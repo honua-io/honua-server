@@ -27,6 +27,8 @@ public sealed class CommittedPostgisResultPackageTests
         var artifact = Package(Job(Receipt)).Artifacts.Should().ContainSingle().Subject;
 
         artifact.Kind.Should().Be(ArtifactKind.FeatureLayer);
+        artifact.Uri.Should().StartWith("data:application/json;base64,");
+        artifact.ContentType.Should().Be("application/json", "the committed sink artifact is a receipt, not GeoJSON geometry");
         artifact.Metadata.Should().ContainKey("connectionId").WhoseValue.Should().Be(ConnectionId);
         artifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be("results");
         artifact.Metadata.Should().ContainKey("table").WhoseValue.Should().Be("output");

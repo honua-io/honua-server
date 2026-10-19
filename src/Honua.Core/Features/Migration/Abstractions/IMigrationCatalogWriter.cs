@@ -404,6 +404,14 @@ public sealed record MigrationRelationshipApplyRequest
     /// Normalized relationship cardinality (<c>1:1</c>, <c>1:N</c>, or <c>M:N</c>).
     /// </summary>
     public required string Cardinality { get; init; }
+
+    /// <summary>
+    /// True when the source relationship declares composite ownership. The v1
+    /// relationship row stores a role, not ownership, so this flag is persisted
+    /// only on the Metadata v2 relationship. A composite request is deferred
+    /// instead of being rewritten as a simple relationship.
+    /// </summary>
+    public bool Composite { get; init; }
 }
 
 /// <summary>

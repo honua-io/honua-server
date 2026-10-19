@@ -72,8 +72,6 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         Guid connectionId = Guid.Empty;
         try
         {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(90);
             // The same reviewed, registered connection is resolved by the worker and
             // by service.publish. Its search path also reaches the fixture's canonical
             // features table when the publisher materializes source rows.
@@ -195,18 +193,6 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             terminalJob.Should().NotBeNull("the actual Redis worker must reach a terminal state");
             terminalJob!.Status.Should().Be(ExecutionJobStatus.Succeeded, terminalJob.ErrorMessage);
 
-            var foreignTenant = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.NameIdentifier, WebAppFixture.SharedAdminActorId),
-                new Claim(ClaimTypes.Name, "admin"),
-                new Claim(ClaimTypes.Role, "admin"),
-                new Claim("tenant_id", "other-tenant")
-            ], "TestAdmin"));
-            Func<Task> foreignRead = () => fixture.GetService<IGeoprocessingJobService>()
-                .GetJobResultsForTerminalAsync(jobId!, foreignTenant);
-            await foreignRead.Should().ThrowAsync<GeoprocessingNotFoundException>(
-                "a cross-tenant administrator must not read the committed sink result");
-
             AnalysisResultPackage? package = null;
             using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
             {
@@ -226,12 +212,52 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
             var artifact = package.Artifacts.Should().ContainSingle().Subject;
             artifact.Kind.Should().Be(ArtifactKind.FeatureLayer);
+            artifact.Uri.Should().StartWith("data:application/json;base64,");
+            artifact.ContentType.Should().Be("application/json");
             artifact.Metadata.Should().ContainKey("connectionId")
                 .WhoseValue.Should().Be(connectionId.ToString("D"));
             artifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be("public");
             artifact.Metadata.Should().ContainKey("table").WhoseValue.Should().Be(table);
             artifact.Metadata.Values.Should().NotContain(value => value.Contains("Host=", StringComparison.Ordinal));
 
+            // Recreate the actual host and its DI graph while retaining only the
+            // owned Redis and Postgres substrate. Publication must consume the
+            // committed job/package from those stores, not an in-memory handle.
+            await fixture.RestartHostAsync();
+            var restoredRun = await fixture.GetService<IWorkflowRunStore>().GetAsync(run.RunId);
+            restoredRun.Should().NotBeNull();
+            restoredRun!.StepStates.Should().ContainSingle().Which.JobId.Should().Be(jobId);
+            var restoredJob = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
+            restoredJob.Should().NotBeNull();
+            restoredJob!.OperationId.Should().Be(jobId);
+            restoredJob.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            var restoredPackage = await fixture.GetService<IGeoprocessingResultPackageStore>().GetAsync(jobId!);
+            restoredPackage.Should().NotBeNull();
+            restoredPackage!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            var restoredArtifact = restoredPackage.Artifacts.Should().ContainSingle().Subject;
+            restoredArtifact.ArtifactId.Should().Be(artifact.ArtifactId);
+            restoredArtifact.Uri.Should().Be(artifact.Uri);
+            restoredArtifact.ContentType.Should().Be("application/json");
+            restoredArtifact.Metadata.Should().ContainKey("connectionId")
+                .WhoseValue.Should().Be(connectionId.ToString("D"));
+            restoredArtifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be("public");
+            restoredArtifact.Metadata.Should().ContainKey("table").WhoseValue.Should().Be(table);
+            restoredArtifact.Metadata.Values.Should().NotContain(value => value.Contains("Host=", StringComparison.Ordinal));
+
+            var foreignTenant = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, WebAppFixture.SharedAdminActorId),
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("tenant_id", "other-tenant")
+            ], "TestAdmin"));
+            Func<Task> foreignRead = () => fixture.GetService<IGeoprocessingJobService>()
+                .GetJobResultsForTerminalAsync(jobId!, foreignTenant);
+            await foreignRead.Should().ThrowAsync<GeoprocessingNotFoundException>(
+                "a cross-tenant administrator must not read the persisted sink result after restart");
+
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(90);
             using (var resourceResponse = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",

@@ -245,6 +245,13 @@ public static class MigrationCatalogReconciliationCodes
     public const string RelationshipMissing = "catalog.relationship.missing";
 
     /// <summary>
+    /// A published relationship matches a composite source record but dropped composite ownership
+    /// or no longer agrees on role, cardinality, or key fields. A name match is not enough to
+    /// treat that publication as a simple relationship.
+    /// </summary>
+    public const string RelationshipCompositeDowngraded = "catalog.relationship.composite-downgraded";
+
+    /// <summary>
     /// The source resource advertised attachments but the published resource does not declare
     /// attachment support (<c>Editing.SupportsAttachments</c> is <c>false</c>).
     /// </summary>
