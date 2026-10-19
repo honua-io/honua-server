@@ -159,6 +159,38 @@ public sealed class ServicePublishMcpAuthorizationTests
         descriptor.ApprovalModel.Should().Be(OperationApprovalModel.OperatorGate);
     }
 
+    [Theory]
+    [InlineData(GeoprocessingWorkflowStatus.Failed)]
+    [InlineData(GeoprocessingWorkflowStatus.Cancelled)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task PublishResult_RefusesCommittedEffectFromNonCompletedJobWithoutActuation(
+        GeoprocessingWorkflowStatus status)
+    {
+        var principal = CreatePrincipal(PrincipalProfile.AdminWrite);
+        var gate = new OperatorApprovalGate(
+            Substitute.For<IOperatorAuthorizationEvaluator>(),
+            new MatrixApprovalEvaluator(required: false),
+            NullLogger<OperatorApprovalGate>.Instance);
+        var invoker = Substitute.For<IOperationInvoker>();
+        var context = CreateContext(principal, new MatrixAuthorizationService(), gate, invoker);
+        var jobService = CreateJobService();
+        var completed = await jobService.GetJobResultsAsync(
+            "matrix-job", principal, CancellationToken.None);
+        // A committed sink receipt can remain visible for recovery after failure or
+        // cancellation. It must never authorize a new hosted service.
+        jobService.GetJobResultsAsync(
+                Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(completed with { Status = status });
+        var tool = new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance);
+
+        Func<Task> invoke = () => tool.InvokeAsync(
+            context, CreateArguments(PublishTool.PublishResult), CancellationToken.None);
+
+        await invoke.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        await invoker.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default!, default);
+    }
+
     private static async Task<AdmissionOutcome> EvaluateRestTwinAsync(
         HttpContext httpContext,
         ClaimsPrincipal principal,

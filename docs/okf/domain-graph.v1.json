@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:338254e141ebe910b7ed7a557f390c4b7c9191ab838a2e5416ecea0fd3cd91eb",
+  "bundleDigest": "sha256:028630aff266b80c9ea41e933abc96da6b4faed7ac552502940fb97711261989",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5391,7 +5391,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:28ca58e290e4b9e49a3924c7cbd26c3855b6d102062ca3bf8dc9f13bff467a96",
+      "documentDigest": "sha256:96ccea4027aa72faf187efe102314cd9651c01ca30e5ed554d60e85529e1fad3",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -6054,7 +6054,7 @@
     {
       "id": "okf/capabilities/editing.featureserver-edits",
       "path": "okf/capabilities/editing.featureserver-edits.md",
-      "documentDigest": "sha256:2de1c9109c8008a6e7dee33c989e3265b9a9318017c121802389ebcea686ea15",
+      "documentDigest": "sha256:6e94311b6d73aa3929b808e18e80edf31a652252341a06ce3da7a2ebbd160b03",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Editing",
@@ -6853,7 +6853,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-mapserver",
       "path": "okf/capabilities/serve.geoservices-mapserver.md",
-      "documentDigest": "sha256:77e8e38a09abcf5e8346e9a89071094f9415aacc95ae0bfb84b470c2707ff7b8",
+      "documentDigest": "sha256:72184f76b496882e1d2b55a83638fbd5ae08fb4f4c192be2b4b2a73c89d535dd",
       "metadata": {
         "type": "capability",
         "title": "MapServer",
@@ -7125,7 +7125,7 @@
     {
       "id": "okf/capabilities/serve.wfs",
       "path": "okf/capabilities/serve.wfs.md",
-      "documentDigest": "sha256:b2b7c180f9aecf5aa0d8444323df7494b65b29f424d84e28e84479ab04cbe8f7",
+      "documentDigest": "sha256:76db96bf8b34a7f83586442cd4730a4a65159ce52d30b1b3f3d62375b4f2e480",
       "metadata": {
         "type": "capability",
         "title": "WFS 2.0",

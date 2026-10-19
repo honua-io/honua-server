@@ -43,6 +43,8 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     DatabaseFixtureAdapter database,
     ITestOutputHelper output) : IClassFixture<DatabaseFixtureAdapter>
 {
+    private const string SinkConnectionId = "11111111-1111-1111-1111-111111111111";
+
     [IntegrationTest]
     public async Task StaleAttempt_IsFencedAcrossReclaimDuplicateDeliveryAndTerminalization()
     {
@@ -230,6 +232,9 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             package.Should().NotBeNull();
             package!.Artifacts.Should().ContainSingle();
             var artifact = package.Artifacts.Single();
+            artifact.Metadata.Should().ContainKey("connectionId").WhoseValue.Should().Be(SinkConnectionId);
+            artifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be(schema);
+            artifact.Metadata.Should().ContainKey("table").WhoseValue.Should().Be("fenced_output");
             artifact.Uri.Should().StartWith("data:application/json;base64,");
             var artifactBytes = Convert.FromBase64String(artifact.Uri!["data:application/json;base64,".Length..]);
             using var descriptor = JsonDocument.Parse(artifactBytes);
@@ -512,7 +517,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = ExternalPostgisSinkExecutor.HandledProcessId,
             ["protocolProcessId"] = ExternalPostgisSinkExecutor.HandledProcessId,
             [prefix + "input"] = input,
-            [prefix + "connectionName"] = "test-postgis",
+            [prefix + "connectionId"] = SinkConnectionId,
             [prefix + "table"] = "fenced_output",
             [prefix + "schema"] = schema,
             [prefix + "targetSrid"] = "4326",
