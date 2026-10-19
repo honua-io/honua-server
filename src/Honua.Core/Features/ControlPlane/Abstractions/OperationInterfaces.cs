@@ -188,6 +188,8 @@ public interface IExecutionJobStore : IOperationStore
     /// The optional <see cref="ExecutionJobRecord.AcceptanceDeadline"/> must be checked
     /// using the store's clock atomically with creation. An expired admission cannot
     /// create a record or indexes. Existing records remain available for read-only recovery.
+    /// If the original security context carries an execution lease, its expiry is an
+    /// additional first-creation ceiling, without rewriting the retained task deadline.
     /// </remarks>
     Task<bool> TryCreateAsync(
         ExecutionJobRecord job,

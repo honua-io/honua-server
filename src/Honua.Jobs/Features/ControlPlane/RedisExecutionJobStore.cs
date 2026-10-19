@@ -120,6 +120,13 @@ internal sealed partial class RedisExecutionJobStore(
 
         var versioned = job with { Version = 1 };
         var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        // Keep the original task deadline in the receipt. First creation must also
+        // precede the separately sealed execution/source authority deadline; check
+        // the tighter ceiling using Redis TIME in the same atomic create script.
+        var admissionDeadline = job.AcceptanceDeadline;
+        if (job.Audit.SubmitterSecurityContext?.ExecutionLease is { } lease &&
+            (admissionDeadline is null || lease.ExpiresAt < admissionDeadline))
+            admissionDeadline = lease.ExpiresAt;
         var retention = ttl ?? DefaultRetention;
         ArgumentOutOfRangeException.ThrowIfLessThan(retention.TotalMilliseconds, 1, nameof(ttl));
         RedisKey[] keys =
@@ -135,7 +142,7 @@ internal sealed partial class RedisExecutionJobStore(
                 payload, (long)retention.TotalMilliseconds, job.OperationId,
                 IsTerminal(job.Status) ? 0 : 1, job.CreatedAt.ToUnixTimeMilliseconds(),
                 (long)DefaultRetention.TotalMilliseconds,
-                job.AcceptanceDeadline is { } deadline
+                admissionDeadline is { } deadline
                     ? deadline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) : string.Empty
             ]).ConfigureAwait(false) == 1;
 

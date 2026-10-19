@@ -24,6 +24,51 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ExecutionJobStore_FirstAcceptanceRequiresBothTaskAndExecutionDeadlines(bool expiredLease)
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var job = CreateQueuedJob($"job-lease-admission-{Guid.NewGuid():N}");
+        var future = DateTimeOffset.UtcNow.AddHours(1);
+        var expired = DateTimeOffset.UtcNow.AddMinutes(-1);
+        job = job with
+        {
+            AcceptanceDeadline = expiredLease ? future : expired,
+            Audit = new OperationAuditInfo
+            {
+                SubmitterSecurityContext = new JobSecurityContext("agent", null, [])
+                {
+                    ExecutionLease = new JobExecutionLease
+                    {
+                        LeaseId = "test-deadline-only", JobId = job.OperationId,
+                        IssuedAt = expired.AddMinutes(-1), ExpiresAt = expiredLease ? expired : future,
+                        ProtectedAuthority = "not-execution-authority"
+                    }
+                }
+            }
+        };
+        (await harness.JobStore.TryCreateAsync(job)).Should().BeFalse();
+        (await harness.JobStore.GetAsync(job.OperationId)).Should().BeNull();
+        (await harness.JobStore.ListActiveAsync()).Should().BeEmpty();
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery())).Items.Should().BeEmpty();
+
+        var accepted = job with
+        {
+            AcceptanceDeadline = future,
+            Audit = job.Audit with
+            {
+                SubmitterSecurityContext = job.Audit.SubmitterSecurityContext! with
+                { ExecutionLease = job.Audit.SubmitterSecurityContext!.ExecutionLease! with { ExpiresAt = future.AddMinutes(-10) } }
+            }
+        };
+        (await harness.JobStore.TryCreateAsync(accepted)).Should().BeTrue();
+        var stored = (await harness.JobStore.GetAsync(job.OperationId))!;
+        stored.AcceptanceDeadline.Should().Be(future, "the authority ceiling does not rewrite the original task deadline");
+        stored.Audit.SubmitterSecurityContext!.ExecutionLease!.ExpiresAt.Should().Be(future.AddMinutes(-10));
+    }
+
     [IntegrationTest]
     public async Task ExecutionJobStore_ExpiredAdmission_LeavesNoJobOrIndexesEvenWithFutureCreatedTime()
     {
