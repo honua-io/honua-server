@@ -35,6 +35,8 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
     private HttpClient _alice = null!;
     private HttpClient _bob = null!;
     private string _aliceSubject = null!;
+    private string _bobSubject = null!;
+    private Func<Task>? _beforeApply;
 
     public FeatureServerOwnerGuardDispatchTests()
     {
@@ -45,7 +47,7 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             })
-            .DecorateService<IFeatureWriter>(inner => new RecordingWriter(inner, _written));
+            .DecorateService<IFeatureWriter>(inner => new RecordingWriter(inner, _written, BeforeApplyAsync));
     }
 
     public async Task InitializeAsync()
@@ -86,6 +88,7 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
         var bobKey = await keyStore.CreateAsync("owner-guard-bob",
             ["read:test", "write:test"], null, null, CancellationToken.None);
         _aliceSubject = aliceKey.Record.Id.ToString();
+        _bobSubject = bobKey.Record.Id.ToString();
         _alice = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         _bob = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
     }
@@ -118,6 +121,8 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
         updateBatch.Updates.Should().ContainSingle(feature => feature.Id == aliceId);
         updateBatch.OwnerGuards.Should().ContainSingle().Which
             .Should().Be(new OwnerEditGuard(aliceId, "owner", _aliceSubject));
+        await AssertStoredFeatureAsync(_alice, aliceId, "alice-updated", _aliceSubject);
+        await AssertStoredFeatureAsync(_bob, bobId, "bob-original", _bobSubject);
         _written.Clear();
 
         var atomic = await ApplyEditsAsync(_alice, $$$"""
@@ -127,6 +132,8 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
             """);
         atomic.Success.Should().BeFalse();
         _written.Should().BeEmpty("a denied slot aborts rollbackOnFailure before dispatch");
+        await AssertStoredFeatureAsync(_alice, aliceId, "alice-updated", _aliceSubject);
+        await AssertStoredFeatureAsync(_bob, bobId, "bob-original", _bobSubject);
 
         var delete = await ApplyEditsAsync(_alice, $$$"""
             {"deletes":[{{{aliceId}}},{{{bobId}}}],"rollbackOnFailure":false}
@@ -138,6 +145,73 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
         deleteBatch.Deletes.Should().ContainSingle().Which.Should().Be(aliceId);
         deleteBatch.OwnerGuards.Should().ContainSingle().Which
             .Should().Be(new OwnerEditGuard(aliceId, "owner", _aliceSubject));
+        (await ReadStoredFeaturesAsync(_alice, aliceId)).Should().BeEmpty();
+        await AssertStoredFeatureAsync(_bob, bobId, "bob-original", _bobSubject);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task OwnerTransferAfterAdmission_RejectsMutationAndPreservesTransferredRow(bool delete)
+    {
+        var id = await AddFeatureAsync(_alice, "alice-original");
+        _written.Clear();
+        _beforeApply = async () =>
+        {
+            // The original request has already authorized Alice. A separate admin
+            // request commits the transfer before its guarded writer statement runs.
+            using var admin = _fixture.CreateAdminClient();
+            var transfer = await ApplyEditsAsync(admin, JsonSerializer.Serialize(new
+            {
+                updates = new[] { new { attributes = new { objectid = id, name = "bob-transferred", owner = _bobSubject } } },
+                rollbackOnFailure = true
+            }));
+            transfer.UpdateResults.Should().ContainSingle(result => result.Success);
+        };
+
+        var payload = delete
+            ? JsonSerializer.Serialize(new { deletes = new[] { id }, rollbackOnFailure = true })
+            : JsonSerializer.Serialize(new
+            {
+                updates = new[] { new { attributes = new { objectid = id, name = "alice-stale-write" } } },
+                rollbackOnFailure = true
+            });
+        var response = await ApplyEditsAsync(_alice, payload);
+        var results = delete ? response.DeleteResults : response.UpdateResults;
+        results.Should().ContainSingle().Which.Success.Should().BeFalse();
+        _written.Should().HaveCount(2, "the independent admin transfer and original mutation both reached the real writer");
+        _written[0].OwnerGuards.Should().ContainSingle().Which
+            .Should().Be(new OwnerEditGuard(id, "owner", _aliceSubject));
+        _written[1].OwnerGuards.IsDefaultOrEmpty.Should().BeTrue("the admin may transfer ownership");
+        await AssertStoredFeatureAsync(_bob, id, "bob-transferred", _bobSubject);
+    }
+
+    private async Task BeforeApplyAsync()
+    {
+        var beforeApply = _beforeApply;
+        _beforeApply = null;
+        if (beforeApply != null)
+        {
+            await beforeApply();
+        }
+    }
+
+    private static async Task AssertStoredFeatureAsync(HttpClient client, long id, string name, string owner)
+    {
+        var attributes = (await ReadStoredFeaturesAsync(client, id)).Should().ContainSingle().Subject;
+        attributes.GetProperty("name").GetString().Should().Be(name);
+        attributes.GetProperty("owner").GetString().Should().Be(owner);
+    }
+
+    private static async Task<JsonElement[]> ReadStoredFeaturesAsync(HttpClient client, long id)
+    {
+        using var response = await client.GetAsync($"/rest/services/test/FeatureServer/0/query?f=json&objectIds={id}&outFields=name,owner&returnGeometry=false");
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("attributes").Clone()).ToArray();
     }
 
     private async Task<long> AddFeatureAsync(HttpClient client, string name)
@@ -167,7 +241,7 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
             ?? throw new InvalidOperationException($"Expected applyEdits response: {body}");
     }
 
-    private sealed class RecordingWriter(IFeatureWriter inner, List<FeatureEditBatch> written) : IFeatureWriter
+    private sealed class RecordingWriter(IFeatureWriter inner, List<FeatureEditBatch> written, Func<Task> beforeApply) : IFeatureWriter
     {
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
             => inner.CreateAsync(layerId, feature, cancellationToken);
@@ -178,11 +252,12 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
         public Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
             => inner.DeleteAsync(layerId, featureId, cancellationToken);
 
-        public Task<FeatureEditResult> ApplyEditsAsync(
+        public async Task<FeatureEditResult> ApplyEditsAsync(
             int layerId, FeatureEditBatch batch, CancellationToken cancellationToken = default)
         {
             written.Add(batch);
-            return inner.ApplyEditsAsync(layerId, batch, cancellationToken);
+            await beforeApply();
+            return await inner.ApplyEditsAsync(layerId, batch, cancellationToken);
         }
     }
 }
