@@ -13,6 +13,7 @@ import sys
 import urllib.parse
 import urllib.request
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SHA = r"[0-9a-f]{64}"
@@ -128,6 +129,8 @@ def run_private(args, *, cwd=None, env=None, timeout=600):
 
 def fixed_request():
     request = json.loads((STAGE / "request.json").read_bytes())
+    lifetime = request["expiresInSeconds"]
+    expiry = datetime.fromisoformat(request["sessionExpiresAtUtc"].replace("Z", "+00:00"))
     account = request["accountId"]
     deployment = request["executionIdentityContract"]["roles"]["infra_deployment"]["role_arn"]
     backend_role = request["workloadIdentityContract"]["role_arn"]
@@ -139,6 +142,9 @@ def fixed_request():
             and request["iacRevision"] == os.environ["CERT_IAC_REVISION"]
             and request["candidateDigest"] == os.environ["CERT_CANDIDATE_SHA256"]
             and re.fullmatch(SHA, request["backendSourceSha256"])
+            and type(lifetime) is int and 60 <= lifetime <= 1800
+            and expiry.tzinfo is not None
+            and expiry > datetime.now(timezone.utc) + timedelta(seconds=lifetime + 120)
             and re.fullmatch(r"[0-9]{12}", account)
             and request["region"] == os.environ["AWS_REGION"]
             and deployment == os.environ["CERT_DEPLOY_ROLE_ARN"]
@@ -225,7 +231,7 @@ def prepare():
                  "-input=false", "-no-color"], env=init_env, timeout=600)
     verified = json.loads(run_private(["python3", "-I", str(iac / SCRIPT_REL / "verify_reviewed_modules.py"),
                                        "--root", str(root), "--manifest",
-                                       str(iac / "release/aws-cert-reviewed-modules.json")]))
+                                       str(iac / "release/aws-cert-reviewed-modules.json")], env=setup_env))
     require(verified["status"] == "verified", "module-preflight-invalid")
     require(sha((root / ".terraform.lock.hcl").read_bytes()) == request["providerLockSha256"],
             "provider-lock-mismatch")

@@ -188,6 +188,8 @@ class StandingCertPlanWorkflow(unittest.TestCase):
                           "varFile": str(stage / "terraform.tfvars.json"),
                           "backendTokenFile": str(stage / "backend-token"),
                           "iacRevision": self.revision, "candidateDigest": self.candidate,
+                          "expiresInSeconds": 600,
+                          "sessionExpiresAtUtc": (datetime.now(timezone.utc) + timedelta(minutes=45)).isoformat(),
                           "accountId": "123456789012", "region": "us-east-1",
                           "backend": {"bucket_id": "honua-existing-state",
                                       "object_key": "standing/cert/terraform.tfstate"},
@@ -207,6 +209,11 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "backend-source-refused"):
                 hosted.admit_backend_source(changed, backend_bytes + b"endpoint = \"https://evil.invalid\"\n")
             os.environ["CERT_DEPLOY_ROLE_ARN"] = "arn:aws:iam::123456789012:role/other"
+            with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
+                hosted.fixed_request()
+            hosted_request["varFile"] = str(stage / "terraform.tfvars.json")
+            hosted_request["sessionExpiresAtUtc"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+            (stage / "request.json").write_text(json.dumps(hosted_request))
             with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
                 hosted.fixed_request()
             os.environ["CERT_DEPLOY_ROLE_ARN"] = deploy_role
