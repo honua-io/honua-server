@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1197,
+    "total": 1199,
     "byStatus": {
-      "not-executable": 1182,
+      "not-executable": 1184,
       "unvalidated": 12,
       "passed": 3
     }
@@ -32,7 +32,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 157,
+      "line": 161,
       "language": "bash"
     },
     {
@@ -45,7 +45,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 25,
+      "line": 29,
       "language": "bash"
     },
     {
@@ -58,7 +58,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 51,
+      "line": 55,
       "language": "bash"
     },
     {
@@ -71,7 +71,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 37,
+      "line": 41,
       "language": "bash"
     },
     {
@@ -84,7 +84,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 168,
+      "line": 172,
       "language": "bash"
     },
     {
@@ -13737,6 +13737,32 @@
       },
       "fence": 1,
       "line": 33,
+      "language": "json"
+    },
+    {
+      "id": "290cb2794d8f04e4",
+      "kind": "docs-fence",
+      "path": "docs/operator/gp-native-qualification-observer.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 143,
+      "language": "text"
+    },
+    {
+      "id": "adec24286572e31c",
+      "kind": "docs-fence",
+      "path": "docs/operator/gp-native-qualification-observer.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 75,
       "language": "json"
     },
     {
