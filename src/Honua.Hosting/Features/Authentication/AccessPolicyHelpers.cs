@@ -517,18 +517,29 @@ internal static class AccessPolicyHelpers
         HttpContext context,
         MetadataV2Service service,
         AccessScope scope = AccessScope.Read)
+        => CreateAccessDeniedResult(context, EvaluateServiceAccess(context, service, scope));
+
+    /// <summary>
+    /// Evaluates a resolved service, including tenant and scoped-key targets, while
+    /// leaving protocol-specific serialization of a denial to the caller.
+    /// </summary>
+    /// <param name="context">The current request.</param>
+    /// <param name="service">The resolved target service.</param>
+    /// <param name="scope">The requested read or write scope.</param>
+    /// <returns>The tenant- and target-aware access decision.</returns>
+    public static AccessDecision EvaluateServiceAccess(
+        HttpContext context,
+        MetadataV2Service service,
+        AccessScope scope = AccessScope.Read)
     {
         ArgumentNullException.ThrowIfNull(service);
         if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
         {
-            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+            return AccessDecision.Forbidden(AccessForbiddenMessage);
         }
 
-        var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope));
-        return scopedKeyDecision is { } decision
-            ? CreateAccessDeniedResult(context, decision)
-            : CreateAccessDeniedResult(context, EvaluateServicePolicy(
-                context.RequestServices, context.User, null, service, scope));
+        return EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope))
+            ?? EvaluateServicePolicy(context.RequestServices, context.User, null, service, scope);
     }
 
     public static bool IsResourceAccessible(
