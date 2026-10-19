@@ -225,25 +225,19 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var catalog = await PublishedMetadataCatalogProjection.ListReadableAsync(
                 httpContext, snapshot, cancellationToken).ConfigureAwait(false);
+            // Detail reads also reserve the public URI for inactive promotions.
+            // Fetch all matching identities in one query rather than doing a
+            // store round trip for every catalog service before the page cap.
+            var collidingNames = new HashSet<string>(
+                _services is null
+                    ? []
+                    : await _services.FindCollidingPublicIdsAsync(
+                        catalog.Select(service => service.ServiceName).ToArray(),
+                        cancellationToken).ConfigureAwait(false),
+                StringComparer.Ordinal);
             foreach (var service in catalog)
             {
-                // Detail resolves metadata names without case, including inactive
-                // promotion records. Refuse a collision before listing either URI.
-                PublishedServiceRecord? promotionRecord = null;
-                if (_services is not null)
-                {
-                    try
-                    {
-                        promotionRecord = await _services.FindByPublicIdAsync(
-                            service.ServiceName, cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (PublishedServiceIdentityAmbiguousException exception)
-                    {
-                        throw new GeoprocessingValidationException(exception.Message);
-                    }
-                }
-
-                if (activePromotionNames.Contains(service.ServiceName) || promotionRecord is not null)
+                if (activePromotionNames.Contains(service.ServiceName) || collidingNames.Contains(service.ServiceName))
                 {
                     throw new GeoprocessingValidationException(
                         $"Published service identity '{service.ServiceName}' is shared by a promotion and a catalog publication.");

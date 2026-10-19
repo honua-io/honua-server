@@ -182,10 +182,13 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
 
         // The publisher returns the revision of its own committed graph mutation.
         // A later current-graph read could attribute another publisher's revision to this job.
-        _notifications?.BroadcastResourcesListChanged();
-        _notifications?.BroadcastToolsListChanged();
+        if (_notifications is { } notifications)
+        {
+            TryNotify(() => { notifications.BroadcastResourcesListChanged(); });
+            TryNotify(() => { notifications.BroadcastToolsListChanged(); });
+        }
         var now = _clock.GetUtcNow();
-        var promotionCollision = await HasPromotionCollisionAsync(summary.ServiceName, CancellationToken.None)
+        var promotionReadback = await ResolvePromotionReadbackAsync(summary.ServiceName, CancellationToken.None)
             .ConfigureAwait(false);
         var resultDetails = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -193,10 +196,12 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             ["layerName"] = summary.LayerName,
             ["geometryType"] = summary.GeometryType,
         };
-        if (promotionCollision)
+        if (promotionReadback != PromotionReadback.Available)
         {
             resultDetails["readbackStatus"] = "Unavailable";
-            resultDetails["readbackReason"] = "The published service identity conflicts with a promotion record.";
+            resultDetails["readbackReason"] = promotionReadback == PromotionReadback.Collision
+                ? "The published service identity conflicts with a promotion record."
+                : "The published service identity could not be checked after publication committed.";
         }
         else
         {
@@ -216,7 +221,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             CreatedAt = now,
             UpdatedAt = now,
             MetadataRevision = summary.MetadataRevision,
-            ResourceIds = promotionCollision
+            ResourceIds = promotionReadback != PromotionReadback.Available
                 ? new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
@@ -272,14 +277,35 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         if (progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
             progress.LayerId is int committedLayerId)
         {
-            var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var resolved = TryResolvePublishedService(graph, committedLayerId, progress.TenantId, out var serviceName);
-            var promotionCollision = resolved &&
-                await HasPromotionCollisionAsync(serviceName, cancellationToken).ConfigureAwait(false);
-            if (resolved && !promotionCollision)
+            var resolved = false;
+            var promotionReadback = PromotionReadback.Available;
+            var serviceName = string.Empty;
+            string? serviceUri = null;
+            try
+            {
+                var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                resolved = TryResolvePublishedService(graph, committedLayerId, progress.TenantId, out serviceName);
+                if (resolved)
+                {
+                    promotionReadback = await ResolvePromotionReadbackAsync(serviceName, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (promotionReadback == PromotionReadback.Available)
+                    {
+                        serviceUri = McpResourceUris.PublishedServiceUri(serviceName);
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // The worker has committed. Readback enrichment cannot change
+                // completion into a retryable failure or invent a service URI.
+                promotionReadback = PromotionReadback.Unavailable;
+            }
+
+            if (resolved && serviceUri is not null && promotionReadback == PromotionReadback.Available)
             {
                 details["serviceName"] = serviceName;
-                details["serviceUri"] = McpResourceUris.PublishedServiceUri(serviceName);
+                details["serviceUri"] = serviceUri;
                 if (metadataRevision is > 0)
                 {
                     details["metadataRevision"] = metadataRevision.Value.ToString(CultureInfo.InvariantCulture);
@@ -292,9 +318,12 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
                 // The publication committed, but a missing or ambiguous catalog
                 // identity cannot truthfully produce a service URI. Never retry it.
                 details["readbackStatus"] = "Unavailable";
-                details["readbackReason"] = promotionCollision
-                    ? "The published service identity conflicts with a promotion record."
-                    : "The committed layer has no unique persisted feature-service identity.";
+                details["readbackReason"] = promotionReadback switch
+                {
+                    PromotionReadback.Collision => "The published service identity conflicts with a promotion record.",
+                    PromotionReadback.Unavailable => "The published service identity could not be checked after publication committed.",
+                    _ => "The committed layer has no unique persisted feature-service identity.",
+                };
             }
         }
 
@@ -316,23 +345,53 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         };
     }
 
-    private async Task<bool> HasPromotionCollisionAsync(string serviceName, CancellationToken cancellationToken)
+    private enum PromotionReadback
+    {
+        Available,
+        Collision,
+        Unavailable,
+    }
+
+    private static void TryNotify(Action notify)
+    {
+        try
+        {
+            notify();
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Notification fanout is best effort after the catalog commit.
+            // A listener outage cannot make a non-idempotent publish retryable.
+        }
+    }
+
+    private async Task<PromotionReadback> ResolvePromotionReadbackAsync(
+        string serviceName,
+        CancellationToken cancellationToken)
     {
         if (_publishedServices is null)
         {
-            return false;
+            return PromotionReadback.Available;
         }
 
         try
         {
             return await _publishedServices.FindByPublicIdAsync(serviceName, cancellationToken)
-                .ConfigureAwait(false) is not null;
+                .ConfigureAwait(false) is null
+                ? PromotionReadback.Available
+                : PromotionReadback.Collision;
         }
         catch (PublishedServiceIdentityAmbiguousException)
         {
             // The layer is already committed. Ambiguous promotions make its URI
             // unreadable, but must not turn completion into a retryable failure.
-            return true;
+            return PromotionReadback.Collision;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // A store outage after actuation cannot make this non-idempotent
+            // publish safe to retry. Withhold the readback URI instead.
+            return PromotionReadback.Unavailable;
         }
     }
 

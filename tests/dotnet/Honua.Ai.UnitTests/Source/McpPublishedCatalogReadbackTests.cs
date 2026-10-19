@@ -36,6 +36,8 @@ public sealed class McpPublishedCatalogReadbackTests
     public McpPublishedCatalogReadbackTests()
     {
         _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _promotions.FindCollidingPublicIdsAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, ServiceName,
             Arg.Any<CancellationToken>()).Returns([]);
     }
@@ -108,6 +110,38 @@ public sealed class McpPublishedCatalogReadbackTests
         var item = body.GetProperty("items")[0];
         item.GetProperty("resourceUri").GetString().Should().Be(ServiceUri);
         item.GetProperty("etag").GetString().Should().Be(detail.GetProperty("etag").GetString());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
+    public async Task Index_MultipleCatalogServices_UsesOneBatchCollisionReadBeforeTruncation()
+    {
+        var builder = new TestMetadataV2GraphBuilder();
+        for (var index = 0; index < 4; index++)
+        {
+            var id = $"road-{index}";
+            builder.AddResource($"resource-{id}", id)
+                .AddStorageBinding($"binding-{id}", $"resource-{id}", $"public.{id}", storageLayerId: 740 + index)
+                .AddService($"service-{id}", id,
+                    route: $"/rest/services/{id}/FeatureServer", protocols: ServiceProtocols.All)
+                .AddPublication($"publication-{id}", $"service-{id}", $"resource-{id}",
+                    layerIndex: index, storageBindingId: $"binding-{id}",
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+        }
+
+        var resource = new PromotionSurfaceIndexResource(
+            _promotions, _deployments, _jobs,
+            NullLogger<PromotionSurfaceIndexResource>.Instance, pageSize: 2);
+        var result = await resource.ReadAsync(Context(builder.Build()),
+            "honua://published-services", CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("count").GetInt32().Should().Be(2);
+        body.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        await _promotions.Received(1).FindCollidingPublicIdsAsync(
+            Arg.Is<IReadOnlyList<string>>(names => names.Count == 4 && names.Contains("road-3")),
+            Arg.Any<CancellationToken>());
+        await _promotions.DidNotReceiveWithAnyArgs().FindByPublicIdAsync(default!, default);
     }
 
     [UnitTest]
@@ -229,6 +263,8 @@ public sealed class McpPublishedCatalogReadbackTests
     [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_CollidingPromotionIdentity_RefusesUnreadableUri()
     {
+        _promotions.FindCollidingPublicIdsAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([ServiceName]);
         _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(new PublishedServiceRecord
         {
             ServiceId = ServiceName,
@@ -299,6 +335,8 @@ public sealed class McpPublishedCatalogReadbackTests
     public async Task Index_InactiveCaseOnlyPromotionCollision_RefusesCatalogUri()
     {
         var promotion = Promotion() with { ServiceId = "ROADS", Status = PublishedServiceStatus.Suspended };
+        _promotions.FindCollidingPublicIdsAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([ServiceName]);
         _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
         // An inactive promotion does not appear in ListActiveAsync. Its stored
         // public identifier still makes the same catalog URI ambiguous.
@@ -353,6 +391,8 @@ public sealed class McpPublishedCatalogReadbackTests
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_AmbiguousStoredPromotionIdentity_IsValidationRefusal()
     {
+        _promotions.FindCollidingPublicIdsAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([ServiceName]);
         _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>())
             .Returns<Task<PublishedServiceRecord?>>(_ => throw new PublishedServiceIdentityAmbiguousException(ServiceName));
         var detail = new PublishedServiceResource(

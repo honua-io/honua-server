@@ -84,6 +84,35 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         return record;
     }
 
+    public async Task<IReadOnlyList<string>> FindCollidingPublicIdsAsync(
+        IReadOnlyList<string> candidateServiceIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateServiceIds);
+        if (candidateServiceIds.Count == 0)
+        {
+            return [];
+        }
+
+        var sql = $"""
+            SELECT DISTINCT candidate.service_id
+            FROM unnest(@candidate_ids) AS candidate(service_id)
+            JOIN {_table} AS stored ON lower(stored.service_id) = lower(candidate.service_id)
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@candidate_ids", NpgsqlDbType.Array | NpgsqlDbType.Text,
+            candidateServiceIds.ToArray());
+        var matches = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            matches.Add(reader.GetString(0));
+        }
+
+        return matches;
+    }
+
     public async Task SetAsync(
         PublishedServiceRecord service,
         CancellationToken cancellationToken = default)

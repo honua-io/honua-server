@@ -384,6 +384,33 @@ public sealed class LayerPublishJobTests
     }
 
     [UnitTest]
+    public async Task Executor_CompletedQueuedPublish_StoreOutageRetainsCommittedStatusWithoutStaleUri()
+    {
+        var services = Substitute.For<IPublishedServiceStore>();
+        services.FindByPublicIdAsync("roads", Arg.Any<CancellationToken>())
+            .Returns<Task<PublishedServiceRecord?>>(_ => throw new InvalidOperationException("transient store failure"));
+        var previous = Handle(OperationHandleStatus.Completed, ServicePublishOperation.OperationId) with
+        {
+            JobId = "abc",
+            ResourceIds = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["serviceName"] = "roads",
+                ["serviceUri"] = "honua://published-services/roads",
+            },
+        };
+
+        var status = await Executor(CompletedJobs(741), new TestMetadataV2GraphProvider(PublishedGraph("roads")), services)
+            .GetStatusAsync(previous);
+
+        Assert.Equal(OperationHandleStatus.Completed, status.Status);
+        Assert.Equal(11, status.MetadataRevision);
+        Assert.Equal("Unavailable", status.Result!.Details["readbackStatus"]);
+        Assert.False(status.ResourceIds.ContainsKey("serviceName"));
+        Assert.False(status.ResourceIds.ContainsKey("serviceUri"));
+        Assert.False(status.Result.Details.ContainsKey("serviceUri"));
+    }
+
+    [UnitTest]
     public async Task Executor_InlinePublish_UsesCommittedRevisionAndWithholdsCollidingUri()
     {
         var publisher = Substitute.For<ILayerPublishingService>();

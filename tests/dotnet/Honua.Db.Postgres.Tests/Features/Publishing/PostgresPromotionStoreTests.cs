@@ -74,10 +74,16 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
             (await store.TryCreateAsync(upper)).Should().BeTrue();
             (await store.GetAsync("roads")).Should().BeNull();
             (await store.FindByPublicIdAsync("roads")).Should().BeEquivalentTo(upper);
+            (await store.FindCollidingPublicIdsAsync(["roads", "missing", "ROADS"]))
+                .Should().BeEquivalentTo(["roads", "ROADS"]);
 
             (await store.TryCreateAsync(BuildPublishedService("roads", "result-2"))).Should().BeTrue();
             await FluentActions.Invoking(() => store.FindByPublicIdAsync("roads"))
                 .Should().ThrowAsync<PublishedServiceIdentityAmbiguousException>();
+            await store.SetAsync(upper with { Status = PublishedServiceStatus.Decommissioned });
+            (await store.FindCollidingPublicIdsAsync(["roads", "missing"]))
+                .Should().ContainSingle().Which.Should().Be("roads",
+                    "because inactive records still reserve the public URI");
         }
         finally
         {

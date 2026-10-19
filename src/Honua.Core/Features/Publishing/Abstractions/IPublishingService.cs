@@ -84,6 +84,14 @@ public interface IPublishedServiceStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finds candidate public identifiers that collide with any persisted service,
+    /// including inactive and decommissioned records, in one store read.
+    /// </summary>
+    Task<IReadOnlyList<string>> FindCollidingPublicIdsAsync(
+        IReadOnlyList<string> candidateServiceIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Persists the latest published service record state.
     /// </summary>
     /// <param name="service">Updated published service record.</param>
