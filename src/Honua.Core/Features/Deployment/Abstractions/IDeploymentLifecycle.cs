@@ -26,10 +26,14 @@ public interface IDeploymentStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Persists the latest deployment record state, including any appended transitions.
+    /// Persists one lifecycle transition only when the stored revision matches the expected
+    /// revision and the promoted source and target identities have not changed.
     /// </summary>
-    Task SetAsync(
+    /// <returns>True when the transition committed; false after a concurrent update or when
+    /// the record no longer exists.</returns>
+    Task<bool> TrySetAsync(
         Domain.Deployment deployment,
+        long expectedVersion,
         CancellationToken cancellationToken = default);
 
     /// <summary>

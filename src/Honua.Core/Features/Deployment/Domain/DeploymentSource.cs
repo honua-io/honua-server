@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Studio.Domain;
+
 namespace Honua.Core.Features.Deployment.Domain;
 
 /// <summary>
@@ -40,6 +42,27 @@ public sealed record DeploymentSource
     /// </summary>
     public string? AppPackageId { get; init; }
 
+    /// <summary>Studio content item that owns a published immutable version.</summary>
+    public Guid? StudioItemId { get; init; }
+
+    /// <summary>Exact immutable Studio version published at the target route.</summary>
+    public Guid? StudioVersionId { get; init; }
+
+    /// <summary>SHA-256 content hash of that exact Studio version.</summary>
+    public string? StudioContentHash { get; init; }
+
+    /// <summary>Owner of the immutable Studio item at publication time.</summary>
+    public string? StudioOwnerId { get; init; }
+
+    /// <summary>Accepted request that moved the serving pointer to this version.</summary>
+    public Guid? StudioPublicationRequestId { get; init; }
+
+    /// <summary>Rollback request that restored this version, when applicable.</summary>
+    public Guid? StudioRollbackRequestId { get; init; }
+
+    /// <summary>Map or app family of the Studio version.</summary>
+    public StudioPackageFamily? StudioFamily { get; init; }
+
     /// <summary>
     /// Creates a deployment source backed by a published service.
     /// </summary>
@@ -78,4 +101,37 @@ public sealed record DeploymentSource
             MapPackageId = mapPackageId,
             PublishedServiceId = publishedServiceId
         };
+
+    /// <summary>
+    /// Binds an accepted Studio map/app publication to its exact immutable version. Studio
+    /// item and version identifiers are not treated as geoprocessing package identifiers.
+    /// </summary>
+    public static DeploymentSource FromStudioPublishedVersion(
+        Guid itemId,
+        Guid versionId,
+        string contentHash,
+        string? ownerId,
+        Guid publicationRequestId,
+        StudioPackageFamily family,
+        Guid? rollbackRequestId = null)
+    {
+        if (family is not (StudioPackageFamily.Map or StudioPackageFamily.App))
+        {
+            throw new ArgumentOutOfRangeException(nameof(family), family, "Only Studio map and app versions are hosted by this deployment source.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentHash);
+        return new DeploymentSource
+        {
+            Kind = DeploymentSourceKind.StudioPublishedVersion,
+            SourceId = versionId.ToString("D"),
+            StudioItemId = itemId,
+            StudioVersionId = versionId,
+            StudioContentHash = contentHash,
+            StudioOwnerId = ownerId,
+            StudioPublicationRequestId = publicationRequestId,
+            StudioRollbackRequestId = rollbackRequestId,
+            StudioFamily = family
+        };
+    }
 }

@@ -541,6 +541,16 @@ public sealed record StudioPublicationRequest
     [JsonPropertyName("requestId")]
     public required Guid RequestId { get; init; }
 
+    /// <summary>
+    /// Canonical deployment created atomically with an accepted hosted map/app publication.
+    /// Null for proposals, rejections, non-hosted families, and native bridged publications.
+    /// This is the identity behind <c>honua://deployments/{deploymentId}</c>, distinct from
+    /// this publication request and from any control-plane workflow operation.
+    /// </summary>
+    [JsonPropertyName("deploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentId { get; init; }
+
     /// <summary>Content item identifier.</summary>
     [JsonPropertyName("itemId")]
     public required Guid ItemId { get; init; }

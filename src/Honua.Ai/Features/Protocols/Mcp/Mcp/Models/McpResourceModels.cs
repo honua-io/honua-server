@@ -590,6 +590,27 @@ internal sealed class McpDeploymentView
     [JsonPropertyName("sourceResourceUri")]
     public string? SourceResourceUri { get; set; }
 
+    [JsonPropertyName("studioItemId")]
+    public Guid? StudioItemId { get; set; }
+
+    [JsonPropertyName("studioVersionId")]
+    public Guid? StudioVersionId { get; set; }
+
+    [JsonPropertyName("studioContentHash")]
+    public string? StudioContentHash { get; set; }
+
+    [JsonPropertyName("studioOwnerId")]
+    public string? StudioOwnerId { get; set; }
+
+    [JsonPropertyName("studioPublicationRequestId")]
+    public Guid? StudioPublicationRequestId { get; set; }
+
+    [JsonPropertyName("studioRollbackRequestId")]
+    public Guid? StudioRollbackRequestId { get; set; }
+
+    [JsonPropertyName("studioFamily")]
+    public string? StudioFamily { get; set; }
+
     [JsonPropertyName("targetId")]
     public string TargetId { get; set; } = string.Empty;
 

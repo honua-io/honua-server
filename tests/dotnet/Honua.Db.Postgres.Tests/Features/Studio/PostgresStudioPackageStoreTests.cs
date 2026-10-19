@@ -7,11 +7,14 @@ using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.Db.Postgres.Features.Publishing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -21,6 +24,120 @@ namespace Honua.Db.Postgres.Tests.Features.Studio;
 [Collection("Database")]
 public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 {
+    [IntegrationTest]
+    public async Task AcceptedMapPublication_CommitsCanonicalDeploymentWithPointer_AndRepublishSupersedes()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests) + "_Deploy");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var writer = new PostgresStudioPackageStore(provider, schema);
+            var deploymentReader = new PostgresDeploymentStore(fixture.DataSource, schema);
+            var map = MapPackage.CreateDraft("map-provenance", "honua_map_package.v1", [], []);
+            var draft = BuildDraft("1=1", "map-provenance") with
+            {
+                Family = StudioPackageFamily.Map,
+                TenantId = "tenant-map",
+                Envelope = new StudioPackageEnvelope
+                {
+                    Family = StudioPackageFamily.Map,
+                    SchemaVersion = "studio_map.v1",
+                    Format = map.Format,
+                    Body = JsonSerializer.SerializeToElement(map, PackagingJsonContext.Default.MapPackage)
+                }
+            };
+            draft = await writer.CreateDraftAsync(draft);
+            var firstVersion = await writer.CreateVersionAsync(draft, "approved map", "tester");
+
+            StudioPublicationRequest Request(StudioContentVersion version, string? route) => new()
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = version.ItemId,
+                VersionId = version.VersionId,
+                Intent = route is null ? null : new StudioPublicationIntent { Route = route, Visibility = "public" },
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = version.Validation,
+                RequestedBy = "approver",
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+
+            var blank = await writer.CreatePublicationRequestAsync(Request(firstVersion, null), firstVersion.VersionId);
+            blank.DeploymentId.Should().BeNull();
+
+            var firstRequest = Request(firstVersion, "/maps/first");
+            var first = await writer.CreatePublicationRequestAsync(firstRequest, firstVersion.VersionId);
+            first.DeploymentId.Should().NotBeNullOrWhiteSpace();
+            var replay = await writer.CreatePublicationRequestAsync(firstRequest, firstVersion.VersionId);
+            replay.DeploymentId.Should().Be(first.DeploymentId,
+                "a lost response must replay the committed deployment identity");
+            var conflictingReplay = async () => await writer.CreatePublicationRequestAsync(
+                firstRequest with { Intent = new StudioPublicationIntent { Route = "/maps/forged", Visibility = "public" } },
+                firstVersion.VersionId);
+            await conflictingReplay.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("The Studio publication request ID is already bound to different content.");
+            var freshStore = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first"))!.DeploymentId
+                .Should().Be(first.DeploymentId);
+            var firstDeployment = await deploymentReader.GetAsync(first.DeploymentId!);
+            firstDeployment.Should().NotBeNull();
+            firstDeployment!.Source.Kind.Should().Be(DeploymentSourceKind.StudioPublishedVersion);
+            firstDeployment.Source.StudioItemId.Should().Be(firstVersion.ItemId);
+            firstDeployment.Source.StudioVersionId.Should().Be(firstVersion.VersionId);
+            firstDeployment.Source.StudioContentHash.Should().Be(firstVersion.ContentHash);
+            firstDeployment.Source.StudioOwnerId.Should().Be("tester");
+            firstDeployment.Source.StudioPublicationRequestId.Should().Be(first.RequestId);
+            firstDeployment.Source.StudioFamily.Should().Be(StudioPackageFamily.Map);
+            firstDeployment.Audit.TenantId.Should().Be("tenant-map");
+            firstDeployment.Audit.RequestedBy.Should().Be("approver");
+            firstDeployment.Status.Should().Be(DeploymentStatus.Active);
+            firstDeployment.PublicationState.Should().Be(DeploymentPublicationState.Published);
+            firstDeployment.Runtime.Health.Should().Be(RuntimeHealth.Unknown,
+                "a committed route pointer is not an HTTP health observation");
+            firstDeployment.Target.RoutePrefix.Should().Be(StudioPublishedRoutes.BuildActiveUrl("/maps/first"));
+
+            var secondVersion = await writer.CreateVersionAsync(draft, "republish map", "tester");
+            var second = await writer.CreatePublicationRequestAsync(Request(secondVersion, "/maps/second"), secondVersion.VersionId);
+            second.DeploymentId.Should().NotBe(first.DeploymentId);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first")).Should().BeNull();
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second"))!.DeploymentId
+                .Should().Be(second.DeploymentId);
+            var superseded = await deploymentReader.GetAsync(first.DeploymentId!);
+            superseded!.Status.Should().Be(DeploymentStatus.Superseded);
+            superseded.SupersededByDeploymentId.Should().Be(second.DeploymentId);
+            superseded.Version.Should().Be(1);
+            (await deploymentReader.GetAsync(second.DeploymentId!))!.Status.Should().Be(DeploymentStatus.Active);
+
+            var rollback = await writer.RollbackAsync(
+                firstVersion.ItemId, firstVersion.VersionId, StudioRollbackPointer.Published,
+                "rollback-operator", "restore approved map");
+            rollback.Pointers.PublishedVersionId.Should().Be(firstVersion.VersionId);
+            var afterRollback = await deploymentReader.ListActiveAsync();
+            var restored = afterRollback.Should().ContainSingle(candidate =>
+                candidate.Source.StudioItemId == firstVersion.ItemId).Subject;
+            restored.Source.StudioVersionId.Should().Be(firstVersion.VersionId);
+            restored.Source.StudioContentHash.Should().Be(firstVersion.ContentHash);
+            restored.Source.StudioPublicationRequestId.Should().Be(second.RequestId);
+            restored.Source.StudioRollbackRequestId.Should().Be(rollback.RequestId);
+            restored.Audit.RequestedBy.Should().Be("rollback-operator");
+            restored.Target.RoutePrefix.Should().Be(StudioPublishedRoutes.BuildActiveUrl("/maps/second"));
+            restored.Runtime.Health.Should().Be(RuntimeHealth.Unknown);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second"))!.DeploymentId
+                .Should().Be(restored.DeploymentId,
+                    "the route reader must project the current rollback deployment, not the superseded receipt");
+            (await freshStore.GetPublicationRequestAsync(second.ItemId, second.VersionId, second.RequestId))!
+                .DeploymentId.Should().Be(second.DeploymentId,
+                    "the original immutable publication receipt keeps its own deployment identity");
+            var retiredByRollback = await deploymentReader.GetAsync(second.DeploymentId!);
+            retiredByRollback!.Status.Should().Be(DeploymentStatus.Superseded);
+            retiredByRollback.SupersededByDeploymentId.Should().Be(restored.DeploymentId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task CheckpointVersion_AssociationCommitsWithVersionAndSupportsRecoveryLookup()
     {
@@ -1122,6 +1239,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                  {
                      "035_CreateStudioPackageLifecycle.sql",
                      "036_CreateContentPublications.sql",
+                     "082_CreatePromotionStores.sql",
                      "089_AddStudioContentEnumerationIndexes.sql",
                      "090_AddStudioContentItemOwner.sql",
                      "092_CreateSavedMapOperationLog.sql",
@@ -1134,6 +1252,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      // Migration 126 adds the persisted canonical content-hash input the version
                      // insert and single-version read carry (honua-server#5449).
                      "126_AddStudioContentHashInput.sql",
+                     "134_VersionCanonicalDeployments.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);
@@ -1145,6 +1264,10 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
         var sql = await File.ReadAllTextAsync(migrationPath);
         sql = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
+        if (migrationFile == "082_CreatePromotionStores.sql")
+        {
+            sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        }
         await fixture.ExecuteAsync(sql, schema);
     }
 

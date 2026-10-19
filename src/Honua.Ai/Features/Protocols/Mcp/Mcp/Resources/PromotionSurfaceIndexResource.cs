@@ -148,7 +148,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
 
         if (string.Equals(uri, McpResourceUris.DeploymentsRoot, StringComparison.Ordinal))
         {
-            return await ReadDeploymentIndexAsync(principal, uri, cancellationToken).ConfigureAwait(false);
+            return await ReadDeploymentIndexAsync(httpContext, principal, uri, cancellationToken).ConfigureAwait(false);
         }
 
         if (string.Equals(uri, McpResourceUris.MapPackagesRoot, StringComparison.Ordinal))
@@ -218,6 +218,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
     }
 
     private async Task<McpResourcesReadResult> ReadDeploymentIndexAsync(
+        HttpContext httpContext,
         System.Security.Claims.ClaimsPrincipal principal,
         string uri,
         CancellationToken cancellationToken)
@@ -236,10 +237,19 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // in PackageViewFactory.
         var records = await _deployments.ListActiveAsync(cancellationToken).ConfigureAwait(false);
         var published = PackageViewFactory.FilterPublished(records);
+        var visible = new List<Deployment>();
+        foreach (var deployment in published)
+        {
+            if (await StudioDeploymentReadAuthority.CanReadAsync(
+                    httpContext, deployment, cancellationToken).ConfigureAwait(false))
+            {
+                visible.Add(deployment);
+            }
+        }
         // Impose a deterministic order before truncating so `truncated=true`
         // responses return the same prefix across calls regardless of the
         // backing store's iteration order.
-        var orderedPublished = published
+        var orderedPublished = visible
             .OrderBy(deployment => deployment.DeploymentId, StringComparer.Ordinal)
             .ToList();
         var truncated = orderedPublished.Count > _pageSize;
