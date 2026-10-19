@@ -26,6 +26,47 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class JobExecutionServiceTests
 {
     [UnitTheory]
+    [InlineData("receipt", true)]
+    [InlineData("null", false)]
+    [InlineData("missing-marker", false)]
+    [InlineData("wrong-marker", false)]
+    public async Task RestartAlreadyExpiredLicense_OnlyExactCommittedRecoveryCanFinalize(string change, bool succeeds)
+    {
+        using var expired = new CancellationTokenSource();
+        expired.Cancel();
+        var durable = CreateProvisioningJob();
+        durable = durable with { Spec = durable.Spec with { Kind = ExecutionJobKind.FileImport } };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.OperationCancellation.Returns(expired.Token);
+        var output = new FileImportOutputReceipt { PhysicalTableName = "imported_roads", Schema = "public", FeatureCount = 17 };
+        var executor = Substitute.For<IJobExecutor, IJobCommittedResultRecovery>();
+        executor.Kind.Returns(ExecutionJobKind.FileImport);
+        ((IJobCommittedResultRecovery)executor).TryRecoverCommittedAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                Assert.False(call.Arg<CancellationToken>().IsCancellationRequested);
+                if (change == "null") return null;
+                var job = call.Arg<ExecutionJobRecord>();
+                if (change != "missing-marker")
+                {
+                    var marker = $"honua-import-commit:{job.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(job)}";
+                    await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync(change == "wrong-marker" ? marker + "other" : marker, call.Arg<CancellationToken>());
+                }
+                return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true, FileImportOutput = output };
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance, policy);
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+        await executor.DidNotReceive().ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
+        Assert.Equal(succeeds ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed, durable.Status);
+        Assert.Equal(succeeds ? output : null, durable.FileImportOutput);
+    }
+
+    [UnitTheory]
     [InlineData("license", true)]
     [InlineData("timeout", true)]
     [InlineData("cancel", true)]

@@ -547,8 +547,58 @@ internal sealed partial class JobExecutionService(
             }
         }
 
+        async Task FinalizeCommittedImportAsync(JobExecutionResult result)
+        {
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            if (context.LeaseLost) return;
+            var partitionCurrent = !partitionLeaseLostCts.IsCancellationRequested
+                && await VerifyPartitionLeaseOwnershipAsync(operationId, partitionKey, partitionLeaseId,
+                    partitionLeaseOwner).ConfigureAwait(false);
+            var finalized = partitionCurrent && await FinalizeJobAsync(operationId, workerId, result,
+                partitionLeaseId, partitionLeaseOwner, CancellationToken.None, running.AttemptCount,
+                claimedImportIntent).ConfigureAwait(false);
+            if (!finalized)
+            {
+                await AbandonJobAsync(running, workerId, "Exclusive partition lease lost before committed receipt finalization.",
+                    CancellationToken.None, forceRequeue: true, requeueDelayOverride: _partitionLeaseContentionDelay).ConfigureAwait(false);
+            }
+        }
+
         try
         {
+            if (claimedImportIntent is not null && executor is IJobCommittedResultRecovery recovery)
+            {
+                // Reconciliation can report an existing committed fact after license
+                // expiry. This closed port cannot execute or publish ordinary output.
+                if (partitionLeaseLostCts.IsCancellationRequested
+                    || !await VerifyPartitionLeaseOwnershipAsync(operationId, partitionKey, partitionLeaseId,
+                        partitionLeaseOwner).ConfigureAwait(false))
+                {
+                    await AbandonJobAsync(running, workerId, "Exclusive partition lease lost before receipt recovery.",
+                        CancellationToken.None, forceRequeue: true, requeueDelayOverride: _partitionLeaseContentionDelay).ConfigureAwait(false);
+                    return;
+                }
+                using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var beforeRecovery = await jobStore.GetAsync(operationId, recoveryTimeout.Token).ConfigureAwait(false);
+                if (beforeRecovery is null || IsTerminalOrNotOwnedBy(beforeRecovery, workerId)
+                    || beforeRecovery.AttemptCount != running.AttemptCount
+                    || JobExecutionLeaseIntentFingerprint.Compute(beforeRecovery) != claimedImportIntent
+                    || beforeRecovery.Audit.SubmitterSecurityContext?.ExecutionLease != running.Audit.SubmitterSecurityContext?.ExecutionLease)
+                {
+                    await StopHeartbeatPumpAsync().ConfigureAwait(false);
+                    return;
+                }
+                var recovered = await recovery.TryRecoverCommittedAsync(running, context, recoveryTimeout.Token).ConfigureAwait(false);
+                if (recovered is not null)
+                {
+                    var actual = await jobStore.GetAsync(operationId, recoveryTimeout.Token).ConfigureAwait(false);
+                    if (actual?.ClaimedBy != workerId || actual.AttemptCount != running.AttemptCount
+                        || !IsCommittedImportResult(actual, recovered, claimedImportIntent))
+                        throw new InvalidOperationException("Committed import recovery did not provide the exact durable receipt and result.");
+                    await FinalizeCommittedImportAsync(recovered).ConfigureAwait(false);
+                    return;
+                }
+            }
             licenseCancellation.ThrowIfCancellationRequested();
             await ExecutionQualificationBarrier.WaitAsync("claimed", jobCts.Token).ConfigureAwait(false);
             licenseCancellation.ThrowIfCancellationRequested();
@@ -591,19 +641,7 @@ internal sealed partial class JobExecutionService(
 
             if (committedImport)
             {
-                // This is durable committed-effect truth, not permission to execute or
-                // publish ordinary artifacts after expiry. Keep all ownership/CAS fences.
-                var partitionCurrent = !partitionLeaseLostCts.IsCancellationRequested
-                    && await VerifyPartitionLeaseOwnershipAsync(operationId, partitionKey, partitionLeaseId,
-                        partitionLeaseOwner).ConfigureAwait(false);
-                var finalized = partitionCurrent && await FinalizeJobAsync(operationId, workerId, result,
-                    partitionLeaseId, partitionLeaseOwner, CancellationToken.None, running.AttemptCount,
-                    claimedImportIntent).ConfigureAwait(false);
-                if (!finalized)
-                {
-                    await AbandonJobAsync(running, workerId, "Exclusive partition lease lost before committed receipt finalization.",
-                        CancellationToken.None, forceRequeue: true, requeueDelayOverride: _partitionLeaseContentionDelay).ConfigureAwait(false);
-                }
+                await FinalizeCommittedImportAsync(result).ConfigureAwait(false);
                 return;
             }
 
@@ -1729,6 +1767,8 @@ internal sealed partial class JobExecutionContext(
                     && claimedIntentFingerprint is not null
                     && claimedIntentFingerprint == JobExecutionLeaseIntentFingerprint.Compute(job)
                     && artifactReference == $"honua-import-commit:{operationId}:{claimedIntentFingerprint}";
+                if (committedEffect && artifactReference.StartsWith("honua-import-commit:", StringComparison.Ordinal) && !exactImportTruth)
+                    return false;
                 if (!exactImportTruth) licenseCancellation.ThrowIfCancellationRequested();
 
                 if (!committedEffect && job.CancellationRequestedAt.HasValue)
