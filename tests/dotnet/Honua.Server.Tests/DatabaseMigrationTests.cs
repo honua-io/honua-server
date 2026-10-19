@@ -133,6 +133,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task CanonicalDeploymentMigration_DefaultExistingDatabase_RemainsExpandOnlyWithoutApproval()
     {
         var assembly = typeof(Program).Assembly;
@@ -162,6 +163,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
     [InlineData("legacy", true)]
     [InlineData("configured", true)]
     [InlineData("duplicate", false)]
