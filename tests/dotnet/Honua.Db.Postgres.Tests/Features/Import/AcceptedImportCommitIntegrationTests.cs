@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
+using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
@@ -153,6 +155,82 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
         result.Success.Should().BeTrue(result.ErrorMessage);
         (await ReadAsync(job)).Should().BeEquivalentTo(result);
         (await ScalarAsync("SELECT count(*) FROM honua_data.imported_roads")).Should().Be(2L);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AcceptedKmz_UsesProcessingScratchBeforeDestinationMutation(bool refuseScratch)
+    {
+        // Actual archive reader and database path; the Core scratch port is controlled.
+        // Allocator disk/accounting ordering is covered by ImportProcessingScratchTests.
+        var job = CreateJob();
+        using var scope = JobSecurityScope.BeginExecution(job, job.Audit.SubmitterSecurityContext!);
+        await using var source = new MemoryStream();
+        using (var archive = new ZipArchive(source, ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(archive.CreateEntry("doc.kml").Open(), Encoding.UTF8))
+            writer.Write("""
+                <kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark>
+                <name>Harbor</name><Point><coordinates>-157.5,21.25</coordinates></Point>
+                </Placemark></Document></kml>
+                """);
+        source.Position = 0;
+        var transfer = new ImportTransferProvenance(new string('a', 32), "actor", null, "target", "workspace", "task", 1, new string('b', 64));
+        var processing = new ControlledProcessingScratch(refuseScratch);
+        var service = new StreamingFileImportService(_connections,
+            new CrsDetectionService(_connections, NullLogger<CrsDetectionService>.Instance),
+            new TestFileFormatDetectionService(), new NoopPerformanceMonitor(), NullLogger<StreamingFileImportService>.Instance,
+            schemaConfiguration: _schemas, commitAuthority: new CommitAuthority(job), processingScratchFactory: processing);
+        var result = await service.ImportFileAsync(new ImportRequest
+        {
+            FileStream = source, FileName = "roads.kmz", TableName = "roads", TargetSchema = "honua_data",
+            SourceSrid = 4326, TargetSrid = 4326,
+            StagedSource = new($"imports/resumable/{transfer.UploadId}/source-{new string('c', 32)}", "generation", source.Length,
+                Convert.ToHexStringLower(SHA256.HashData(source.ToArray())), Transfer: transfer)
+        });
+        Assert.Equal(transfer, processing.Transfer);
+        Assert.Equal(1, processing.Writes);
+        Assert.False(Directory.Exists(processing.DirectoryPath));
+        Assert.Equal(!refuseScratch, result.Success);
+        if (refuseScratch)
+        {
+            Assert.Null(await ReadAsync(job));
+            Assert.Equal(true, await ScalarAsync("SELECT to_regclass('honua_data.imported_roads') IS NULL"));
+        }
+        else
+        {
+            Assert.Equal(1, result.FeatureCount);
+            Assert.Equal(1L, await ScalarAsync("SELECT count(*) FROM honua_data.imported_roads"));
+            (await ReadAsync(job)).Should().BeEquivalentTo(result);
+        }
+    }
+
+    private sealed class ControlledProcessingScratch(bool refuse) : IImportProcessingScratchFactory, IImportProcessingScratch
+    {
+        public string DirectoryPath { get; } = Path.Join(Path.GetTempPath(), "honua-kmz-port-" + Guid.NewGuid().ToString("N"));
+        internal ImportTransferProvenance? Transfer { get; private set; }
+        internal int Writes { get; private set; }
+        public Task<IImportProcessingScratch> CreateAsync(ImportTransferProvenance transfer, long maximumBytes,
+            int maximumFiles, CancellationToken cancellationToken = default)
+        {
+            Transfer = transfer;
+            Directory.CreateDirectory(DirectoryPath);
+            return Task.FromResult<IImportProcessingScratch>(this);
+        }
+        public async Task WriteFileAsync(Stream source, string path, long expectedBytes, CancellationToken cancellationToken = default)
+        {
+            Writes++;
+            Assert.StartsWith(DirectoryPath + Path.DirectorySeparatorChar, path);
+            if (refuse) throw new InvalidOperationException("Controlled scratch budget exhausted.");
+            await using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await source.CopyToAsync(output, cancellationToken);
+            Assert.Equal(expectedBytes, output.Length);
+        }
+        public ValueTask DisposeAsync()
+        {
+            if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, true);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private async Task<ImportResult> ImportAsync(CommitAuthority authority,
