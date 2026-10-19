@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -43,16 +41,7 @@ internal sealed partial class StreamingFileImportService
     private static string GetAllowedTableName(string tableName)
     {
         ValidateTableName(tableName);
-        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
-        var physicalName = "imported_" + sanitized.ToLowerInvariant();
-        if (physicalName.Length <= MaxImportTableNameLength)
-        {
-            return physicalName;
-        }
-
-        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(physicalName)))[..12];
-        var prefixLength = MaxImportTableNameLength - hash.Length - 1;
-        return $"{physicalName[..prefixLength]}_{hash}";
+        return ImportPhysicalTableName.Canonical(tableName);
     }
 
     private static async Task<string> ResolvePhysicalTableNameAsync(
@@ -62,8 +51,7 @@ internal sealed partial class StreamingFileImportService
         CancellationToken cancellationToken)
     {
         ValidateTableName(tableName);
-        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
-        var legacyName = "imported_" + sanitized.ToLowerInvariant();
+        var legacyName = ImportPhysicalTableName.Legacy(tableName);
         if (legacyName.Length <= MaxImportTableNameLength)
         {
             return legacyName;
