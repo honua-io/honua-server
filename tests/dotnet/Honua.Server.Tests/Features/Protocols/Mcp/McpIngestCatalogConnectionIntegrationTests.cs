@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.TestKit;
