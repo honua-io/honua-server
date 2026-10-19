@@ -607,6 +607,59 @@ internal sealed partial class ODataBatchHandler
                     }
                 }
 
+                var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(context);
+                var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+                    _featureReader,
+                    layer.StorageLayerId,
+                    layer.Resource.OwnerEditPolicy,
+                    batch,
+                    principal,
+                    cancellationToken).ConfigureAwait(false);
+                if (!prepared.IsAllowed)
+                {
+                    var reason = prepared.DenialReason ?? "Edit not permitted.";
+                    if (layerCreates is not null)
+                    {
+                        foreach (var item in layerCreates)
+                        {
+                            responses.Add(CreateErrorResponse(item.requestId, StatusCodes.Status403Forbidden, "Forbidden", reason));
+                        }
+                    }
+
+                    if (layerUpdates is not null)
+                    {
+                        foreach (var item in layerUpdates)
+                        {
+                            responses.Add(CreateErrorResponse(item.requestId, StatusCodes.Status403Forbidden, "Forbidden", reason));
+                        }
+                    }
+
+                    if (layerDeletes is not null)
+                    {
+                        foreach (var item in layerDeletes)
+                        {
+                            responses.Add(CreateErrorResponse(item.requestId, StatusCodes.Status403Forbidden, "Forbidden", reason));
+                        }
+                    }
+
+                    foreach (var request in requests)
+                    {
+                        if (responses.Any(response => response.Id == request.Id))
+                        {
+                            continue;
+                        }
+
+                        responses.Add(CreateErrorResponse(
+                            request.Id,
+                            StatusCodes.Status424FailedDependency,
+                            "DependencyFailed",
+                            "Request depends on a failed request in the atomic group."));
+                    }
+
+                    return responses.ToImmutableArray();
+                }
+
+                batch = prepared.Batch;
                 var atomicOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
                     context,
                     layerId,

@@ -555,6 +555,7 @@ internal sealed class FeatureServerEditsHandler(
             AddResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null,
             UpdateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null,
             DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null,
+            RequiresOwnerGuards = OwnerEditPolicyFieldAccess.RequiresStoredOwner(resource.OwnerEditPolicy, principal),
             LockScope = lockScope
         };
 
@@ -579,18 +580,7 @@ internal sealed class FeatureServerEditsHandler(
     /// authenticated, and whether it holds the administrative override role.
     /// </summary>
     private static EditPrincipal ResolveEditPrincipal(HttpContext httpContext)
-    {
-        var isAuthenticated = httpContext.User?.Identity?.IsAuthenticated == true;
-        if (!isAuthenticated)
-        {
-            return EditPrincipal.Anonymous;
-        }
-
-        return new EditPrincipal(
-            EditOwnerSubject.Resolve(httpContext.User),
-            IsAuthenticated: true,
-            IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(httpContext));
-    }
+        => ServiceDataEditorAuthorization.ResolveEditPrincipal(httpContext);
 
     /// <summary>
     /// Processes add operations and tracks features to create
@@ -821,6 +811,7 @@ internal sealed class FeatureServerEditsHandler(
                     existingFeature,
                     ownerSnapshots,
                     request.UseGlobalIds).ConfigureAwait(false);
+                CaptureOwnerGuard(context, resource, ownerSnapshots, internalObjectId);
                 context.UpdateFeatures.Add(updateFeature);
                 // The full merged row above serves rules, validation, hooks and events. The
                 // DEFAULT writer receives only what this request changes, so the row it locks
@@ -1019,6 +1010,15 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             var internalObjectId = existingFeature.Value.Id;
+            if (!TryCaptureOwnerGuard(context, resource, ownerSnapshots, internalObjectId))
+            {
+                context.HasValidationErrors = true;
+                context.DeleteResults![i] = CreateFailureResult(
+                    code: GeoServicesEditErrorCodes.NotPermitted,
+                    description: "Edit not permitted.",
+                    objectId: objectId);
+                continue;
+            }
             context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
             context.DeleteIds.Add(internalObjectId);
             context.DeleteResponseObjectIds.Add(objectId);
@@ -1073,6 +1073,15 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+
+        // The owner read authorizes each request slot before plugins run. Carry the same
+        // expected owner into the writer's UPDATE/DELETE statement for only the surviving
+        // rows. Re-authorizing the whole batch here would change the per-row failure
+        // contract for rollbackOnFailure=false.
+        if (context.RequiresOwnerGuards)
+        {
+            editBatch = editBatch with { OwnerGuards = BuildOwnerGuards(editBatch, context.OwnerGuards) };
+        }
 
         if (context.GuardUpdateSnapshot)
         {
@@ -1598,6 +1607,8 @@ internal sealed class FeatureServerEditsHandler(
     /// </summary>
     internal sealed class EditOperationContext
     {
+        public bool RequiresOwnerGuards { get; init; }
+        public Dictionary<long, OwnerEditGuard> OwnerGuards { get; } = new();
         public EditResult?[]? AddResults { get; init; }
         public EditResult?[]? UpdateResults { get; init; }
         public EditResult?[]? DeleteResults { get; init; }
@@ -2020,15 +2031,15 @@ internal sealed class FeatureServerEditsHandler(
             {
                 var ownerAttribute = attributes.FirstOrDefault(pair =>
                     pair.Key.Equals(ownerPolicy.OwnerField, StringComparison.OrdinalIgnoreCase));
-                if ((ownerAttribute.Key is not null || feature.ReplaceAttributes) &&
-                    !string.Equals(
-                        Convert.ToString(ownerAttribute.Value, CultureInfo.InvariantCulture),
-                        Convert.ToString(updateSnapshot?.Owner, CultureInfo.InvariantCulture),
-                        StringComparison.OrdinalIgnoreCase))
+                if (OwnerEditPolicyFieldAccess.RejectsOwnerReassignment(
+                        ownerFieldPresent: ownerAttribute.Key is not null,
+                        replacesAllAttributes: feature.ReplaceAttributes,
+                        submittedOwner: ownerAttribute.Value,
+                        storedOwner: updateSnapshot?.Owner))
                 {
                     // Reject reassignment without turning a full replacement into a partial update
                     // or copying the unmasked owner snapshot into the response attribute bag.
-                    throw new EditNotPermittedException("Only an administrator can change the feature owner.");
+                    throw new EditNotPermittedException(OwnerEditPolicyFieldAccess.OwnerReassignmentDeniedReason);
                 }
             }
         }
@@ -2211,6 +2222,101 @@ internal sealed class FeatureServerEditsHandler(
         return snapshots.TryGetValue(storageFeatureId, out var snapshot)
             ? snapshot
             : OwnerFieldSnapshot.Hidden;
+    }
+
+    private static void CaptureOwnerGuard(
+        EditOperationContext context,
+        MetadataV2Resource resource,
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? snapshots,
+        long objectId)
+    {
+        if (!TryCaptureOwnerGuard(context, resource, snapshots, objectId))
+        {
+            throw new EditNotPermittedException("Edit not permitted.");
+        }
+    }
+
+    private static bool TryCaptureOwnerGuard(
+        EditOperationContext context,
+        MetadataV2Resource resource,
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? snapshots,
+        long objectId)
+    {
+        if (!context.RequiresOwnerGuards)
+        {
+            return true;
+        }
+
+        var snapshot = SnapshotFor(snapshots, objectId);
+        if (snapshot is not { Visible: true })
+        {
+            return false;
+        }
+
+        var guard = new OwnerEditGuard(
+            objectId,
+            resource.OwnerEditPolicy!.OwnerField,
+            Convert.ToString(snapshot.Value.Owner, CultureInfo.InvariantCulture) ?? string.Empty);
+        if (context.OwnerGuards.TryGetValue(objectId, out var previous))
+        {
+            return previous == guard;
+        }
+
+        context.OwnerGuards.Add(objectId, guard);
+        return true;
+    }
+
+    internal static ImmutableArray<OwnerEditGuard> BuildOwnerGuards(
+        FeatureEditBatch batch,
+        IReadOnlyDictionary<long, OwnerEditGuard> captured)
+    {
+        var guards = ImmutableArray.CreateBuilder<OwnerEditGuard>();
+        var seen = new HashSet<long>();
+        void AddGuard(long objectId)
+        {
+            if (!seen.Add(objectId))
+            {
+                return;
+            }
+
+            if (!captured.TryGetValue(objectId, out var guard))
+            {
+                throw new EditBatchValidationException("Edit not permitted.");
+            }
+
+            guards.Add(guard);
+        }
+
+        if (!batch.Operations.IsDefaultOrEmpty)
+        {
+            foreach (var operation in batch.Operations)
+            {
+                if (operation.Kind == FeatureEditOperationKind.Update)
+                {
+                    AddGuard(operation.Feature?.Id
+                        ?? throw new EditBatchValidationException("Edit not permitted."));
+                }
+                else if (operation.Kind == FeatureEditOperationKind.Delete)
+                {
+                    AddGuard(operation.ObjectId
+                        ?? throw new EditBatchValidationException("Edit not permitted."));
+                }
+            }
+        }
+        else
+        {
+            foreach (var feature in batch.Updates)
+            {
+                AddGuard(feature.Id);
+            }
+
+            foreach (var objectId in batch.Deletes)
+            {
+                AddGuard(objectId);
+            }
+        }
+
+        return guards.ToImmutable();
     }
 
     /// <summary>
@@ -2534,7 +2640,7 @@ internal sealed class FeatureServerEditsHandler(
     /// (honua-server#6133). Per-feature failures use <see cref="ArgumentException"/> inside
     /// the slot loop instead.
     /// </summary>
-    private sealed class EditBatchValidationException(string message) : Exception(message)
+    internal sealed class EditBatchValidationException(string message) : Exception(message)
     {
     }
 

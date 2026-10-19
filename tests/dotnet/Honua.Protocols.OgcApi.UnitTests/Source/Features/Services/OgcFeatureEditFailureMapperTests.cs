@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
@@ -19,6 +20,7 @@ public sealed class OgcFeatureEditFailureMapperTests
     [InlineData("Geometry is required for create operation on a spatial layer", 1000, 400)]
     [InlineData("Create failed.", 1000, 500)]
     [InlineData("Something else.", 422, 400)]
+    [InlineData("Feature is owned by another principal and cannot be modified under the owner-based edit policy.", 403, 403)]
     public void DetermineStatus_ClassifiesSafeWriterMessages(string message, int code, int expected)
     {
         var status = OgcFeatureEditFailureMapper.DetermineStatus(
@@ -40,5 +42,28 @@ public sealed class OgcFeatureEditFailureMapperTests
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [UnitTest]
+    public async Task ToResult_OwnerDenial_ReturnsForbiddenWithThePolicyReason()
+    {
+        const string denial = "Feature is owned by another principal and cannot be modified under the owner-based edit policy.";
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Path = "/ogc/features/collections/cities/items/42";
+        context.Response.Body = new MemoryStream();
+
+        var result = OgcFeatureEditFailureMapper.ToResult(
+            context,
+            EditOperationResult.Failure(denial, EditOperationResult.NotPermittedErrorCode),
+            "An error occurred while updating the feature.");
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
+        body.Should().Contain(denial);
+        body.Should().NotContain("alice");
     }
 }
