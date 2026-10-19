@@ -92,12 +92,15 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
         // A historical observation never reopens source bytes or demands the target
         // remain absent. Current rights to the original selected source and actual
         // destination are checked on the observer; no executor scope is restored.
+        // Status uses protected source provenance plus current workspace/destination
+        // rights and does not depend on a live source daemon. Content retains the
+        // independent current source/project policy check.
         if (!AgentWorkspaceState.CanRead(bound.Document, actor, bound.Task.TenantId, bound.Task.TargetId)
             || !await AgentCredentialAuthority.IsCurrentObserverAsync(observer, services, cancellationToken).ConfigureAwait(false)
             || !await _destination.IsAuthorizedCoreAsync(services, observer, bound.Task.TargetId, bound.Task.Destination,
                 bound.Task.Options, false, cancellationToken).ConfigureAwait(false)
-            || !await DatasetImportTaskProvider.HistoricalSourceAuthorizedAsync(services, observer, bound.Task.TenantId,
-                bound.Document, bound.Task.Source, cancellationToken).ConfigureAwait(false)) throw Denied();
+            || kind == JobExecutionLeaseObservationKind.OutputContent && !await DatasetImportTaskProvider.HistoricalSourceAuthorizedAsync(
+                services, observer, bound.Task.TenantId, bound.Document, bound.Task.Source, cancellationToken).ConfigureAwait(false)) throw Denied();
         await RequireUnchangedAsync(job, bound, cancellationToken).ConfigureAwait(false);
         if (!await AgentCredentialAuthority.IsCurrentObserverAsync(observer, services, cancellationToken).ConfigureAwait(false)) throw Denied();
     }

@@ -145,6 +145,7 @@ public sealed class ExecutionJobLeasePolicyTests
     [Theory]
     [InlineData("unchanged")]
     [InlineData("missing")]
+    [InlineData("cancelled")]
     [InlineData("seal")]
     [InlineData("claim")]
     [InlineData("rejected")]
@@ -160,12 +161,13 @@ public sealed class ExecutionJobLeasePolicyTests
         var job = fixture.Job with { Status = ExecutionJobStatus.Succeeded };
         var scope = fixture.Scope;
         if (change == "missing") fixture.Proposal = null;
+        if (change == "cancelled") fixture.Proposal = fixture.Proposal! with { Status = OperationProposalStatus.Cancelled };
         if (change == "seal") fixture.Proposal = fixture.Proposal! with { SealedPlanHash = new string('0', 64) };
         if (change == "claim") fixture.Proposal = fixture.Proposal! with { ApprovedByAtClaim = fixture.Job.Audit.RequestedBy };
         if (change == "rejected") fixture.Proposal = fixture.Proposal! with { Status = OperationProposalStatus.Rejected };
         if (change == "scope") scope = scope with { ProviderBinding = "other" };
         if (change == "intent") job = job with { AcceptanceDeadline = fixture.Now.AddHours(2) };
-        if (change == "unchanged")
+        if (change is "unchanged" or "cancelled")
         {
             await fixture.Policy.RequireObservationAsync(job, decision, scope, fixture.Executor, JobExecutionLeaseObservationKind.Status);
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Policy.RequireCurrentAsync(job, decision, scope, fixture.Current));

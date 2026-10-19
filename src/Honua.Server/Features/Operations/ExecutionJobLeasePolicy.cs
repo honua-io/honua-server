@@ -186,7 +186,7 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
             job.Audit.OperationInstanceId != job.OperationId || proposal.Audit.OperationInstanceId != job.OperationId ||
             (!historical && proposal.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling)) ||
             (historical && proposal.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling
-                or OperationProposalStatus.Succeeded or OperationProposalStatus.Failed or OperationProposalStatus.RolledBack)) ||
+                or OperationProposalStatus.Succeeded or OperationProposalStatus.Failed or OperationProposalStatus.RolledBack or OperationProposalStatus.Cancelled)) ||
             (proposal.ExecutionOperationId is not null && proposal.ExecutionOperationId != job.OperationId) ||
             string.IsNullOrWhiteSpace(proposal.Audit.AuditId) || string.IsNullOrWhiteSpace(proposal.ApprovedByAtClaim) ||
             proposal.ApprovedByAtClaim.Equals(proposal.RequestedBy, StringComparison.OrdinalIgnoreCase) ||

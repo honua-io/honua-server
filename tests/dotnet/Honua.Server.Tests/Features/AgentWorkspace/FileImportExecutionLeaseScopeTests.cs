@@ -53,7 +53,7 @@ public sealed class FileImportExecutionLeaseScopeTests
             case "workspace": fixture.Document = fixture.Document with { Members = [] }; break;
             case "browser-selection": fixture.Document = fixture.Document with { Turns = new(fixture.Document.Turns) { ["turn"] = fixture.Document.Turns["turn"] with { BrowserFileSelection = new("other", "roads.geojson", 100, new string('a', 64)) } } }; break;
             case "agent-link": fixture.Document = fixture.Document with { AgentActorId = "other" }; break;
-            case "source-expired": fixture.Clock.Now = fixture.Clock.Now.AddHours(1); break;
+            case "source-expired": fixture.Clock.Now = fixture.Clock.Now.AddMinutes(10); break;
             case "occupied": fixture.Occupied = true; break;
             case "source-generation": fixture.Metadata = fixture.Metadata with { ETag = "replacement" }; break;
             case "revoked-during-source": fixture.RevokeOnMetadata = true; break;
@@ -236,7 +236,7 @@ public sealed class FileImportExecutionLeaseScopeTests
             var prepared = new DatasetImportPreparedAdmission("task", 1, task.ContentHash, new string('c', 32), 1, authorityHash,
                 owner, human, "turn", turnHash, context, policyHash, context.AgentCredential!, task.UploadAdmissionDeadline);
             var source = new ImportStagedSourceBinding("imports/resumable/" + new string('d', 32) + "/source-" + new string('e', 32), "generation", 100,
-                new string('a', 64), ExpiresAt: clock.Now.AddMinutes(30), Transfer: new(new string('d', 32), owner, null, "target", "workspace", "task", 1, task.ContentHash));
+                new string('a', 64), ExpiresAt: clock.Now.AddMinutes(5), Transfer: new(new string('d', 32), owner, null, "target", "workspace", "task", 1, task.ContentHash));
             var intent = DatasetImportSubmissionIntent.Create(task, prepared, source);
             var document = new AgentWorkspaceDocument { WorkspaceId = "workspace", TargetId = "target", OwnerId = human, AgentActorId = owner, Members = [human, owner] };
             document.DatasetImportTasks[task.TaskId] = [task];
