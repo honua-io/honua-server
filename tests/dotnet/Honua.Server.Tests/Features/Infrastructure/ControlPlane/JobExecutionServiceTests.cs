@@ -26,6 +26,53 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class JobExecutionServiceTests
 {
     [UnitTheory]
+    [InlineData("license", true)]
+    [InlineData("timeout", true)]
+    [InlineData("cancel", true)]
+    [InlineData("wrong-marker", false)]
+    [InlineData("missing-flag", false)]
+    [InlineData("different-intent", false)]
+    public async Task ProcessJob_ExactCommittedImportTruthSurvivesLateExecutionExpiry(string change, bool succeeds)
+    {
+        using var expired = new CancellationTokenSource();
+        var durable = CreateProvisioningJob();
+        durable = durable with { Spec = durable.Spec with { Kind = ExecutionJobKind.FileImport },
+            TimeoutPolicy = new JobTimeoutPolicy { MaxDuration = change == "timeout" ? TimeSpan.FromMilliseconds(25) : TimeSpan.FromMinutes(5) } };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.OperationCancellation.Returns(expired.Token);
+        var output = new FileImportOutputReceipt { PhysicalTableName = "imported_roads", Schema = "public", FeatureCount = 17 };
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.FileImport);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var accepted = call.Arg<ExecutionJobRecord>();
+                var context = call.Arg<IJobExecutionContext>();
+                var marker = $"honua-import-commit:{accepted.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(accepted)}";
+                if (change == "wrong-marker") marker += "other";
+                if (change == "different-intent") durable = durable with { AcceptanceDeadline = DateTimeOffset.UtcNow.AddMinutes(2) };
+                if (change == "timeout") await Task.Delay(100, CancellationToken.None);
+                else if (change == "cancel") durable = durable with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                else await expired.CancelAsync();
+                await context.RecordCommittedEffectAsync(marker, CancellationToken.None);
+                if (change is "license" or "missing-flag")
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => context.TryPublishArtifactAsync("ordinary-after-expiry", CancellationToken.None));
+                if (change == "cancel") Assert.False(await context.TryPublishArtifactAsync("ordinary-after-expiry", CancellationToken.None));
+                return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = change != "missing-flag", FileImportOutput = output };
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance, policy);
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+        Assert.Equal(succeeds ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed, durable.Status);
+        Assert.Equal(succeeds ? output : null, durable.FileImportOutput);
+        if (succeeds) Assert.Contains(durable.CommittedEffectReferences, reference => reference.StartsWith("honua-import-commit:", StringComparison.Ordinal));
+    }
+
+    [UnitTheory]
     [InlineData(ExecutionJobKind.FileImport, false, true)]
     [InlineData(ExecutionJobKind.FileImport, true, false)]
     [InlineData(ExecutionJobKind.Geoprocessing, false, false)]

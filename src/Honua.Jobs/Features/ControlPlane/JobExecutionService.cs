@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -514,7 +515,7 @@ internal sealed partial class JobExecutionService(
         // fences artifact publication: a stale attempt cannot publish after requeue.
         using var context = new JobExecutionContext(
             operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger,
-            running.AttemptCount, licenseCancellation);
+            running.AttemptCount, licenseCancellation, JobExecutionLeaseIntentFingerprint.Compute(running));
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -560,7 +561,10 @@ internal sealed partial class JobExecutionService(
                 : jobCts.Token;
             var result = await executor.ExecuteAsync(running, context, executorCancellationToken).ConfigureAwait(false);
 
-            if (result.Status == ExecutionJobStatus.Succeeded)
+            var committedImport = IsCommittedImportResult(
+                await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false), result,
+                JobExecutionLeaseIntentFingerprint.Compute(running));
+            if (result.Status == ExecutionJobStatus.Succeeded && !committedImport)
             {
                 // Artifact publication has already happened inside the executor. Keep the
                 // heartbeat alive while the qualification runner cancels at the final fence;
@@ -579,6 +583,24 @@ internal sealed partial class JobExecutionService(
                 // fail the attempt a new worker already claimed (#6154).
                 activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
                 Log.ExecutionLeaseLost(logger, operationId);
+                return;
+            }
+
+            if (committedImport)
+            {
+                // This is durable committed-effect truth, not permission to execute or
+                // publish ordinary artifacts after expiry. Keep all ownership/CAS fences.
+                var partitionCurrent = !partitionLeaseLostCts.IsCancellationRequested
+                    && await VerifyPartitionLeaseOwnershipAsync(operationId, partitionKey, partitionLeaseId,
+                        partitionLeaseOwner).ConfigureAwait(false);
+                var finalized = partitionCurrent && await FinalizeJobAsync(operationId, workerId, result,
+                    partitionLeaseId, partitionLeaseOwner, CancellationToken.None, running.AttemptCount,
+                    JobExecutionLeaseIntentFingerprint.Compute(running)).ConfigureAwait(false);
+                if (!finalized)
+                {
+                    await AbandonJobAsync(running, workerId, "Exclusive partition lease lost before committed receipt finalization.",
+                        CancellationToken.None, forceRequeue: true, requeueDelayOverride: _partitionLeaseContentionDelay).ConfigureAwait(false);
+                }
                 return;
             }
 
@@ -914,7 +936,9 @@ internal sealed partial class JobExecutionService(
         JobExecutionResult result,
         string? partitionLeaseId,
         string? partitionLeaseOwner,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? committedAttempt = null,
+        string? committedIntent = null)
     {
         ExecutionJobRecord job;
         ExecutionJobRecord final;
@@ -934,6 +958,11 @@ internal sealed partial class JobExecutionService(
                 return true;
             }
 
+            if (committedIntent is not null && (current.AttemptCount != committedAttempt
+                || !IsCommittedImportResult(current, result, committedIntent)))
+            {
+                return true;
+            }
             job = current;
             (final, effectiveStatus) = BuildFinalRecord(operationId, job, result);
 
@@ -1050,6 +1079,15 @@ internal sealed partial class JobExecutionService(
         return (final, effectiveStatus);
     }
 
+    private static bool IsCommittedImportResult(ExecutionJobRecord? job, JobExecutionResult result, string intent)
+        => job is not null && result.Status == ExecutionJobStatus.Succeeded && result.CompletedWithCommittedEffects
+            && result.FileImportOutput is not null && JobExecutionLeaseIntentFingerprint.Compute(job) == intent
+            && HasExactImportReceipt(job);
+
+    private static bool HasExactImportReceipt(ExecutionJobRecord job)
+        => job.Spec.Kind == ExecutionJobKind.FileImport && job.CommittedEffectReferences.Contains(
+            $"honua-import-commit:{job.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(job)}", StringComparer.Ordinal);
+
     internal const string CommittedCancellationWarning = "Cancellation requested after sink data committed; committed-effect receipts are retained.";
 
     private async Task TerminateJobAsync(
@@ -1064,6 +1102,9 @@ internal sealed partial class JobExecutionService(
         {
             return;
         }
+
+        if (job.Status == ExecutionJobStatus.Succeeded && job.FileImportOutput is not null
+            && HasExactImportReceipt(job)) return;
 
         var lateExpiredSuccess = reason == "license expired" && job.Status == ExecutionJobStatus.Succeeded &&
             string.Equals(job.ClaimedBy, workerId, StringComparison.Ordinal);
@@ -1557,7 +1598,8 @@ internal sealed partial class JobExecutionContext(
     CancellationTokenSource? durableCancellationCts,
     ILogger logger,
     int claimedAttempt = 0,
-    CancellationToken licenseCancellation = default) : IJobExecutionContext, IDisposable
+    CancellationToken licenseCancellation = default,
+    string? claimedIntentFingerprint = null) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private int _leaseLost;
@@ -1663,19 +1705,25 @@ internal sealed partial class JobExecutionContext(
         ArgumentException.ThrowIfNullOrWhiteSpace(artifactReference);
         const int maxCasRetries = 10;
 
-        licenseCancellation.ThrowIfCancellationRequested();
+        if (!committedEffect) licenseCancellation.ThrowIfCancellationRequested();
 
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             for (var attempt = 0; attempt < maxCasRetries; attempt++)
             {
-                licenseCancellation.ThrowIfCancellationRequested();
+                if (!committedEffect) licenseCancellation.ThrowIfCancellationRequested();
                 var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
                 if (!TryObserveLease(job))
                 {
                     return false;
                 }
+
+                var exactImportTruth = committedEffect && job.Spec.Kind == ExecutionJobKind.FileImport
+                    && claimedIntentFingerprint is not null
+                    && claimedIntentFingerprint == JobExecutionLeaseIntentFingerprint.Compute(job)
+                    && artifactReference == $"honua-import-commit:{operationId}:{claimedIntentFingerprint}";
+                if (!exactImportTruth) licenseCancellation.ThrowIfCancellationRequested();
 
                 if (!committedEffect && job.CancellationRequestedAt.HasValue)
                 {
