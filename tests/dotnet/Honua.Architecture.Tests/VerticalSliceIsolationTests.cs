@@ -35,6 +35,7 @@ public sealed class VerticalSliceIsolationTests
         "Orchestration",
         "PackageReview",
         "Plugins", // Plugin/extension SDK host slice (honua-server#1562): maps plugin-contributed ICustomEndpoint routes.
+        "Portal", // Persistent Portal sharing and request-scoped audience hydration.
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
         "NlQuery",

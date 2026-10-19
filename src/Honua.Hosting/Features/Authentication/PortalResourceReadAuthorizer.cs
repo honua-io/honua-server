@@ -36,6 +36,13 @@ internal sealed class PortalResourceReadAuthorizer(
             return false;
         }
 
+        if (context.RequestServices.GetService<IPortalAudienceSnapshotProvider>() is not null)
+        {
+            // Postgres audiences are loaded asynchronously once after the trusted tenant
+            // is known. An absent snapshot denies; never block this synchronous path.
+            return PortalAudienceSnapshot.HasService(context, service.Metadata.Id);
+        }
+
         var state = sharing.Get(service.Metadata.Id);
         var membership = groups.GetGroupIdsForUser(username, tenantId);
         // Everyone/org are deliberately unsupported; only exact live group membership grants access.

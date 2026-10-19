@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:d37b1da92556a29504ec06bc3afd1a0ea28c2805ea644c7424b1f8d1c2bcc173",
+  "bundleDigest": "sha256:599bd9cee25bb7bb2d48171fd04c9f0d51bbbc417a57b7c1b9093b25620f931f",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6275,7 +6275,7 @@
     {
       "id": "okf/capabilities/identity.portal-sharing",
       "path": "okf/capabilities/identity.portal-sharing.md",
-      "documentDigest": "sha256:520b29c6febcb48bd300765e0dd1a3804f8eb3d72991a577ad46ba8e8064550b",
+      "documentDigest": "sha256:82700d10c055dbe84c320f0697d76b730bbf8714f08a08012113c384cf43f00d",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Sharing Read Surface",
@@ -6785,7 +6785,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:9cf3b9cffa641f47d22a093a7f19a46677ce4ba2d2bbfe9e3a21881ff9ddac8d",
+      "documentDigest": "sha256:091ed5c41f16bb0d5bd82457abee918aa346cd80bd372fd824291579783dbeee",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -7608,7 +7608,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:b58b68b244d1ade65633738a22265faa15b72fc9b0b93a7dde00e460965cc8b2",
+      "documentDigest": "sha256:1b060e5a6d20c29b64fb82fdac2986c7c5e8bb7fd86960652c42ecd24daf5cdf",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",
