@@ -37,6 +37,7 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
     private readonly HashSet<string> _paths = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private long _reservedBytes;
     private bool _disposed;
+    private bool _physicalDeleted;
     private bool _cleanupCompleted;
 
     public string DirectoryPath { get; } = directory;
@@ -110,15 +111,16 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
         if (!Path.IsPathFullyQualified(path)) throw new ArgumentException("An absolute processing path is required.", nameof(path));
         var fullPath = Path.GetFullPath(path);
         var relative = Path.GetRelativePath(DirectoryPath, fullPath);
-        if (relative == "." || relative.Length > 1024 || relative.Split(Path.DirectorySeparatorChar).Length > 8 ||
-            Path.IsPathRooted(relative) || relative.Split(Path.DirectorySeparatorChar)
-                .Any(static segment => segment is ".." or ".reservations"))
+        var segments = relative.Split(Path.DirectorySeparatorChar);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (relative == "." || relative.Length > 1024 || segments.Length > 8 ||
+            Path.IsPathRooted(relative) || segments.Any(segment => segment == ".." || segment.Equals(".reservations", comparison)))
             throw new ArgumentException("Processing scratch paths must remain inside the private workspace.", nameof(path));
         for (var current = Path.GetDirectoryName(fullPath); current is not null; current = Path.GetDirectoryName(current))
         {
             if (Directory.Exists(current) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
                 throw new IOException("Processing scratch cannot traverse symbolic links.");
-            if (current == DirectoryPath) break;
+            if (current.Equals(DirectoryPath, comparison)) break;
         }
         return fullPath;
     }
@@ -130,9 +132,16 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
         {
             if (_cleanupCompleted) return;
             _disposed = true;
-            // No writers remain while this gate is held. Failed deletion retains every
-            // reservation and its on-disk manifest; no timeout or TTL frees active storage.
-            if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, recursive: true);
+            // Delete content before manifests. A failed content deletion must leave its
+            // physical/accounting association available for later census. Exists() is not
+            // proof of absence: it also returns false for inaccessible paths.
+            if (!_physicalDeleted)
+            {
+                foreach (var path in _paths) File.Delete(path);
+                try { Directory.Delete(DirectoryPath, recursive: true); }
+                catch (DirectoryNotFoundException) { }
+                _physicalDeleted = true;
+            }
             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             foreach (var reservation in _reservations)
                 _ = await budget.ReleaseDeletedAsync(reservation, cleanup.Token).ConfigureAwait(false);

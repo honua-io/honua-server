@@ -93,6 +93,46 @@ public sealed class ImportProcessingScratchTests
         Assert.Empty(fixture.Budget.Reservations);
     }
 
+    [UnitTest]
+    public async Task ContentDeletionFails_PreservesManifestAndChargeUntilCleanupRetry()
+    {
+        using var fixture = new Fixture();
+        await using var scratch = await fixture.CreateAsync();
+        fixture.Budget.Directory = scratch.DirectoryPath;
+        var path = Path.Join(scratch.DirectoryPath, "data.bin");
+        using var source = new MemoryStream([1]);
+        await scratch.WriteFileAsync(source, path, 1);
+        File.Delete(path);
+        Directory.CreateDirectory(path); // Real filesystem refuses File.Delete on a directory.
+        await Assert.ThrowsAnyAsync<Exception>(() => scratch.DisposeAsync().AsTask());
+        Assert.Single(Directory.GetFiles(Path.Join(scratch.DirectoryPath, ".reservations")));
+        Assert.Empty(fixture.Budget.Released);
+        using var later = new MemoryStream([2]);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => scratch.WriteFileAsync(later, Path.Join(scratch.DirectoryPath, "later"), 1));
+        Directory.Delete(path);
+        await scratch.DisposeAsync();
+        Assert.Single(fixture.Budget.Released);
+    }
+
+    [UnitTest]
+    public async Task AccountingReleaseFails_ClosedWorkspaceCanRetryWithoutAllowingNewWriters()
+    {
+        using var fixture = new Fixture();
+        await using var scratch = await fixture.CreateAsync();
+        fixture.Budget.Directory = scratch.DirectoryPath;
+        using var source = new MemoryStream([1]);
+        await scratch.WriteFileAsync(source, Path.Join(scratch.DirectoryPath, "data"), 1);
+        fixture.Budget.ReleaseUnavailable = true;
+        await Assert.ThrowsAsync<IOException>(() => scratch.DisposeAsync().AsTask());
+        Assert.False(Directory.Exists(scratch.DirectoryPath));
+        Assert.Empty(fixture.Budget.Released);
+        using var later = new MemoryStream([2]);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => scratch.WriteFileAsync(later, Path.Join(scratch.DirectoryPath, "later"), 1));
+        fixture.Budget.ReleaseUnavailable = false;
+        await scratch.DisposeAsync();
+        Assert.Single(fixture.Budget.Released);
+    }
+
     private sealed class Fixture : IDisposable
     {
         internal string Root { get; } = Path.Join(Path.GetTempPath(), "honua-processing-test-" + Guid.NewGuid().ToString("N"));
@@ -108,6 +148,7 @@ public sealed class ImportProcessingScratchTests
         internal string? Directory { get; set; }
         internal bool Allow { get; set; } = true;
         internal bool Unknown { get; set; }
+        internal bool ReleaseUnavailable { get; set; }
         internal List<ImportStorageReservation> Reservations { get; } = [];
         internal List<ImportStorageReservation> Released { get; } = [];
         public Task<bool> TryReserveAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
@@ -119,6 +160,7 @@ public sealed class ImportProcessingScratchTests
         public Task<bool> ReleaseDeletedAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
         {
             Assert.False(System.IO.Directory.Exists(Directory), "Accounting must survive until physical deletion.");
+            if (ReleaseUnavailable) throw new IOException("Accounting unavailable.");
             Released.Add(reservation);
             return Task.FromResult(true);
         }
