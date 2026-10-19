@@ -160,7 +160,7 @@ while True:
         out = io.StringIO()
         with mock.patch.dict(os.environ, self.env, clear=True), \
              mock.patch.object(entry.subprocess, "check_output", side_effect=self.git), \
-             mock.patch.object(entry.subprocess, "run", return_value=child), \
+             mock.patch.object(entry, "run_producer", return_value=child), \
              mock.patch.object(entry, "oidc_token", return_value="header.payload.signature"), \
              contextlib.redirect_stdout(out):
             with self.assertRaisesRegex(ValueError, "plan refused"):
