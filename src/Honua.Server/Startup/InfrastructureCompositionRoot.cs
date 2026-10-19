@@ -19,6 +19,7 @@ using Honua.Infrastructure.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
+using Honua.Server.Features.Portal;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -53,6 +54,9 @@ internal static class InfrastructureCompositionRoot
                     services,
                     configuration,
                     ServerCoreSchemaMigrations.Manifest);
+                // Postgres is the default server provider. Its Portal stores replace
+                // process-local sharing state before the Hosting defaults are added.
+                services.AddPostgresPortalSharing(configuration);
                 break;
             case DataProviderNames.DuckDb:
                 Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
