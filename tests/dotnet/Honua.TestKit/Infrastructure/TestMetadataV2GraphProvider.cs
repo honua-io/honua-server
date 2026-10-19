@@ -287,6 +287,19 @@ public sealed class TestMetadataV2GraphBuilder
         return this;
     }
 
+    public TestMetadataV2GraphBuilder WithOwnerEditPolicy(string resourceId, MetadataV2OwnerEditPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        var index = _resources.FindIndex(resource => resource.Metadata.Id == resourceId);
+        if (index < 0)
+        {
+            throw new ArgumentException($"Resource '{resourceId}' was not added.", nameof(resourceId));
+        }
+
+        _resources[index] = _resources[index] with { OwnerEditPolicy = policy };
+        return this;
+    }
+
     public TestMetadataV2GraphBuilder AddStorageBinding(
         string id,
         string resourceId,

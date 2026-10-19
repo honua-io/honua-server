@@ -556,18 +556,7 @@ internal sealed class FeatureServerEditsHandler(
     /// authenticated, and whether it holds the administrative override role.
     /// </summary>
     private static EditPrincipal ResolveEditPrincipal(HttpContext httpContext)
-    {
-        var isAuthenticated = httpContext.User?.Identity?.IsAuthenticated == true;
-        if (!isAuthenticated)
-        {
-            return EditPrincipal.Anonymous;
-        }
-
-        return new EditPrincipal(
-            EditOwnerSubject.Resolve(httpContext.User),
-            IsAuthenticated: true,
-            IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(httpContext));
-    }
+        => ServiceDataEditorAuthorization.ResolveEditPrincipal(httpContext);
 
     /// <summary>
     /// Processes add operations and tracks features to create
@@ -1987,15 +1976,15 @@ internal sealed class FeatureServerEditsHandler(
             {
                 var ownerAttribute = attributes.FirstOrDefault(pair =>
                     pair.Key.Equals(ownerPolicy.OwnerField, StringComparison.OrdinalIgnoreCase));
-                if ((ownerAttribute.Key is not null || feature.ReplaceAttributes) &&
-                    !string.Equals(
-                        Convert.ToString(ownerAttribute.Value, CultureInfo.InvariantCulture),
-                        Convert.ToString(updateSnapshot?.Owner, CultureInfo.InvariantCulture),
-                        StringComparison.OrdinalIgnoreCase))
+                if (OwnerEditPolicyFieldAccess.RejectsOwnerReassignment(
+                        ownerFieldPresent: ownerAttribute.Key is not null,
+                        replacesAllAttributes: feature.ReplaceAttributes,
+                        submittedOwner: ownerAttribute.Value,
+                        storedOwner: updateSnapshot?.Owner))
                 {
                     // Reject reassignment without turning a full replacement into a partial update
                     // or copying the unmasked owner snapshot into the response attribute bag.
-                    throw new EditNotPermittedException("Only an administrator can change the feature owner.");
+                    throw new EditNotPermittedException(OwnerEditPolicyFieldAccess.OwnerReassignmentDeniedReason);
                 }
             }
         }

@@ -2425,7 +2425,7 @@ internal sealed partial class Wfs20Handler
                 objectId: result.ObjectId))
             .ToImmutableArray();
 
-    private async Task<FeatureEditResult> ExecutePreparedEditAsync(
+    internal async Task<FeatureEditResult> ExecutePreparedEditAsync(
         HttpContext context,
         int layerId,
         MetadataV2Resource resource,
@@ -2455,6 +2455,21 @@ internal sealed partial class Wfs20Handler
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            _featureReader,
+            layerId,
+            resource.OwnerEditPolicy,
+            editBatch,
+            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+            cancellationToken).ConfigureAwait(false);
+        if (!prepared.IsAllowed)
+        {
+            return OwnerEditPolicyFieldAccess.DeniedEditResult(
+                editBatch,
+                prepared.DenialReason ?? "Edit not permitted.");
+        }
+
+        editBatch = prepared.Batch;
         // Bin per-kind geometry-change flags from the request-intent flags captured by
         // PrepareInsert/Update/Delete/ReplaceOperationsAsync (BEFORE merging with the
         // existing row). Reading editBatch.Operations[i].Feature.Geometry would over-
