@@ -34,10 +34,12 @@ public sealed class PostgresPortalSharingDurabilityTests(PostgresFixture postgre
             ?? throw new InvalidOperationException("Portal sharing migration resource is missing.");
         using var reader = new StreamReader(stream);
         var migration = await reader.ReadToEndAsync();
-        await postgres.ExecuteAsync(migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal));
+        await postgres.RunUnderSchemaMutationLockAsync(() =>
+            postgres.ExecuteAsync(migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal)));
     }
 
-    public Task DisposeAsync() => postgres.ExecuteAsync($"DROP SCHEMA IF EXISTS {_schema} CASCADE");
+    public Task DisposeAsync() => postgres.RunUnderSchemaMutationLockAsync(
+        () => postgres.ExecuteAsync($"DROP SCHEMA IF EXISTS {_schema} CASCADE"));
 
     [IntegrationTest]
     public async Task AcceptedGroupsAndShares_SurviveReplicaReconstruction_AndRevokeFreshReads()

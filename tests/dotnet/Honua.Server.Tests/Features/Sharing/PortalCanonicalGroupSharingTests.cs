@@ -80,9 +80,12 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
         using var builder = new NpgsqlCommandBuilder();
         var migration = (await reader.ReadToEndAsync())
             .Replace("$HonuaSchema$", builder.QuoteIdentifier(schema), StringComparison.Ordinal);
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = new NpgsqlCommand(migration, connection);
-        await command.ExecuteNonQueryAsync();
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+            await using var command = new NpgsqlCommand(migration, connection);
+            await command.ExecuteNonQueryAsync();
+        });
     }
 
     private void ConfigureGraph()
@@ -209,7 +212,7 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
             groups.Parameters.AddWithValue("group", group);
             ((string[])(await groups.ExecuteScalarAsync())!).Should().Contain("bob");
             await using var shares = new NpgsqlCommand(
-                $"SELECT group_ids FROM {schema}.portal_item_shares WHERE tenant_key = '' AND item_id = @item", connection);
+                $"SELECT group_ids FROM {schema}.portal_item_shares WHERE item_id = @item", connection);
             shares.Parameters.AddWithValue("item", ItemId);
             ((string[])(await shares.ExecuteScalarAsync())!).Should().Contain(group);
         }
