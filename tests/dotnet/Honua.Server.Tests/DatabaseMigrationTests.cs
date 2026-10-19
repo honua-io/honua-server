@@ -279,10 +279,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var now = DateTimeOffset.UtcNow;
         var service = new PublishedServiceRecord
         {
-            ServiceId = "canonical-service", IntentId = "canonical-intent",
-            SourceKind = PublishSourceKind.ResultPackage, SourceId = "source",
-            TargetKind = PublishTargetKind.FeatureService, Status = PublishedServiceStatus.Active,
-            PublishedAt = now, UpdatedAt = now
+            ServiceId = "canonical-service",
+            IntentId = "canonical-intent",
+            SourceKind = PublishSourceKind.ResultPackage,
+            SourceId = "source",
+            TargetKind = PublishTargetKind.FeatureService,
+            Status = PublishedServiceStatus.Active,
+            PublishedAt = now,
+            UpdatedAt = now
         };
         var serviceWriter = new PostgresPublishedServiceStore(dataSource, _schemaName);
         (await serviceWriter.TryCreateAsync(service)).Should().BeTrue();
