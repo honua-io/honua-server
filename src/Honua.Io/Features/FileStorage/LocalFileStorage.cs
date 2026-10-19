@@ -25,6 +25,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         .ToArray();
     private readonly string _basePath;
     private readonly string _metadataPath;
+    private readonly IStorageDomainMutationFence? _domainFence;
+
+    internal bool IsBoundToMutationFence(IStorageDomainMutationFence fence) => ReferenceEquals(_domainFence, fence);
 
     /// <summary>
     /// Creates a new local file storage instance
@@ -35,9 +38,11 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     public LocalFileStorage(
         IOptions<LocalStorageOptions> options,
         ILogger<LocalFileStorage> logger,
-        IUploadProgressStore progressStore)
+        IUploadProgressStore progressStore,
+        IStorageDomainMutationFence? domainFence = null)
         : base(logger, progressStore)
     {
+        _domainFence = domainFence;
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
             ? Directory.GetCurrentDirectory()
@@ -72,6 +77,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        await using var domainLease = _domainFence is null ? null
+            : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
         if (conditional && expectedETag is not null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
@@ -328,6 +335,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        await using var domainLease = _domainFence is null ? null
+            : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
 
         var mutationLock = GetMutationLock(fileId);
         await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -401,6 +410,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        await using var domainLease = _domainFence is null ? null
+            : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
 
         var mutationLock = GetMutationLock(fileId);
@@ -488,6 +499,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         CancellationToken cancellationToken = default)
     {
         ValidatePresignedUploadArguments(fileName, contentType, cancellationToken, checkCancellation: false);
+        if (_domainFence is not null)
+            throw new NotSupportedException("A fenced storage domain cannot expose an unfenced direct filesystem writer.");
 
         // For local storage, we generate a file ID and path
         // Real cloud implementations would provide presigned upload URLs
