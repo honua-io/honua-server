@@ -301,6 +301,36 @@ internal static class AgentCredentialAuthority
         return current is not null && CanonicalSecurityActor.Resolve(current)?.ActorId == CanonicalSecurityActor.Resolve(principal)?.ActorId;
     }
 
+    // Scoped to contributor/lease observation checks. Ordinary external-human
+    // authentication semantics are unchanged when no managed source owns the identity.
+    internal static async Task<bool> IsCurrentObserverAsync(ClaimsPrincipal principal, IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsCurrentAsync(principal, services, cancellationToken).ConfigureAwait(false)) return false;
+        if (ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(principal) || principal.HasClaim(claim => claim.Type == "api_key_id")
+            || IsDelegated(principal) || JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal)) return true;
+        var stamps = principal.FindAll(ManagedMembershipRevalidation.ManagedClaimType)
+            .Where(CanonicalSecurityActor.IsFrameworkOwnedClaim).ToArray();
+        if (stamps.Length > 1) return false;
+        var source = services.GetService<IPrincipalMembershipSource>();
+        if (source is null) return stamps.Length == 0;
+        var identities = principal.Identities.Where(identity => identity.IsAuthenticated).ToArray();
+        if (identities.Length != 1) return false;
+        var identity = identities[0];
+        var subject = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? identity.FindFirst("sub")?.Value;
+        var issuer = identity.FindFirst("iss")?.Value;
+        if (string.IsNullOrWhiteSpace(subject)) return stamps.Length == 0;
+        if (stamps.Length == 1 && (!stamps[0].Properties.TryGetValue("subject", out var stampedSubject) || stampedSubject != subject
+            || !stamps[0].Properties.TryGetValue("issuer", out var stampedIssuer) || stampedIssuer != (issuer ?? string.Empty))) return false;
+        var membership = await source.ResolveMembershipAsync(subject, issuer, cancellationToken).ConfigureAwait(false);
+        if (membership is null) return stamps.Length == 0;
+        if (!membership.IsActive) return false;
+        var options = services.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions();
+        var retainedRoles = new HashSet<string>(RbacRoleClaims.Enumerate(principal, options, services)
+            .Where(role => !string.IsNullOrWhiteSpace(role)).Select(role => role.Trim()), StringComparer.OrdinalIgnoreCase);
+        return retainedRoles.SetEquals(membership.Roles.Where(role => !string.IsNullOrWhiteSpace(role)).Select(role => role.Trim()));
+    }
+
     private static string[] ValidatedOAuthScopes(Claim marker) => RecognizedOAuthScopes(string.Join(" ",
         new[] { OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.ScpClaimType, OperatorScopeCatalog.ScopeClaimUri }
             .Select(type => Value(marker, type) ?? "")));

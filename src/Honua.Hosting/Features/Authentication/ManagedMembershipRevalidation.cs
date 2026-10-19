@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Honua.Infrastructure.Authentication;
@@ -13,6 +14,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal static class ManagedMembershipRevalidation
 {
+    internal const string ManagedClaimType = "honua:managed_membership";
     /// <summary>
     /// Applies live membership to <paramref name="principal"/>.
     /// Unmanaged principals (the source returns null) are unchanged.
@@ -73,7 +75,12 @@ internal static class ManagedMembershipRevalidation
             "roles",
             identity.RoleClaimType,
         };
-        var claims = identity.Claims.Where(claim => !roleClaimTypes.Contains(claim.Type)).ToList();
+        var claims = identity.Claims.Where(claim => !roleClaimTypes.Contains(claim.Type)
+            && !string.Equals(claim.Type, ManagedClaimType, StringComparison.OrdinalIgnoreCase)).ToList();
+        var managed = CanonicalSecurityActor.CreateStampedClaim(ManagedClaimType, "managed");
+        managed.Properties["subject"] = principalId;
+        managed.Properties["issuer"] = identity.FindFirst("iss")?.Value ?? string.Empty;
+        claims.Add(managed);
         foreach (var role in membership.Roles
             .Where(static role => !string.IsNullOrWhiteSpace(role))
             .Select(static role => role.Trim())

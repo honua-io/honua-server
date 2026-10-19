@@ -92,7 +92,7 @@ internal sealed class JobExecutionLeaseAuthority(
     public async Task<JobExecutionLeaseObservation> ResolveForObservationAsync(string jobId, ClaimsPrincipal observer,
         JobExecutionLeaseObservationKind kind, CancellationToken cancellationToken = default)
     {
-        if (!Enum.IsDefined(kind) || !await AgentCredentialAuthority.IsCurrentAsync(observer, _services, cancellationToken).ConfigureAwait(false))
+        if (!Enum.IsDefined(kind) || !await AgentCredentialAuthority.IsCurrentObserverAsync(observer, _services, cancellationToken).ConfigureAwait(false))
         {
             throw Denied();
         }
@@ -117,7 +117,7 @@ internal sealed class JobExecutionLeaseAuthority(
             await provider.RequireCurrentAsync(live.Job, CopyScope(live.Binding.Scope), context, context.CurrentAgentPrincipal!, null, cancellationToken).ConfigureAwait(false);
             await provider.RequireCurrentAsync(live.Job, CopyScope(live.Binding.Scope), context, observer, kind, cancellationToken).ConfigureAwait(false);
             _ = await ValidateBaseAsync(jobId, live.Job, execution: false, cancellationToken).ConfigureAwait(false);
-            if (!await AgentCredentialAuthority.IsCurrentAsync(observer, _services, cancellationToken).ConfigureAwait(false))
+            if (!await AgentCredentialAuthority.IsCurrentObserverAsync(observer, _services, cancellationToken).ConfigureAwait(false))
             {
                 throw Denied();
             }

@@ -26,7 +26,7 @@ internal sealed class DatasetImportContributorAuthorizer(IAgentWorkspaceStore st
             !AgentWorkspaceState.IsIdentifier(workspaceId) || !AgentWorkspaceState.IsIdentifier(taskId) ||
             revision < 1 || !DatasetImportTaskState.Hash(contentHash)) return null;
         var services = transport.RequestServices;
-        if (!await AgentCredentialAuthority.IsCurrentAsync(contributor, services, cancellationToken).ConfigureAwait(false)) return null;
+        if (!await AgentCredentialAuthority.IsCurrentObserverAsync(contributor, services, cancellationToken).ConfigureAwait(false)) return null;
         var tenant = services.GetService<ITenantContext>()?.TenantId;
         var target = await store.GetTargetIdAsync().ConfigureAwait(false);
         var document = await store.GetAsync(workspaceId).ConfigureAwait(false);
@@ -58,7 +58,7 @@ internal sealed class DatasetImportContributorAuthorizer(IAgentWorkspaceStore st
             !latest.DatasetImportTasks.TryGetValue(taskId, out var retainedVersions) ||
             retainedVersions.SingleOrDefault(item => item.Revision == revision) is not { } retainedTask ||
             retainedTask != task || !Bound(latest, retained, retainedTask, actor, tenant, currentTarget, contentHash) ||
-            !await AgentCredentialAuthority.IsCurrentAsync(contributor, services, cancellationToken).ConfigureAwait(false) ||
+            !await AgentCredentialAuthority.IsCurrentObserverAsync(contributor, services, cancellationToken).ConfigureAwait(false) ||
             await AgentCredentialAuthority.RevalidateAsync(retained.ExecutorAuthority, services, cancellationToken).ConfigureAwait(false) is null)
             return null;
         return new(task, binding.ExecutorActorId, actor, actor, binding.OriginatingTurnId, binding.OriginalTurnHash,
