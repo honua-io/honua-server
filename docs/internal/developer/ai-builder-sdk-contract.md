@@ -50,8 +50,8 @@ The HTTP endpoint for these MCP calls is `POST /mcp` using JSON-RPC 2.0.
 
 Consume the exact `serviceUri` returned by `honua_publish_service` or a completed
 publication status. The URI contains one percent-encoded service identity; do not
-split or decode that identity and reconstruct the URI. Queued publication has no
-completed service resource until its maintained status surface reports completion.
+split or decode that identity and reconstruct the URI. Treat a queued publication's resulting service identity as pending until its
+maintained status surface reports completion.
 If the committed catalog identity is missing or ambiguous, status reports
 `readbackStatus: "Unavailable"`; the publication must not be repeated to repair a
 readback failure.
