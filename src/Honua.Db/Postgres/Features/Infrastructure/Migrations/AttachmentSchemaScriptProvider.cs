@@ -29,8 +29,9 @@ internal sealed class AttachmentSchemaScriptProvider(IScriptProvider source, str
     {
         var rendered = script.Name switch
         {
-            PostgresAttachmentSchema.CreateMigration => script.Contents.Replace(
-                "honua.attachments", quotedSchema + ".attachments", StringComparison.Ordinal),
+            PostgresAttachmentSchema.CreateMigration =>
+                (quotedSchema == "\"honua\"" ? string.Empty : $"CREATE SCHEMA IF NOT EXISTS {quotedSchema};\n") +
+                script.Contents.Replace("honua.attachments", quotedSchema + ".attachments", StringComparison.Ordinal),
             PostgresAttachmentSchema.ImportMigration => script.Contents
                 .Replace("$HonuaSchema$.attachments", quotedSchema + ".attachments", StringComparison.Ordinal)
                 .Replace("$HonuaSchema$.import_attachment_cleanup", quotedSchema + ".import_attachment_cleanup", StringComparison.Ordinal),

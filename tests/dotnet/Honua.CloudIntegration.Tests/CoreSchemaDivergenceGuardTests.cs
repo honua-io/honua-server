@@ -8,6 +8,9 @@ using DbUp.Engine;
 using DbUp.ScriptProviders;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Core.Features.Attachments.Domain;
+using Honua.Core.Features.Attachments.Abstractions;
+using Honua.FileStorage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using FluentAssertions;
 using Honua.Core.Configuration;
@@ -709,6 +712,124 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             """, connection);
         command.Parameters.AddWithValue("table", table);
         return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static readonly byte[] _firstAttachmentImportBytes = [1, 2, 3];
+    private static readonly byte[] _replacementAttachmentImportBytes = [4, 5];
+
+    [SkippableTheory]
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, "")]
+    [InlineData(true, "   ")]
+    [InlineData(false, "honua")]
+    [InlineData(true, "honua")]
+    public async Task AttachmentRuntime_CanonicalVectorAndRasterBoot_UsesProductionRegistrationAndPreservesOverride(
+        bool raster, string? attachmentOverride)
+    {
+        Skip.IfNot(postgres.Available, "Real PostgreSQL and local file storage are required for attachment registration proof.");
+        const string schema = "attachment_registered";
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true, enablePostGisRaster: raster);
+        var storageRoot = Path.Join(Path.GetTempPath(), "honua-attachment-registration-" + Guid.NewGuid().ToString("N"));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = connectionString,
+            ["Database:Schema"] = schema,
+            ["Attachments:Schema"] = attachmentOverride,
+            ["FileStorage:Provider"] = "Local",
+            ["FileStorage:LocalStorage:BasePath"] = storageRoot,
+            ["FileStorage:EnableAutomaticCleanup"] = "false"
+        }).Build();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest, configuration: configuration);
+        var beforePlanning = await CaptureAttachmentAuthorityStateAsync(connectionString);
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(plan.ErrorMessage);
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(beforePlanning,
+            "planning must not create the configured schema or write journal rows");
+        plan.ScriptBindings.Should().OnlyContain(binding => binding.PhysicalSchema == schema);
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        result.Successful.Should().BeTrue(result.ErrorMessage);
+        try
+        {
+            long createdId;
+            long importedId;
+            string importedPath;
+            var generation = Guid.Parse("63ddbe32-e163-4fcf-9c8d-675d55f01f12");
+            await using (var provider = CreateAttachmentRegistrationProvider(configuration))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<PostgresAttachmentStore>();
+                scope.ServiceProvider.GetRequiredService<IAttachmentStore>().Should().BeSameAs(store);
+                if (attachmentOverride == "honua")
+                {
+                    var before = await CaptureAttachmentAuthorityStateAsync(connectionString);
+                    await store.Awaiting(instance => instance.GetAsync(7, 8, 1)).Should().ThrowAsync<AttachmentSchemaBindingException>();
+                    (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(before,
+                        "an explicit mismatched override must not be silently replaced or repaired");
+                    return;
+                }
+                var created = await store.CreateAsync(7, 8, new Attachment
+                {
+                    Id = 0, LayerId = 7, FeatureId = 8, Filename = "registered.txt", ContentType = "text/plain",
+                    Size = 1, CreatedAt = DateTime.UtcNow, StoragePath = "metadata-only/registered"
+                });
+                createdId = created.Id;
+                (await store.GetAsync(7, 8, createdId)).Should().NotBeNull();
+                (await store.HasLegacyAttachmentsAsync(7, CancellationToken.None)).Should().BeTrue();
+                await using var first = new MemoryStream(_firstAttachmentImportBytes, writable: false);
+                var imported = await store.UploadImportedAsync(9, 10, "fixture-source", 72, 99, Guid.Empty,
+                    "import.bin", "application/octet-stream", first, null, CancellationToken.None);
+                await using var second = new MemoryStream(_replacementAttachmentImportBytes, writable: false);
+                var replacement = await store.UploadImportedAsync(9, 10, "fixture-source", 72, 99, generation,
+                    "replacement.bin", "application/octet-stream", second, null, CancellationToken.None);
+                replacement.Id.Should().Be(imported.Id, "the canonical import identity upserts the same metadata row");
+                replacement.StoragePath.Should().NotBe(imported.StoragePath);
+                var files = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
+                (await files.ExistsAsync(imported.StoragePath)).Should().BeFalse("the actual import cleanup retires the replaced object");
+                (await files.DownloadBytesAsync(replacement.StoragePath)).Should().Equal(_replacementAttachmentImportBytes);
+                (await store.HasLegacyAttachmentsAsync(9, CancellationToken.None)).Should().BeFalse();
+                importedId = replacement.Id;
+                importedPath = replacement.StoragePath;
+            }
+            var restarted = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+            restarted.Successful.Should().BeTrue(restarted.ErrorMessage);
+            restarted.AppliedScripts.Should().BeEmpty();
+            await using (var provider = CreateAttachmentRegistrationProvider(configuration))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<PostgresAttachmentStore>();
+                (await store.GetAsync(7, 8, createdId)).Should().NotBeNull();
+                var imported = await store.GetAsync(9, 10, importedId);
+                imported.Should().NotBeNull();
+                var persisted = imported ?? throw new InvalidOperationException("The imported attachment must survive restart.");
+                persisted.StoragePath.Should().Be(importedPath);
+                (await scope.ServiceProvider.GetRequiredService<ICloudFileStorage>().DownloadBytesAsync(importedPath))
+                    .Should().Equal(_replacementAttachmentImportBytes);
+            }
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand("""
+                SELECT count(*)=1 AND bool_and(import_parent_id=72 AND import_attachment_id=99 AND import_generation=@generation)
+                FROM attachment_registered.attachments WHERE layer_id=9 AND import_source='fixture-source'
+                """, connection);
+            command.Parameters.AddWithValue("generation", generation);
+            (await command.ExecuteScalarAsync()).Should().Be(true);
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot)) Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    private static ServiceProvider CreateAttachmentRegistrationProvider(IConfiguration configuration)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(configuration);
+        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration, ServerCoreSchemaMigrations.Manifest);
+        services.AddCloudFileStorage(configuration);
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
     [SkippableFact]
