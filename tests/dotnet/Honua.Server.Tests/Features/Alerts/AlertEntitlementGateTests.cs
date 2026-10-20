@@ -75,14 +75,35 @@ public sealed class AlertEntitlementGateTests
         isActive = true,
     };
 
-    private static async Task AssertBlockedAsync(HttpClient client, object payload, string expectedKey)
+    private static async Task AssertBlockedAsync(
+        HttpClient client,
+        object payload,
+        string expectedKey,
+        string requiredEdition,
+        bool includeUpdate = false)
     {
-        using var response = await client.PostAsJsonAsync(RulesRoute, payload);
+        await AssertDenialAsync(() => client.PostAsJsonAsync(RulesRoute, payload), expectedKey, requiredEdition);
+        if (includeUpdate)
+        {
+            await AssertDenialAsync(
+                () => client.PutAsJsonAsync($"{RulesRoute}/1", payload),
+                expectedKey,
+                requiredEdition);
+        }
+    }
+
+    private static async Task AssertDenialAsync(
+        Func<Task<HttpResponseMessage>> send,
+        string expectedKey,
+        string requiredEdition)
+    {
+        using var response = await send();
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(
             response.StatusCode == HttpStatusCode.PaymentRequired,
             $"Expected 402 for '{expectedKey}' but got {(int)response.StatusCode}: {body}");
-        Assert.Contains($"entitlement: {expectedKey}", body);
+        Assert.Contains($"entitlement: {expectedKey}", body, StringComparison.Ordinal);
+        Assert.Contains($"requires an active {requiredEdition} entitlement", body, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -123,8 +144,8 @@ public sealed class AlertEntitlementGateTests
         {
             using var client = fixture.CreateAdminClient();
 
-            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit");
-            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "channels.webhook");
+            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit", "Pro");
+            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "channels.webhook", "Pro");
 
             // On-demand rule evaluation (POST /rules/test) is the alerts.evaluation surface.
             using var testResponse = await client.PostAsJsonAsync(
@@ -141,6 +162,7 @@ public sealed class AlertEntitlementGateTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
+    [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}")]
     [Endpoint("POST /api/v1/admin/alerts/rules/test")]
     public async Task ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures()
     {
@@ -160,12 +182,15 @@ public sealed class AlertEntitlementGateTests
             await AssertBlockedAsync(
                 client,
                 RulePayload("dwell", "webhook", conditionsJson: "{\"dwellSeconds\":60}"),
-                "alerts.dwell");
+                "alerts.dwell",
+                "Enterprise",
+                includeUpdate: true);
             await AssertBlockedAsync(
                 client,
                 RulePayload("threshold", "webhook", conditionsJson: "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}"),
-                "alerts.threshold");
-            await AssertBlockedAsync(client, RulePayload("enter", "email"), "channels.email");
+                "alerts.threshold",
+                "Enterprise");
+            await AssertBlockedAsync(client, RulePayload("enter", "email"), "channels.email", "Enterprise", includeUpdate: true);
         }
         finally
         {
@@ -240,11 +265,12 @@ public sealed class AlertEntitlementGateTests
         {
             using var client = fixture.CreateAdminClient();
 
-            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit");
+            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit", "Pro");
             await AssertBlockedAsync(
                 client,
                 RulePayload("dwell", "webhook", conditionsJson: "{\"dwellSeconds\":60}"),
-                "alerts.dwell");
+                "alerts.dwell",
+                "Enterprise");
         }
         finally
         {
