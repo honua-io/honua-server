@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Geometry.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -158,8 +160,17 @@ public sealed class LayerReconciliationServiceTests
         artifact.Layers[0].Classification.Should().Be(MigrationReconciliationClassifications.Skipped);
     }
 
-    private static LayerReconciliationService NewService(IFeatureReader reader)
-        => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance);
+    private static LayerReconciliationService NewService(IFeatureReader reader, IGeometryTopologyValidator? topology = null)
+        => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance, topologyValidator: topology);
+
+    private sealed class FixedTopologyValidator(bool valid) : IGeometryTopologyValidator
+    {
+        public Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeometryValidationResult { IsValid = valid });
+
+        public Task<GeometryRepairResult> RepairAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
 
     [Trait("Tier", "Fast")]
     [Theory]
@@ -419,13 +430,77 @@ public sealed class LayerReconciliationServiceTests
             ]
         };
 
-        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+        var geometry = (await NewService(reader, new FixedTopologyValidator(valid: true)).ReconcileAsync(request)).Layers[0].Geometry;
 
         geometry.Classification.Should().Be("warn");
         geometry.InheritedSourceDefects.Should().Be(0);
         geometry.MigrationLosses.Should().Be(0);
         geometry.SourceDefectRewrites.Should().Be(1);
         geometry.Reason.Should().Contain("not a successful repair");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceThatRemainsTopologicallyInvalid_IsInherited()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader, new FixedTopologyValidator(valid: false)).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.SourceDefectRewrites.Should().Be(0);
+        geometry.Reason.Should().Contain("invalid source geometry").And.Contain("none were repaired");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceWithoutTopologyCheck_IsNotCountedAsRepair()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.SourceDefectRewrites.Should().Be(0);
     }
 
     [UnitTest]

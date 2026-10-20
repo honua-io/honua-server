@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -43,6 +44,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
     private readonly IFeatureReader _featureReader;
     private readonly ReconciliationQueryBuilder? _queryBuilder;
+    private readonly IGeometryTopologyValidator? _topologyValidator;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<LayerReconciliationService> _logger;
 
@@ -53,14 +55,20 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     /// <param name="timeProvider">Time provider used to stamp the artifact.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="queryBuilder">Canonical query compiler, required for shared-target filter mirrors.</param>
+    /// <param name="topologyValidator">
+    /// Topology check used when an invalid source id is still present on the target.
+    /// A missing validator does not treat a WKB header as a successful repair.
+    /// </param>
     public LayerReconciliationService(
         IFeatureReader featureReader,
         TimeProvider timeProvider,
         ILogger<LayerReconciliationService> logger,
-        ReconciliationQueryBuilder? queryBuilder = null)
+        ReconciliationQueryBuilder? queryBuilder = null,
+        IGeometryTopologyValidator? topologyValidator = null)
     {
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _queryBuilder = queryBuilder;
+        _topologyValidator = topologyValidator;
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -218,7 +226,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
         var count = BuildCountProbe(layer, options, targetCount, readerFailure);
         var geometry = layer.SourceHasGeometry
-            ? BuildGeometryProbe(layer, sample, options, readerFailure)
+            ? await BuildGeometryProbe(layer, sample, options, readerFailure, cancellationToken).ConfigureAwait(false)
             : new MigrationReconciliationGeometryProbe
             {
                 Sampled = 0,
@@ -472,11 +480,12 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         };
     }
 
-    private static MigrationReconciliationGeometryProbe BuildGeometryProbe(
+    private async Task<MigrationReconciliationGeometryProbe> BuildGeometryProbe(
         LayerReconciliationLayerInput layer,
         QueryResult<Feature>? sample,
         LayerReconciliationOptions options,
-        string? readerFailure)
+        string? readerFailure,
+        CancellationToken cancellationToken)
     {
         if (sample is null)
         {
@@ -493,7 +502,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var features = sample.Value.Items;
         if (layer.SourceGeometry is { } census)
         {
-            return BuildCensusGeometryProbe(census, features);
+            return await BuildCensusGeometryProbe(census, features, cancellationToken).ConfigureAwait(false);
         }
 
         if (features.Length == 0)
@@ -534,12 +543,14 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
     /// <summary>
     /// Identity-mapped geometry probe. A known transfer loss fails the probe even when it is
-    /// one row. Matching null or invalid source geometries are inherited defects. A well-formed
-    /// target in their place is not a successful repair (#4826).
+    /// one row. Matching null source geometries are inherited defects. An invalid source that
+    /// remains topologically invalid is inherited; only a topology-valid target is a rewrite,
+    /// and that rewrite is not a successful repair (#4826, #6377).
     /// </summary>
-    private static MigrationReconciliationGeometryProbe BuildCensusGeometryProbe(
+    private async Task<MigrationReconciliationGeometryProbe> BuildCensusGeometryProbe(
         SourceGeometryCensus census,
-        IReadOnlyList<Feature> features)
+        IReadOnlyList<Feature> features,
+        CancellationToken cancellationToken)
     {
         var inheritedNull = 0;
         var inheritedInvalid = 0;
@@ -575,7 +586,9 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             if (census.InvalidTargetFeatureIds.Contains(feature.Id) &&
                 !census.UnconvertedTargetFeatureIds.Contains(feature.Id))
             {
-                if (wellFormed)
+                // WKB presence is not topology. A header-only payload that is still invalid
+                // stays an inherited source defect. Without a validator, fail closed.
+                if (await IsTopologicallyValidAsync(feature.Geometry, cancellationToken).ConfigureAwait(false))
                 {
                     rewrites++;
                 }
@@ -1158,6 +1171,28 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             GeometryWarnRatio = Math.Clamp(Math.Min(options.GeometryWarnRatio, options.GeometryPassRatio), 0d, 1d),
             ExtentTolerance = Math.Max(0d, options.ExtentTolerance)
         };
+    }
+
+    /// <summary>
+    /// Topology result for an invalid-source target. A null validator, an empty payload, or a
+    /// validator failure is not a repair. Cancellation still propagates.
+    /// </summary>
+    private async Task<bool> IsTopologicallyValidAsync(byte[]? wkb, CancellationToken cancellationToken)
+    {
+        if (_topologyValidator is null || wkb is not { Length: > 0 })
+        {
+            return false;
+        }
+
+        try
+        {
+            var result = await _topologyValidator.ValidateTopologyAsync(wkb, cancellationToken).ConfigureAwait(false);
+            return result.IsValid;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
