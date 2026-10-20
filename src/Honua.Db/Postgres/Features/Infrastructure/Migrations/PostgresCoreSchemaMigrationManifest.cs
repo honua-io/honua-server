@@ -50,6 +50,9 @@ internal sealed class PostgresCoreSchemaMigrationManifest
 
     public string ApplicationMigrationAssemblyName { get; }
 
+    /// <summary>Application-owned attachment contract; synthetic manifests may omit it.</summary>
+    public PostgresAttachmentMigrationContract? Attachments { get; init; }
+
     /// <summary>
     /// Complete reader-qualified migration identities supplied by the application. Synthetic
     /// manifests may omit this when testing an isolated schema floor.

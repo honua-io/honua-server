@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:be0fa462e5c3e597fa4b305576a7a687cd8086a280efa3299c0e61ff2775deda",
+  "bundleDigest": "sha256:fa867ee151aeb4bc2155a3fc1d669dad07c1e25ce1e9d1dfe0b19dbf5c919a38",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:2743bef16be095456fd7dd01f163e766c285a3d7aa1c26ec20e2a104ee8b3836",
+      "documentDigest": "sha256:02a32cc5152a967c317bdefa51d8ef3641c4133702c9b582faed81d38d640a64",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -7719,7 +7719,7 @@
     {
       "id": "reference/configuration/data-sources/postgis",
       "path": "reference/configuration/data-sources/postgis.md",
-      "documentDigest": "sha256:59b42df11dbba04b823d848765624d80d769430ef0a983e40839835394476f08",
+      "documentDigest": "sha256:176d25cce21d604ea85c2ddbe0595741d2b996f4df3c6938e9171adc81c243fe",
       "metadata": {
         "type": "reference",
         "title": "PostGIS provider",

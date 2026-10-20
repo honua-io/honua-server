@@ -107,6 +107,8 @@ internal sealed class DeployPreflightProbe(
                 PendingScripts = plan.PendingScripts,
                 PendingContractScripts = plan.ContractScriptNames,
                 PendingScriptClassifications = plan.PendingScriptClassifications,
+                ScriptBindings = plan.ScriptBindings,
+                ContractApprovalNonce = plan.ContractApprovalNonce,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
                 PlanError = plan.Successful ? null : plan.ErrorMessage ?? MigrationPlanUnavailableMessage,
                 BackupHook = backupHook
@@ -284,6 +286,11 @@ internal sealed class DeployPreflightMigrationSnapshot
     /// </summary>
     public IReadOnlyList<MigrationScriptClassification> PendingScriptClassifications { get; init; }
         = Array.Empty<MigrationScriptClassification>();
+
+    public IReadOnlyList<DatabaseMigrationScriptBinding> ScriptBindings { get; init; }
+        = Array.Empty<DatabaseMigrationScriptBinding>();
+
+    public string? ContractApprovalNonce { get; init; }
 
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 

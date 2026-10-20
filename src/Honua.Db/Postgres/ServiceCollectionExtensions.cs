@@ -303,7 +303,8 @@ internal static class ServiceCollectionExtensions
         // outlived its row. TryAdd so a host can substitute a durable ledger.
         services.TryAddSingleton<IAttachmentOrphanLedger, LoggingAttachmentOrphanLedger>();
 
-        // Register attachment store implementation (metadata tables live in the honua schema).
+        // Register the attachment store against the same metadata schema as canonical migrations.
+        // An explicit override must resolve to the same physical family as canonical migrations.
         // Feature deletes resolve IFeatureAttachmentCleanup from this same instance so attachment
         // rows share the feature transaction (#6137). Object storage stays optional here:
         // a host that registered ICloudFileStorage wins, and a database-only host can still
@@ -314,11 +315,13 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetService<ICloudFileStorage>(),
                 serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
-                    ? "honua"
+                    ? schemaConfiguration.MetadataSchema
                     : configuration["Attachments:Schema"],
                 orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
                 attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
-                    ?? new AttachmentLimits()));
+                    ?? new AttachmentLimits(),
+                migrationContract: coreSchemaMigrations.Attachments,
+                canonicalSchemaName: schemaConfiguration.MetadataSchema));
         services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
         services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
 

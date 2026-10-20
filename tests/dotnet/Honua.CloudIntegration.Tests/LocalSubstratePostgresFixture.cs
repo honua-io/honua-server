@@ -91,7 +91,10 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
 
         var connectionString = new NpgsqlConnectionStringBuilder(ConnectionString)
         {
-            Database = databaseName
+            Database = databaseName,
+            // Each scenario owns a distinct short-lived database. Keeping a pool per database
+            // retains idle server connections until pruning and can exhaust the shared container.
+            Pooling = false
         }.ConnectionString;
 
         if (enablePostGis || enablePostGisRaster)

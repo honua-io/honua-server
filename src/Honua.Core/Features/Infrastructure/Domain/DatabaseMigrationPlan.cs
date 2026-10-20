@@ -36,6 +36,13 @@ public sealed record DatabaseMigrationPlan
     /// </summary>
     public bool JournalIsNonEmpty { get; init; }
 
+    /// <summary>Physical attachment bindings and immutable/rendered SQL identities.</summary>
+    public IReadOnlyList<DatabaseMigrationScriptBinding> ScriptBindings { get; init; }
+        = Array.Empty<DatabaseMigrationScriptBinding>();
+
+    /// <summary>Exact approval nonce for this plan, including custom binding context.</summary>
+    public string? ContractApprovalNonce { get; init; }
+
     /// <summary>
     /// Expand/contract safety classification for each pending script, in the order the scripts
     /// would be applied. Populated by runners that can read script contents; empty otherwise.

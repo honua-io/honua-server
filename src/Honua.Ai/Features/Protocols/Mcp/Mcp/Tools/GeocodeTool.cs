@@ -134,6 +134,11 @@ internal sealed class GeocodeTool : IMcpTool
             throw new GeoprocessingValidationException("'outSrid' must be a positive SRID/WKID.");
         }
 
+        if (!GeocodeCountryCodes.TryParse(argument.CountryCodes, out _))
+        {
+            throw new GeoprocessingValidationException(GeocodeCountryCodes.InvalidMessage);
+        }
+
         return new ForwardGeocodeRequest(
             Query: argument.Address.Trim(),
             MaxResults: maxResults,

@@ -191,6 +191,8 @@ internal static class ObservabilityEndpoints
                 PlanAvailable = plan.Successful,
                 UpgradeRequired = plan.UpgradeRequired,
                 PendingScripts = plan.PendingScripts,
+                ScriptBindings = plan.ScriptBindings,
+                ContractApprovalNonce = plan.ContractApprovalNonce,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
                 PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage,
                 BackupHook = plan.Successful
