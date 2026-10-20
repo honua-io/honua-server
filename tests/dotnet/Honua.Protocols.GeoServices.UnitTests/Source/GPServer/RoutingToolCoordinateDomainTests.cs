@@ -29,7 +29,7 @@ public sealed class RoutingToolCoordinateDomainTests
         var tasks = new List<GPTaskInfoResponse>();
         foreach (var name in new[] { "FindRoutes", "GenerateServiceAreas" })
         {
-            var json = NAServerMetadata.Serialize(NAServerMetadata.BuildUtilityTaskInfo(name));
+            var json = NAServerMetadata.Serialize(NAServerMetadata.BuildUtilityTaskInfo(name), pretty: false);
             tasks.Add(JsonSerializer.Deserialize(json, GPServerJsonContext.Default.GPTaskInfoResponse)!);
         }
         foreach (var (processId, taskName) in new[]
