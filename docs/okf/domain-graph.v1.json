@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:070de853038db16e8812beb3b8e6274d7c679b2b24e0f1056bc2a7816bccbd07",
+  "bundleDigest": "sha256:c779ae34082f5bf067567e8b114b2768fa204f581613d692b4794707a75e0c07",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7719,7 +7719,7 @@
     {
       "id": "reference/configuration/data-sources/postgis",
       "path": "reference/configuration/data-sources/postgis.md",
-      "documentDigest": "sha256:176d25cce21d604ea85c2ddbe0595741d2b996f4df3c6938e9171adc81c243fe",
+      "documentDigest": "sha256:258730e9a423db1e1c80a954e1411c412058d5da28b8bb46c2f26cc0c3f49174",
       "metadata": {
         "type": "reference",
         "title": "PostGIS provider",
