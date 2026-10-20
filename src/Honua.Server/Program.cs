@@ -860,6 +860,12 @@ if (builder.Configuration.GetValue<bool?>("HONUA_DB_DEGRADED_START") is { } envD
 // on there unless the operator set it explicitly (honua-server preflight 53300 crash loop).
 startupResilienceOptions = Honua.Infrastructure.Monitoring.StartupDatabasePreflight.ApplyServerlessDefault(
     startupResilienceOptions, builder.Configuration);
+startupResilienceOptions = Honua.Infrastructure.Monitoring.StartupDatabasePreflight.ApplyDevelopmentContainerDefault(
+    startupResilienceOptions, builder.Configuration, builder.Environment.IsDevelopment());
+// A recovery-enabled Development container must reject permanent startup failures too;
+// otherwise its permissive legacy path leaves a live host with a failed migration latch.
+var failOnDatabaseStartupFailure = Honua.Infrastructure.Monitoring.StartupDatabasePreflight.ShouldFailStartup(
+    startupResilienceOptions, builder.Configuration, builder.Environment.IsDevelopment());
 
 builder.Services.AddSingleton(startupResilienceOptions);
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
@@ -2136,7 +2142,7 @@ async Task RunDatabaseMigrationsAsync()
         if (string.IsNullOrEmpty(skippedMigrationConnectionString))
         {
             migrationState.MarkFailed("Migrations were skipped, but the schema guard could not run without a database connection string.");
-            if (!app.Environment.IsDevelopment())
+            if (failOnDatabaseStartupFailure)
             {
                 throw new InvalidOperationException(
                     "Database schema verification is required when HONUA_SKIP_MIGRATIONS=true, but no connection string is configured.");
@@ -2159,7 +2165,6 @@ async Task RunDatabaseMigrationsAsync()
             // A schema newer than this binary (DatabaseSchemaCompatibilityException) or one that
             // contradicts its journal still fails fast below.
             if (Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService.IsSchemaBehindBinary(ex, out var schemaFloorReason)
-                && !app.Environment.IsDevelopment()
                 && TryArmDegradedStart(
                     "schema guard",
                     schemaFloorReason,
@@ -2174,7 +2179,6 @@ async Task RunDatabaseMigrationsAsync()
             // The guard could not reach the database (no free slots, timeout): that is an outage,
             // not schema divergence. Degraded start defers the guard to the recovery loop.
             if (ex is not Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException
-                && !app.Environment.IsDevelopment()
                 && TryEnterDegradedStart("schema guard", ex, migrationsPending: false, schemaGuardPending: true))
             {
                 return;
@@ -2182,7 +2186,7 @@ async Task RunDatabaseMigrationsAsync()
 
             migrationState.MarkFailed("Database schema diverges from the migration journal.");
             Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
-            if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException || !app.Environment.IsDevelopment())
+            if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException || failOnDatabaseStartupFailure)
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
             }
@@ -2244,8 +2248,8 @@ async Task RunDatabaseMigrationsAsync()
             // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
             // start is enabled and the failure is transient connectivity (#1632).
             if (error is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
-                (!app.Environment.IsDevelopment()
-                && !TryEnterDegradedStart("migrations", error, migrationsPending: true)))
+                (!TryEnterDegradedStart("migrations", error, migrationsPending: true)
+                && failOnDatabaseStartupFailure))
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
                 return; // unreachable; satisfies the compiler
@@ -2281,8 +2285,8 @@ async Task RunDatabaseMigrationsAsync()
         // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
         // start is enabled and the failure is transient connectivity (#1632).
         if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
-            (!app.Environment.IsDevelopment()
-            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true)))
+            (!TryEnterDegradedStart("migrations", ex, migrationsPending: true)
+            && failOnDatabaseStartupFailure))
         {
             throw;
         }
@@ -2380,7 +2384,7 @@ async Task RunPostGisPreflightCheckAsync()
             static (delay, cancellationToken) => Task.Delay(delay, cancellationToken),
             app.Lifetime.ApplicationStopping);
     }
-    catch (Exception ex) when (!app.Environment.IsDevelopment())
+    catch (Exception ex) when (ex is not OutOfMemoryException)
     {
         // The preflight could not reach the database to check compatibility. If degraded start is
         // enabled and the failure is transient connectivity, arm degraded mode (migrations are run
@@ -2401,7 +2405,6 @@ async Task RunPostGisPreflightCheckAsync()
     // honua-server#5916: the readiness reason and the log line carry the cause class
     // (connection-borrow-timeout, connection-refused, auth, connection-unavailable).
     if (result.IsTransientFailure
-        && !app.Environment.IsDevelopment()
         && TryArmDegradedStart(
             "PostGIS preflight",
             Honua.Infrastructure.Monitoring.StartupDatabasePreflight.DescribeCause(result),
@@ -2420,7 +2423,7 @@ async Task RunPostGisPreflightCheckAsync()
 
     var errorMessage = result.ErrorMessage ?? "Database compatibility check failed.";
 
-    if (!app.Environment.IsDevelopment())
+    if (failOnDatabaseStartupFailure)
     {
         Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(
             app.Logger,
