@@ -141,6 +141,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         FeatureExtent? comparisonExtent = null;
         QueryResult<Feature>? sample = null;
         string? readerFailure = null;
+        var censusDisagrees = false;
         // Compile once against one target metadata snapshot; all probes use this predicate.
         var queryTask = BuildCountQueryAsync(layer, cancellationToken);
 
@@ -212,6 +213,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             if (comparison.PopulationUnread)
             {
                 readerFailure ??= "Target geometry comparison did not cover the filtered population; manual review required.";
+                censusDisagrees = targetCount is not null;
             }
             else
             {
@@ -224,7 +226,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             Log.ProbeFailed(_logger, layer.SourceLayerId, "sample", ex);
         }
 
-        var count = BuildCountProbe(layer, options, targetCount, readerFailure);
+        var count = BuildCountProbe(layer, options, targetCount, readerFailure, censusDisagrees);
         var geometry = layer.SourceHasGeometry
             ? await BuildGeometryProbe(layer, sample, options, readerFailure, cancellationToken).ConfigureAwait(false)
             : new MigrationReconciliationGeometryProbe
@@ -371,8 +373,10 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             break;
         }
 
-        // A terminal flag does not prove the known population was read.
-        if (knownPopulation is { } expected && items.Count < expected)
+        // A terminal flag does not prove the known population was read. Extra unique
+        // rows, or a query total that contradicts the count, are the same disagreement.
+        if (knownPopulation is { } expected &&
+            (items.Count != expected || (total > 0 && total != expected)))
         {
             return (null, true);
         }
@@ -385,14 +389,15 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         LayerReconciliationLayerInput layer,
         LayerReconciliationOptions options,
         long? targetCount,
-        string? readerFailure)
+        string? readerFailure,
+        bool censusDisagrees = false)
     {
-        if (readerFailure is not null && targetCount is null)
+        if (censusDisagrees || (readerFailure is not null && targetCount is null))
         {
             return new MigrationReconciliationCountProbe
             {
                 SourceCount = layer.SourceFeatureCount,
-                TargetCount = null,
+                TargetCount = targetCount,
                 FilterMirror = layer.FilterMirror,
                 Classification = MigrationReconciliationClassifications.Fail,
                 Reason = readerFailure

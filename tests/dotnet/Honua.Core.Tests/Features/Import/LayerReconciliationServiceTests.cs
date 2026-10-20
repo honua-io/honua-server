@@ -568,6 +568,45 @@ public sealed class LayerReconciliationServiceTests
     }
 
     [UnitTest]
+    public async Task Reconcile_CensusLargerThanCount_DoesNotCertifyParity()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(
+                2,
+                ImmutableArray.Create(
+                    Feature.Create(1, [1, 1, 0, 0, 0], attributes),
+                    Feature.Create(2, [1, 1, 0, 0, 0], attributes)),
+                hasMoreResults: false)
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    TargetContainsOnlyImportedFeatures = true,
+                    SourceGeometry = new SourceGeometryCensus()
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+        var layer = result.Layers[0];
+
+        result.Classification.Should().Be("fail");
+        layer.Count.Classification.Should().Be("fail");
+        layer.Count.TargetCount.Should().Be(1);
+        layer.Geometry.Classification.Should().Be("fail");
+        layer.Geometry.Reason.Should().Contain("did not cover the filtered population");
+        layer.Count.Reason.Should().Contain("did not cover the filtered population");
+    }
+
+    [UnitTest]
     public async Task Reconcile_EmptyTerminalPage_DoesNotCertifyKnownPopulation()
     {
         var reader = new StubFeatureReader
