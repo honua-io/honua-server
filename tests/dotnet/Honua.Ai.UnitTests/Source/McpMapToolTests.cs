@@ -1512,10 +1512,11 @@ public sealed class McpMapToolTests
         ITemporaryFileService? temporaryFileService = null,
         AccessPolicy? accessPolicy = null,
         AccessPolicy? servicePolicy = null,
-        IPermissionResolver? permissionResolver = null)
+        IPermissionResolver? permissionResolver = null,
+        IMetadataV2GraphProvider? graphProvider = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider(accessPolicy, servicePolicy));
+        services.AddSingleton<IMetadataV2GraphProvider>(graphProvider ?? BuildGraphProvider(accessPolicy, servicePolicy));
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddOptions<RbacOptions>();
         if (permissionResolver is not null)
