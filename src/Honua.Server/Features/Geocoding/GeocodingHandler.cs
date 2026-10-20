@@ -167,10 +167,9 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, outFieldsError ?? "Invalid outFields parameter.");
         }
 
-        var countryCodes = GetValue(values, "countryCodes") ?? GetValue(values, "countryCode");
-        if (!GeocodeCountryCodes.TryParse(countryCodes, out _))
+        if (!TryParseCountryFilter(values, out var countryCodes, out var countryError))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, GeocodeCountryCodes.InvalidMessage);
+            return StandardErrorHelpers.CreateBadRequest(context, countryError!);
         }
 
         try
@@ -652,10 +651,9 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, outFieldsError ?? "Invalid outFields parameter.");
         }
 
-        var countryCodes = GetValue(values, "countryCodes") ?? GetValue(values, "countryCode");
-        if (!GeocodeCountryCodes.TryParse(countryCodes, out _))
+        if (!TryParseCountryFilter(values, out var countryCodes, out var countryError))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, GeocodeCountryCodes.InvalidMessage);
+            return StandardErrorHelpers.CreateBadRequest(context, countryError!);
         }
 
         try
@@ -999,6 +997,37 @@ internal sealed class GeocodingHandler(
         }
 
         return null;
+    }
+
+    private static bool TryParseCountryFilter(
+        IReadOnlyDictionary<string, StringValues> values,
+        out string? countryCodes,
+        out string? error)
+    {
+        error = null;
+        countryCodes = GetValue(values, "countryCodes");
+        if (countryCodes is not null)
+        {
+            if (GeocodeCountryCodes.TryParse(countryCodes, out _))
+            {
+                return true;
+            }
+
+            error = GeocodeCountryCodes.InvalidMessage;
+            return false;
+        }
+
+        var singularCountry = GetValue(values, "countryCode");
+        if (GeocodeCountryCodes.TryParseGeoServicesCountry(singularCountry, out _))
+        {
+            // External providers already receive the GeoServices spelling. The local
+            // provider resolves its own equivalent forms without changing that contract.
+            countryCodes = singularCountry;
+            return true;
+        }
+
+        error = "Invalid countryCode: expected a country name or two- or three-letter ISO country code.";
+        return false;
     }
 
     private static string? BuildForwardQuery(IReadOnlyDictionary<string, StringValues> values)

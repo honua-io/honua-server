@@ -108,6 +108,23 @@ public sealed class GeocodingEndpointTests
         using var validBatch = await client.GetAsync(batchUrl + "&countryCodes=us%2CCA");
         Assert.Equal(HttpStatusCode.OK, validBatch.StatusCode);
         Assert.Equal("us,CA", provider.LastBatchRequest?.CountryCodes);
+
+        using var alphaThree = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?address=380+New+York+St&countryCode=USA&f=json");
+        Assert.Equal(HttpStatusCode.OK, alphaThree.StatusCode);
+        Assert.Equal("USA", provider.LastForwardRequest?.CountryCodes);
+
+        using var fullName = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?address=380+New+York+St&countryCode=United+States&f=json");
+        Assert.Equal(HttpStatusCode.OK, fullName.StatusCode);
+        Assert.Equal("United States", provider.LastForwardRequest?.CountryCodes);
+
+        using var fullNameBatch = await client.GetAsync(batchUrl + "&countryCode=United+States");
+        Assert.Equal(HttpStatusCode.OK, fullNameBatch.StatusCode);
+        Assert.Equal("United States", provider.LastBatchRequest?.CountryCodes);
+
+        using var invalidSingular = await client.GetAsync(forwardUrl + "&countryCode=U1");
+        await invalidSingular.AssertGeoServicesErrorAsync(400);
     }
 
     // Regression (#1428): findAddressCandidates must reproject candidate locations to a

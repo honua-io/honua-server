@@ -129,9 +129,62 @@ public sealed class LocalPostgisGeocodeProviderIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ForwardGeocodeAsync_CountryCodes_MatchExistingImportedAlphaThreeAndFullNames()
+    {
+        await InsertReferenceAsync(
+            "101 Alias Lane, Redlands",
+            "101 alias lane redlands usa",
+            "101", "Alias Lane", "Redlands", "CA", "92373", "USA", "PointAddress",
+            -117.196, 34.056);
+        await InsertReferenceAsync(
+            "102 Alias Lane, Redlands",
+            "102 alias lane redlands united states",
+            "102", "Alias Lane", "Redlands", "CA", "92373", "United States", "PointAddress",
+            -117.197, 34.057);
+        await InsertReferenceAsync(
+            "101 Alias Lane, Toronto",
+            "101 alias lane",
+            "101", "Alias Lane", "Toronto", "ON", "M5H 2N2", "CAN", "PointAddress",
+            -79.3832, 43.6532);
+
+        foreach (var (number, expected) in new[]
+                 {
+                     ("101", "101 Alias Lane, Redlands"),
+                     ("102", "102 Alias Lane, Redlands")
+                 })
+        {
+            var request = new ForwardGeocodeRequest("unused", 1, 4326, CountryCodes: "US", InputType: GeocodeInputType.Structured)
+            {
+                StructuredAddress = new StructuredAddress
+                {
+                    AddressNumber = number,
+                    StreetName = "Alias Lane",
+                    Country = "United States"
+                }
+            };
+            var results = await _provider.ForwardGeocodeAsync(request);
+            Assert.Equal(expected, Assert.Single(results).Address);
+        }
+
+        var batch = await _provider.BatchGeocodeAsync(
+            new BatchGeocodeRequest(["101 Alias Lane", "102 Alias Lane"], CountryCodes: "US"));
+        Assert.Collection(batch,
+            first => Assert.Equal("101 Alias Lane, Redlands", first.Address),
+            second => Assert.Equal("102 Alias Lane, Redlands", second.Address));
+
+        var alphaThree = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("101 Alias Lane", 1, 4326, CountryCodes: "USA"));
+        Assert.Equal("101 Alias Lane, Redlands", Assert.Single(alphaThree).Address);
+
+        var fullName = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("102 Alias Lane", 1, 4326, CountryCodes: "United States"));
+        Assert.Equal("102 Alias Lane, Redlands", Assert.Single(fullName).Address);
+    }
+
+    [Fact]
     public async Task ForwardGeocodeAsync_MalformedCountryCodes_RefusesBeforeSearching()
     {
-        foreach (var filter in new[] { "USA", "US,", ",US", "U1", "üS", new string('U', 1025) })
+        foreach (var filter in new[] { "USA,", "US,", ",US", "U1", "üS", new string('U', 1025) })
         {
             var error = await Assert.ThrowsAsync<GeocodeRequestException>(() =>
                 _provider.ForwardGeocodeAsync(
