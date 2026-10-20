@@ -326,7 +326,16 @@ internal static partial class GeoservicesImportEndpoints
         try
         {
             jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
-            if (jobManager is IImportCoordinationHealth { CanAcceptNewJobs: false })
+            // Probe recovery before refusing: the cached health flags only clear through
+            // component operations, so gating first would keep admission closed after
+            // Redis returns (#4877). Still-unavailable coordination is refused below.
+            if (jobManager is IImportCoordinationHealth coordinationHealth &&
+                !await ImportCoordinationRecovery.TryAdmitAsync(
+                    coordinationHealth,
+                    jobManager.JobQueue,
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    cancellationToken).ConfigureAwait(false))
             {
                 await AdminResponseWriter.WriteErrorAsync(
                     context,
