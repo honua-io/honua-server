@@ -1426,3 +1426,46 @@ The console timing suggests roughly eleven minutes were spent in the largest cla
 logs cannot predict either child's final wall time. Actual complete child TRX and timing receipts
 remain necessary; the split alone does not establish qualification or close a capacity incident.
 The retained source/timing description is `wms-shard-capacity-20261018.json` beside this document.
+
+
+## October 2026 Core attachments capacity split (6451)
+
+The local normal FULL run at `cd64950dc097e36ffe550cf7839c949b246241b8`
+exhausted the Core Attachments and Records shard's 26-minute cap after 124
+reported passing executions. The runner recorded output 5 seconds before exit 124,
+classified capacity exhaustion and produced no final TRX. This is a failed gate.
+One trace measured 6551.588ms total, 133.456ms in request-logging middleware and
+47.838ms in its query handler; that sample points to cold pipeline/host overhead.
+It does not establish a product-query benchmark or a green trunk baseline.
+
+The original six selectors now have three children:
+
+| Child | Original classes | Inner / outer cap | Measured child duration |
+| --- | --- | --- | --- |
+| Core Attachments | AttachmentEndpointTests; PostgresAttachmentStoreTests |26m /36m | Not yet qualified |
+| Core Related Records and Limits | QueryRelatedRecordsEndpointTests; LimitsEnforcementTests |26m /36m | Not yet qualified |
+| Core OGC Features and CRS | OgcFeaturesEndpointTests; CrsTransformationCorrectnessTests |26m /36m | Not yet qualified |
+
+Each child retains every original source-path trigger and the original runner
+metadata. Earlier selectors are excluded from later children to make ownership
+disjoint even when a name contains multiple class substrings. The Core/API
+Governance partition includes all children. The executable coverage test
+independently checks the old selector's union through all 64
+truth combinations as well as actual declared class ownership.
+
+No per-test assertion, tier filter, SQL/raster deadline, shard budget or runtime
+behavior changes. The source-bound roster grows from 123 to 127 shards; release consumers use
+the existing dynamic inventory. Historical tables above retain their original names and
+measurements. Actual completed child receipts and a complete integrated normal
+gate remain required; the split is not runtime or milestone qualification.
+
+The same failed run also exhausted Core Endpoints after 2462 seconds against its
+41-minute inner cap, with 98 reported passes and output three seconds before
+termination. Its missing final TRX is a failure. That original selector now has
+three method-level children: query methods, mutation methods, and the remaining
+metadata/rendering methods. The complement also owns future methods. Each child
+retains the original 41-minute inner and 51-minute outer caps and every source
+trigger. The Core/API partition validates at method granularity, and a separate
+regression compares these children with the original endpoint selector, so no
+original runnable method can be lost or duplicated. Fresh
+completed child timings remain unqualified until the integrated normal gate runs.
