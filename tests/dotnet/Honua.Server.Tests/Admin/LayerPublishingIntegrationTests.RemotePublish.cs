@@ -167,8 +167,12 @@ public sealed partial class LayerPublishingIntegrationTests
         progress.RowsTotal.Should().Be(2);
         progress.RowsMaterialized.Should().Be(2);
         progress.LayerId.Should().BeGreaterThan(0);
+        var metadataRevision = progress.MetadataRevision
+            ?? throw new InvalidOperationException("Completed publication did not persist its metadata revision.");
+        metadataRevision.Should().BeGreaterThan(0);
         _layerId = progress.LayerId;
-        completed.CommittedEffectReferences.Should().Contain($"layer-publish:{_layerId}:2:2");
+        completed.CommittedEffectReferences.Should().Contain(
+            $"layer-publish:{_layerId}:2:2:{metadataRevision}");
         (await GetManagedStoreRowCountAsync(_layerId!.Value)).Should().Be(2);
     }
 }

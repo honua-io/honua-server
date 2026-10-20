@@ -9,6 +9,7 @@ using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -28,8 +29,9 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly AttachmentLimits? _attachmentLimits;
-    private readonly string _tableName;
-    private readonly string _importCleanupTableName;
+    private readonly string _configuredSchema;
+    private readonly string _canonicalSchema;
+    private readonly PostgresAttachmentMigrationContract? _migrationContract;
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -37,7 +39,9 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         ILogger<PostgresAttachmentStore> logger,
         string? schemaName = null,
         IAttachmentOrphanLedger? orphanLedger = null,
-        AttachmentLimits? attachmentLimits = null)
+        AttachmentLimits? attachmentLimits = null,
+        PostgresAttachmentMigrationContract? migrationContract = null,
+        string? canonicalSchemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         // Null is a database-only host. Feature-store resolution includes this store for
@@ -46,8 +50,12 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _orphanLedger = orphanLedger;
         _attachmentLimits = attachmentLimits;
-        _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
-        _importCleanupTableName = Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", schemaName);
+        _ = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
+        _configuredSchema = string.IsNullOrWhiteSpace(schemaName)
+            ? PostgresSchemaConfiguration.DefaultMetadataSchema : schemaName;
+        _canonicalSchema = string.IsNullOrWhiteSpace(canonicalSchemaName) ? _configuredSchema : canonicalSchemaName;
+        _ = SchemaSearchPath.ValidateAndQuote(_canonicalSchema);
+        _migrationContract = migrationContract;
     }
 
     /// <summary>
@@ -57,6 +65,28 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     private ICloudFileStorage RequireFileStorage()
         => _fileStorage ?? throw new InvalidOperationException(
             "Object storage is not configured. Register ICloudFileStorage before using attachment blobs.");
+
+    private async Task<(string Attachments, string Cleanup)> ResolveTablesAsync(
+        NpgsqlConnection connection, NpgsqlTransaction? transaction, bool requireImportCleanup,
+        CancellationToken cancellationToken)
+    {
+        var contract = _migrationContract ?? throw new InvalidOperationException("Attachment migration identities were not supplied by the host.");
+        var physical = await PostgresAttachmentSchema.ResolveAsync(
+            connection, _canonicalSchema, contract, transaction, requireImportCleanup: requireImportCleanup,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(_configuredSchema, _canonicalSchema, StringComparison.Ordinal))
+        {
+            var overridden = await PostgresAttachmentSchema.ResolveAsync(
+                connection, _configuredSchema, contract, transaction, requireImportCleanup: requireImportCleanup,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(physical, overridden, StringComparison.Ordinal))
+            {
+                throw new AttachmentSchemaBindingException("The explicit attachment schema resolves to a different canonical physical authority.");
+            }
+        }
+        return (Infrastructure.SchemaSearchPath.QualifyTable("attachments", physical),
+            Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", physical));
+    }
 
     /// <summary>
     /// Records a storage object that outlived its metadata row, so the divergence is
@@ -94,12 +124,13 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
     public async Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
     {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
             SELECT id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords
-            FROM {_tableName}
+            FROM {tables.Attachments}
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3";
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -117,13 +148,14 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
     public async Task<Attachment[]> ListAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
             SELECT id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords
-            FROM {_tableName}
+            FROM {tables.Attachments}
             WHERE layer_id = $1 AND feature_id = $2
             ORDER BY created_at DESC";
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -148,13 +180,14 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
     public async Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
     {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            UPDATE {_tableName}
+            UPDATE {tables.Attachments}
             SET filename = $4, content_type = $5, size = $6, storage_path = $7, keywords = $8
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -181,13 +214,14 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         string? keywords,
         CancellationToken cancellationToken = default)
     {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            UPDATE {_tableName}
+            UPDATE {tables.Attachments}
             SET keywords = $4
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -320,12 +354,13 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
     {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            DELETE FROM {_tableName}
+            DELETE FROM {tables.Attachments}
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3
             RETURNING storage_path";
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -528,6 +563,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         var limits = _attachmentLimits ?? throw new InvalidOperationException("Attachment limits are not configured.");
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, transaction, false, cancellationToken).ConfigureAwait(false);
 
         // hashtextextended keeps the lock in the bigint form. Feature ids do not fit the
         // two-int overload, and the prefix does not share the feature-edit lock key.
@@ -545,7 +581,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         long totalSize;
         await using (var countCommand = new NpgsqlCommand($"""
             SELECT COUNT(*)::bigint, COALESCE(SUM(size), 0)::bigint
-            FROM {_tableName}
+            FROM {tables.Attachments}
             WHERE layer_id = $1 AND feature_id = $2
             """, connection, transaction))
         {
@@ -588,8 +624,9 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         Attachment attachment,
         CancellationToken cancellationToken)
     {
+        var tables = await ResolveTablesAsync(connection, transaction, true, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
+            INSERT INTO {tables.Attachments} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'honua')
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 

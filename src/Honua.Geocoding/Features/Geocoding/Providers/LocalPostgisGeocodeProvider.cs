@@ -82,10 +82,23 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
             };
         }
 
+        if (!GeocodeCountryCodes.TryParse(request.CountryCodes, out var countryCodes))
+        {
+            if (!GeocodeCountryCodes.TryParseGeoServicesCountry(request.CountryCodes, out var singleCode) || singleCode is null)
+            {
+                throw new GeocodeRequestException(GeocodeCountryCodes.InvalidMessage)
+                {
+                    ParameterName = "countryCodes"
+                };
+            }
+
+            countryCodes = [singleCode];
+        }
+
         // Structured input contributes discrete components; otherwise the single-line query is used.
-        var searchText = ComposeSearchText(request);
+        var searchText = ComposeSearchText(request, countryCodes);
         var tokens = Tokenize(searchText);
-        if (tokens.Count == 0)
+        if (tokens.Count == 0 && countryCodes is null)
         {
             return [];
         }
@@ -101,6 +114,15 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         {
             conditions.Add($"search_text LIKE @t{i}");
             command.Parameters.AddWithValue($"t{i}", "%" + EscapeLike(tokens[i]) + "%");
+        }
+
+        if (countryCodes is not null)
+        {
+            // Imports preserve the supplied country value, including alpha-3 codes
+            // and full names. Match only unambiguous equivalent representations,
+            // before ordering and LIMIT.
+            conditions.Add("upper(country) = ANY(@country_codes)");
+            command.Parameters.AddWithValue("country_codes", GeocodeCountryCodes.StoredRepresentations(countryCodes));
         }
 
         var whereClause = string.Join(" AND ", conditions);
@@ -287,7 +309,7 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         Neighborhood = GetStringOrNull(reader, "neighborhood")
     };
 
-    private static string ComposeSearchText(ForwardGeocodeRequest request)
+    private static string ComposeSearchText(ForwardGeocodeRequest request, string[]? countryCodes)
     {
         if (request.StructuredAddress is { } structured)
         {
@@ -301,7 +323,12 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
                 structured.City,
                 structured.Region,
                 structured.PostalCode,
-                structured.Country
+                // The country predicate handles equivalent imported forms. Requiring
+                // the request's spelling as a text token would discard a row that
+                // stores the same country as a different code or full name.
+                countryCodes is not null && GeocodeCountryCodes.Matches(structured.Country, countryCodes)
+                    ? null
+                    : structured.Country
             }
             .Where(static p => !string.IsNullOrWhiteSpace(p));
 

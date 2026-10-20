@@ -117,6 +117,25 @@ public sealed class LayerPublishWorkerControlsTests
     }
 
     [UnitTest]
+    public async Task Execute_CommittedReceiptRecoversExactPublicationRevisionAfterProgressFailure()
+    {
+        using var fixture = new Fixture { RejectTerminal = true };
+        fixture.Publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await LayerSnapshotProgressScope.Current!.ReportAsync(7, 7, CancellationToken.None);
+                return Summary(metadataRevision: 11);
+            });
+
+        var result = await fixture.ExecuteAsync();
+        Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
+        Assert.Equal("layer-publish:23:7:7:11", fixture.Receipt);
+        var recovered = LayerPublishJobService.ProjectExecutionOutcome(fixture.Progress, CompletedJob(fixture.Receipt!));
+        Assert.Equal(ProgressStatus.Completed, recovered.Status);
+        Assert.Equal(11, recovered.MetadataRevision);
+    }
+
+    [UnitTest]
     public async Task Execute_NotificationThrowsAfterCommit_DoesNotRetryPublication()
     {
         using var fixture = new Fixture();
@@ -137,6 +156,8 @@ public sealed class LayerPublishWorkerControlsTests
     [InlineData("layer-publish:23:-1:7", null, 1, 9)]
     [InlineData("layer-publish:0:7:7", null, 1, 9)]
     [InlineData("layer-publish:23:7", null, 1, 9)]
+    [InlineData("layer-publish:23:7:7:0", null, 1, 9)]
+    [InlineData("layer-publish:23:7:7:bad", null, 1, 9)]
     public void Poll_RecoversOnlyRecordedValidCounts_AndKeepsLegacyUnknownCounts(string receipt, int? layerId, long materialized, long total)
     {
         var progress = new LayerPublishJobProgress
@@ -152,6 +173,26 @@ public sealed class LayerPublishWorkerControlsTests
         Assert.Equal(layerId, recovered.LayerId);
         Assert.Equal(materialized, recovered.RowsMaterialized);
         Assert.Equal(total, recovered.RowsTotal);
+    }
+
+    [UnitTest]
+    public void Receipt_LayerOnlyRevisionIsMarkedWithoutAdmittingOldMalformedNumericPair()
+    {
+        var receipt = LayerPublishCompletionReceipt.Create(23, snapshot: null, metadataRevision: 11);
+        Assert.Equal("layer-publish:23:r11", receipt);
+        var progress = new LayerPublishJobProgress
+        {
+            OperationId = "publish",
+            Status = ProgressStatus.Processing,
+            RowsMaterialized = 1,
+            RowsTotal = 9,
+            StartedAt = DateTimeOffset.UtcNow,
+        };
+        var recovered = LayerPublishJobService.ProjectExecutionOutcome(progress, CompletedJob(receipt));
+        Assert.Equal(23, recovered.LayerId);
+        Assert.Equal(11, recovered.MetadataRevision);
+        Assert.Equal(1, recovered.RowsMaterialized);
+        Assert.Equal(9, recovered.RowsTotal);
     }
 
     private static ExecutionJobRecord CompletedJob(string receipt) => new()
@@ -170,7 +211,7 @@ public sealed class LayerPublishWorkerControlsTests
         CommittedEffectReferences = [receipt],
     };
 
-    private static PublishedLayerSummary Summary() => new()
+    private static PublishedLayerSummary Summary(long? metadataRevision = null) => new()
     {
         LayerId = 23,
         LayerName = "Roads",
@@ -178,6 +219,7 @@ public sealed class LayerPublishWorkerControlsTests
         Table = "roads",
         GeometryType = "Point",
         ServiceName = "roads",
+        MetadataRevision = metadataRevision,
     };
 
     private sealed class Fixture : IDisposable

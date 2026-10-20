@@ -128,6 +128,44 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
         result.Items.Should().OnlyContain(item => !item.Attributes.ContainsKey("secret"));
     }
 
+    [IntegrationTest]
+    public async Task QueryAsync_LiteralWildcardIsEmpty_ExpandedNamesKeepVisibleUnmaskedFields()
+    {
+        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("secret"));
+        var reader = CreateReader();
+
+        // The provider treats both a literal "*" and an explicit empty
+        // projection as no matching schema attributes. It still returns the
+        // mandatory objectid identity; adapters must expand the wildcard.
+        var literal = await reader.QueryAsync(1, new FeatureQuery { OutFields = ["*"], Limit = 10 });
+        literal.Items.Should().HaveCount(4);
+        foreach (var item in literal.Items)
+        {
+            item.Attributes.Keys.Should().Equal(FieldNames.ObjectId);
+        }
+        var empty = await reader.QueryAsync(1, new FeatureQuery
+        {
+            OutFields = ImmutableArray<string>.Empty,
+            Limit = 10
+        });
+        empty.Items.Should().HaveCount(4);
+        foreach (var item in empty.Items)
+        {
+            item.Attributes.Keys.Should().Equal(FieldNames.ObjectId);
+        }
+
+        var expanded = await reader.QueryAsync(1, new FeatureQuery
+        {
+            OutFields = ["id", "tenant", "secret"],
+            Limit = 10
+        });
+        expanded.Items.Should().HaveCount(4).And.OnlyContain(item =>
+            item.Attributes.ContainsKey("id") && item.Attributes.ContainsKey("tenant") &&
+            !item.Attributes.ContainsKey("secret"));
+        expanded.Items[0].Attributes["tenant"].Should().Be("a");
+    }
+
     private static async Task<(long? Count, ImmutableArray<Feature> Items)> ReadAsync(
         PostgresStorageMappedFeatureReader reader, string operation)
     {

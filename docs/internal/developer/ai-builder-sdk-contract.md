@@ -40,11 +40,36 @@ The HTTP endpoint for these MCP calls is `POST /mcp` using JSON-RPC 2.0.
 | `honua://jobs/{jobId}` | jobs | Functional job status resource. | Job read through shared geoprocessing service |
 | `honua://jobs/{jobId}/results` | artifacts/jobs | Functional result package resource. | Job result read through shared geoprocessing service |
 | `honua://jobs/{jobId}/report` | artifacts | Functional when analysis reporting is registered. | Report read through reporting service |
-| `honua://published-services/{serviceId}` | services | Functional when MCP promotion surface stores are registered. | `PublishedService` / `Read` |
+| `honua://published-services/{serviceId}` | services | Reads an ordinary publication from the Metadata v2 catalog or a managed promotion from its canonical store. | `PublishedService` / `Read`; catalog publications also require tenant visibility and service/resource metadata access |
 | `honua://deployments/{deploymentId}` | deployments | Functional when MCP promotion surface stores are registered. | `Deployment` / `Read` |
 | `honua://map-packages/{packageId}` | packages | Functional when MCP promotion surface stores are registered. | `Package` / `Read` |
 | `honua://app-packages/{packageId}` | packages | Functional when MCP promotion surface stores are registered. | `Package` / `Read` |
 | `honua://promotion-surface` | services/deployments/packages | Functional index when MCP promotion surface stores are registered. | Store-backed read |
+
+## Published service readback
+
+Consume the exact `serviceUri` returned by `honua_publish_service` or a completed
+publication status. The URI contains one percent-encoded service identity; do not
+split or decode that identity and reconstruct the URI. Treat a queued publication's resulting service identity as pending until its
+maintained status surface reports completion.
+If the committed catalog identity is missing or ambiguous, status reports
+`readbackStatus: "Unavailable"`; the publication must not be repeated to repair a
+readback failure.
+
+Ordinary catalog publications use `sourceKind: "MetadataV2Graph"` and expose the
+persisted `metadataServiceId`. Their `layerIds` are public layer indices, not
+physical storage-layer handles. `servingLayerIds`, `featureServerEnabled`, and
+`serving` describe current availability separately from publication existence:
+a stopped service remains readable as metadata, while the
+`honua://published-services` index lists only currently serving catalog services.
+Tenant visibility and service/resource metadata policies apply to both reads.
+
+Catalog timestamps are present only when persisted; clients must allow absent
+`publishedAt` and `updatedAt`. The ETag comes from the graph snapshot. Promotion
+records retain their stored timestamps, ETags and provenance; ordinary table
+publication does not invent a promotion intent or result package. A readable
+catalog publication and promotion record sharing an identity are rejected as
+ambiguous until their equivalence is established by a persisted binding.
 
 ## Fixture Cases
 

@@ -17,9 +17,10 @@ internal sealed partial class PostgresAttachmentStore
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        var tables = await ResolveTablesAsync(connection, transaction, false, cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
-            DELETE FROM {_tableName}
+            DELETE FROM {tables.Attachments}
             WHERE layer_id = $1 AND feature_id = $2
             RETURNING storage_path";
 

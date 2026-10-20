@@ -67,6 +67,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
                 GeometryType = "Polygon",
                 Srid = 4326,
                 ServiceName = "default",
+                MetadataRevision = 42,
             });
         _publishing.ValidateTableForPublishAsync(
                 Arg.Any<string>(),
@@ -84,7 +85,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
         _graphProvider = Substitute.For<IMetadataV2GraphProvider>();
         _graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
             new MetadataV2GraphSnapshot(
-                new MetadataV2Graph { Revision = 42 },
+                new MetadataV2Graph { Revision = 99 },
                 "\"publish-matrix-etag\"",
                 DateTimeOffset.UtcNow));
 
@@ -293,7 +294,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
     {
         await _publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        await _graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
+        await _graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
     }
 
     private async Task AssertZeroActuationAsync()

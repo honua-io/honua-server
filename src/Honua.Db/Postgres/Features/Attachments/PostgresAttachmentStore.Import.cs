@@ -15,7 +15,8 @@ internal sealed partial class PostgresAttachmentStore
     public async Task<bool> HasLegacyAttachmentsAsync(int layerId, CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {_tableName} WHERE layer_id = $1 AND import_source IS NULL AND attachment_origin IS NULL)", connection);
+        var tables = await ResolveTablesAsync(connection, null, true, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {tables.Attachments} WHERE layer_id = $1 AND import_source IS NULL AND attachment_origin IS NULL)", connection);
         command.Parameters.AddWithValue(layerId);
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
     }
@@ -44,16 +45,17 @@ internal sealed partial class PostgresAttachmentStore
         {
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            var tables = await ResolveTablesAsync(connection, transaction, true, cancellationToken).ConfigureAwait(false);
             // Serialize source identity updates, including the case where no row exists yet.
             await using (var lease = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", connection, transaction))
             {
-                lease.Parameters.AddWithValue($"honua.attachment-import:{_tableName}:{layerId}");
+                lease.Parameters.AddWithValue($"honua.attachment-import:{tables.Attachments}:{layerId}");
                 await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
             await using (var retire = new NpgsqlCommand($"""
-                INSERT INTO {_importCleanupTableName} (storage_path, layer_id, feature_id)
-                SELECT storage_path, layer_id, feature_id FROM {_tableName}
+                INSERT INTO {tables.Cleanup} (storage_path, layer_id, feature_id)
+                SELECT storage_path, layer_id, feature_id FROM {tables.Attachments}
                 WHERE layer_id = $1 AND import_source = $2 AND import_parent_id = $3 AND import_attachment_id = $4
                   AND storage_path <> $5
                 ON CONFLICT (storage_path) DO NOTHING
@@ -68,7 +70,7 @@ internal sealed partial class PostgresAttachmentStore
             }
 
             await using (var upsert = new NpgsqlCommand($"""
-                INSERT INTO {_tableName}
+                INSERT INTO {tables.Attachments}
                     (layer_id, feature_id, filename, content_type, size, storage_path, keywords, attachment_origin,
                      import_source, import_parent_id, import_attachment_id, import_generation)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'geoservices', $8, $9, $10, $11)
@@ -109,8 +111,9 @@ internal sealed partial class PostgresAttachmentStore
             try
             {
                 await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(CancellationToken.None).ConfigureAwait(false);
+                var tables = await ResolveTablesAsync(connection, null, true, CancellationToken.None).ConfigureAwait(false);
                 await using var queue = new NpgsqlCommand($"""
-                    INSERT INTO {_importCleanupTableName} (storage_path, layer_id, feature_id)
+                    INSERT INTO {tables.Cleanup} (storage_path, layer_id, feature_id)
                     VALUES ($1, $2, $3) ON CONFLICT (storage_path) DO NOTHING
                     """, connection);
                 queue.Parameters.AddWithValue(path);
@@ -156,14 +159,15 @@ internal sealed partial class PostgresAttachmentStore
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, transaction, true, cancellationToken).ConfigureAwait(false);
         await using (var lease = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", connection, transaction))
         {
-            lease.Parameters.AddWithValue($"honua.attachment-import:{_tableName}:{layerId}");
+            lease.Parameters.AddWithValue($"honua.attachment-import:{tables.Attachments}:{layerId}");
             await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await using (var remap = new NpgsqlCommand($"""
-            UPDATE {_tableName} AS attachment
+            UPDATE {tables.Attachments} AS attachment
             SET feature_id = mapped.target_id
             FROM unnest($2::bigint[], $3::bigint[]) AS mapped(parent_id, target_id)
             WHERE attachment.layer_id = $1
@@ -178,7 +182,7 @@ internal sealed partial class PostgresAttachmentStore
         // A parent that was not loaded still carries its pre-swap feature id. When that id was
         // assigned to a different loaded feature, leave the attachment off every live feature.
         await using (var detach = new NpgsqlCommand($"""
-            UPDATE {_tableName} AS attachment
+            UPDATE {tables.Attachments} AS attachment
             SET feature_id = -attachment.id
             WHERE attachment.layer_id = $1
               AND attachment.import_parent_id IS NOT NULL
@@ -209,19 +213,20 @@ internal sealed partial class PostgresAttachmentStore
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var tables = await ResolveTablesAsync(connection, transaction, true, cancellationToken).ConfigureAwait(false);
         await using (var lease = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", connection, transaction))
         {
-            lease.Parameters.AddWithValue($"honua.attachment-import:{_tableName}:{layerId}");
+            lease.Parameters.AddWithValue($"honua.attachment-import:{tables.Attachments}:{layerId}");
             await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await using (var retire = new NpgsqlCommand($"""
             WITH retired AS (
-                DELETE FROM {_tableName}
+                DELETE FROM {tables.Attachments}
                 WHERE layer_id = $1 AND import_source IS NOT NULL AND import_generation <> $2
                 RETURNING storage_path, layer_id, feature_id
             )
-            INSERT INTO {_importCleanupTableName} (storage_path, layer_id, feature_id)
+            INSERT INTO {tables.Cleanup} (storage_path, layer_id, feature_id)
             SELECT storage_path, layer_id, feature_id FROM retired
             ON CONFLICT (storage_path) DO NOTHING
             """, connection, transaction))
@@ -232,7 +237,7 @@ internal sealed partial class PostgresAttachmentStore
         }
 
         bool hasUntracked;
-        await using (var legacy = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {_tableName} WHERE layer_id = $1 AND import_source IS NULL AND attachment_origin IS NULL)", connection, transaction))
+        await using (var legacy = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {tables.Attachments} WHERE layer_id = $1 AND import_source IS NULL AND attachment_origin IS NULL)", connection, transaction))
         {
             legacy.Parameters.AddWithValue(layerId);
             hasUntracked = await legacy.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
@@ -248,8 +253,9 @@ internal sealed partial class PostgresAttachmentStore
         try
         {
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(CancellationToken.None).ConfigureAwait(false);
+            var tables = await ResolveTablesAsync(connection, null, true, CancellationToken.None).ConfigureAwait(false);
             var pending = new List<(string Path, long FeatureId)>();
-            await using (var command = new NpgsqlCommand($"SELECT storage_path, feature_id FROM {_importCleanupTableName} WHERE layer_id = $1", connection))
+            await using (var command = new NpgsqlCommand($"SELECT storage_path, feature_id FROM {tables.Cleanup} WHERE layer_id = $1", connection))
             {
                 command.Parameters.AddWithValue(layerId);
                 await using var reader = await command.ExecuteReaderAsync(CancellationToken.None).ConfigureAwait(false);
@@ -263,7 +269,7 @@ internal sealed partial class PostgresAttachmentStore
             {
                 try
                 {
-                    await using var referenced = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {_tableName} WHERE storage_path = $1)", connection);
+                    await using var referenced = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {tables.Attachments} WHERE storage_path = $1)", connection);
                     referenced.Parameters.AddWithValue(item.Path);
                     var isReferenced = await referenced.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false) is true;
                     if (!isReferenced)
@@ -271,7 +277,7 @@ internal sealed partial class PostgresAttachmentStore
                         await RequireFileStorage().DeleteAsync(item.Path, CancellationToken.None).ConfigureAwait(false);
                     }
 
-                    await using var remove = new NpgsqlCommand($"DELETE FROM {_importCleanupTableName} WHERE storage_path = $1", connection);
+                    await using var remove = new NpgsqlCommand($"DELETE FROM {tables.Cleanup} WHERE storage_path = $1", connection);
                     remove.Parameters.AddWithValue(item.Path);
                     await remove.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
                 }
@@ -284,7 +290,7 @@ internal sealed partial class PostgresAttachmentStore
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            AttachmentLog.AttachmentCleanupFailed(_logger, ex, _importCleanupTableName);
+            AttachmentLog.AttachmentCleanupFailed(_logger, ex, "import_attachment_cleanup");
         }
     }
 }

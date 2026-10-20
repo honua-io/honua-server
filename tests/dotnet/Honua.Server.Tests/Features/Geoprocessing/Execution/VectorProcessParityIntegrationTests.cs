@@ -18,6 +18,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
 using Honua.Server.Features.Orchestration;
+using Honua.Server.Tests.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -65,6 +66,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
+        await McpPublicationFixtureSetup.InstallPromotionStoresAsync(fixture);
         var table = $"gp_result_{Guid.NewGuid():N}";
         var service = $"gp_result_{Guid.NewGuid():N}";
         Guid connectionId = Guid.Empty;
