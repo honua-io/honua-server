@@ -711,20 +711,21 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
             var jobId = acceptedContent.RootElement.GetProperty("jobId").GetString()!;
             coordination.Redis.ListContents("geoservices:import:queue").Should().Equal(jobId);
 
-            var worker = ActivatorUtilities.CreateInstance<GeoservicesImportBackgroundService>(isolatedFixture.Services);
-            await worker.StartAsync(CancellationToken.None);
-            try
+            using (var worker = ActivatorUtilities.CreateInstance<GeoservicesImportBackgroundService>(isolatedFixture.Services))
             {
-                using var completed = await WaitForJobStatusAsync(
-                    isolatedFixture.Client,
-                    jobId,
-                    GeoservicesImportStatus.Completed,
-                    TimeSpan.FromSeconds(30));
-            }
-            finally
-            {
-                await worker.StopAsync(CancellationToken.None);
-                worker.Dispose();
+                await worker.StartAsync(CancellationToken.None);
+                try
+                {
+                    using var completed = await WaitForJobStatusAsync(
+                        isolatedFixture.Client,
+                        jobId,
+                        GeoservicesImportStatus.Completed,
+                        TimeSpan.FromSeconds(30));
+                }
+                finally
+                {
+                    await worker.StopAsync(CancellationToken.None);
+                }
             }
 
             importService.ImportRequests.Should().ContainSingle().Which.JobId.Should().Be(jobId);

@@ -356,16 +356,17 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             var jobId = await GetJobIdAsync(accepted);
             coordination.Redis.ListContents("geoserver:import:queue").Should().Equal(jobId);
 
-            var worker = ActivatorUtilities.CreateInstance<GeoServerImportBackgroundService>(isolatedFixture.Services);
-            await worker.StartAsync(CancellationToken.None);
-            try
+            using (var worker = ActivatorUtilities.CreateInstance<GeoServerImportBackgroundService>(isolatedFixture.Services))
             {
-                using var completed = await WaitForJobStatusAsync(isolatedFixture.Client, jobId, "Completed", TimeSpan.FromSeconds(30));
-            }
-            finally
-            {
-                await worker.StopAsync(CancellationToken.None);
-                worker.Dispose();
+                await worker.StartAsync(CancellationToken.None);
+                try
+                {
+                    using var completed = await WaitForJobStatusAsync(isolatedFixture.Client, jobId, "Completed", TimeSpan.FromSeconds(30));
+                }
+                finally
+                {
+                    await worker.StopAsync(CancellationToken.None);
+                }
             }
 
             importService.ImportRequests.Should().ContainSingle().Which.JobId.Should().Be(jobId);
