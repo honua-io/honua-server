@@ -121,6 +121,11 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
             return false;
         }
 
+        var sourceJobs = services.GetService<IExecutionJobStore>();
+        var processCatalog = services.GetService<IProcessCatalog>();
+        var sourceProof = sourceJobs is not null && processCatalog is not null
+            ? new CommittedSinkPublicationSources(sourceJobs, processCatalog)
+            : null;
         executor = new ServicePublishExecutor(
             publishingService!,
             connectionResolver!,
@@ -129,8 +134,7 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
             services.GetService<IMcpNotificationPublisher>(),
             services.GetService<ILayerPublishJobs>(),
             services.GetService<IPublishedServiceStore>(),
-            services.GetService<IExecutionJobStore>(),
-            services.GetService<IProcessCatalog>());
+            sourceProof);
         unavailable = null;
         return true;
     }

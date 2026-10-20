@@ -4,8 +4,6 @@
 using System.Globalization;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
@@ -36,8 +34,7 @@ internal sealed class ServicePublishExecutor
     private readonly IMcpNotificationPublisher? _notifications;
     private readonly ILayerPublishJobs? _jobs;
     private readonly IPublishedServiceStore? _publishedServices;
-    private readonly IExecutionJobStore? _sourceJobs;
-    private readonly IProcessCatalog? _processCatalog;
+    private readonly CommittedSinkPublicationSources? _sourceProof;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ServicePublishExecutor"/>.
@@ -52,8 +49,7 @@ internal sealed class ServicePublishExecutor
     /// directly; production composition always supplies it.
     /// </param>
     /// <param name="publishedServices">Optional persisted service store for promotion identity checks.</param>
-    /// <param name="sourceJobs">Durable source jobs for committed sink publication.</param>
-    /// <param name="processCatalog">Catalog for verified source result-package projection.</param>
+    /// <param name="sourceProof">Durable source jobs and result-package catalog for committed sink publication.</param>
     public ServicePublishExecutor(
         ILayerPublishingService publishingService,
         ISecureConnectionResolver connectionResolver,
@@ -62,8 +58,7 @@ internal sealed class ServicePublishExecutor
         IMcpNotificationPublisher? notifications = null,
         ILayerPublishJobs? jobs = null,
         IPublishedServiceStore? publishedServices = null,
-        IExecutionJobStore? sourceJobs = null,
-        IProcessCatalog? processCatalog = null)
+        CommittedSinkPublicationSources? sourceProof = null)
     {
         ArgumentNullException.ThrowIfNull(publishingService);
         ArgumentNullException.ThrowIfNull(connectionResolver);
@@ -76,8 +71,7 @@ internal sealed class ServicePublishExecutor
         _notifications = notifications;
         _jobs = jobs;
         _publishedServices = publishedServices;
-        _sourceJobs = sourceJobs;
-        _processCatalog = processCatalog;
+        _sourceProof = sourceProof;
     }
 
     /// <inheritdoc />
@@ -107,7 +101,7 @@ internal sealed class ServicePublishExecutor
         }
 
         if (sourceJobId is null || sourceArtifactId is null ||
-            _sourceJobs is null || _processCatalog is null ||
+            _sourceProof is null ||
             !Guid.TryParse(request.ConnectionId, out var connectionId) || connectionId == Guid.Empty ||
             string.IsNullOrWhiteSpace(context.PrincipalId) ||
             (claimedPublisher is not null &&
@@ -130,8 +124,8 @@ internal sealed class ServicePublishExecutor
             isAdministrator = wasAdministrator;
         }
 
-        var verified = await CommittedSinkPublicationVerifier.VerifyAsync(
-            _sourceJobs, _processCatalog, sourceJobId, sourceArtifactId, connectionId,
+        var verified = await _sourceProof.VerifyAsync(
+            sourceJobId, sourceArtifactId, connectionId,
             GetRequired(request, "schema"), GetRequired(request, "table"), claimedFingerprint,
             context.TenantId, context.PrincipalId, isAdministrator,
             expectedSourceOwnerActorId: null, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -266,11 +260,9 @@ internal sealed class ServicePublishExecutor
         {
             if (publishRequest.CommittedSinkPublication is { } claim)
             {
-                publishRequest.CommittedSinkPublication = await CommittedSinkPublicationVerifier.RevalidateAsync(
-                    _sourceJobs ?? throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
-                        "Committed sink source evidence is unavailable."),
-                    _processCatalog ?? throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
-                        "Committed sink process evidence is unavailable."),
+                publishRequest.CommittedSinkPublication = await (_sourceProof ??
+                    throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                        "Committed sink source evidence is unavailable.")).RevalidateAsync(
                     claim, publishRequest.ConnectionId ?? Guid.Empty, publishRequest.Schema, publishRequest.Table,
                     publishRequest.ConnectionEndpointFingerprint, context.TenantId, cancellationToken)
                     .ConfigureAwait(false);

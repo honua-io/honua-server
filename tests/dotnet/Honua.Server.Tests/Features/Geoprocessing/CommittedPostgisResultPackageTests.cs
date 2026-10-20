@@ -173,8 +173,7 @@ public sealed class CommittedPostgisResultPackageTests
             Substitute.For<ISecureConnectionResolver>(),
             Substitute.For<IMetadataV2GraphProvider>(),
             TimeProvider.System,
-            sourceJobs: jobs,
-            processCatalog: Substitute.For<IProcessCatalog>());
+            sourceProof: new CommittedSinkPublicationSources(jobs, Substitute.For<IProcessCatalog>()));
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["schema"] = "results",

@@ -11,6 +11,48 @@ using Honua.Geoprocessing;
 
 namespace Honua.Server.Features.Operations;
 
+/// <summary>The two durable inputs required to authenticate a committed sink result.</summary>
+internal sealed class CommittedSinkPublicationSources
+{
+    private readonly IExecutionJobStore _jobStore;
+    private readonly IProcessCatalog _processCatalog;
+
+    internal CommittedSinkPublicationSources(IExecutionJobStore jobStore, IProcessCatalog processCatalog)
+    {
+        _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
+        _processCatalog = processCatalog ?? throw new ArgumentNullException(nameof(processCatalog));
+    }
+
+    internal Task<VerifiedCommittedSinkPublication> VerifyAsync(
+        string sourceJobId,
+        string sourceArtifactId,
+        Guid connectionId,
+        string schema,
+        string table,
+        string? endpointFingerprint,
+        string? tenantId,
+        string publisherActorId,
+        bool publisherIsAdministrator,
+        string? expectedSourceOwnerActorId,
+        CancellationToken cancellationToken)
+        => CommittedSinkPublicationVerifier.VerifyAsync(
+            _jobStore, _processCatalog, sourceJobId, sourceArtifactId, connectionId,
+            schema, table, endpointFingerprint, tenantId, publisherActorId,
+            publisherIsAdministrator, expectedSourceOwnerActorId, cancellationToken);
+
+    internal Task<VerifiedCommittedSinkPublication> RevalidateAsync(
+        VerifiedCommittedSinkPublication claim,
+        Guid connectionId,
+        string schema,
+        string table,
+        string? endpointFingerprint,
+        string? tenantId,
+        CancellationToken cancellationToken)
+        => CommittedSinkPublicationVerifier.RevalidateAsync(
+            _jobStore, _processCatalog, claim, connectionId, schema, table,
+            endpointFingerprint, tenantId, cancellationToken);
+}
+
 /// <summary>
 /// Re-reads the completed sink job and its committed receipt before a publication can use the
 /// external-schema exception. Caller-supplied metadata is only an equality claim, never proof.
