@@ -364,7 +364,7 @@ assert_exact_shards \
 assert_exact_shards \
   "core-capacity-CrsTransformationCorrectnessTests" \
   "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs" \
-  '["Core Attachments and Records"]'
+  '["Core Attachments", "Core Related Records and Limits", "Core OGC Features and CRS"]'
 # #3204 headroom rebalance: AdvancedSpatialQueryTests and
 # StreamingFeatureServerEndpointTests moved out of `Core Endpoints` into their own
 # shard (#4450 putting the former here is what took Core Endpoints to 82% of its
@@ -373,7 +373,7 @@ assert_exact_shards \
 assert_exact_shards \
   "core-capacity-AdvancedSpatialQueryTests" \
   "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs" \
-  '["Core Endpoints","Core Spatial Query and Streaming"]'
+  '["Core Endpoints","Core Endpoint Queries","Core Endpoint Mutations","Core Spatial Query and Streaming"]'
 # The STAC capacity split leaves both children on the same source tree, so a
 # change under it must still select BOTH of them (a one-shard answer here would
 # mean half the STAC assembly stopped running on a STAC diff).
@@ -1662,7 +1662,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.CrsTransformationCorrectnessTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core Attachments and Records" \
+    "Core OGC Features and CRS" \
   --assert-owner \
     "Honua.Server.Tests.AdvancedSpatialQueryTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
