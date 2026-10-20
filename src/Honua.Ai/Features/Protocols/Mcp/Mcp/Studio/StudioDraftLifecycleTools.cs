@@ -456,7 +456,8 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Name = ToolName,
         Title = "Validate Studio draft",
         Description =
-            "Validate a Studio package lifecycle draft's current envelope and return the validation summary. "
+            "Validate a Studio package lifecycle draft's current envelope and return the structural validation summary. "
+            + "This does not query sources, verify their current access, or render the Studio canvas. "
             + "Genuinely read-only: it does NOT persist the result onto the draft or change its generation "
             + "(unlike the REST admin POST .../validate endpoint), so it is always safe to call between composition-mutation calls.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
@@ -535,6 +536,7 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         Title = "Preview Studio draft",
         Description =
             "Build a read-only preview plan for a Studio package lifecycle draft's current envelope. "
+            + "This is planning only for every family: it does not query sources or render a map. "
             + "Genuinely read-only: it does NOT persist a validation summary or change the draft's generation "
             + "(unlike the REST admin POST .../preview-plan endpoint). "
             + "For job-backed families (gp, etl, workflow) the plan is planning-only — it does not submit or execute a job.",
