@@ -110,9 +110,8 @@ internal static class PostgresSensorThingsSchema
         else if (Complete("honua") && !Any(configured)) physical = "honua";
         else throw Failure(sensingMigration, "The configured and legacy sensing families are partial, duplicate or ambiguous.");
 
-        bool BaseObjectMatches(string schema, string name) => objects.TryGetValue((schema, name), out var value) &&
-            (name.EndsWith("_seq", StringComparison.Ordinal) ? value.Kind == 'S' : name == "sta_observation" ? value.Kind == 'p' : value.Kind == 'r');
-        bool BaseComplete(string schema) => _baseObjects.All(name => BaseObjectMatches(schema, name));
+        bool BaseComplete(string schema) => _baseObjects.All(name => objects.TryGetValue((schema, name), out var value) &&
+            (name.EndsWith("_seq", StringComparison.Ordinal) ? value.Kind == 'S' : name == "sta_observation" ? value.Kind == 'p' : value.Kind == 'r'));
         var baseSchema = configured;
         if (configured != "honua")
         {
@@ -122,12 +121,7 @@ internal static class PostgresSensorThingsSchema
             else if (BaseComplete("honua") && !configuredAny && physical == "honua") baseSchema = "honua";
             else throw Failure(sensingMigration, "The original SensorThings family is partial, duplicate or incompatible with sensing authority.");
         }
-        else if (!BaseComplete(baseSchema))
-        {
-            var missingObjects = _baseObjects.Where(name => !BaseObjectMatches(baseSchema, name));
-            throw Failure(sensingMigration,
-                $"The original SensorThings family is incomplete or has incompatible object kinds: {string.Join(", ", missingObjects.Select(name => baseSchema + "." + name))}.");
-        }
+        else if (!BaseComplete(baseSchema)) throw Failure(sensingMigration, "The original SensorThings family is incomplete.");
 
         if (requireConfiguredBase && baseSchema != configured)
             throw Failure(sensingMigration, "The configured runtime base family has not been adopted; legacy base authority is permitted only during migration planning.");
