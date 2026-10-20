@@ -519,6 +519,32 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var assembly = typeof(Program).Assembly;
         var bindings = AttachmentSchemaScriptProvider.Describe(assembly, "configured", "honua");
         bindings.Should().HaveCount(2);
+        bindings.Should().OnlyContain(binding => binding.PreambleResourceName == null && binding.PreambleResourceSha256 == null,
+            "legacy/default physical authority must not acquire an unused preamble contract");
+        using var contractStream = assembly.GetManifestResourceStream(AttachmentSchemaScriptProvider.PreambleResourceName)!;
+        using var contractBytes = new MemoryStream();
+        contractStream.CopyTo(contractBytes);
+        var rawContract = contractBytes.ToArray();
+        const string expectedContractDigest = "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3";
+        Convert.ToHexString(SHA256.HashData(rawContract)).ToLowerInvariant().Should().Be(expectedContractDigest);
+        AttachmentSchemaScriptProvider.ValidatePreambleBytes(rawContract).Should().Be(expectedContractDigest);
+        var changedContract = (byte[])rawContract.Clone();
+        changedContract[0] ^= 1;
+        Action changedContractCheck = () => AttachmentSchemaScriptProvider.ValidatePreambleBytes(changedContract);
+        changedContractCheck.Should().Throw<InvalidOperationException>();
+        Action emptyContractCheck = () => AttachmentSchemaScriptProvider.ValidatePreambleBytes([]);
+        emptyContractCheck.Should().Throw<InvalidOperationException>();
+        new EmbeddedScriptProvider(assembly, name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+            .GetScripts(null!).Select(script => script.Name).Should().NotContain(AttachmentSchemaScriptProvider.PreambleResourceName,
+                "the versioned contract is not independently discovered or journaled as a migration");
+        var projectedBindings = AttachmentSchemaScriptProvider.Describe(assembly, "configured", "configured");
+        var preambleBinding = projectedBindings.Single(binding => binding.ScriptName == PostgresAttachmentSchema.CreateMigration);
+        preambleBinding.PreambleResourceName.Should().Be(AttachmentSchemaScriptProvider.PreambleResourceName);
+        preambleBinding.PreambleResourceSha256.Should().Be(expectedContractDigest);
+        projectedBindings.Single(binding => binding.ScriptName == PostgresAttachmentSchema.ImportMigration)
+            .PreambleResourceName.Should().BeNull();
+        projectedBindings.Single(binding => binding.ScriptName == PostgresAttachmentSchema.ImportMigration)
+            .PreambleResourceSha256.Should().BeNull();
         foreach (var binding in bindings)
         {
             using var stream = assembly.GetManifestResourceStream(binding.ScriptName)!;
@@ -527,6 +553,18 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             binding.ResourceSha256.Should().Be(Convert.ToHexString(SHA256.HashData(bytes.ToArray())).ToLowerInvariant());
             binding.AttachmentsTable.Should().Be("\"honua\".attachments");
             binding.ImportCleanupTable.Should().Be("\"honua\".import_attachment_cleanup");
+            using var sqlReader = new StreamReader(new MemoryStream(bytes.ToArray()));
+            var rawSql = sqlReader.ReadToEnd();
+            var projected = projectedBindings.Single(item => item.ScriptName == binding.ScriptName);
+            projected.ResourceSha256.Should().Be(binding.ResourceSha256);
+            var expectedSql = binding.ScriptName == PostgresAttachmentSchema.CreateMigration
+                ? System.Text.Encoding.UTF8.GetString(rawContract).Replace("$PhysicalSchema$", "\"configured\"", StringComparison.Ordinal) +
+                    rawSql.Replace("honua.attachments", "\"configured\".attachments", StringComparison.Ordinal)
+                : rawSql.Replace("$HonuaSchema$.attachments", "\"configured\".attachments", StringComparison.Ordinal)
+                    .Replace("$HonuaSchema$.import_attachment_cleanup", "\"configured\".import_attachment_cleanup", StringComparison.Ordinal);
+            projected.RenderedSqlSha256.Should().Be(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(expectedSql))).ToLowerInvariant());
+            new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured", assembly)
+                .Render(new SqlScript(binding.ScriptName, rawSql)).Contents.Should().Be(expectedSql);
         }
 
         MigrationScriptClassification[] classifications =
@@ -544,27 +582,39 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var nonce = PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, bindings);
         nonce.Should().NotBe(historical);
         PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, bindings.Reverse().ToArray()).Should().Be(nonce);
-        foreach (var original in bindings)
+        foreach (var bindingSet in new[] { bindings, projectedBindings })
         {
-            DatabaseMigrationScriptBinding[] mutations =
-            [
-                original with { ScriptName = original.ScriptName + ".changed" },
-                original with { ConfiguredSchema = "other_configured" },
-                original with { PhysicalSchema = "other_physical" },
-                original with { AttachmentsTable = "\"other\".attachments" },
-                original with { ImportCleanupTable = "\"other\".import_attachment_cleanup" },
-                original with { ResourceSha256 = new string('a', 64) },
-                original with { RenderedSqlSha256 = new string('b', 64) }
-            ];
-            foreach (var mutation in mutations)
+            var bindingNonce = PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, bindingSet);
+            foreach (var original in bindingSet)
             {
-                var changed = bindings.Select(binding => binding == original ? mutation : binding).ToArray();
-                PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, changed).Should().NotBe(nonce,
-                    $"every physical/resource/rendering field must be approved: {mutation}");
+                List<DatabaseMigrationScriptBinding> mutations =
+                [
+                    original with { ScriptName = original.ScriptName + ".changed" },
+                    original with { ConfiguredSchema = "other_configured" },
+                    original with { PhysicalSchema = "other_physical" },
+                    original with { AttachmentsTable = "\"other\".attachments" },
+                    original with { ImportCleanupTable = "\"other\".import_attachment_cleanup" },
+                    original with { ResourceSha256 = new string('a', 64) },
+                    original with { RenderedSqlSha256 = new string('b', 64) },
+                    original with { PreambleResourceName = "changed-contract.v1.sql.template" },
+                    original with { PreambleResourceSha256 = new string('c', 64) }
+                ];
+                if (original.PreambleResourceName is not null)
+                {
+                    mutations.Add(original with { PreambleResourceName = null });
+                    mutations.Add(original with { PreambleResourceSha256 = null });
+                }
+
+                foreach (var mutation in mutations)
+                {
+                    var changed = bindingSet.Select(binding => binding == original ? mutation : binding).ToArray();
+                    PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, changed).Should().NotBe(bindingNonce,
+                        $"every physical/resource/rendering field must be approved: {mutation}");
+                }
             }
         }
 
-        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured");
+        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured", assembly);
         var unrelated = new SqlScript("unrelated.sql", "SELECT 'honua.attachments', '$HonuaSchema$.attachments';");
         renderer.Render(unrelated).Contents.Should().Be(unrelated.Contents,
             "rendering is keyed by exact canonical script name, not arbitrary SQL substrings");
@@ -654,7 +704,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var assembly = typeof(Program).Assembly;
         using var stream = assembly.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
-        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), physical);
+        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), physical, assembly);
         var original = new SqlScript(resource, await reader.ReadToEndAsync());
         // Legacy setup executes protected 002 literally, without fixture rewriting.
         var rendered = resource == PostgresAttachmentSchema.CreateMigration && physical == "honua"

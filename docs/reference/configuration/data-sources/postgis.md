@@ -88,7 +88,13 @@ before applying it.
 
 The diagnostic migration plan exposes `scriptBindings` with the configured and
 physical attachment schema, both qualified attachment/cleanup table identities,
-and the raw embedded-resource and rendered SQL hashes. Its
+and the raw embedded-resource and rendered SQL hashes. For a new non-default
+physical schema, migration 002 also uses the immutable, hash-pinned
+`attachment-schema-preamble.v1.sql.template` contract. The plan records its exact
+resource identity and raw-byte hash; the full rendered SQL hash includes its
+validated schema projection. The contract is not independently discovered or
+journaled as a migration. Default/legacy physical authority and migration 125
+retain null preamble fields. Its
 `contractApprovalNonce` binds this custom attachment context alongside the actual
 pending contract-script set. A changed binding or rendering requires a newly
 reviewed plan; Honua refuses a token from the previous custom plan. Default-schema and unrelated

@@ -274,7 +274,10 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         var bindingContext = string.Join("\n", custom.Select(binding => string.Join("\n",
             binding.ScriptName, binding.ConfiguredSchema, binding.PhysicalSchema,
             binding.AttachmentsTable, binding.ImportCleanupTable,
-            binding.ResourceSha256, binding.RenderedSqlSha256)));
+            binding.ResourceSha256, binding.RenderedSqlSha256) +
+            (binding.PreambleResourceName is null && binding.PreambleResourceSha256 is null
+                ? string.Empty
+                : string.Join("\n", string.Empty, binding.PreambleResourceName, binding.PreambleResourceSha256))));
         return custom.Length == 0
             ? MigrationSafetyClassifier.ComputeContractApprovalNonce(pending)
             : MigrationSafetyClassifier.ComputeContractApprovalNonce(pending.Concat(
@@ -492,7 +495,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                     (includeConfiguredSchemaAdoption ||
                      !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)));
             IScriptProvider selectedProvider = attachmentSchema is null ? provider :
-                new AttachmentSchemaScriptProvider(provider, attachmentSchema);
+                new AttachmentSchemaScriptProvider(provider, attachmentSchema, migrationsAssembly);
             builder.WithScripts(selectedProvider);
         }
 

@@ -195,6 +195,8 @@
                       Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
     <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
+    <EmbeddedResource Include="MigrationContracts\attachment-schema-preamble.v1.sql.template"
+                      LogicalName="Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template" />
     <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
                       Link="DeploymentProfiles\feature-catalog.json"
                       LogicalName="Honua.Server.DeploymentProfiles.feature-catalog.json" />

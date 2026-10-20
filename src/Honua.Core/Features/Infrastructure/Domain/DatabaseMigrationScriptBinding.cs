@@ -18,6 +18,10 @@ public sealed record DatabaseMigrationScriptBinding
     public required string ImportCleanupTable { get; init; }
     /// <summary>SHA256 of the immutable embedded resource bytes.</summary>
     public required string ResourceSha256 { get; init; }
+    /// <summary>Versioned preamble resource identity, only when its SQL is included.</summary>
+    public string? PreambleResourceName { get; init; }
+    /// <summary>SHA256 of the exact immutable preamble resource bytes, when included.</summary>
+    public string? PreambleResourceSha256 { get; init; }
     /// <summary>SHA256 of the exact rendered SQL text encoded as UTF8.</summary>
     public required string RenderedSqlSha256 { get; init; }
 }
