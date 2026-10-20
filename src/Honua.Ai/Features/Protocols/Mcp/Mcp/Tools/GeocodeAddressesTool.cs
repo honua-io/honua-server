@@ -170,6 +170,11 @@ internal sealed class GeocodeAddressesTool : IMcpTool
             throw new GeoprocessingValidationException("'outSrid' must be a positive SRID/WKID.");
         }
 
+        if (!GeocodeCountryCodes.TryParse(argument.CountryCodes, out _))
+        {
+            throw new GeoprocessingValidationException(GeocodeCountryCodes.InvalidMessage);
+        }
+
         var countryCodes = string.IsNullOrWhiteSpace(argument.CountryCodes) ? null : argument.CountryCodes.Trim();
         var provider = string.IsNullOrWhiteSpace(argument.Provider) ? null : argument.Provider.Trim();
         return (addresses, outSrid, countryCodes, provider);

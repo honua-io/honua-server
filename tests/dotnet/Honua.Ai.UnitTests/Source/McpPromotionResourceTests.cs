@@ -53,7 +53,7 @@ public sealed class McpPromotionResourceTests
     public async Task PublishedServiceResource_Read_SerializesRecordAndProvenance()
     {
         var service = BuildPublishedService("svc-1", intentId: "intent-1", sourceId: "pkg-7");
-        _services.GetAsync("svc-1", Arg.Any<CancellationToken>()).Returns(service);
+        _services.FindByPublicIdAsync("svc-1", Arg.Any<CancellationToken>()).Returns(service);
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-1", Arg.Any<CancellationToken>())
             .Returns([BuildDeployment("dep-1", DeploymentSource.FromPublishedService("svc-1"))]);
 
@@ -91,7 +91,7 @@ public sealed class McpPromotionResourceTests
             "svc-from-record",
             intentId: "intent-missing",
             sourceId: "pkg-from-record");
-        _services.GetAsync("svc-from-record", Arg.Any<CancellationToken>()).Returns(service);
+        _services.FindByPublicIdAsync("svc-from-record", Arg.Any<CancellationToken>()).Returns(service);
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-from-record", Arg.Any<CancellationToken>())
             .Returns([]);
 
@@ -118,7 +118,7 @@ public sealed class McpPromotionResourceTests
             "svc-workspace",
             sourceKind: PublishSourceKind.WorkspaceArtifact,
             sourceId: "ws-42");
-        _services.GetAsync("svc-workspace", Arg.Any<CancellationToken>()).Returns(service);
+        _services.FindByPublicIdAsync("svc-workspace", Arg.Any<CancellationToken>()).Returns(service);
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-workspace", Arg.Any<CancellationToken>())
             .Returns([]);
 
@@ -139,7 +139,7 @@ public sealed class McpPromotionResourceTests
     public async Task PublishedServiceResource_Read_ExposesAllActiveDeploymentsSortedStably()
     {
         var service = BuildPublishedService("svc-multi");
-        _services.GetAsync("svc-multi", Arg.Any<CancellationToken>()).Returns(service);
+        _services.FindByPublicIdAsync("svc-multi", Arg.Any<CancellationToken>()).Returns(service);
         // Return in reverse alphabetical order to verify sort is applied.
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-multi", Arg.Any<CancellationToken>())
             .Returns(
@@ -167,7 +167,7 @@ public sealed class McpPromotionResourceTests
     public async Task PublishedServiceResource_Read_ExcludesNonPublishedDeployments()
     {
         var service = BuildPublishedService("svc-mix");
-        _services.GetAsync("svc-mix", Arg.Any<CancellationToken>()).Returns(service);
+        _services.FindByPublicIdAsync("svc-mix", Arg.Any<CancellationToken>()).Returns(service);
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-mix", Arg.Any<CancellationToken>())
             .Returns(
             [
@@ -195,7 +195,7 @@ public sealed class McpPromotionResourceTests
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task PublishedServiceResource_MissingRecord_ThrowsNotFound()
     {
-        _services.GetAsync("missing", Arg.Any<CancellationToken>()).Returns((PublishedServiceRecord?)null);
+        _services.FindByPublicIdAsync("missing", Arg.Any<CancellationToken>()).Returns((PublishedServiceRecord?)null);
 
         var resource = BuildPublishedServiceResource();
         var act = async () => await resource.ReadAsync(
@@ -226,7 +226,7 @@ public sealed class McpPromotionResourceTests
 
         (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
             .Which.RequiresAuthentication.Should().BeFalse();
-        await _services.DidNotReceiveWithAnyArgs().GetAsync(default!, default);
+        await _services.DidNotReceiveWithAnyArgs().FindByPublicIdAsync(default!, default);
     }
 
     [UnitTest]
@@ -1038,7 +1038,7 @@ public sealed class McpPromotionResourceTests
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
-        await _services.DidNotReceiveWithAnyArgs().GetAsync(default!, default);
+        await _services.DidNotReceiveWithAnyArgs().FindByPublicIdAsync(default!, default);
     }
 
     [UnitTest]
