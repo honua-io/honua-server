@@ -710,6 +710,16 @@ internal static class NAServerMetadata
                 "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
         };
 
+        parameters[0]!["defaultValue"] = new JsonObject
+        {
+            ["geometryType"] = "esriGeometryPoint",
+            ["spatialReference"] = new JsonObject { ["wkid"] = 4326 },
+            ["objectIdFieldName"] = "ObjectID",
+            ["fields"] = new JsonArray(
+                new JsonObject { ["name"] = "ObjectID", ["type"] = "esriFieldTypeOID" },
+                new JsonObject { ["name"] = "Name", ["type"] = "esriFieldTypeString", ["length"] = 500 }),
+            ["features"] = new JsonArray(),
+        };
         parameters[1]!["choiceList"] = new JsonArray("Minutes");
         parameters[3]!["defaultValue"] = false;
         parameters[4]!["defaultValue"] = new JsonObject

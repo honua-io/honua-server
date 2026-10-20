@@ -429,7 +429,7 @@ internal static partial class GPServerSoapExecution
                 new XElement("URL", url.OriginalString)));
     }
 
-    private static XElement BuildRecordSetOutput(GPResultResponse output)
+    internal static XElement BuildRecordSetOutput(GPResultResponse output)
     {
         if (output.Value is not JsonElement { ValueKind: JsonValueKind.Object } set ||
             !set.TryGetProperty("fields", out var fieldsJson) || fieldsJson.ValueKind != JsonValueKind.Array ||

@@ -182,7 +182,23 @@ internal static class GPServerSoapEndpoints
             return value;
         }
 
-        // Only scalar defaults have an established SOAP value mapping.
+        // Discovery needs the same RecordSet schema as execution: geometry,
+        // projection and fields describe the input even when it has no rows.
+        if (parameter.DataType is "GPFeatureRecordSetLayer" or "GPRecordSet"
+            && defaultValue.ValueKind == JsonValueKind.Object
+            && defaultValue.TryGetProperty("fields", out _)
+            && defaultValue.TryGetProperty("features", out _))
+        {
+            var recordSet = GPServerSoapExecution.BuildRecordSetOutput(new GPResultResponse
+            {
+                ParamName = parameter.Name,
+                DataType = parameter.DataType,
+                Value = defaultValue
+            });
+            recordSet.Name = "Value";
+            return recordSet;
+        }
+
         if (parameter.DataType is "GPString" or "GPLong" or "GPDouble" or "GPBoolean" or "GPDate")
         {
             value.Add(new XElement("Value", defaultValue.ValueKind == JsonValueKind.String
