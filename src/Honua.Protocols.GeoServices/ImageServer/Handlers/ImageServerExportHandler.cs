@@ -520,6 +520,7 @@ internal sealed class ImageServerExportHandler
                     Colormap: exportQuery.Colormap)
                 {
                     RawSamples = exportQuery.OutputFormat == RasterFormat.Raw,
+                    ResolveStandardTimeName = true,
                 },
                 coordinateTransform,
                 cancellationToken)

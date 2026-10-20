@@ -67,6 +67,9 @@ internal static class ImageServerMultidimensionalDefinition
             // Permit only ordinary ordering hints; filtering, locking, merge operations
             // and other mosaic transforms must not be silently ignored by the slice reader.
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using var orderingStream = new MemoryStream();
+            using var orderingWriter = new Utf8JsonWriter(orderingStream);
+            orderingWriter.WriteStartObject();
             foreach (var property in document.RootElement.EnumerateObject())
             {
                 if (!names.Add(property.Name) || property.Name is not ("multidimensionalDefinition" or "mosaicMethod" or
@@ -75,14 +78,48 @@ internal static class ImageServerMultidimensionalDefinition
                     error = "Coordinate-selected slices support only dimension filters and acquisition-date ordering hints.";
                     return false;
                 }
+                if (property.Name is "multidimensionalDefinition")
+                {
+                    continue;
+                }
+                if (property.Name == "ascending"
+                    ? property.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+                    : property.Value.ValueKind != JsonValueKind.String)
+                {
+                    error = "Mosaic ordering hints must use their declared string/boolean types.";
+                    return false;
+                }
+                // The coordinate filter chooses exactly one slice. Distance from
+                // an ordering base cannot affect that slice. Keep ordinary catalog
+                // mosaic parsing strict, including its unsupported base-sort rule.
+                if (property.Name != "sortValue")
+                {
+                    property.WriteTo(orderingWriter);
+                }
+                else if (!DateTimeOffset.TryParse(property.Value.GetString(), CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal, out _))
+                {
+                    error = "A coordinate-selected acquisition ordering base must be a valid date.";
+                    return false;
+                }
             }
-            if (!ImageServerMosaicRule.TryParse(mosaicRule, out var parsed, out error, out _) ||
-                parsed.Method is not (MosaicMethod.None or MosaicMethod.ByDate))
+            orderingWriter.WriteEndObject();
+            orderingWriter.Flush();
+            if (!ImageServerMosaicRule.TryParse(System.Text.Encoding.UTF8.GetString(orderingStream.ToArray()),
+                    out var parsed, out error, out _) ||
+                parsed.Method is not (MosaicMethod.None or MosaicMethod.ByDate) ||
+                (names.Contains("sortValue") && parsed.Method != MosaicMethod.ByDate))
             {
-                error ??= "Coordinate-selected slices do not support this mosaic method.";
+                if (string.IsNullOrWhiteSpace(error)) error = "Coordinate-selected slices do not support this mosaic method.";
                 return false;
             }
-            return TryParse(definitions[0].Value.GetRawText(), out constraints, out error);
+            if (!TryParse(definitions[0].Value.GetRawText(), out constraints, out error)) return false;
+            if (constraints.Count == 0 || constraints.Any(static constraint => constraint.Values.Length != 1))
+            {
+                error = "A mosaic dimension filter must select exactly one coordinate per dimension.";
+                return false;
+            }
+            return true;
         }
         catch (JsonException)
         {

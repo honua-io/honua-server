@@ -167,6 +167,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         if (!TryResolveSelections(
                 metadata,
                 request.Selections,
+                request.ResolveStandardTimeName,
                 out var variable,
                 out var datetime,
                 out var verticalIndex,
@@ -449,6 +450,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
     private static bool TryResolveSelections(
         ZarrStoreMetadata metadata,
         IReadOnlyList<ZarrPointSliceSelection> selections,
+        bool resolveStandardTimeName,
         out string? variable,
         out (DateTimeOffset? Start, DateTimeOffset? End)? datetime,
         out int? verticalIndex,
@@ -482,6 +484,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             return false;
         }
 
+        var resolvedDimensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var selection in selections)
         {
             if (!string.IsNullOrWhiteSpace(selection.Variable) &&
@@ -491,13 +494,22 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 return false;
             }
 
-            if (!ZarrDimensionSliceResolver.TryFindArrayDimension(array, selection.Dimension, out _))
+            var dimension = resolveStandardTimeName &&
+                string.Equals(selection.Dimension, "StdTime", StringComparison.OrdinalIgnoreCase)
+                ? metadata.TemporalDimension ?? selection.Dimension
+                : selection.Dimension;
+            if (!resolvedDimensions.Add(dimension))
+            {
+                error = $"Dimension '{dimension}' may be selected only once, including its advertised alias.";
+                return false;
+            }
+            if (!ZarrDimensionSliceResolver.TryFindArrayDimension(array, dimension, out _))
             {
                 error = $"Variable '{variable}' does not vary along dimension '{selection.Dimension}'.";
                 return false;
             }
 
-            if (IsSpatialDimension(metadata, selection.Dimension))
+            if (IsSpatialDimension(metadata, dimension))
             {
                 error = "Spatial dimensions must be selected with bbox, not multidimensionalDefinition.";
                 return false;
@@ -505,7 +517,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
 
             if (!ZarrDimensionSliceResolver.TryResolveSliceIndex(
                     metadata,
-                    selection.Dimension,
+                    dimension,
                     selection.Coordinate,
                     out var sliceIndex,
                     out error))
@@ -513,7 +525,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 return false;
             }
 
-            if (IsTemporalDimension(metadata, selection.Dimension))
+            if (IsTemporalDimension(metadata, dimension))
             {
                 try
                 {

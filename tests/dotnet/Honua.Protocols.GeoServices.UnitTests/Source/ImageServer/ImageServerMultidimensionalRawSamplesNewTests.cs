@@ -32,6 +32,58 @@ public sealed class ImageServerMultidimensionalRawSamplesNewTests
 {
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImage_AdvertisedStdTime_ResolvesRealTimeAxisAndRejectsAmbiguousAliases()
+    {
+        const string root = "synthetic/native-time-axis";
+        var objects = ImageServerZarrTestFixture.BuildVerticalStore(root, 2, 1, 2);
+        objects[root + "/.zattrs"] = Encoding.UTF8.GetBytes("""
+            {"variables":["temperature"],"primary_variable":"temperature","crs_wkid":4326,
+             "extent":[-180,-90,180,90],"x_dimension":"x","y_dimension":"y","t_dimension":"time",
+             "t_start":"2024-01-01T00:00:00Z","t_end":"2024-01-02T00:00:00Z","t_step_seconds":86400}
+            """);
+        objects[root + "/temperature/.zattrs"] = Encoding.UTF8.GetBytes("{\"_ARRAY_DIMENSIONS\":[\"time\",\"y\",\"x\"]}");
+        var rangeReader = new ImageServerFixtureRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(rangeReader, "bucket", root);
+        metadata.TemporalDimension.Should().Be("time");
+        var zarr = Substitute.For<IZarrStore>();
+        zarr.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns([new ZarrRegistration
+        {
+            Id = 92, LayerId = 1, Name = "native-time", Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket", RootPath = root, Metadata = metadata, CreatedAt = DateTimeOffset.UnixEpoch,
+        }]);
+        var reader = new ZarrRasterSliceReader(zarr, new ZarrSubsetReader(), [rangeReader]);
+        var second = DateTimeOffset.Parse("2024-01-02T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+            .ToUnixTimeMilliseconds();
+        // Native dimension lookup remains literal unless the ImageServer adapter
+        // explicitly opts in to its advertised standard-name translation.
+        var literal = await reader.ReadAsync(1, new ZarrRasterSliceReadRequest(null, 4326, 2, 1,
+            [new ZarrPointSliceSelection("temperature", "StdTime", second)]) { RawSamples = true });
+        literal.Status.Should().Be(ZarrRasterSliceReadStatus.InvalidSelection);
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-1", "synthetic-time", MetadataV2ResourceType.RasterDataset)
+            .AddService("service-1", "image-svc-1", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication("publication-1", "service-1", "resource-1", layerIndex: 1,
+                serviceLocalId: "synthetic-time", publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+        var handler = new ImageServerExportHandler(graph,
+            new ImageServerExportBackend(Substitute.For<IRasterStore>(), reader), Substitute.For<ITemporaryFileService>(),
+            NullLogger<ImageServerExportHandler>.Instance);
+        var definition = "[{\"variableName\":\"temperature\",\"dimensionName\":\"StdTime\",\"values\":[" + second + "]}]";
+        var request = new ExportImageRequest { Bbox = "-180,-90,180,90", BboxSr = "4326", Size = "2,1",
+            Format = "bsq", PixelType = "F32", MultidimensionalDefinition = definition, F = "image" };
+        var output = await ExportAsync(handler, request);
+        output.Status.Should().Be(200, "synthetic alias response: {0}",
+            output.Status == 200 ? "binary success" : Encoding.UTF8.GetString(output.Body));
+        // The second genuine chunk slice is 1000/1001, never the default 0/1 slice.
+        output.Body.Should().Equal([0x00, 0x00, 0x7a, 0x44, 0x00, 0x40, 0x7a, 0x44, 0xc0]);
+        var ambiguous = definition[..^1] + ",{\"variableName\":\"temperature\",\"dimensionName\":\"time\",\"values\":[" + second + "]}]";
+        var rejected = await ExportAsync(handler, new ExportImageRequest { Bbox = "-180,-90,180,90", BboxSr = "4326",
+            Size = "2,1", Format = "bsq", MultidimensionalDefinition = ambiguous, F = "image" });
+        rejected.Status.Should().Be(400);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImage_TwoTimeSlices_PreservesFloatSamplesMasksAndDocumentedMosaicSelection()
     {
         const string root = "synthetic/md-raw";
@@ -94,7 +146,8 @@ public sealed class ImageServerMultidimensionalRawSamplesNewTests
                     var request = Request(format, size == sizeof(float) ? "F32" : "F64",
                         format == "bip" ? definition : null, format == "bsq" ? mosaic : null);
                     var output = await ExportAsync(handler, request);
-                    output.Status.Should().Be(200);
+                    output.Status.Should().Be(200, "synthetic {0} frame {1} response: {2}",
+                        format, frame, output.Status == 200 ? "binary success" : Encoding.UTF8.GetString(output.Body));
                     output.Type.Should().Be("application/octet-stream");
                     byte[] mask = frame == 0 ? [0xdf, 0x00] : [0x7e, 0x80];
                     output.Body.Should().Equal([.. Samples(frames[frame], size), .. mask]);
@@ -115,6 +168,15 @@ public sealed class ImageServerMultidimensionalRawSamplesNewTests
                     .Status.Should().Be(400);
                 (await ExportAsync(handler, Request("bsq", null, null,
                     mosaic[..^1] + ",\"where\":\"1=0\"}"))).Status.Should().Be(400);
+                foreach (var malformed in new[]
+                {
+                    mosaic.Replace("2026/01/01", "not-a-date", StringComparison.Ordinal),
+                    mosaic.Replace("AcquisitionDate", "Width", StringComparison.Ordinal),
+                    mosaic[..^1] + ",\"sortValue\":\"2026/01/02\"}",
+                })
+                {
+                    (await ExportAsync(handler, Request("bsq", null, null, malformed))).Status.Should().Be(400);
+                }
             }
             rasterStore.ReceivedCalls().Should().BeEmpty("MD selection must read actual Zarr chunks, not a catalog raster fallback");
             temporary.ReceivedCalls().Should().BeEmpty("inline output must not create public temporary artifacts");

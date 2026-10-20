@@ -47,6 +47,12 @@ public sealed record ZarrRasterSliceReadRequest(
     /// This does not apply a display stretch or colormap.
     /// </summary>
     public bool RawSamples { get; init; }
+
+    /// <summary>
+    /// Resolve the protocol's advertised StdTime name to the actual temporal array
+    /// dimension. Other callers retain literal native dimension matching.
+    /// </summary>
+    public bool ResolveStandardTimeName { get; init; }
 }
 
 /// <summary>
