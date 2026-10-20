@@ -60,6 +60,7 @@ internal sealed class LayerPublishJobService(
             TenantId = tenantContext.TenantId,
             TenantSource = tenantContext.Source,
             CurrentSchema = schemaContext?.CurrentSchema,
+            ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
         };
         var queued = new LayerPublishJobProgress
         {

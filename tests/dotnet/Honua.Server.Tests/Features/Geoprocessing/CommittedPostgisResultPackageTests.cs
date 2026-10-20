@@ -4,6 +4,7 @@
 using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -17,7 +18,15 @@ public sealed class CommittedPostgisResultPackageTests
 {
     private const string ConnectionId = "11111111-1111-1111-1111-111111111111";
     private const string Prefix = "honua.geoprocessing.step.0.";
+    private const string Fingerprint =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     private const string Receipt =
+        "{\"processId\":\"sink.external-postgis\",\"schema\":\"results\",\"table\":\"output\","
+        + "\"batchId\":\"batch-1\",\"committed\":true,\"featuresWritten\":2,\"featuresRejected\":0,"
+        + "\"endpointFingerprint\":\"" + Fingerprint + "\"}";
+
+    private const string ReceiptWithoutFingerprint =
         "{\"processId\":\"sink.external-postgis\",\"schema\":\"results\",\"table\":\"output\","
         + "\"batchId\":\"batch-1\",\"committed\":true,\"featuresWritten\":2,\"featuresRejected\":0}";
 
@@ -32,6 +41,7 @@ public sealed class CommittedPostgisResultPackageTests
         artifact.Metadata.Should().ContainKey("connectionId").WhoseValue.Should().Be(ConnectionId);
         artifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be("results");
         artifact.Metadata.Should().ContainKey("table").WhoseValue.Should().Be("output");
+        artifact.Metadata.Should().ContainKey(ConnectionEndpointFingerprint.MetadataKey).WhoseValue.Should().Be(Fingerprint);
         artifact.Metadata.Values.Should().NotContain(value => value.Contains("Host=", StringComparison.Ordinal));
     }
 
@@ -62,6 +72,8 @@ public sealed class CommittedPostgisResultPackageTests
         {
             ArtifactReferences = [ToDataUri(Receipt), ToDataUri(Receipt)]
         }];
+        yield return ["missing endpoint fingerprint", Job(ReceiptWithoutFingerprint)];
+        yield return ["reserved schema", Job(ReceiptWithSchema("pg_catalog"), schema: "pg_catalog")];
     }
 
     [Theory]
@@ -74,22 +86,27 @@ public sealed class CommittedPostgisResultPackageTests
         package.Artifacts.Should().OnlyContain(artifact =>
             !artifact.Metadata.ContainsKey("connectionId") &&
             !artifact.Metadata.ContainsKey("schema") &&
-            !artifact.Metadata.ContainsKey("table"), reason);
+            !artifact.Metadata.ContainsKey("table") &&
+            !artifact.Metadata.ContainsKey(ConnectionEndpointFingerprint.MetadataKey), reason);
     }
 
     private static AnalysisResultPackage Package(ExecutionJobRecord job)
         => GeoprocessingResultPackageFactory.Create(job, Substitute.For<IProcessCatalog>());
 
+    private static string ReceiptWithSchema(string schema)
+        => Receipt.Replace("\"schema\":\"results\"", $"\"schema\":\"{schema}\"", StringComparison.Ordinal);
+
     private static ExecutionJobRecord Job(
         string receipt,
         string? connectionId = ConnectionId,
-        string? connectionName = null)
+        string? connectionName = null,
+        string schema = "results")
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "sink.external-postgis",
             [ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = nameof(ArtifactKind.FeatureLayer),
-            [Prefix + "schema"] = "results",
+            [Prefix + "schema"] = schema,
             [Prefix + "table"] = "output",
         };
         if (connectionId is not null)

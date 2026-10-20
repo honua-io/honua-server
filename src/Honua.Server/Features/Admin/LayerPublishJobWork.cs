@@ -91,6 +91,7 @@ internal static partial class LayerPublishJobWork
         {
             publishRequest = LayerPublishRequestMapper.CreateDomain(
                 payload.Request, payload.ConnectionId, payload.TenantId);
+            publishRequest.ConnectionEndpointFingerprint = payload.ConnectionEndpointFingerprint;
         }
         catch (LayerPublishingException exception)
         {

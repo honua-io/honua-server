@@ -151,6 +151,13 @@ public sealed class LayerPublishRequest
     /// <see cref="LayerStorageMode.Managed"/>.
     /// </summary>
     public IReadOnlyList<string>? Capabilities { get; init; }
+
+    /// <summary>
+    /// SHA-256 of the host, port, and database pinned when a committed sink wrote the table.
+    /// Absent for ordinary publication. Not accepted from the public HTTP body; a queued job
+    /// carries it on its own payload. Settable so the job worker can apply it after mapping.
+    /// </summary>
+    public string? ConnectionEndpointFingerprint { get; set; }
 }
 
 /// <summary>
@@ -226,6 +233,12 @@ public sealed class TablePublishValidationRequest
     /// Selected attribute fields to publish. Empty means all discovered columns.
     /// </summary>
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Endpoint fingerprint pinned by a committed sink. See
+    /// <see cref="LayerPublishRequest.ConnectionEndpointFingerprint"/>.
+    /// </summary>
+    public string? ConnectionEndpointFingerprint { get; set; }
 }
 
 /// <summary>

@@ -90,7 +90,8 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             TargetSrid = GetInt(request, "srid"),
             GeometryColumn = GetOptional(request, "geometryColumn"),
             PrimaryKey = GetOptional(request, "primaryKey"),
-            Fields = request.Fields
+            Fields = request.Fields,
+            ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
         };
 
         var result = await _publishingService
@@ -128,7 +129,8 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             PrimaryKey = GetOptional(request, "primaryKey"),
             Fields = request.Fields,
             ServiceName = request.ServiceName,
-            ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null
+            ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null,
+            ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
         };
 
         PublishedLayerSummary summary;

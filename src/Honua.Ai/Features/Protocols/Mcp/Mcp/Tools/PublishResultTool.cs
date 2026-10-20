@@ -57,6 +57,8 @@ internal sealed class PublishResultTool : IMcpTool
         public const string ConnectionId = "connectionId";
         public const string Schema = "schema";
         public const string Table = "table";
+        public const string ConnectionEndpointFingerprint =
+            Honua.Core.Features.Admin.Domain.ConnectionEndpointFingerprint.MetadataKey;
         public const string GeometryColumn = "geometryColumn";
         public const string GeometryType = "geometryType";
         public const string Srid = "srid";
@@ -293,6 +295,11 @@ internal sealed class PublishResultTool : IMcpTool
         if (TryGetMetadata(artifact, MetadataKeys.PrimaryKey, out var primaryKey))
         {
             parameters["primaryKey"] = primaryKey;
+        }
+
+        if (TryGetMetadata(artifact, MetadataKeys.ConnectionEndpointFingerprint, out var endpointFingerprint))
+        {
+            parameters[MetadataKeys.ConnectionEndpointFingerprint] = endpointFingerprint;
         }
 
         return new OperationRequest

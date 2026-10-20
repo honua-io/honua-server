@@ -29,6 +29,11 @@ internal sealed class LayerPublishJobPayload
 
     public string? CurrentSchema { get; init; }
 
+    /// <summary>
+    /// Endpoint fingerprint captured when the sink committed. Kept off the HTTP request body.
+    /// </summary>
+    public string? ConnectionEndpointFingerprint { get; init; }
+
     internal string ToJson()
         => JsonSerializer.Serialize(this, LayerPublishingJsonContext.Default.LayerPublishJobPayload);
 

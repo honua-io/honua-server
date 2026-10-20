@@ -208,6 +208,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentNullException.ThrowIfNull(request);
+        using var pinnedSchema = OpenCommittedSchemaScope(connectionString, request.ConnectionEndpointFingerprint);
 
         var schema = request.Schema?.Trim();
         var table = request.Table?.Trim();
@@ -646,6 +647,27 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         return linkedLayer;
     }
 
+    /// <summary>
+    /// Verifies a committed-sink endpoint pin and, only when it matches, allows that
+    /// publish to discover a non-reserved schema outside the operational list.
+    /// </summary>
+    private static IDisposable? OpenCommittedSchemaScope(string connectionString, string? fingerprint)
+    {
+        if (string.IsNullOrWhiteSpace(fingerprint))
+        {
+            return null;
+        }
+
+        if (!ConnectionEndpointFingerprint.Matches(connectionString, fingerprint))
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "The registered connection endpoint does not match the committed sink output.");
+        }
+
+        return CommittedExternalSchemaPublication.Begin();
+    }
+
     public async Task<TablePublishValidationResult> ValidateTableForPublishAsync(
         string connectionString,
         TablePublishValidationRequest request,
@@ -653,6 +675,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentNullException.ThrowIfNull(request);
+        using var pinnedSchema = OpenCommittedSchemaScope(connectionString, request.ConnectionEndpointFingerprint);
 
         var schema = request.Schema?.Trim() ?? string.Empty;
         var table = request.Table?.Trim() ?? string.Empty;
