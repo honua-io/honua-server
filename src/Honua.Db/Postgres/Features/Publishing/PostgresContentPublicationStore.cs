@@ -135,6 +135,82 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>> ListVersionsByPublicationIdsAsync(
+        IReadOnlyCollection<string> publicationIds,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(publicationIds);
+        var result = new Dictionary<string, List<ContentPublicationVersion>>(StringComparer.Ordinal);
+        if (publicationIds.Count == 0 || limit <= 0)
+        {
+            return ToVersionPages(result);
+        }
+
+        var publicationGuids = new List<Guid>(publicationIds.Count);
+        foreach (var publicationId in publicationIds.Distinct(StringComparer.Ordinal))
+        {
+            if (TryParsePublicationId(publicationId, out var publicationGuid))
+            {
+                publicationGuids.Add(publicationGuid);
+            }
+        }
+
+        if (publicationGuids.Count == 0)
+        {
+            return ToVersionPages(result);
+        }
+
+        // One round-trip for the page. The window keeps the same per-publication
+        // bound as ListVersionsAsync instead of loading every historical row.
+        var sql = $"""
+            SELECT {VersionColumns}
+            FROM (
+                SELECT {VersionColumns},
+                       ROW_NUMBER() OVER (PARTITION BY publication_id ORDER BY revision DESC) AS version_rank
+                FROM {_versionsTable}
+                WHERE publication_id = ANY(@publication_ids)
+            ) ranked
+            WHERE ranked.version_rank <= @limit
+            ORDER BY ranked.publication_id, ranked.revision DESC
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("@publication_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            Value = publicationGuids.ToArray(),
+        });
+        command.Parameters.AddWithValue("@limit", limit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var version = MapVersion(reader);
+            if (!result.TryGetValue(version.PublicationId, out var versions))
+            {
+                versions = [];
+                result[version.PublicationId] = versions;
+            }
+
+            versions.Add(version);
+        }
+
+        return ToVersionPages(result);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>> ToVersionPages(
+        Dictionary<string, List<ContentPublicationVersion>> pages)
+    {
+        var result = new Dictionary<string, IReadOnlyList<ContentPublicationVersion>>(pages.Count, StringComparer.Ordinal);
+        foreach (var (publicationId, versions) in pages)
+        {
+            result[publicationId] = versions;
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
         ContentPublicationLifecycle? lifecycle,
         int offset,

@@ -100,6 +100,44 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>> ListVersionsByPublicationIdsAsync(
+        IReadOnlyCollection<string> publicationIds,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(publicationIds);
+        var result = new Dictionary<string, IReadOnlyList<ContentPublicationVersion>>(StringComparer.Ordinal);
+        if (publicationIds.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>>(result);
+        }
+
+        var bounded = Math.Max(0, limit);
+        lock (_gate)
+        {
+            foreach (var publicationId in publicationIds.Distinct(StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (bounded == 0 || !_versionsByPublicationId.TryGetValue(publicationId, out var versions))
+                {
+                    continue;
+                }
+
+                var page = versions
+                    .OrderByDescending(version => version.Revision)
+                    .Take(bounded)
+                    .ToArray();
+                if (page.Length > 0)
+                {
+                    result[publicationId] = page;
+                }
+            }
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>>(result);
+    }
+
+    /// <inheritdoc />
     public Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
         ContentPublicationLifecycle? lifecycle,
         int offset,

@@ -238,6 +238,66 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task ListVersionsByPublicationIds_LoadsEachPageBoundInOneQuery()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresContentPublicationStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var store = new PostgresContentPublicationStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var publicationA = Guid.NewGuid().ToString("D");
+            var publicationB = Guid.NewGuid().ToString("D");
+
+            var (v1, route1, e1) = BuildPublish(publicationA, "batch-a", "h1");
+            await store.AppendVersionAndSetRouteAsync(v1, route1, e1, expectedEtag: null);
+            var (v2, route2, e2) = BuildRepublish(route1, "h2");
+            await store.AppendVersionAndSetRouteAsync(v2, route2, e2, expectedEtag: route1.Etag);
+            var thirdVersionId = Guid.NewGuid().ToString("D");
+            var third = v2 with
+            {
+                VersionId = thirdVersionId,
+                Revision = 3,
+                ContentHash = "h3",
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+            var route3 = route2 with
+            {
+                ActiveVersionId = thirdVersionId,
+                ActiveRevision = 3,
+                PreviousVersionId = v2.VersionId,
+                Generation = route2.Generation + 1,
+                Etag = ContentPublicationCrypto.NewEtag(),
+            };
+            await store.AppendVersionAndSetRouteAsync(
+                third,
+                route3,
+                BuildEvent(publicationA, ContentPublicationOperation.Republish, thirdVersionId, 3, "batch-a"),
+                expectedEtag: route2.Etag);
+
+            var (vb, routeb, eb) = BuildPublish(publicationB, "batch-b", "hb");
+            await store.AppendVersionAndSetRouteAsync(vb, routeb, eb, expectedEtag: null);
+
+            var pages = await store.ListVersionsByPublicationIdsAsync(
+                [publicationA, publicationB, publicationA, "not-a-guid", Guid.NewGuid().ToString("D")],
+                limit: 2);
+
+            pages.Keys.Should().BeEquivalentTo([publicationA, publicationB]);
+            pages[publicationA].Select(version => version.Revision).Should().Equal(3, 2);
+            pages[publicationA].Select(version => version.ContentHash).Should().Equal("h3", "h2");
+            pages[publicationB].Should().ContainSingle().Which.ContentHash.Should().Be("hb");
+
+            var unbounded = await store.ListVersionsByPublicationIdsAsync([publicationA], limit: 100);
+            unbounded[publicationA].Select(version => version.Revision).Should().Equal(3, 2, 1);
+            (await store.ListVersionsByPublicationIdsAsync([], limit: 100)).Should().BeEmpty();
+            (await store.ListVersionsByPublicationIdsAsync([publicationA], limit: 0)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ReadMethods_MalformedPublicationId_ReturnStableEmptyResults()
     {
         var store = new PostgresContentPublicationStore(new ThrowingConnectionProvider(), schemaName: "unused");
@@ -246,6 +306,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
         (await store.GetVersionByIdAsync("not-a-guid", Guid.NewGuid().ToString("D"))).Should().BeNull();
         (await store.GetVersionByRevisionAsync("not-a-guid", 1)).Should().BeNull();
         (await store.ListVersionsAsync("not-a-guid", 10)).Should().BeEmpty();
+        (await store.ListVersionsByPublicationIdsAsync(["not-a-guid"], 10)).Should().BeEmpty();
         (await store.GetMaxRevisionAsync("not-a-guid")).Should().Be(0L);
         (await store.ListEventsAsync("not-a-guid", 10)).Should().BeEmpty();
     }
