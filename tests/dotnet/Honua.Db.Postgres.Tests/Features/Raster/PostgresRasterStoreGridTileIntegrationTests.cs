@@ -663,6 +663,248 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false, false, 1)]
+    [InlineData(false, true, 1)]
+    [InlineData(false, false, 2)]
+    [InlineData(false, true, 2)]
+    public Task GetImageTileAsync_NumericPngOpacity_FollowsDisplayedBandValidity(
+        bool mosaic, bool explicitGrid, int bands)
+        => VerifyNumericPngOpacityAsync(mosaic, explicitGrid, bands, legacyCache: false);
+
+    // Separate entrypoint names allow a focused mosaic run without selecting single-raster rows.
+    [IntegrationTheory]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    [InlineData(true, 2)]
+    public Task GetMosaicImageTileAsync_NumericPngOpacity_FollowsDisplayedBandValidity(bool explicitGrid, int bands)
+        => VerifyNumericPngOpacityAsync(mosaic: true, explicitGrid, bands, legacyCache: false);
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    public Task GetMosaicImageTileAsync_NumericPngOpacity_TwoSourcesRetainDisplayedBandCoverage(bool explicitGrid)
+        => VerifyNumericPngOpacityAsync(mosaic: true, explicitGrid, bands: 2, legacyCache: false, fillNoData: true);
+
+    [IntegrationTest]
+    public Task GetMosaicImageTileAsync_NumericPngOpacity_TwoSourcesWebMercatorWithinDeadline()
+        => VerifyNumericPngOpacityAsync(mosaic: true, explicitGrid: false, bands: 2, legacyCache: false, fillNoData: true);
+
+    [IntegrationTest]
+    public Task GetImageTileAsync_NumericPngOpacity_RejectsOldAlphaCacheWithoutDeletingIt()
+        => VerifyNumericPngOpacityAsync(mosaic: false, explicitGrid: false, bands: 2, legacyCache: true);
+
+    private async Task VerifyNumericPngOpacityAsync(bool mosaic, bool explicitGrid, int bands, bool legacyCache, bool fillNoData = false)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE raster_tiles (
+                    raster_data_id bigint, zoom_level integer, tile_x integer, tile_y integer,
+                    tile_data bytea, content_type text, renderer_version integer DEFAULT 0,
+                    renderer_payload_sha256 bytea);
+                WITH first_band AS (
+                    SELECT ST_SetValues(ST_AddBand(
+                        ST_MakeEmptyRaster(2, 2, 1000, 3000, 1000, -1000, 0, 0, 3857),
+                        '32BF'::text, -9999, -9999), 1, 1, 1,
+                        ARRAY[[-17.25, 101], [-9999, 0]]::double precision[][]) AS rast
+                )
+                INSERT INTO raster_data (layer_id, name, raster)
+                SELECT @layerId, 'numeric-opacity',
+                    CASE WHEN @bands = 1 THEN rast ELSE
+                        ST_SetValues(ST_AddBand(rast, '32BF'::text, -9999, -9999), 2, 1, 1,
+                            ARRAY[[-9999, -4.5], [600, 1100]]::double precision[][])
+                    END
+                FROM first_band RETURNING id;
+                """;
+            command.Parameters.AddWithValue("layerId", LayerId);
+            command.Parameters.AddWithValue("bands", bands);
+            var rasterId = (long)(await command.ExecuteScalarAsync())!;
+            command.Parameters.Clear();
+
+            var rasterIds = new[] { rasterId };
+            if (fillNoData)
+            {
+                command.CommandText = """
+                    INSERT INTO raster_data (layer_id, name, raster, created_at)
+                    SELECT @layerId, 'numeric-opacity-overlay',
+                        ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 1000, 2000, 1000, -1000, 0, 0, 3857),
+                            '32BF'::text, 101, -9999), '32BF'::text, -9999, -9999), NOW() + INTERVAL '1 second'
+                    RETURNING id;
+                    """;
+                command.Parameters.AddWithValue("layerId", LayerId);
+                rasterIds = [rasterId, (long)(await command.ExecuteScalarAsync())!];
+                command.Parameters.Clear();
+            }
+
+            if (legacyCache)
+            {
+                command.CommandText = """
+                    WITH encoded AS (
+                        SELECT ST_AsGDALRaster(ST_AddBand(ST_AddBand(
+                            ST_MakeEmptyRaster(256, 256, 0, 256, 1, -1, 0, 0, 3857),
+                            '8BUI'::text, 50, NULL), '8BUI'::text, 0, NULL), 'PNG') AS data
+                    )
+                    INSERT INTO raster_tiles
+                        (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type,
+                         renderer_version, renderer_payload_sha256)
+                    SELECT @id, 10, 512, 511, data, 'image/png', 1, sha256(data) FROM encoded;
+                    """;
+                command.Parameters.AddWithValue("id", rasterId);
+                await command.ExecuteNonQueryAsync();
+                command.Parameters.Clear();
+            }
+
+            var registry = new TileMatrixSetRegistry(new TileMatrixSetDefinitionOptions());
+            registry.TryGetGeometry(TileMatrixSetRegistry.WebMercatorQuadId, 10, out var geometry).Should().BeTrue();
+            var bounds = geometry!.GetTileBounds(512, 511, 10)!;
+            var window = new RasterTileWindow
+            {
+                MinX = explicitGrid ? 0 : bounds.XMin,
+                MinY = explicitGrid ? 0 : bounds.YMin,
+                MaxX = explicitGrid ? 4000 : bounds.XMax,
+                MaxY = explicitGrid ? 4000 : bounds.YMax,
+                Srid = 3857,
+                TileWidth = 256,
+                TileHeight = 256
+            };
+            var store = CreateStore(schemaName);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var tile = (mosaic, explicitGrid) switch
+            {
+                (false, false) => await store.GetImageTileAsync(LayerId, rasterId, 10, 511, 512,
+                    RasterFormat.PNG, cancellationToken: deadline.Token),
+                (false, true) => await store.GetImageTileAsync(LayerId, rasterId, window,
+                    RasterFormat.PNG, cancellationToken: deadline.Token),
+                (true, false) => await store.GetMosaicImageTileAsync(LayerId, rasterIds, RasterMergeStrategy.Newest,
+                    10, 511, 512, RasterFormat.PNG, cancellationToken: deadline.Token),
+                (true, true) => await store.GetMosaicImageTileAsync(LayerId, rasterIds, RasterMergeStrategy.Newest,
+                    window, RasterFormat.PNG, cancellationToken: deadline.Token)
+            } ?? throw new InvalidOperationException("Numeric PNG tile is missing.");
+
+            // Decode the actual PNG, including its physical alpha or tRNS mask. Inspecting
+            // TIFF samples or only the PNG signature cannot prove display opacity.
+            command.CommandText = """
+                WITH image AS (SELECT ST_FromGDALRaster(@png) AS rast),
+                sample AS (SELECT rast, ST_Value(rast, 1, @x, @y, FALSE) AS gray FROM image)
+                SELECT gray,
+                    CASE WHEN ST_NumBands(rast) IN (2, 4)
+                        THEN ST_Value(rast, ST_NumBands(rast), @x, @y, FALSE)
+                        WHEN gray IS NOT DISTINCT FROM ST_BandNoDataValue(rast, 1) THEN 0
+                        ELSE 255 END AS opacity
+                FROM sample;
+                """;
+            foreach (var (x, y, expectedGray, expectedOpacity) in new[]
+                     { (1500d, 2500d, 0d, 255d), (2500d, 2500d, 255d, 255d),
+                       (1500d, 1500d, fillNoData ? 255d : 0d, fillNoData ? 255d : 0d), (2500d, 1500d, 37d, 255d) })
+            {
+                command.Parameters.Clear();
+                command.Parameters.AddWithValue("png", tile.Data);
+                command.Parameters.AddWithValue("x", 1 + (int)Math.Floor((x - window.MinX) * 256 / (window.MaxX - window.MinX)));
+                command.Parameters.AddWithValue("y", 1 + (int)Math.Floor((window.MaxY - y) * 256 / (window.MaxY - window.MinY)));
+                await using var reader = await command.ExecuteReaderAsync();
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetDouble(1).Should().Be(expectedOpacity, "display opacity follows band one, not scientific band two");
+                reader.GetDouble(0).Should().Be(expectedGray);
+            }
+
+            if (legacyCache)
+            {
+                command.Parameters.Clear();
+                command.CommandText = "SELECT COUNT(*) FROM raster_tiles WHERE renderer_version = 1 AND renderer_payload_sha256 = sha256(tile_data)";
+                ((long)(await command.ExecuteScalarAsync())!).Should().Be(1, "old cached evidence is retained, not rewritten");
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(3)]
+    [InlineData(4)]
+    public async Task GetImageTileAsync_NumericPngOpacity_PreservesRgbAndRgba(int bands)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO raster_data (layer_id, name, raster)
+                SELECT @layer, 'presentation', ST_AddBand(
+                    ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 3857), ARRAY(
+                        SELECT ROW(NULL, '8BUI', CASE WHEN n = 4 THEN 64 ELSE n * 10 END, NULL)::addbandarg
+                        FROM generate_series(1, @bands) n ORDER BY n)) RETURNING id;
+                """;
+            command.Parameters.AddWithValue("layer", LayerId);
+            command.Parameters.AddWithValue("bands", bands);
+            var id = (long)(await command.ExecuteScalarAsync())!;
+            var tile = await CreateStore(schemaName).GetImageTileAsync(LayerId, id,
+                new RasterTileWindow
+                {
+                    MinX = 0,
+                    MinY = 0,
+                    MaxX = 1,
+                    MaxY = 1,
+                    Srid = 3857,
+                    TileWidth = 1,
+                    TileHeight = 1
+                }, RasterFormat.PNG)
+                ?? throw new InvalidOperationException("Missing presentation tile.");
+            command.Parameters.Clear();
+            command.CommandText = """
+                WITH image AS (SELECT ST_FromGDALRaster(@png) AS rast)
+                SELECT ST_NumBands(rast), ST_Value(rast, n, 1, 1, FALSE)
+                FROM image, generate_series(1, ST_NumBands(rast)) n ORDER BY n;
+                """;
+            command.Parameters.AddWithValue("png", tile.Data);
+            await using var reader = await command.ExecuteReaderAsync();
+            for (var band = 1; band <= bands; band++)
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetInt32(0).Should().Be(bands);
+                reader.GetDouble(1).Should().Be(band == 4 ? 64 : band * 10);
+            }
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RasterTileExecution_LocalJitSetting_DoesNotLeak(bool fail)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SHOW jit";
+        var original = (string)(await command.ExecuteScalarAsync())!;
+        command.CommandText = fail ? "SELECT 1 / 0" : "SELECT current_setting('jit')";
+        if (fail)
+        {
+            var error = await Assert.ThrowsAsync<PostgresException>(async () =>
+                await RasterTileExecution.ExecuteScalarAsync(command, CancellationToken.None));
+            error.SqlState.Should().Be("22012");
+        }
+        else
+        {
+            (await RasterTileExecution.ExecuteScalarAsync(command, CancellationToken.None)).Should().Be("off");
+        }
+        command.Transaction.Should().BeNull();
+        command.CommandText = "SHOW jit";
+        ((string)(await command.ExecuteScalarAsync())!).Should().Be(original);
+    }
+
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),

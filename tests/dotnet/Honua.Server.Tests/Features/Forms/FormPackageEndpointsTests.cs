@@ -6,12 +6,20 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Forms;
@@ -25,7 +33,23 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        _fixture.ConfigureServices(services =>
+        {
+            // Form metadata is canonical honua data. Resolve its attachments against
+            // that same authority instead of the fixture's isolated feature schema.
+            services.RemoveAll<PostgresAttachmentStore>();
+            services.AddScoped(serviceProvider => new PostgresAttachmentStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetService<ICloudFileStorage>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
+                schemaName: "honua",
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+                attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                    ?? new AttachmentLimits(),
+                migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
+        });
         await _fixture.InitializeAsync();
+        await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         await EnableEditingCapabilitiesAsync();
     }
 
@@ -312,7 +336,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             Encoding.UTF8,
             "application/json"), "submission");
 
-        var file = new ByteArrayContent(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="));
+        var attachmentBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
+        var file = new ByteArrayContent(attachmentBytes);
         file.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
         form.Add(file, "photo-file", "photo.png");
 
@@ -322,21 +347,51 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await ReadJsonAsync(response, FormPackageJsonContext.Default.FormSubmissionResponse);
-        body.Status.Should().Be("accepted");
-        body.AttachmentOutcomes.Should().ContainSingle(outcome =>
-            outcome.Status == "accepted" &&
-            outcome.FieldId == "photo" &&
-            outcome.AttachmentId.HasValue &&
-            outcome.PrivacyApplied);
+        try
+        {
+            body.Status.Should().Be("accepted");
+            body.AttachmentOutcomes.Should().ContainSingle(outcome =>
+                outcome.Status == "accepted" &&
+                outcome.FieldId == "photo" &&
+                outcome.AttachmentId.HasValue &&
+                outcome.PrivacyApplied);
 
-        var (attachmentCount, requestSummary) = await ReadSubmissionPersistenceAsync(body.SubmissionId);
-        attachmentCount.Should().Be(1);
-        using var summaryDocument = JsonDocument.Parse(requestSummary);
-        var privateFieldIds = summaryDocument.RootElement.GetProperty("privateFieldIds").EnumerateArray()
-            .Select(static value => value.GetString())
-            .ToArray();
-        privateFieldIds.Should().Equal("name");
-        requestSummary.Should().NotContain("Private attachment value");
+            body.TargetFeatureId.Should().NotBeNull();
+            body.TargetFeatureId!.Value.Should().BePositive();
+            var acceptedAttachment = body.AttachmentOutcomes.Single(outcome => outcome.Status == "accepted");
+            acceptedAttachment.AttachmentId.Should().NotBeNull();
+            acceptedAttachment.AttachmentId!.Value.Should().BePositive();
+            using var download = await _fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/{body.TargetFeatureId}/attachments/{acceptedAttachment.AttachmentId}");
+            download.StatusCode.Should().Be(HttpStatusCode.OK);
+            download.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+            (await download.Content.ReadAsByteArrayAsync()).Should().Equal(attachmentBytes);
+
+            var (attachmentCount, requestSummary) = await ReadSubmissionPersistenceAsync(body.SubmissionId);
+            attachmentCount.Should().Be(1);
+            using var summaryDocument = JsonDocument.Parse(requestSummary);
+            var privateFieldIds = summaryDocument.RootElement.GetProperty("privateFieldIds").EnumerateArray()
+                .Select(static value => value.GetString())
+                .ToArray();
+            privateFieldIds.Should().Equal("name");
+            requestSummary.Should().NotContain("Private attachment value");
+        }
+        finally
+        {
+            if (body.TargetFeatureId is > 0)
+            {
+                using var scope = _fixture.Services.CreateScope();
+                var attachmentStore = scope.ServiceProvider.GetRequiredService<IAttachmentStore>();
+                foreach (var outcome in body.AttachmentOutcomes.Where(outcome =>
+                    outcome.Status == "accepted" && outcome.AttachmentId is > 0))
+                {
+                    await attachmentStore.DeleteAsync(
+                        WebAppFixture.TestLayerId,
+                        body.TargetFeatureId.Value,
+                        outcome.AttachmentId!.Value);
+                }
+            }
+        }
     }
 
     [IntegrationTest]
