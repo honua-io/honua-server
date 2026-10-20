@@ -39,7 +39,10 @@ every attachment reader, writer and cleanup path use that same binding. A missin
 cleanup table is legitimate before migration 125 and is created there by 125.
 Honua refuses missing cleanup after 125, partial or split families, duplicate
 authorities, non-table objects, and incompatible column types or keys. Ordinary reads
-do not move, copy or repair these objects.
+do not move, copy or repair these objects. An explicit `Attachments:Schema`
+override must resolve to the same physical family as the canonical metadata
+binding. A legacy `honua` override remains valid when both resolve there; two
+complete families in different metadata/override schemas are refused.
 
 ## Supported versions
 

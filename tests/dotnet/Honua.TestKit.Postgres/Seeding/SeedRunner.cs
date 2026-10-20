@@ -506,8 +506,19 @@ internal static class SeedRunner
             ?? throw new InvalidOperationException($"Embedded seed migration '{migration}' was not found.");
         using var reader = new StreamReader(stream);
         command.Parameters.Clear();
-        command.CommandText = (await reader.ReadToEndAsync().ConfigureAwait(false))
-            .Replace("$HonuaSchema$", schemaName, StringComparison.Ordinal);
+        using var identifiers = new NpgsqlCommandBuilder();
+        var attachmentMigration = migration is "Honua.Server.Migrations.002_CreateAttachmentsTable.sql"
+            or "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql";
+        var targetSchema = attachmentMigration ? identifiers.QuoteIdentifier(schemaName) : schemaName;
+        var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
+            .Replace("$HonuaSchema$", targetSchema, StringComparison.Ordinal);
+        if (migration == "Honua.Server.Migrations.002_CreateAttachmentsTable.sql")
+        {
+            // Only this immutable historical resource names the attachment table literally.
+            // Fixture schemas already exist; bind only that qualified table identity.
+            ddl = ddl.Replace("honua.attachments", targetSchema + ".attachments", StringComparison.Ordinal);
+        }
+        command.CommandText = ddl;
         await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         command.CommandText = $"INSERT INTO {schemaName}.test_seed_migrations (name) VALUES (@name);";
         command.Parameters.AddWithValue("name", migration);

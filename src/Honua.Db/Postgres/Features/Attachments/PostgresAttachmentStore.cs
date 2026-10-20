@@ -29,7 +29,8 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly AttachmentLimits? _attachmentLimits;
-    private readonly string? _configuredSchema;
+    private readonly string _configuredSchema;
+    private readonly string _canonicalSchema;
     private readonly PostgresAttachmentMigrationContract? _migrationContract;
 
     public PostgresAttachmentStore(
@@ -39,7 +40,8 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         string? schemaName = null,
         IAttachmentOrphanLedger? orphanLedger = null,
         AttachmentLimits? attachmentLimits = null,
-        PostgresAttachmentMigrationContract? migrationContract = null)
+        PostgresAttachmentMigrationContract? migrationContract = null,
+        string? canonicalSchemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         // Null is a database-only host. Feature-store resolution includes this store for
@@ -49,7 +51,10 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         _orphanLedger = orphanLedger;
         _attachmentLimits = attachmentLimits;
         _ = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
-        _configuredSchema = schemaName;
+        _configuredSchema = string.IsNullOrWhiteSpace(schemaName)
+            ? PostgresSchemaConfiguration.DefaultMetadataSchema : schemaName;
+        _canonicalSchema = string.IsNullOrWhiteSpace(canonicalSchemaName) ? _configuredSchema : canonicalSchemaName;
+        _ = SchemaSearchPath.ValidateAndQuote(_canonicalSchema);
         _migrationContract = migrationContract;
     }
 
@@ -65,9 +70,20 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         NpgsqlConnection connection, NpgsqlTransaction? transaction, bool requireImportCleanup,
         CancellationToken cancellationToken)
     {
+        var contract = _migrationContract ?? throw new InvalidOperationException("Attachment migration identities were not supplied by the host.");
         var physical = await PostgresAttachmentSchema.ResolveAsync(
-            connection, _configuredSchema, _migrationContract ?? throw new InvalidOperationException("Attachment migration identities were not supplied by the host."), transaction, requireImportCleanup: requireImportCleanup,
+            connection, _canonicalSchema, contract, transaction, requireImportCleanup: requireImportCleanup,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(_configuredSchema, _canonicalSchema, StringComparison.Ordinal))
+        {
+            var overridden = await PostgresAttachmentSchema.ResolveAsync(
+                connection, _configuredSchema, contract, transaction, requireImportCleanup: requireImportCleanup,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(physical, overridden, StringComparison.Ordinal))
+            {
+                throw new AttachmentSchemaBindingException("The explicit attachment schema resolves to a different canonical physical authority.");
+            }
+        }
         return (Infrastructure.SchemaSearchPath.QualifyTable("attachments", physical),
             Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", physical));
     }

@@ -922,6 +922,119 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         }
     }
 
+    [SkippableTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AttachmentRuntime_ExplicitOverride_RequiresTheSameCanonicalAuthority(bool legacyCompatible)
+    {
+        Skip.IfNot(postgres.Available, "Real PostgreSQL is required for attachment authority comparison.");
+        const string metadata = "attachment_authority_meta";
+        var physical = legacyCompatible ? "honua" : metadata;
+        var overridden = legacyCompatible ? "honua" : "attachment_authority_other";
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true, enablePostGisRaster: false);
+        await ExecuteAsync(connectionString, "CREATE SCHEMA attachment_authority_meta; CREATE SCHEMA honua;");
+        // The negative deliberately has no legacy family: both independently valid
+        // configured families must not let DI silently choose a different store.
+        if (!legacyCompatible)
+        {
+            await ExecuteAsync(connectionString, "DROP SCHEMA honua;");
+        }
+        var contract = ServerCoreSchemaMigrations.Manifest.Attachments!;
+        await ApplyAttachmentResourceAsync(connectionString, contract.CreateMigration, physical);
+        await ApplyAttachmentResourceAsync(connectionString, contract.ImportMigration, physical);
+        await ExecuteAsync(connectionString, $"""
+            INSERT INTO {physical}.attachments
+                (id, feature_id, layer_id, filename, content_type, size, storage_path, attachment_origin)
+            VALUES (9101, 72, 73, 'canonical.txt', 'text/plain', 1, 'canonical/row', 'honua');
+            """);
+        if (!legacyCompatible)
+        {
+            await ApplyAttachmentResourceAsync(connectionString, contract.CreateMigration, overridden);
+            await ApplyAttachmentResourceAsync(connectionString, contract.ImportMigration, overridden);
+            await ExecuteAsync(connectionString, $"""
+                INSERT INTO {overridden}.attachments
+                    (id, feature_id, layer_id, filename, content_type, size, storage_path, attachment_origin)
+                VALUES (9101, 72, 73, 'other.txt', 'text/plain', 1, 'other/row', 'honua');
+                """);
+        }
+        var before = await CaptureAttachmentAuthorityStateAsync(connectionString);
+        var canonicalRows = await CaptureAttachmentRowsAsync(connectionString, physical);
+        var overrideRows = await CaptureAttachmentRowsAsync(connectionString, overridden);
+        var original = await CaptureAttachmentAsync(connectionString, physical);
+        var storageRoot = Path.Join(Path.GetTempPath(), "honua-attachment-authority-" + Guid.NewGuid().ToString("N"));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = connectionString,
+            ["Database:Schema"] = metadata,
+            ["Attachments:Schema"] = overridden,
+            ["Security:ConnectionEncryption:MasterKey"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
+            ["FileStorage:Provider"] = "Local",
+            ["FileStorage:LocalStorage:BasePath"] = storageRoot,
+            ["FileStorage:EnableAutomaticCleanup"] = "false"
+        }).Build();
+        try
+        {
+            long createdId = 0;
+            await using (var provider = CreateAttachmentRegistrationProvider(configuration))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<PostgresAttachmentStore>();
+                scope.ServiceProvider.GetRequiredService<IAttachmentStore>().Should().BeSameAs(store);
+                if (!legacyCompatible)
+                {
+                    await store.Awaiting(instance => instance.GetAsync(73, 72, 9101))
+                        .Should().ThrowAsync<AttachmentSchemaBindingException>();
+                    await store.Awaiting(instance => instance.CreateAsync(73, 72, new Attachment
+                    {
+                        Id = 0, LayerId = 73, FeatureId = 72, Filename = "denied.txt", ContentType = "text/plain",
+                        Size = 1, CreatedAt = DateTime.UtcNow, StoragePath = "metadata-only/denied"
+                    })).Should().ThrowAsync<AttachmentSchemaBindingException>();
+                    (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(before);
+                    (await CaptureAttachmentRowsAsync(connectionString, physical)).Should().Be(canonicalRows);
+                    (await CaptureAttachmentRowsAsync(connectionString, overridden)).Should().Be(overrideRows);
+                    return;
+                }
+                (await store.GetAsync(73, 72, 9101))!.Filename.Should().Be("canonical.txt");
+                var created = await store.CreateAsync(73, 72, new Attachment
+                {
+                    Id = 0, LayerId = 73, FeatureId = 72, Filename = "same-family.txt", ContentType = "text/plain",
+                    Size = 1, CreatedAt = DateTime.UtcNow, StoragePath = "metadata-only/same-family"
+                });
+                createdId = created.Id;
+                (await CaptureAttachmentAsync(connectionString, physical)).Should().Be(original,
+                    "the explicit legacy alias must preserve the original row and table OID");
+                (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(before,
+                    "runtime binding must not create a configured twin or mutate the journal");
+            }
+            await using (var provider = CreateAttachmentRegistrationProvider(configuration))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<PostgresAttachmentStore>();
+                (await store.GetAsync(73, 72, createdId))!.Filename.Should().Be("same-family.txt");
+                (await CaptureAttachmentAsync(connectionString, physical)).Should().Be(original);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+            {
+                Directory.Delete(storageRoot, recursive: true);
+            }
+        }
+    }
+
+    private static async Task<string> CaptureAttachmentRowsAsync(string connectionString, string schema)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        using var identifiers = new NpgsqlCommandBuilder();
+        var table = identifiers.QuoteIdentifier(schema) + ".attachments";
+        await using var command = new NpgsqlCommand($"""
+            SELECT COALESCE(jsonb_agg(to_jsonb(a) ORDER BY id), '[]'::jsonb)::text FROM {table} a
+            """, connection);
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
     private static ServiceProvider CreateAttachmentRegistrationProvider(IConfiguration configuration)
     {
         var services = new ServiceCollection();

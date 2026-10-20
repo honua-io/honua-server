@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using DbUp.ScriptProviders;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
@@ -20,6 +22,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Npgsql;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -72,24 +75,18 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             _schemaName,
             migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
-        // Create test table structure
-        await _fixture.ExecuteAsync($"""
-            CREATE TABLE {_schemaName}.attachments (
-                id BIGSERIAL PRIMARY KEY,
-                feature_id BIGINT NOT NULL,
-                layer_id INT NOT NULL,
-                filename TEXT NOT NULL,
-                content_type TEXT NOT NULL,
-                size BIGINT NOT NULL CHECK (size >= 0),
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                storage_path TEXT NOT NULL,
-                keywords TEXT,
-                attachment_origin TEXT
-            );
-
-            CREATE INDEX idx_attachments_feature_layer ON {_schemaName}.attachments(layer_id, feature_id);
-            CREATE INDEX idx_attachments_created_at ON {_schemaName}.attachments(created_at);
-            """);
+        // Use the exact production attachment migrations instead of an incomplete
+        // hand-authored import shape. The schema remains isolated per test.
+        var contract = Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!;
+        var assembly = typeof(Program).Assembly;
+        var scripts = new AttachmentSchemaScriptProvider(
+            new EmbeddedScriptProvider(assembly,
+                name => name == contract.CreateMigration || name == contract.ImportMigration),
+            _schemaName, assembly, contract);
+        foreach (var script in scripts.GetScripts(null!))
+        {
+            await _fixture.ExecuteAsync(script.Contents);
+        }
 
         _output.WriteLine($"Created isolated schema: {_schemaName}");
         _output.WriteLine($"Created temp storage: {_tempStoragePath}");
@@ -442,21 +439,23 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     [Fact]
     public async Task UploadAsync_WhenMetadataInsertFails_RemovesTheObjectItAlreadyUploaded()
     {
-        // A store pointed at a schema with no attachments table: the object upload succeeds
-        // against the shared file storage and only the INSERT fails, which is exactly the
-        // window the compensating delete exists for.
+        // Reject the metadata INSERT in the valid owned family after real object upload.
+        // A missing configured schema can legitimately resolve to a legacy family.
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schemaName}.attachments ADD CONSTRAINT ck_test_metadata_insert CHECK (filename <> 'orphan.txt');");
         var brokenStore = new PostgresAttachmentStore(
             new TestDatabaseConnectionProvider(_fixture.DataSource),
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
-            schemaName: MissingSchemaName,
+            schemaName: _schemaName,
             migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         var objectsBefore = await ListStoredObjectIdsAsync();
 
         await using var stream = new MemoryStream("orphan candidate"u8.ToArray());
-        await Assert.ThrowsAnyAsync<Exception>(() => brokenStore.UploadAsync(
+        var error = await Assert.ThrowsAsync<PostgresException>(() => brokenStore.UploadAsync(
             TestLayerId, TestFeatureId, "orphan.txt", "text/plain", stream));
+        Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
+        Assert.Equal("ck_test_metadata_insert", error.ConstraintName);
 
         var objectsAfter = await ListStoredObjectIdsAsync();
         Assert.Equal(objectsBefore, objectsAfter);
@@ -475,19 +474,22 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     [Fact]
     public async Task UploadAsync_WhenInsertAndCompensatingDeleteBothFail_RecordsAnOrphan()
     {
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schemaName}.attachments ADD CONSTRAINT ck_test_metadata_insert CHECK (filename <> 'unreachable.txt');");
         var ledger = new RecordingOrphanLedger();
         var storage = new DeleteFailingFileStorage(_fileStorage);
         var brokenStore = new PostgresAttachmentStore(
             new TestDatabaseConnectionProvider(_fixture.DataSource),
             storage,
             NullLogger<PostgresAttachmentStore>.Instance,
-            schemaName: MissingSchemaName,
+            schemaName: _schemaName,
             orphanLedger: ledger,
             migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         await using var stream = new MemoryStream("unreachable object"u8.ToArray());
-        await Assert.ThrowsAnyAsync<Exception>(() => brokenStore.UploadAsync(
+        var error = await Assert.ThrowsAsync<PostgresException>(() => brokenStore.UploadAsync(
             TestLayerId, TestFeatureId, "unreachable.txt", "text/plain", stream));
+        Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
+        Assert.Equal("ck_test_metadata_insert", error.ConstraintName);
 
         var orphan = Assert.Single(ledger.Orphans);
         Assert.Equal(AttachmentOrphanKind.ObjectWithoutMetadata, orphan.Kind);
@@ -685,14 +687,6 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.True(stored.Length <= limit);
         Assert.Equal(limit, stored.Length);
     }
-
-    /// <summary>
-    /// A schema that does not exist, so the metadata INSERT fails while the object upload against
-    /// the shared file storage succeeds — the exact window the compensating delete exists for.
-    /// A suffix on <c>_schemaName</c> cannot be used: the isolated schema name already sits at
-    /// Postgres's 63-character identifier limit.
-    /// </summary>
-    private const string MissingSchemaName = "honua_absent_schema";
 
     private async Task<HashSet<string>> ListStoredObjectIdsAsync()
     {

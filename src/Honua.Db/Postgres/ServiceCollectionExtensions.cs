@@ -304,7 +304,7 @@ internal static class ServiceCollectionExtensions
         services.TryAddSingleton<IAttachmentOrphanLedger, LoggingAttachmentOrphanLedger>();
 
         // Register the attachment store against the same metadata schema as canonical migrations.
-        // An explicit attachment override remains an independent, validated physical binding.
+        // An explicit override must resolve to the same physical family as canonical migrations.
         // Feature deletes resolve IFeatureAttachmentCleanup from this same instance so attachment
         // rows share the feature transaction (#6137). Object storage stays optional here:
         // a host that registered ICloudFileStorage wins, and a database-only host can still
@@ -320,7 +320,8 @@ internal static class ServiceCollectionExtensions
                 orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
                 attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
                     ?? new AttachmentLimits(),
-                migrationContract: coreSchemaMigrations.Attachments));
+                migrationContract: coreSchemaMigrations.Attachments,
+                canonicalSchemaName: schemaConfiguration.MetadataSchema));
         services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
         services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
 
