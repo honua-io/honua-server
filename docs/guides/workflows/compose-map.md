@@ -108,15 +108,6 @@ workflow:
           - "A preview may already have been observed; source data and shared styles are not implicitly reverted."
     -
       id: "preview"
-      interfaces:
-        -
-          kind: "mcp"
-          operation: "honua_studio_validate_draft"
-          contract: "/studio/mcp-tools.md"
-        -
-          kind: "mcp"
-          operation: "honua_studio_preview_draft"
-          contract: "/studio/mcp-tools.md"
       verb: "validate_preview"
       inputs:
         -
@@ -147,6 +138,12 @@ workflow:
 Resolve [published layers](../../concepts/domain/layer.md) before creating [drawing layers](../../concepts/domain/map-layer.md). A composition records source references, drawing order, style, labels, and view state. It does not copy every feature into the map document.
 
 Use the current draft generation and preserve unrelated edits. “Make the important records stand out” needs a field or rule defining importance. Changing a catalog default can affect other consumers, so prefer the scope the user actually requested.
+
+Ask for the outcome in GIS terms: “Map these parcels by zoning, keep the existing overlays, show a legend, and save a version I can reopen. Tell me which checks passed before publishing.” The agent resolves the selected published data and styling fields rather than asking you to supply internal identifiers.
+
+For catalog-backed composition, the agent copies the discovered `studioSourceId` from `honua_list_layers` or `honua_describe_layer` into the drawing layer's `sourceId`. The drawing layer's own `id` identifies that presentation within the map. Ordinary catalog editing does not require portable `sourceBindings` or a `mapSpec` export; those and supported inline overrides are separate source mechanisms. Discovery leaves data access subject to the current caller's permissions.
+
+`honua_studio_validate_draft` checks structure, and `honua_studio_preview_draft` returns a plan. Source access and canvas rendering remain unverified after either result. A `honua_render_map` image previews the requested published layers, independently of the saved Studio composition. The visual preview action above requires an actual Studio canvas or another supported consumer of that exact composition; it has no equivalent MCP render call.
 
 Preview the result with the real renderer. Check all layers, ordering, labels, legend, attribution, and useful extent. A blank map could be a legitimate empty selection or a broken dependency; establish which.
 
