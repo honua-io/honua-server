@@ -17,6 +17,10 @@ internal static partial class ContentPublicationEndpointsLog
         Message = "Published content {PublicationId} on route {RouteSlug}")]
     public static partial void Published(ILogger logger, string publicationId, string routeSlug);
 
+    [LoggerMessage(EventId = 5317, Level = LogLevel.Information,
+        Message = "Listed {Count} content publications of {Total}")]
+    public static partial void Listed(ILogger logger, int count, int total);
+
     [LoggerMessage(EventId = 5311, Level = LogLevel.Information,
         Message = "Republished content {PublicationId} on route {RouteSlug} (revision {Revision})")]
     public static partial void Republished(ILogger logger, string publicationId, string routeSlug, long revision);
