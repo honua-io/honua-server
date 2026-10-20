@@ -89,6 +89,7 @@ internal sealed class CloudDemoServiceSeeder(
         {
             var physicalAttachmentSchema = await PostgresAttachmentSchema.ResolveAsync(
                 connection.RequireNpgsqlConnection(), configuration?["Database:Schema"],
+                Startup.ServerCoreSchemaMigrations.Manifest.Attachments!,
                 transaction as NpgsqlTransaction ?? throw new InvalidOperationException("Demo seeding requires the active PostgreSQL transaction."),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             var attachmentTable = SchemaSearchPath.QualifyTable("attachments", physicalAttachmentSchema);
