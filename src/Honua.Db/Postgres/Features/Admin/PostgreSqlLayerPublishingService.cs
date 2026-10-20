@@ -539,6 +539,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             FieldCount = fields.Count,
             Enabled = request.Enabled,
             ServiceName = serviceName,
+            MetadataRevision = metadataMutation?.PersistedGraph.Revision,
             StorageMode = storage.IsManagedStore ? ManagedStorageModeName : SourceStorageModeName,
             Capabilities = publicationCapabilities
         };

@@ -5,8 +5,11 @@ using System.Globalization;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Server.Features.Admin;
@@ -29,6 +32,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     private readonly TimeProvider _clock;
     private readonly IMcpNotificationPublisher? _notifications;
     private readonly ILayerPublishJobs? _jobs;
+    private readonly IPublishedServiceStore? _publishedServices;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ServicePublishExecutor"/>.
@@ -42,13 +46,15 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     /// Accepts the publish off the request token. Omitted only by tests that construct the executor
     /// directly; production composition always supplies it.
     /// </param>
+    /// <param name="publishedServices">Optional persisted service store for promotion identity checks.</param>
     public ServicePublishExecutor(
         ILayerPublishingService publishingService,
         ISecureConnectionResolver connectionResolver,
         IMetadataV2GraphProvider metadataGraphProvider,
         TimeProvider clock,
         IMcpNotificationPublisher? notifications = null,
-        ILayerPublishJobs? jobs = null)
+        ILayerPublishJobs? jobs = null,
+        IPublishedServiceStore? publishedServices = null)
     {
         ArgumentNullException.ThrowIfNull(publishingService);
         ArgumentNullException.ThrowIfNull(connectionResolver);
@@ -60,6 +66,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         _clock = clock;
         _notifications = notifications;
         _jobs = jobs;
+        _publishedServices = publishedServices;
     }
 
     /// <inheritdoc />
@@ -173,18 +180,37 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
                 .ConfigureAwait(false);
         }
 
-        // Surface the resulting Metadata v2 revision in the handle. PublishedLayerSummary does
-        // not carry it today (the publish path computes graph.Revision+1 internally in
-        // PostgreSqlLayerPublishingService.MetadataV2Graph.cs and persists it without echoing it
-        // on the summary), so we read the post-publish current revision from the graph provider.
-        // The canonical source is the graph snapshot the publish just saved; surfacing it here is
-        // the cheapest read-after-write that keeps the executor a thin wrapper over the service.
-        // None, not the request token: an accepted publish must finish after the client disconnects.
-        var graph = await _metadataGraphProvider.GetCurrentAsync(
-            _jobs is null ? cancellationToken : CancellationToken.None).ConfigureAwait(false);
-        _notifications?.BroadcastResourcesListChanged();
-        _notifications?.BroadcastToolsListChanged();
+        // The publisher returns the revision of its own committed graph mutation.
+        // A later current-graph read could attribute another publisher's revision to this job.
+        if (_notifications is { } notifications)
+        {
+            TryNotify(() => { notifications.BroadcastResourcesListChanged(); });
+            TryNotify(() => { notifications.BroadcastToolsListChanged(); });
+        }
         var now = _clock.GetUtcNow();
+        var promotionReadback = await ResolvePromotionReadbackAsync(summary.ServiceName, CancellationToken.None)
+            .ConfigureAwait(false);
+        var resultDetails = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+            ["layerName"] = summary.LayerName,
+            ["geometryType"] = summary.GeometryType,
+        };
+        if (promotionReadback != PromotionReadback.Available)
+        {
+            resultDetails["readbackStatus"] = "Unavailable";
+            resultDetails["readbackReason"] = promotionReadback == PromotionReadback.Collision
+                ? "The published service identity conflicts with a promotion record."
+                : "The published service identity could not be checked after publication committed.";
+        }
+        else
+        {
+            resultDetails["serviceName"] = summary.ServiceName;
+        }
+        if (summary.MetadataRevision is > 0)
+        {
+            resultDetails["metadataRevision"] = summary.MetadataRevision.Value.ToString(CultureInfo.InvariantCulture);
+        }
 
         return new OperationHandle
         {
@@ -194,23 +220,21 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             Status = OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
-            MetadataRevision = graph.Revision,
-            ResourceIds = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
-                ["serviceName"] = summary.ServiceName,
-            },
+            MetadataRevision = summary.MetadataRevision,
+            ResourceIds = promotionReadback != PromotionReadback.Available
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                }
+                : new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                    ["serviceName"] = summary.ServiceName,
+                },
             Result = new OperationResultSummary
             {
                 Summary = $"Published layer '{summary.LayerName}' (id {summary.LayerId}) to service '{summary.ServiceName}'.",
-                Details = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
-                    ["layerName"] = summary.LayerName,
-                    ["serviceName"] = summary.ServiceName,
-                    ["geometryType"] = summary.GeometryType,
-                    ["metadataRevision"] = graph.Revision.ToString(CultureInfo.InvariantCulture)
-                }
+                Details = resultDetails
             }
         };
     }
@@ -238,6 +262,11 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             ["status"] = progress.Status.ToString(),
         };
         var resourceIds = new Dictionary<string, string>(handle.ResourceIds, StringComparer.Ordinal);
+        // A prior poll may have advertised this identity. Re-resolve it from
+        // the current persisted stores on every poll before carrying it forward.
+        resourceIds.Remove("serviceName");
+        resourceIds.Remove("serviceUri");
+        var metadataRevision = progress.MetadataRevision ?? handle.MetadataRevision;
         if (progress.LayerId is int layerId)
         {
             var layerText = layerId.ToString(CultureInfo.InvariantCulture);
@@ -245,20 +274,185 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             resourceIds["layerId"] = layerText;
         }
 
+        if (progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
+            progress.LayerId is int committedLayerId)
+        {
+            var resolved = false;
+            var promotionReadback = PromotionReadback.Available;
+            var serviceName = string.Empty;
+            string? serviceUri = null;
+            try
+            {
+                var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                resolved = TryResolvePublishedService(graph, committedLayerId, progress.TenantId, out serviceName);
+                if (resolved)
+                {
+                    promotionReadback = await ResolvePromotionReadbackAsync(serviceName, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (promotionReadback == PromotionReadback.Available)
+                    {
+                        serviceUri = McpResourceUris.PublishedServiceUri(serviceName);
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // The worker has committed. Readback enrichment cannot change
+                // completion into a retryable failure or invent a service URI.
+                promotionReadback = PromotionReadback.Unavailable;
+            }
+
+            if (resolved && serviceUri is not null && promotionReadback == PromotionReadback.Available)
+            {
+                details["serviceName"] = serviceName;
+                details["serviceUri"] = serviceUri;
+                if (metadataRevision is > 0)
+                {
+                    details["metadataRevision"] = metadataRevision.Value.ToString(CultureInfo.InvariantCulture);
+                }
+                details["readbackStatus"] = "Resolved";
+                resourceIds["serviceName"] = serviceName;
+            }
+            else
+            {
+                // The publication committed, but a missing or ambiguous catalog
+                // identity cannot truthfully produce a service URI. Never retry it.
+                details["readbackStatus"] = "Unavailable";
+                details["readbackReason"] = promotionReadback switch
+                {
+                    PromotionReadback.Collision => "The published service identity conflicts with a promotion record.",
+                    PromotionReadback.Unavailable => "The published service identity could not be checked after publication committed.",
+                    _ => "The committed layer has no unique persisted feature-service identity.",
+                };
+            }
+        }
+
         return Echo(handle) with
         {
             Status = MapStatus(progress.Status),
+            MetadataRevision = metadataRevision,
             UpdatedAt = progress.CompletedAt ?? handle.UpdatedAt,
             Reason = progress.ErrorMessage ?? handle.Reason,
             ResourceIds = resourceIds,
             Result = new OperationResultSummary
             {
-                Summary = progress.LayerId is int published
+                Summary = progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
+                    progress.LayerId is int published
                     ? $"Published layer id {published.ToString(CultureInfo.InvariantCulture)}."
                     : $"Layer publish {progress.Status}.",
                 Details = details,
             },
         };
+    }
+
+    private enum PromotionReadback
+    {
+        Available,
+        Collision,
+        Unavailable,
+    }
+
+    private static void TryNotify(Action notify)
+    {
+        try
+        {
+            notify();
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Notification fanout is best effort after the catalog commit.
+            // A listener outage cannot make a non-idempotent publish retryable.
+        }
+    }
+
+    private async Task<PromotionReadback> ResolvePromotionReadbackAsync(
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        if (_publishedServices is null)
+        {
+            return PromotionReadback.Available;
+        }
+
+        try
+        {
+            return await _publishedServices.FindByPublicIdAsync(serviceName, cancellationToken)
+                .ConfigureAwait(false) is null
+                ? PromotionReadback.Available
+                : PromotionReadback.Collision;
+        }
+        catch (PublishedServiceIdentityAmbiguousException)
+        {
+            // The layer is already committed. Ambiguous promotions make its URI
+            // unreadable, but must not turn completion into a retryable failure.
+            return PromotionReadback.Collision;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // A store outage after actuation cannot make this non-idempotent
+            // publish safe to retry. Withhold the readback URI instead.
+            return PromotionReadback.Unavailable;
+        }
+    }
+
+    private static bool TryResolvePublishedService(
+        MetadataV2GraphSnapshot? snapshot,
+        int storageLayerId,
+        string? tenantId,
+        out string serviceName)
+    {
+        serviceName = string.Empty;
+        if (snapshot is null)
+        {
+            return false;
+        }
+
+        // Durable completion records the storage-layer identity. A public layer
+        // index can differ, and the submitted service name may have been an alias.
+        // Reconstruct only from the committed graph, including after a restart.
+        var publications = snapshot.Graph.Publications
+            .Where(publication =>
+                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.LayerIndex is >= 0 &&
+                snapshot.ResolveResource(publication) is not null &&
+                snapshot.ResolveStorageBinding(publication) is { } binding &&
+                binding.ResourceId == publication.ResourceId &&
+                binding.StorageLayerId is >= 0 &&
+                (string.IsNullOrEmpty(publication.StorageBindingId) ||
+                    publication.StorageBindingId == binding.Metadata.Id) &&
+                snapshot.Index.ServicesById.ContainsKey(publication.ServiceId))
+            .Where(publication => MetadataV2TenantVisibility.IsVisibleToTenant(
+                publication, snapshot.ResolveResource(publication),
+                snapshot.Index.ServicesById[publication.ServiceId], tenantId))
+            .ToArray();
+        var services = publications
+            .Where(publication => snapshot.ResolveStorageBinding(publication)!.StorageLayerId == storageLayerId)
+            .Select(publication => snapshot.Index.ServicesById[publication.ServiceId])
+            .DistinctBy(service => service.Metadata.Id, StringComparer.Ordinal)
+            .Take(2)
+            .ToArray();
+        if (services.Length != 1 || string.IsNullOrWhiteSpace(services[0].Metadata.Name))
+        {
+            return false;
+        }
+
+        // A resource URI uses the public name, so a different storage layer in
+        // another service with that same name is still an ambiguous readback.
+        var selected = services[0];
+        if (publications.Any(publication =>
+                publication.ServiceId != selected.Metadata.Id &&
+                string.Equals(snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name,
+                    selected.Metadata.Name, StringComparison.OrdinalIgnoreCase)) ||
+            publications.Where(publication => publication.ServiceId == selected.Metadata.Id)
+                .GroupBy(publication => publication.LayerIndex).Any(group => group.Count() > 1))
+        {
+            return false;
+        }
+
+        // Publishing into a stopped service can complete successfully. Returning
+        // its identity does not reactivate it; the resource reports its lifecycle.
+        serviceName = services[0].Metadata.Name;
+        return true;
     }
 
     private static OperationStatus Echo(OperationHandle handle)

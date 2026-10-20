@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Domain;
@@ -66,6 +67,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     {
         _fixture.DecorateService<IFeatureCacheManager>(inner =>
             new MissingSridCacheManager(inner, layerId => _missingLayerSrid && layerId == _layerId));
+        // Program skips provider infrastructure in Test, and WebAppFixture installs
+        // the graph provider after AddServerFeatures has run. Register the same
+        // catalog-only MCP surface after that fixture provider composition.
+        _fixture.ConfigureServices(services => services.AddMcpCatalogPublicationSurface());
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
         _schema = PublishSchema;
