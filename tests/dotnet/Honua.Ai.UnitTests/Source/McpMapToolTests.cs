@@ -341,7 +341,7 @@ public sealed class McpMapToolTests
             ToolCall("conflicting-layer", ListLayersTool.ToolName, "{}"), CancellationToken.None);
 
         response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
-        response.Result.Value.ToString().Should().Contain("ambiguous");
+        response.Result!.Value.ToString().Should().Contain("ambiguous");
     }
 
     private static async Task<MetadataV2Graph> MultiProtocolLayerGraphAsync(AccessPolicy? accessPolicy = null)
