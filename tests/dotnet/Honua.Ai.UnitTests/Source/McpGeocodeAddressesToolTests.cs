@@ -121,6 +121,43 @@ public sealed class McpGeocodeAddressesToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_geocode_addresses")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_GeocodeAddresses_CarriesCountryFilterAcrossOrderedPartialResults()
+    {
+        var coordinator = Substitute.For<IGeocodeCoordinatorService>();
+        coordinator.ForwardGeocodeAsync(
+                Arg.Is<ForwardGeocodeRequest>(r => r.Query == "380 New York St Redlands" && r.CountryCodes == "us"),
+                "local", true, Arg.Any<CancellationToken>())
+            .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
+                [new GeocodeCandidate("380 New York St, Redlands, CA 92373", -117.1956, 34.0566, 95,
+                    new Dictionary<string, string?>()) { SpatialReferenceWkid = 4326 }], "local"));
+        coordinator.ForwardGeocodeAsync(
+                Arg.Is<ForwardGeocodeRequest>(r => r.Query == "unmatched address" && r.CountryCodes == "us"),
+                "local", true, Arg.Any<CancellationToken>())
+            .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>([], "local"));
+
+        var response = await DispatchAsync(
+            ActiveLicense(GeocodeAddressesTool.EntitlementKey), coordinator,
+            """{"addresses":["380 New York St Redlands","unmatched address"],"provider":"local","countryCodes":"us"}""");
+
+        var output = response!.Result!.Value.GetProperty("structuredContent");
+        output.GetProperty("succeeded").GetInt32().Should().Be(1);
+        output.GetProperty("failed").GetInt32().Should().Be(1);
+        output.GetProperty("results")[0].GetProperty("matchedAddress").GetString()
+            .Should().Be("380 New York St, Redlands, CA 92373");
+        output.GetProperty("results")[1].GetProperty("input").GetString().Should().Be("unmatched address");
+        output.GetProperty("results")[1].GetProperty("ok").GetBoolean().Should().BeFalse();
+
+        var invalid = await DispatchAsync(
+            ActiveLicense(GeocodeAddressesTool.EntitlementKey), coordinator,
+            """{"addresses":["380 New York St Redlands"],"provider":"local","countryCodes":"US,"}""");
+        invalid!.Result!.Value.GetProperty("structuredContent").GetProperty("code").GetString()
+            .Should().Be("invalid_argument");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_geocode_addresses")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_GeocodeAddresses_OverBatchCap_ReturnsInvalidArgument()
     {
         var addresses = string.Join(',', Enumerable.Range(0, LocationToolSchemas.MaxBatchAddresses + 1)
