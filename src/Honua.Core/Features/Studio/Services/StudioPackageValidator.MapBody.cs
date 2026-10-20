@@ -89,60 +89,6 @@ public sealed partial class StudioPackageValidator
         {
             ValidateMapInitialView(initialView, $"{path}/initialView", diagnostics);
         }
-
-        ValidateMapLayerSources(body, diagnostics);
-    }
-
-    private static void ValidateMapLayerSources(JsonElement body, List<StudioValidationDiagnostic> diagnostics)
-    {
-        if (!body.TryGetProperty("layers", out var layers) || layers.ValueKind != JsonValueKind.Array)
-        {
-            return;
-        }
-
-        var declaredSources = new HashSet<string>(StringComparer.Ordinal);
-        if (body.TryGetProperty("sourceBindings", out var bindings) && bindings.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var binding in bindings.EnumerateArray())
-            {
-                if (binding.ValueKind == JsonValueKind.Object
-                    && binding.TryGetProperty("sourceId", out var sourceId)
-                    && sourceId.ValueKind == JsonValueKind.String)
-                {
-                    declaredSources.Add(sourceId.GetString()!);
-                }
-            }
-        }
-
-        if (body.TryGetProperty("mapSpec", out var mapSpec) && mapSpec.ValueKind == JsonValueKind.Object
-            && mapSpec.TryGetProperty("sources", out var sources) && sources.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var source in sources.EnumerateObject())
-            {
-                if (source.Value.ValueKind == JsonValueKind.Object)
-                {
-                    declaredSources.Add(source.Name);
-                }
-            }
-        }
-
-        var index = 0;
-        foreach (var layer in layers.EnumerateArray())
-        {
-            var layerPath = $"/body/layers/{index++}/sourceId";
-            if (layer.ValueKind == JsonValueKind.Object
-                && layer.TryGetProperty("sourceId", out var sourceId)
-                && sourceId.ValueKind == JsonValueKind.String
-                && !declaredSources.Contains(sourceId.GetString()!))
-            {
-                diagnostics.Add(Error(
-                    "studio.map.layer.source.unresolved",
-                    layerPath,
-                    "Layer sourceId must resolve to a declared sourceBindings entry or mapSpec source. "
-                    + "Bind the actual service/layer using the canonical package contract; a top-level sources object "
-                    + "or a service/layer identifier string alone is not a portable source binding."));
-            }
-        }
     }
 
     private static void ValidateMapSourceBinding(JsonElement binding, string path, List<StudioValidationDiagnostic> diagnostics)
