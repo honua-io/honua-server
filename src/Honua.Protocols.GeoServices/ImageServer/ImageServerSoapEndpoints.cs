@@ -21,7 +21,6 @@ using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
-using SkiaSharp;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
@@ -650,7 +649,7 @@ internal static partial class ImageServerSoapEndpoints
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
     {
-        if (!TryCreateExportRequest(operation, out var request, out var width, out var height, out var error, requireImageType: false))
+        if (!TryCreateExportRequest(operation, out var request, out _, out _, out var error, requireImageType: false))
         {
             return CreateSoapFault(
                 error!,
@@ -688,14 +687,6 @@ internal static partial class ImageServerSoapEndpoints
         }
 
         var raster = referenceRaster.Value;
-        if (!string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase))
-        {
-            return CreateSoapFault(
-                "SOAP GetImage currently supports unsigned 8-bit image services.",
-                StatusCodes.Status400BadRequest,
-                requestContext.SoapNamespace);
-        }
-
         if (request.Compression is not null
             && !string.Equals(request.Compression, "None", StringComparison.OrdinalIgnoreCase))
         {
@@ -705,17 +696,28 @@ internal static partial class ImageServerSoapEndpoints
                 requestContext.SoapNamespace);
         }
 
-        var bandCount = ResolveGetImageBandCount(request.BandIds, raster.BandCount);
-        if (bandCount is not (1 or 3))
+        var description = operation.Elements().First(element => element.Name.LocalName == "ImageDescription");
+        var bsqElements = description.Elements().Where(static element => element.Name.LocalName == "BSQ").ToArray();
+        var layout = bsqElements.Length == 0 ? "bip" : bsqElements[0].Value.Trim() switch
+        {
+            "true" or "1" => "bsq",
+            "false" or "0" => "bip",
+            _ => null
+        };
+        if (bsqElements.Length > 1 || layout is null)
         {
             return CreateSoapFault(
-                "SOAP GetImage currently supports one-band grayscale or three-band RGB pixel blocks; " +
-                "multispectral bands require a raw-sample renderer that preserves a distinct NoData mask.",
-                StatusCodes.Status501NotImplemented,
+                "ImageDescription BSQ must be a single xsd:boolean (true, false, 1 or 0).",
+                StatusCodes.Status400BadRequest,
                 requestContext.SoapNamespace);
         }
 
-        request = CopyWithResponseFormat(request, "image", MapPixelType(raster.PixelType));
+        // GetImage is typed source samples, not an encoded visualization. The
+        // canonical export pipeline already frames little-endian BIP/BSQ data
+        // followed by the Esri MSB-first one-bit-per-pixel NoData mask. Reuse it
+        // for every supported native pixel type and selected band count; PNG
+        // decoding would quantize floating-point/multispectral source values.
+        request = CopyWithResponseFormat(request, "image", MapPixelType(raster.PixelType), layout);
         var exportResult = await exportHandler.ExportImageAsync(
             requestContext.HttpContext,
             current.PublicationLayerIndex ?? current.LayerId,
@@ -724,12 +726,12 @@ internal static partial class ImageServerSoapEndpoints
             AuthorizationOperation.Export,
             cancellationToken).ConfigureAwait(false);
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
-            { FileContents: var imageData })
+            { FileContents: var imageData, ContentType: var contentType })
         {
-            if (!TryBuildEsriPixelBlock(imageData.Span, width, height, bandCount, out var pixelBlock))
+            if (contentType != "application/octet-stream" || imageData.IsEmpty)
             {
                 return CreateSoapFault(
-                    "The canonical raster renderer returned an invalid image payload.",
+                    "The canonical raster pipeline returned an invalid raw pixel block.",
                     StatusCodes.Status500InternalServerError,
                     requestContext.SoapNamespace);
             }
@@ -738,7 +740,7 @@ internal static partial class ImageServerSoapEndpoints
                 requestContext.SoapNamespace,
                 requestContext.OperationNamespace,
                 "GetImageResponse",
-                new XElement("Result", Convert.ToBase64String(pixelBlock)));
+                new XElement("Result", Convert.ToBase64String(imageData.Span)));
         }
 
         return CreateSoapFaultFromResult(
@@ -827,66 +829,6 @@ internal static partial class ImageServerSoapEndpoints
     }
 
     /// <summary>
-    /// Converts the canonical encoded render into Esri GetImage binary layout: unsigned
-    /// 8-bit samples in band-interleaved-by-pixel order followed by a packed validity
-    /// mask. Mask bits are stored most-significant-bit first; one means valid and zero
-    /// means NoData, with no row padding.
-    /// </summary>
-    private static bool TryBuildEsriPixelBlock(
-        ReadOnlySpan<byte> encodedImage,
-        int expectedWidth,
-        int expectedHeight,
-        int bandCount,
-        out byte[] pixelBlock)
-    {
-        pixelBlock = [];
-        using var encoded = SKData.CreateCopy(encodedImage);
-        using var bitmap = SKBitmap.Decode(encoded);
-        if (bitmap is null || bitmap.Width != expectedWidth || bitmap.Height != expectedHeight)
-        {
-            return false;
-        }
-
-        var pixelCount = checked(expectedWidth * expectedHeight);
-        var sampleByteCount = checked(pixelCount * bandCount);
-        var maskByteCount = checked((pixelCount + 7) / 8);
-        pixelBlock = GC.AllocateUninitializedArray<byte>(checked(sampleByteCount + maskByteCount));
-        pixelBlock.AsSpan(sampleByteCount, maskByteCount).Clear();
-
-        var sampleOffset = 0;
-        for (var y = 0; y < expectedHeight; y++)
-        {
-            for (var x = 0; x < expectedWidth; x++)
-            {
-                var color = bitmap.GetPixel(x, y);
-                pixelBlock[sampleOffset++] = color.Red;
-                if (bandCount >= 2)
-                {
-                    pixelBlock[sampleOffset++] = color.Green;
-                }
-
-                if (bandCount >= 3)
-                {
-                    pixelBlock[sampleOffset++] = color.Blue;
-                }
-
-                if (bandCount >= 4)
-                {
-                    pixelBlock[sampleOffset++] = color.Alpha;
-                }
-
-                if (color.Alpha != 0)
-                {
-                    var pixelIndex = (y * expectedWidth) + x;
-                    pixelBlock[sampleByteCount + (pixelIndex / 8)] |= (byte)(0x80 >> (pixelIndex % 8));
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
     /// Reads band ids from a direct <c>BandIDs</c>, <c>BandIds</c>, or <c>BandSelection</c>
     /// child of <paramref name="description"/>. Nested integers under
     /// <c>MosaicRule</c> (lock raster ids) are not band ids.
@@ -907,16 +849,6 @@ internal static partial class ImageServerSoapEndpoints
             .Where(static value => value.Length > 0)
             .ToArray();
         return ids.Length == 0 ? null : string.Join(",", ids);
-    }
-
-    private static int ResolveGetImageBandCount(string? bandIds, int serviceBandCount)
-    {
-        if (!string.IsNullOrWhiteSpace(bandIds))
-        {
-            return bandIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
-        }
-
-        return serviceBandCount;
     }
 
     private static bool TryCreateExportRequest(
@@ -1024,14 +956,15 @@ internal static partial class ImageServerSoapEndpoints
     private static ExportImageRequest CopyWithResponseFormat(
         ExportImageRequest request,
         string responseFormat,
-        string? sourcePixelType = null)
+        string? sourcePixelType = null,
+        string? imageFormat = null)
         => new()
         {
             Bbox = request.Bbox,
             Size = request.Size,
             ImageSr = request.ImageSr,
             BboxSr = request.BboxSr,
-            Format = request.Format,
+            Format = imageFormat ?? request.Format,
             PixelType = string.Equals(request.PixelType, sourcePixelType, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : request.PixelType,
