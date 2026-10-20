@@ -153,8 +153,9 @@ internal sealed class ImageServerExportHandler
                     : StandardErrorHelpers.CreateBadRequest(context, parseError.Detail);
             }
 
-            if (!ImageServerMultidimensionalDefinition.TryParse(
+            if (!ImageServerMultidimensionalDefinition.TryParseExport(
                     request.MultidimensionalDefinition,
+                    request.MosaicRule,
                     out var dimensionConstraints,
                     out var multidimensionalError))
             {
@@ -174,16 +175,6 @@ internal sealed class ImageServerExportHandler
 
             if (dimensionConstraints.Count > 0)
             {
-                if (exportQuery.OutputFormat == RasterFormat.Raw)
-                {
-                    return StandardErrorHelpers.CreateNotImplemented(context,
-                        "Raw pixel-block export (bsq, bip, lerc) of multidimensional slices requires a raw-sample slice reader.");
-                }
-
-                if (!ImageServerPixelTypes.IsNative(request.PixelType, storedPixelType: null))
-                {
-                    return StandardErrorHelpers.CreateNotImplemented(context, PixelTypeConversionNotImplemented);
-                }
                 return await ExportMultidimensionalSliceAsync(
                         context,
                         storageLayerId,
@@ -442,7 +433,8 @@ internal sealed class ImageServerExportHandler
                 "exportImage slice reads require exactly one coordinate value per multidimensionalDefinition entry.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Time) || !string.IsNullOrWhiteSpace(request.MosaicRule))
+        if (!string.IsNullOrWhiteSpace(request.Time) ||
+            (!string.IsNullOrWhiteSpace(request.MultidimensionalDefinition) && !string.IsNullOrWhiteSpace(request.MosaicRule)))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -525,7 +517,10 @@ internal sealed class ImageServerExportHandler
                     OutputSrid: imageSrid ?? bboxSrid,
                     Resampling: exportQuery.ResamplingAlgorithm,
                     Stretch: exportQuery.Stretch,
-                    Colormap: exportQuery.Colormap),
+                    Colormap: exportQuery.Colormap)
+                {
+                    RawSamples = exportQuery.OutputFormat == RasterFormat.Raw,
+                },
                 coordinateTransform,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -544,12 +539,25 @@ internal sealed class ImageServerExportHandler
         }
 
         var raster = read.Raster!.Value;
-        if (!TryEncodeSliceOutput(
+        if (!ImageServerPixelTypes.IsNative(request.PixelType, raster.PixelType))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context, PixelTypeConversionNotImplemented);
+        }
+        byte[] outputData;
+        string outputContentType;
+        if (exportQuery.OutputFormat == RasterFormat.Raw)
+        {
+            _ = ImageServerPixelBlockEncoder.TryParseLayout(request.Format, out var layout);
+            var encoded = ImageServerPixelBlockEncoder.Encode(raster, layout);
+            outputData = encoded.Data;
+            outputContentType = encoded.ContentType;
+        }
+        else if (!TryEncodeSliceOutput(
                 exportQuery,
                 raster,
                 read.Rgba,
-                out var outputData,
-                out var outputContentType,
+                out outputData,
+                out outputContentType,
                 out var encodeError))
         {
             ImageServerLog.InvalidExportParameters(_logger, layerId, encodeError);
@@ -560,6 +568,7 @@ internal sealed class ImageServerExportHandler
         {
             RasterFormat.JPEG => "JPEG",
             RasterFormat.TIFF => "TIFF",
+            RasterFormat.Raw => "RAW",
             _ => "PNG",
         };
         ImageServerLog.ExportImageStarted(_logger, layerId, raster.Width, raster.Height, outputFormatName);

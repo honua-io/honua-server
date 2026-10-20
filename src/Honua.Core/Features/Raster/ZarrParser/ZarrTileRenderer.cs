@@ -186,6 +186,71 @@ public static class ZarrTileRenderer
         return pixels;
     }
 
+    /// <summary>
+    /// Samples a floating-point slice using the same spatial selection and resampling as
+    /// display rendering, preserving scientific values in little-endian planar order.
+    /// Missing cells retain the declared fill value (or NaN) and have a clear mask bit.
+    /// </summary>
+    public static (byte[] Data, byte[] Mask, string PixelType) RenderRaw(
+        ZarrSubsetResult result, ZarrTileSlicePlan slice, int outputWidth, int outputHeight,
+        double[] sampleX, double[] sampleY, ResamplingAlgorithm resampling, double? fillValue)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(slice);
+        ArgumentNullException.ThrowIfNull(sampleX);
+        ArgumentNullException.ThrowIfNull(sampleY);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputHeight);
+        var count = checked(outputWidth * outputHeight);
+        if (sampleX.Length != count || sampleY.Length != count)
+        {
+            throw new ArgumentException("Sample coordinate buffers must match the output pixel count.");
+        }
+        var dtype = Normalize(result.DataType);
+        var size = dtype switch
+        {
+            "f4" => sizeof(float),
+            "f8" => sizeof(double),
+            _ => throw new ArgumentException("Raw Zarr slice output supports float32 and float64 source arrays.")
+        };
+        if ((long)count * size > 64L * 1024 * 1024)
+        {
+            throw new ArgumentException("Raw Zarr slice output exceeds the 64 MiB sample limit.");
+        }
+        var height = result.Shape[slice.YDimensionIndex];
+        var width = result.Shape[slice.XDimensionIndex];
+        if (width <= 0 || height <= 0)
+        {
+            throw new InvalidOperationException("Zarr slice has no spatial extent.");
+        }
+        var (strideY, strideX) = ComputeSpatialStrides(result.Shape, slice.YDimensionIndex, slice.XDimensionIndex);
+        var values = DecodeBuffer(result);
+        var data = new byte[checked(count * size)];
+        var mask = new byte[(count + 7) / 8];
+        for (var index = 0; index < count; index++)
+        {
+            var value = Sample(values, width, height, strideX, strideY, slice,
+                sampleX[index], sampleY[index], resampling, fillValue);
+            if (double.IsFinite(value) && (size != sizeof(float) || float.IsFinite((float)value)))
+            {
+                mask[index / 8] |= (byte)(0x80 >> (index % 8));
+            }
+            else
+            {
+                value = fillValue ?? double.NaN;
+            }
+            if (size == sizeof(float))
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(index * size), (float)value);
+            }
+            else
+            {
+                BinaryPrimitives.WriteDoubleLittleEndian(data.AsSpan(index * size), value);
+            }
+        }
+        return (data, mask, size == sizeof(float) ? "32BF" : "64BF");
+    }
+
     // Samples the decoded value grid at a native (storage-CRS) coordinate using the requested
     // resampling. Missing (NaN / fill) centres short-circuit to NaN so they render transparent;
     // non-finite neighbours in an interpolation kernel fall back to the centre value so an edge

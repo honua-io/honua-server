@@ -52,7 +52,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         activity?.SetTag("honua.slice.selection_count", request.Selections.Count);
         activity?.SetTag("honua.output.width", request.OutputWidth);
         activity?.SetTag("honua.output.height", request.OutputHeight);
-        activity?.SetTag("honua.output.format", "png");
+        activity?.SetTag("honua.output.format", request.RawSamples ? "raw" : "png");
 
         if (!TryValidateRequest(request, out var validationError))
         {
@@ -242,29 +242,49 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 }
             }
 
-            var stretchRange = ResolveStretchRange(request.Stretch);
-            var rgba = ZarrTileRenderer.RenderRgba(
-                subset,
-                slice,
-                request.OutputWidth,
-                request.OutputHeight,
-                sampleX,
-                sampleY,
-                request.Resampling,
-                request.Colormap,
-                stretchRange,
-                fillValue);
-            var png = PngEncoder.Encode(rgba, request.OutputWidth, request.OutputHeight);
+            byte[] data;
+            byte[]? rgba = null;
+            byte[][]? masks = null;
+            var pixelType = subset.DataType.TrimStart('<', '|', '=') switch
+            {
+                "f4" => "32BF",
+                "f8" => "64BF",
+                _ => subset.DataType,
+            };
+            if (request.RawSamples)
+            {
+                if (request.Stretch is not null || request.Colormap is not null ||
+                    subset.DataType.TrimStart('<', '|', '=') is not ("f4" or "f8") ||
+                    (long)request.OutputWidth * request.OutputHeight *
+                        (subset.DataType.EndsWith("f8", StringComparison.Ordinal) ? 8 : 4) > MaxSubsetBytes)
+                {
+                    return Finish(ZarrRasterSliceReadStatus.InvalidSelection, request.Selections.Count, variable,
+                        error: "Raw slice output requires float32/float64 samples within 64 MiB and no display transforms.",
+                        activity: activity);
+                }
+                var raw = ZarrTileRenderer.RenderRaw(subset, slice, request.OutputWidth, request.OutputHeight,
+                    sampleX, sampleY, request.Resampling, fillValue);
+                data = raw.Data;
+                masks = [raw.Mask];
+                pixelType = raw.PixelType;
+            }
+            else
+            {
+                rgba = ZarrTileRenderer.RenderRgba(subset, slice, request.OutputWidth, request.OutputHeight,
+                    sampleX, sampleY, request.Resampling, request.Colormap, ResolveStretchRange(request.Stretch), fillValue);
+                data = PngEncoder.Encode(rgba, request.OutputWidth, request.OutputHeight);
+            }
             var raster = new RasterResult
             {
-                Data = png,
-                ContentType = "image/png",
+                Data = data,
+                ContentType = request.RawSamples ? "application/octet-stream" : "image/png",
                 Width = request.OutputWidth,
                 Height = request.OutputHeight,
                 Srid = outputSrid,
                 Extent = outputExtent,
                 BandCount = 1,
-                PixelType = subset.DataType,
+                PixelType = pixelType,
+                BandValidityMasks = masks,
                 GeoTransform =
                 [
                     outputExtent.XMin,
@@ -276,7 +296,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 ],
             };
 
-            activity?.SetTag("honua.output.bytes", png.Length);
+            activity?.SetTag("honua.output.bytes", data.Length);
             return Finish(
                 ZarrRasterSliceReadStatus.Success,
                 request.Selections.Count,

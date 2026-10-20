@@ -36,6 +36,62 @@ internal static class ImageServerMultidimensionalDefinition
     private const int MaxDefinitionLength = 8192;
     private const int MaxConstraints = 8;
 
+    /// <summary>Reads the documented exportImage mosaic-rule dimension filter.</summary>
+    public static bool TryParseExport(string? raw, string? mosaicRule,
+        out IReadOnlyList<ImageServerDimensionConstraint> constraints, out string? error)
+    {
+        if (!TryParse(raw, out constraints, out error) || string.IsNullOrWhiteSpace(mosaicRule))
+        {
+            return error is null;
+        }
+        try
+        {
+            using var document = JsonDocument.Parse(mosaicRule);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                // Preserve ordinary mosaic parsing when there is no nested filter.
+                return true;
+            }
+            var definitions = document.RootElement.EnumerateObject()
+                .Where(static property => property.NameEquals("multidimensionalDefinition")).ToArray();
+            if (definitions.Length == 0)
+            {
+                return true;
+            }
+            if (definitions.Length != 1 || !string.IsNullOrWhiteSpace(raw))
+            {
+                error = "Specify multidimensionalDefinition once, either directly or inside mosaicRule.";
+                return false;
+            }
+            // A single coordinate-selected variable has no raster ordering ambiguity.
+            // Permit only ordinary ordering hints; filtering, locking, merge operations
+            // and other mosaic transforms must not be silently ignored by the slice reader.
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!names.Add(property.Name) || property.Name is not ("multidimensionalDefinition" or "mosaicMethod" or
+                    "sortField" or "sortValue" or "ascending"))
+                {
+                    error = "Coordinate-selected slices support only dimension filters and acquisition-date ordering hints.";
+                    return false;
+                }
+            }
+            if (!ImageServerMosaicRule.TryParse(mosaicRule, out var parsed, out error, out _) ||
+                parsed.Method is not (MosaicMethod.None or MosaicMethod.ByDate))
+            {
+                error ??= "Coordinate-selected slices do not support this mosaic method.";
+                return false;
+            }
+            return TryParse(definitions[0].Value.GetRawText(), out constraints, out error);
+        }
+        catch (JsonException)
+        {
+            // No nested JSON filter was read. The existing mosaic parser retains
+            // ownership of bare operation tokens and malformed ordinary rules.
+            return true;
+        }
+    }
+
     /// <summary>
     /// Attempts to parse the raw <c>multidimensionalDefinition</c> value. Returns <c>true</c>
     /// (with an empty <paramref name="constraints"/>) when the value is absent. Returns

@@ -40,7 +40,14 @@ public sealed record ZarrRasterSliceReadRequest(
     int? OutputSrid = null,
     ResamplingAlgorithm Resampling = ResamplingAlgorithm.NearestNeighbor,
     RasterStretch? Stretch = null,
-    RasterColormap? Colormap = null);
+    RasterColormap? Colormap = null)
+{
+    /// <summary>
+    /// Return native floating-point samples and a validity mask instead of display pixels.
+    /// This does not apply a display stretch or colormap.
+    /// </summary>
+    public bool RawSamples { get; init; }
+}
 
 /// <summary>
 /// Stable outcome categories for a rendered 2D Zarr slice read.
