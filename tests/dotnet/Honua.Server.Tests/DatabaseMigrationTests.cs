@@ -308,13 +308,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                 "decommissioned canonical records reserve the same public identity in either physical family");
     }
 
-    private async Task ApplyCanonicalDeploymentMigrationAsync(Npgsql.NpgsqlConnection connection, string filename)
+    private async Task ApplyCanonicalDeploymentMigrationAsync(
+        Npgsql.NpgsqlConnection connection, string filename, string? physicalSchema = null)
     {
         var assembly = typeof(Program).Assembly;
         var resource = assembly.GetManifestResourceNames().Single(name => name.EndsWith(filename, StringComparison.Ordinal));
         await using var stream = assembly.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
-        var sql = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_schemaName}\"", StringComparison.Ordinal);
+        var sql = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{physicalSchema ?? _schemaName}\"", StringComparison.Ordinal);
         await using var command = new Npgsql.NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();
     }
@@ -815,8 +816,9 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await satisfied.Should().NotThrowAsync();
 
         // Ingest allocates @iot.ids from these sequences: dropping them must fail the floor
-        // against the migration that owns them, not surface as a NOT NULL violation on the
-        // first insert (#4199).
+        // through the strict physical-family floor, not surface as a NOT NULL violation on
+        // the first insert (#4199). Migration 127 validates the complete family, including
+        // the original sequences introduced by 116; its diagnosis must name both defects.
         await using (var drop = connection.CreateCommand())
         {
             // CASCADE also drops the column defaults that reference them, which is exactly
@@ -831,13 +833,21 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var sequenceFailure = await missingSequences.Should()
             .ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
         sequenceFailure.Which.MigrationScript.Should()
-            .Be(ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration);
+            .Be(ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration);
         sequenceFailure.Which.FailureKind.Should().Be(
             Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
         sequenceFailure.Which.Message.Should().Contain("sta_observation_id_seq");
         sequenceFailure.Which.Message.Should().Contain("sta_datastream_id_seq");
 
-        // An un-journaled sequence migration is a pending upgrade, reported as such.
+        // Isolate the journal defect from the physical defect above. The immutable 116
+        // resource uses CREATE SEQUENCE IF NOT EXISTS, restores owned defaults and
+        // resets sequences from existing IDs; direct fixture replay never edits the journal.
+        await ApplyCanonicalDeploymentMigrationAsync(connection, "116_AddSensorThingsIdSequences.sql", "honua");
+        var restored = () => guard.VerifyRequirementAsync(
+            connection, Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        await restored.Should().NotThrowAsync("the exact physical sequence floor is restored before removing its receipt");
+
+        // With all physical objects intact, only the un-journaled 116 receipt is refused.
         await using (var unjournal = connection.CreateCommand())
         {
             unjournal.CommandText = "DELETE FROM public.schema_versions WHERE scriptname = @script;";
