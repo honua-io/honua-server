@@ -9,7 +9,7 @@ using Honua.TestKit.Attributes;
 using Npgsql;
 using NSubstitute;
 
-namespace Honua.Db.Postgres.Tests.Features.Geometry;
+namespace Honua.Db.Postgres.Tests.Features.Topology;
 
 [Collection("Database")]
 public sealed class PostgresGeometryTopologyValidatorTests(PostgresFixture fixture)
