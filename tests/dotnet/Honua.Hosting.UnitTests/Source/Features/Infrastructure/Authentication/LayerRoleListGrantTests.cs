@@ -172,7 +172,7 @@ public sealed class LayerRoleListGrantTests
         var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             context,
             Resource(new AccessPolicy { AllowedRoles = ["gis-analyst"] }),
-            Service(servicePolicy: null),
+            Service(accessPolicy: null),
             AuthorizationOperation.Query);
 
         decision.IsAllowed.Should().BeFalse();
