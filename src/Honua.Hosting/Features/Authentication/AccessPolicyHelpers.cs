@@ -632,8 +632,9 @@ internal static class AccessPolicyHelpers
             .Evaluate(principal, resourcePolicy, servicePolicy, scope);
     }
 
-    // Empty role lists and AllowAnonymous still allow, so the grant stands unless the
-    // evaluator forbids the principal for the role list.
+    // Empty role lists and AllowAnonymous still allow, so the grant stands. A forbidden
+    // decision stands even when a replacement evaluator uses its own failure text.
+    // Authentication-required is not a role-list denial.
     private static AccessDecision ApplyRoleListToGrant(
         IServiceProvider services,
         ClaimsPrincipal principal,
@@ -649,10 +650,6 @@ internal static class AccessPolicyHelpers
             ScopeForOperation(operation),
             operation);
         return policyDecision is { IsAllowed: false, RequiresAuthentication: false }
-            && string.Equals(
-                policyDecision.FailureReason,
-                AccessPolicyEvaluator.RequiredRoleDeniedReason,
-                StringComparison.Ordinal)
             ? policyDecision
             : AccessDecision.Allowed();
     }

@@ -160,6 +160,26 @@ public sealed class LayerRoleListGrantTests
     }
 
     [UnitTest]
+    public async Task ViewerGrant_CustomForbiddenReason_IsStillDenied()
+    {
+        await using var provider = BuildProvider(rewriteRoleDenials: true);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = provider,
+            User = Principal(["viewer"]),
+        };
+
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            context,
+            Resource(new AccessPolicy { AllowedRoles = ["gis-analyst"] }),
+            Service(servicePolicy: null),
+            AuthorizationOperation.Query);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.FailureReason.Should().Be(ReasonRewritingEvaluator.CustomReason);
+    }
+
+    [UnitTest]
     public async Task ServiceGrant_ExcludedAllowedRoles_IsDenied()
     {
         await using var provider = BuildProvider();
@@ -224,14 +244,57 @@ public sealed class LayerRoleListGrantTests
             operation);
     }
 
-    private static ServiceProvider BuildProvider()
+    private static ServiceProvider BuildProvider(bool rewriteRoleDenials = false)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.AddSingleton<AccessPolicyEvaluator>();
+        if (rewriteRoleDenials)
+        {
+            services.AddSingleton<IAccessPolicyEvaluator>(sp =>
+                new ReasonRewritingEvaluator(sp.GetRequiredService<AccessPolicyEvaluator>()));
+        }
+        else
+        {
+            services.AddSingleton<IAccessPolicyEvaluator>(sp => sp.GetRequiredService<AccessPolicyEvaluator>());
+        }
+
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
         services.AddSingleton<IRoleStore, BuiltInGrantRoleStore>();
         services.AddSingleton<IPermissionResolver>(sp => new PermissionResolver(sp.GetRequiredService<IRoleStore>()));
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Replacement evaluator whose forbidden text is not the built-in role-denial sentence.
+    /// </summary>
+    private sealed class ReasonRewritingEvaluator(IAccessPolicyEvaluator inner) : IAccessPolicyEvaluator
+    {
+        public const string CustomReason = "policy denied the principal";
+
+        public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action)
+            => inner.EvaluateAsync(principal, resource, action);
+
+        public AccessDecision Evaluate(ClaimsPrincipal principal, string resource, string action)
+            => inner.Evaluate(principal, resource, action);
+
+        public async Task<AccessDecision> EvaluateAsync(
+            ClaimsPrincipal principal,
+            AccessPolicy? layerPolicy,
+            AccessPolicy? servicePolicy,
+            object? scope = null)
+            => Rewrite(await inner.EvaluateAsync(principal, layerPolicy, servicePolicy, scope).ConfigureAwait(false));
+
+        public AccessDecision Evaluate(
+            ClaimsPrincipal principal,
+            AccessPolicy? layerPolicy,
+            AccessPolicy? servicePolicy,
+            object? scope = null)
+            => Rewrite(inner.Evaluate(principal, layerPolicy, servicePolicy, scope));
+
+        private static AccessDecision Rewrite(AccessDecision decision)
+            => decision is { IsAllowed: false, RequiresAuthentication: false }
+                ? AccessDecision.Forbidden(CustomReason)
+                : decision;
     }
 
     private static ClaimsPrincipal Principal(string[] roles, bool authenticated = true)
