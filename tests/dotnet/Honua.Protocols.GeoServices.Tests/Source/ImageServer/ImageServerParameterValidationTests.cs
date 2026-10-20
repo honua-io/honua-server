@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -629,8 +630,25 @@ public sealed class ImageServerParameterFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await App.InitializeAsync();
-        App.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId,
-            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
+        var policy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] };
+        // Storage layer 0 is bound by two publications: the "test" FeatureServer layer
+        // (res-layer-0, which the numeric /rest/services/0/ImageServer route resolves first) and the
+        // ImageServer publication (res-image-test, which /rest/services/test/ImageServer binds).
+        // UpdateV2ResourceMetadata restricts only the former; restrict the raster resource too so
+        // both routes are guarded by the same role.
+        App.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, accessPolicy: policy);
+        var graph = App.GetCurrentV2GraphSnapshot().Graph;
+        ((TestMetadataV2GraphProvider)App.GetService<IMetadataV2GraphProvider>()).SetGraph(
+            graph with
+            {
+                Revision = graph.Revision + 1,
+                Resources = graph.Resources
+                    .Select(resource => resource.Metadata.Id == "res-image-test"
+                        ? resource with { AccessPolicy = policy }
+                        : resource)
+                    .ToArray(),
+            },
+            schema: App.CurrentSchema);
         var token = await App.GetService<IPortalTokenIssuer>().IssueAsync(
             new PortalTokenIssueRequest(
                 "imagery-parameter-reader",

@@ -9301,6 +9301,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.GetServiceInfo_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.GetServiceInfo_InvalidFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.GetServiceInfo_NonExistentLayer_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.GetServiceInfo_ValidLayerId_ReturnsServiceMetadata",
@@ -9606,9 +9607,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithInlineImageFormat_ReturnsImageBytes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithMultidimensionalDefinition_ReturnsNativeSlicePng",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithValidParameters_ReturnsImageOrNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithValidParameters_ReturnsMosaicPixels",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ExportsInlinePngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ReceivesEsriErrorShapeForInvalidRequests",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.BandIds_ZeroBasedOnStatisticsHistogramsAndExportImage_AddressTheSameBand",
@@ -10000,7 +10002,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.GetImageTile_WithValidCoordinates_ReturnsTileOrNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.GetImageTile_DeniedPrincipals_DiscloseNothingAndChangeNothing",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.GetImageTile_InsideMosaic_RendersCoveringRasterValue",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Tile_Available_ReturnsUnchangedImageBytesForBothRoutes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Tile_MissingWithoutBlankFallback_ReturnsHttp404ForBothRoutes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.GetImageTile_InvalidFormat_ReturnsBadRequest",
@@ -11526,6 +11529,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoute_NumericLeadingServiceId_DispatchesToNamedRoute",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex"
       ],
@@ -11613,6 +11617,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo"
       ],
@@ -11628,6 +11633,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -11642,6 +11648,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -11656,6 +11663,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputePixelLocation_GetAndPost_UsesRasterGeoTransform"
       ],
@@ -11671,6 +11679,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex"
       ],
@@ -11700,6 +11709,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -11728,6 +11738,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImageByService_ResolvesBothRoutesWithExportAuthorization"
       ],
@@ -11773,6 +11784,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex"
       ],
@@ -11802,6 +11814,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex"
       ],
@@ -11849,6 +11862,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex"
       ],
@@ -11864,6 +11878,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerKmlTests.GetKml_SeededMosaic_ReturnsKmzGroundOverlayOverServiceExtent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerKmlTests.GetKml_UnknownLayer_ReturnsNotFound"
@@ -11880,6 +11895,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex"
       ],
@@ -11910,6 +11926,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -11938,6 +11955,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -11952,6 +11970,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryBoundary_GetAndPost_ReturnsShapeAndArea"
       ],
@@ -11995,6 +12014,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -12026,6 +12046,7 @@
         "Honua.Server.Tests.Features.Protocols.Cog.CogRegistrationTileTests.RegisteredCog_DistinctStorageAndPublicationIds_ServesOnlyBoundService",
         "Honua.Server.Tests.Features.Protocols.Cog.CogRegistrationTileTests.RegisteredCog_PublicationIndexLaterCollides_FailsClosedForEveryService",
         "Honua.Server.Tests.Features.Protocols.Cog.CogRegistrationTileTests.RegisteredGdalJpegCog_SharedJpegTables_ServesDecodableJpegMatchingGdal",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Tile_Available_ReturnsUnchangedImageBytesForBothRoutes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Tile_MissingWithoutBlankFallback_ReturnsHttp404ForBothRoutes"
@@ -21184,7 +21205,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_PostFormBody_ReturnsImageOrNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_PostFormBody_DeniedPrincipals_DiscloseNothingAndChangeNothing",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_PostFormBody_ReturnsMosaicPixels",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithMultidimensionalDefinition_ReturnsNativeSlicePng",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImagePost_WithTime_SelectsTemporalSliceAndAgreesWithGet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostFormBody_WithEsriJsonSpatialReferences_ReturnsSeededRaster",
@@ -21259,7 +21281,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.Identify_PostFormBody_ReturnsIdentifyResultOrNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.Identify_PostFormBody_DeniedPrincipals_DiscloseNothingAndChangeNothing",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.Identify_PostFormBody_ReturnsPixelValueOfCoveringRaster"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -22687,6 +22710,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo"
       ],
@@ -22702,6 +22726,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22716,6 +22741,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22730,6 +22756,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputePixelLocation_GetAndPost_UsesRasterGeoTransform"
       ],
@@ -22745,6 +22772,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22787,6 +22815,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImageByService_ResolvesBothRoutesWithExportAuthorization"
       ],
@@ -22831,6 +22860,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22859,6 +22889,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22889,6 +22920,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.KeyProperties_Post_ReturnsNonEmptyBandProperties"
       ],
@@ -22904,6 +22936,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22932,6 +22965,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22960,6 +22994,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
@@ -22974,6 +23009,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryBoundary_GetAndPost_ReturnsShapeAndArea"
       ],
@@ -23017,6 +23053,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DeniedPrincipals_DiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",

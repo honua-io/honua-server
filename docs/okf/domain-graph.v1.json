@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:548a53abeb864cf11381ac5a054d3097e08ffc870e9cd4567bb38b03034e77f1",
+  "bundleDigest": "sha256:15dfe1ff1c27b4d5242078b2e8f220739406b860a14afbc0268fc0e57b8f9f9a",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6836,7 +6836,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:6b5b37a6daaafa195a33cbc9025c408635580d7dfc79dca58e7b808d652650ec",
+      "documentDigest": "sha256:3727e0df62dad878794ad29cc6c394f8c69307b3d54438315cf9a1a9f28a4745",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
