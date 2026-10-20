@@ -86,6 +86,41 @@ public sealed class McpIngestDatasetToolTests
 
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("geojson", 3857)]
+    [InlineData("geojson", 32610)]
+    [InlineData("csv", 3857)]
+    [InlineData("csv", 32610)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ProjectedInput_ReturnsStoredTargetSridForPublication(string format, int sourceSrid)
+    {
+        var importService = Substitute.For<IFileImportService>();
+        ImportRequest? captured = null;
+        importService.ImportFileAsync(Arg.Do<ImportRequest>(request => captured = request), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateSuccess(
+                "projected", format == "csv" ? SupportedFileFormat.Csv : SupportedFileFormat.GeoJson,
+                featureCount: 1, detectedSrid: sourceSrid,
+                physicalTableName: "imported_projected", schema: "honua_data"));
+        var data = format == "csv"
+            ? "id,wkt\n1,POINT (1000 0)\n"
+            : """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1000,0]},"properties":{"id":1}}]}""";
+        var arguments = $$"""{"format":"{{format}}","data":{{JsonSerializer.Serialize(data)}},"datasetName":"projected","sourceSrid":{{sourceSrid}}}""";
+
+        var structured = AssertToolSucceeded(await DispatchAsync(BuildServices(importService), arguments));
+
+        structured.GetProperty("success").GetBoolean().Should().BeTrue();
+        structured.GetProperty("srid").GetInt32().Should().Be(4326,
+            "the publish hint describes the stored table, while DetectedSrid describes its input");
+        captured.Should().NotBeNull();
+        captured!.SourceSrid.Should().Be(sourceSrid);
+        captured.TargetSrid.Should().Be(4326);
+        structured.GetProperty("table").GetString().Should().Be("imported_projected");
+    }
+
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]

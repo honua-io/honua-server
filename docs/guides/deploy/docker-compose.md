@@ -45,6 +45,19 @@ hostname, and permit access to the proxy through the host firewall. Do not expos
 PostgreSQL, Redis or the unauthenticated health probe on a separate public port.
 Configure the Docker daemon to start on boot so the stack comes back after a host restart.
 
+The Development container profile enables database startup recovery by default.
+Docker's restart policy does not repeat Compose's dependency health ordering, so
+Honua can start while PostgreSQL is still recovering. During a transient outage,
+liveness remains available, readiness returns 503, and mutation requests are
+refused until the canonical migration or schema verification succeeds. Permanent
+database incompatibility or migration failures still require operator action.
+An explicit `HONUA_DB_DEGRADED_START` or
+`Database__StartupResilience__DegradedStartEnabled` setting takes precedence;
+Production container defaults retain fail-fast behavior unless opted in. If
+background migrations are disabled, recovery verifies the externally prepared
+schema rather than assuming it is current. Docker health based on liveness is
+not evidence that Honua is ready: check `/healthz/ready` and its typed reason.
+
 After the proxy is configured, set its hostname, browser origin and actual source
 address as seen by Honua. The original loopback route remains
 available for local diagnostics and recovery. This example accepts one forwarded
