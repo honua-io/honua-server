@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Studio;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Studio;
 
@@ -16,6 +19,8 @@ public sealed class StudioPackageValidatorSourceReferencesTests
 {
     [Theory]
     [InlineData("\"sources\": {}")]
+    [InlineData("\"sources\": {\"buffer\":{\"protocol\":\"honua-feature-service\",\"serviceId\":\"buffer-service\",\"layerId\":1}}")]
+    [InlineData("\"mapSpec\": {\"sources\":{\"buffer\":null}}")]
     [InlineData("\"sourceBindings\": [{\"sourceId\":\"other\",\"protocol\":\"ogc_features\",\"locator\":{\"collectionId\":\"other\"}}]")]
     [Trait("Tier", "Fast")]
     public void Validate_LayerWithoutItsDeclaredSource_ReportsPreciseReference(string sourceMembers)
@@ -48,6 +53,38 @@ public sealed class StudioPackageValidatorSourceReferencesTests
 
         Assert.Empty(summary.Diagnostics);
         Assert.Equal(StudioPackageValidationStatus.Valid, summary.Status);
+    }
+
+    [UnitTest]
+    public async Task SaveDraftAsVersion_UnresolvedSourceRemainsInvalidInStoredVersion()
+    {
+        var services = new ServiceCollection();
+        services.AddStudioPackageLifecycle();
+        using var provider = services.BuildServiceProvider();
+        var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        using var document = JsonDocument.Parse(LayerBody("\"sources\": {}"));
+        var draft = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "unresolved-buffer",
+            WorkspaceId = "studio",
+            OwnerId = "author",
+            ActorId = "author",
+            Envelope = new StudioPackageEnvelope
+            {
+                Family = StudioPackageFamily.Map,
+                SchemaVersion = "1.0",
+                Format = "honua_map_package.v1",
+                Body = document.RootElement.Clone(),
+            },
+        });
+
+        Assert.Equal(StudioPackageValidationStatus.Invalid, draft.Validation.Status);
+        var version = await lifecycle.SaveDraftAsVersionAsync(draft.DraftId, "retain incomplete work", "author");
+
+        var saved = Assert.IsType<StudioContentVersion>(version);
+        Assert.Equal(StudioPackageValidationStatus.Invalid, saved.Validation.Status);
+        Assert.Contains(saved.Validation.Diagnostics, diagnostic => diagnostic.Code == "studio.map.layer.source.unresolved");
+        Assert.True(JsonElement.DeepEquals(document.RootElement, saved.Envelope.Body!.Value));
     }
 
     private static string LayerBody(string sourceMembers) =>

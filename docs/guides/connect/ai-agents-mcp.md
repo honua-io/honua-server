@@ -169,8 +169,9 @@ An applied style with no style layers draws nothing for that layer. The caption 
 
 The `honua_studio_*` tools compose the same server-resident draft the Studio UI observes: create, read and update a draft; add and remove layers, widgets, controls and interaction bindings; set styles, visibility and the view; validate and preview; save an immutable version; reopen a version as a new draft; and propose a saved version for governed publication. The tool table is in [Studio MCP tools](../../studio/mcp-tools.md).
 
-Two rules matter when driving them:
+Three rules matter when driving them:
 
+- **Bind actual sources before claiming a working map.** Current family envelopes use schema version `1.0`. The canonical `honua_create_map_package` tool returns a portable map's identity, format and `sourceBindings`; composition layers reference those binding `sourceId` values. A self-contained `mapSpec` can also declare its sources. A top-level `sources` object or a concatenated service/layer identifier alone does not establish that binding. Preserve unrelated draft content while correcting it. Validation and save/reopen receipts do not prove live data access or rendering: verify the authorized source and the actual rendered layer separately.
 - **Draft mutations that accept `generation` are generation-checked.** Pass the latest generation returned by a successful draft read or mutation. A stale value returns `failed_precondition` with the current generation; fetch the draft again and reconcile rather than resubmitting blindly. `honua_studio_validate_draft` and `honua_studio_preview_draft` are read-only and never advance the generation, so calling them between mutations is safe.
 - **Publication is not a canvas mutation.** Save the intended draft with
   `honua_studio_save_version`; its `versionId` and `contentHash` are nested under

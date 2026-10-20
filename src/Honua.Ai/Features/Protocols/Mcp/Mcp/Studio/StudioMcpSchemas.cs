@@ -78,7 +78,7 @@ internal static class StudioMcpSchemas
           "additionalProperties": false,
           "properties": {
             "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Stable layer id, unique within the composition." },
-            "sourceId": { "type": "string", "maxLength": 200, "description": "Bound source identifier." },
+            "sourceId": { "type": "string", "maxLength": 200, "description": "Source identifier declared in the map body's sourceBindings or mapSpec.sources. A service/layer identifier string alone does not create a portable binding." },
             "type": { "type": "string", "maxLength": 100, "description": "Layer type (e.g. fill, circle, line, raster)." },
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "visible": { "type": "boolean", "default": true, "description": "Layer visibility." },
@@ -244,10 +244,10 @@ internal static class StudioMcpSchemas
               "enum": {{FamilyEnumJson}},
               "description": "Studio package family."
             },
-            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
+            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family. Current families use 1.0; this is not a schema identifier or package format." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
             "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field and become the owner automatically." },
-            "body": { "type": "object", "description": "Optional initial composition/family body. Omit to start empty." },
+            "body": { "type": "object", "description": "Optional initial composition/family body. Omit to start empty. For maps, honua_create_map_package returns canonical mapPackageId, format and sourceBindings; composition layers reference those binding sourceIds. A top-level sources object is not the portable map contract. Validate, inspect the actual binding and verify rendering before claiming a working map." },
             "itemId": { "type": "string", "format": "uuid", "description": "Existing content item id, to add a draft under an existing item." },
             "baseVersionId": { "type": "string", "format": "uuid", "description": "Immutable version this draft was reopened from, when applicable." }
           }
@@ -274,11 +274,11 @@ internal static class StudioMcpSchemas
             "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency). A mismatch surfaces a failed_precondition error; re-fetch with honua_studio_get_draft and retry." },
             "packageKey": {{PackageKeyPropertyJson}},
-            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
+            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family. Current families use 1.0; this is not a schema identifier or package format." },
             "format": { "type": "string", "maxLength": 100, "description": "Family-specific package format." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
             "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field; explicit non-admin assignment is rejected." },
-            "body": { "type": "object", "description": "Replacement composition/family body. Omit to leave the existing body unchanged." }
+            "body": { "type": "object", "description": "Replacement composition/family body. Omit to leave the existing body unchanged. For maps, preserve unrelated content and declare canonical sourceBindings or mapSpec sources for composition-layer sourceIds. Use the returned honua_create_map_package sourceBindings shape; a top-level sources object alone is not a portable binding." }
           }
         }
         """;
