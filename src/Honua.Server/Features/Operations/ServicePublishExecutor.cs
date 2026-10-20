@@ -26,7 +26,8 @@ namespace Honua.Server.Features.Operations;
 /// calls <c>PublishLayerAsync</c>. The resulting Metadata v2 revision is surfaced on the
 /// returned handle.
 /// </summary>
-internal sealed class ServicePublishExecutor : IOperationExecutor, IOperationRequestPreparer
+internal sealed class ServicePublishExecutor
+    : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
     private readonly ILayerPublishingService _publishingService;
     private readonly ISecureConnectionResolver _connectionResolver;

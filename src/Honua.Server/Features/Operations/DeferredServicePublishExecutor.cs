@@ -19,7 +19,8 @@ namespace Honua.Server.Features.Operations;
 /// composing the database-backed publishing graph. Selecting service.publish in such a host
 /// returns a typed, actionable validation failure instead of failing the entire dispatcher.
 /// </summary>
-internal sealed class DeferredServicePublishExecutor(IServiceProvider services) : IOperationExecutor, IOperationRequestPreparer
+internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
+    : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
     public string OperationId => ServicePublishOperation.OperationId;
 

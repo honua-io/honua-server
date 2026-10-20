@@ -195,7 +195,9 @@ public sealed class CommittedPostgisResultPackageTests
         {
             Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                ["schema"] = "results", ["table"] = "output", ["layerName"] = "Output",
+                ["schema"] = "results",
+                ["table"] = "output",
+                ["layerName"] = "Output",
                 [ConnectionEndpointFingerprint.MetadataKey] = Fingerprint
             }
         };
@@ -230,7 +232,9 @@ public sealed class CommittedPostgisResultPackageTests
 
         var admin = new OperationPolicyContext
         {
-            PrincipalId = "administrator", TenantId = "tenant-a", Roles = ["admin"]
+            PrincipalId = "administrator",
+            TenantId = "tenant-a",
+            Roles = ["admin"]
         };
         var adminPrepared = await executor.PrepareAsync(request, admin);
         adminPrepared.VerifiedCommittedSinkPublication!.PublisherWasAdministrator.Should().BeTrue();
@@ -252,20 +256,20 @@ public sealed class CommittedPostgisResultPackageTests
                 replayContext with { TenantId = "tenant-b" }))
             .Should().ThrowAsync<LayerPublishingException>();
         await FluentActions.Invoking(() => executor.PrepareAsync(replayRequest with
+        {
+            Parameters = new Dictionary<string, string?>(replayRequest.Parameters, StringComparer.Ordinal)
             {
-                Parameters = new Dictionary<string, string?>(replayRequest.Parameters, StringComparer.Ordinal)
-                {
-                    ["table"] = "other"
-                }
-            }, replayContext))
+                ["table"] = "other"
+            }
+        }, replayContext))
             .Should().ThrowAsync<LayerPublishingException>();
         await FluentActions.Invoking(() => executor.PrepareAsync(replayRequest with
+        {
+            Parameters = new Dictionary<string, string?>(replayRequest.Parameters, StringComparer.Ordinal)
             {
-                Parameters = new Dictionary<string, string?>(replayRequest.Parameters, StringComparer.Ordinal)
-                {
-                    [VerifiedCommittedSinkPublication.SourceArtifactIdKey] = "job-1:artifact:2"
-                }
-            }, replayContext))
+                [VerifiedCommittedSinkPublication.SourceArtifactIdKey] = "job-1:artifact:2"
+            }
+        }, replayContext))
             .Should().ThrowAsync<LayerPublishingException>();
     }
 

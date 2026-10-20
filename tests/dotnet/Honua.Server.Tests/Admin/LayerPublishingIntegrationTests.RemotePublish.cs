@@ -52,14 +52,18 @@ public sealed partial class LayerPublishingIntegrationTests
         await FluentActions.Invoking(() => publisher.ValidateTableForPublishAsync(connection,
                 new TablePublishValidationRequest
                 {
-                    Schema = "results", Table = "output", LayerName = "Output",
+                    Schema = "results",
+                    Table = "output",
+                    LayerName = "Output",
                     ConnectionEndpointFingerprint = fingerprint
                 }, CancellationToken.None))
             .Should().ThrowAsync<LayerPublishingException>();
         await FluentActions.Invoking(() => publisher.PublishLayerAsync(connection,
                 new LayerPublishRequest
                 {
-                    Schema = "results", Table = "output", LayerName = "Output",
+                    Schema = "results",
+                    Table = "output",
+                    LayerName = "Output",
                     ConnectionEndpointFingerprint = fingerprint
                 }, CancellationToken.None))
             .Should().ThrowAsync<LayerPublishingException>();
