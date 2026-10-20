@@ -17,6 +17,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "tests/seed/sdk-protocol-v1/manifest.json"
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+CORE_FIXTURE_PATH = "docs/gis/data/client-certification-fixture.v1.json"
+INPUT_PATHS = frozenset({
+    "docker/routing/init-routing.sql",
+    "tests/seed/sdk-protocol-v1/geocoder.csv",
+    "src/Honua.Server/appsettings.json",
+    "eng/Honua.ProtocolProfiles.props",
+    "src/Honua.Server/fixtures/scenes/downtown-honolulu/tileset.json",
+    "src/Honua.Server/fixtures/scenes/downtown-honolulu/tiles/0.b3dm",
+    "src/Honua.Server/fixtures/scenes/downtown-honolulu/metadata/scene.json",
+})
+
 
 
 def _digest(path: Path) -> str:
@@ -33,6 +44,8 @@ def verify_source(root: Path = ROOT) -> dict:
     paths = [entry["path"] for entry in entries]
     if len(paths) != len(set(paths)):
         raise ValueError("duplicate fixture input")
+    if paths[0] != CORE_FIXTURE_PATH or set(paths[1:]) != INPUT_PATHS:
+        raise ValueError("manifest must bind the complete fixture input set")
     for entry in entries:
         relative = Path(entry["path"])
         if relative.is_absolute() or ".." in relative.parts or not SHA256.fullmatch(entry["sha256"]):
