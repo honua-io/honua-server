@@ -283,7 +283,7 @@
     },
     {
       "name": "Migration capacity split (#3204)",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ArcGisMigration|FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.PostgresMigrationStyleApplicator|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ArcGisMigration|FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.PostgresMigrationStyleApplicator|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinationOutageRecoveryTests",
       "children": [
         "Migration",
         "Migration Source Imports"
@@ -627,6 +627,7 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
@@ -3352,7 +3353,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Parent p90 was 27.4m of 29m (94%). The GeoServer/Geoservices source-import classes are 13.2m of the parent's 27.4m union. New shard 13.2m of 25m (53%); residual Migration 14.0m of 29m (48%).",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinationOutageRecoveryTests",
       "paths": [
         "src/Honua.Core/Features/Geoprocessing/Abstractions/IProcessConditionalInputProbe.cs",
         "src/Honua.Core/Features/Migration/",
@@ -3372,6 +3373,7 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",

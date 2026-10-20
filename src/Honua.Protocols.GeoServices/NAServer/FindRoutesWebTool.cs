@@ -28,10 +28,13 @@ internal static class FindRoutesWebTool
         "barriers", "polylineBarriers", "polygonBarriers",
     };
 
-    internal static async Task<IResult> ExecuteAsync(HttpContext context, CancellationToken ct)
+    internal static async Task<IResult> ExecuteAsync(HttpContext context, CancellationToken ct,
+        Func<IReadOnlyDictionary<string, string>>? readSoapParameters = null)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct).ConfigureAwait(false);
+        var parameters = readSoapParameters is null
+            ? await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct).ConfigureAwait(false)
+            : readSoapParameters();
         parameters.TryGetValue("f", out var format);
         if (!string.IsNullOrWhiteSpace(format) &&
             !format.Equals("json", StringComparison.OrdinalIgnoreCase) &&
@@ -65,6 +68,8 @@ internal static class FindRoutesWebTool
             var result = await routing.SolveRouteAsync(request, ct).ConfigureAwait(false);
             var solved = NAServerResultMapping.MapRoute(
                 result, request.OutSrid, includeRoutes: true, includeDirections: false);
+            var routes = JsonSerializer.SerializeToNode(solved.Routes, NAServerJsonContext.Default.NAServerRouteFeatureSet)!.AsObject();
+            routes["fields"] = NAServerMetadata.BuildRouteFields();
             var document = new JsonObject
             {
                 ["results"] = new JsonArray
@@ -73,8 +78,7 @@ internal static class FindRoutesWebTool
                     {
                         ["paramName"] = "Output_Routes",
                         ["dataType"] = "GPFeatureRecordSetLayer",
-                        ["value"] = JsonSerializer.SerializeToNode(
-                            solved.Routes, NAServerJsonContext.Default.NAServerRouteFeatureSet),
+                        ["value"] = routes,
                     },
                     new JsonObject
                     {

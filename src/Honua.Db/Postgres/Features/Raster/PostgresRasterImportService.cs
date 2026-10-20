@@ -795,6 +795,31 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         // shared geometry chokepoint before the tile-index math and the raster warp.
         var mercatorEnvelope = RasterWebMercatorSql.BuildEnvelopeExpression("ST_Envelope(r.raster)", sourceSrid);
 
+        // Import has already persisted all band statistics in this transaction. Use the same
+        // display stretch as dynamic tiles, without rescanning the raster for every tile.
+        var statistics = new List<RasterStatistics>();
+        await using (var statisticsCommand = connection.CreateCommand())
+        {
+            statisticsCommand.Transaction = transaction;
+            statisticsCommand.CommandText = $"""
+                SELECT band_number, min_value, max_value FROM {_rasterStatisticsTable}
+                WHERE raster_data_id = @rasterId ORDER BY band_number
+                """;
+            statisticsCommand.AddParameter("@rasterId", rasterId);
+            await using var reader = await statisticsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                statistics.Add(new RasterStatistics
+                {
+                    Band = reader.GetInt32(0),
+                    MinValue = reader.IsDBNull(1) ? null : reader.GetDouble(1),
+                    MaxValue = reader.IsDBNull(2) ? null : reader.GetDouble(2)
+                });
+            }
+        }
+        var stretchBounds = PostgresRasterStore.BuildAutoTileStretchBounds([.. statistics]);
+        await RasterTileExecution.DisableJitAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
         foreach (var zoom in zoomLevels)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -813,9 +838,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     0.0, 0.0, 3857)
                 """;
             var framedRaster = RasterCorrectedNearestSql.Sample("r.raster", grid);
+            var displayRaster = PostgresRasterStore.BuildTileDisplayRasterExpression(
+                framedRaster, grid, RasterFormat.PNG, stretchBounds);
             // Keep one encoded payload per tile for both the body and its digest. OFFSET 0
             // prevents expression flattening without materializing an entire zoom's tiles.
-            var encodedTile = $"(SELECT ST_AsGDALRaster({framedRaster}, 'PNG') AS tile_data OFFSET 0)";
+            var encodedTile = $"(SELECT ST_AsGDALRaster({displayRaster}, 'PNG') AS tile_data OFFSET 0)";
 
             if (zoom == 0)
             {
