@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:548a53abeb864cf11381ac5a054d3097e08ffc870e9cd4567bb38b03034e77f1",
+  "bundleDigest": "sha256:eeeecc8cb7bc257109cf5f5436e9758d071a073eaca0049676e3a2b7039df62e",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -3106,7 +3106,7 @@
     {
       "id": "guides/workflows/compose-map",
       "path": "guides/workflows/compose-map.md",
-      "documentDigest": "sha256:a56467b2d5259c30b5ae5d5bd1797ec9ad442ae4eea47346ba4e5e8d0f615305",
+      "documentDigest": "sha256:13771c6a8bf66fc904b959702af33956d6889cabaa8653b69581719e4a681510",
       "metadata": {
         "type": "guide",
         "title": "Compose a map from readable layers",
@@ -3248,18 +3248,6 @@
             },
             {
               "id": "preview",
-              "interfaces": [
-                {
-                  "kind": "mcp",
-                  "operation": "honua_studio_validate_draft",
-                  "contract": "/studio/mcp-tools.md"
-                },
-                {
-                  "kind": "mcp",
-                  "operation": "honua_studio_preview_draft",
-                  "contract": "/studio/mcp-tools.md"
-                }
-              ],
               "verb": "validate_preview",
               "inputs": [
                 {
@@ -3555,7 +3543,7 @@
     {
       "id": "guides/workflows/design-studio",
       "path": "guides/workflows/design-studio.md",
-      "documentDigest": "sha256:5d63f686dfbc6c6c347029a8383150429e0454f2e9c6cdc7bb203f9b67c8820b",
+      "documentDigest": "sha256:e1d5b2058c583ea567d04bdd5742215b6e56a22bbba18ce805c34cbbb30b28d6",
       "metadata": {
         "type": "guide",
         "title": "Design a map application through prompt and preview",
@@ -3734,13 +3722,6 @@
                   "name": "workspace",
                   "concept": "/concepts/domain/studio-workspace.md",
                   "description": "Current design paired with the preview generated for this revision."
-                }
-              ],
-              "interfaces": [
-                {
-                  "kind": "mcp",
-                  "operation": "honua_studio_preview_draft",
-                  "contract": "/studio/mcp-tools.md"
                 }
               ],
               "effect": "read",
@@ -8266,7 +8247,7 @@
     {
       "id": "studio/mcp-tools",
       "path": "studio/mcp-tools.md",
-      "documentDigest": "sha256:514ea6aed4a258e3553056ddb7a30923949d2ed70749bc7f00a3bf198990235d",
+      "documentDigest": "sha256:a2d1a388a896501e07779460452ce76405e838d045a354421538e88c04c99f3b",
       "metadata": {
         "type": "guide",
         "title": "Studio MCP tools",
@@ -16807,24 +16788,6 @@
       "executionVerified": false
     },
     {
-      "workflow": "guides/workflows/compose-map",
-      "action": "preview",
-      "operation": "honua_studio_validate_draft",
-      "kind": "mcp",
-      "validation": "documentation_reference_only",
-      "runtimeDiscoveryRequired": true,
-      "executionVerified": false
-    },
-    {
-      "workflow": "guides/workflows/compose-map",
-      "action": "preview",
-      "operation": "honua_studio_preview_draft",
-      "kind": "mcp",
-      "validation": "documentation_reference_only",
-      "runtimeDiscoveryRequired": true,
-      "executionVerified": false
-    },
-    {
       "workflow": "guides/workflows/connect-publish-data",
       "action": "inspect",
       "operation": "honua_admin_connections_test",
@@ -16865,15 +16828,6 @@
       "workflow": "guides/workflows/design-studio",
       "action": "edit",
       "operation": "honua_studio_update_draft",
-      "kind": "mcp",
-      "validation": "documentation_reference_only",
-      "runtimeDiscoveryRequired": true,
-      "executionVerified": false
-    },
-    {
-      "workflow": "guides/workflows/design-studio",
-      "action": "preview",
-      "operation": "honua_studio_preview_draft",
       "kind": "mcp",
       "validation": "documentation_reference_only",
       "runtimeDiscoveryRequired": true,
