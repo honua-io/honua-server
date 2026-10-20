@@ -778,12 +778,12 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 createdId = created.Id;
                 (await store.GetAsync(7, 8, createdId)).Should().NotBeNull();
                 (await store.HasLegacyAttachmentsAsync(7, CancellationToken.None)).Should().BeFalse(
-                    "the production CreateAsync path marks new attachments as manual, not legacy");
+                    "the production CreateAsync path marks new attachments with Honua origin, not legacy");
                 await using (var legacyConnection = new NpgsqlConnection(connectionString))
                 {
                     await legacyConnection.OpenAsync();
                     await using var legacyCommand = new NpgsqlCommand("""
-                        SELECT attachment_origin='manual' FROM attachment_registered.attachments
+                        SELECT attachment_origin='honua' FROM attachment_registered.attachments
                         WHERE id=@id AND layer_id=7 AND feature_id=8
                         """, legacyConnection);
                     legacyCommand.Parameters.AddWithValue("id", createdId);
@@ -837,13 +837,13 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             command.Parameters.AddWithValue("generation", generation);
             (await command.ExecuteScalarAsync()).Should().Be(true);
             command.CommandText = """
-                SELECT attachment_origin='manual' FROM attachment_registered.attachments
+                SELECT attachment_origin='honua' FROM attachment_registered.attachments
                 WHERE id=@id AND layer_id=7 AND feature_id=8
                 """;
             command.Parameters.Clear();
             command.Parameters.AddWithValue("id", createdId);
             (await command.ExecuteScalarAsync()).Should().Be(true,
-                "the real manually created row must retain its origin across restart");
+                "the real CreateAsync row must retain its Honua origin across restart");
         }
         finally
         {
