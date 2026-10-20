@@ -6,6 +6,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.GPServer.Models;
+using Honua.Protocols.GeoServices.NAServer;
 using Honua.ServiceDefaults;
 using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 
@@ -155,7 +156,29 @@ internal static class GPServerSoapEndpoints
                 new XElement("Direction", parameter.Direction),
                 new XElement("ParamType", parameter.ParameterType),
                 parameter.ChoiceList is null ? null : new XElement("ChoiceList", parameter.ChoiceList.Select(value => new XElement("String", value))),
-                BuildParameterValue(parameter)))));
+                BuildParameterValue(parameter)))),
+            BuildRoutingCoordinateDomainExtent(task.Name));
+
+    private static XElement? BuildRoutingCoordinateDomainExtent(string? taskName)
+    {
+        if (!NAServerMetadata.IsRoutingWebTool(taskName))
+        {
+            return null;
+        }
+
+        // Routing web-tool coordinates use WGS84. This is the coordinate domain,
+        // not an estimate of the graph's data extent or its solve coverage.
+        // Use the existing EnvelopeN wire form and normal SOAP serializer.
+        XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
+        return new XElement("Extent", new XAttribute(xsi + "type", "tns:EnvelopeN"),
+            new XElement("XMin", -180),
+            new XElement("YMin", -90),
+            new XElement("XMax", 180),
+            new XElement("YMax", 90),
+            new XElement("SpatialReference", new XAttribute(xsi + "type", "tns:GeographicCoordinateSystem"),
+                new XElement("WKID", 4326),
+                new XElement("LatestWKID", 4326)));
+    }
 
     private static string GetSoapDataType(string? dataType)
     {
