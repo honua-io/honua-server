@@ -87,7 +87,8 @@ public sealed class OperationsEndpointsTests
                 Table = "parcels",
                 GeometryType = "Polygon",
                 Srid = 4326,
-                ServiceName = "default"
+                ServiceName = "default",
+                MetadataRevision = 42
             });
         publishing
             .ValidateTableForPublishAsync(
@@ -136,7 +137,7 @@ public sealed class OperationsEndpointsTests
             data.GetProperty("operationId").GetString().Should().Be("service.publish");
             data.GetProperty("status").GetString().Should().Be("Completed");
             data.TryGetProperty("metadataRevision", out var revision).Should().BeTrue();
-            revision.GetInt64().Should().BeGreaterThanOrEqualTo(0);
+            revision.GetInt64().Should().Be(42, "the handle must retain the publisher's own committed revision");
 
             await publishing.Received(1).PublishLayerAsync(
                 Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
