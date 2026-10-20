@@ -6,12 +6,14 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Geometry;
 
 internal sealed class PostgresGeometryTopologyValidator(
-    IAdoNetDatabaseConnectionProvider connectionProvider) : IGeometryTopologyValidator
+    IAdoNetDatabaseConnectionProvider connectionProvider) : IGeometryTopologyValidator, IBatchGeometryTopologyValidator
 {
+    private const int TopologyBatchSize = 256;
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider = connectionProvider
         ?? throw new ArgumentNullException(nameof(connectionProvider));
 
@@ -42,6 +44,63 @@ internal sealed class PostgresGeometryTopologyValidator(
         }
 
         return GeometryValidationResult.Success();
+    }
+
+    public async Task<IReadOnlyList<GeometryValidationResult>> ValidateTopologiesAsync(
+        IReadOnlyList<byte[]> wkbs,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(wkbs);
+        if (wkbs.Count == 0)
+        {
+            return [];
+        }
+
+        var results = new List<GeometryValidationResult>(wkbs.Count);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        for (var offset = 0; offset < wkbs.Count; offset += TopologyBatchSize)
+        {
+            var count = Math.Min(TopologyBatchSize, wkbs.Count - offset);
+            var chunk = new byte[count][];
+            for (var index = 0; index < count; index++)
+            {
+                chunk[index] = wkbs[offset + index];
+            }
+
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = """
+                SELECT input.ordinality, ST_IsValid(input.wkb::geometry), ST_IsValidReason(input.wkb::geometry)
+                FROM unnest(@wkbs) WITH ORDINALITY AS input(wkb, ordinality)
+                ORDER BY input.ordinality
+                """;
+            cmd.Parameters.Add(new NpgsqlParameter("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea)
+            {
+                Value = chunk
+            });
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            for (var index = 0; index < count; index++)
+            {
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ||
+                    reader.GetInt64(0) != index + 1)
+                {
+                    throw new InvalidOperationException("Topology batch did not return one ordered result per geometry.");
+                }
+
+                var isValid = reader.GetBoolean(1);
+                var reason = reader.IsDBNull(2) ? null : reader.GetString(2);
+                results.Add(isValid
+                    ? GeometryValidationResult.Success()
+                    : GeometryValidationResult.Failure(
+                        MapPostGisReasonToErrorCode(reason), reason ?? "Geometry is topologically invalid"));
+            }
+
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("Topology batch returned more results than inputs.");
+            }
+        }
+
+        return results;
     }
 
     public async Task<GeometryRepairResult> RepairAsync(

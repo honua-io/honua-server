@@ -90,7 +90,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
         string table,
         CancellationToken cancellationToken = default)
     {
-        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
         {
             return null;
         }
@@ -232,7 +232,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
         string table,
         CancellationToken cancellationToken = default)
     {
-        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
         {
             return null;
         }
@@ -246,7 +246,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var discoverySchemas = _schemaConfiguration.ResolveDiscoverySchemas(_schemaContext?.CurrentSchema);
+            var discoverySchemas = CommittedSinkSchemaGate.DiscoverySchemas(
+                _schemaConfiguration, _schemaContext?.CurrentSchema, schema);
             const string sql = """
                 SELECT
                     f_table_schema as schema,

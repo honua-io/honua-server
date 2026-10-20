@@ -98,6 +98,20 @@ public sealed class ImportCoordinationOutageRecoveryTests
     }
 
     [UnitTest]
+    public async Task ProbeAsync_HungProbe_DoesNotStartAnotherWhileTheFirstIsRunning()
+    {
+        var queue = Substitute.For<IDistributedJobQueueService>();
+        queue.GetQueueLengthAsync(Arg.Any<CancellationToken>()).Returns(new TaskCompletionSource<long>().Task);
+        var requestStore = Substitute.For<IDistributedProgressStore<object>, IProgressStoreRecovery>();
+        var progressStore = Substitute.For<IDistributedProgressStore<object>, IProgressStoreRecovery>();
+
+        await ImportCoordinationRecovery.ProbeAsync(queue, requestStore, progressStore, CancellationToken.None);
+        await ImportCoordinationRecovery.ProbeAsync(queue, requestStore, progressStore, CancellationToken.None);
+
+        await queue.Received(1).GetQueueLengthAsync(Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task TryAdmitAsync_WhenCancelledDuringHungProbe_StopsPromptly()
     {
         var health = Substitute.For<IImportCoordinationHealth>();

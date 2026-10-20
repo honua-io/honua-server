@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Geometry.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -158,8 +160,48 @@ public sealed class LayerReconciliationServiceTests
         artifact.Layers[0].Classification.Should().Be(MigrationReconciliationClassifications.Skipped);
     }
 
-    private static LayerReconciliationService NewService(IFeatureReader reader)
-        => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance);
+    private static LayerReconciliationService NewService(IFeatureReader reader, IGeometryTopologyValidator? topology = null)
+        => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance, topologyValidator: topology);
+
+    private sealed class FixedTopologyValidator(bool valid) : IGeometryTopologyValidator
+    {
+        public Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeometryValidationResult { IsValid = valid });
+
+        public Task<GeometryRepairResult> RepairAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingBatchTopologyValidator(params bool[] validity)
+        : IGeometryTopologyValidator, IBatchGeometryTopologyValidator
+    {
+        public int BatchCalls { get; private set; }
+
+        public int SingleCalls { get; private set; }
+
+        public Task<IReadOnlyList<GeometryValidationResult>> ValidateTopologiesAsync(
+            IReadOnlyList<byte[]> wkbs,
+            CancellationToken cancellationToken = default)
+        {
+            BatchCalls++;
+            wkbs.Should().HaveCount(2);
+            IReadOnlyList<GeometryValidationResult> results = validity
+                .Select(value => new GeometryValidationResult { IsValid = value })
+                .ToArray();
+            return Task.FromResult(results);
+        }
+
+        public Task<GeometryValidationResult> ValidateTopologyAsync(
+            byte[] wkb,
+            CancellationToken cancellationToken = default)
+        {
+            SingleCalls++;
+            throw new InvalidOperationException("The census must use the batch path.");
+        }
+
+        public Task<GeometryRepairResult> RepairAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
 
     [Trait("Tier", "Fast")]
     [Theory]
@@ -419,13 +461,136 @@ public sealed class LayerReconciliationServiceTests
             ]
         };
 
-        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+        var geometry = (await NewService(reader, new FixedTopologyValidator(valid: true)).ReconcileAsync(request)).Layers[0].Geometry;
 
         geometry.Classification.Should().Be("warn");
         geometry.InheritedSourceDefects.Should().Be(0);
         geometry.MigrationLosses.Should().Be(0);
         geometry.SourceDefectRewrites.Should().Be(1);
         geometry.Reason.Should().Contain("not a successful repair");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceThatRemainsTopologicallyInvalid_IsInherited()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader, new FixedTopologyValidator(valid: false)).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.SourceDefectRewrites.Should().Be(0);
+        geometry.Reason.Should().Contain("invalid source geometry").And.Contain("none were repaired");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourcePopulation_BatchesOrderedTopologyResults()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with
+            {
+                SourceGeometry = new SourceGeometryCensus
+                {
+                    InvalidTargetFeatureIds = new HashSet<long> { 1, 2 }
+                }
+            }]
+        };
+        var topology = new RecordingBatchTopologyValidator(false, true);
+
+        var geometry = (await NewService(reader, topology).ReconcileAsync(request)).Layers[0].Geometry;
+
+        topology.BatchCalls.Should().Be(1);
+        topology.SingleCalls.Should().Be(0);
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.SourceDefectRewrites.Should().Be(1);
+        geometry.Classification.Should().Be(MigrationReconciliationClassifications.Warn);
+    }
+
+    [UnitTest]
+    public async Task Reconcile_IncompleteTopologyBatch_RefusesCensusQualification()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with
+            {
+                SourceGeometry = new SourceGeometryCensus
+                {
+                    InvalidTargetFeatureIds = new HashSet<long> { 1, 2 }
+                }
+            }]
+        };
+
+        var geometry = (await NewService(reader, new RecordingBatchTopologyValidator(true))
+            .ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be(MigrationReconciliationClassifications.Fail);
+        geometry.Reason.Should().Contain("could not be verified");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceWithoutTopologyCheck_IsNotCountedAsRepair()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.SourceDefectRewrites.Should().Be(0);
     }
 
     [UnitTest]
@@ -490,6 +655,45 @@ public sealed class LayerReconciliationServiceTests
         geometry.Classification.Should().Be("fail");
         geometry.Reason.Should().Contain("did not cover the filtered population");
         reader.SampleQueries.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task Reconcile_CensusLargerThanCount_DoesNotCertifyParity()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(
+                2,
+                ImmutableArray.Create(
+                    Feature.Create(1, [1, 1, 0, 0, 0], attributes),
+                    Feature.Create(2, [1, 1, 0, 0, 0], attributes)),
+                hasMoreResults: false)
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    TargetContainsOnlyImportedFeatures = true,
+                    SourceGeometry = new SourceGeometryCensus()
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+        var layer = result.Layers[0];
+
+        result.Classification.Should().Be("fail");
+        layer.Count.Classification.Should().Be("fail");
+        layer.Count.TargetCount.Should().Be(1);
+        layer.Geometry.Classification.Should().Be("fail");
+        layer.Geometry.Reason.Should().Contain("did not cover the filtered population");
+        layer.Count.Reason.Should().Contain("did not cover the filtered population");
     }
 
     [UnitTest]

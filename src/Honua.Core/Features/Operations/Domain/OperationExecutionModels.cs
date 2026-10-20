@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Core.Features.Operations.Domain;
 
 /// <summary>
@@ -11,6 +13,13 @@ namespace Honua.Core.Features.Operations.Domain;
 /// </summary>
 public sealed record OperationRequest
 {
+    /// <summary>
+    /// Server-revalidated committed-sink evidence for this invocation. The public request and
+    /// durable approval payload carry only source job/artifact IDs; the executor reconstructs
+    /// this evidence before validation on every submission and approved replay.
+    /// </summary>
+    [JsonIgnore]
+    public VerifiedCommittedSinkPublication? VerifiedCommittedSinkPublication { get; init; }
     /// <summary>
     /// Operation identifier this request targets (for example <c>service.publish</c>).
     /// </summary>
@@ -56,6 +65,52 @@ public sealed record OperationRequest
     /// </summary>
     public IReadOnlyDictionary<string, OperationSecretReference> SecretParameters { get; init; } =
         new Dictionary<string, OperationSecretReference>(StringComparer.Ordinal);
+}
+
+/// <summary>Exact source and destination identity revalidated from a completed sink job.</summary>
+public sealed record VerifiedCommittedSinkPublication
+{
+    /// <summary>Durable source job identifier.</summary>
+    public required string SourceJobId { get; init; }
+
+    /// <summary>Exact source artifact identifier.</summary>
+    public required string SourceArtifactId { get; init; }
+
+    /// <summary>Registered secure connection identifier used by the sink.</summary>
+    public required Guid ConnectionId { get; init; }
+
+    /// <summary>Committed schema.</summary>
+    public required string Schema { get; init; }
+
+    /// <summary>Committed table.</summary>
+    public required string Table { get; init; }
+
+    /// <summary>Hash of the sink's exact database endpoint.</summary>
+    public required string EndpointFingerprint { get; init; }
+
+    /// <summary>Durable source job owner.</summary>
+    public required string SourceOwnerActorId { get; init; }
+
+    /// <summary>Actor authorized to request this publication.</summary>
+    public required string PublisherActorId { get; init; }
+
+    /// <summary>Whether the publisher accessed another actor's source as an administrator.</summary>
+    public bool PublisherWasAdministrator { get; init; }
+
+    /// <summary>Trusted tenant identity captured by the source job.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Durable source job parameter name.</summary>
+    public const string SourceJobIdKey = "committedSinkSourceJobId";
+
+    /// <summary>Durable source artifact parameter name.</summary>
+    public const string SourceArtifactIdKey = "committedSinkSourceArtifactId";
+
+    /// <summary>Sealed actor parameter name used for approved replay.</summary>
+    public const string PublisherActorIdKey = "committedSinkPublisherActorId";
+
+    /// <summary>Sealed administrator decision parameter name used for approved replay.</summary>
+    public const string PublisherWasAdministratorKey = "committedSinkPublisherWasAdministrator";
 }
 
 /// <summary>Opaque, non-secret handle for one-time operation secret material.</summary>
