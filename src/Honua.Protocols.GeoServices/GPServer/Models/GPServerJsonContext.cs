@@ -9,6 +9,7 @@ namespace Honua.Protocols.GeoServices.GPServer.Models;
 /// AOT-compatible JSON serialization context for GPServer wire-format models.
 /// </summary>
 [JsonSerializable(typeof(GPServiceInfoResponse))]
+[JsonSerializable(typeof(RoutingGPServiceInfoResponse))]
 [JsonSerializable(typeof(GPTaskInfoResponse))]
 [JsonSerializable(typeof(GPParameterInfo))]
 [JsonSerializable(typeof(GPParameterInfo[]))]

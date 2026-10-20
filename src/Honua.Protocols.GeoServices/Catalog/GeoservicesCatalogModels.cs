@@ -39,11 +39,12 @@ internal sealed record RestInfoResponse
     /// ArcGIS REST compatibility level selected for native Esri clients. ArcGIS Pro 3.7's
     /// ImageServer reader rejects the service before issuing an image operation when this
     /// field is absent. This is not Honua's product version; keep the exception confined to
-    /// <c>/rest/info</c>, and do not add <c>fullVersion</c> or version fields to service models.
+    /// <c>/rest/info</c> and the virtual Routing GP descriptor. Neither response advertises
+    /// an ArcGIS installation; <c>fullVersion</c> remains forbidden.
     /// See honua-server#3375 for the licensed-client A/B evidence.
     /// </summary>
     [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 10.8;
+    public double CurrentVersion { get; init; } = GeoServicesMetadataCompatibility.NativeClientLevel;
 
     [JsonPropertyName("owningSystemUrl")]
     public required string OwningSystemUrl { get; init; }

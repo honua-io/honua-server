@@ -9,7 +9,7 @@ namespace Honua.Protocols.GeoServices.GPServer.Models;
 /// <summary>
 /// GPServer service root response listing available tasks.
 /// </summary>
-internal sealed class GPServiceInfoResponse
+internal class GPServiceInfoResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
@@ -32,6 +32,20 @@ internal sealed class GPServiceInfoResponse
 
     /// <summary>Maximum number of records returned.</summary>
     public int MaximumRecords { get; set; } = 1000;
+}
+
+/// <summary>
+/// Virtual Routing's GP service schema, including its bounded native-client compatibility selector.
+/// </summary>
+/// <remarks>
+/// The GPServer JSON schema requires currentVersion. Keep that selector out of the
+/// ordinary catalog service model and do not represent it as Honua's product release.
+/// </remarks>
+internal sealed class RoutingGPServiceInfoResponse : GPServiceInfoResponse
+{
+    /// <summary>ArcGIS REST wire compatibility level; not an ArcGIS Server product version.</summary>
+    [JsonPropertyName("currentVersion")]
+    public double CurrentVersion { get; } = GeoServicesMetadataCompatibility.NativeClientLevel;
 }
 
 /// <summary>

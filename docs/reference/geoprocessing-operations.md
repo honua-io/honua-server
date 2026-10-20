@@ -271,6 +271,13 @@ publication with a colliding service name or stable ID retains its authorization
 and enabled-protocol restrictions; it cannot fall back to the virtual service.
 Full stock-client routing compatibility remains tracked by issue #5192.
 
+The virtual Routing descriptor includes the numeric `currentVersion` wire
+compatibility selector required by the GP service JSON schema. It uses the same
+compatibility level as `/rest/info` and identifies the service as Honua. It does
+not report an ArcGIS installation or Honua's product release. This exception is
+confined to the virtual Routing response; ordinary catalog GP descriptors retain
+their existing version-field policy, and `fullVersion` is not advertised.
+
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
 | `routing.closest-facilities` | Find ranked network routes between incidents and facilities. | `incidents`, `facilities`, `facility_count`, `travel_direction`, `cutoff`, `time_units`, `distance_units`, `travel_mode` | job, workflow |

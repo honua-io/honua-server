@@ -109,14 +109,14 @@ internal static partial class GPServerEndpoints
 
         // https://developers.arcgis.com/rest/services-reference/enterprise/gp-service/
         // REST and SOAP share these synchronous provider tools; catalog jobs remain separate.
-        return Results.Json(new GPServiceInfoResponse
+        return Results.Json(new RoutingGPServiceInfoResponse
         {
-            ServiceDescription = "Routing tools for the configured routing provider",
+            ServiceDescription = "Honua routing tools for the configured routing provider",
             ExecutionType = RoutingUtilityExecutionType,
             Capabilities = string.Empty,
             ResultMapServerName = string.Empty,
             Tasks = [.. tasks]
-        }, GPServerJsonContext.Default.GPServiceInfoResponse, contentType: NetworkAnalysisUtilitiesContentType);
+        }, GPServerJsonContext.Default.RoutingGPServiceInfoResponse, contentType: NetworkAnalysisUtilitiesContentType);
     }
 
     private static bool IsPrettyJsonRequest(HttpContext context, IReadOnlyDictionary<string, string> parameters)
