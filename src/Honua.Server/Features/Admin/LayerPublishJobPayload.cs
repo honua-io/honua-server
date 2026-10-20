@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Features.Admin.Models;
 
@@ -33,6 +34,9 @@ internal sealed class LayerPublishJobPayload
     /// Endpoint fingerprint captured when the sink committed. Kept off the HTTP request body.
     /// </summary>
     public string? ConnectionEndpointFingerprint { get; init; }
+
+    /// <summary>Bounded source identity claims revalidated from the durable job on execution.</summary>
+    public VerifiedCommittedSinkPublication? CommittedSinkPublication { get; init; }
 
     internal string ToJson()
         => JsonSerializer.Serialize(this, LayerPublishingJsonContext.Default.LayerPublishJobPayload);

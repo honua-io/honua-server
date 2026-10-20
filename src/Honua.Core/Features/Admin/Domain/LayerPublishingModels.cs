@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+using Honua.Core.Features.Operations.Domain;
+
 namespace Honua.Core.Features.Admin.Domain;
 
 /// <summary>
@@ -158,6 +161,13 @@ public sealed class LayerPublishRequest
     /// carries it on its own payload. Settable so the job worker can apply it after mapping.
     /// </summary>
     public string? ConnectionEndpointFingerprint { get; set; }
+
+    /// <summary>
+    /// Server-revalidated source evidence for a committed sink publish. Never read from an
+    /// HTTP body; the queued worker stores only its bounded durable coordinates separately.
+    /// </summary>
+    [JsonIgnore]
+    public VerifiedCommittedSinkPublication? CommittedSinkPublication { get; set; }
 }
 
 /// <summary>
@@ -239,6 +249,10 @@ public sealed class TablePublishValidationRequest
     /// <see cref="LayerPublishRequest.ConnectionEndpointFingerprint"/>.
     /// </summary>
     public string? ConnectionEndpointFingerprint { get; set; }
+
+    /// <summary>Server-revalidated committed sink evidence, excluded from public JSON.</summary>
+    [JsonIgnore]
+    public VerifiedCommittedSinkPublication? CommittedSinkPublication { get; set; }
 }
 
 /// <summary>

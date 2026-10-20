@@ -162,7 +162,7 @@ internal sealed class PublishResultTool : IMcpTool
                 new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
-        var request = BuildRequest(argument, artifact, connectionId, schema, table);
+        var request = BuildRequest(argument, artifact, sourceId, connectionId, schema, table);
         var context = new OperationPolicyContext
         {
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
@@ -266,6 +266,7 @@ internal sealed class PublishResultTool : IMcpTool
     private static OperationRequest BuildRequest(
         McpPublishResultArgument argument,
         ArtifactRef artifact,
+        string sourceJobId,
         string connectionId,
         string schema,
         string table)
@@ -275,6 +276,8 @@ internal sealed class PublishResultTool : IMcpTool
             ["schema"] = schema,
             ["table"] = table,
             ["layerName"] = string.IsNullOrWhiteSpace(argument.LayerName) ? artifact.Label : argument.LayerName,
+            [VerifiedCommittedSinkPublication.SourceJobIdKey] = sourceJobId,
+            [VerifiedCommittedSinkPublication.SourceArtifactIdKey] = artifact.ArtifactId,
         };
 
         if (TryGetMetadata(artifact, MetadataKeys.GeometryColumn, out var geometryColumn))

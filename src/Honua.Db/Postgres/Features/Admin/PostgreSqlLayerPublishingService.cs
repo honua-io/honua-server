@@ -14,6 +14,7 @@
 
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -208,7 +209,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentNullException.ThrowIfNull(request);
-        using var pinnedSchema = OpenCommittedSchemaScope(connectionString, request.ConnectionEndpointFingerprint);
+        using var pinnedSchema = OpenCommittedSchemaScope(
+            connectionString, request.ConnectionEndpointFingerprint,
+            request.CommittedSinkPublication, request.Schema, request.Table);
 
         var schema = request.Schema?.Trim();
         var table = request.Table?.Trim();
@@ -259,7 +262,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     TargetSrid = request.Srid,
                     GeometryColumn = request.GeometryColumn,
                     PrimaryKey = request.PrimaryKey,
-                    Fields = request.Fields
+                    Fields = request.Fields,
+                    ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
+                    CommittedSinkPublication = request.CommittedSinkPublication
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -651,14 +656,23 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     /// Verifies a committed-sink endpoint pin and, only when it matches, allows that
     /// publish to discover a non-reserved schema outside the operational list.
     /// </summary>
-    private static IDisposable? OpenCommittedSchemaScope(string connectionString, string? fingerprint)
+    private static IDisposable? OpenCommittedSchemaScope(
+        string connectionString,
+        string? fingerprint,
+        VerifiedCommittedSinkPublication? source,
+        string? schema,
+        string? table)
     {
         if (string.IsNullOrWhiteSpace(fingerprint))
         {
             return null;
         }
 
-        if (!ConnectionEndpointFingerprint.Matches(connectionString, fingerprint))
+        if (source is null || source.ConnectionId == Guid.Empty ||
+            !string.Equals(source.Schema, schema, StringComparison.Ordinal) ||
+            !string.Equals(source.Table, table, StringComparison.Ordinal) ||
+            !string.Equals(source.EndpointFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase) ||
+            !ConnectionEndpointFingerprint.Matches(connectionString, fingerprint))
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
@@ -675,7 +689,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentNullException.ThrowIfNull(request);
-        using var pinnedSchema = OpenCommittedSchemaScope(connectionString, request.ConnectionEndpointFingerprint);
+        using var pinnedSchema = OpenCommittedSchemaScope(
+            connectionString, request.ConnectionEndpointFingerprint,
+            request.CommittedSinkPublication, request.Schema, request.Table);
 
         var schema = request.Schema?.Trim() ?? string.Empty;
         var table = request.Table?.Trim() ?? string.Empty;

@@ -7,6 +7,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -16,6 +17,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Microsoft.Extensions.Options;
+using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
 
@@ -92,12 +94,40 @@ internal static partial class LayerPublishJobWork
             publishRequest = LayerPublishRequestMapper.CreateDomain(
                 payload.Request, payload.ConnectionId, payload.TenantId);
             publishRequest.ConnectionEndpointFingerprint = payload.ConnectionEndpointFingerprint;
+            if (payload.ConnectionEndpointFingerprint is not null)
+            {
+                var source = payload.CommittedSinkPublication
+                    ?? throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                        "Committed sink source evidence is unavailable.");
+                if (payload.ConnectionId != source.ConnectionId ||
+                    !string.Equals(publishRequest.Schema, source.Schema, StringComparison.Ordinal) ||
+                    !string.Equals(publishRequest.Table, source.Table, StringComparison.Ordinal) ||
+                    !string.Equals(payload.TenantId, source.TenantId, StringComparison.Ordinal) ||
+                    !string.Equals(payload.ConnectionEndpointFingerprint, source.EndpointFingerprint, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                        "Committed sink source identity changed before execution.");
+                }
+
+                publishRequest.CommittedSinkPublication = await CommittedSinkPublicationVerifier.RevalidateAsync(
+                    services.GetRequiredService<IExecutionJobStore>(),
+                    services.GetRequiredService<IProcessCatalog>(),
+                    source, payload.ConnectionId, publishRequest.Schema, publishRequest.Table,
+                    payload.ConnectionEndpointFingerprint, payload.TenantId, jobToken).ConfigureAwait(false);
+            }
         }
         catch (LayerPublishingException exception)
         {
             await WriteTerminalAsync(
                 progressStore, jobId, OperationStatus.Failed, null, exception.Message).ConfigureAwait(false);
             return NonRetryable(exception.Message);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+        {
+            Log.PublishFaulted(logger, jobId, exception);
+            await WriteTerminalAsync(
+                progressStore, jobId, OperationStatus.Failed, null, SafeFailureMessage).ConfigureAwait(false);
+            return NonRetryable(SafeFailureMessage);
         }
 
         await WritePhaseAsync(progressStore, jobId, OperationStatus.Processing, "Materializing", null)

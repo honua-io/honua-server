@@ -2,13 +2,22 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using NSubstitute;
 
@@ -88,6 +97,176 @@ public sealed class CommittedPostgisResultPackageTests
             !artifact.Metadata.ContainsKey("schema") &&
             !artifact.Metadata.ContainsKey("table") &&
             !artifact.Metadata.ContainsKey(ConnectionEndpointFingerprint.MetadataKey), reason);
+    }
+
+    [UnitTest]
+    public async Task CommittedSinkVerifier_RequiresCompletedOwnedExactDestination()
+    {
+        var original = Job(Receipt) with
+        {
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                TenantId = "tenant-a",
+                SubmitterSecurityContext = new JobSecurityContext("alice", "tenant-a", [])
+                {
+                    OwnerActorId = "alice"
+                }
+            }
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(call => original);
+        var catalog = Substitute.For<IProcessCatalog>();
+
+        async Task Verify(
+            string artifactId = "job-1:artifact:1",
+            string schema = "results",
+            string table = "output",
+            string actor = "alice",
+            bool administrator = false,
+            string tenant = "tenant-a",
+            string? expectedOwner = null)
+            => _ = await CommittedSinkPublicationVerifier.VerifyAsync(
+                store, catalog, "job-1", artifactId, Guid.Parse(ConnectionId), schema, table,
+                Fingerprint, tenant, actor, administrator, expectedOwner, CancellationToken.None);
+
+        await Verify();
+        await FluentActions.Invoking(() => Verify(artifactId: "job-1:artifact:2"))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => Verify(schema: "other"))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => Verify(table: "other"))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => Verify(actor: "bob"))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => Verify(tenant: "tenant-b"))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => Verify(expectedOwner: "bob"))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await Verify(actor: "admin", administrator: true);
+
+        store.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(call => original with { Status = ExecutionJobStatus.Failed });
+        await FluentActions.Invoking(() => Verify())
+            .Should().ThrowAsync<LayerPublishingException>();
+    }
+
+    [UnitTest]
+    public async Task ServicePublishPreparation_RejectsGenericSpoofAndRevalidatesApprovedReplay()
+    {
+        var sourceJob = Job(Receipt) with
+        {
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                TenantId = "tenant-a",
+                SubmitterSecurityContext = new JobSecurityContext("alice", "tenant-a", [])
+                {
+                    OwnerActorId = "alice"
+                }
+            }
+        };
+        var jobs = Substitute.For<IExecutionJobStore>();
+        jobs.GetAsync(sourceJob.OperationId, Arg.Any<CancellationToken>()).Returns(sourceJob);
+        var executor = new ServicePublishExecutor(
+            Substitute.For<ILayerPublishingService>(),
+            Substitute.For<ISecureConnectionResolver>(),
+            Substitute.For<IMetadataV2GraphProvider>(),
+            TimeProvider.System,
+            sourceJobs: jobs,
+            processCatalog: Substitute.For<IProcessCatalog>());
+        var parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["schema"] = "results",
+            ["table"] = "output",
+            ["layerName"] = "Output",
+            [VerifiedCommittedSinkPublication.SourceJobIdKey] = sourceJob.OperationId,
+            [VerifiedCommittedSinkPublication.SourceArtifactIdKey] = "job-1:artifact:1"
+        };
+        var request = new OperationRequest
+        {
+            OperationId = ServicePublishOperation.OperationId,
+            ConnectionId = ConnectionId,
+            Parameters = parameters
+        };
+        var alice = new OperationPolicyContext { PrincipalId = "alice", TenantId = "tenant-a" };
+
+        var fingerprintOnly = request with
+        {
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["schema"] = "results", ["table"] = "output", ["layerName"] = "Output",
+                [ConnectionEndpointFingerprint.MetadataKey] = Fingerprint
+            }
+        };
+        await FluentActions.Invoking(() => executor.PrepareAsync(fingerprintOnly, alice))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        var prepared = await executor.PrepareAsync(request, alice);
+        prepared.VerifiedCommittedSinkPublication.Should().NotBeNull();
+        prepared.Parameters[ConnectionEndpointFingerprint.MetadataKey].Should().Be(Fingerprint);
+        prepared.VerifiedCommittedSinkPublication!.SourceOwnerActorId.Should().Be("alice");
+        var forgedJson = JsonNode.Parse(JsonSerializer.Serialize(fingerprintOnly,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)))!.AsObject();
+        forgedJson["verifiedCommittedSinkPublication"] = JsonSerializer.SerializeToNode(
+            prepared.VerifiedCommittedSinkPublication);
+        var deserializedForgery = JsonSerializer.Deserialize<OperationRequest>(forgedJson.ToJsonString(),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        deserializedForgery.VerifiedCommittedSinkPublication.Should().BeNull();
+        await FluentActions.Invoking(() => executor.PrepareAsync(deserializedForgery, alice))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        var forged = request with
+        {
+            Parameters = new Dictionary<string, string?>(parameters, StringComparer.Ordinal)
+            {
+                [VerifiedCommittedSinkPublication.PublisherActorIdKey] = "bob",
+                [VerifiedCommittedSinkPublication.PublisherWasAdministratorKey] = "true"
+            }
+        };
+        await FluentActions.Invoking(() => executor.PrepareAsync(forged,
+                new OperationPolicyContext { PrincipalId = "bob", TenantId = "tenant-a" }))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        var admin = new OperationPolicyContext
+        {
+            PrincipalId = "administrator", TenantId = "tenant-a", Roles = ["admin"]
+        };
+        var adminPrepared = await executor.PrepareAsync(request, admin);
+        adminPrepared.VerifiedCommittedSinkPublication!.PublisherWasAdministrator.Should().BeTrue();
+        var durable = ServicePublishApprovalPayload.From(adminPrepared, admin);
+        var serialized = JsonSerializer.Serialize(durable,
+            ServicePublishApprovalJsonContext.Default.ServicePublishApprovalPayload);
+        var restored = JsonSerializer.Deserialize(serialized,
+            ServicePublishApprovalJsonContext.Default.ServicePublishApprovalPayload)!;
+        var replayRequest = restored.ToOperationRequest();
+        replayRequest.VerifiedCommittedSinkPublication.Should().BeNull();
+        var replayContext = admin with { Roles = [], ApprovedProposalId = "approved-1" };
+        var replayPrepared = await executor.PrepareAsync(replayRequest, replayContext);
+        replayPrepared.VerifiedCommittedSinkPublication!.PublisherWasAdministrator.Should().BeTrue();
+
+        await FluentActions.Invoking(() => executor.PrepareAsync(replayRequest,
+                replayContext with { PrincipalId = "mallory" }))
+            .Should().ThrowAsync<InvalidOperationException>();
+        await FluentActions.Invoking(() => executor.PrepareAsync(replayRequest,
+                replayContext with { TenantId = "tenant-b" }))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => executor.PrepareAsync(replayRequest with
+            {
+                Parameters = new Dictionary<string, string?>(replayRequest.Parameters, StringComparer.Ordinal)
+                {
+                    ["table"] = "other"
+                }
+            }, replayContext))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => executor.PrepareAsync(replayRequest with
+            {
+                Parameters = new Dictionary<string, string?>(replayRequest.Parameters, StringComparer.Ordinal)
+                {
+                    [VerifiedCommittedSinkPublication.SourceArtifactIdKey] = "job-1:artifact:2"
+                }
+            }, replayContext))
+            .Should().ThrowAsync<LayerPublishingException>();
     }
 
     private static AnalysisResultPackage Package(ExecutionJobRecord job)

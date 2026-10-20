@@ -113,7 +113,7 @@ public static class ConnectionEndpointFingerprint
 
         canonical = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"{host.Trim().ToLowerInvariant()}|{port}|{database.Trim().ToLowerInvariant()}");
+            $"{host.Trim().ToLowerInvariant()}|{port}|{database.Trim()}");
         return true;
     }
 

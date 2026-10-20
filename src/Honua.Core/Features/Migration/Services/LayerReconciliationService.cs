@@ -557,6 +557,57 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         IReadOnlyList<Feature> features,
         CancellationToken cancellationToken)
     {
+        // A source census can contain a large population of invalid geometries. The Postgres
+        // validator evaluates ordered chunks over one connection instead of opening a new
+        // connection for every target row. Keep the provider's per-row result associated with
+        // its exact feature index, including duplicate IDs in a contradictory target read.
+        var batchValidator = _topologyValidator as IBatchGeometryTopologyValidator;
+        var batchValidity = new bool[features.Count];
+        if (batchValidator is not null)
+        {
+            var indexes = new List<int>();
+            var wkbs = new List<byte[]>();
+            for (var index = 0; index < features.Count; index++)
+            {
+                var feature = features[index];
+                if (census.InvalidTargetFeatureIds.Contains(feature.Id) &&
+                    !census.AbsentTargetFeatureIds.Contains(feature.Id) &&
+                    !census.UnconvertedTargetFeatureIds.Contains(feature.Id) &&
+                    feature.Geometry is { Length: > 0 } wkb)
+                {
+                    indexes.Add(index);
+                    wkbs.Add(wkb);
+                }
+            }
+
+            if (wkbs.Count > 0)
+            {
+                try
+                {
+                    var topology = await batchValidator.ValidateTopologiesAsync(wkbs, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (topology.Count != indexes.Count)
+                    {
+                        throw new InvalidOperationException("Topology batch returned an incomplete result set.");
+                    }
+
+                    for (var index = 0; index < indexes.Count; index++)
+                    {
+                        batchValidity[indexes[index]] = topology[index].IsValid;
+                    }
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    return new MigrationReconciliationGeometryProbe
+                    {
+                        Sampled = features.Count,
+                        Classification = MigrationReconciliationClassifications.Fail,
+                        Reason = "Target topology could not be verified against the source census."
+                    };
+                }
+            }
+        }
+
         var inheritedNull = 0;
         var inheritedInvalid = 0;
         var rewrites = 0;
@@ -565,8 +616,9 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var sampledLosses = 0;
         var wellFormedIds = new HashSet<long>();
         var valid = 0;
-        foreach (var feature in features)
+        for (var featureIndex = 0; featureIndex < features.Count; featureIndex++)
         {
+            var feature = features[featureIndex];
             var wellFormed = IsGeometryWellFormed(feature.Geometry);
             if (wellFormed)
             {
@@ -593,7 +645,9 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             {
                 // WKB presence is not topology. A header-only payload that is still invalid
                 // stays an inherited source defect. Without a validator, fail closed.
-                if (await IsTopologicallyValidAsync(feature.Geometry, cancellationToken).ConfigureAwait(false))
+                if (batchValidator is not null
+                    ? batchValidity[featureIndex]
+                    : await IsTopologicallyValidAsync(feature.Geometry, cancellationToken).ConfigureAwait(false))
                 {
                     rewrites++;
                 }

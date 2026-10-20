@@ -5,10 +5,12 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Db.Postgres.Features.Admin;
+using Honua.Server.Features.Operations;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -21,7 +23,8 @@ internal sealed class LayerPublishJobService(
     IUniversalProgressStore progressStore,
     ITenantContext tenantContext,
     ISchemaContext? schemaContext = null,
-    IExecutionJobStore? jobStore = null) : ILayerPublishJobs
+    IExecutionJobStore? jobStore = null,
+    IProcessCatalog? processCatalog = null) : ILayerPublishJobs
 {
     public async Task<LayerPublishAdmission> SubmitAsync(
         string connectionString,
@@ -40,6 +43,7 @@ internal sealed class LayerPublishJobService(
         var threshold = options.Value.GetValidatedAsyncPublishRowThreshold();
         if (rowCount <= threshold)
         {
+            await RevalidateCommittedSourceAsync(request, connectionId, requestCancellation).ConfigureAwait(false);
             var summary = await publishingService.PublishLayerAsync(
                 connectionString, request, CancellationToken.None).ConfigureAwait(false);
             return new LayerPublishAdmission(LayerPublishAdmissionKind.Completed, summary, null, rowCount, null);
@@ -49,6 +53,8 @@ internal sealed class LayerPublishJobService(
         {
             return new LayerPublishAdmission(LayerPublishAdmissionKind.Unavailable, null, null, rowCount, null);
         }
+
+        await RevalidateCommittedSourceAsync(request, connectionId, requestCancellation).ConfigureAwait(false);
 
         var jobId = Guid.NewGuid().ToString("N");
         var payload = new LayerPublishJobPayload
@@ -61,6 +67,7 @@ internal sealed class LayerPublishJobService(
             TenantSource = tenantContext.Source,
             CurrentSchema = schemaContext?.CurrentSchema,
             ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
+            CommittedSinkPublication = request.CommittedSinkPublication,
         };
         var queued = new LayerPublishJobProgress
         {
@@ -77,6 +84,27 @@ internal sealed class LayerPublishJobService(
 
         await dispatcher.DispatchAsync(payload, queued, request.Table).ConfigureAwait(false);
         return Queued(jobId, rowCount, routeId);
+    }
+
+    private async Task RevalidateCommittedSourceAsync(
+        LayerPublishRequest request, Guid connectionId, CancellationToken cancellationToken)
+    {
+        if (request.ConnectionEndpointFingerprint is null && request.CommittedSinkPublication is null)
+        {
+            return;
+        }
+
+        if (request.CommittedSinkPublication is not { } claim ||
+            jobStore is null || processCatalog is null)
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                "Committed sink source evidence is unavailable.");
+        }
+
+        request.CommittedSinkPublication = await CommittedSinkPublicationVerifier.RevalidateAsync(
+            jobStore, processCatalog, claim, connectionId, request.Schema, request.Table,
+            request.ConnectionEndpointFingerprint, tenantContext.TenantId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<LayerPublishJobProgress?> GetAsync(string jobId, CancellationToken cancellationToken)

@@ -19,7 +19,7 @@ public sealed class CommittedSinkPublicationTests
     {
         var first = ConnectionEndpointFingerprint.TryCompute(Connection);
         var rotated = ConnectionEndpointFingerprint.TryCompute(
-            "Server=DB.Example;Database=GIS;Username=other;Password=changed");
+            "Server=DB.Example;Database=gis;Username=other;Password=changed");
 
         first.Should().NotBeNull();
         first.Should().HaveLength(64);
@@ -27,6 +27,12 @@ public sealed class CommittedSinkPublicationTests
         rotated.Should().Be(first);
         first.Should().NotContain("secret");
         first.Should().NotContain("db.example");
+        ConnectionEndpointFingerprint.TryCompute(
+            "Server=DB.Example;Database=GIS;Username=other;Password=changed")
+            .Should().NotBe(first);
+        ConnectionEndpointFingerprint.Matches(
+            "Server=DB.Example;Database=GIS;Username=other;Password=changed", first)
+            .Should().BeFalse();
     }
 
     [UnitTest]

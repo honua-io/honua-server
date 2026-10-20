@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -17,9 +19,22 @@ namespace Honua.Server.Features.Operations;
 /// composing the database-backed publishing graph. Selecting service.publish in such a host
 /// returns a typed, actionable validation failure instead of failing the entire dispatcher.
 /// </summary>
-internal sealed class DeferredServicePublishExecutor(IServiceProvider services) : IOperationExecutor
+internal sealed class DeferredServicePublishExecutor(IServiceProvider services) : IOperationExecutor, IOperationRequestPreparer
 {
     public string OperationId => ServicePublishOperation.OperationId;
+
+    public Task<OperationRequest> PrepareAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryResolve(out var executor, out _))
+        {
+            return Task.FromResult(request);
+        }
+
+        return executor!.PrepareAsync(request, context, cancellationToken);
+    }
 
     public Task<OperationValidation> ValidateAsync(
         OperationRequest request,
@@ -112,7 +127,9 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services) 
             clock!,
             services.GetService<IMcpNotificationPublisher>(),
             services.GetService<ILayerPublishJobs>(),
-            services.GetService<IPublishedServiceStore>());
+            services.GetService<IPublishedServiceStore>(),
+            services.GetService<IExecutionJobStore>(),
+            services.GetService<IProcessCatalog>());
         unavailable = null;
         return true;
     }
