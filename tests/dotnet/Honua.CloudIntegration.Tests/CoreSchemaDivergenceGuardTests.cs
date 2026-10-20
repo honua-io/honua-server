@@ -777,7 +777,27 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 });
                 createdId = created.Id;
                 (await store.GetAsync(7, 8, createdId)).Should().NotBeNull();
-                (await store.HasLegacyAttachmentsAsync(7, CancellationToken.None)).Should().BeTrue();
+                (await store.HasLegacyAttachmentsAsync(7, CancellationToken.None)).Should().BeFalse(
+                    "the production CreateAsync path marks new attachments as manual, not legacy");
+                await using (var legacyConnection = new NpgsqlConnection(connectionString))
+                {
+                    await legacyConnection.OpenAsync();
+                    await using var legacyCommand = new NpgsqlCommand("""
+                        SELECT attachment_origin='manual' FROM attachment_registered.attachments
+                        WHERE id=@id AND layer_id=7 AND feature_id=8
+                        """, legacyConnection);
+                    legacyCommand.Parameters.AddWithValue("id", createdId);
+                    (await legacyCommand.ExecuteScalarAsync()).Should().Be(true);
+                    legacyCommand.CommandText = """
+                        INSERT INTO attachment_registered.attachments
+                            (feature_id, layer_id, filename, content_type, size, created_at, storage_path, attachment_origin)
+                        VALUES (8, 7, 'historical-legacy.txt', 'text/plain', 1, CURRENT_TIMESTAMP, 'legacy-fixture/historical', NULL)
+                        """;
+                    legacyCommand.Parameters.Clear();
+                    (await legacyCommand.ExecuteNonQueryAsync()).Should().Be(1);
+                }
+                (await store.HasLegacyAttachmentsAsync(7, CancellationToken.None)).Should().BeTrue(
+                    "a historical unmarked attachment in the same authoritative family must remain detectable");
                 await using var first = new MemoryStream(_firstAttachmentImportBytes, writable: false);
                 var imported = await store.UploadImportedAsync(9, 10, "fixture-source", 72, 99, Guid.Empty,
                     "import.bin", "application/octet-stream", first, null, CancellationToken.None);
@@ -816,6 +836,14 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 """, connection);
             command.Parameters.AddWithValue("generation", generation);
             (await command.ExecuteScalarAsync()).Should().Be(true);
+            command.CommandText = """
+                SELECT attachment_origin='manual' FROM attachment_registered.attachments
+                WHERE id=@id AND layer_id=7 AND feature_id=8
+                """;
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("id", createdId);
+            (await command.ExecuteScalarAsync()).Should().Be(true,
+                "the real manually created row must retain its origin across restart");
         }
         finally
         {
