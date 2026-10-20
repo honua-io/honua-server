@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using NpgsqlTypes;
@@ -22,6 +23,7 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IDatabaseSchemaGuard _schemaGuard;
+    private readonly string _sensingMigration;
     private readonly ISchemaContext? _schemaContext;
     private readonly string? _configuredSchema;
     private readonly IConfiguration? _configuration;
@@ -34,12 +36,16 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
     public PostgresObservationStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         IDatabaseSchemaGuard schemaGuard,
+        PostgresCoreSchemaMigrationManifest migrations,
         string? schemaName = null,
         ISchemaContext? schemaContext = null,
         IConfiguration? configuration = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
+        ArgumentNullException.ThrowIfNull(migrations);
+        _sensingMigration = migrations.SensorThingsSensingMigration
+            ?? throw new ArgumentException("The sensing migration identity must be supplied by application composition.", nameof(migrations));
         _configuredSchema = schemaName;
         _schemaContext = schemaContext;
         _configuration = configuration;

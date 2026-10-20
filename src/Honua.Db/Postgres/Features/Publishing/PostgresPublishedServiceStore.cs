@@ -66,6 +66,58 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
             : null;
     }
 
+    public async Task<PublishedServiceRecord?> FindByPublicIdAsync(
+        string serviceId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"SELECT document FROM {_table} WHERE lower(service_id) = lower(@service_id) ORDER BY service_id LIMIT 2";
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@service_id", NpgsqlDbType.Text, serviceId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var record = Deserialize(reader.GetString(0));
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new PublishedServiceIdentityAmbiguousException(serviceId);
+        }
+
+        return record;
+    }
+
+    public async Task<IReadOnlyList<string>> FindCollidingPublicIdsAsync(
+        IReadOnlyList<string> candidateServiceIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateServiceIds);
+        if (candidateServiceIds.Count == 0)
+        {
+            return [];
+        }
+
+        var sql = $"""
+            SELECT DISTINCT candidate.service_id
+            FROM unnest(@candidate_ids) AS candidate(service_id)
+            JOIN {_table} AS stored ON lower(stored.service_id) = lower(candidate.service_id)
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@candidate_ids", NpgsqlDbType.Array | NpgsqlDbType.Text,
+            candidateServiceIds.ToArray());
+        var matches = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            matches.Add(reader.GetString(0));
+        }
+
+        return matches;
+    }
+
     public async Task SetAsync(
         PublishedServiceRecord service,
         CancellationToken cancellationToken = default)

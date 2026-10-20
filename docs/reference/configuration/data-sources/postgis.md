@@ -31,6 +31,19 @@ Host=db.example.com;Port=5432;Database=honua;Username=honua_app;Password=...;SSL
 
 An import that names any other target schema is refused with `400 Bad Request`.
 
+Attachments have an explicit physical compatibility rule. New installations
+create `attachments` and `import_attachment_cleanup` in the configured metadata
+schema. An existing complete family in `honua` stays there with its table and row
+identity; a configured-only family stays configured. Migration rendering and
+every attachment reader, writer and cleanup path use that same binding. A missing
+cleanup table is legitimate before migration 125 and is created there by 125.
+Honua refuses missing cleanup after 125, partial or split families, duplicate
+authorities, non-table objects, and incompatible column types or keys. Ordinary reads
+do not move, copy or repair these objects. An explicit `Attachments:Schema`
+override must resolve to the same physical family as the canonical metadata
+binding. A legacy `honua` override remains valid when both resolve there; two
+complete families in different metadata/override schemas are refused.
+
 ## Supported versions
 
 PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested configurations matrix](README.md#tested-postgresql-configurations).
@@ -66,9 +79,10 @@ Honua performs a PostGIS preflight check at startup:
 4. Non-Development environments fail fast (CrashLoopBackOff) if PostGIS is missing.
 5. Development mode logs a warning and continues. Missing `postgis_raster` warns but never blocks startup.
 
-For deployments using a non-default `Database:Schema`, migration 109 moves a
-complete legacy Metadata v2, SensorThings, or raster family out of `honua` into
-the configured schema. It aborts transactionally on partial or coexisting
+For deployments using a non-default `Database:Schema`, the canonical numbered
+application and eligible provider migrations adopt complete legacy guarded
+Metadata v2, SensorThings and raster families from `honua` into the configured
+schema. They abort transactionally on partial or coexisting
 families so operators can reconcile ambiguous state without an automatic merge.
 Because older nodes still query the legacy schema, this move is a contract-phase
 migration: drain older nodes, review the deploy preflight, and provide the
@@ -85,6 +99,38 @@ for reconciliation; reads never create, move, copy, or merge records. Studio
 metadata stays in the configured schema and references that same promotion family.
 Migration 134 adds the deployment revision without relocating tables. This
 additive change does not by itself qualify an older rollback image or a release.
+
+SensorThings sensing objects introduced by migration 127 can remain in `honua`
+after migration 109 adopts the earlier SensorThings tables. The sensing store
+and schema verifier resolve this complete physical family together: five sensing
+tables, three identifier sequences and two observation trigger functions. They
+use the configured family when the legacy family is absent, or the complete
+legacy sensing family alongside the configured base tables. Reads and writes do
+not move, copy or repair these objects. Partial, duplicate or mixed sensing
+families, incompatible foreign-key or trigger bindings, and identifier defaults
+that point at another sequence are refused. Fresh configured installations keep
+the whole family in the configured schema. This does not change the existing
+migration approval rules or establish rolling rollback compatibility.
+
+The diagnostic migration plan exposes `scriptBindings` with the configured and
+physical attachment schema, both qualified attachment/cleanup table identities,
+and the raw embedded-resource and rendered SQL hashes. For a new non-default
+physical schema, migration 002 also uses the immutable, hash-pinned
+`attachment-schema-preamble.v1.sql.template` contract. The Server composition
+manifest supplies the exact attachment journal identities, preamble resource name
+and raw hash to both the bootstrap runner and the DI attachment store; the
+PostgreSQL provider does not construct application resource identities. The plan records its exact
+resource identity and raw-byte hash; the full rendered SQL hash includes its
+validated schema projection. The contract is not independently discovered or
+journaled as a migration. Default/legacy physical authority and migration 125
+retain null preamble fields. Its
+`contractApprovalNonce` binds this custom attachment context alongside the actual
+pending contract-script set. A changed binding or rendering requires a newly
+reviewed plan; Honua refuses a token from the previous custom plan. Default-schema and unrelated
+historical approval identities remain unchanged, and fresh empty-journal installs
+retain the existing approval exemption. Enabling `postgis_raster` later does not
+make a pending reviewed provider contract an unattended expand-only change:
+inspect the actual plan before applying it.
 
 The preflight result is available via `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` in the `databaseCompatibility` field.
 

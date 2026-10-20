@@ -138,6 +138,8 @@ internal static class DeployControlEndpoints
                     PlanAvailable = snapshot.Migration.PlanAvailable,
                     UpgradeRequired = snapshot.Migration.UpgradeRequired,
                     PendingScripts = snapshot.Migration.PendingScripts,
+                    ScriptBindings = snapshot.Migration.ScriptBindings,
+                    ContractApprovalNonce = snapshot.Migration.ContractApprovalNonce,
                     PendingScriptClassifications = snapshot.Migration.PendingScriptClassifications
                         .Select(classification => new DeployPreflightMigrationClassification
                         {

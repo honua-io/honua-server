@@ -393,7 +393,8 @@ internal static class WebAppFixturePostgresWiringMixin
             schemaName: serviceProvider.GetRequiredService<ISchemaContext>().CurrentSchema,
             orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
             attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
-                ?? new AttachmentLimits()));
+                ?? new AttachmentLimits(),
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
     }
 
     /// <summary>

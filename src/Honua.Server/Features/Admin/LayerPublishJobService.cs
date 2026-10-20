@@ -176,6 +176,7 @@ internal sealed class LayerPublishJobService(
                 CompletedAt = job.CompletedAt ?? job.UpdatedAt,
                 CurrentPhase = job.CurrentPhase ?? "Completed",
                 LayerId = progress.LayerId ?? completion?.LayerId,
+                MetadataRevision = completion?.MetadataRevision ?? progress.MetadataRevision,
                 RowsMaterialized = completion?.RowsMaterialized ?? progress.RowsMaterialized,
                 RowsTotal = completion?.RowsTotal ?? progress.RowsTotal,
             },
