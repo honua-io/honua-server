@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.SensorThings;
 using Honua.Server.Startup;
@@ -17,6 +20,64 @@ namespace Honua.CloudIntegration.Tests;
 
 public sealed partial class CoreSchemaDivergenceGuardTests
 {
+    private static async Task AssertSensingCatalogBatchesAsync(string connectionString, string configuredSchema, long locationId)
+    {
+        var releases = 0;
+        var connection = new SemaphoreReleasingConnection(new NpgsqlConnection(connectionString),
+            () => Interlocked.Increment(ref releases));
+        var commands = new ConcurrentQueue<string>();
+        try
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            string physical;
+            {
+                using var trace = new Activity("sensing-authority-catalog-proof").SetIdFormat(ActivityIdFormat.W3C).Start();
+                var traceId = trace.TraceId;
+                using var listener = new ActivityListener
+                {
+                    ShouldListenTo = source => source.Name == "Npgsql",
+                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                    ActivityStopped = activity =>
+                    {
+                        if (activity.TraceId == traceId && activity.GetTagItem("db.query.text") is string text)
+                            commands.Enqueue(text);
+                    },
+                };
+                ActivitySource.AddActivityListener(listener);
+                physical = await PostgresSensorThingsSchema.ResolveAsync(connection, configuredSchema,
+                    sensingApplied: true, transaction: transaction, requireConfiguredBase: true);
+            }
+            physical.Should().Be("honua", "the literal 109 fixture preserves the complete legacy 127 family");
+            releases.Should().Be(0, "the caller still owns the wrapped connection and transaction");
+            connection.State.Should().Be(System.Data.ConnectionState.Open);
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "SELECT name FROM honua.sta_location WHERE id=@id";
+            command.Parameters.Add(new NpgsqlParameter("id", locationId));
+            var originalName = await command.ExecuteScalarAsync();
+            originalName.Should().Be("preserved");
+            command.CommandText = "UPDATE honua.sta_location SET name='catalog-batch-rollback' WHERE id=@id RETURNING name";
+            (await command.ExecuteScalarAsync()).Should().Be("catalog-batch-rollback");
+            await transaction.RollbackAsync();
+            command.Transaction = null;
+            command.CommandText = "SELECT name FROM honua.sta_location WHERE id=@id";
+            (await command.ExecuteScalarAsync()).Should().Be(originalName, "the same wrapped transaction must roll back the actual row update");
+            releases.Should().Be(0);
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+        }
+        releases.Should().Be(1, "only the caller's disposal releases the actual semaphore-owned connection");
+        await connection.DisposeAsync();
+        releases.Should().Be(1, "double disposal must not release a second slot");
+        commands.Should().HaveCount(2, "live catalog authority validation must use two protocol batches, not fifteen sequential commands");
+        var observed = commands.ToArray();
+        observed[0].Should().Contain("pg_catalog.pg_class").And.Contain("pg_catalog.pg_proc");
+        observed[1].Should().Contain("pg_catalog.pg_constraint").And.Contain("pg_catalog.pg_attrdef").And.Contain("pg_catalog.pg_trigger");
+    }
+
     [SkippableTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -40,6 +101,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         }
         (await CaptureSensingFamilyAsync(connectionString)).Should().Be(before,
             "109 must leave every 127 sensing object OID, row and sequence value intact");
+        await AssertSensingCatalogBatchesAsync(connectionString, schema, original);
         var guard = CreateSensingGuard(schema);
         var store = new PostgresObservationStore(new TestConnectionProvider(connectionString), guard, schema);
         (await store.GetEntityAsync("Locations", original, CancellationToken.None))!.Value.GetProperty("name").GetString().Should().Be("preserved");

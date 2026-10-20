@@ -50,37 +50,42 @@ internal static class PostgresSensorThingsSchema
         if (configured is DeferredSchemaToken or DeferredBaseSchemaToken) throw Failure("The configured schema collides with the reserved sensing query identifier.");
         var objects = new Dictionary<(string Schema, string Name), (uint Oid, char Kind)>();
         var functions = new Dictionary<(string Schema, string Name), uint>();
-        await using (var command = connection.CreateCommand())
+        // Two protocol batches preserve live authority validation without per-object round trips.
+        // Never cache the result across operations, connections or transactions.
+        await using (var batch = new NpgsqlBatch(connection.RequireNpgsqlConnection(), (NpgsqlTransaction?)transaction))
         {
-            command.Transaction = transaction;
-            command.CommandText = """
+            var objectCommand = new NpgsqlBatchCommand("""
                 SELECT n.nspname, c.relname, c.oid, c.relkind::text
                 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
                 WHERE n.nspname=ANY(@schemas) AND c.relname=ANY(@objects)
-                """;
-            command.Parameters.Add(new NpgsqlParameter("schemas", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = new[] { configured, "honua" } });
-            command.Parameters.Add(new NpgsqlParameter("objects", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = _baseObjects.Concat(SensingObjects).ToArray() });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                objects.Add((reader.GetString(0), reader.GetString(1)), (reader.GetFieldValue<uint>(2), reader.GetString(3)[0]));
-        }
-        await using (var command = connection.CreateCommand())
-        {
-            command.Transaction = transaction;
-            command.CommandText = """
+                """);
+            objectCommand.Parameters.Add(new NpgsqlParameter("schemas", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = new[] { configured, "honua" } });
+            objectCommand.Parameters.Add(new NpgsqlParameter("objects", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = _baseObjects.Concat(SensingObjects).ToArray() });
+            batch.BatchCommands.Add(objectCommand);
+            var functionCommand = new NpgsqlBatchCommand("""
                 SELECT n.nspname,p.proname,p.oid,p.pronargs,p.prorettype='pg_catalog.trigger'::regtype,p.prokind::text
                 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
                 WHERE n.nspname=ANY(@schemas) AND p.proname=ANY(@functions)
-                """;
-            command.Parameters.Add(new NpgsqlParameter("schemas", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = new[] { configured, "honua" } });
-            command.Parameters.Add(new NpgsqlParameter("functions", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = _functions });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                """);
+            functionCommand.Parameters.Add(new NpgsqlParameter("schemas", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = new[] { configured, "honua" } });
+            functionCommand.Parameters.Add(new NpgsqlParameter("functions", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = _functions });
+            batch.BatchCommands.Add(functionCommand);
+            await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (reader.FieldCount != 4) throw Failure("Sensing object catalog result has an incompatible shape.");
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                objects.Add((reader.GetString(0), reader.GetString(1)), (reader.GetFieldValue<uint>(2), reader.GetString(3)[0]));
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false) || reader.FieldCount != 6)
+                throw Failure("Sensing function catalog result is missing or has an incompatible shape.");
+            string? functionFailure = null;
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (reader.GetInt16(3) != 0 || !reader.GetBoolean(4) || reader.GetString(5) != "f" ||
                     !functions.TryAdd((reader.GetString(0), reader.GetString(1)), reader.GetFieldValue<uint>(2)))
-                    throw Failure("Sensing trigger function identity is ambiguous or has an incompatible signature.");
+                    functionFailure = "Sensing trigger function identity is ambiguous or has an incompatible signature.";
             }
+            if (await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+                throw Failure("Sensing catalog batch returned an unexpected result.");
+            if (functionFailure is not null) throw Failure(functionFailure);
         }
 
         bool Any(string schema) => SensingObjects.Any(name => objects.ContainsKey((schema, name))) || _functions.Any(name => functions.ContainsKey((schema, name)));
@@ -122,29 +127,27 @@ internal static class PostgresSensorThingsSchema
             throw Failure("The configured runtime base family has not been adopted; legacy base authority is permitted only during migration planning.");
 
         uint Oid(string table) => objects[(_baseObjects.Contains(table, StringComparer.Ordinal) ? baseSchema : physical, table)].Oid;
+        await using var validationBatch = new NpgsqlBatch(connection.RequireNpgsqlConnection(), (NpgsqlTransaction?)transaction);
+        var failureDetails = new List<string>();
         foreach (var (table, column, target, targetColumn) in _foreignKeys)
         {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
+            var command = new NpgsqlBatchCommand("""
                 SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_constraint c
                 JOIN pg_catalog.pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=c.conkey[1]
                 JOIN pg_catalog.pg_attribute b ON b.attrelid=c.confrelid AND b.attnum=c.confkey[1]
                 WHERE c.contype='f' AND c.convalidated AND cardinality(c.conkey)=1 AND cardinality(c.confkey)=1
                   AND c.conrelid=@source AND c.confrelid=@target AND a.attname=@column AND b.attname=@target_column)
-                """;
+                """);
             command.Parameters.Add(new NpgsqlParameter("source", NpgsqlDbType.Oid) { Value = Oid(table) });
             command.Parameters.Add(new NpgsqlParameter("target", NpgsqlDbType.Oid) { Value = Oid(target) });
             command.Parameters.Add(new NpgsqlParameter("column", column));
             command.Parameters.Add(new NpgsqlParameter("target_column", targetColumn));
-            if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
-                throw Failure($"Sensing foreign-key authority is incompatible for {table}.{column}.");
+            validationBatch.BatchCommands.Add(command);
+            failureDetails.Add($"Sensing foreign-key authority is incompatible for {table}.{column}.");
         }
         foreach (var table in new[] { "sta_location", "sta_historical_location", "sta_feature_of_interest" })
         {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
+            var command = new NpgsqlBatchCommand("""
                 SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_attrdef d
                 JOIN pg_catalog.pg_attribute a ON a.attrelid=d.adrelid AND a.attnum=d.adnum
                 JOIN pg_catalog.pg_depend dep ON dep.classid='pg_catalog.pg_attrdef'::regclass AND dep.objid=d.oid
@@ -155,25 +158,45 @@ internal static class PostgresSensorThingsSchema
                   AND owner.deptype IN ('a','i')
                   AND (owner.refobjid<>@table OR owner.refobjsubid<>(SELECT attnum FROM pg_catalog.pg_attribute
                        WHERE attrelid=@table AND attname='id')))
-                """;
+                """);
             command.Parameters.Add(new NpgsqlParameter("table", NpgsqlDbType.Oid) { Value = Oid(table) });
             command.Parameters.Add(new NpgsqlParameter("sequence", NpgsqlDbType.Oid) { Value = objects[(physical, table + "_id_seq")].Oid });
-            if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
-                throw Failure("Sensing identifier default does not bind the selected physical sequence authority.");
+            validationBatch.BatchCommands.Add(command);
+            failureDetails.Add("Sensing identifier default does not bind the selected physical sequence authority.");
         }
         foreach (var (trigger, function) in new[] { ("sta_observation_result_sync", _functions[0]), ("sta_observation_reference_sync", _functions[1]) })
         {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
+            var command = new NpgsqlBatchCommand("""
                 SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_trigger
                 WHERE tgrelid=@table AND tgname=@trigger AND tgfoid=@function AND NOT tgisinternal AND tgenabled IN ('O','A'))
-                """;
+                """);
             command.Parameters.Add(new NpgsqlParameter("table", NpgsqlDbType.Oid) { Value = Oid("sta_observation") });
             command.Parameters.Add(new NpgsqlParameter("trigger", trigger));
             command.Parameters.Add(new NpgsqlParameter("function", NpgsqlDbType.Oid) { Value = functions[(physical, function)] });
-            if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
-                throw Failure("Sensing observation trigger does not bind the selected physical function authority.");
+            validationBatch.BatchCommands.Add(command);
+            failureDetails.Add("Sensing observation trigger does not bind the selected physical function authority.");
+        }
+        // Consume every result before reporting the first failed authority check. A failed
+        // early FK must not hide a malformed/missing later result or leave an active reader.
+        await using (var reader = await validationBatch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            string? failure = null;
+            for (var index = 0; index < failureDetails.Count; index++)
+            {
+                var rowCount = 0;
+                var passed = false;
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    rowCount++;
+                    if (reader.FieldCount == 1 && reader.GetValue(0) is true) passed = true;
+                }
+                if (reader.FieldCount != 1 || rowCount != 1 || !passed)
+                    failure ??= failureDetails[index];
+                var hasNext = await reader.NextResultAsync(cancellationToken).ConfigureAwait(false);
+                if (hasNext != (index + 1 < failureDetails.Count))
+                    throw Failure("Sensing authority validation batch returned an incompatible result count.");
+            }
+            if (failure is not null) throw Failure(failure);
         }
         return physical;
     }
