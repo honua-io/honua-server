@@ -55,6 +55,9 @@ internal sealed partial class IngestDatasetTool : IMcpTool
     /// <summary>Primary key column of the imported staging table.</summary>
     public const string ImportedPrimaryKey = "id";
 
+    /// <summary>Stored coordinate reference shared by the import request and publication hint.</summary>
+    private const int ImportedTargetSrid = 4326;
+
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
 
@@ -138,7 +141,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 TableName = validated.DatasetName,
                 SourceKind = "mcp-inline",
                 SourceSrid = validated.SourceSrid,
-                TargetSrid = 4326,
+                TargetSrid = ImportedTargetSrid,
                 OverwriteExisting = true,
                 CsvOptions = csvOptions
             };
@@ -354,7 +357,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             ConnectionId = catalogConnection.ConnectionId,
             Schema = importResult.Schema,
             Table = importResult.PhysicalTableName ?? importResult.TableName,
-            Srid = importResult.DetectedSrid ?? 4326,
+            Srid = ImportedTargetSrid,
             GeometryColumn = ImportedGeometryColumn,
             PrimaryKey = ImportedPrimaryKey,
             Warnings = warnings,

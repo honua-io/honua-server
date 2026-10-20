@@ -94,6 +94,8 @@ internal sealed class ListLayersTool : IMcpTool
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var layers = new List<McpLayerSummary>();
+        var identities = new Dictionary<(string ServiceId, int LayerId),
+            (string ResourceId, string? BindingId, McpLayerSummary Summary)>();
         foreach (var service in snapshot.Graph.Services)
         {
             var publications = snapshot.PublicationsForService(service.Metadata.Id);
@@ -114,6 +116,25 @@ internal sealed class ListLayersTool : IMcpTool
                 }
 
                 var summary = ToSummary(service, publication, resource!, layerIndex);
+                var identity = (service.Metadata.Id, layerIndex);
+                var bindingId = snapshot.ResolveStorageBinding(publication)?.Metadata.Id;
+                // A layer can have several protocol publications. Authorize each
+                // before grouping so a denied publication cannot hide an allowed one.
+                if (identities.TryGetValue(identity, out var existing))
+                {
+                    if (existing.ResourceId != resource!.Metadata.Id || existing.BindingId != bindingId
+                        || !JsonElement.DeepEquals(
+                            JsonSerializer.SerializeToElement(existing.Summary, MapToolJsonContext.Default.McpLayerSummary),
+                            JsonSerializer.SerializeToElement(summary, MapToolJsonContext.Default.McpLayerSummary)))
+                    {
+                        throw new GeoprocessingValidationException(
+                            "Published layer metadata is ambiguous for a service/layer identity.");
+                    }
+
+                    continue;
+                }
+
+                identities.Add(identity, (resource!.Metadata.Id, bindingId, summary));
                 if (filter is null || Matches(summary, service, filter))
                 {
                     layers.Add(summary);
@@ -124,7 +145,13 @@ internal sealed class ListLayersTool : IMcpTool
         layers.Sort(static (a, b) =>
         {
             var byService = string.CompareOrdinal(a.ServiceName, b.ServiceName);
-            return byService != 0 ? byService : a.LayerId.CompareTo(b.LayerId);
+            if (byService != 0)
+            {
+                return byService;
+            }
+
+            var byServiceId = string.CompareOrdinal(a.ServiceId, b.ServiceId);
+            return byServiceId != 0 ? byServiceId : a.LayerId.CompareTo(b.LayerId);
         });
 
         var totalCount = layers.Count;
