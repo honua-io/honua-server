@@ -52,7 +52,7 @@ internal static class ImageServerTileCacheKey
             '|',
             // Sampling directly from target centers changes edge pixels. Preserve old objects,
             // but never admit them under the corrected renderer's behavior key.
-            "target-centers-nearest-v1",
+            rasterFormat == RasterFormat.PNG ? "target-centers-nearest-png-opacity-v2" : "target-centers-nearest-v1",
             metadataEtag,
             publicationId,
             layerId.ToString(CultureInfo.InvariantCulture),
