@@ -260,6 +260,17 @@ Native-format sinks (shapefile, GeoPackage) are deferred to the GDAL worker stre
 
 Managed routing jobs use the configured canonical routing provider. They fail explicitly when that provider or the requested capability is unavailable. GeoServices exposes these jobs through both GPServer and NAServer web-tool aliases; submission, polling, and named results use the shared durable job runtime.
 
+The virtual `Routing/GPServer` utility service also exposes synchronous
+`FindRoutes`, `GenerateServiceAreas`, `GetTravelModes`, and `GetToolInfo` tasks,
+limited by the configured provider's capabilities. SOAP discovery at
+`/services/Routing/GPServer` (also under the conventional `/arcgis` path base)
+uses the same task definitions as REST. SOAP `Execute` decodes typed GP values
+and invokes the same synchronous handlers, returning typed record sets with
+their field schemas. These tools do not create asynchronous jobs. A catalog
+publication with a colliding service name or stable ID retains its authorization
+and enabled-protocol restrictions; it cannot fall back to the virtual service.
+Full stock-client routing compatibility remains tracked by issue #5192.
+
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
 | `routing.closest-facilities` | Find ranked network routes between incidents and facilities. | `incidents`, `facilities`, `facility_count`, `travel_direction`, `cutoff`, `time_units`, `distance_units`, `travel_mode` | job, workflow |

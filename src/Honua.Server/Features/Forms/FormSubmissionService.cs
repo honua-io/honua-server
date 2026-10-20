@@ -36,6 +36,7 @@ internal sealed class FormSubmissionService
     private readonly FormPackageValidator _validator;
     private readonly IFormTargetMetadataResolver _targetMetadataResolver;
     private readonly IEditProcessor _editProcessor;
+    private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
     private readonly IAttachmentStore _attachmentStore;
     private readonly AttachmentLimits _attachmentLimits;
@@ -48,6 +49,7 @@ internal sealed class FormSubmissionService
         FormPackageValidator validator,
         IFormTargetMetadataResolver targetMetadataResolver,
         IEditProcessor editProcessor,
+        IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         IAttachmentStore attachmentStore,
         IOptions<LimitsOptions> limitsOptions,
@@ -59,6 +61,7 @@ internal sealed class FormSubmissionService
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
         _targetMetadataResolver = targetMetadataResolver ?? throw new ArgumentNullException(nameof(targetMetadataResolver));
         _editProcessor = editProcessor ?? throw new ArgumentNullException(nameof(editProcessor));
+        _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _featureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
         _attachmentStore = attachmentStore ?? throw new ArgumentNullException(nameof(attachmentStore));
         ArgumentNullException.ThrowIfNull(limitsOptions);
@@ -216,6 +219,35 @@ internal sealed class FormSubmissionService
 
             var optimized = _editProcessor.OptimizeEdit(editRequest, targetMetadata.Resource);
             var batch = _editProcessor.ToFeatureEditBatch(optimized, targetMetadata.Resource);
+            var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+                _featureReader,
+                storageLayerId,
+                targetMetadata.Resource.OwnerEditPolicy,
+                batch,
+                ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+                postClaimToken).ConfigureAwait(false);
+            if (!ownerPrepared.IsAllowed)
+            {
+                var rejected = BuildRejectedResponse(
+                    submissionId,
+                    packageVersion,
+                    request,
+                    [new FormValidationIssue
+                    {
+                        Code = "ownerEditDenied",
+                        Severity = "error",
+                        Message = ownerPrepared.DenialReason ?? "Edit not permitted."
+                    }],
+                    retryable: false);
+                await CompleteSubmissionAsync(submissionId, rejected, "rejected").ConfigureAwait(false);
+                await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Denied,
+                    $"{{\"version\":{packageVersion.Version},\"ownerEditDenied\":true}}", CancellationToken.None)
+                    .ConfigureAwait(false);
+                return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse,
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            batch = ownerPrepared.Batch;
             // From this point onward the writer may have committed even when it throws (for
             // example, when the commit acknowledgement is lost). Retain the idempotency
             // claim unless the provider explicitly guarantees that no write occurred.
@@ -405,7 +437,14 @@ internal sealed class FormSubmissionService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Submission with this idempotency key is still pending.");
         }
 
-        return Results.Json(CloneReplayResponse(existing.Response), FormPackageJsonContext.Default.FormSubmissionResponse);
+        // A completed owner-policy refusal remains a refusal on replay. The idempotency
+        // lookup must not turn a previously denied write into an apparent HTTP success.
+        var statusCode = existing.Response.ValidationIssues.Any(static issue =>
+            string.Equals(issue.Code, "ownerEditDenied", StringComparison.Ordinal))
+            ? StatusCodes.Status403Forbidden
+            : StatusCodes.Status200OK;
+        return Results.Json(CloneReplayResponse(existing.Response), FormPackageJsonContext.Default.FormSubmissionResponse,
+            statusCode: statusCode);
     }
 
     private async Task CompleteSubmissionAsync(Guid submissionId, FormSubmissionResponse response, string status)

@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:ebce889646493639605fbac5ee14a34fcc546f2bb7dad07415b5d55d2cc270b4",
+  "bundleDigest": "sha256:5e9c582fc2b917e436fe9b2a44aa3614d988395e2b04487ad51dddb4c328d762",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:2743bef16be095456fd7dd01f163e766c285a3d7aa1c26ec20e2a104ee8b3836",
+      "documentDigest": "sha256:02a32cc5152a967c317bdefa51d8ef3641c4133702c9b582faed81d38d640a64",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -6054,7 +6054,7 @@
     {
       "id": "okf/capabilities/editing.featureserver-edits",
       "path": "okf/capabilities/editing.featureserver-edits.md",
-      "documentDigest": "sha256:6e94311b6d73aa3929b808e18e80edf31a652252341a06ce3da7a2ebbd160b03",
+      "documentDigest": "sha256:cc427a15620da98ae2bfa1305ce419befb1e2127712ddd4869e03fb7540ee39e",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Editing",
@@ -6836,7 +6836,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:7bf22facdaae7a1c24937b02d3721ae30f41c24974383a8a64794ec835417914",
+      "documentDigest": "sha256:6b5b37a6daaafa195a33cbc9025c408635580d7dfc79dca58e7b808d652650ec",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
@@ -7719,7 +7719,7 @@
     {
       "id": "reference/configuration/data-sources/postgis",
       "path": "reference/configuration/data-sources/postgis.md",
-      "documentDigest": "sha256:cbda585a87f81eb1d6aea60721338959114cbedc199e2d1f719294528ebe9ff4",
+      "documentDigest": "sha256:176d25cce21d604ea85c2ddbe0595741d2b996f4df3c6938e9171adc81c243fe",
       "metadata": {
         "type": "reference",
         "title": "PostGIS provider",
@@ -7839,7 +7839,7 @@
     {
       "id": "reference/geoprocessing-operations",
       "path": "reference/geoprocessing-operations.md",
-      "documentDigest": "sha256:040b38ebd0de6dfcf97ed4fbeb2c54b69c12578164db763870c61546164c0061",
+      "documentDigest": "sha256:338121e11c00989848820ba418a70aaa809749b60db4dfc866812d50ca34e2e3",
       "metadata": {
         "type": "reference",
         "title": "Geoprocessing operations",

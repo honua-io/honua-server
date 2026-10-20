@@ -8,7 +8,7 @@ namespace Honua.Db.Postgres.Features.Raster;
 /// </summary>
 internal static class RasterCorrectedNearestSql
 {
-    internal const int RendererVersion = 1;
+    internal const int RendererVersion = 2;
     /// <summary>
     /// Uses SQL COALESCE's lazy evaluation: a rejected native window reaches separable sampling,
     /// and unsupported axes or CRS reach the canonical batched-coordinate fallback. The final

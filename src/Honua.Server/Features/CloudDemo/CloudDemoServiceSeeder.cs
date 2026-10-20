@@ -7,12 +7,15 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Attachments;
+using Npgsql;
 namespace Honua.Server.Features.CloudDemo;
 
 internal sealed class CloudDemoServiceSeeder(
     IAdoNetDatabaseConnectionProvider connectionProvider,
     IMetadataV2LegacyCatalogProjector legacyCatalogProjector,
-    IMetadataV2GraphStore graphStore)
+    IMetadataV2GraphStore graphStore,
+    IConfiguration? configuration = null)
 {
     private const int CommandTimeoutSeconds = 60;
 
@@ -84,9 +87,18 @@ internal sealed class CloudDemoServiceSeeder(
 
         try
         {
+            var physicalAttachmentSchema = await PostgresAttachmentSchema.ResolveAsync(
+                connection.RequireNpgsqlConnection(), configuration?["Database:Schema"],
+                Startup.ServerCoreSchemaMigrations.Manifest.Attachments!,
+                transaction as NpgsqlTransaction ?? throw new InvalidOperationException("Demo seeding requires the active PostgreSQL transaction."),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            var attachmentTable = SchemaSearchPath.QualifyTable("attachments", physicalAttachmentSchema);
             foreach (var statement in statements)
             {
-                await ExecuteSqlAsync(connection, transaction, statement, cancellationToken).ConfigureAwait(false);
+                var boundStatement = statement == ResetReadOnlyFeatureDataSql || statement == ResetWritableFeatureDataSql
+                    ? statement.Replace("honua.attachments", attachmentTable, StringComparison.Ordinal)
+                    : statement;
+                await ExecuteSqlAsync(connection, transaction, boundStatement, cancellationToken).ConfigureAwait(false);
             }
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);

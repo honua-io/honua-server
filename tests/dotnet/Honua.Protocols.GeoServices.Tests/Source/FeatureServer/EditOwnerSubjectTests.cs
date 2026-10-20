@@ -256,6 +256,121 @@ public sealed class EditOwnerSubjectTests
         replacement.Attributes.ContainsKey("secret").Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task MultiUpdate_CapturesOnlyAcceptedOwner_AndKeepsItsPreWriteValue()
+    {
+        var currentOwner = "subject-a";
+        var reader = OwnerReader(() => currentOwner);
+        var context = new FeatureServerEditsHandler.EditOperationContext
+        {
+            UpdateResults = new EditResult?[2],
+            RequiresOwnerGuards = true,
+        };
+        var request = new ApplyEditsRequest
+        {
+            Updates =
+            [
+                EditFeature(7, "allowed"),
+                EditFeature(8, "denied"),
+            ],
+        };
+
+        await CreateHandler(reader).ProcessUpdateOperationsAsync(
+            request, context, OwnerEditResource(), storageLayerId: 7,
+            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+            guardUpdateSnapshot: false, versionContext: null, CancellationToken.None);
+
+        context.UpdateWriteFeatures.Should().ContainSingle(feature => feature.Id == 7);
+        context.UpdateResults![1].Should().NotBeNull();
+        context.UpdateResults[1]!.Error!.Code.Should().Be(GeoServicesEditErrorCodes.NotPermitted);
+        currentOwner = "subject-b";
+
+        var guards = FeatureServerEditsHandler.BuildOwnerGuards(
+            FeatureEditBatch.Create(updates: context.UpdateWriteFeatures.ToImmutableArray()),
+            context.OwnerGuards);
+        guards.Should().ContainSingle().Which.Should().Be(new OwnerEditGuard(7, "owner", "subject-a"));
+    }
+
+    [UnitTest]
+    public async Task BranchDelete_CapturesOnlyAcceptedOwner_AndGuardsOrderedWrite()
+    {
+        var currentOwner = "subject-a";
+        var reader = OwnerReader(() => currentOwner);
+        var context = new FeatureServerEditsHandler.EditOperationContext
+        {
+            DeleteResults = new EditResult?[2],
+            RequiresOwnerGuards = true,
+        };
+        var branch = new VersionContext
+        {
+            VersionId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            VersionName = "owner.branch",
+            CommonAncestorGeneration = 1,
+        };
+
+        await CreateHandler(reader).ProcessDeleteOperationsAsync(
+            new ApplyEditsRequest { Deletes = [7L, 8L] },
+            OwnerEditResource(), storageLayerId: 7, context,
+            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+            branch, CancellationToken.None);
+
+        context.DeleteIds.Should().ContainSingle().Which.Should().Be(7);
+        context.DeleteResults![1].Should().NotBeNull();
+        context.DeleteResults[1]!.Error!.Code.Should().Be(GeoServicesEditErrorCodes.NotPermitted);
+        await reader.Received().QueryAsync(7,
+            Arg.Is<FeatureQuery>(query => query.VersionContext == branch && query.OutFields != null && query.OutFields.Contains("owner")),
+            Arg.Any<CancellationToken>());
+        currentOwner = "subject-b";
+
+        var guards = FeatureServerEditsHandler.BuildOwnerGuards(
+            FeatureEditBatch.Create(operations: [FeatureEditOperation.Delete(7)]), context.OwnerGuards);
+        guards.Should().ContainSingle().Which.Should().Be(new OwnerEditGuard(7, "owner", "subject-a"));
+        Action missingGuard = () => FeatureServerEditsHandler.BuildOwnerGuards(
+            FeatureEditBatch.Create(deletes: [7L, 8L]), context.OwnerGuards);
+        missingGuard.Should().Throw<FeatureServerEditsHandler.EditBatchValidationException>()
+            .WithMessage("Edit not permitted.");
+    }
+
+    private static IFeatureReader OwnerReader(Func<string> currentOwner)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.ArgAt<FeatureQuery>(1);
+                var features = new[]
+                {
+                    Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+                        .Add("name", "before").Add("owner", currentOwner())),
+                    Feature.Create(8, null, ImmutableDictionary<string, object?>.Empty
+                        .Add("name", "before").Add("owner", "subject-b")),
+                }.Where(feature => query.ObjectIds == null || query.ObjectIds.Value.IsDefaultOrEmpty || query.ObjectIds.Value.Contains(feature.Id))
+                    .ToImmutableArray();
+                return Task.FromResult(QueryResult<Feature>.Create(features.Length, features));
+            });
+        return reader;
+    }
+
+    private static GeoServicesFeature EditFeature(long objectId, string name)
+        => new() { Attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = name } };
+
+    private static MetadataV2Resource OwnerEditResource()
+        => OwnerResource() with
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "objectid",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"],
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+                new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String, Nullable = true },
+            ],
+        };
+
     private static ClaimsPrincipal Principal(string subjectType, string subject, string displayName)
         => new(new ClaimsIdentity(
             [
@@ -327,12 +442,12 @@ public sealed class EditOwnerSubjectTests
             ],
         };
 
-    private static FeatureServerEditsHandler CreateHandler()
+    private static FeatureServerEditsHandler CreateHandler(IFeatureReader? reader = null)
         => new(
             new FeatureServerEditsDependencies(
                 Substitute.For<IResourceValidator>(),
                 Substitute.For<IFeatureWriter>(),
-                Substitute.For<IFeatureReader>(),
+                reader ?? Substitute.For<IFeatureReader>(),
                 Substitute.For<IFeatureServerGeometryServices>(),
                 Substitute.For<IEditParameterAdapter<GeoServicesEditRequest>>(),
                 Substitute.For<IEditProcessor>(),

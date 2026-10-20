@@ -7,8 +7,12 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -17,12 +21,15 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Models;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using Honua.Core.Features.Licensing.Domain;
@@ -66,7 +73,28 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     {
         _fixture.DecorateService<IFeatureCacheManager>(inner =>
             new MissingSridCacheManager(inner, layerId => _missingLayerSrid && layerId == _layerId));
+        // Program skips provider infrastructure in Test, and WebAppFixture installs
+        // the graph provider after AddServerFeatures has run. Register the same
+        // catalog-only MCP surface after that fixture provider composition.
+        _fixture.ConfigureServices(services =>
+        {
+            services.AddMcpCatalogPublicationSurface();
+            // Publication metadata is stored in the canonical honua schema. Use its
+            // production attachment authority as well; the fixture's isolated feature
+            // schema is not a second attachment authority for these publications.
+            services.RemoveAll<PostgresAttachmentStore>();
+            services.AddScoped(serviceProvider => new PostgresAttachmentStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetService<ICloudFileStorage>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
+                schemaName: "honua",
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+                attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                    ?? new AttachmentLimits(),
+                migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
+        });
         await _fixture.InitializeAsync();
+        await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         _client = _fixture.CreateAdminClient();
         _schema = PublishSchema;
         _tableName = $"layer_{Guid.NewGuid():N}";

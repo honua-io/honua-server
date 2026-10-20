@@ -357,27 +357,46 @@ internal sealed class QueryFeaturesTool : IMcpTool
 
     private static ImmutableArray<string> ResolveOutFields(IReadOnlyList<string>? outFields, MetadataV2Resource resource)
     {
+        var visibleAttributes = resource.VisibleSchemaFields()
+            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .ToArray();
         var requested = outFields?
             .Where(static field => !string.IsNullOrWhiteSpace(field))
             .Select(static field => field.Trim())
             .ToArray();
         if (requested is not { Length: > 0 })
         {
-            return resource.VisibleSchemaFields()
-                .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            return visibleAttributes
                 .Select(static field => field.Name)
                 .ToImmutableArray();
         }
 
+        var selected = ImmutableArray.CreateBuilder<string>(requested.Length);
+        var allVisible = false;
         foreach (var field in requested)
         {
-            if (resource.IsHiddenSchemaField(field))
+            if (field == "*")
+            {
+                allVisible = true;
+                continue;
+            }
+
+            var visible = visibleAttributes.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, field, StringComparison.OrdinalIgnoreCase));
+            if (visible is null)
             {
                 throw new GeoprocessingValidationException($"Field '{field}' is not available.");
             }
+
+            selected.Add(visible.Name);
         }
 
-        return requested.ToImmutableArray();
+        // The storage-mapped reader matches literal field names. Passing "*" through
+        // would match nothing and yield an empty attribute object. Expand it against
+        // the public schema here, while the reader retains principal field masks.
+        return allVisible
+            ? visibleAttributes.Select(static field => field.Name).ToImmutableArray()
+            : selected.ToImmutable();
     }
 
     private static SqlFragment? BuildAttributeFilter(

@@ -476,6 +476,9 @@ public sealed class PublishedLayerSummary
     /// </summary>
     public required string ServiceName { get; init; }
 
+    /// <summary>The exact metadata graph revision committed by this publish, when available.</summary>
+    public long? MetadataRevision { get; init; }
+
     /// <summary>
     /// Storage mode the layer was published with (<c>source</c> or <c>managed</c>). Set on
     /// publish responses; null on listings.

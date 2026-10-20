@@ -25,8 +25,8 @@ public sealed class GatedBootExitTests
     private const string TestRunIdEnv = "HONUA_TEST_RUN_ID";
 
     /// <summary>
-    /// Journal row for a real migration that the core schema guard does not require objects for.
-    /// The journal is therefore non-empty (an existing database) while <c>038</c> stays pending.
+    /// Journal row for a real applied migration. Its attachment table is provisioned from the
+    /// same embedded resource so the journal has a valid physical floor while <c>038</c> stays pending.
     /// </summary>
     private const string SeededJournalScript = "Honua.Server.Migrations.002_CreateAttachmentsTable.sql";
 
@@ -162,11 +162,17 @@ public sealed class GatedBootExitTests
 
     private static async Task SeedExistingDatabaseAsync(string connectionString)
     {
+        await using var migration = typeof(Program).Assembly.GetManifestResourceStream(SeededJournalScript)
+            ?? throw new InvalidOperationException($"The fixture migration {SeededJournalScript} was not embedded.");
+        using var migrationReader = new StreamReader(migration);
+        var attachmentDdl = await migrationReader.ReadToEndAsync();
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
-            """
+            $"""
             CREATE EXTENSION IF NOT EXISTS postgis;
+            CREATE SCHEMA IF NOT EXISTS honua;
+            {attachmentDdl}
             CREATE TABLE public.schema_versions (
                 schemaversionsid serial NOT NULL,
                 scriptname character varying(255) NOT NULL,
