@@ -113,7 +113,17 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         var streamed = await store.QueryEntitiesAsync("Datastreams", new SensorThingsEntityQuery(null, areaOrder.Parameters,
             areaOrder.Sql + ",d.id", 0, 100), CancellationToken.None);
         var derived = streamed.Entities.Single(entity => entity.GetProperty("@iot.id").GetInt64() == datastream);
-        derived.GetProperty("observedArea").GetProperty("type").GetString().Should().Be("Point");
+        var area = derived.GetProperty("observedArea");
+        area.GetProperty("type").GetString().Should().Be("Polygon",
+            "the production projection uses ST_MakeEnvelope even for a single-point extent");
+        var ring = area.GetProperty("coordinates")[0];
+        ring.GetArrayLength().Should().Be(5);
+        foreach (var coordinate in ring.EnumerateArray())
+        {
+            coordinate.GetArrayLength().Should().Be(2);
+            coordinate[0].GetDouble().Should().Be(5);
+            coordinate[1].GetDouble().Should().Be(6);
+        }
         (await store.DeleteEntityAsync("Observations", observation, CancellationToken.None)).Should().BeTrue();
         (await store.DeleteEntityAsync("Locations", location, CancellationToken.None)).Should().BeTrue();
         (await store.GetEntityAsync("Locations", location, CancellationToken.None)).Should().BeNull();
@@ -197,13 +207,18 @@ public sealed partial class CoreSchemaDivergenceGuardTests
     [Theory]
     [InlineData(PostgresSensorThingsSchema.DeferredSchemaToken)]
     [InlineData(PostgresSensorThingsSchema.DeferredBaseSchemaToken)]
-    public void SensingAuthority_ReservedConfiguredIdentifier_CannotBecomeAPlanningOrRuntimeSchema(string schema)
+    public async Task SensingAuthority_ReservedConfiguredIdentifier_CannotBecomeAPlanningOrRuntimeSchema(string schema)
     {
         var store = new PostgresObservationStore(new TestConnectionProvider("not opened"),
             new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), schema);
         var translate = () => store.TranslateFilter("Locations", new BinaryExpression(new PropertyReference("name"),
             BinaryOperator.Equal, new Literal("x", LiteralType.Text)));
         translate.Should().Throw<InvalidOperationException>();
+        // The runtime resolver must reject this identifier before connection I/O.
+        await using var connection = new NpgsqlConnection();
+        var resolve = () => PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, requireConfiguredBase: true);
+        var rejection = await resolve.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        rejection.Which.Detail.Should().Contain("reserved");
     }
 
     [SkippableFact]
