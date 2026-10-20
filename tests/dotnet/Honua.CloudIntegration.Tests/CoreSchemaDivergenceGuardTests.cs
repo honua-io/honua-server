@@ -986,19 +986,33 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                         .Should().ThrowAsync<AttachmentSchemaBindingException>();
                     await store.Awaiting(instance => instance.CreateAsync(73, 72, new Attachment
                     {
-                        Id = 0, LayerId = 73, FeatureId = 72, Filename = "denied.txt", ContentType = "text/plain",
-                        Size = 1, CreatedAt = DateTime.UtcNow, StoragePath = "metadata-only/denied"
+                        Id = 0,
+                        LayerId = 73,
+                        FeatureId = 72,
+                        Filename = "denied.txt",
+                        ContentType = "text/plain",
+                        Size = 1,
+                        CreatedAt = DateTime.UtcNow,
+                        StoragePath = "metadata-only/denied"
                     })).Should().ThrowAsync<AttachmentSchemaBindingException>();
                     (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(before);
                     (await CaptureAttachmentRowsAsync(connectionString, physical)).Should().Be(canonicalRows);
                     (await CaptureAttachmentRowsAsync(connectionString, overridden)).Should().Be(overrideRows);
                     return;
                 }
-                (await store.GetAsync(73, 72, 9101))!.Filename.Should().Be("canonical.txt");
+                var canonical = await store.GetAsync(73, 72, 9101);
+                canonical.HasValue.Should().BeTrue();
+                canonical.GetValueOrDefault().Filename.Should().Be("canonical.txt");
                 var created = await store.CreateAsync(73, 72, new Attachment
                 {
-                    Id = 0, LayerId = 73, FeatureId = 72, Filename = "same-family.txt", ContentType = "text/plain",
-                    Size = 1, CreatedAt = DateTime.UtcNow, StoragePath = "metadata-only/same-family"
+                    Id = 0,
+                    LayerId = 73,
+                    FeatureId = 72,
+                    Filename = "same-family.txt",
+                    ContentType = "text/plain",
+                    Size = 1,
+                    CreatedAt = DateTime.UtcNow,
+                    StoragePath = "metadata-only/same-family"
                 });
                 createdId = created.Id;
                 (await CaptureAttachmentAsync(connectionString, physical)).Should().Be(original,
@@ -1010,7 +1024,9 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             await using (var scope = provider.CreateAsyncScope())
             {
                 var store = scope.ServiceProvider.GetRequiredService<PostgresAttachmentStore>();
-                (await store.GetAsync(73, 72, createdId))!.Filename.Should().Be("same-family.txt");
+                var reloaded = await store.GetAsync(73, 72, createdId);
+                reloaded.HasValue.Should().BeTrue();
+                reloaded.GetValueOrDefault().Filename.Should().Be("same-family.txt");
                 (await CaptureAttachmentAsync(connectionString, physical)).Should().Be(original);
             }
         }
