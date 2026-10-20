@@ -36,6 +36,7 @@ jobs:
   controls:
     name: Plan-only workflow controls (offline)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:

@@ -44,6 +44,7 @@ concurrency:
 jobs:
   operator-preflight:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       provisioned: ${{ steps.operator-secret.outputs.provisioned }}
     steps:

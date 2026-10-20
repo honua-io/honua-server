@@ -29,6 +29,7 @@ concurrency:
 jobs:
   identity:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     outputs:
       harness_ref: ${{ steps.identity.outputs.harness_ref }}
       server_image: ${{ steps.identity.outputs.server_image }}
