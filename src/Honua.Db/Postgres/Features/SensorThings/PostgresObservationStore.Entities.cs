@@ -110,7 +110,7 @@ internal sealed partial class PostgresObservationStore
     private async Task<SensingTables> ResolveSensingTablesAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, CancellationToken ct)
     {
         var schema = _schemaContext?.CurrentSchema ?? _configuredSchema;
-        var physical = await PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, transaction, requireConfiguredBase: true, cancellationToken: ct).ConfigureAwait(false);
+        var physical = await PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, _sensingMigration, transaction, requireConfiguredBase: true, cancellationToken: ct).ConfigureAwait(false);
         return new(string.IsNullOrWhiteSpace(schema) ? "honua" : schema, physical);
     }
 

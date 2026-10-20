@@ -249,6 +249,7 @@ internal static class ServiceCollectionExtensions
             serviceProvider => new Honua.Db.Postgres.Features.SensorThings.PostgresObservationStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
+                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetService<ISchemaContext>(),
                 serviceProvider.GetRequiredService<IConfiguration>()));

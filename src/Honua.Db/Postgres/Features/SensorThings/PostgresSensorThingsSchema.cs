@@ -17,7 +17,6 @@ internal static class PostgresSensorThingsSchema
 {
     internal const string DeferredBaseSchemaToken = "__honua_sensing_base__";
     internal const string DeferredSchemaToken = "__honua_sensing_physical__";
-    internal const string SensingMigration = "Honua.Server.Migrations.127_CompleteSensorThingsSensing.sql";
     internal static readonly string[] SensingObjects =
     [
         "sta_location", "sta_historical_location", "sta_feature_of_interest", "sta_thing_location",
@@ -43,11 +42,12 @@ internal static class PostgresSensorThingsSchema
     ];
 
     internal static async Task<string> ResolveAsync(DbConnection connection, string? configuredSchema,
-        bool sensingApplied, DbTransaction? transaction = null, bool requireConfiguredBase = false, CancellationToken cancellationToken = default)
+        bool sensingApplied, string sensingMigration, DbTransaction? transaction = null, bool requireConfiguredBase = false, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sensingMigration);
         var configured = string.IsNullOrWhiteSpace(configuredSchema) ? "honua" : configuredSchema;
         _ = SchemaSearchPath.ValidateAndQuote(configured);
-        if (configured is DeferredSchemaToken or DeferredBaseSchemaToken) throw Failure("The configured schema collides with the reserved sensing query identifier.");
+        if (configured is DeferredSchemaToken or DeferredBaseSchemaToken) throw Failure(sensingMigration, "The configured schema collides with the reserved sensing query identifier.");
         var objects = new Dictionary<(string Schema, string Name), (uint Oid, char Kind)>();
         var functions = new Dictionary<(string Schema, string Name), uint>();
         // Two protocol batches preserve live authority validation without per-object round trips.
@@ -71,11 +71,11 @@ internal static class PostgresSensorThingsSchema
             functionCommand.Parameters.Add(new NpgsqlParameter("functions", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = _functions });
             batch.BatchCommands.Add(functionCommand);
             await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (reader.FieldCount != 4) throw Failure("Sensing object catalog result has an incompatible shape.");
+            if (reader.FieldCount != 4) throw Failure(sensingMigration, "Sensing object catalog result has an incompatible shape.");
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 objects.Add((reader.GetString(0), reader.GetString(1)), (reader.GetFieldValue<uint>(2), reader.GetString(3)[0]));
             if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false) || reader.FieldCount != 6)
-                throw Failure("Sensing function catalog result is missing or has an incompatible shape.");
+                throw Failure(sensingMigration, "Sensing function catalog result is missing or has an incompatible shape.");
             string? functionFailure = null;
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -84,8 +84,8 @@ internal static class PostgresSensorThingsSchema
                     functionFailure = "Sensing trigger function identity is ambiguous or has an incompatible signature.";
             }
             if (await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-                throw Failure("Sensing catalog batch returned an unexpected result.");
-            if (functionFailure is not null) throw Failure(functionFailure);
+                throw Failure(sensingMigration, "Sensing catalog batch returned an unexpected result.");
+            if (functionFailure is not null) throw Failure(sensingMigration, functionFailure);
         }
 
         bool Any(string schema) => SensingObjects.Any(name => objects.ContainsKey((schema, name))) || _functions.Any(name => functions.ContainsKey((schema, name)));
@@ -95,7 +95,7 @@ internal static class PostgresSensorThingsSchema
         if (!sensingApplied)
         {
             if (Any(configured) || Any("honua"))
-                throw new DatabaseSchemaFloorException(SensingMigration, DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
+                throw new DatabaseSchemaFloorException(sensingMigration, DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
                     "Sensing objects exist without their numbered migration receipt.");
             return configured;
         }
@@ -103,12 +103,12 @@ internal static class PostgresSensorThingsSchema
         string physical;
         if (configured == "honua")
         {
-            if (!Complete(configured)) throw Failure("The canonical sensing family is incomplete or has incompatible object kinds.");
+            if (!Complete(configured)) throw Failure(sensingMigration, "The canonical sensing family is incomplete or has incompatible object kinds.");
             physical = configured;
         }
         else if (Complete(configured) && !Any("honua")) physical = configured;
         else if (Complete("honua") && !Any(configured)) physical = "honua";
-        else throw Failure("The configured and legacy sensing families are partial, duplicate or ambiguous.");
+        else throw Failure(sensingMigration, "The configured and legacy sensing families are partial, duplicate or ambiguous.");
 
         bool BaseComplete(string schema) => _baseObjects.All(name => objects.TryGetValue((schema, name), out var value) &&
             (name.EndsWith("_seq", StringComparison.Ordinal) ? value.Kind == 'S' : name == "sta_observation" ? value.Kind == 'p' : value.Kind == 'r'));
@@ -119,12 +119,12 @@ internal static class PostgresSensorThingsSchema
             var legacyAny = _baseObjects.Any(name => objects.ContainsKey(("honua", name)));
             if (BaseComplete(configured) && !legacyAny) baseSchema = configured;
             else if (BaseComplete("honua") && !configuredAny && physical == "honua") baseSchema = "honua";
-            else throw Failure("The original SensorThings family is partial, duplicate or incompatible with sensing authority.");
+            else throw Failure(sensingMigration, "The original SensorThings family is partial, duplicate or incompatible with sensing authority.");
         }
-        else if (!BaseComplete(baseSchema)) throw Failure("The original SensorThings family is incomplete.");
+        else if (!BaseComplete(baseSchema)) throw Failure(sensingMigration, "The original SensorThings family is incomplete.");
 
         if (requireConfiguredBase && baseSchema != configured)
-            throw Failure("The configured runtime base family has not been adopted; legacy base authority is permitted only during migration planning.");
+            throw Failure(sensingMigration, "The configured runtime base family has not been adopted; legacy base authority is permitted only during migration planning.");
 
         uint Oid(string table) => objects[(_baseObjects.Contains(table, StringComparer.Ordinal) ? baseSchema : physical, table)].Oid;
         await using var validationBatch = new NpgsqlBatch(connection.RequireNpgsqlConnection(), (NpgsqlTransaction?)transaction);
@@ -194,13 +194,13 @@ internal static class PostgresSensorThingsSchema
                     failure ??= failureDetails[index];
                 var hasNext = await reader.NextResultAsync(cancellationToken).ConfigureAwait(false);
                 if (hasNext != (index + 1 < failureDetails.Count))
-                    throw Failure("Sensing authority validation batch returned an incompatible result count.");
+                    throw Failure(sensingMigration, "Sensing authority validation batch returned an incompatible result count.");
             }
-            if (failure is not null) throw Failure(failure);
+            if (failure is not null) throw Failure(sensingMigration, failure);
         }
         return physical;
     }
 
-    private static DatabaseSchemaFloorException Failure(string detail) =>
-        new(SensingMigration, DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema, detail);
+    private static DatabaseSchemaFloorException Failure(string sensingMigration, string detail) =>
+        new(sensingMigration, DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema, detail);
 }

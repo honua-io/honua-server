@@ -1188,6 +1188,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
         var observationStore = new PostgresObservationStore(
             new TestConnectionProvider(connectionString),
             guard,
+            ServerCoreSchemaMigrations.Manifest,
             schema);
         var things = await observationStore.ListThingsAsync(CatalogQuery.Page(0, 10), CancellationToken.None);
         things.Should().ContainSingle(thing => thing.Id == 1,
@@ -1450,6 +1451,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
         var observationStore = new PostgresObservationStore(
             new TestConnectionProvider(connectionString),
             approvedGuard,
+            ServerCoreSchemaMigrations.Manifest,
             schema);
         (await observationStore.ListThingsAsync(CatalogQuery.Page(0, 10), CancellationToken.None))
             .Should().ContainSingle(thing => thing.Id == 1,
@@ -1998,7 +2000,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
                 return;
 
             case StoreOperation.SensorThingsRead:
-                var observationStore = new PostgresObservationStore(provider, guard);
+                var observationStore = new PostgresObservationStore(provider, guard, ServerCoreSchemaMigrations.Manifest);
                 await observationStore.ListThingsAsync(CatalogQuery.Page(0, 1), CancellationToken.None);
                 return;
 

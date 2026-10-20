@@ -1157,7 +1157,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
 
         var sensingSchema = resolveSensingAuthority && _migrations.SensorThingsSensingMigration is { } sensingMigration
-            ? await PostgresSensorThingsSchema.ResolveAsync(connection, _schemaName, appliedScripts.Contains(sensingMigration),
+            ? await PostgresSensorThingsSchema.ResolveAsync(connection, _schemaName, appliedScripts.Contains(sensingMigration), sensingMigration,
                 cancellationToken: cancellationToken).ConfigureAwait(false)
             : _schemaName;
 

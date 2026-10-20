@@ -46,7 +46,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
                 };
                 ActivitySource.AddActivityListener(listener);
                 physical = await PostgresSensorThingsSchema.ResolveAsync(connection, configuredSchema,
-                    sensingApplied: true, transaction: transaction, requireConfiguredBase: true);
+                    sensingApplied: true, sensingMigration: ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration!, transaction: transaction, requireConfiguredBase: true);
             }
             physical.Should().Be("honua", "the literal 109 fixture preserves the complete legacy 127 family");
             releases.Should().Be(0, "the caller still owns the wrapped connection and transaction");
@@ -86,7 +86,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is required for physical sensing authority proof.");
         var connectionString = await CreateSensingBaselineAsync();
         var defaultGuard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
-        var defaultStore = new PostgresObservationStore(new TestConnectionProvider(connectionString), defaultGuard, "honua");
+        var defaultStore = new PostgresObservationStore(new TestConnectionProvider(connectionString), defaultGuard, ServerCoreSchemaMigrations.Manifest, "honua");
         var original = await defaultStore.CreateEntityAsync("Locations", SensingJson("""
             {"name":"preserved","description":"legacy","encodingType":"application/geo+json",
              "location":{"type":"Point","coordinates":[1,2]}}
@@ -103,7 +103,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
             "109 must leave every 127 sensing object OID, row and sequence value intact");
         await AssertSensingCatalogBatchesAsync(connectionString, schema, original);
         var guard = CreateSensingGuard(schema);
-        var store = new PostgresObservationStore(new TestConnectionProvider(connectionString), guard, schema);
+        var store = new PostgresObservationStore(new TestConnectionProvider(connectionString), guard, ServerCoreSchemaMigrations.Manifest, schema);
         (await store.GetEntityAsync("Locations", original, CancellationToken.None))!.Value.GetProperty("name").GetString().Should().Be("preserved");
         var thing = await store.CreateEntityAsync("Things", SensingJson("""
             {"name":"authority-thing","description":"test","Locations":[
@@ -190,7 +190,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         (await store.DeleteEntityAsync("Locations", location, CancellationToken.None)).Should().BeTrue();
         (await store.GetEntityAsync("Locations", location, CancellationToken.None)).Should().BeNull();
         var restarted = new PostgresObservationStore(new TestConnectionProvider(connectionString),
-            CreateSensingGuard(schema), schema);
+            CreateSensingGuard(schema), ServerCoreSchemaMigrations.Manifest, schema);
         (await restarted.GetEntityAsync("Locations", original, CancellationToken.None))!.Value.GetProperty("name").GetString().Should().Be("preserved");
         (await restarted.GetEntityAsync("Things", thing, CancellationToken.None)).Should().NotBeNull();
     }
@@ -230,10 +230,10 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         var before = await CaptureSensingAuthorityStateAsync(connectionString);
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
-        var resolve = () => PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, requireConfiguredBase: true);
+        var resolve = () => PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration!, requireConfiguredBase: true);
         await resolve.Should().ThrowAsync<DatabaseSchemaFloorException>();
         var store = new PostgresObservationStore(new TestConnectionProvider(connectionString),
-            CreateSensingGuard(schema), schema);
+            CreateSensingGuard(schema), ServerCoreSchemaMigrations.Manifest, schema);
         await store.Awaiting(instance => instance.GetEntityAsync("Locations", 1, CancellationToken.None)).Should().ThrowAsync<DatabaseSchemaFloorException>();
         (await CaptureSensingAuthorityStateAsync(connectionString)).Should().Be(before);
     }
@@ -252,16 +252,16 @@ public sealed partial class CoreSchemaDivergenceGuardTests
             await ApplySensingAdoptionFixtureAsync(connectionString, schema);
             await using var bound = new NpgsqlConnection(connectionString);
             await bound.OpenAsync();
-            (await PostgresSensorThingsSchema.ResolveAsync(bound, schema, true, requireConfiguredBase: true)).Should().Be("honua");
+            (await PostgresSensorThingsSchema.ResolveAsync(bound, schema, true, ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration!, requireConfiguredBase: true)).Should().Be("honua");
             foreach (var table in new[] { "sta_thing", "sta_sensor", "sta_observed_property", "sta_datastream", "sta_observation", "sta_observation_default" })
                 await ExecuteAsync(connectionString, $"ALTER TABLE sensing_configured.{table} SET SCHEMA honua");
         }
         var before = await CaptureSensingAuthorityStateAsync(connectionString);
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
-        (await PostgresSensorThingsSchema.ResolveAsync(connection, schema, true)).Should().Be("honua",
+        (await PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration!)).Should().Be("honua",
             "migration planning must inspect the complete pre-109 physical family");
-        var runtime = () => PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, requireConfiguredBase: true);
+        var runtime = () => PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration!, requireConfiguredBase: true);
         await runtime.Should().ThrowAsync<DatabaseSchemaFloorException>();
         (await CaptureSensingAuthorityStateAsync(connectionString)).Should().Be(before);
     }
@@ -272,13 +272,13 @@ public sealed partial class CoreSchemaDivergenceGuardTests
     public async Task SensingAuthority_ReservedConfiguredIdentifier_CannotBecomeAPlanningOrRuntimeSchema(string schema)
     {
         var store = new PostgresObservationStore(new TestConnectionProvider("not opened"),
-            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), schema);
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), ServerCoreSchemaMigrations.Manifest, schema);
         var translate = () => store.TranslateFilter("Locations", new BinaryExpression(new PropertyReference("name"),
             BinaryOperator.Equal, new Literal("x", LiteralType.Text)));
         translate.Should().Throw<InvalidOperationException>();
         // The runtime resolver must reject this identifier before connection I/O.
         await using var connection = new NpgsqlConnection();
-        var resolve = () => PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, requireConfiguredBase: true);
+        var resolve = () => PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration!, requireConfiguredBase: true);
         var rejection = await resolve.Should().ThrowAsync<DatabaseSchemaFloorException>();
         rejection.Which.Detail.Should().Contain("reserved");
     }
