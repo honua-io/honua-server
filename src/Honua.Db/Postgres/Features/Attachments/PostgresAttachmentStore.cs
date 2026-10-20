@@ -9,6 +9,7 @@ using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -29,6 +30,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly AttachmentLimits? _attachmentLimits;
     private readonly string? _configuredSchema;
+    private readonly PostgresAttachmentMigrationContract? _migrationContract;
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -36,7 +38,8 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         ILogger<PostgresAttachmentStore> logger,
         string? schemaName = null,
         IAttachmentOrphanLedger? orphanLedger = null,
-        AttachmentLimits? attachmentLimits = null)
+        AttachmentLimits? attachmentLimits = null,
+        PostgresAttachmentMigrationContract? migrationContract = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         // Null is a database-only host. Feature-store resolution includes this store for
@@ -47,6 +50,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         _attachmentLimits = attachmentLimits;
         _ = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
         _configuredSchema = schemaName;
+        _migrationContract = migrationContract;
     }
 
     /// <summary>
@@ -62,7 +66,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         CancellationToken cancellationToken)
     {
         var physical = await PostgresAttachmentSchema.ResolveAsync(
-            connection, _configuredSchema, transaction, requireImportCleanup: requireImportCleanup,
+            connection, _configuredSchema, _migrationContract ?? throw new InvalidOperationException("Attachment migration identities were not supplied by the host."), transaction, requireImportCleanup: requireImportCleanup,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return (Infrastructure.SchemaSearchPath.QualifyTable("attachments", physical),
             Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", physical));

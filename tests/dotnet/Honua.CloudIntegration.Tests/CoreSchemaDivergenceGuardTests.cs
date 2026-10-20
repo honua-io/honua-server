@@ -516,34 +516,49 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     [Fact]
     public void AttachmentBindings_PreserveResourcesAndDefaultNonce_AndBindEveryCustomField()
     {
+        var contract = Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!;
+        contract.CreateMigration.Should().Be("Honua.Server.Migrations.002_CreateAttachmentsTable.sql");
+        contract.ImportMigration.Should().Be("Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql");
+        contract.PreambleResourceName.Should().Be("Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template");
         var assembly = typeof(Program).Assembly;
-        var bindings = AttachmentSchemaScriptProvider.Describe(assembly, "configured", "honua");
+        foreach (var invalid in new[]
+        {
+            contract with { CreateMigration = "unbound.create.sql" },
+            contract with { ImportMigration = "unbound.import.sql" },
+            contract with { PreambleResourceName = "unbound.preamble.sql.template" },
+            contract with { PreambleResourceSha256 = new string('0', 64) }
+        })
+        {
+            Action describeInvalid = () => AttachmentSchemaScriptProvider.Describe(assembly, "configured", "configured", invalid);
+            describeInvalid.Should().Throw<InvalidOperationException>("composition identities and raw hash must bind real resources");
+        }
+        var bindings = AttachmentSchemaScriptProvider.Describe(assembly, "configured", "honua", Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         bindings.Should().HaveCount(2);
         bindings.Should().OnlyContain(binding => binding.PreambleResourceName == null && binding.PreambleResourceSha256 == null,
             "legacy/default physical authority must not acquire an unused preamble contract");
-        using var contractStream = assembly.GetManifestResourceStream(AttachmentSchemaScriptProvider.PreambleResourceName)!;
+        using var contractStream = assembly.GetManifestResourceStream(Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.PreambleResourceName)!;
         using var contractBytes = new MemoryStream();
         contractStream.CopyTo(contractBytes);
         var rawContract = contractBytes.ToArray();
         const string expectedContractDigest = "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3";
         Convert.ToHexString(SHA256.HashData(rawContract)).ToLowerInvariant().Should().Be(expectedContractDigest);
-        AttachmentSchemaScriptProvider.ValidatePreambleBytes(rawContract).Should().Be(expectedContractDigest);
+        AttachmentSchemaScriptProvider.ValidatePreambleBytes(rawContract, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!).Should().Be(expectedContractDigest);
         var changedContract = (byte[])rawContract.Clone();
         changedContract[0] ^= 1;
-        Action changedContractCheck = () => AttachmentSchemaScriptProvider.ValidatePreambleBytes(changedContract);
+        Action changedContractCheck = () => AttachmentSchemaScriptProvider.ValidatePreambleBytes(changedContract, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         changedContractCheck.Should().Throw<InvalidOperationException>();
-        Action emptyContractCheck = () => AttachmentSchemaScriptProvider.ValidatePreambleBytes([]);
+        Action emptyContractCheck = () => AttachmentSchemaScriptProvider.ValidatePreambleBytes([], Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         emptyContractCheck.Should().Throw<InvalidOperationException>();
         new EmbeddedScriptProvider(assembly, name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
-            .GetScripts(null!).Select(script => script.Name).Should().NotContain(AttachmentSchemaScriptProvider.PreambleResourceName,
+            .GetScripts(null!).Select(script => script.Name).Should().NotContain(Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.PreambleResourceName,
                 "the versioned contract is not independently discovered or journaled as a migration");
-        var projectedBindings = AttachmentSchemaScriptProvider.Describe(assembly, "configured", "configured");
-        var preambleBinding = projectedBindings.Single(binding => binding.ScriptName == PostgresAttachmentSchema.CreateMigration);
-        preambleBinding.PreambleResourceName.Should().Be(AttachmentSchemaScriptProvider.PreambleResourceName);
+        var projectedBindings = AttachmentSchemaScriptProvider.Describe(assembly, "configured", "configured", Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+        var preambleBinding = projectedBindings.Single(binding => binding.ScriptName == Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.CreateMigration);
+        preambleBinding.PreambleResourceName.Should().Be(Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.PreambleResourceName);
         preambleBinding.PreambleResourceSha256.Should().Be(expectedContractDigest);
-        projectedBindings.Single(binding => binding.ScriptName == PostgresAttachmentSchema.ImportMigration)
+        projectedBindings.Single(binding => binding.ScriptName == Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.ImportMigration)
             .PreambleResourceName.Should().BeNull();
-        projectedBindings.Single(binding => binding.ScriptName == PostgresAttachmentSchema.ImportMigration)
+        projectedBindings.Single(binding => binding.ScriptName == Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.ImportMigration)
             .PreambleResourceSha256.Should().BeNull();
         foreach (var binding in bindings)
         {
@@ -557,13 +572,13 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             var rawSql = sqlReader.ReadToEnd();
             var projected = projectedBindings.Single(item => item.ScriptName == binding.ScriptName);
             projected.ResourceSha256.Should().Be(binding.ResourceSha256);
-            var expectedSql = binding.ScriptName == PostgresAttachmentSchema.CreateMigration
+            var expectedSql = binding.ScriptName == Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.CreateMigration
                 ? System.Text.Encoding.UTF8.GetString(rawContract).Replace("$PhysicalSchema$", "\"configured\"", StringComparison.Ordinal) +
                     rawSql.Replace("honua.attachments", "\"configured\".attachments", StringComparison.Ordinal)
                 : rawSql.Replace("$HonuaSchema$.attachments", "\"configured\".attachments", StringComparison.Ordinal)
                     .Replace("$HonuaSchema$.import_attachment_cleanup", "\"configured\".import_attachment_cleanup", StringComparison.Ordinal);
             projected.RenderedSqlSha256.Should().Be(Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(expectedSql))).ToLowerInvariant());
-            new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured", assembly)
+            new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured", assembly, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!)
                 .Render(new SqlScript(binding.ScriptName, rawSql)).Contents.Should().Be(expectedSql);
         }
 
@@ -578,7 +593,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var historical = MigrationSafetyClassifier.ComputeContractApprovalNonce(["reviewed.sql"]);
         PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, []).Should().Be(historical);
         PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications,
-            AttachmentSchemaScriptProvider.Describe(assembly, "honua", "honua")).Should().Be(historical);
+            AttachmentSchemaScriptProvider.Describe(assembly, "honua", "honua", Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!)).Should().Be(historical);
         var nonce = PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, bindings);
         nonce.Should().NotBe(historical);
         PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, bindings.Reverse().ToArray()).Should().Be(nonce);
@@ -614,7 +629,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             }
         }
 
-        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured", assembly);
+        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured", assembly, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         var unrelated = new SqlScript("unrelated.sql", "SELECT 'honua.attachments', '$HonuaSchema$.attachments';");
         renderer.Render(unrelated).Contents.Should().Be(unrelated.Contents,
             "rendering is keyed by exact canonical script name, not arbitrary SQL substrings");
@@ -638,12 +653,12 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Real PostgreSQL is required for attachment physical binding.");
         var connectionString = await postgres.CreateFreshDatabaseAsync();
         await ExecuteAsync(connectionString, "CREATE SCHEMA honua; CREATE SCHEMA configured; CREATE TABLE public.schema_versions(scriptname text NOT NULL);");
-        await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.CreateMigration, "honua");
-        await ExecuteAsync(connectionString, $"INSERT INTO public.schema_versions VALUES ('{PostgresAttachmentSchema.CreateMigration}');");
+        await ApplyAttachmentResourceAsync(connectionString, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.CreateMigration, "honua");
+        await ExecuteAsync(connectionString, $"INSERT INTO public.schema_versions VALUES ('{Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.CreateMigration}');");
         if (state != "pre125")
         {
-            await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.ImportMigration, "honua");
-            await ExecuteAsync(connectionString, $"INSERT INTO public.schema_versions VALUES ('{PostgresAttachmentSchema.ImportMigration}');");
+            await ApplyAttachmentResourceAsync(connectionString, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.ImportMigration, "honua");
+            await ExecuteAsync(connectionString, $"INSERT INTO public.schema_versions VALUES ('{Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.ImportMigration}');");
         }
 
         switch (state)
@@ -652,8 +667,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 await ExecuteAsync(connectionString, "DROP TABLE honua.import_attachment_cleanup;");
                 break;
             case "duplicate":
-                await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.CreateMigration, "configured");
-                await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.ImportMigration, "configured");
+                await ApplyAttachmentResourceAsync(connectionString, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.CreateMigration, "configured");
+                await ApplyAttachmentResourceAsync(connectionString, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.ImportMigration, "configured");
                 break;
             case "split":
                 await ExecuteAsync(connectionString, "ALTER TABLE honua.import_attachment_cleanup SET SCHEMA configured;");
@@ -681,13 +696,13 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var before = await CaptureAttachmentAuthorityStateAsync(connectionString);
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
-        var resolve = () => PostgresAttachmentSchema.ResolveAsync(connection, "configured");
+        var resolve = () => PostgresAttachmentSchema.ResolveAsync(connection, "configured", Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         if (succeeds)
         {
             (await resolve()).Should().Be("honua");
             foreach (var defaultSchema in new string?[] { null, string.Empty, "   " })
             {
-                (await PostgresAttachmentSchema.ResolveAsync(connection, defaultSchema)).Should().Be("honua",
+                (await PostgresAttachmentSchema.ResolveAsync(connection, defaultSchema, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!)).Should().Be("honua",
                     "the existing store API treats omitted and whitespace schema names as the default");
             }
         }
@@ -704,10 +719,10 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var assembly = typeof(Program).Assembly;
         using var stream = assembly.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
-        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), physical, assembly);
+        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), physical, assembly, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         var original = new SqlScript(resource, await reader.ReadToEndAsync());
         // Legacy setup executes protected 002 literally, without fixture rewriting.
-        var rendered = resource == PostgresAttachmentSchema.CreateMigration && physical == "honua"
+        var rendered = resource == Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!.CreateMigration && physical == "honua"
             ? original : renderer.Render(original);
         await ExecuteAsync(connectionString, rendered.Contents);
     }
@@ -1023,7 +1038,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var verify = () => guard.VerifyAsync(connectionString);
         await verify.Should().NotThrowAsync();
         var attachments = new PostgresAttachmentStore(new TestConnectionProvider(connectionString), null,
-            NullLogger<PostgresAttachmentStore>.Instance, schema);
+            NullLogger<PostgresAttachmentStore>.Instance, schema,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         var created = await attachments.CreateAsync(7, 8, new Attachment
         {
             Id = 0,
@@ -1283,7 +1299,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         (await CaptureLegacyAttachmentAsync(connectionString)).Should().Be(legacyAttachment,
             "the configured upgrade must preserve the physical attachment OID and all legacy row bytes");
         var attachmentStore = new PostgresAttachmentStore(new TestConnectionProvider(connectionString), null,
-            NullLogger<PostgresAttachmentStore>.Instance, schema);
+            NullLogger<PostgresAttachmentStore>.Instance, schema,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         var found = await attachmentStore.GetAsync(73, 72, 9101);
         found.Should().NotBeNull();
         var preserved = found ?? throw new InvalidOperationException("The migrated legacy attachment must exist.");

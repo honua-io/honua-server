@@ -107,7 +107,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             }
 
             var attachmentSchema = connection is null ? null : await PostgresAttachmentSchema.ResolveAsync(
-                connection, _metadataSchema, allowPendingCreation: true, cancellationToken: cancellationToken)
+                connection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             var upgrader = BuildUpgrader(
                 BuildMigrationConnectionString(connectionString),
@@ -116,7 +116,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
-                attachmentSchema);
+                attachmentSchema, _migrations.Attachments);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (connection is not null)
@@ -130,7 +130,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             var classifications = ClassifyScripts(scripts);
             var executedButNotDiscoveredScripts = upgrader.GetExecutedButNotDiscoveredScripts().ToArray();
             var bindings = attachmentSchema is null ? Array.Empty<DatabaseMigrationScriptBinding>() :
-                AttachmentSchemaScriptProvider.Describe(migrationsAssembly, _metadataSchema, attachmentSchema);
+                AttachmentSchemaScriptProvider.Describe(migrationsAssembly, _metadataSchema, attachmentSchema, _migrations.Attachments!);
 
             return DatabaseMigrationPlan.Succeeded(
                 pendingScripts,
@@ -338,7 +338,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             var includeRasterProviderMigrations = usesCanonicalMigrationRoots &&
                 await HasPostGisRasterAsync(lockConnection, cancellationToken).ConfigureAwait(false);
             var attachmentSchema = usesCanonicalMigrationRoots ? await PostgresAttachmentSchema.ResolveAsync(
-                lockConnection, _metadataSchema, allowPendingCreation: true, cancellationToken: cancellationToken)
+                lockConnection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false) : null;
             var upgrader = BuildUpgrader(
                 migrationConnectionString,
@@ -347,7 +347,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
-                attachmentSchema);
+                attachmentSchema, _migrations.Attachments);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (usesCanonicalMigrationRoots)
@@ -358,7 +358,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
             var classifications = ClassifyScripts(upgrader.GetScriptsToExecute());
             var bindings = attachmentSchema is null ? Array.Empty<DatabaseMigrationScriptBinding>() :
-                AttachmentSchemaScriptProvider.Describe(migrationsAssembly, _metadataSchema, attachmentSchema);
+                AttachmentSchemaScriptProvider.Describe(migrationsAssembly, _metadataSchema, attachmentSchema, _migrations.Attachments!);
             var migrationRunId = CreateMigrationRunId();
 
             // 1. ADR-0060 fail-closed: reject unannotated contract scripts (default Enforce=true).
@@ -389,10 +389,10 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             if (attachmentSchema is not null)
             {
                 var currentAttachmentSchema = await PostgresAttachmentSchema.ResolveAsync(
-                    lockConnection, _metadataSchema, allowPendingCreation: true,
+                    lockConnection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
                 var currentBindings = AttachmentSchemaScriptProvider.Describe(
-                    migrationsAssembly, _metadataSchema, currentAttachmentSchema);
+                    migrationsAssembly, _metadataSchema, currentAttachmentSchema, _migrations.Attachments!);
                 if (!bindings.SequenceEqual(currentBindings))
                 {
                     var error = new InvalidOperationException("Attachment physical binding changed after migration planning; re-plan before applying.");
@@ -469,7 +469,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         bool includeRasterProviderMigrations,
         bool includeConfiguredSchemaAdoption,
         string configuredSchemaAdoptionMigration,
-        string? attachmentSchema = null)
+        string? attachmentSchema = null,
+        PostgresAttachmentMigrationContract? attachmentContract = null)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -495,7 +496,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                     (includeConfiguredSchemaAdoption ||
                      !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)));
             IScriptProvider selectedProvider = attachmentSchema is null ? provider :
-                new AttachmentSchemaScriptProvider(provider, attachmentSchema, migrationsAssembly);
+                new AttachmentSchemaScriptProvider(provider, attachmentSchema, migrationsAssembly,
+                    attachmentContract ?? throw new InvalidOperationException("Canonical attachment identities were not supplied."));
             builder.WithScripts(selectedProvider);
         }
 

@@ -319,7 +319,8 @@ internal static class ServiceCollectionExtensions
                     : configuration["Attachments:Schema"],
                 orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
                 attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
-                    ?? new AttachmentLimits()));
+                    ?? new AttachmentLimits(),
+                migrationContract: coreSchemaMigrations.Attachments));
         services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
         services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
 

@@ -90,7 +90,10 @@ The diagnostic migration plan exposes `scriptBindings` with the configured and
 physical attachment schema, both qualified attachment/cleanup table identities,
 and the raw embedded-resource and rendered SQL hashes. For a new non-default
 physical schema, migration 002 also uses the immutable, hash-pinned
-`attachment-schema-preamble.v1.sql.template` contract. The plan records its exact
+`attachment-schema-preamble.v1.sql.template` contract. The Server composition
+manifest supplies the exact attachment journal identities, preamble resource name
+and raw hash to both the bootstrap runner and the DI attachment store; the
+PostgreSQL provider does not construct application resource identities. The plan records its exact
 resource identity and raw-byte hash; the full rendered SQL hash includes its
 validated schema projection. The contract is not independently discovered or
 journaled as a migration. Default/legacy physical authority and migration 125

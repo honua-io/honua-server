@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Attachments;
@@ -14,18 +15,18 @@ namespace Honua.Db.Postgres.Features.Attachments;
 /// </summary>
 internal static class PostgresAttachmentSchema
 {
-    internal const string CreateMigration = "Honua.Server.Migrations.002_CreateAttachmentsTable.sql";
-    internal const string ImportMigration = "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql";
     private static readonly string[] _cleanupColumns = ["storage_path", "layer_id", "feature_id"];
 
     internal static async Task<string> ResolveAsync(
         NpgsqlConnection connection,
         string? configuredSchema,
+        PostgresAttachmentMigrationContract contract,
         NpgsqlTransaction? transaction = null,
         bool allowPendingCreation = false,
         bool requireImportCleanup = false,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(contract);
         var configured = string.IsNullOrWhiteSpace(configuredSchema) ? "honua" : configuredSchema;
         _ = SchemaSearchPath.ValidateAndQuote(configured);
         var objects = new Dictionary<(string Schema, string Table), char>();
@@ -61,8 +62,8 @@ internal static class PostgresAttachmentSchema
                     SELECT EXISTS (SELECT 1 FROM public.schema_versions WHERE scriptname = @created),
                            EXISTS (SELECT 1 FROM public.schema_versions WHERE scriptname = @imported)
                     """;
-                journal.Parameters.AddWithValue("created", CreateMigration);
-                journal.Parameters.AddWithValue("imported", ImportMigration);
+                journal.Parameters.AddWithValue("created", contract.CreateMigration);
+                journal.Parameters.AddWithValue("imported", contract.ImportMigration);
                 await using var reader = await journal.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                 await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
                 created = reader.GetBoolean(0);

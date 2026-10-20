@@ -69,7 +69,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             connectionProvider,
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
-            _schemaName);
+            _schemaName,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         // Create test table structure
         await _fixture.ExecuteAsync($"""
@@ -448,7 +449,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             new TestDatabaseConnectionProvider(_fixture.DataSource),
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
-            schemaName: MissingSchemaName);
+            schemaName: MissingSchemaName,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         var objectsBefore = await ListStoredObjectIdsAsync();
 
@@ -480,7 +482,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             storage,
             NullLogger<PostgresAttachmentStore>.Instance,
             schemaName: MissingSchemaName,
-            orphanLedger: ledger);
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         await using var stream = new MemoryStream("unreachable object"u8.ToArray());
         await Assert.ThrowsAnyAsync<Exception>(() => brokenStore.UploadAsync(
@@ -519,7 +522,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             storage,
             NullLogger<PostgresAttachmentStore>.Instance,
             schemaName: _schemaName,
-            orphanLedger: ledger);
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         var deleted = await store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id);
 
@@ -549,7 +553,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
             schemaName: _schemaName,
-            orphanLedger: ledger);
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         var attachment = await CreateTestAttachment("clean-delete.txt");
 
@@ -574,7 +579,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
             schemaName: _schemaName,
-            orphanLedger: ledger);
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         var attachment = await CreateTestAttachment("already-gone.txt");
 
@@ -615,7 +621,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             storage,
             NullLogger<PostgresAttachmentStore>.Instance,
             schemaName: _schemaName,
-            orphanLedger: ledger);
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id, cancellation.Token));
@@ -650,7 +657,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
                 MaxAttachmentsPerFeature = limit,
                 MaxAttachmentSize = 1024 * 1024,
                 MaxTotalAttachmentSize = 50L * 1024 * 1024
-            });
+            },
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
         for (var index = 0; index < limit - 1; index++)
         {
