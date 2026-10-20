@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c779ae34082f5bf067567e8b114b2768fa204f581613d692b4794707a75e0c07",
+  "bundleDigest": "sha256:548a53abeb864cf11381ac5a054d3097e08ffc870e9cd4567bb38b03034e77f1",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5391,7 +5391,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:96ccea4027aa72faf187efe102314cd9651c01ca30e5ed554d60e85529e1fad3",
+      "documentDigest": "sha256:ce85f6064c3cfaf70226521f46fb11ec815322ae8a32d46fe749ada522c167b7",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5459,7 +5459,7 @@
     {
       "id": "okf/capabilities/ai.mcp-discovery",
       "path": "okf/capabilities/ai.mcp-discovery.md",
-      "documentDigest": "sha256:03209dcece2893fb28a6f99204da78ae5d14ea13dde16b463e8623c5a4bb5b96",
+      "documentDigest": "sha256:35aa438712bfd5e7dac8facf69b1fd7e94f1b9af2b8bda9294e6ae3c8cb08e2b",
       "metadata": {
         "type": "capability",
         "title": "MCP Discovery & Query",
@@ -6139,7 +6139,7 @@
     {
       "id": "okf/capabilities/geocoding.batch",
       "path": "okf/capabilities/geocoding.batch.md",
-      "documentDigest": "sha256:a25376adb6c17a9d50123e50bdbb9c9564e9905a94fd4146479901f4c3246ca6",
+      "documentDigest": "sha256:3eeac23293b29cb887eda8bb5e201123fe9d18386968c19dac11fd48e3ac676c",
       "metadata": {
         "type": "capability",
         "title": "Batch Geocoding",
@@ -6173,7 +6173,7 @@
     {
       "id": "okf/capabilities/geocoding.forward",
       "path": "okf/capabilities/geocoding.forward.md",
-      "documentDigest": "sha256:1914f80cbeeaddcfecf9df605b6de84d6d956861b51641666889467bb6fe4329",
+      "documentDigest": "sha256:24da7b748793eb4364bb0dc0a6453e9aedf8c60550d8c36b4ff77591a6dea365",
       "metadata": {
         "type": "capability",
         "title": "Forward Geocoding",
@@ -6360,7 +6360,7 @@
     {
       "id": "okf/capabilities/import.geoserver",
       "path": "okf/capabilities/import.geoserver.md",
-      "documentDigest": "sha256:1079ccc4ea971681b1be9d05225a1335ec7a47f9406daafb03239491b3e99038",
+      "documentDigest": "sha256:428a30603432ce319f5523365653ef6699e183b4bf37456511709bb10c865030",
       "metadata": {
         "type": "capability",
         "title": "GeoServer Import",
@@ -6377,7 +6377,7 @@
     {
       "id": "okf/capabilities/import.geoservices",
       "path": "okf/capabilities/import.geoservices.md",
-      "documentDigest": "sha256:012d9f324d476091317fc5c37aac0e882b061534366d63d3c61907aba4f4ce8f",
+      "documentDigest": "sha256:14f366e5fa25d7d58720575f41c7d3e66807833f169bb65145e6299a5153499c",
       "metadata": {
         "type": "capability",
         "title": "GeoServices Import",
@@ -6513,7 +6513,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:f2671cefe2eb1e7973be07f43a616dff4e4db762e7715d8edffc1d318b147676",
+      "documentDigest": "sha256:1bcdf15b34c78f0f8d401d355d07f24ebef4e6974969b04fe1aae0e80229fda7",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -6785,7 +6785,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:87dd15a8424e03be7adb09e2cd05cb227f94133014dbcbe4ad36ade9bff3110a",
+      "documentDigest": "sha256:34a5246a1ad50ca52c904422fbadb2a0b2bfc6da8ecdabe2b74d98441e912711",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
