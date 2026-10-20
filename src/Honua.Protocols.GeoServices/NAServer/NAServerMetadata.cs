@@ -712,6 +712,13 @@ internal static class NAServerMetadata
 
         parameters[1]!["choiceList"] = new JsonArray("Minutes");
         parameters[3]!["defaultValue"] = false;
+        parameters[4]!["defaultValue"] = new JsonObject
+        {
+            ["geometryType"] = "esriGeometryPolyline",
+            ["spatialReference"] = new JsonObject { ["wkid"] = 4326 },
+            ["fields"] = BuildRouteFields(),
+            ["features"] = new JsonArray(),
+        };
 
         return new JsonObject
         {
@@ -775,6 +782,11 @@ internal static class NAServerMetadata
             ["parameters"] = parameters,
         };
     }
+
+    internal static JsonArray BuildRouteFields()
+        => new(new JsonObject { ["name"] = "Name", ["alias"] = "Name", ["type"] = "esriFieldTypeString" },
+            new JsonObject { ["name"] = "Total_Length", ["alias"] = "Total_Length", ["type"] = "esriFieldTypeDouble" },
+            new JsonObject { ["name"] = "Total_TravelTime", ["alias"] = "Total_TravelTime", ["type"] = "esriFieldTypeDouble" });
 
     internal static JsonArray BuildServiceAreaFields()
     {
