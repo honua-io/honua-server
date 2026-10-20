@@ -69,7 +69,19 @@ public sealed class FindRoutesExecuteTests(FindRoutesExecuteTestsFixture fixture
         findRoutesRequest.TravelMode.Should().Be(explicitOptions ? "walking" : null);
         var results = actual.RootElement.GetProperty("results");
         results[0].GetProperty("paramName").GetString().Should().Be("Output_Routes");
-        results[0].GetProperty("value").GetRawText().Should().Be(canonical.RootElement.GetProperty("routes").GetRawText());
+        var routeValue = results[0].GetProperty("value");
+        var canonicalRoutes = canonical.RootElement.GetProperty("routes");
+        // GP record sets carry field schema that the NAServer route feature set does not.
+        foreach (var name in new[] { "geometryType", "spatialReference", "features" })
+        {
+            routeValue.GetProperty(name).GetRawText().Should().Be(canonicalRoutes.GetProperty(name).GetRawText());
+        }
+
+        var fields = routeValue.GetProperty("fields");
+        fields.GetArrayLength().Should().Be(3);
+        fields[0].GetProperty("name").GetString().Should().Be("Name");
+        fields[1].GetProperty("name").GetString().Should().Be("Total_Length");
+        fields[2].GetProperty("name").GetString().Should().Be("Total_TravelTime");
         results[1].GetProperty("value").GetBoolean().Should().BeTrue();
     }
 

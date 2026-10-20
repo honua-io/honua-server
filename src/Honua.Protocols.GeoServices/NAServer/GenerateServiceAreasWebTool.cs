@@ -30,10 +30,13 @@ internal static class GenerateServiceAreasWebTool
         "Point_Barriers", "Line_Barriers", "Polygon_Barriers", "barriers", "polylineBarriers", "polygonBarriers",
     };
 
-    internal static async Task<IResult> ExecuteAsync(HttpContext context, CancellationToken ct)
+    internal static async Task<IResult> ExecuteAsync(HttpContext context, CancellationToken ct,
+        Func<IReadOnlyDictionary<string, string>>? readSoapParameters = null)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct).ConfigureAwait(false);
+        var parameters = readSoapParameters is null
+            ? await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct).ConfigureAwait(false)
+            : readSoapParameters();
         parameters.TryGetValue("f", out var format);
         if (!string.IsNullOrWhiteSpace(format) &&
             !format.Equals("json", StringComparison.OrdinalIgnoreCase) &&

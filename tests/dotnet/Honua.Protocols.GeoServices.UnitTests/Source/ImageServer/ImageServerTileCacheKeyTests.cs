@@ -84,6 +84,15 @@ public class ImageServerTileCacheKeyTests
     }
 
     [UnitTest]
+    public void Build_NumericPngOpacity_SeparatesLegacyPngObjectsAndRetainsTiffIdentity()
+    {
+        // Frozen v1 behavior hashes for this fixture, before the PNG opacity repair.
+        // Retained old PNG objects must never supply a new-renderer response.
+        Build(format: RasterFormat.PNG).Should().NotContain("/81b42ae18cc41ea2/");
+        Build(format: RasterFormat.TIFF).Should().Contain("/544a4e5a8d05f5b9/");
+    }
+
+    [UnitTest]
     public void Build_VariesByTileMatrixSet()
     {
         Build(tileMatrixSetId: "WebMercatorQuad").Should().NotBe(Build(tileMatrixSetId: "WorldCRS84Quad"));
