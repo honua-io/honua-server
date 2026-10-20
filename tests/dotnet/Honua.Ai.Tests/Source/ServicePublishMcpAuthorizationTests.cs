@@ -72,7 +72,7 @@ public sealed class ServicePublishMcpAuthorizationTests
         var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
         graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
             new MetadataV2GraphSnapshot(
-                new MetadataV2Graph { Revision = 42 },
+                new MetadataV2Graph { Revision = 99 },
                 "\"matrix-etag\"",
                 DateTimeOffset.UtcNow));
         var resolver = Substitute.For<ISecureConnectionResolver>();
@@ -113,7 +113,7 @@ public sealed class ServicePublishMcpAuthorizationTests
                 "the operation context must carry the canonical authorization result");
             await publishing.Received(1).PublishLayerAsync(
                 Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-            await graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
+            await graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
             return;
         }
 
@@ -289,6 +289,7 @@ public sealed class ServicePublishMcpAuthorizationTests
                 GeometryType = "Polygon",
                 Srid = 4326,
                 ServiceName = "default",
+                MetadataRevision = 42,
             });
         return publishing;
     }
