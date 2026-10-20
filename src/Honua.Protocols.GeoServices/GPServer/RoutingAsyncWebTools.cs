@@ -86,20 +86,15 @@ internal static class RoutingAsyncWebTools
             "polygon_barriers" => "esriGeometryPolygon",
             _ => "esriGeometryPoint",
         };
+        // Keep this bounded schema reflection-free: both REST task metadata
+        // and SOAP GetToolInfo construct it with reflection disabled in production.
+        var weightField = parameter == "demand_points"
+            ? """,{"name":"Weight","type":"esriFieldTypeDouble","defaultValue":1}"""
+            : string.Empty;
         using var document = JsonDocument.Parse($$"""
-            {"geometryType":"{{geometryType}}","spatialReference":{"wkid":4326},"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString"}],"features":[]}
+            {"geometryType":"{{geometryType}}","spatialReference":{"wkid":4326},"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString"}{{weightField}}],"features":[]}
             """);
-        var value = JsonNode.Parse(document.RootElement.GetRawText())!.AsObject();
-        if (parameter == "demand_points")
-        {
-            // The canonical location-allocation executor consumes weighted
-            // demand; native insert cursors discover this field from metadata.
-            value["fields"]!.AsArray().Add(new JsonObject
-            {
-                ["name"] = "Weight", ["type"] = "esriFieldTypeDouble", ["defaultValue"] = 1d,
-            });
-        }
-        return JsonSerializer.SerializeToElement(value);
+        return document.RootElement.Clone();
     }
 
     internal static Dictionary<string, string> Translate(ProcessDefinition definition, IReadOnlyDictionary<string, string> raw, int? environmentOutSr)

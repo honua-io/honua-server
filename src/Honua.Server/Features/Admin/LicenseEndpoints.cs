@@ -153,15 +153,18 @@ internal static partial class LicenseEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<EntitlementResponse>>>, ProblemHttpResult>>
+    private static Results<Ok<ApiResponse<IReadOnlyList<EntitlementResponse>>>, ProblemHttpResult>
         HandleGetEntitlements(
-            [FromServices] ILicenseManager licenseManager,
+            [FromServices] ILicenseEntitlementService entitlementService,
             [FromServices] ILogger<LicenseEndpointsLog> logger,
             HttpContext context)
     {
         try
         {
-            var entitlements = await licenseManager.GetEntitlementsAsync(context.RequestAborted);
+            // Report the effective runtime view, including the explicit development
+            // grant, consistently with capability discovery and operation gates.
+            // License upload/status continue to use the persisted license manager.
+            var entitlements = entitlementService.GetSnapshot().Entitlements;
 
             var response = entitlements.Select(e => new EntitlementResponse
             {
