@@ -736,6 +736,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             ["ConnectionStrings:DefaultConnection"] = connectionString,
             ["Database:Schema"] = schema,
             ["Attachments:Schema"] = attachmentOverride,
+            ["Security:ConnectionEncryption:MasterKey"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
             ["FileStorage:Provider"] = "Local",
             ["FileStorage:LocalStorage:BasePath"] = storageRoot,
             ["FileStorage:EnableAutomaticCleanup"] = "false"
