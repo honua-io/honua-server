@@ -70,8 +70,10 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         string serviceId,
         CancellationToken cancellationToken = default)
     {
-        var sql = $"SELECT document FROM {_table} WHERE lower(service_id) = lower(@service_id) ORDER BY service_id LIMIT 2";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_published_services", schema);
+        var sql = $"SELECT document FROM {table} WHERE lower(service_id) = lower(@service_id) ORDER BY service_id LIMIT 2";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@service_id", NpgsqlDbType.Text, serviceId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -99,12 +101,14 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
             return [];
         }
 
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_published_services", schema);
         var sql = $"""
             SELECT DISTINCT candidate.service_id
             FROM unnest(@candidate_ids) AS candidate(service_id)
-            JOIN {_table} AS stored ON lower(stored.service_id) = lower(candidate.service_id)
+            JOIN {table} AS stored ON lower(stored.service_id) = lower(candidate.service_id)
             """;
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@candidate_ids", NpgsqlDbType.Array | NpgsqlDbType.Text,
             candidateServiceIds.ToArray());

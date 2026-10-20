@@ -247,6 +247,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             await deploymentRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
             var serviceRead = () => new PostgresPublishedServiceStore(rejectedSource, _schemaName).GetAsync("unknown");
             await serviceRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
+            var publicIdRead = () => new PostgresPublishedServiceStore(rejectedSource, _schemaName).FindByPublicIdAsync("unknown");
+            await publicIdRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
+            var collisionRead = () => new PostgresPublishedServiceStore(rejectedSource, _schemaName).FindCollidingPublicIdsAsync(["unknown"]);
+            await collisionRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
             return;
         }
 
@@ -297,6 +301,11 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var updatedService = service with { Status = PublishedServiceStatus.Decommissioned };
         await serviceWriter.SetAsync(updatedService);
         (await serviceReader.GetAsync(service.ServiceId)).Should().BeEquivalentTo(updatedService);
+        (await serviceReader.FindByPublicIdAsync("CANONICAL-SERVICE")).Should().BeEquivalentTo(updatedService);
+        (await serviceReader.FindByPublicIdAsync("missing")).Should().BeNull();
+        (await serviceReader.FindCollidingPublicIdsAsync(["CANONICAL-SERVICE", "missing"]))
+            .Should().ContainSingle().Which.Should().Be("CANONICAL-SERVICE",
+                "decommissioned canonical records reserve the same public identity in either physical family");
     }
 
     private async Task ApplyCanonicalDeploymentMigrationAsync(Npgsql.NpgsqlConnection connection, string filename)
