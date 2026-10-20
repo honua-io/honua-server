@@ -1087,7 +1087,9 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <summary>
     /// Frames default tile presentation. Numeric PNGs display band one with an explicit alpha
     /// derived before stretching: a valid minimum can become zero without becoming NoData.
-    /// Secondary scientific bands are data, not an implicit PNG alpha channel.
+    /// A two-band raster whose bands share an unsigned 8- or 16-bit pixel type keeps band two.
+    /// PostGIS stores no GDAL color interpretation; that pixel type is the band metadata a
+    /// PNG gray-plus-alpha import retains. Any other second band stays scientific data.
     /// </summary>
     internal static string BuildTileDisplayRasterExpression(
         string sourceExpression, string gridExpression, RasterFormat format,
@@ -1104,14 +1106,37 @@ internal sealed class PostgresRasterStore : IRasterStore
         var grayExpression = stretchBounds is { Count: > 0 }
             ? BuildStretchMapAlgebraExpression(stretchBounds[0].Lo, stretchBounds[0].Hi)
             : "LEAST(255.0, GREATEST(0.0, [rast.val]))";
+        var framedBand = RasterGridFrameSql.FrameAlignedRaster("ST_Band(i.rast, 1)", "i.grid");
+        var framedAlpha = RasterGridFrameSql.FrameAlignedRaster("i.rast", "i.grid");
+        var framedColor = RasterGridFrameSql.FrameAlignedRaster(stretched, "i.grid");
         return $"""
             (
                 WITH display_input AS MATERIALIZED (
                     SELECT {sourceExpression} AS rast, {gridExpression} AS grid
                 )
-                SELECT CASE WHEN ST_NumBands(i.rast) IN (1, 2) THEN (
+                SELECT CASE
+                    WHEN ST_NumBands(i.rast) = 2
+                     AND ST_BandPixelType(i.rast, 1) IN ('8BUI', '16BUI')
+                     AND ST_BandPixelType(i.rast, 2) = ST_BandPixelType(i.rast, 1)
+                    THEN (
+                        WITH alpha_input AS MATERIALIZED (
+                            SELECT {framedAlpha} AS rast
+                        )
+                        SELECT ST_AddBand(
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(a.rast, 1, '8BUI', '{grayExpression}', 0), 1, NULL::double precision),
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(a.rast, 2, '8BUI',
+                                    CASE WHEN ST_BandPixelType(a.rast, 2) = '16BUI'
+                                         THEN 'LEAST(255.0, GREATEST(0.0, [rast.val] / 257.0))'
+                                         ELSE '[rast.val]' END,
+                                    0), 1, NULL::double precision),
+                            1)
+                        FROM alpha_input a
+                    )
+                    WHEN ST_NumBands(i.rast) IN (1, 2) THEN (
                     WITH numeric_input AS MATERIALIZED (
-                        SELECT {RasterGridFrameSql.FrameAlignedRaster("ST_Band(i.rast, 1)", "i.grid")} AS rast
+                        SELECT {framedBand} AS rast
                     )
                     SELECT ST_AddBand(
                         ST_SetBandNoDataValue(
@@ -1119,7 +1144,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                         ST_SetBandNoDataValue(
                             ST_MapAlgebra(n.rast, 1, '8BUI', '255', 0), 1, NULL::double precision), 1)
                     FROM numeric_input n
-                ) ELSE {RasterGridFrameSql.FrameAlignedRaster(stretched, "i.grid")} END
+                ) ELSE {framedColor} END
                 FROM display_input i WHERE i.rast IS NOT NULL
             )
             """;

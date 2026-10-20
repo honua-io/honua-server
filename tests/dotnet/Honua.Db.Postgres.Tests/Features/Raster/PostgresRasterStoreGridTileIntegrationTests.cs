@@ -694,6 +694,72 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
     public Task GetImageTileAsync_NumericPngOpacity_RejectsOldAlphaCacheWithoutDeletingIt()
         => VerifyNumericPngOpacityAsync(mosaic: false, explicitGrid: false, bands: 2, legacyCache: true);
 
+    [IntegrationTest]
+    public async Task GetImageTileAsync_GrayAlphaPng_PreservesIndependentAlpha()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO raster_data (layer_id, name, raster)
+                SELECT @layerId, 'gray-alpha',
+                    ST_SetValues(
+                        ST_AddBand(
+                            ST_SetValues(
+                                ST_AddBand(
+                                    ST_MakeEmptyRaster(2, 2, 1000, 3000, 1000, -1000, 0, 0, 3857),
+                                    '8BUI'::text, 1, NULL),
+                                1, 1, 1, ARRAY[[10, 200], [40, 0]]::double precision[][]),
+                            '8BUI'::text, 1, NULL),
+                        2, 1, 1, ARRAY[[0, 128], [255, 255]]::double precision[][])
+                RETURNING id;
+                """;
+            command.Parameters.AddWithValue("layerId", LayerId);
+            var rasterId = (long)(await command.ExecuteScalarAsync())!;
+            var window = new RasterTileWindow
+            {
+                MinX = 1000,
+                MinY = 1000,
+                MaxX = 3000,
+                MaxY = 3000,
+                Srid = 3857,
+                TileWidth = 2,
+                TileHeight = 2
+            };
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var tile = await CreateStore(schemaName).GetImageTileAsync(
+                LayerId, rasterId, window, RasterFormat.PNG, deadline.Token)
+                ?? throw new InvalidOperationException("Gray-alpha PNG tile is missing.");
+
+            command.Parameters.Clear();
+            command.CommandText = """
+                WITH image AS (SELECT ST_FromGDALRaster(@png) AS rast)
+                SELECT ST_NumBands(rast), ST_Value(rast, 1, col, row, FALSE), ST_Value(rast, 2, col, row, FALSE)
+                FROM image, (VALUES (1, 1, 10.0, 0.0), (2, 1, 200.0, 128.0), (1, 2, 40.0, 255.0), (2, 2, 0.0, 255.0))
+                    AS sample(col, row, gray, alpha)
+                ORDER BY row, col;
+                """;
+            command.Parameters.AddWithValue("png", tile.Data);
+            await using var reader = await command.ExecuteReaderAsync();
+            foreach (var (gray, alpha) in new[] { (10d, 0d), (200d, 128d), (40d, 255d), (0d, 255d) })
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetInt32(0).Should().Be(2);
+                reader.GetDouble(1).Should().Be(gray);
+                reader.GetDouble(2).Should().Be(alpha, "band two is the source alpha, not a NoData mask");
+            }
+
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private async Task VerifyNumericPngOpacityAsync(bool mosaic, bool explicitGrid, int bands, bool legacyCache, bool fillNoData = false)
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
