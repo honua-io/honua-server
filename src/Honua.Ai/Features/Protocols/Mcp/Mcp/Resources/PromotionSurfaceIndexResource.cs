@@ -4,10 +4,12 @@
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
@@ -16,10 +18,13 @@ namespace Honua.Ai.Protocols.Mcp.Resources;
 /// surfaces without a trailing identifier:
 /// <c>honua://published-services</c>, <c>honua://deployments</c>,
 /// <c>honua://map-packages</c>, and <c>honua://app-packages</c>. Each returns
-/// a capped summary list drawn from the canonical store. Services and
+/// a capped summary list drawn from canonical stores. Published services also
+/// include ordinary Metadata v2 layer publications when they are serving;
+/// their detail URI is backed by the same persisted graph. Services and
 /// deployments are narrowed past the store's broader "non-decommissioned" /
 /// "non-retired-non-superseded" semantics to the truly live subsets — services
-/// with <see cref="PublishedServiceStatus.Active"/> and deployments with
+/// with <see cref="PublishedServiceStatus.Active"/> (or routable metadata
+/// publications) and deployments with
 /// <see cref="DeploymentPublicationState.Published"/> — so the advertised
 /// "active" descriptors match the wire contract. Package roots reuse the same
 /// published-deployment filter from <see cref="PackageViewFactory.IsPublished"/>
@@ -33,15 +38,15 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 200;
 
-    private readonly IPublishedServiceStore _services;
-    private readonly IDeploymentStore _deployments;
+    private readonly IPublishedServiceStore? _services;
+    private readonly IDeploymentStore? _deployments;
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<PromotionSurfaceIndexResource> _logger;
     private readonly int _pageSize;
 
     public PromotionSurfaceIndexResource(
-        IPublishedServiceStore services,
-        IDeploymentStore deployments,
+        IPublishedServiceStore? services,
+        IDeploymentStore? deployments,
         IGeoprocessingJobService jobService,
         ILogger<PromotionSurfaceIndexResource> logger)
         : this(services, deployments, jobService, logger, DefaultPageSize)
@@ -49,8 +54,8 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
     }
 
     internal PromotionSurfaceIndexResource(
-        IPublishedServiceStore services,
-        IDeploymentStore deployments,
+        IPublishedServiceStore? services,
+        IDeploymentStore? deployments,
         IGeoprocessingJobService jobService,
         ILogger<PromotionSurfaceIndexResource> logger,
         int pageSize)
@@ -94,15 +99,21 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         return Family;
     }
 
-    public IReadOnlyList<McpResourceDescriptor> Describe() => new[]
+    public IReadOnlyList<McpResourceDescriptor> Describe() => _deployments is null
+        ? [PublishedServicesDescriptor()]
+        : AllDescriptors();
+
+    private static McpResourceDescriptor PublishedServicesDescriptor() => new()
     {
-        new McpResourceDescriptor
-        {
-            Uri = McpResourceUris.PublishedServicesRoot,
-            Name = "Published services index",
-            Description = "Published services whose status is Active (serving requests).",
-            MimeType = McpResourceHelpers.JsonMimeType
-        },
+        Uri = McpResourceUris.PublishedServicesRoot,
+        Name = "Published services index",
+        Description = "Published services currently serving requests.",
+        MimeType = McpResourceHelpers.JsonMimeType
+    };
+
+    private static McpResourceDescriptor[] AllDescriptors() => new[]
+    {
+        PublishedServicesDescriptor(),
         new McpResourceDescriptor
         {
             Uri = McpResourceUris.DeploymentsRoot,
@@ -130,9 +141,10 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
 
     public bool CanHandle(string uri) =>
         string.Equals(uri, McpResourceUris.PublishedServicesRoot, StringComparison.Ordinal) ||
-        string.Equals(uri, McpResourceUris.DeploymentsRoot, StringComparison.Ordinal) ||
-        string.Equals(uri, McpResourceUris.MapPackagesRoot, StringComparison.Ordinal) ||
-        string.Equals(uri, McpResourceUris.AppPackagesRoot, StringComparison.Ordinal);
+        (_deployments is not null &&
+            (string.Equals(uri, McpResourceUris.DeploymentsRoot, StringComparison.Ordinal) ||
+             string.Equals(uri, McpResourceUris.MapPackagesRoot, StringComparison.Ordinal) ||
+             string.Equals(uri, McpResourceUris.AppPackagesRoot, StringComparison.Ordinal)));
 
     public async Task<McpResourcesReadResult> ReadAsync(
         HttpContext httpContext,
@@ -143,7 +155,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
 
         if (string.Equals(uri, McpResourceUris.PublishedServicesRoot, StringComparison.Ordinal))
         {
-            return await ReadPublishedServiceIndexAsync(principal, uri, cancellationToken).ConfigureAwait(false);
+            return await ReadPublishedServiceIndexAsync(httpContext, principal, uri, cancellationToken).ConfigureAwait(false);
         }
 
         if (string.Equals(uri, McpResourceUris.DeploymentsRoot, StringComparison.Ordinal))
@@ -164,6 +176,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
     }
 
     private async Task<McpResourcesReadResult> ReadPublishedServiceIndexAsync(
+        HttpContext httpContext,
         System.Security.Claims.ClaimsPrincipal principal,
         string uri,
         CancellationToken cancellationToken)
@@ -178,7 +191,9 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // Active subset here to match the "active published services" descriptor
         // and keep the list root consistent with what agents expect when they ask
         // for the currently-serving catalog.
-        var records = await _services.ListActiveAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<PublishedServiceRecord> records = _services is null
+            ? []
+            : await _services.ListActiveAsync(cancellationToken).ConfigureAwait(false);
         var active = new List<PublishedServiceRecord>(records.Count);
         for (var i = 0; i < records.Count; i++)
         {
@@ -190,10 +205,9 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // Impose a deterministic order before truncating so `truncated=true`
         // responses return the same prefix across calls regardless of the
         // backing store's iteration order.
-        active.Sort(static (a, b) => string.CompareOrdinal(a.ServiceId, b.ServiceId));
-        var truncated = active.Count > _pageSize;
+        var activePromotionNames = new HashSet<string>(
+            active.Select(record => record.ServiceId), StringComparer.OrdinalIgnoreCase);
         var items = active
-            .Take(_pageSize)
             .Select(record => new McpPublishedServiceSummary
             {
                 ServiceId = record.ServiceId,
@@ -204,6 +218,41 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
                 Etag = PromotionSurfaceEtag.ForPublishedService(record)
             })
             .ToList();
+
+        var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is not null)
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var catalog = await PublishedMetadataCatalogProjection.ListReadableAsync(
+                httpContext, snapshot, cancellationToken).ConfigureAwait(false);
+            // Detail reads also reserve the public URI for inactive promotions.
+            // Fetch all matching identities in one query rather than doing a
+            // store round trip for every catalog service before the page cap.
+            var collidingNames = new HashSet<string>(
+                _services is null
+                    ? []
+                    : await _services.FindCollidingPublicIdsAsync(
+                        catalog.Select(service => service.ServiceName).ToArray(),
+                        cancellationToken).ConfigureAwait(false),
+                StringComparer.Ordinal);
+            foreach (var service in catalog)
+            {
+                if (activePromotionNames.Contains(service.ServiceName) || collidingNames.Contains(service.ServiceName))
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Published service identity '{service.ServiceName}' is shared by a promotion and a catalog publication.");
+                }
+
+                if (service.Serving)
+                {
+                    items.Add(service.ToSummary());
+                }
+            }
+        }
+
+        items.Sort(static (a, b) => string.CompareOrdinal(a.ServiceId, b.ServiceId));
+        var truncated = items.Count > _pageSize;
+        items = items.Take(_pageSize).ToList();
 
         McpLog.PromotionListRead(_logger, McpTelemetry.ResourceFamily.PublishedServices, items.Count, truncated);
 
@@ -216,6 +265,9 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         };
         return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpPublishedServiceListView);
     }
+
+    private IDeploymentStore RequireDeploymentStore() => _deployments
+        ?? throw new GeoprocessingNotFoundException("Promotion deployment resources are not configured.");
 
     private async Task<McpResourcesReadResult> ReadDeploymentIndexAsync(
         System.Security.Claims.ClaimsPrincipal principal,
@@ -234,7 +286,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // contract ("active deployments") matches the set of deployments that
         // are currently routable, consistent with the package visibility filter
         // in PackageViewFactory.
-        var records = await _deployments.ListActiveAsync(cancellationToken).ConfigureAwait(false);
+        var records = await RequireDeploymentStore().ListActiveAsync(cancellationToken).ConfigureAwait(false);
         var published = PackageViewFactory.FilterPublished(records);
         // Impose a deterministic order before truncating so `truncated=true`
         // responses return the same prefix across calls regardless of the
@@ -292,7 +344,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // Packages are visible only through currently-published deployments so the
         // list root agrees with the package detail 404 contract — a package that
         // is referenced by no published deployment must not appear in the index.
-        var deployments = await _deployments.ListActiveAsync(cancellationToken).ConfigureAwait(false);
+        var deployments = await RequireDeploymentStore().ListActiveAsync(cancellationToken).ConfigureAwait(false);
         var grouped = deployments
             .Where(deployment =>
                 deployment.Source.Kind == packageKind
