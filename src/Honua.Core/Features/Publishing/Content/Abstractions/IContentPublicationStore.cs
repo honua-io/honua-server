@@ -40,6 +40,17 @@ public interface IContentPublicationStore
         int limit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lists route-state rows, oldest first, optionally restricted to one lifecycle.
+    /// <paramref name="offset"/> and <paramref name="limit"/> select the page; the total
+    /// counts every matching route, not just the page.
+    /// </summary>
+    Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
+        ContentPublicationLifecycle? lifecycle,
+        int offset,
+        int limit,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Returns the highest revision for a publication, or 0 when none exist.</summary>
     Task<long> GetMaxRevisionAsync(
         string publicationId,

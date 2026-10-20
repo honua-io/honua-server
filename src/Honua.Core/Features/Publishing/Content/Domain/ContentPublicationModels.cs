@@ -320,6 +320,41 @@ public sealed record ContentPublicationDetail
 }
 
 /// <summary>
+/// Cursor page of content publications. Each item is the same
+/// <see cref="ContentPublicationDetail"/> record the item GET returns, so a list row
+/// carries the publication id, title, and lifecycle state without a second shape.
+/// </summary>
+public sealed record ContentPublicationListResponse
+{
+    /// <summary>Publications in this page, oldest first.</summary>
+    [JsonPropertyName("items")]
+    public IReadOnlyList<ContentPublicationDetail> Items { get; init; } = [];
+
+    /// <summary>Total publications matching the query across all pages.</summary>
+    [JsonPropertyName("total")]
+    public int Total { get; init; }
+
+    /// <summary>Opaque cursor for the next page, or null when no more items remain.</summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; init; }
+}
+
+/// <summary>Filter and cursor parameters for listing content publications.</summary>
+public sealed record ContentPublicationListQuery
+{
+    /// <summary>Opaque cursor returned by a previous page. Null or empty starts at the first page.</summary>
+    public string? Cursor { get; init; }
+
+    /// <summary>
+    /// Maximum items per page. Values below 1 use the default; implementations clamp to an upper bound.
+    /// </summary>
+    public int Limit { get; init; } = 25;
+
+    /// <summary>Optional lifecycle filter. Null lists every state.</summary>
+    public ContentPublicationLifecycle? Lifecycle { get; init; }
+}
+
+/// <summary>
 /// Client-safe projection of a published artifact returned by public route reads.
 /// Excludes server-only policy internals (role lists, public-link hashes) but
 /// surfaces the embed contract the client needs.

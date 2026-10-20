@@ -32,6 +32,14 @@ public interface IContentPublicationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists publications oldest-first with cursor paging. An empty registry returns an empty page.
+    /// Each item is the same <see cref="ContentPublicationDetail"/> the item read returns.
+    /// </summary>
+    Task<ContentPublicationListResponse> ListAsync(
+        ContentPublicationListQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns one immutable version selected by revision (numeric or <c>v{n}</c>) or version id.
     /// </summary>
     /// <exception cref="ContentPublicationValidationException">Publication id or selector is not valid.</exception>

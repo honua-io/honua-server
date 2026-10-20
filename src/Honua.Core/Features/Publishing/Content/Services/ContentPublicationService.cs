@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Text;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Abstractions;
@@ -20,6 +22,8 @@ namespace Honua.Core.Features.Publishing.Content.Services;
 public sealed class ContentPublicationService : IContentPublicationService
 {
     private const int VersionPageSize = 100;
+    private const int DefaultListLimit = 25;
+    private const int MaxListLimit = 1_000;
     private const string RoutePathPrefix = "/api/v1/published/";
 
     // Client-supplied public-link tokens act as a bearer credential; a short token is
@@ -169,6 +173,31 @@ public sealed class ContentPublicationService : IContentPublicationService
 
         var versions = await _store.ListVersionsAsync(publicationId, VersionPageSize, cancellationToken).ConfigureAwait(false);
         return new ContentPublicationDetail { Route = route, Versions = versions };
+    }
+
+    /// <inheritdoc />
+    public async Task<ContentPublicationListResponse> ListAsync(ContentPublicationListQuery query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var limit = query.Limit <= 0 ? DefaultListLimit : Math.Min(query.Limit, MaxListLimit);
+        var offset = DecodeListCursor(query.Cursor);
+        var (routes, total) = await _store.ListRoutesAsync(query.Lifecycle, offset, limit, cancellationToken).ConfigureAwait(false);
+
+        var items = new List<ContentPublicationDetail>(routes.Count);
+        foreach (var route in routes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var versions = await _store.ListVersionsAsync(route.PublicationId, VersionPageSize, cancellationToken).ConfigureAwait(false);
+            items.Add(new ContentPublicationDetail { Route = route, Versions = versions });
+        }
+
+        var nextOffset = offset + items.Count;
+        return new ContentPublicationListResponse
+        {
+            Items = items,
+            Total = total,
+            NextCursor = nextOffset < total ? EncodeListCursor(nextOffset) : null,
+        };
     }
 
     /// <inheritdoc />
@@ -637,6 +666,34 @@ public sealed class ContentPublicationService : IContentPublicationService
 
     private static bool IsWgs84(string crs)
         => Wgs84LonLatCrs.Contains(crs.Trim());
+
+    // Same opaque offset cursor as the neighboring console content list: base64 of a
+    // decimal index. A missing or unreadable cursor starts at the first page.
+    private static int DecodeListCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor))
+        {
+            return 0;
+        }
+
+        try
+        {
+            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(cursor.Trim()));
+            return int.TryParse(decoded, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index) && index > 0
+                ? index
+                : 0;
+        }
+        catch (FormatException)
+        {
+            return 0;
+        }
+    }
+
+    private static string EncodeListCursor(int index)
+    {
+        var bytes = Encoding.UTF8.GetBytes(index.ToString(CultureInfo.InvariantCulture));
+        return Convert.ToBase64String(bytes);
+    }
 
     private static bool TryParseRevision(string selector, out long revision)
     {

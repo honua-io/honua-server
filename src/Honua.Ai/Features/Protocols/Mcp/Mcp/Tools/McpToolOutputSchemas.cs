@@ -1178,6 +1178,8 @@ internal static class McpToolOutputSchemas
             "status": { "type": "string", "minLength": 1 },
             "humanConfirmationRequired": { "type": "boolean" },
             "shareUrl": { "type": "string", "minLength": 1 },
+            "deploymentId": { "type": "string", "minLength": 1 },
+            "deploymentResourceUri": { "type": "string", "pattern": "^honua://deployments/.+" },
             "message": { "type": "string" }
           }
         }

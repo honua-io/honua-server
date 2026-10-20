@@ -572,6 +572,12 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             resources["activeUrl"] = activeUrl;
         }
 
+        if (result.DeploymentId is { } deploymentId && result.DeploymentResourceUri is { } deploymentResourceUri)
+        {
+            resources["deploymentId"] = deploymentId;
+            resources["deploymentResourceUri"] = deploymentResourceUri;
+        }
+
         return resources;
     }
 }
@@ -604,6 +610,23 @@ internal sealed class StudioRollbackExecutor(IStudioPackageLifecycleService life
     public override string OperationId => StudioDraftOperations.Rollback;
     protected override JsonTypeInfo<StudioRollbackPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioRollbackPayload;
     protected override JsonTypeInfo<StudioRollbackRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioRollbackRequest;
+
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioRollbackRequest result)
+    {
+        var resources = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["requestId"] = result.RequestId.ToString("D"),
+            ["itemId"] = result.ItemId.ToString("D"),
+            ["versionId"] = result.TargetVersionId.ToString("D"),
+        };
+        if (result.DeploymentId is { } deploymentId && result.DeploymentResourceUri is { } deploymentResourceUri)
+        {
+            resources["deploymentId"] = deploymentId;
+            resources["deploymentResourceUri"] = deploymentResourceUri;
+        }
+
+        return resources;
+    }
 
     protected override async Task<StudioRollbackRequest> ActuateAsync(
         StudioRollbackPayload payload,

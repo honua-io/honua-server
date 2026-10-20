@@ -279,12 +279,15 @@ to the agent at `AWS_CONTAINER_CREDENTIALS_FULL_URI`, and the S3, Batch, and
 other AWS SDK clients use the SDK's default credential chain. IRSA
 (`AWS_WEB_IDENTITY_TOKEN_FILE` plus `AWS_ROLE_ARN`) works for the AWS SDK
 clients but not for `aws:secretsmanager:` references: the built-in resolver
-has no web-identity provider, logs a warning, and falls back to the node role,
-which is normally denied. Use a Pod Identity association for the server's
+has no web-identity provider and refuses the request without querying the node
+role. Use a Pod Identity association for the server's
 service account instead. If the server log shows
 `AwsContainerCredentialsRequestRejected` or
 `AwsContainerAuthorizationTokenFileUnusable`, the pod-identity association or
-its projected token is missing.
+its projected token is missing or unusable. The selected provider does not fall
+back to EC2 credentials on token-file, endpoint or response failure. Fix that
+provider's configuration; changing provider type requires restarting the host.
+This applies to the API host and native GDAL worker's built-in secret resolver.
 
 ## Geoprocessing on Kubernetes Jobs
 
