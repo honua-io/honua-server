@@ -89,6 +89,18 @@ migration: drain older nodes, review the deploy preflight, and provide the
 one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce reported by the migration gate
 before applying it.
 
+SensorThings sensing objects introduced by migration 127 can remain in `honua`
+after migration 109 adopts the earlier SensorThings tables. The sensing store
+and schema verifier resolve this complete physical family together: five sensing
+tables, three identifier sequences and two observation trigger functions. They
+use the configured family when the legacy family is absent, or the complete
+legacy sensing family alongside the configured base tables. Reads and writes do
+not move, copy or repair these objects. Partial, duplicate or mixed sensing
+families, incompatible foreign-key or trigger bindings, and identifier defaults
+that point at another sequence are refused. Fresh configured installations keep
+the whole family in the configured schema. This does not change the existing
+migration approval rules or establish rolling rollback compatibility.
+
 The diagnostic migration plan exposes `scriptBindings` with the configured and
 physical attachment schema, both qualified attachment/cleanup table identities,
 and the raw embedded-resource and rendered SQL hashes. For a new non-default

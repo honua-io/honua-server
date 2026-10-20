@@ -38,7 +38,7 @@ namespace Honua.CloudIntegration.Tests;
 /// or advancing the journal.
 /// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
-public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture postgres)
+public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture postgres)
     : IClassFixture<LocalSubstratePostgresFixture>
 {
     public static TheoryData<string, int, int, string, DatabaseSchemaFloorFailureKind> DivergenceCases =>
@@ -1188,6 +1188,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var observationStore = new PostgresObservationStore(
             new TestConnectionProvider(connectionString),
             guard,
+            ServerCoreSchemaMigrations.Manifest,
             schema);
         var things = await observationStore.ListThingsAsync(CatalogQuery.Page(0, 10), CancellationToken.None);
         things.Should().ContainSingle(thing => thing.Id == 1,
@@ -1287,6 +1288,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             $"the provider root must be plannable over journaled server no-ops. Error: {plan.ErrorMessage}");
         plan.PendingScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
         plan.ContractScriptNames.Should().Equal(PostgresCoreSchemaGuard.RasterTablesMigration);
+        AssertLegacyAttachmentPlanBindings(plan, "honua");
         var beforeApproval = await CaptureAttachmentAuthorityStateAsync(connectionString);
         var refused = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         refused.Successful.Should().BeFalse("late raster discovery includes the reviewed provider contract script");
@@ -1393,8 +1395,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         plan.ContractScriptNames.Should().Equal(
             PostgresCoreSchemaGuard.RasterTablesMigration,
             ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
-        plan.ScriptBindings.Should().HaveCount(2).And.OnlyContain(binding =>
-            binding.PhysicalSchema == "honua" && binding.ImportCleanupTable == "\"honua\".import_attachment_cleanup");
+        AssertLegacyAttachmentPlanBindings(plan, schema);
 
         var beforeBlockedRun = await CaptureAttachmentAuthorityStateAsync(connectionString);
         var blockedResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
@@ -1450,6 +1451,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var observationStore = new PostgresObservationStore(
             new TestConnectionProvider(connectionString),
             approvedGuard,
+            ServerCoreSchemaMigrations.Manifest,
             schema);
         (await observationStore.ListThingsAsync(CatalogQuery.Page(0, 10), CancellationToken.None))
             .Should().ContainSingle(thing => thing.Id == 1,
@@ -1721,6 +1723,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             PostgresCoreSchemaGuard.RasterLateProvisioningMigration,
         });
         plan.ContractScriptNames.Should().Equal(PostgresCoreSchemaGuard.RasterTablesMigration);
+        AssertLegacyAttachmentPlanBindings(plan, "honua");
         var beforeApproval = await CaptureAttachmentAuthorityStateAsync(connectionString);
         var refused = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         refused.Successful.Should().BeFalse("late raster discovery includes the reviewed provider contract script");
@@ -1851,6 +1854,28 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         ProviderRootJournaledWithoutStatisticsRow,
     }
 
+    private static void AssertLegacyAttachmentPlanBindings(DatabaseMigrationPlan plan, string configuredSchema)
+    {
+        plan.ScriptBindings.Should().HaveCount(2);
+        var create = plan.ScriptBindings.Should().ContainSingle(binding =>
+            binding.ScriptName == "Honua.Server.Migrations.002_CreateAttachmentsTable.sql").Which;
+        var import = plan.ScriptBindings.Should().ContainSingle(binding =>
+            binding.ScriptName == "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql").Which;
+        create.ResourceSha256.Should().Be("fc944b0240df90280a451ee684059b087ffb52f27cbea4348c0399ee5dee6698");
+        create.RenderedSqlSha256.Should().Be("e909b164c60f1d6fc839d728a011d9f97c30be0da29634391901a513a1e71b57");
+        import.ResourceSha256.Should().Be("f9b7c3694002615f3d08020e86d535d6b03c685cf37b0ec3319368cbdbd7ac27");
+        import.RenderedSqlSha256.Should().Be("626769e372659d8c14f131bf42ba4e640a4814d4fa7522e14951a37050ba6928");
+        foreach (var binding in plan.ScriptBindings)
+        {
+            binding.ConfiguredSchema.Should().Be(configuredSchema);
+            binding.PhysicalSchema.Should().Be("honua");
+            binding.AttachmentsTable.Should().Be("\"honua\".attachments");
+            binding.ImportCleanupTable.Should().Be("\"honua\".import_attachment_cleanup");
+            binding.PreambleResourceName.Should().BeNull();
+            binding.PreambleResourceSha256.Should().BeNull();
+        }
+    }
+
     private static async Task<long> InsertProbeRasterAsync(string connectionString, int[][] pixels, int noData)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -1975,7 +2000,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 return;
 
             case StoreOperation.SensorThingsRead:
-                var observationStore = new PostgresObservationStore(provider, guard);
+                var observationStore = new PostgresObservationStore(provider, guard, ServerCoreSchemaMigrations.Manifest);
                 await observationStore.ListThingsAsync(CatalogQuery.Page(0, 1), CancellationToken.None);
                 return;
 

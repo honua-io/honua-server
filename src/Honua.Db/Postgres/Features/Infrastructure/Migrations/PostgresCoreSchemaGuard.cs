@@ -4,6 +4,7 @@
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Db.Postgres.Features.SensorThings;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using NpgsqlTypes;
@@ -398,7 +399,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentNullException.ThrowIfNull(connection);
         await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (state.RequiresRasterFloor)
         {
@@ -473,7 +474,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentNullException.ThrowIfNull(connection);
         await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (!state.JournalIsEmpty)
         {
@@ -519,6 +520,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         // journaled, a migration-owned table without its journal row is ordinary divergence.
         if (!state.JournalIsEmpty)
         {
+            state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
             VerifyConsistency(state);
             return;
         }
@@ -729,7 +731,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken,
+            resolveSensingAuthority: requirement == DatabaseSchemaRequirement.SensorThings).ConfigureAwait(false);
 
         var (migration, requiredTables, requiredColumns, requiredIndexes) = requirement switch
         {
@@ -1128,7 +1131,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             .ToArray();
     }
 
-    private async Task<SchemaState> ReadStateAsync(DbConnection connection, CancellationToken cancellationToken)
+    private async Task<SchemaState> ReadStateAsync(DbConnection connection, CancellationToken cancellationToken,
+        bool resolveSensingAuthority = false)
     {
         var appliedScripts = new HashSet<string>(StringComparer.Ordinal);
         await using (var journalCommand = connection.CreateCommand())
@@ -1151,6 +1155,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 // The consistency checks below distinguish that from unjournaled partial schema.
             }
         }
+
+        var sensingSchema = resolveSensingAuthority && _migrations.SensorThingsSensingMigration is { } sensingMigration
+            ? await PostgresSensorThingsSchema.ResolveAsync(connection, _schemaName, appliedScripts.Contains(sensingMigration), sensingMigration,
+                cancellationToken: cancellationToken).ConfigureAwait(false)
+            : _schemaName;
 
         var hasPostGisRaster = false;
         await using (var extensionCommand = connection.CreateCommand())
@@ -1180,9 +1189,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                  AND a.attnum > 0
                  AND NOT a.attisdropped
                 WHERE (
-                    (n.nspname = @schema AND (
+                    (n.nspname = @schema AND c.relname <> ALL(@sensing_objects) AND (
                         @schema = @canonical_schema OR
                         (c.relname <> ALL(@lineage_tables) AND c.relname <> ALL(@lineage_indexes))))
+                    OR
+                    (n.nspname = @sensing_schema AND c.relname = ANY(@sensing_objects))
                     OR
                     (n.nspname = @canonical_schema AND
                         (c.relname = ANY(@lineage_tables) OR c.relname = ANY(@lineage_indexes) OR
@@ -1195,6 +1206,12 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             schemaParameter.ParameterName = "schema";
             schemaParameter.Value = _schemaName;
             schemaCommand.Parameters.Add(schemaParameter);
+
+            schemaCommand.Parameters.Add(new NpgsqlParameter("sensing_schema", sensingSchema));
+            schemaCommand.Parameters.Add(new NpgsqlParameter("sensing_objects", NpgsqlDbType.Array | NpgsqlDbType.Text)
+            {
+                Value = PostgresSensorThingsSchema.SensingObjects
+            });
 
             var canonicalSchemaParameter = schemaCommand.CreateParameter();
             canonicalSchemaParameter.ParameterName = "canonical_schema";
