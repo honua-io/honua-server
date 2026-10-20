@@ -772,8 +772,14 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 }
                 var created = await store.CreateAsync(7, 8, new Attachment
                 {
-                    Id = 0, LayerId = 7, FeatureId = 8, Filename = "registered.txt", ContentType = "text/plain",
-                    Size = 1, CreatedAt = DateTime.UtcNow, StoragePath = "metadata-only/registered"
+                    Id = 0,
+                    LayerId = 7,
+                    FeatureId = 8,
+                    Filename = "registered.txt",
+                    ContentType = "text/plain",
+                    Size = 1,
+                    CreatedAt = DateTime.UtcNow,
+                    StoragePath = "metadata-only/registered"
                 });
                 createdId = created.Id;
                 (await store.GetAsync(7, 8, createdId)).Should().NotBeNull();
