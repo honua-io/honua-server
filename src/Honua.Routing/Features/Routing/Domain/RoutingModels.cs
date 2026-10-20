@@ -248,7 +248,17 @@ public sealed record ServiceAreaPolygon(
 /// facility then ascending break.
 /// </param>
 public sealed record ServiceAreaSolveResult(
-    IReadOnlyList<ServiceAreaPolygon> Polygons);
+    IReadOnlyList<ServiceAreaPolygon> Polygons)
+{
+    /// <summary>Actual provider location results, retaining each zero-based input index.</summary>
+    public IReadOnlyList<ServiceAreaFacility> Facilities { get; init; } = [];
+}
+
+/// <summary>Provider-observed service-area facility location; no location means the input could not be located.</summary>
+/// <param name="FacilityId">Zero-based input identity, shared with service-area polygons.</param>
+/// <param name="NetworkVertexId">Actual snapped graph vertex when the provider uses a graph.</param>
+/// <param name="Location">Actual provider location in the requested output spatial reference, or null when unlocated.</param>
+public sealed record ServiceAreaFacility(int FacilityId, long? NetworkVertexId, RoutePoint? Location);
 
 /// <summary>
 /// Direction of travel relative to a closest-facility incident/facility pair.

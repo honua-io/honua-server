@@ -129,7 +129,12 @@ internal sealed class MockRoutingProvider : IRoutingProvider
             }
         }
 
-        return Task.FromResult(new ServiceAreaSolveResult(polygons));
+        // This provider's location model is the supplied point itself; unlike
+        // pgRouting it has no graph snap or graph vertex identity.
+        return Task.FromResult(new ServiceAreaSolveResult(polygons)
+        {
+            Facilities = request.Facilities.Select((point, index) => new ServiceAreaFacility(index, null, point)).ToArray(),
+        });
     }
 
     /// <inheritdoc />

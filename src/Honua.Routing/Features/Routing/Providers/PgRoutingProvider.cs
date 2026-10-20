@@ -409,6 +409,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdgeCount);
 
             var polygons = new List<ServiceAreaPolygon>();
+            var facilities = new List<ServiceAreaFacility>(request.Facilities.Count);
 
             for (var facilityId = 0; facilityId < request.Facilities.Count; facilityId++)
             {
@@ -418,8 +419,26 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 if (vertexId is null)
                 {
                     _logger.FacilityNotSnapped(facilityId);
+                    facilities.Add(new ServiceAreaFacility(facilityId, null, null));
                     continue;
                 }
+
+                // Preserve the actual graph location, not an echo of the supplied
+                // input point. The validated dataset identifier is the same one
+                // used for snapping; vertex and output projection are bound values.
+                var location = await session.QuerySingleOrDefaultAsync<RoutePoint?>(
+                    $"""
+                    SELECT ST_X(ST_Transform(the_geom, @out_srid)), ST_Y(ST_Transform(the_geom, @out_srid))
+                    FROM {dataset.VertexTable} WHERE id = @vertex_id;
+                    """,
+                    static row => new RoutePoint(row.GetFieldValue<double>(0), row.GetFieldValue<double>(1)),
+                    new Dictionary<string, object?> { ["vertex_id"] = vertexId.Value, ["out_srid"] = request.OutSrid },
+                    cancellationToken).ConfigureAwait(false);
+                if (location is null)
+                {
+                    throw new InvalidOperationException("The snapped service-area vertex has no output geometry.");
+                }
+                facilities.Add(new ServiceAreaFacility(facilityId, vertexId.Value, location));
 
                 foreach (var toBreak in orderedBreaks)
                 {
@@ -451,7 +470,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             activity?.SetTag("honua.routing.solved", polygons.Count > 0);
             activity?.SetTag("honua.routing.polygons", polygons.Count);
-            return new ServiceAreaSolveResult(polygons);
+            return new ServiceAreaSolveResult(polygons) { Facilities = facilities };
         }
         catch (Exception ex)
         {

@@ -101,6 +101,21 @@ internal static class GenerateServiceAreasWebTool
 
             var result = await routing.SolveServiceAreaAsync(request, ct).ConfigureAwait(false);
             var canonical = NAServerResultMapping.MapServiceArea(result, request.OutSrid);
+            var located = canonical.Facilities!;
+            foreach (var feature in located["features"]!.AsArray())
+            {
+                var attributes = feature!["attributes"]!;
+                var index = attributes["FacilityID"]!.GetValue<int>();
+                if (index < 0 || index >= facilities.Length)
+                {
+                    throw new InvalidOperationException("The provider returned a foreign service-area facility identity.");
+                }
+                attributes["FacilityOID"] = facilities[index].ObjectId;
+                attributes["Name"] = facilities[index].Name ?? $"Facility {index}";
+                // The canonical provider index stays zero-based. GP clients
+                // join polygons to positive native output feature ObjectIDs.
+                attributes["FacilityID"] = index + 1;
+            }
             var polygons = JsonSerializer.SerializeToNode(canonical.SaPolygons, NAServerJsonContext.Default.NAServerSaPolygonsFeatureSet)!.AsObject();
             foreach (var feature in polygons["features"]!.AsArray())
             {
@@ -108,6 +123,7 @@ internal static class GenerateServiceAreasWebTool
                 var facilityId = attributes["FacilityID"]!.GetValue<int>();
                 var identity = facilities[facilityId];
                 attributes["FacilityOID"] = identity.ObjectId;
+                attributes["FacilityID"] = facilityId + 1;
                 if (identity.Name is not null)
                 {
                     var canonicalName = attributes["Name"]!.GetValue<string>();
@@ -136,6 +152,12 @@ internal static class GenerateServiceAreasWebTool
                         ["paramName"] = "Solve_Succeeded",
                         ["dataType"] = "GPBoolean",
                         ["value"] = result.Polygons.Count > 0,
+                    },
+                    new JsonObject
+                    {
+                        ["paramName"] = "Output_Facilities",
+                        ["dataType"] = "GPFeatureRecordSetLayer",
+                        ["value"] = located,
                     },
                 },
                 ["messages"] = JsonSerializer.SerializeToNode(messages, GPServerJsonContext.Default.GPJobMessageArray),

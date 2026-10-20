@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Protocols.GeoServices.NAServer.Models;
 using Honua.Routing.Features.Routing.Domain;
 
@@ -145,6 +146,7 @@ internal static class NAServerResultMapping
 
         return new NAServerServiceAreaResponse
         {
+            Facilities = BuildServiceAreaFacilities(result, outSrid),
             SaPolygons = new NAServerSaPolygonsFeatureSet
             {
                 GeometryType = "esriGeometryPolygon",
@@ -152,6 +154,41 @@ internal static class NAServerResultMapping
                 Features = [.. features],
             },
             Messages = messages,
+        };
+    }
+
+    /// <summary>Projects only actual canonical provider facility locations and status.</summary>
+    internal static JsonObject BuildServiceAreaFacilities(ServiceAreaSolveResult result, int outSrid)
+    {
+        var features = new JsonArray();
+        var seen = new HashSet<int>();
+        foreach (var facility in result.Facilities)
+        {
+            if (facility.FacilityId < 0 || !seen.Add(facility.FacilityId)
+                || facility.Location is { } location && (!double.IsFinite(location.Lon) || !double.IsFinite(location.Lat)))
+            {
+                throw new InvalidOperationException("Invalid canonical service-area facility identity or location.");
+            }
+            features.Add(new JsonObject
+            {
+                ["attributes"] = new JsonObject
+                {
+                    ["ObjectID"] = facility.FacilityId + 1,
+                    ["FacilityID"] = facility.FacilityId,
+                    ["NetworkVertexID"] = facility.NetworkVertexId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["Status"] = facility.Location is null ? 1 : 0,
+                },
+                ["geometry"] = facility.Location is { } point
+                    ? new JsonObject { ["x"] = point.Lon, ["y"] = point.Lat } : null,
+            });
+        }
+        return new JsonObject
+        {
+            ["geometryType"] = "esriGeometryPoint",
+            ["spatialReference"] = new JsonObject { ["wkid"] = outSrid },
+            ["objectIdFieldName"] = "ObjectID",
+            ["fields"] = NAServerMetadata.BuildServiceAreaFacilityFields(),
+            ["features"] = features,
         };
     }
 

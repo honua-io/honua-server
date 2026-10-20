@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 
 namespace Honua.Protocols.GeoServices.NAServer.Models;
 
@@ -270,6 +271,9 @@ internal sealed class NAServerServiceAreaResponse
 {
     /// <summary>Service-area polygon feature set.</summary>
     public NAServerSaPolygonsFeatureSet SaPolygons { get; init; } = new();
+
+    /// <summary>Provider-observed facility locations, not reconstructed input points.</summary>
+    public JsonObject? Facilities { get; init; }
 
     /// <summary>Solver messages (informative / warning / error).</summary>
     public NAServerMessage[]? Messages { get; init; }

@@ -746,13 +746,14 @@ internal static class NAServerMetadata
     {
         var parameters = new JsonArray
         {
-            Parameter("Facilities", "GPFeatureRecordSetLayer", "Facilities", "Facility points in input order. FacilityID is the zero-based input index; input ObjectID is retained as FacilityOID and Name prefixes polygon names. Other nondefault facility settings are unsupported.", "esriGPParameterDirectionInput", "esriGPParameterTypeRequired", null),
+            Parameter("Facilities", "GPFeatureRecordSetLayer", "Facilities", "Facility points in input order. GP polygon FacilityID references the positive ObjectID of Output_Facilities; input ObjectID is retained as FacilityOID and Name prefixes polygon names. Other nondefault facility settings are unsupported.", "esriGPParameterDirectionInput", "esriGPParameterTypeRequired", null),
             Parameter("Break_Values", "GPString", "Break Values", "Positive minute cutoffs separated by spaces, commas or semicolons.", "esriGPParameterDirectionInput", "esriGPParameterTypeRequired", "5 10 15"),
             Parameter("Break_Units", "GPString", "Break Units", "Only Minutes is supported.", "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "Minutes"),
             Parameter("Travel_Direction", "GPString", "Travel Direction", "Travel away from or towards facilities, subject to provider capabilities.", "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "Away From Facility"),
             Parameter("Travel_Mode", "GPString", "Travel Mode", "A supported provider travel mode; empty uses the provider default.", "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", null),
             Parameter("Service_Areas", "GPFeatureRecordSetLayer", "Service Areas", "Canonical polygons with FacilityID and FromBreak/ToBreak in minutes.", "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
             Parameter("Solve_Succeeded", "GPBoolean", "Solve Succeeded", "Whether the solve produced service-area polygons.", "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
+            Parameter("Output_Facilities", "GPFeatureRecordSetLayer", "Output Facilities", "Actual provider-located facilities with original input identity and location status.", "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
         };
         parameters[0]!["defaultValue"] = new JsonObject
         {
@@ -779,6 +780,14 @@ internal static class NAServerMetadata
             ["geometryType"] = "esriGeometryPolygon",
             ["spatialReference"] = new JsonObject { ["wkid"] = 4326 },
             ["fields"] = BuildServiceAreaFields(),
+            ["features"] = new JsonArray(),
+        };
+        parameters[7]!["defaultValue"] = new JsonObject
+        {
+            ["geometryType"] = "esriGeometryPoint",
+            ["spatialReference"] = new JsonObject { ["wkid"] = 4326 },
+            ["objectIdFieldName"] = "ObjectID",
+            ["fields"] = BuildServiceAreaFacilityFields(),
             ["features"] = new JsonArray(),
         };
         return new JsonObject
@@ -808,6 +817,14 @@ internal static class NAServerMetadata
         };
         return new JsonArray(Field("ObjectID", "esriFieldTypeOID"), Field("FacilityID", "esriFieldTypeInteger"), Field("FacilityOID", "esriFieldTypeInteger"),
             Field("Name", "esriFieldTypeString"), Field("FromBreak", "esriFieldTypeDouble"), Field("ToBreak", "esriFieldTypeDouble"));
+    }
+
+    internal static JsonArray BuildServiceAreaFacilityFields()
+    {
+        static JsonObject Field(string name, string type) => new() { ["name"] = name, ["type"] = type, ["alias"] = name };
+        return new JsonArray(Field("ObjectID", "esriFieldTypeOID"), Field("FacilityID", "esriFieldTypeInteger"),
+            Field("FacilityOID", "esriFieldTypeInteger"), Field("Name", "esriFieldTypeString"),
+            Field("Status", "esriFieldTypeInteger"), Field("NetworkVertexID", "esriFieldTypeString"));
     }
 
     private static JsonObject Parameter(

@@ -89,7 +89,17 @@ internal static class RoutingAsyncWebTools
         using var document = JsonDocument.Parse($$"""
             {"geometryType":"{{geometryType}}","spatialReference":{"wkid":4326},"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString"}],"features":[]}
             """);
-        return document.RootElement.Clone();
+        var value = JsonNode.Parse(document.RootElement.GetRawText())!.AsObject();
+        if (parameter == "demand_points")
+        {
+            // The canonical location-allocation executor consumes weighted
+            // demand; native insert cursors discover this field from metadata.
+            value["fields"]!.AsArray().Add(new JsonObject
+            {
+                ["name"] = "Weight", ["type"] = "esriFieldTypeDouble", ["defaultValue"] = 1d,
+            });
+        }
+        return JsonSerializer.SerializeToElement(value);
     }
 
     internal static Dictionary<string, string> Translate(ProcessDefinition definition, IReadOnlyDictionary<string, string> raw, int? environmentOutSr)
