@@ -69,7 +69,8 @@ public sealed class FeatureDeleteAttachmentCleanupTests
             storage,
             NullLogger<PostgresAttachmentStore>.Instance,
             "honua",
-            ledger);
+            ledger,
+            migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("test.attachments.create", "test.attachments.import", "test.preamble", "test.sha"));
 
         var act = () => store.DeleteBlobsAsync(
             [
@@ -97,7 +98,8 @@ public sealed class FeatureDeleteAttachmentCleanupTests
             fileStorage: null,
             NullLogger<PostgresAttachmentStore>.Instance,
             "honua",
-            ledger);
+            ledger,
+            migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("test.attachments.create", "test.attachments.import", "test.preamble", "test.sha"));
 
         var act = () => store.DeleteBlobsAsync(
             [new DeletedAttachmentBlob(3, 9, "blob")],

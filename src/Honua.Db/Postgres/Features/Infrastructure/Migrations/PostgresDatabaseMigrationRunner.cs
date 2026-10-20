@@ -14,6 +14,8 @@ using Honua.Core.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Honua.Db.Postgres.Features.Attachments;
+using DbUp.ScriptProviders;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
@@ -43,6 +45,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
     private readonly string? _contractApprovalToken;
     private readonly string _metadataSchemaVariable;
+    private readonly string _metadataSchema;
     private readonly bool _includeConfiguredSchemaAdoption;
     private readonly bool _adoptSeededSchemaOnFirstMigration;
     private readonly IDatabaseSchemaGuard _schemaGuard;
@@ -64,6 +67,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             ? PostgresSchemaConfiguration.DefaultMetadataSchema
             : configuredMetadataSchema.Trim();
         _metadataSchemaVariable = SchemaSearchPath.ValidateAndQuote(metadataSchema);
+        _metadataSchema = metadataSchema;
         _includeConfiguredSchemaAdoption = !string.Equals(
             metadataSchema,
             PostgresSchemaConfiguration.DefaultMetadataSchema,
@@ -102,13 +106,17 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                     .ConfigureAwait(false);
             }
 
+            var attachmentSchema = connection is null ? null : await PostgresAttachmentSchema.ResolveAsync(
+                connection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
             var upgrader = BuildUpgrader(
                 BuildMigrationConnectionString(connectionString),
                 migrationsAssembly,
                 _metadataSchemaVariable,
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
-                _migrations.ConfiguredSchemaAdoptionMigration);
+                _migrations.ConfiguredSchemaAdoptionMigration,
+                attachmentSchema, _migrations.Attachments);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (connection is not null)
@@ -121,12 +129,18 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
             var executedButNotDiscoveredScripts = upgrader.GetExecutedButNotDiscoveredScripts().ToArray();
+            var bindings = attachmentSchema is null ? Array.Empty<DatabaseMigrationScriptBinding>() :
+                AttachmentSchemaScriptProvider.Describe(migrationsAssembly, _metadataSchema, attachmentSchema, _migrations.Attachments!);
 
             return DatabaseMigrationPlan.Succeeded(
                 pendingScripts,
                 executedButNotDiscoveredScripts,
                 classifications,
-                journalIsNonEmpty);
+                journalIsNonEmpty) with
+            {
+                ScriptBindings = bindings,
+                ContractApprovalNonce = ComputeApprovalNonce(classifications, bindings)
+            };
         }
         catch (DatabaseSchemaCompatibilityException ex)
         {
@@ -194,7 +208,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     /// </summary>
     private InvalidOperationException? TryBuildContractGateRejection(
         IReadOnlyList<MigrationScriptClassification> classifications,
-        bool journalIsNonEmpty)
+        bool journalIsNonEmpty,
+        IReadOnlyList<DatabaseMigrationScriptBinding> bindings)
     {
         if (_safetyOptions.ContractApplyPolicy != ContractApplyPolicy.Gate)
         {
@@ -221,7 +236,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         // One-shot nonce (#2812): the approval token must match the digest of THIS pending contract-script
         // set. A blanket/stale value (e.g. a left-behind "true") never matches, so approving one upgrade
         // does not silently approve the next one.
-        var expectedNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(pendingAnnotated);
+        var expectedNonce = ComputeApprovalNonce(classifications, bindings);
         if (_contractApprovalToken != null &&
             string.Equals(_contractApprovalToken, expectedNonce, StringComparison.OrdinalIgnoreCase))
         {
@@ -237,6 +252,36 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             $"'{MigrationSafetyOptions.ApproveContractMigrationsKey}={expectedNonce}' to apply them (a one-shot " +
             "token bound to these exact scripts that will not approve any later contract migration), or run " +
             "migrations out-of-band with HONUA_SKIP_MIGRATIONS=true, which owns its own safety.");
+    }
+
+    internal static string? ComputeApprovalNonce(
+        IReadOnlyList<MigrationScriptClassification> classifications,
+        IReadOnlyList<DatabaseMigrationScriptBinding> bindings)
+    {
+        var pending = classifications
+            .Where(c => c.Classification == MigrationSafetyClassification.ContractAnnotated)
+            .Select(c => c.ScriptName).ToArray();
+        if (pending.Length == 0)
+        {
+            return null;
+        }
+
+        // Existing default-schema and synthetic approvals retain their established
+        // identity. A custom attachment projection additionally binds the reviewed
+        // physical authority and exact resource/rendering bytes.
+        var custom = bindings.Where(binding => binding.ConfiguredSchema != "honua")
+            .OrderBy(binding => binding.ScriptName, StringComparer.Ordinal).ToArray();
+        var bindingContext = string.Join("\n", custom.Select(binding => string.Join("\n",
+            binding.ScriptName, binding.ConfiguredSchema, binding.PhysicalSchema,
+            binding.AttachmentsTable, binding.ImportCleanupTable,
+            binding.ResourceSha256, binding.RenderedSqlSha256) +
+            (binding.PreambleResourceName is null && binding.PreambleResourceSha256 is null
+                ? string.Empty
+                : string.Join("\n", string.Empty, binding.PreambleResourceName, binding.PreambleResourceSha256))));
+        return custom.Length == 0
+            ? MigrationSafetyClassifier.ComputeContractApprovalNonce(pending)
+            : MigrationSafetyClassifier.ComputeContractApprovalNonce(pending.Concat(
+                ["attachment-binding:" + AttachmentSchemaScriptProvider.SqlDigest(bindingContext)]));
     }
 
     /// <summary>
@@ -292,13 +337,17 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             var usesCanonicalMigrationRoots = UsesCanonicalMigrationRoots(migrationsAssembly);
             var includeRasterProviderMigrations = usesCanonicalMigrationRoots &&
                 await HasPostGisRasterAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+            var attachmentSchema = usesCanonicalMigrationRoots ? await PostgresAttachmentSchema.ResolveAsync(
+                lockConnection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true, cancellationToken: cancellationToken)
+                .ConfigureAwait(false) : null;
             var upgrader = BuildUpgrader(
                 migrationConnectionString,
                 migrationsAssembly,
                 _metadataSchemaVariable,
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
-                _migrations.ConfiguredSchemaAdoptionMigration);
+                _migrations.ConfiguredSchemaAdoptionMigration,
+                attachmentSchema, _migrations.Attachments);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (usesCanonicalMigrationRoots)
@@ -308,6 +357,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             }
 
             var classifications = ClassifyScripts(upgrader.GetScriptsToExecute());
+            var bindings = attachmentSchema is null ? Array.Empty<DatabaseMigrationScriptBinding>() :
+                AttachmentSchemaScriptProvider.Describe(migrationsAssembly, _metadataSchema, attachmentSchema, _migrations.Attachments!);
             var migrationRunId = CreateMigrationRunId();
 
             // 1. ADR-0060 fail-closed: reject unannotated contract scripts (default Enforce=true).
@@ -318,7 +369,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
             // 2. Journal-scoped contract-apply gate (#2565): block annotated contract scripts on an
             //    existing database unless the operator approved them.
-            if (TryBuildContractGateRejection(classifications, journalIsNonEmpty) is { } gateRejection)
+            if (TryBuildContractGateRejection(classifications, journalIsNonEmpty, bindings) is { } gateRejection)
             {
                 return DatabaseMigrationResult.Failed(gateRejection, gateRejection.Message);
             }
@@ -330,6 +381,23 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                     .ConfigureAwait(false) is { } backupFailure)
             {
                 return DatabaseMigrationResult.Failed(backupFailure, backupFailure.Message);
+            }
+
+            // A backup hook can take time or execute operator-owned work. Re-read
+            // the physical authority while still holding the canonical migration
+            // lock; never execute a rendered plan against a changed binding.
+            if (attachmentSchema is not null)
+            {
+                var currentAttachmentSchema = await PostgresAttachmentSchema.ResolveAsync(
+                    lockConnection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                var currentBindings = AttachmentSchemaScriptProvider.Describe(
+                    migrationsAssembly, _metadataSchema, currentAttachmentSchema, _migrations.Attachments!);
+                if (!bindings.SequenceEqual(currentBindings))
+                {
+                    var error = new InvalidOperationException("Attachment physical binding changed after migration planning; re-plan before applying.");
+                    return DatabaseMigrationResult.Failed(error, error.Message);
+                }
             }
 
             var result = upgrader.PerformUpgrade();
@@ -351,7 +419,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
             return DatabaseMigrationResult.Succeeded(appliedScripts);
         }
-        catch (Exception ex) when (ex is DatabaseSchemaFloorException or DatabaseSchemaCompatibilityException)
+        catch (Exception ex) when (ex is DatabaseSchemaFloorException or DatabaseSchemaCompatibilityException or AttachmentSchemaBindingException)
         {
             return DatabaseMigrationResult.Failed(ex, ex.Message);
         }
@@ -400,7 +468,9 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         string metadataSchemaVariable,
         bool includeRasterProviderMigrations,
         bool includeConfiguredSchemaAdoption,
-        string configuredSchemaAdoptionMigration)
+        string configuredSchemaAdoptionMigration,
+        string? attachmentSchema = null,
+        PostgresAttachmentMigrationContract? attachmentContract = null)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -416,15 +486,22 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             ? new[] { typeof(PostgresDatabaseMigrationRunner).Assembly, migrationsAssembly }
             : new[] { migrationsAssembly };
 
-        return builder
-            .WithScriptsEmbeddedInAssemblies(
-                migrationAssemblies,
-                // Migration 109 is a contract-phase move that only has meaning for a
-                // non-default Database:Schema. Omitting it at discovery time keeps an
-                // existing default-schema upgrade out of the nonce gate altogether.
+        foreach (var assembly in migrationAssemblies)
+        {
+            // Migration 109 is a contract-phase move that only has meaning for a
+            // non-default Database:Schema. Omitting it at discovery time keeps an
+            // existing default-schema upgrade out of the nonce gate altogether.
+            var provider = new EmbeddedScriptProvider(assembly,
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
                     (includeConfiguredSchemaAdoption ||
-                     !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)))
+                     !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)));
+            IScriptProvider selectedProvider = attachmentSchema is null ? provider :
+                new AttachmentSchemaScriptProvider(provider, attachmentSchema, migrationsAssembly,
+                    attachmentContract ?? throw new InvalidOperationException("Canonical attachment identities were not supplied."));
+            builder.WithScripts(selectedProvider);
+        }
+
+        return builder
             .WithScriptNameComparer(_migrationScriptNameComparer)
             .Build();
     }
