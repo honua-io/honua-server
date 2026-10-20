@@ -207,6 +207,161 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_list_layers")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ListLayers_ProtocolPublications_CountAndPageUniqueLayerIdentities()
+    {
+        var graph = await MultiProtocolLayerGraphAsync();
+        var publication = graph.Publications[0];
+        graph = graph with
+        {
+            Services = [.. graph.Services, graph.Services[0] with
+            {
+                Metadata = graph.Services[0].Metadata with { Id = "svc-other" }
+            }],
+            Publications = [.. graph.Publications,
+                publication with
+                {
+                    Metadata = publication.Metadata with { Id = "pub-second-layer" },
+                    Identifier = publication.Identifier with { Value = "1" }
+                },
+                publication with
+                {
+                    Metadata = publication.Metadata with { Id = "pub-other-service" },
+                    ServiceId = "svc-other"
+                }]
+        };
+        MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
+        using var services = BuildServices(graphProvider: new TestMetadataV2GraphProvider(graph));
+        var surface = BuildSurface();
+        var identities = new List<string>();
+        for (var offset = 0; offset < 3; offset++)
+        {
+            var response = await surface.DispatchAsync(AuthenticatedContext(services),
+                ToolCall($"unique-page-{offset}", ListLayersTool.ToolName,
+                    $$"""{"filter":"Parcels","limit":1,"offset":{{offset}}}"""), CancellationToken.None);
+            var output = response!.Result!.Value.GetProperty("structuredContent");
+            output.GetProperty("totalCount").GetInt32().Should().Be(3);
+            output.GetProperty("layerCount").GetInt32().Should().Be(1);
+            output.GetProperty("hasMore").GetBoolean().Should().Be(offset < 2);
+            if (offset < 2)
+            {
+                output.GetProperty("nextOffset").GetInt32().Should().Be(offset + 1);
+            }
+            var layer = output.GetProperty("layers")[0];
+            identities.Add($"{layer.GetProperty("serviceId").GetString()}/{layer.GetProperty("layerId").GetInt32()}");
+        }
+        identities.Should().Equal("svc-other/0", $"{ServiceId}/0", $"{ServiceId}/1");
+
+        var filtered = await surface.DispatchAsync(AuthenticatedContext(services),
+            ToolCall("unique-filter", ListLayersTool.ToolName, """{"filter":"svc-parcels"}"""), CancellationToken.None);
+        filtered!.Result!.Value.GetProperty("structuredContent").GetProperty("totalCount").GetInt32().Should().Be(2);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ListLayers_ProtocolPublications_AuthorizesEachBeforeDeduplication(bool firstAllowed, bool secondAllowed)
+    {
+        var graph = await MultiProtocolLayerGraphAsync(new AccessPolicy { AllowedRoles = ["restricted-reader"] });
+        var resolver = Substitute.For<IPermissionResolver>();
+        var grant = new PermissionGrant { Service = ServiceName, Layer = "Parcels Dataset", Operation = "metadata" };
+        resolver.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+                "Parcels Dataset", AuthorizationOperation.Metadata, true, Arg.Any<CancellationToken>())
+            .Returns(firstAllowed ? PermissionDecision.Allow(grant) : PermissionDecision.NoMatch(),
+                secondAllowed ? PermissionDecision.Allow(grant) : PermissionDecision.NoMatch());
+        using var services = BuildServices(graphProvider: new TestMetadataV2GraphProvider(graph), permissionResolver: resolver);
+        var context = AuthenticatedContext(services);
+        context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, "scoped-reader")]));
+
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("unique-authority", ListLayersTool.ToolName, "{}"), CancellationToken.None);
+
+        var output = response!.Result!.Value.GetProperty("structuredContent");
+        var expectedCount = firstAllowed || secondAllowed ? 1 : 0;
+        output.GetProperty("totalCount").GetInt32().Should().Be(expectedCount);
+        output.GetProperty("layers").GetArrayLength().Should().Be(expectedCount);
+        await resolver.Received(2).AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+            "Parcels Dataset", AuthorizationOperation.Metadata, true, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("title")]
+    [InlineData("resource")]
+    [InlineData("binding")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ListLayers_ConflictingProtocolMetadata_RefusesAnAmbiguousSummary(string conflict)
+    {
+        var graph = await MultiProtocolLayerGraphAsync();
+        var alternate = graph.Publications[1];
+        if (conflict == "title")
+        {
+            alternate = alternate with { TitleOverride = "Different title" };
+        }
+        else
+        {
+            var resource = graph.Resources[0];
+            var binding = graph.StorageBindings[0] with
+            {
+                Metadata = graph.StorageBindings[0].Metadata with { Id = "binding-alternate" },
+                StorageLayerId = 43
+            };
+            if (conflict == "resource")
+            {
+                resource = resource with
+                {
+                    Metadata = resource.Metadata with { Id = "res-alternate" },
+                    StorageBindingIds = [binding.Metadata.Id]
+                };
+                binding = binding with { ResourceId = resource.Metadata.Id };
+                graph = graph with { Resources = [.. graph.Resources, resource] };
+            }
+            else
+            {
+                resource = resource with { StorageBindingIds = [.. resource.StorageBindingIds, binding.Metadata.Id] };
+                graph = graph with { Resources = [resource] };
+            }
+            graph = graph with { StorageBindings = [.. graph.StorageBindings, binding] };
+            alternate = alternate with { ResourceId = resource.Metadata.Id, StorageBindingId = binding.Metadata.Id };
+        }
+        graph = graph with { Publications = [graph.Publications[0], alternate] };
+        MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
+        using var services = BuildServices(graphProvider: new TestMetadataV2GraphProvider(graph));
+
+        var response = await BuildSurface().DispatchAsync(AuthenticatedContext(services),
+            ToolCall("conflicting-layer", ListLayersTool.ToolName, "{}"), CancellationToken.None);
+
+        response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+        response.Result.Value.ToString().Should().Contain("ambiguous");
+    }
+
+    private static async Task<MetadataV2Graph> MultiProtocolLayerGraphAsync(AccessPolicy? accessPolicy = null)
+    {
+        var graph = (await BuildGraphProvider(accessPolicy).GetCurrentAsync()).Graph;
+        var feature = graph.Publications[0] with { PublicationType = MetadataV2PublicationType.EsriFeatureLayer };
+        return graph with
+        {
+            Publications = [feature, feature with
+            {
+                Metadata = feature.Metadata with { Id = "pub-parcels-stac" },
+                PublicationType = MetadataV2PublicationType.StacCollection
+            }]
+        };
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_ListLayers_HonorsLimitAndOffsetPaging()
     {
         var surface = BuildSurface();
