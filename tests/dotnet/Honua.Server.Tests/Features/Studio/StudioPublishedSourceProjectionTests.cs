@@ -34,7 +34,6 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            builder.UseSetting("Licensing:Mode", "Disabled");
         })
         .ConfigureServices(services =>
         {
