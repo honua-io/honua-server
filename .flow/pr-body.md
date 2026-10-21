@@ -19,7 +19,14 @@ Fix forward is appropriate because eight landings separate the last actual green
 - Preserve the current trunk implementation and all other lanes' changes.
 
 ## Testing
-Verification commands and results are recorded below after completion.
+- `python3 scripts/ci/fixtures/validate-mcp-server-auth.py` — passed all 7 environment/mutation checks.
+- `python3 -m unittest scripts.certification.test_verify_mcp_live_certification` — passed 4 tests.
+- `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter FullyQualifiedName~ConfigurationValidationServiceTests --logger 'trx;LogFileName=mcp-rest-configuration.trx'` — passed 30 tests, zero failures/skips, Release, on the original branch baseline.
+- `scripts/ci/pre-pr-check.sh --fast` — final gate in progress with current trunk integrated.
+
+Current trunk f854f8fac0d5bf9fd9e4719a7f603463469bfb99 was merged without conflict before final verification. Its alerts and ImageServer changes are preserved. The focused configuration class will also be rerun against the merged build.
+
+The first sandboxed .NET/preflight attempts were stopped before compilation because shared build admission could not establish live guardians. Host inspection proved three reservations belonged to a vanished PID namespace and both original locks were free; those stale reservations were reconciled, and the admitted PATH-shim retry passed. The shim retained its CPU cap and shared compilation. No C# files are changed by this packet, so dotnet format is not applicable. No local live MCP certification run or new live receipt is claimed.
 
 ## Self-review
 Review scope: this handoff diff and the existing authentication repair, using honua-flow-work/tools/lib/pr-review-rubric.md. No new endpoint, dependency, public type, authentication bypass, test relaxation, or protocol pipeline is introduced. The inherited environment fixture checks both certification and smoke against the shared Development action and rejects bypass and credential mismatch mutations. Live certification was not run locally; the trailing full matrix remains the proof of the complete family.
