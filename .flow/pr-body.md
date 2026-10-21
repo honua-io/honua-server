@@ -34,6 +34,8 @@ Fix forward is already on trunk in #5784. Its fixture graph supplies routable bi
 
 Verification is in progress. Exact commands and results will be recorded before staged delivery. All managed commands use PATH `dotnet`, the lane shim's unchanged four-node cap, and shared compilation. No project source changed, so no formatter is required.
 
+The first current-trunk focused attempt (`timeout 30m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish.trx' --results-directory /tmp/admin-layer-repair-results`) restored and compiled dependencies, then exhausted its outer timeout during compilation (exit 124). No test result is claimed from that attempt. A longer incremental retry is queued after the fast gate.
+
 ## Gate Impact
 - [x] PR gates (build, test, governance): historical Admin Layer Management regression verification
 
