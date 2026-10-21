@@ -26,6 +26,7 @@ The cap test blob is identical from the supplied green through the red head. Sou
 ## Testing
 - [x] `MapServerQueryLimitsTests`: Release, 4 passed, 0 failed, 0 skipped.
 - [x] `MapServerIdentifyEndpointTests`: Release, 56 passed, 0 failed, 0 skipped, including all four new precedence cases.
+- [x] Gate-selected `Honua.Server.Tests` `Tier=Fast` smoke: Release, 4,164 passed, 0 failed, 0 skipped with four xUnit collection workers; TRX `/tmp/mapserver-identify-verification/server-fast-bounded.trx`.
 - [ ] `scripts/ci/pre-pr-check.sh --fast`: Release build passed with zero warnings/errors and scoped formatting passed; retrying after the host churn governor rejected the literal test-runner argument separator.
 - [x] Changed-project formatting verified by the fast check (one owning project, two included files, `timeout 20m`).
 - [x] `git diff --check`.
@@ -41,7 +42,7 @@ NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget dotnet test tests/dotnet/Hon
 
 The Identify Release dependency and test assembly build completed before the successful `--no-build` run. Its initial automatic-container attempt failed during PostgreSQL fixture initialization, before endpoint assertions. The successful run used the existing TestKit-supported `HONUA_TEST_DB_URL` with a dedicated PostGIS 18 sidecar; each test retained its isolated schema and original assertions. No fixture or runtime code changed. Results: `/tmp/honua-geoservices-6f74305-results/mapserver-query-limits.trx` and `/tmp/mapserver-identify-verification/identify-sidecar.trx`.
 
-Next full fast-check command (after the bounded selected smoke completes):
+Full fast-check command (reserved retry pending):
 
 ```bash
 IFS= read -r HONUA_TEST_DB_URL < /tmp/mapserver-identify-sidecar/db-url
@@ -57,8 +58,26 @@ The fast check selects 33 roots / a 105-project closure because the staged descr
 
 Staged handoff: verified source is based on `f854f8fac0d5bf9fd9e4719a7f603463469bfb99`. Trunk advanced to `581cda46c63e3bad91f85e405af6d949a4ac4cb3` during local verification. Before opening the PR, sync the then-current default branch and rerun verification as required by the packet's opening-stage instruction. This staged delivery does not open a PR or claim verification of later trunk landings.
 
+The selected smoke was verified separately with the same environment exports and adapter:
+
+```bash
+PATH="/tmp/mapserver-identify-dotnet-compat:$PATH" NUGET_PACKAGES=/tmp/mapserver-identify-packages NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-build --no-restore --configuration Release --filter 'Tier=Fast' --logger 'trx;LogFileName=server-fast-bounded.trx' --results-directory /tmp/mapserver-identify-verification -- RunConfiguration.MaxCpuCount=1
+```
+
+The ignored generated runner can be recreated as `obj/mapserver-pre-pr-reserved.proj`:
+
+```xml
+<Project>
+  <Target Name="Verify">
+    <Exec Command="bash scripts/ci/pre-pr-check.sh --fast"
+          WorkingDirectory="$(MSBuildThisFileDirectory).."
+          IgnoreStandardErrorWarningFormat="true" />
+  </Target>
+</Project>
+```
+
 ## Self-review
-Completed one round using `honua-flow-work/tools/lib/pr-review-rubric.md`. Existing endpoints and fixtures are reused; the original exact cap assertion remains. No runtime, dependency, security, or public API change. P0/P1: none found. P2/P3 follow-ups: none identified. Both focused classes passed; the required fast check remains pending.
+Completed one round using `honua-flow-work/tools/lib/pr-review-rubric.md`. Existing endpoints and fixtures are reused; the original exact cap assertion remains. No runtime, dependency, security, or public API change. P0/P1: none found. P2/P3 follow-ups: none identified. Both focused classes and all 4,164 retained Server Fast cases passed; the complete reserved fast-check retry remains pending.
 
 ## Gate Impact
 - [x] PR gates (build, test, governance).
