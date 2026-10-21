@@ -360,6 +360,53 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/network-datasets/{id}/promote")]
+    public async Task Promote_SameIdempotencyKeyWithDifferentRowVersion_Returns409WithoutChangingHistory()
+    {
+        var datasetId = await RegisterDatasetAsync("idembinding");
+        var candidate = await BuildReadyGenerationAsync(datasetId);
+        var (activeGeneration, activeRowVersion) = await GetActiveGenerationAsync(datasetId);
+        var idempotencyKey = Guid.NewGuid().ToString();
+
+        async Task<HttpResponseMessage> Send(long expectedRowVersion)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+            {
+                Content = JsonContent.Create(
+                    new { TargetGeneration = candidate, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = expectedRowVersion },
+                    options: _jsonOptions),
+                Headers = { { "Idempotency-Key", idempotencyKey } },
+            };
+            return await _client.SendAsync(request);
+        }
+
+        using var first = await Send(activeRowVersion);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var original = await first.Content.ReadFromJsonAsync<NetworkTopologyPromotionDto>(_jsonOptions);
+        Assert.NotNull(original);
+
+        // Only the row version differs: legacy generation-only replay would accept
+        // this request, so rejection proves the persisted request hash is consulted.
+        using var conflict = await Send(activeRowVersion + 1);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        using var problem = JsonDocument.Parse(await conflict.Content.ReadAsStringAsync());
+        Assert.Contains("idempotency key", problem.RootElement.GetProperty("detail").GetString());
+
+        using var replay = await Send(activeRowVersion);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        var replayed = await replay.Content.ReadFromJsonAsync<NetworkTopologyPromotionDto>(_jsonOptions);
+        Assert.NotNull(replayed);
+        Assert.Equal(original.PromotionId, replayed.PromotionId);
+
+        using var historyResponse = await _client.GetAsync($"/api/v1/admin/network-datasets/{datasetId}/promotions");
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+        var history = await historyResponse.Content.ReadFromJsonAsync<NetworkTopologyPromotionDto[]>(_jsonOptions);
+        Assert.NotNull(history);
+        Assert.Equal(original.PromotionId, Assert.Single(history).PromotionId);
+        Assert.Equal(candidate, (await GetActiveGenerationAsync(datasetId)).ActiveGeneration);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/network-datasets/{id}/promotions")]
     public async Task ListHistory_AfterPromotion_IncludesEntry()
     {
