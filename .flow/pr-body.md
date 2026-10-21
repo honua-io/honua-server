@@ -30,11 +30,12 @@ The Identify family independently had 15 failures (35 passes) at the same head: 
 Identify-family diagnosis: [commit comment](https://github.com/honua-io/honua-server/commit/6f7430587a1a8283f7e95de86c38908a3cb2ed9d#commitcomment-205857884) and [culprit PR #5835](https://github.com/honua-io/honua-server/pull/5835) read before investigation. Artifact inventory was checked first; artifact `11710678770` is no longer downloadable. [Retained target logs](https://github.com/honua-io/honua-server/actions/runs/38158644558/job/114539712938) confirm 50 total, 35 passed, 15 failed. The diagnosis records the same 15 failures in the culprit PR test execution (despite its report-only green job conclusion) and intermediate trunk. This packet does not claim a completed local historical runtime bisect.
 
 ## Testing
-- [ ] Integration tests updated and focused Release class passes.
+- [x] `MapServerQueryLimitsTests`: Release, 4 passed, 0 failed, 0 skipped (including both CRS cap cases).
+- [ ] Final Identify class verification pending.
 - [ ] `scripts/ci/pre-pr-check.sh --fast` passes.
 - [ ] Changed-project formatting verified.
 
-Exact verification commands (queued; no local pass/fail verdict yet):
+Verification commands (initial QueryLimits run passed; final checks pending):
 
 ```bash
 dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj --configuration Release --filter FullyQualifiedName~MapServerQueryLimitsTests --logger 'trx;LogFileName=mapserver-query-limits.trx' --results-directory /tmp/honua-geoservices-6f74305-results
@@ -43,12 +44,12 @@ NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget dotnet test tests/dotnet/Hon
 NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget scripts/ci/pre-pr-check.sh --fast
 ```
 
-Both commands use the PATH lane shim with its four-node cap and shared compilation enabled. The focused run acquired capacity and has restored the GeoServices test project and shared fixture. As of 2026-10-21 04:10 UTC, all runtime dependencies and the server assembly have compiled successfully. The main fixture and GeoServices test assembly remain in the focused build. Its test verdict is pending. The first fast-check attempt validated capability completeness and selected 33 build roots, with full catalogue/proof enforcement because `.flow/pr-body.md` is an unclassified contract input, then exited 75 before managed validation while waiting for the same worktree reservation. It will be rerun after the focused command finishes. No test or managed-build success is claimed yet.
+All commands use the PATH lane shim with its four-node cap and shared compilation enabled. The initial Release `MapServerQueryLimitsTests` run completed successfully: 4 passed, 0 failed, 0 skipped; TRX `/tmp/honua-geoservices-6f74305-results/mapserver-query-limits.trx`. The first fast-check attempt validated capability completeness and selected 33 build roots, then exited 75 before managed validation while waiting for the worktree reservation. The final fast check and separate named-class reruns will now follow the default-branch sync. No final fast-check or Identify pass is claimed yet.
 
 Identify-lane progress as of 2026-10-21 04:15 UTC: restore, all runtime dependencies (including GeoServices), the server, and TestKit compiled successfully; the GeoServices test assembly is compiling. MSBuild recovered from one native-asset copy retry caused by host memory allocation pressure. The initial fast check validated capability metadata and selected 33 build roots; its duplicate waiter was interrupted before managed validation so it can run sequentially after the focused test. No Identify test verdict is claimed yet.
 
 ## Self-review
-Reviewed the diff using `honua-flow-work/tools/lib/pr-review-rubric.md`: existing endpoint and fixture reused, original exact cap assertion retained, native/default CRS coverage added, no runtime, dependency, security, or public API changes. P0/P1: none found. P2/P3 follow-ups: none identified. Verification pending.
+Reviewed the diff using `honua-flow-work/tools/lib/pr-review-rubric.md`: existing endpoint and fixture reused, original exact cap assertion retained, native/default CRS coverage added, no runtime, dependency, security, or public API changes. P0/P1: none found. P2/P3 follow-ups: none identified. Initial QueryLimits verification passed; final verification pending.
 
 ## Gate Impact
 - [x] PR gates (build, test, governance)
