@@ -40,6 +40,24 @@ checks, including rejection of inherited job/workflow bypasses, missing or
 mismatched credentials and a substituted Test environment. The four tests in
 `scripts.certification.test_verify_mcp_live_certification` pass.
 
+A source-only replay composes the workflow, job and nested action environments
+at the last green, every intervening landing, the repair and current HEAD. It
+confirms that `36fa28bab3` first reaches the existing Development legacy-auth
+rejection and that the repair removes that condition. This replay does not start
+the server or execute the C# validator.
+
+The initial pre-PR check encounters an unrelated host-tool interaction in
+`EvidenceTests.test_evidence_io_does_not_reclassify_early_kill_as_timeout`:
+the lane's instrumented `sleep` adds about 1.8 seconds to a 0.01-second poll,
+crossing the fixture's two-second classification boundary. All eight evidence
+tests pass with native `/usr/bin/sleep` supplied through a temporary PATH entry.
+The original dotnet shim, build reservations and four-worker cap are retained;
+no fixture, assertion or timeout is changed.
+
+The supplementary Release `ConfigurationValidationServiceTests` command never
+acquires a shared build reservation and is canceled before build/test execution.
+No .NET pass is claimed. No managed project changed, so formatting is unnecessary.
+
 These checks establish the startup configuration repair and receipt validation;
 they do not establish a new live grpc-web certification result. This packet
 neither dispatches CI nor claims new live certification evidence. The full
