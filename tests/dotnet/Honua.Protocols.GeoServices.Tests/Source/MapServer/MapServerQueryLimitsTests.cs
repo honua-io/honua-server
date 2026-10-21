@@ -54,14 +54,21 @@ public sealed class MapServerQueryLimitsTests : IClassFixture<MapServerQueryLimi
         service!.MaxRecordCount.Should().Be(2);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90}", "-180,-90,180,90", "&sr=4326", 4326)]
+    [InlineData("{\"xmin\":-20037508,\"ymin\":-20037508,\"xmax\":20037508,\"ymax\":20037508}", "-20037508,-20037508,20037508,20037508", "", 3857)]
     [Operation(Operations.Identify)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithConfiguredMaxRecordCount_AppliesGlobalCap()
+    public async Task MapServer_Identify_WithConfiguredMaxRecordCount_AppliesGlobalCap(
+        string geometryJson,
+        string mapExtent,
+        string spatialReferenceParameter,
+        int expectedSrid)
     {
-        var geometry = Uri.EscapeDataString("{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90}");
+        // Degree inputs declare their CRS; omitted sr uses the advertised Web Mercator CRS.
+        var geometry = Uri.EscapeDataString(geometryJson);
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry={geometry}&geometryType=esriGeometryEnvelope&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=all&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry={geometry}&geometryType=esriGeometryEnvelope{spatialReferenceParameter}&mapExtent={mapExtent}&imageDisplay=800,600,96&layers=all&returnGeometry=true&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -69,6 +76,13 @@ public sealed class MapServerQueryLimitsTests : IClassFixture<MapServerQueryLimi
 
         identify.Should().NotBeNull();
         identify!.Results.Should().HaveCount(2);
+
+        using var document = JsonDocument.Parse(content);
+        foreach (var result in document.RootElement.GetProperty("results").EnumerateArray())
+        {
+            result.GetProperty("geometry").GetProperty("spatialReference").GetProperty("wkid")
+                .GetInt32().Should().Be(expectedSrid);
+        }
     }
 
     [IntegrationTest]
