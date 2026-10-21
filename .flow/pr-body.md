@@ -27,7 +27,7 @@ Fix-forward coverage is appropriate: the original repair is already on trunk and
 
 The artifact inventory was checked first; the shard TRX is no longer listed. Surviving historical job logs show [111/111 passing at the last green](https://github.com/honua-io/honua-server/actions/runs/38039717015/job/114177463775), then [103 passed / 9 failed at `79e37c7`](https://github.com/honua-io/honua-server/actions/runs/38046734917/job/114212285743) and [the same nine failures at `493edf3`](https://github.com/honua-io/honua-server/actions/runs/38048019858/job/114215518668).
 
-The [diagnosis comment](https://github.com/honua-io/honua-server/commit/493edf3b585c5fb67188113334906687fd442359#commitcomment-205888989) was read before further diagnosis, along with culprit PR #5764. Source comparison confirms the test file was unchanged at that landing and the relevant publish/proxy path was unchanged between that landing and the target. Attribution of the unexecuted `f65908a` midpoint is source-based; no new locally executed historical bisect is claimed.
+The [diagnosis comment](https://github.com/honua-io/honua-server/commit/493edf3b585c5fb67188113334906687fd442359#commitcomment-205888989) was read before further diagnosis, along with culprit PR #5764. Source comparison confirms the test file was unchanged at that landing and the relevant publish/proxy path was unchanged between that landing and the target. Attribution of the historical Tiles and Scenes failure at `f65908a` remains source-based. The local midpoint execution below covers the Runtime Operations theory; it does not claim a historical Tiles and Scenes test execution.
 
 ### Runtime operations attribution
 
@@ -57,7 +57,7 @@ timeout 90m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.cspro
 
 Result: **2 passed, 0 failed, 0 skipped**, with both named theory cases verified in TRX. `NuGetAudit=false` is limited to this historical diagnostic revision; no package or production policy was changed.
 
-Combined current-branch publishing verification and the final fast gate remain in progress. Initial 30-minute attempts expired during compilation without test results. The first combined fast gate exited 75 before building because the focused run held the worktree lock; it will be rerun sequentially. Final commands and results will be recorded before staged delivery.
+Combined current-branch publishing verification and the final fast gate remain in progress. Initial 30-minute attempts expired during compilation without test results. The first combined fast gate exited 75 before building because the focused run held the worktree lock; it will be rerun sequentially. The combined Release build subsequently completed, but its 90-minute wrapper expired during test execution without a complete TRX. The C# contents are unchanged from that compiled tree (only staged notes changed); the same two class filters are being retried with `--no-build`, normal console progress, and a separate test budget. Final commands and results will be recorded before staged delivery.
 
 ## Gate Impact
 
