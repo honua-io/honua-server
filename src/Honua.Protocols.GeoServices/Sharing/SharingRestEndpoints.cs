@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -524,24 +525,67 @@ public static class SharingRestEndpoints
             return gate;
         }
 
-        var principal = context.User;
-        var user = principal.Identity?.IsAuthenticated == true
-            ? new PortalUser
-            {
-                Username = ResolveUsername(principal),
-                FullName = ResolveDisplayName(principal),
-            }
-            : null;
+        var helpers = await BuildRoutingHelpersAsync(context, logger).ConfigureAwait(false);
+        var user = await BuildPortalUserAsync(context, helpers, logger).ConfigureAwait(false);
 
         var response = new PortalSelfResponse
         {
             Id = PortalId,
             Name = "Honua",
             User = user,
-            HelperServices = await BuildRoutingHelpersAsync(context, logger).ConfigureAwait(false),
+            HelperServices = helpers,
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.PortalSelfResponse, contentType: JsonContentType);
+    }
+
+    internal static async Task<PortalUser?> BuildPortalUserAsync(
+        HttpContext context, PortalHelperServices helpers, ILogger<SharingRestLog> logger)
+    {
+        var principal = context.User;
+        if (principal.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        var options = context.RequestServices.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions();
+        var privileges = Array.Empty<string>();
+        // These are discovery claims about the existing durable execution gate,
+        // not a second authorization policy or a grant of routing access.
+        if (helpers.AsyncRoute is not null)
+        {
+            try
+            {
+                var authorization = context.RequestServices.GetService<IOperatorAuthorizationEvaluator>();
+                var scopes = context.RequestServices.GetService<IOperatorScopeAuthorizer>();
+                if (authorization is not null && scopes is not null)
+                {
+                    var decision = await authorization.EvaluateAsync(principal, new OperatorAuthorizationRequest
+                    {
+                        ResourceType = OperatorResourceType.Process,
+                        Operation = OperatorOperation.Execute,
+                    }, context.RequestAborted).ConfigureAwait(false);
+                    if (decision.IsAllowed && scopes.Evaluate(principal,
+                            OperatorResourceType.Process, OperatorOperation.Execute).IsAllowed)
+                    {
+                        privileges = ["premium:user:networkanalysis"];
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+            {
+                SharingRestLog.RoutingHelpersUnavailable(logger, exception);
+            }
+        }
+
+        return new PortalUser
+        {
+            Username = ResolveUsername(principal),
+            FullName = ResolveDisplayName(principal),
+            OrgId = PortalId,
+            Role = RbacRoleClaims.IsAdmin(principal, options, context.RequestServices) ? "org_admin" : "org_user",
+            Privileges = privileges,
+        };
     }
 
     private static async Task<PortalHelperServices> BuildRoutingHelpersAsync(HttpContext context, ILogger<SharingRestLog> logger)
