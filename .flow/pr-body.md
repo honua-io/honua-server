@@ -65,8 +65,8 @@ An independent disposable PostgreSQL reproduction extracts each commit's exact s
 ### Verification
 
 - `python3 /home/mike/honua-io/artifacts/trunkred-a658-admin-network-jobs-bisect.py`: PASS, all eight expected SQL boundary outcomes; isolated container removed.
-- Focused Release xUnit verification and required pre-PR check: in progress.
-- The initial sandboxed restore hit NU1900 because NuGet's shared vulnerability cache was read-only. The same focused command was restarted with command escalation; no warning or audit suppression was added.
+- Focused Release xUnit verification and required pre-PR check: in progress. The required selector resolved 32 build roots / 105 closure projects, and restore passed for the entire closure.
+- The initial sandboxed restore hit NU1900 because NuGet's shared vulnerability cache was read-only. An escalated cold build then hit a WebCIL conversion memory-allocation failure in the referenced StacOpsDemo sample. Verification restarted with `DOTNET_PROCESSOR_COUNT=4` to bound SDK task concurrency; the lane shim still enforces `-maxCpuCount:4`, the build reservation, and Roslyn shared compilation. No warning, audit, analyzer, or sample-build suppression was added.
 
 ### Self-review
 
