@@ -38,9 +38,13 @@ Exact verification commands (queued; no local pass/fail verdict yet):
 ```bash
 dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj --configuration Release --filter FullyQualifiedName~MapServerQueryLimitsTests --logger 'trx;LogFileName=mapserver-query-limits.trx' --results-directory /tmp/honua-geoservices-6f74305-results
 scripts/ci/pre-pr-check.sh --fast
+NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj --configuration Release --filter FullyQualifiedName~MapServerIdentifyEndpointTests --logger 'trx;LogFileName=identify.trx' --results-directory /tmp/mapserver-identify-verification
+NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget scripts/ci/pre-pr-check.sh --fast
 ```
 
 Both commands use the PATH lane shim with its four-node cap and shared compilation enabled. The focused run acquired capacity and has restored the GeoServices test project and shared fixture. Its test verdict is pending. The first fast-check attempt validated capability completeness and selected 33 build roots, with full catalogue/proof enforcement because `.flow/pr-body.md` is an unclassified contract input, then exited 75 before managed validation while waiting for the same worktree reservation. It will be rerun after the focused command finishes. No test or managed-build success is claimed yet.
+
+Identify-lane progress: restore completed successfully and compilation is active. The initial fast check validated capability metadata and selected 33 build roots; its duplicate waiter was interrupted before managed validation so it can run sequentially after the focused test. No Identify test verdict is claimed yet.
 
 ## Self-review
 Reviewed the diff using `honua-flow-work/tools/lib/pr-review-rubric.md`: existing endpoint and fixture reused, original exact cap assertion retained, native/default CRS coverage added, no runtime, dependency, security, or public API changes. P0/P1: none found. P2/P3 follow-ups: none identified. Verification pending.
