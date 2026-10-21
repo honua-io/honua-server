@@ -28,6 +28,7 @@ internal sealed class RoutingJobExecutor(
 {
     public IReadOnlySet<string> ProcessIds { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
+        RoutingProcessDefinitions.Route,
         RoutingProcessDefinitions.ClosestFacilities, RoutingProcessDefinitions.OdCostMatrix, RoutingProcessDefinitions.LocationAllocation,
     };
 
@@ -90,7 +91,37 @@ internal sealed class RoutingJobExecutor(
             FeatureCollection first;
             FeatureCollection second;
 
-            if (processId == RoutingProcessDefinitions.ClosestFacilities)
+            if (processId == RoutingProcessDefinitions.Route)
+            {
+                Require(capabilities.SupportsRoute, "The routing provider does not support routes.");
+                Require(cutoff is null, "FindRoutes does not support an impedance cutoff.");
+                first = ReadPoints(inputs, "stops", configuration.Value.MaxStops);
+                Require(first.Count >= 2, "FindRoutes requires at least two stops.");
+                Require(first.All(feature => Attribute(feature, "RouteName") is null
+                    || string.IsNullOrEmpty(Attribute(feature, "RouteName")?.ToString())),
+                    "FindRoutes supports one ordered route, not grouped RouteName values.");
+                second = new FeatureCollection();
+                var request = new RouteSolveRequest(Points(first), OutSrid: outSrid)
+                { InSrid = inSrid, Barriers = barriers, TravelMode = mode };
+                var result = await routing.SolveRouteAsync(request, cancellationToken).ConfigureAwait(false);
+                solution = result.Solved
+                    ? [Feature(result.RouteGeometryGeoJson, ("ObjectID", 1),
+                        ("Name", $"{Name(first, 0)} - {Name(first, first.Count - 1)}"),
+                        ("Total_Minutes", result.TotalTimeMinutes), ("Total_TravelTime", result.TotalTimeMinutes),
+                        ("Total_Miles", result.TotalLengthMeters / 1609.344),
+                        ("Total_Kilometers", result.TotalLengthMeters / 1000), ("Total_Length", result.TotalLengthMeters))]
+                    : [];
+                if (solution.Count > 0)
+                {
+                    AddSelectedUnits(solution[0], result.TotalTimeMinutes, result.TotalLengthMeters,
+                        timeUnits, distanceUnits, minutesPerUnit, metersPerUnit);
+                }
+                for (var index = 0; index < first.Count; index++)
+                {
+                    SetAttribute(first[index], "Sequence", index + 1);
+                }
+            }
+            else if (processId == RoutingProcessDefinitions.ClosestFacilities)
             {
                 Require(capabilities.SupportsClosestFacility, "The routing provider does not support closest facilities.");
                 first = ReadPoints(inputs, "incidents", configuration.Value.MaxIncidents);
@@ -219,19 +250,22 @@ internal sealed class RoutingJobExecutor(
 
             var firstOutput = await ProjectInputsAsync(first, inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
             var secondOutput = await ProjectInputsAsync(second, inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
-            var payloads = new[]
+            var payloads = new List<byte[]>
             {
                 FeatureCollectionArtifact.WriteFeatureCollection(solution, processId),
                 FeatureCollectionArtifact.WriteFeatureCollection(firstOutput, processId),
-                FeatureCollectionArtifact.WriteFeatureCollection(secondOutput, processId),
-                Encoding.UTF8.GetBytes(solution.Count > 0 ? "true" : "false"),
             };
+            if (processId != RoutingProcessDefinitions.Route)
+            {
+                payloads.Add(FeatureCollectionArtifact.WriteFeatureCollection(secondOutput, processId));
+            }
+            payloads.Add(Encoding.UTF8.GetBytes(solution.Count > 0 ? "true" : "false"));
             Require(payloads.All(payload => payload.Length <= options.CurrentValue.MaxArtifactBytes), "Routing output exceeds MaxArtifactBytes.");
             // Encode/validate all outputs before publishing; provider failures cannot leave partial success artifacts.
-            for (var index = 0; index < payloads.Length; index++)
+            for (var index = 0; index < payloads.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var uri = index == 3 ? "data:application/json;base64," + Convert.ToBase64String(payloads[index])
+                var uri = index == payloads.Count - 1 ? "data:application/json;base64," + Convert.ToBase64String(payloads[index])
                     : FeatureCollectionArtifact.BuildDataUri(payloads[index]);
                 Require(await context.TryPublishArtifactAsync(uri, cancellationToken).ConfigureAwait(false), "Routing artifact publication lost its execution fence.");
             }

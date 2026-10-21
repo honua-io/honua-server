@@ -138,6 +138,7 @@ internal static class GPServerEsriTaskAliases
         // Data enrichment (#2283): the async batch enrichment job maps onto the
         // Esri "Enrich Layer" analysis tool convention.
         ["enrichment.enrich"] = "EnrichLayer",
+        ["routing.route"] = "FindRoutes",
         ["routing.closest-facilities"] = "FindClosestFacilities",
         ["routing.od-cost-matrix"] = "GenerateOriginDestinationCostMatrix",
         ["routing.location-allocation"] = "SolveLocationAllocation",

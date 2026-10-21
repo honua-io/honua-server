@@ -22,6 +22,7 @@ using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.GeocodeServer;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.Soap;
+using Honua.Routing.Features.Routing.Abstractions;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -837,6 +838,20 @@ internal static class GeoservicesCatalogEndpoints
                         : null
                 });
             }
+        }
+
+        var routing = context.RequestServices.GetService<IRoutingProvider>();
+        if (!featureMapOnly && routing is not null
+            && (serviceName is null || string.Equals(serviceName, GPServer.GPServerEndpoints.AsyncRouteServiceId, StringComparison.OrdinalIgnoreCase))
+            && (await routing.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false)).SupportsRoute
+            && await GPServer.GPServerEndpoints.CanPublishAsyncRouteAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            entries.Add(new ServiceDirectoryEntry
+            {
+                Name = GPServer.GPServerEndpoints.AsyncRouteServiceId,
+                Type = GPServerProtocolName,
+                Url = $"{baseUrl}/rest/services/{GPServer.GPServerEndpoints.AsyncRouteServiceId}/GPServer",
+            });
         }
 
         if (imageServerServices.Count > 0)

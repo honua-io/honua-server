@@ -547,6 +547,7 @@ public static class SharingRestEndpoints
     private static async Task<PortalHelperServices> BuildRoutingHelpersAsync(HttpContext context, ILogger<SharingRestLog> logger)
     {
         RoutingProviderCapabilities capabilities;
+        bool publishAsyncRoute;
         try
         {
             var routing = context.RequestServices.GetService<IRoutingProvider>();
@@ -556,6 +557,8 @@ public static class SharingRestEndpoints
             }
 
             capabilities = await routing.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
+            publishAsyncRoute = capabilities.SupportsRoute
+                && await GPServer.GPServerEndpoints.CanPublishAsyncRouteAsync(context, context.RequestAborted).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
         {
@@ -570,6 +573,10 @@ public static class SharingRestEndpoints
         var baseUrl = $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/rest/services/Routing/NAServer";
         return new PortalHelperServices
         {
+            AsyncRoute = publishAsyncRoute ? new PortalHelperService
+            { Url = $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/rest/services/RoutingRoute/GPServer" } : null,
+            RoutingUtilities = capabilities.SupportsRoute || capabilities.SupportsServiceArea ? new PortalHelperService
+            { Url = $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/rest/services/Routing/GPServer" } : null,
             Route = capabilities.SupportsRoute ? new PortalHelperService { Url = $"{baseUrl}/Route" } : null,
             ServiceArea = capabilities.SupportsServiceArea ? new PortalHelperService { Url = $"{baseUrl}/ServiceArea" } : null,
             ClosestFacility = capabilities.SupportsClosestFacility ? new PortalHelperService { Url = $"{baseUrl}/ClosestFacility" } : null,

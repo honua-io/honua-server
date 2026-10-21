@@ -20,6 +20,7 @@ internal static class RoutingAsyncWebTools
 
     private static readonly Dictionary<string, string> CommonInputs = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["Stops"] = "stops",
         ["Incidents"] = "incidents",
         ["Facilities"] = "facilities",
         ["Origins"] = "origins",
@@ -48,6 +49,7 @@ internal static class RoutingAsyncWebTools
 
     internal static string InputName(string canonicalName, string processId) => canonicalName switch
     {
+        "stops" => "Stops",
         "incidents" => "Incidents",
         "facilities" => "Facilities",
         "origins" => "Origins",
@@ -72,6 +74,7 @@ internal static class RoutingAsyncWebTools
 
     internal static string[] Outputs(string processId) => processId switch
     {
+        RoutingProcessDefinitions.Route => ["Output_Routes", "Output_Stops", "Solve_Succeeded"],
         RoutingProcessDefinitions.ClosestFacilities => ["Output_Routes", "Output_Incidents", "Output_Facilities", "Solve_Succeeded"],
         RoutingProcessDefinitions.OdCostMatrix => ["Output_Origin_Destination_Lines", "Output_Origins", "Output_Destinations", "Solve_Succeeded"],
         RoutingProcessDefinitions.LocationAllocation => ["Output_Allocation_Lines", "Output_Facilities", "Output_Demand_Points", "Solve_Succeeded"],
@@ -105,6 +108,16 @@ internal static class RoutingAsyncWebTools
             if (IsControl(name))
             {
                 translated[name] = value;
+                continue;
+            }
+            if (definition.ProcessId == RoutingProcessDefinitions.Route
+                && (name.Equals("Reorder_Stops_to_Find_Optimal_Routes", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("Reorder_Stops_to_Find_Optimal_Route", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!bool.TryParse(value, out var reorder) || reorder)
+                {
+                    throw new GeoprocessingValidationException("FindRoutes supports stops in input order only.");
+                }
                 continue;
             }
             var canonical = CommonInputs.GetValueOrDefault(name) ?? name;

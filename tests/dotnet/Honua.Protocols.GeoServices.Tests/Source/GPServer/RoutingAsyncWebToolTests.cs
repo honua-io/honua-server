@@ -3,12 +3,15 @@
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Geoprocessing;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -41,6 +44,67 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
 
     public Task InitializeAsync() => DeleteControlPlaneKeysAsync();
     public Task DisposeAsync() => DeleteControlPlaneKeysAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task FindRoutes_NewVirtualService_AdvertisesAndRunsAnAuthorizedDurableRoute()
+    {
+        var provider = Provider();
+        provider.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new RoutingProviderCapabilities(SupportsRoute: true));
+        provider.SolveRouteAsync(Arg.Any<RouteSolveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RouteSolveResult(RouteGeometry, 1234, 4, []));
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authorization.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.ArgAt<ClaimsPrincipal>(0).Identity?.IsAuthenticated == true
+                ? AccessDecision.Allowed() : AccessDecision.RequiresAuth()));
+        await using var fixture = Fixture(provider).ConfigureServices(services =>
+        {
+            services.RemoveAll<IOperatorAuthorizationEvaluator>();
+            services.AddSingleton(authorization);
+        });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        const string root = "/rest/services/RoutingRoute/GPServer";
+        using var directoryResponse = await client.GetAsync("/rest/services?f=json");
+        using var directory = JsonDocument.Parse(await directoryResponse.Content.ReadAsStringAsync());
+        directory.RootElement.GetProperty("services").EnumerateArray().Should().Contain(service =>
+            service.GetProperty("name").GetString() == "RoutingRoute" && service.GetProperty("type").GetString() == "GPServer");
+        using var portalResponse = await client.GetAsync("/sharing/rest/portals/self?f=json");
+        using var portal = JsonDocument.Parse(await portalResponse.Content.ReadAsStringAsync());
+        var helpers = portal.RootElement.GetProperty("helperServices");
+        helpers.GetProperty("asyncRoute").GetProperty("url").GetString().Should().EndWith(root);
+        helpers.GetProperty("routingUtilities").GetProperty("url").GetString().Should().EndWith("/rest/services/Routing/GPServer");
+        using var metadataResponse = await client.GetAsync(root + "/FindRoutes?f=json");
+        metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+        metadata.RootElement.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeAsynchronous");
+        using var synchronousResponse = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/FindRoutes?f=json");
+        using var synchronous = JsonDocument.Parse(await synchronousResponse.Content.ReadAsStringAsync());
+        synchronous.RootElement.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeSynchronous");
+        using var deniedInput = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json", ["Stops"] = "not-json" });
+        using var denied = await fixture.Client.PostAsync(root + "/FindRoutes/submitJob", deniedInput);
+        await denied.AssertGeoServicesErrorAsync(401, 499);
+        provider.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IRoutingProvider.SolveRouteAsync));
+        const string stops = """{"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[{"geometry":{"x":-122,"y":37},"attributes":{"OBJECTID":17,"Name":"Start"}},{"geometry":{"x":-121,"y":38},"attributes":{"OBJECTID":23,"Name":"End"}}]}""";
+        using var input = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json", ["Stops"] = stops });
+        using var submission = await client.PostAsync(root + "/FindRoutes/submitJob", input);
+        var submittedText = await submission.Content.ReadAsStringAsync();
+        submission.StatusCode.Should().Be(HttpStatusCode.OK, submittedText);
+        using var submitted = JsonDocument.Parse(submittedText);
+        var jobId = submitted.RootElement.GetProperty("jobId").GetString()!;
+        var jobPath = root + "/FindRoutes/jobs/" + jobId;
+        using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client, jobPath + "?f=json", jobId,
+            fixture.GetService<IExecutionJobStore>());
+        using var resultResponse = await client.GetAsync(jobPath + "/results/Output_Routes?f=json");
+        using var result = JsonDocument.Parse(await resultResponse.Content.ReadAsStringAsync());
+        result.RootElement.GetProperty("value").GetProperty("features")[0].GetProperty("attributes")
+            .GetProperty("Total_Minutes").GetDouble().Should().Be(4);
+        (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!.ArtifactReferences.Should().HaveCount(3);
+        await provider.Received(1).SolveRouteAsync(Arg.Is<RouteSolveRequest>(request => request.Stops.Count == 2
+            && request.Stops[0].Lon == -122 && request.Stops[1].Lon == -121), Arg.Any<CancellationToken>());
+    }
 
     private async Task DeleteControlPlaneKeysAsync()
     {

@@ -100,6 +100,14 @@ internal sealed record PortalSelfResponse
 /// <summary>Only synchronous solvers supported by the configured routing provider.</summary>
 internal sealed record PortalHelperServices
 {
+    [JsonPropertyName("asyncRoute")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? AsyncRoute { get; init; }
+
+    [JsonPropertyName("routingUtilities")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? RoutingUtilities { get; init; }
+
     [JsonPropertyName("route")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PortalHelperService? Route { get; init; }

@@ -15,6 +15,7 @@ namespace Honua.Geoprocessing;
 internal static class ProcessExecutionCapabilityCatalog
 {
     private static readonly FrozenSet<string> JobProcessIds = IdSet(
+        "routing.route",
         "routing.closest-facilities",
         "routing.od-cost-matrix",
         "routing.location-allocation",

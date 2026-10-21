@@ -18,6 +18,11 @@ internal static partial class GPServerEndpoints
     internal static async Task<IResult?> TryHandleRoutingSoapAsync(
         HttpContext context, XElement operation, XNamespace soap, CancellationToken ct)
     {
+        var asyncRoute = await TryHandleAsyncRouteSoapAsync(context, operation, soap, ct).ConfigureAwait(false);
+        if (asyncRoute is not null)
+        {
+            return asyncRoute;
+        }
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty;
         if (!IsRoutingUtilityService(serviceId) || await HasRoutingCatalogServiceAsync(context, ct).ConfigureAwait(false))
         {

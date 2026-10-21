@@ -214,6 +214,11 @@ internal static partial class GPServerEndpoints
         // Routing is the provider-level service also published by the portal's
         // helperServices. It has no feature-service catalog row; its GP root must
         // describe the same synchronous tools that already answer by name.
+        if (await IsVirtualAsyncRouteServiceAsync(context, ct).ConfigureAwait(false))
+        {
+            var routeValidation = await ValidateVirtualAsyncRouteAsync(context, ct).ConfigureAwait(false);
+            return routeValidation.IsValid ? AsyncRouteServiceInfo() : routeValidation.ErrorResult!;
+        }
         if (IsRoutingUtilityService(serviceId) &&
             !await HasRoutingCatalogServiceAsync(context, ct).ConfigureAwait(false))
         {
@@ -269,7 +274,7 @@ internal static partial class GPServerEndpoints
         // The utility tasks answer for every service id, like the NAServer solves they
         // describe: a stand-alone routing binding names a utilityUrl whose service id
         // need not publish any catalog task of its own.
-        if (NAServerMetadata.IsUtilityTask(taskName))
+        if (NAServerMetadata.IsUtilityTask(taskName) && !await IsVirtualAsyncRouteServiceAsync(context, ct).ConfigureAwait(false))
         {
             var routingError = await ValidateRoutingUtilityTaskAsync(context, taskName, ct).ConfigureAwait(false);
             if (routingError is not null)
@@ -319,7 +324,7 @@ internal static partial class GPServerEndpoints
 
         try
         {
-            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName) && !await IsVirtualAsyncRouteServiceAsync(context, ct).ConfigureAwait(false))
             {
                 // The utility tasks are synchronous by contract (Esri publishes them as
                 // esriExecutionTypeSynchronous); there is no job to enqueue.
@@ -465,7 +470,7 @@ internal static partial class GPServerEndpoints
 
         try
         {
-            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName) && !await IsVirtualAsyncRouteServiceAsync(context, ct).ConfigureAwait(false))
             {
                 // Read-only projection of the routing provider: no job, no job
                 // authorization, anonymous like the NAServer solves it describes, and
@@ -1343,21 +1348,25 @@ internal static partial class GPServerEndpoints
     // Shared helpers
     // -----------------------------------------------------------------------
 
-    internal static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
+    internal static async Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
         HttpContext context,
         string serviceId,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        if (await IsVirtualAsyncRouteServiceAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return await ValidateVirtualAsyncRouteAsync(context, cancellationToken).ConfigureAwait(false);
+        }
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        return ServiceResourceValidationHelpers.ValidateServiceV2Async(
+        return await ServiceResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
             ProtocolName,
             context,
             id => GPServerLog.ServiceNotFound(logger, id),
             requireServiceAccess: true,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1801,7 +1810,9 @@ internal static partial class GPServerEndpoints
             yield return GPServerTaskNames.Encode(process.ProcessId, encodingPrefix);
 
             var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);
-            if (alias != null && !processIds.Contains(alias))
+            // FindRoutes on ordinary services remains the existing synchronous
+            // utility. Its async alias is published only by RoutingRoute.
+            if (alias != null && process.ProcessId != RoutingProcessDefinitions.Route && !processIds.Contains(alias))
             {
                 yield return alias;
             }
