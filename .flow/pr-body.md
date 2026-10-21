@@ -11,7 +11,7 @@ The Admin Layer Management shard at `79e37c73c6abccc0856297081ce9f9203464ee7f` f
 ## Changes Made
 - Record the artifact-first diagnosis and verification of Admin Layer Management only.
 - Preserve the existing routable-source fixtures and refusal-without-upload assertions from #5784.
-- Preserve the earlier Operator Eval lane's incomplete checkpoint in [operator-eval-checkpoint.md](operator-eval-checkpoint.md). This packet does not claim that lane's coverage or that its pending local checks passed.
+- Preserve the earlier Operator Eval lane's incomplete checkpoint verbatim in `.flow/operator-eval-checkpoint.md`. This packet does not claim that lane's coverage or that its pending local checks passed.
 
 ## Diagnosis and Fix vs Revert
 Read the [family diagnosis](https://github.com/honua-io/honua-server/commit/79e37c73c6abccc0856297081ce9f9203464ee7f#commitcomment-205860371) and [culprit PR #5764](https://github.com/honua-io/honua-server/pull/5764) before investigation. Checked the artifact inventory for run 38046734917 first: no Admin Layer Management TRX remains; only unrelated operator-eval, MapLibre, image-build and SBOM artifacts survive. The shard artifacts had seven-day retention.
@@ -19,6 +19,12 @@ Read the [family diagnosis](https://github.com/honua-io/honua-server/commit/79e3
 The [completed rerun log](https://github.com/honua-io/honua-server/actions/runs/38046734917/job/114212284326) reports 103 passed / 1 failed / 104 total. The failure is `TileOperationJobServicePublishTests.ArchiveOrPublish_SharedStorageLayer_UsesRequestedServiceResourceMetadata(operation: "publish", serviceScoped: false, publicationLayerIndex: 7)`. It expected Completed but received Failed: `Publish could not bind the same routable source that generated the archive, so the object was not uploaded.`
 
 The first-parent range from the supplied last green `179d8e915c5f141ac973b770450d184561ef13fa` contains exactly #5764 (`f65908a6cf9ada5bad6f7800892d3ea227040c5c`), then #5761 (`79e37c73c6abccc0856297081ce9f9203464ee7f`). #5764 introduces the generation/upload source identity guard. The test's first storage-layer binding belongs to an unpublished resource, so the bare layer ID cannot resolve to a routable source. #5761 does not change this test, execution core, source resolver or metadata graph index. The supplied diagnosis records executed green/red CI results and source-based midpoint isolation; it does not claim an executed local midpoint. This packet likewise makes no new historical executable-bisect claim.
+
+An additional baseline attempt in `/home/mike/honua-io/wt-trunkred-79e37c7-admin-layer-bisect` at `179d8e915c5f141ac973b770450d184561ef13fa` reached restore but failed with NU1900 because the sandbox could not write NuGet's vulnerability cache. It was stopped (exit 143) before compilation. The same command retried with escalation was refused at worktree admission with `BUILD-RESERVATION-RECONCILE-REQUIRED` / `unclean guardian exit`; it was stopped (exit 143) without starting dotnet. No historical TRX was produced and the queued midpoint/red commands were not reached. No reservation was bypassed or rewritten. The focused historical command attempted was:
+
+```bash
+timeout 20m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~ArchiveOrPublish_SharedStorageLayer_UsesRequestedServiceResourceMetadata' --logger 'trx;LogFileName=179d8e915c5f141ac973b770450d184561ef13fa.trx' --results-directory /tmp/admin-layer-historical-results
+```
 
 Fix forward is already on trunk in #5784. Its fixture graph supplies routable bindings for ordinary unscoped publish cases, and the ambiguous shared-storage case explicitly requires failure with no upload. The archive and service-scoped cases still check the requested metadata and decoded tile payloads. Reverting #5764 now would remove a production security repair after the fixture fix has already landed. The regression is historical, so the fresh-red revert rule does not apply.
 
@@ -44,4 +50,6 @@ None.
 Pending final review against the PR reviewer's rubric after verification. No staged-success receipt has been written.
 
 ## Known Follow-ups
+P2 evidence follow-up: complete the historical executable bisect when the dedicated bisect worktree's build reservation can be reconciled. Attribution currently relies on the existing green/red CI executions and isolated source delta, not an executed local midpoint.
+
 The preserved Operator Eval checkpoint remains unverified by this packet. Other failed families belong to their own lanes.
