@@ -180,6 +180,10 @@ internal sealed record ContentUserResponse
 /// </summary>
 internal sealed record PortalUser
 {
+    /// <summary>The organization represented by this authenticated portal view.</summary>
+    [JsonPropertyName("orgId")]
+    public required string OrgId { get; init; }
+
     /// <summary>Username of the calling principal.</summary>
     [JsonPropertyName("username")]
     public required string Username { get; init; }
@@ -191,6 +195,10 @@ internal sealed record PortalUser
     /// <summary>Coarse role string for the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
+
+    /// <summary>Supported capabilities the current principal is authorized to execute.</summary>
+    [JsonPropertyName("privileges")]
+    public IReadOnlyList<string> Privileges { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
