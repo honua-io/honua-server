@@ -76,4 +76,5 @@ Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions 
 
 - P3: make the local architecture checker inspect actual base-type declarations instead of counting colon-space text. The reported inheritance concern is a reviewed false positive; no source change is needed here.
 
-Checkpoint: 2026-10-21T11:10:03+00:00 — the standard lane reservation for the combined verification driver remains queued; no runtime pass is claimed and no staged result receipt has been written.
+
+Checkpoint: 2026-10-21T11:27:22+00:00 — the first combined-driver reservation wait expired with retryable exit 75 before any command started. The identical driver is queued again with `HONUA_BUILD_SLOT_WAIT=14400` (wait only; capacity, ownership checks, CPU cap, and shared compilation unchanged). No runtime pass or staged result receipt is claimed.
