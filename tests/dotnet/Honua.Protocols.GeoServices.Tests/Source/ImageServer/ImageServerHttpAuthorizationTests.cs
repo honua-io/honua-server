@@ -104,9 +104,9 @@ public sealed class ImageServerHttpAuthorizationTests
         {
             await fixture.InitializeAsync();
 
-            fixture.UpdateV2ResourceMetadata(
-                LayerId,
-                accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
+            ImageServerRasterResourceAccess.Restrict(
+                fixture,
+                new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
 
             var entitled = await IssueAsync(fixture, "imagery-analyst", EntitledRole);
             var unentitled = await IssueAsync(fixture, "map-viewer", UnrelatedRole);
@@ -149,21 +149,10 @@ public sealed class ImageServerHttpAuthorizationTests
         try
         {
             await fixture.InitializeAsync();
-            var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
-            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
-            provider.SetGraph(graph with
-            {
-                Revision = graph.Revision + 1,
-                Resources = graph.Resources.Select(resource => resource.Metadata.Id == "res-image-test"
-                    ? resource with
-                    {
-                        AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] }
-                    }
-                    : resource).ToArray()
-            }, schema: fixture.CurrentSchema);
+            ImageServerRasterResourceAccess.Restrict(
+                fixture,
+                new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
             var restricted = fixture.GetCurrentV2GraphSnapshot().Graph;
-            restricted.Resources.Single(resource => resource.Metadata.Id == "res-image-test")
-                .AccessPolicy!.AllowedRoles.Should().Equal(EntitledRole);
             restricted.Services.Single(service => service.Metadata.Id == "svc-image-test")
                 .AccessPolicy.Should().BeNull("denial must be enforced by the raster resource, not a service gate");
             var entitled = await IssueAsync(fixture, "imagery-analyst", EntitledRole);
