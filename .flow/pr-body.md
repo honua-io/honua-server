@@ -59,10 +59,28 @@ A longer admission-wait retry also exited 75 before managed work; its ledger ent
 HONUA_BUILD_SLOT_WAIT=7200 timeout 240m scripts/ci/pre-pr-check.sh --fast
 ```
 
-The next retry increases both the queue-lock acquisition wait and admission wait. The shared four-slot capacity, four-node MSBuild cap, shared compilation and normal check selection remain unchanged:
+The queue-lock-wait retry completed dependency-graph evaluation, then was stopped at restore admission (exit 143) to avoid repeatedly joining the queue between gate steps. No managed build or test result is claimed from that attempt. Its command was:
 
 ```bash
 HONUA_BUILD_SLOT_QLOCK_WAIT=60 HONUA_BUILD_SLOT_WAIT=7200 timeout 240m scripts/ci/pre-pr-check.sh --fast
+```
+
+The current gate runs through a temporary MSBuild target that executes the unchanged fast-check script. Launching the target through the normal PATH `dotnet` shim keeps one canonical-worktree/global reservation for the complete gate. Nested dotnet calls retain the standard owner-token/ancestor validation, four-node cap and shared compiler. No source, test, gate selection or check is changed. The target file is outside the checkout:
+
+```xml
+<Project>
+  <Target Name="LanePrePrCheck">
+    <Exec
+      WorkingDirectory="/home/mike/honua-io/wt-trunkred-79e37c7-server-tests-server-features-admin-layer-management"
+      Command="bash scripts/ci/pre-pr-check.sh --fast" />
+  </Target>
+</Project>
+```
+
+Exact launcher command (normal host command escalation):
+
+```bash
+HONUA_BUILD_SLOT_QLOCK_WAIT=60 HONUA_BUILD_SLOT_WAIT=7200 timeout 240m dotnet msbuild src/Honua.Server/Honua.Server.csproj -target:LanePrePrCheck -p:Configuration=Release -p:CustomBeforeMicrosoftCommonTargets=/tmp/admin-layer-fast-check.targets /v:minimal
 ```
 
 ## Gate Impact
