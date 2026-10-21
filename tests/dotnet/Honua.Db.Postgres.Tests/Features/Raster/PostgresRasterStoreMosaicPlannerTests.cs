@@ -25,7 +25,7 @@ public sealed class PostgresRasterStoreMosaicPlannerTests
         await using var batch = PostgresRasterStore.CreateScopedNearestMosaicBatch(command);
         batch.EnableErrorBarriers.Should().BeFalse("SET LOCAL and SELECT must share one implicit transaction");
         batch.Timeout.Should().Be(command.CommandTimeout);
-        batch.BatchCommands.Should().HaveCount(2);
+        batch.BatchCommands.Count.Should().Be(2);
         batch.BatchCommands[0].CommandText.Should().Be("SELECT pg_catalog.set_config('jit', 'off', true)");
         batch.BatchCommands[1].CommandText.Should().Be("/* honua:framed-nearest-mosaic-jit-off */\n" + command.CommandText);
         command.Parameters.Should().HaveCount(3, "cloning must not remove the original parameters");
