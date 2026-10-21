@@ -46,7 +46,7 @@ python3 /tmp/trunkred-a6581e4-core-validate-bisect.py
 
 The harness executes `dotnet test /tmp/trunkred-a6581e4-core-bisect/ReaderBisect.csproj --configuration Release --filter FullyQualifiedName~EsriTileCachePackageReaderTests --logger 'trx;LogFileName=<commit>.trx' --results-directory /tmp/trunkred-a6581e4-core-bisect/results` for each table entry. TRX files and per-commit logs are under `/tmp/trunkred-a6581e4-core-bisect/`.
 
-Pre-PR progress checkpoint: restore succeeded for the selected 105-project closure. Core, the corrected Core test assembly, database providers, protocol modules, and the sample Blazor project have compiled; the remaining dependency build is ongoing without reported errors. The pre-PR result and final focused rerun after the square-tile fixture correction are pending.
+Pre-PR progress checkpoint: restore succeeded for the selected 105-project closure. Core, the corrected Core test assembly, database providers, protocol modules, and the sample Blazor project have compiled; additional OData, Scene, OGC API, and GeoServices component test assemblies have also compiled. The remaining dependency build is ongoing without reported errors. The pre-PR result and final focused rerun after the square-tile fixture correction are pending.
 
 ## Testing
 - [x] Unit tests added/updated
