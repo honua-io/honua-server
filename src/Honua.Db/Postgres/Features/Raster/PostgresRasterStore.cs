@@ -2288,7 +2288,21 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, name, value);
         }
 
-        await using var reader = await ExecuteRasterExportReaderAsync(command, cancellationToken).ConfigureAwait(false);
+        // The corrected nearest frame contains multiple fallback expressions. PostgreSQL can
+        // spend the entire request budget JIT-compiling those expressions even for a tiny
+        // mosaic. Match the scoped planner-read batch used by the feature reader: SET LOCAL
+        // and the unchanged SELECT share one implicit transaction, including reader disposal,
+        // SQL errors and cancellation. Caller-owned transactions keep their original policy.
+        await using var scopedBatch = frameClipExtent
+            && query.OutputFormat == RasterFormat.Raw
+            && query.ResamplingAlgorithm == ResamplingAlgorithm.NearestNeighbor
+            && command.Transaction is null
+            && System.Transactions.Transaction.Current is null
+                ? CreateScopedNearestMosaicBatch(command)
+                : null;
+        await using var reader = scopedBatch is null
+            ? await ExecuteRasterExportReaderAsync(command, cancellationToken).ConfigureAwait(false)
+            : await ExecuteScopedNearestMosaicReaderAsync(scopedBatch, cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return new RasterResult
@@ -5132,6 +5146,55 @@ internal sealed class PostgresRasterStore : IRasterStore
         // native resolutions or grid origins, so each input is put on one shared grid first
         // (honua-server#4792); aligned inputs pass through unchanged.
         => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort, alignToSourceCte: "source");
+
+    internal static NpgsqlBatch CreateScopedNearestMosaicBatch(DbCommand command)
+    {
+        var connection = command.Connection
+            ?? throw new InvalidOperationException("The mosaic command must have an open connection.");
+        var query = new NpgsqlBatchCommand("/* honua:framed-nearest-mosaic-jit-off */\n" + command.CommandText);
+        foreach (NpgsqlParameter parameter in command.Parameters)
+        {
+            // Parameters cannot belong to two commands. Clone their full PostgreSQL typing,
+            // names and values; do not rebuild geometry/array parameters through inference.
+            query.Parameters.Add(parameter.Clone());
+        }
+
+        var batch = new NpgsqlBatch(connection.RequireNpgsqlConnection())
+        {
+            EnableErrorBarriers = false,
+            Timeout = command.CommandTimeout
+        };
+        batch.BatchCommands.Add(new NpgsqlBatchCommand("SELECT pg_catalog.set_config('jit', 'off', true)"));
+        batch.BatchCommands.Add(query);
+        return batch;
+    }
+
+    internal static async Task<DbDataReader> ExecuteScopedNearestMosaicReaderAsync(
+        NpgsqlBatch batch, CancellationToken cancellationToken)
+    {
+        var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadScopedNearestMosaicResultAsync(reader, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<DbDataReader> ReadScopedNearestMosaicResultAsync(
+        DbDataReader reader, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // The first result belongs to set_config; callers consume only the raster SELECT.
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("The scoped mosaic batch did not return a raster result.");
+            }
+
+            return reader;
+        }
+        catch
+        {
+            await reader.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
 
     private static async Task<DbDataReader> ExecuteRasterExportReaderAsync(
         DbCommand command,
