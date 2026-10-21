@@ -1,4 +1,4 @@
-test(geoprocessing): verify the repaired operator eval import fixture
+docs(ci): record operator eval repair and verification limits
 
 # COVERS: Server Tests (Operator Eval Harness)
 
@@ -24,7 +24,25 @@ Both surviving `operator-eval-report` artifacts (11668570973 and 11670191040) re
 - [ ] Focused import-job integration tests completed
 - [ ] `scripts/ci/pre-pr-check.sh --fast` passed
 
-Verification is in progress. No local passing test or completed empirical bisect is claimed by this checkpoint.
+Local verification has not completed. The first current-trunk focused attempt exhausted its 25-minute outer timeout before compilation (exit 124). A bounded retry returned exit 75: `dotnet shim: reservation unavailable; command not started (retryable)`. The midpoint attempt at `f65908a6cf` exhausted 20 minutes before compilation (exit 124). No local TRX was produced. The red-landing attempt and bounded fast-gate retry are still pending at this checkpoint. The first fast-gate attempt passed instruction/routing checks, selected 32 projects and full architecture enforcement, then waited at dependency-graph admission; it was stopped (exit 143) for a bounded retry. This is an incomplete verification checkpoint, not a staged delivery.
+
+Commands attempted from the named worktrees:
+
+```bash
+# Delivery worktree: /home/mike/honua-io/wt-trunkred-79e37c7-server-tests-operator-eval-harness
+timeout 25m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~ImportDatasetJobExecutorTests' --logger 'trx;LogFileName=operator-import-current.trx' --results-directory /tmp/operator-eval-repair-results
+HONUA_BUILD_SLOT_WAIT=120 timeout 4m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~ImportDatasetJobExecutorTests' --logger 'trx;LogFileName=operator-import-retry.trx' --results-directory /tmp/operator-eval-repair-results
+timeout 90m scripts/ci/pre-pr-check.sh --fast
+HONUA_BUILD_SLOT_WAIT=120 timeout 8m scripts/ci/pre-pr-check.sh --fast
+
+# Detached bisect worktree: /home/mike/honua-io/wt-trunkred-79e37c7-operator-bisect
+# At f65908a6cf9ada5bad6f7800892d3ea227040c5c:
+timeout 20m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~ImportDatasetJobExecutorTests.ExecuteAsync_StagedGeoJson_ImportsFlattensRefreshesAndRecordsProvenance' --logger 'trx;LogFileName=midpoint.trx' --results-directory /tmp/operator-eval-bisect-results
+# At 79e37c73c6abccc0856297081ce9f9203464ee7f:
+timeout 10m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~ImportDatasetJobExecutorTests.ExecuteAsync_StagedGeoJson_ImportsFlattensRefreshesAndRecordsProvenance' --logger 'trx;LogFileName=red.trx' --results-directory /tmp/operator-eval-bisect-results
+```
+
+All managed commands used PATH `dotnet`, the lane admission shim, shared compilation and its unchanged four-node cap. No project source changed and no formatter was required.
 
 ## Gate Impact
 - [x] PR gates (build, test, governance): historical Operator Eval Harness regression evidence only
