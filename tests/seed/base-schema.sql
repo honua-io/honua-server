@@ -174,7 +174,8 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
     band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
     pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
-    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED,
+    second_band_is_alpha BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Store the raster payload EXTERNAL (out-of-line, UNCOMPRESSED) so dynamic
