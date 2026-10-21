@@ -230,6 +230,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var point = expectedResults[0].GetProperty("geometry");
         point.GetProperty("x").GetDouble().Should().BeApproximately(-13636637.62, 1);
         point.GetProperty("y").GetDouble().Should().BeApproximately(4509031.39, 1);
+        point.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
 
         async Task<JsonDocument> RequestAsync(bool includeSrid)
         {

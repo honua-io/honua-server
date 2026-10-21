@@ -1,6 +1,6 @@
-test(mapserver): cover identify cap in the advertised CRS
+test(mapserver): verify Identify CRS defaults, precedence, and limits
 
-# COVERS: Server Tests (GeoServices Geometry VectorTile and Versioning)
+# COVERS: Server Tests (GeoServices Geometry VectorTile and Versioning); Server Tests (GeoServices MapServer Identify)
 
 ## Issue Link
 Refs #5884 (the original family repair landed in #5887; this adds endpoint regression coverage for the advertised default CRS).
@@ -10,10 +10,14 @@ The historical shard at `6f7430587a1a8283f7e95de86c38908a3cb2ed9d` failed only `
 
 Preserve that fix forward and extend its regression test to exercise a Web Mercator envelope without `sr`. Both cases must return exactly two results and geometries in the requested/default CRS. No runtime change or revert is needed. The regression predates multiple trailing heads and eleven landings separate the supplied green and red heads; reverting the broad culprit would also discard unrelated protocol corrections.
 
+The Identify family independently had 15 failures (35 passes) at the same head: degree-coordinate GET/POST, point-literal baseline, JSON mapExtent, time override, and gdbVersion fixtures omitted `sr`. #5887 declares `sr=4326` in those fixtures, and #5893 adds omitted-SR Web Mercator endpoint coverage. This packet preserves both landed repairs and strengthens the latter coverage.
+
 ## Changes Made
 - Retain the degree-coordinate cap case with explicit EPSG:4326.
 - Add an omitted-SR EPSG:3857 envelope case under the same two-result global cap.
 - Assert every returned geometry uses the expected SRID.
+- Add four GET/POST endpoint cases proving explicit `sr` overrides geometry CRS and `latestWkid` overrides `wkid`, including exact feature coordinates and returned CRS.
+- Require the existing omitted-SR GET/POST cases to report `wkid=3857`, in addition to projected coordinates.
 
 ## Diagnosis Evidence
 - [Family diagnosis](https://github.com/honua-io/honua-server/commit/6f7430587a1a8283f7e95de86c38908a3cb2ed9d#commitcomment-205859368) read before local investigation, together with culprit PR #5835.
@@ -21,6 +25,8 @@ Preserve that fix forward and extend its regression test to exercise a Web Merca
 - [Retained target job log](https://github.com/honua-io/honua-server/actions/runs/38158644558/job/114539712856) confirms 275 passes and the one cap assertion failure.
 - The cap test blob is identical (`7772c9cb7c6efe8e40ec7875baad78f50f26a4de`) at the supplied green and every first-parent landing through the red head. The native-service fallback remains through `8b45637322`, then changes to `CachedMapSpatialReferenceId` at #5835 and remains there through the red head. These are source comparisons, not local runtime verdicts.
 - Historical local test results: pending.
+
+Identify-family diagnosis: [commit comment](https://github.com/honua-io/honua-server/commit/6f7430587a1a8283f7e95de86c38908a3cb2ed9d#commitcomment-205857884) and [culprit PR #5835](https://github.com/honua-io/honua-server/pull/5835) read before investigation. Artifact inventory was checked first; artifact `11710678770` is no longer downloadable. [Retained target logs](https://github.com/honua-io/honua-server/actions/runs/38158644558/job/114539712938) confirm 50 total, 35 passed, 15 failed. The diagnosis records the same 15 failures in the culprit PR test execution (despite its report-only green job conclusion) and intermediate trunk. This packet does not claim a completed local historical runtime bisect.
 
 ## Testing
 - [ ] Integration tests updated and focused Release class passes.
