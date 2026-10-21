@@ -46,7 +46,7 @@ python3 /tmp/trunkred-a6581e4-core-validate-bisect.py
 
 The harness executes `dotnet test /tmp/trunkred-a6581e4-core-bisect/ReaderBisect.csproj --configuration Release --filter FullyQualifiedName~EsriTileCachePackageReaderTests --logger 'trx;LogFileName=<commit>.trx' --results-directory /tmp/trunkred-a6581e4-core-bisect/results` for each table entry. TRX files and per-commit logs are under `/tmp/trunkred-a6581e4-core-bisect/`.
 
-Pre-PR progress checkpoint: the selected 105-project Release build completed with zero errors. Two MSB3026 asset-copy warnings resolved on retry; copied assets match package originals by SHA-256. The final focused reader run passed 33/33, including all eight new cases. The script stopped after its initial 20-minute format-verification timeout and successful fix pass, which changed no files. Direct scoped format verification and the script-selected remaining checks are in progress.
+Pre-PR progress checkpoint: the selected 105-project Release build completed with zero errors. Two MSB3026 asset-copy warnings resolved on retry; copied assets match package originals by SHA-256. The final focused reader run passed 33/33, including all eight new cases. The script stopped after its initial 20-minute format-verification timeout and successful fix pass, which changed no files. Direct scoped format verification passed with zero changed files. The script-selected test actions are running with identical filters and concurrency. The lane churn wrapper rejects the script's trailing `-- RunConfiguration.MaxCpuCount=1`; the SDK-supported equivalent `-p:VSTestCLIRunSettings=RunConfiguration.MaxCpuCount=1` preserves that setting without bypassing the lane locks or build cap.
 
 ## Testing
 - [x] Unit tests added/updated
