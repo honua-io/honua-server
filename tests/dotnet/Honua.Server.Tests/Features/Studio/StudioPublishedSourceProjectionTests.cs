@@ -183,7 +183,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
     public async Task LocatorBinding_ResolvesPackageSourceIdToTheCanonicalLayer()
     {
         var url = await PublishBodyAsync(PackageBody(
-            layers: [new { id = "layer-7", sourceId = "parcels", type = "fill", visible = true }],
+            layers: new[] { new { id = "layer-7", sourceId = "parcels", type = "fill", visible = true } },
             sourceBindings: new[]
             {
                 new
@@ -230,7 +230,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
             Services = [service with { Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer] }],
         });
         var url = await PublishBodyAsync(PackageBody(
-            layers: [new { id = "layer-7", sourceId = "parcels", type = "fill", visible = true }],
+            layers: new[] { new { id = "layer-7", sourceId = "parcels", type = "fill", visible = true } },
             sourceBindings: new[]
             {
                 new
