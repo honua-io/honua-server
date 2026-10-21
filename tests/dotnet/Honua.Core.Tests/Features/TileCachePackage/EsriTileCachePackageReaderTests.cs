@@ -158,6 +158,44 @@ public sealed class EsriTileCachePackageReaderTests
         descriptor.MaxLevel.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("<X>-20037508.342789244</X><Y>20037508.342789244</Y>", false)]
+    [InlineData("<X>-20037508.342789244</X><Y>20037508.342789244</Y>", true)]
+    [InlineData("<Y>20037508.342789244</Y><X>-20037508.342789244</X>", false)]
+    [InlineData("<Y>20037508.342789244</Y><X>-20037508.342789244</X>", true)]
+    [InlineData("-20037508.342789244 20037508.342789244", false)]
+    [InlineData("-20037508.342789244 20037508.342789244", true)]
+    [InlineData("<![CDATA[-20037508.342789244 20037508.342789244]]>", false)]
+    [InlineData("<![CDATA[-20037508.342789244 20037508.342789244]]>", true)]
+    public async Task ReadDescriptor_AdjacentSchemeElements_PreservesOriginAndLods(string tileOrigin, bool scaleOnly)
+    {
+        // Non-default size and non-contiguous levels expose skipped TileCols/LODInfo
+        // siblings as well as skipped coordinates and Resolution/Scale elements.
+        var lodInfos = string.Concat(new[] { 3, 5 }.Select(level =>
+        {
+            var resolution = double.Parse(Resolution(3857, level), CultureInfo.InvariantCulture) / 2d;
+            var value = scaleOnly
+                ? $"<Scale>{(resolution * 96d / 0.0254d).ToString("R", CultureInfo.InvariantCulture)}</Scale>"
+                : $"<Resolution>{resolution.ToString("R", CultureInfo.InvariantCulture)}</Resolution>";
+            return $"<LODInfo><LevelID>{level}</LevelID>{value}</LODInfo>";
+        }));
+        using var package = BuildExplodedPackage(
+            spatialReference: "<WKID>2263</WKID><LatestWKID>3857</LatestWKID>",
+            tileOrigin: tileOrigin,
+            tileCols: 512,
+            lodInfos: lodInfos);
+
+        var descriptor = await new EsriTileCachePackageReader().ReadDescriptorAsync(package);
+
+        descriptor.Wkid.Should().Be(3857);
+        descriptor.TileSize.Should().Be(512);
+        descriptor.TileMatrixSetIdentifier.Should().Be("WebMercatorQuad");
+        descriptor.ContentType.Should().Be("image/jpeg");
+        descriptor.MinLevel.Should().Be(3);
+        descriptor.MaxLevel.Should().Be(5);
+    }
+
     [UnitTest]
     public async Task ReadDescriptor_EmptyOriginCoordinate_IsRejected()
     {
@@ -486,8 +524,14 @@ public sealed class EsriTileCachePackageReaderTests
         return buffer;
     }
 
-    private static MemoryStream BuildExplodedPackage(string? spatialReference = null, string? tileOrigin = null)
+    private static MemoryStream BuildExplodedPackage(
+        string? spatialReference = null,
+        string? tileOrigin = null,
+        int tileCols = 256,
+        string? lodInfos = null)
     {
+        lodInfos ??= string.Concat(Enumerable.Range(0, 3).Select(level =>
+            $"<LODInfo><LevelID>{level}</LevelID><Resolution>{Resolution(3857, level)}</Resolution></LODInfo>"));
         var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -496,14 +540,10 @@ public sealed class EsriTileCachePackageReaderTests
                 <CacheInfo>
                   <TileCacheInfo>
                     <SpatialReference>{{spatialReference ?? "<WKID>3857</WKID>"}}</SpatialReference>
-                    <TileCols>256</TileCols>
+                    <TileCols>{{tileCols}}</TileCols>
                     <TileRows>256</TileRows>
                     <TileOrigin>{{tileOrigin ?? "<X>-20037508.342789244</X><Y>20037508.342789244</Y>"}}</TileOrigin>
-                    <LODInfos>
-                      <LODInfo><LevelID>0</LevelID><Resolution>{{Resolution(3857, 0)}}</Resolution></LODInfo>
-                      <LODInfo><LevelID>1</LevelID><Resolution>{{Resolution(3857, 1)}}</Resolution></LODInfo>
-                      <LODInfo><LevelID>2</LevelID><Resolution>{{Resolution(3857, 2)}}</Resolution></LODInfo>
-                    </LODInfos>
+                    <LODInfos>{{lodInfos}}</LODInfos>
                   </TileCacheInfo>
                   <TileImageInfo><CacheTileFormat>JPEG</CacheTileFormat></TileImageInfo>
                   <CacheStorageInfo><StorageFormat>esriMapCacheStorageModeExploded</StorageFormat></CacheStorageInfo>
