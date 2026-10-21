@@ -10,6 +10,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 public sealed class RouteOutputProjectionMetadataNewTests
 {
+    private static readonly string[] ExpectedRouteFields = ["Name", "Total_Minutes", "Total_Kilometers"];
+
     [UnitTest]
     public void FindRoutes_AdvertisesProjectedEmptyOutputsInRestAndSoapMetadata()
     {
@@ -37,6 +39,6 @@ public sealed class RouteOutputProjectionMetadataNewTests
         task.Parameters!.Single(p => p.Name == "Solve_Succeeded").DefaultValue.Should().BeNull();
         var routeFields = task.Parameters!.Single(p => p.Name == "Output_Routes").DefaultValue!.Value
             .GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString());
-        routeFields.Should().Contain(new[] { "Name", "Total_Minutes", "Total_Kilometers" });
+        routeFields.Should().Contain(ExpectedRouteFields);
     }
 }
