@@ -24,7 +24,7 @@ Both surviving `operator-eval-report` artifacts (11668570973 and 11670191040) re
 - [ ] Focused import-job integration tests completed
 - [ ] `scripts/ci/pre-pr-check.sh --fast` passed
 
-Local verification has not completed. The first current-trunk focused attempt exhausted its 25-minute outer timeout before compilation (exit 124). A bounded retry returned exit 75: `dotnet shim: reservation unavailable; command not started (retryable)`. The midpoint attempt at `f65908a6cf` exhausted 20 minutes before compilation (exit 124). No local TRX was produced. The red-landing attempt and bounded fast-gate retry are still pending at this checkpoint. The first fast-gate attempt passed instruction/routing checks, selected 32 projects and full architecture enforcement, then waited at dependency-graph admission; it was stopped (exit 143) for a bounded retry. This is an incomplete verification checkpoint, not a staged delivery.
+Local verification has not completed. The first current-trunk focused attempt exhausted its 25-minute outer timeout before compilation (exit 124). A bounded retry returned exit 75: `dotnet shim: reservation unavailable; command not started (retryable)`. The midpoint attempt at `f65908a6cf` exhausted 20 minutes before compilation (exit 124). No local TRX was produced. The red-landing attempt at `79e37c73c6` also exhausted its 10-minute timeout before compilation (exit 124). The bounded fast-gate retry exited 75 at dependency-graph admission with the same reservation-unavailable message; no restore, build, format, unit, architecture, or focused integration test completed. The first fast-gate attempt passed instruction/routing checks, selected 32 projects and full architecture enforcement, then waited at dependency-graph admission; it was stopped (exit 143) for a bounded retry. This is an incomplete verification checkpoint, not a staged delivery.
 
 Commands attempted from the named worktrees:
 
@@ -57,7 +57,9 @@ All managed commands used PATH `dotnet`, the lane admission shim, shared compila
 None.
 
 ## Self-review
-Pending the final verification results. Review scope is this handoff diff against latest trunk, using the PR reviewer rubric.
+Completed one review round against `origin/trunk` using the PR reviewer rubric. No P0/P1 findings; no P2/P3 findings. The diff changes only this handoff file. Checked the historical attribution, existing fixture repair, exact attempted commands, exit statuses, unchanged security policy, commit identity and absence of runtime/test changes. `git diff --check origin/trunk...HEAD` passed. The local verification failure is explicitly recorded and prevents staged delivery.
 
 ## Known follow-ups
-None identified so far. The other failing matrix families belong to their separate lanes; this packet makes no coverage claim for them.
+No P2/P3 code follow-ups. Local `scripts/ci/pre-pr-check.sh --fast` and the focused `ImportDatasetJobExecutorTests` run must complete when build capacity is available before this packet can be marked verified. The historical empirical bisect remains incomplete. The other failing matrix families belong to their separate lanes; this packet makes no coverage claim for them.
+
+This is a backed-up, incomplete checkpoint. No PR was opened, no CI was polled, and no staged-success JSON was written. The existing runtime/fixture repair is already on trunk in #5772; this checkpoint must not be presented as a newly implemented or locally verified fix.
