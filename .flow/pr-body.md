@@ -33,7 +33,14 @@ Identify-family diagnosis: [commit comment](https://github.com/honua-io/honua-se
 - [ ] `scripts/ci/pre-pr-check.sh --fast` passes.
 - [ ] Changed-project formatting verified.
 
-Exact verification commands and results: pending.
+Exact verification commands (queued; no local pass/fail verdict yet):
+
+```bash
+dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj --configuration Release --filter FullyQualifiedName~MapServerQueryLimitsTests --logger 'trx;LogFileName=mapserver-query-limits.trx' --results-directory /tmp/honua-geoservices-6f74305-results
+scripts/ci/pre-pr-check.sh --fast
+```
+
+Both commands use the PATH lane shim with its four-node cap and shared compilation enabled. The test waits for global build capacity; the fast check has validated capability completeness and selected 33 build roots, with full catalogue/proof enforcement because `.flow/pr-body.md` is an unclassified contract input. No test or managed-build success is claimed while admission remains pending.
 
 ## Self-review
 Reviewed the diff using `honua-flow-work/tools/lib/pr-review-rubric.md`: existing endpoint and fixture reused, original exact cap assertion retained, native/default CRS coverage added, no runtime, dependency, security, or public API changes. P0/P1: none found. P2/P3 follow-ups: none identified. Verification pending.
