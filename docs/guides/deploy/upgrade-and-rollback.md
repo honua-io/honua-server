@@ -200,6 +200,7 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 - a named preset is not supported, even alongside explicit query overrides;
 - telemetry parameters are set without `telemetry.connection` (outside the `health-only` profile), or the connection is not configured under `ControlPlane__TelemetryConnections`;
 - error-rate or latency signals have no sample floor (`telemetry.sample_count.query` + `telemetry.sample_count.minimum`);
+- `telemetry.error_rate.query` and `telemetry.error_count.query` are both set, or `telemetry.error_count.query` is set on a connection whose provider is not CloudWatch or Azure Monitor;
 - `telemetry.max_staleness_seconds` is set on a CloudWatch or Azure Monitor connection. Only Prometheus checks each sample's observation time; the other providers query a fixed 300-second window, so the bound would be ignored;
 - the rollout splits traffic (a canary weight or ramp) but its metrics are aggregate. Set `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job`, a canary preset, or explicit candidate-scoped queries, so the stable revision's traffic cannot mask a failing candidate;
 - probe settings or golden-query expectations are set without their URL, or `telemetry.healthz.failure_threshold` exceeds `telemetry.healthz.samples`;
@@ -208,9 +209,22 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 
 At runtime, a reading only counts as evidence when it is present, finite, non-negative, from a single series or row, and fresh. Empty results, `NaN`/`±Inf`, negative values, multi-series or multi-row answers, samples below the sample floor, and samples whose timestamp is further from now than the freshness bound all hold the rollout. None of them ever satisfies the gate.
 
+There is one bounded exception, for error counts. AWS publishes ALB `HTTPCode_Target_5XX_Count` / `HTTPCode_ELB_5XX_Count` and Lambda `Errors` datapoints only for periods that had errors, so a healthy candidate has no error series at all. `FILL(…, 0)` does not help, because a `SEARCH` that matches no metric returns no series to fill. For that case, set `telemetry.error_count.query` instead of `telemetry.error_rate.query`. The gate then divides the count by the sample count read for the same 300-second window and compares the ratio against `telemetry.error_rate.threshold`. When the count query completes and matches no series (CloudWatch) or no rows (Azure Monitor) **and** the sample count meets the floor, the count is read as zero. The decision message records that substitution, for example `error-count series absent for a window with 240 samples (floor 20); read as 0 errors`. Everything else still holds:
+
+| Error-count read | Sample-count read | Decision |
+|---|---|---|
+| A value | Meets the floor | The rate is count ÷ samples, compared against the threshold. |
+| No series or rows, query complete | Meets the floor | 0 errors: the error signal passes. |
+| No series or rows, query complete | Empty, multi-series, non-finite or below the floor | Hold. Missing traffic evidence is never read as healthy. |
+| Partial or failed result (CloudWatch `PartialData`, `InternalError` or a paged answer; an Azure Monitor `PartialError`) | Any | Hold, as missing evidence. |
+| Any | Not configured | Rejected at plan time: an error count needs the sample floor. |
+
+The substitution never applies to `telemetry.error_rate.query`, because an empty ratio cannot tell no errors from no traffic, and no preset uses it. The Prometheus presets reach the same result inside PromQL with `or vector(0)`.
+
 | Parameter | Default | Purpose |
 |---|---|---|
 | `telemetry.max_staleness_seconds` | `300` | Freshness bound for Prometheus samples, in (0, 3600]. CloudWatch and Azure Monitor read only the last 300 seconds and reject this key at plan time. |
+| `telemetry.error_count.query` | — (none) | CloudWatch metric-math or Azure Monitor KQL query for the error *count* over the window, used in place of `telemetry.error_rate.query`. Divided by the sample count; an empty result with the sample floor met reads as 0 errors. Needs `telemetry.error_rate.threshold` and the sample floor. |
 | `telemetry.warmup_seconds` | preset (`120` for `honua-http`) | Bake time after the candidate first receives traffic, in (0, 21600]. |
 | `telemetry.evidence_grace_seconds` | `900` | How long missing or invalid evidence (provider outage, unconfigured connection, stale or ambiguous data, unreachable probe) is tolerated after warmup before the rollout is rolled back, in (0, 3600]. |
 | `telemetry.exposure_deadline_seconds` | `1800` | How long a submitted rollout may wait for the candidate to receive traffic. Past it, the rollout is rolled back without the candidate ever being activated. In (0, 7200]. |
