@@ -198,7 +198,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         return ToVersionPages(result);
     }
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>> ToVersionPages(
+    private static Dictionary<string, IReadOnlyList<ContentPublicationVersion>> ToVersionPages(
         Dictionary<string, List<ContentPublicationVersion>> pages)
     {
         var result = new Dictionary<string, IReadOnlyList<ContentPublicationVersion>>(pages.Count, StringComparer.Ordinal);
