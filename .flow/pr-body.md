@@ -38,7 +38,7 @@ Commands run from `/home/mike/honua-io/wt-trunkred-0f663b0-mcp-certification-grp
 - `scripts/ci/pre-pr-check.sh --fast` — initial run failed in the unrelated early-kill timing fixture. A focused unmodified rerun reproduced it. A trace showed that the lane sleep wrapper added about 1.8 seconds to the fixture's 0.01-second poll.
 - `mkdir -p /tmp/trunkred-0f663b0-tools` and `ln -s /usr/bin/sleep /tmp/trunkred-0f663b0-tools/sleep` — prepare native sleep for timing-sensitive fixtures while retaining the lane dotnet shim and its reservations/cap.
 - `PATH="/tmp/trunkred-0f663b0-tools:$PATH" python3 scripts/ci/test-shard-execution-evidence.py` — passed all 8 tests; no assertions or deadlines changed.
-- `PATH="/tmp/trunkred-0f663b0-tools:$PATH" scripts/ci/pre-pr-check.sh --fast > /tmp/trunkred-0f663b0-pre-pr-native-sleep.log 2>&1` — pending; the complete local pre-PR run is still active, so no pass is claimed yet.
+- `PATH="/tmp/trunkred-0f663b0-tools:$PATH" scripts/ci/pre-pr-check.sh --fast > /tmp/trunkred-0f663b0-pre-pr-native-sleep.log 2>&1` — passed (exit 0); selected CI-SHELL-ONLY automatically for the documentation diff.
 - `timeout 20m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter FullyQualifiedName~ConfigurationValidationServiceTests --logger 'trx;LogFileName=mcp-configuration.trx' --results-directory /tmp/trunkred-0f663b0-verification` — attempted both sandboxed and escalated, then canceled (exit 143) before execution because shared build reservations were unavailable. No restore, build or .NET test pass is claimed.
 
 The fast check selected `CI-SHELL-ONLY` automatically for the documentation diff, before generating this staged metadata. No managed projects changed; no dotnet format run was needed. Logs remain under `/tmp/trunkred-0f663b0-pre-pr*.log` on this host.
@@ -67,6 +67,8 @@ Completed one review using `honua-flow-work/tools/lib/pr-review-rubric.md`, limi
 P2 follow-up: qualify the actual candidate through the full trailing grpc-web matrix and retain its live receipt. Local environment/source checks are not certification credit. P3 operational follow-up: preserve native sleep semantics for timing-sensitive fixtures in lane tooling; no lane-tool changes are included here. No P3 source-code findings.
 
 ## Pre-PR Checklist
+
+- [x] Ran `scripts/ci/pre-pr-check.sh --fast` and all selected checks passed with the native sleep PATH described above.
 
 - [x] Commit messages use conventional format and the required author/committer identity.
 - [x] Culprit and upstream repair linked with dispositions.

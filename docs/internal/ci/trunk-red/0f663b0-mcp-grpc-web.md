@@ -62,3 +62,9 @@ These checks establish the startup configuration repair and receipt validation;
 they do not establish a new live grpc-web certification result. This packet
 neither dispatches CI nor claims new live certification evidence. The full
 trailing matrix remains the qualification authority.
+
+The complete `scripts/ci/pre-pr-check.sh --fast` run passes with that native-sleep
+PATH entry. It automatically selects CI-SHELL-ONLY for this documentation diff;
+managed restore, build, formatting and test execution are not selected. Exact
+commands, the initial timing-fixture failure and the unavailable supplementary
+.NET run are retained in `.flow/pr-body.md`.
