@@ -19,14 +19,14 @@ Fix forward is appropriate because eight landings separate the last actual green
 - Preserve the current trunk implementation and all other lanes' changes.
 
 ## Testing
-- `python3 scripts/ci/fixtures/validate-mcp-server-auth.py` — passed all 7 environment/mutation checks.
-- `python3 -m unittest scripts.certification.test_verify_mcp_live_certification` — passed 4 tests.
+- `python3 scripts/ci/fixtures/validate-mcp-server-auth.py` — passed all 7 environment/mutation checks again on the merged tree.
+- `python3 -m unittest scripts.certification.test_verify_mcp_live_certification` — passed 4 tests again on the merged tree.
 - `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter FullyQualifiedName~ConfigurationValidationServiceTests --logger 'trx;LogFileName=mcp-rest-configuration.trx'` — passed 30 tests, zero failures/skips, Release, on the original branch baseline.
-- `scripts/ci/pre-pr-check.sh --fast` — final gate in progress with current trunk integrated.
+- `scripts/ci/pre-pr-check.sh --fast` — Release build passed (36 roots, 107 projects in the evaluated closure, zero errors). The combined four-project formatter could not finish loading its MSBuild workspace within its cap; its automatic retry also exited 124. No formatting violation was reported. Equivalent per-project format checks and the selector’s unchanged remaining test actions are in progress.
 
 Current trunk f854f8fac0d5bf9fd9e4719a7f603463469bfb99 was merged without conflict before final verification. Its alerts and ImageServer changes are preserved. The focused configuration class will also be rerun against the merged build.
 
-The first sandboxed .NET/preflight attempts were stopped before compilation because shared build admission could not establish live guardians. Host inspection proved three reservations belonged to a vanished PID namespace and both original locks were free; those stale reservations were reconciled, and the admitted PATH-shim retry passed. The shim retained its CPU cap and shared compilation. No C# files are changed by this packet, so dotnet format is not applicable. No local live MCP certification run or new live receipt is claimed.
+The first sandboxed .NET/preflight attempts were stopped before compilation because shared build admission could not establish live guardians. Host inspection proved three reservations belonged to a vanished PID namespace and both original locks were free; those stale reservations were reconciled, and the admitted PATH-shim retry passed. The shim retained its CPU cap and shared compilation. This packet changes no C# files. Formatting covers only the four carried-forward trunk files, in their owning projects with `--include` and a 20-minute execution cap. Shared worktree/global admission is acquired through the existing lane reservation helpers before starting that cap; nested dotnet calls retain the PATH shim, CPU cap, and shared compilation. The build reported five recovered MSB3026 copy retries; each destination matched its package source by SHA-256. No local live MCP certification run or new live receipt is claimed.
 
 ## Self-review
 Review scope: this handoff diff and the existing authentication repair, using honua-flow-work/tools/lib/pr-review-rubric.md. No new endpoint, dependency, public type, authentication bypass, test relaxation, or protocol pipeline is introduced. The inherited environment fixture checks both certification and smoke against the shared Development action and rejects bypass and credential mismatch mutations. Live certification was not run locally; the trailing full matrix remains the proof of the complete family.
