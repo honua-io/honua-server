@@ -81,4 +81,5 @@ Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions 
 
 
 
-Checkpoint: 2026-10-21T12:40:41+00:00 — the reserved Release build continues through protocol, hosting, provider, and unit-test assemblies. Core, Routing, job/import runtimes, and STAC assemblies have completed. No source failure has been reported; the full required check and both runtime filters remain pending.
+
+Checkpoint: 2026-10-21T12:57:51+00:00 — Honua.Server and Honua.TestKit have completed their Release builds under the reserved workflow; test-project compilation and runtime verification are still pending. The referenced WebAssembly sample now builds successfully, and dependency-copy memory warnings have recovered through the normal retries.
