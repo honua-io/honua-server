@@ -28,6 +28,7 @@ RFC 7807 body. Those say so in their ``notes``.
 
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
 import json
 import math
@@ -40,6 +41,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pystac
 import pytest
+from packaging.version import Version
 from pystac_client import Client
 from pystac_client.conformance import ConformanceClasses
 from pystac_client.exceptions import APIError
@@ -748,31 +750,47 @@ def test_cert_errh_01_unknown_collection(
 ) -> None:
     """An unknown collection surfaces as a structured pystac-client error."""
     started = time.perf_counter()
+    unknown_id = canonical_fixture.UNKNOWN_COLLECTION_ID
+    url = f"{base_url.rstrip('/')}/stac/collections/{unknown_id}"
 
+    # The client's own transport surfaces the 404 as a structured APIError.
     with pytest.raises(APIError) as raised:
-        api_client.get_collection(canonical_fixture.UNKNOWN_COLLECTION_ID)
+        StacApiIO(max_retries=0).read_json(url)
 
     error = raised.value
     status = getattr(error, "status_code", None)
     assert status == 404, f"unknown collection produced status {status!r}, expected 404"
     assert str(error), "APIError carried no message body"
 
+    # Client.get_collection maps that APIError by version: before 0.9.1 it
+    # propagates, from 0.9.1 a 404 (and only a 404) becomes None.
+    if Version(importlib.metadata.version("pystac-client")) >= Version("0.9.1"):
+        assert api_client.get_collection(unknown_id) is None
+        client_outcome = "returned None (pystac-client >= 0.9.1 maps only a 404 to None)"
+    else:
+        with pytest.raises(APIError) as raised_by_client:
+            api_client.get_collection(unknown_id)
+        client_status = getattr(raised_by_client.value, "status_code", None)
+        assert client_status == 404, (
+            f"Client.get_collection produced status {client_status!r}, expected 404"
+        )
+        client_outcome = "raised APIError with status_code=404"
+
     # The RFC 7807 body is the substantive evidence and APIError only carries the
     # raw text, so it is re-read directly to assert its shape.
-    response = cert_lane.get_json(
-        f"{base_url.rstrip('/')}/stac/collections/{canonical_fixture.UNKNOWN_COLLECTION_ID}"
-    )
+    response = cert_lane.get_json(url)
     body = response.json()
     assert body.get("status") == 404
-    assert canonical_fixture.UNKNOWN_COLLECTION_ID in str(body.get("detail", ""))
+    assert unknown_id in str(body.get("detail", ""))
 
     cert_collector.record(
         "CERT-ERRH-01",
         "pass",
         duration_ms=_elapsed_ms(started),
         notes=(
-            f"Client.get_collection({canonical_fixture.UNKNOWN_COLLECTION_ID!r}) raised "
+            f"pystac-client StacApiIO.read_json for collection {unknown_id!r} raised "
             f"pystac_client.exceptions.APIError with status_code=404; "
+            f"Client.get_collection({unknown_id!r}) {client_outcome}; "
             f"body {cert_lane.problem_summary(response)}."
         ),
     )
