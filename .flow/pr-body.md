@@ -72,7 +72,7 @@ Verification recovery checkpoint: rebased the packet onto current `origin/trunk`
 None.
 
 ## Self-review
-One review round against the PR reviewer's rubric: correctness, dependency direction, public API documentation, security, shared pipelines, fixture defaults, and regression strength. No P0/P1 findings. One fixture consistency issue was corrected: 512-pixel test tiles now declare both rows and columns as 512. The corrected fixture passed the final focused run (33/33 tests). No remaining P2/P3 findings.
+One review round against the PR reviewer's rubric: correctness, dependency direction, public API documentation, security, shared pipelines, fixture defaults, and regression strength. No P0/P1 findings. One fixture consistency issue was corrected: 512-pixel test tiles now declare both rows and columns as 512. The corrected fixture passed the final focused run (33/33 tests). No remaining P2/P3 findings. `PYTHONIOENCODING=utf-8 python3 scripts/ci/local-architecture-review.py` passed on the refreshed base. Its nonblocking deep-inheritance warning is a reviewed false positive: the heuristic counts `: ` text (89 occurrences already on trunk, including named arguments), while this sealed test class declares no base class.
 
 ## Known follow-ups
 None identified in this diff.
