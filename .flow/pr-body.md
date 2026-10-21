@@ -75,3 +75,5 @@ Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions 
 ### Admin packet follow-ups
 
 - P3: make the local architecture checker inspect actual base-type declarations instead of counting colon-space text. The reported inheritance concern is a reviewed false positive; no source change is needed here.
+
+Checkpoint: 2026-10-21T11:10:03+00:00 — the standard lane reservation for the combined verification driver remains queued; no runtime pass is claimed and no staged result receipt has been written.
