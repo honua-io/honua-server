@@ -59,7 +59,7 @@ An independent disposable PostgreSQL reproduction extracts each commit's exact s
 
 ### Changes Made
 
-- Add `Promote_SameIdempotencyKeyWithDifferentRowVersion_Returns409WithoutChangingHistory`. It promotes successfully, changes only the expected row version under the same key, requires the specific idempotency conflict, replays the original request successfully, and confirms one history record and the expected active generation. A legacy row with no request hash would accept the changed version, so the test exercises persisted request binding through the real endpoint and store.
+- Strengthen `Promote_SameIdempotencyKeyReplayed_ReturnsSameResultWithoutDoublePromoting` without changing its catalogued identity. It promotes successfully, changes only the expected row version under the same key, requires the specific idempotency conflict, replays the original request successfully, and confirms one history record and the expected active generation. A legacy row with no request hash would accept the changed version, so the test exercises persisted request binding through the real endpoint and store.
 - Preserve the Python lane's changes and coverage above. Preserve the Core lane's independent shared WIP ref; this lane checkpoints at `wip/fix/trunkred-a6581e4-admin-network-jobs` to avoid overwriting it.
 
 ### Verification
