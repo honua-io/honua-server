@@ -23,7 +23,7 @@ Read the [Core diagnosis comment](https://github.com/honua-io/honua-server/commi
 Focused Release verification passed all 33 `EsriTileCachePackageReaderTests`, including the eight new cases:
 
 ```bash
-dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter FullyQualifiedName~EsriTileCachePackageReaderTests --logger 'trx;LogFileName=tile-reader-current.trx' --results-directory /tmp/trunkred-a6581e4-core-results
+dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~EsriTileCachePackageReaderTests --logger 'trx;LogFileName=tile-reader-final.trx' --results-directory /tmp/trunkred-a6581e4-core-results
 ```
 
 The isolated executable bisect ran the three original failing test bodies and fixtures against each commit's exact reader, descriptor, JSON context, scheme, interface, and canonical SRID predicates. It did not build the full historical Core projects.
@@ -46,7 +46,7 @@ python3 /tmp/trunkred-a6581e4-core-validate-bisect.py
 
 The harness executes `dotnet test /tmp/trunkred-a6581e4-core-bisect/ReaderBisect.csproj --configuration Release --filter FullyQualifiedName~EsriTileCachePackageReaderTests --logger 'trx;LogFileName=<commit>.trx' --results-directory /tmp/trunkred-a6581e4-core-bisect/results` for each table entry. TRX files and per-commit logs are under `/tmp/trunkred-a6581e4-core-bisect/`.
 
-Pre-PR progress checkpoint: restore succeeded for the selected 105-project closure. Core, the corrected Core test assembly, database providers, protocol modules, and the sample Blazor project have compiled; additional OData, Scene, OGC API, and GeoServices component test assemblies have also compiled. The server and shared TestKit have now also compiled. OGC Classic, OData, and GeoServices integration-test assemblies have also compiled. Build outputs are present for 102 of the 105 selected projects; Ai.Tests, Server.Tests, and Architecture.Tests remain. The remaining test-assembly build is ongoing without reported errors. The pre-PR result and final focused rerun after the square-tile fixture correction are pending.
+Pre-PR progress checkpoint: the selected 105-project Release build completed with zero errors. Two MSB3026 asset-copy warnings resolved on retry; both copied assets match their package originals by SHA-256. Final focused reader tests passed 33/33 after the square-tile fixture correction, including all eight new cases. Formatting and the remaining pre-PR checks are pending.
 
 ## Testing
 - [x] Unit tests added/updated
@@ -70,7 +70,7 @@ Pre-PR progress checkpoint: restore succeeded for the selected 105-project closu
 None.
 
 ## Self-review
-One review round against the PR reviewer's rubric: correctness, dependency direction, public API documentation, security, shared pipelines, fixture defaults, and regression strength. No P0/P1 findings. One fixture consistency issue was corrected: 512-pixel test tiles now declare both rows and columns as 512. Its final verification is pending with the pre-PR check. No remaining P2/P3 findings.
+One review round against the PR reviewer's rubric: correctness, dependency direction, public API documentation, security, shared pipelines, fixture defaults, and regression strength. No P0/P1 findings. One fixture consistency issue was corrected: 512-pixel test tiles now declare both rows and columns as 512. The corrected fixture passed the final focused run (33/33 tests). No remaining P2/P3 findings.
 
 ## Known follow-ups
 None identified in this diff.
