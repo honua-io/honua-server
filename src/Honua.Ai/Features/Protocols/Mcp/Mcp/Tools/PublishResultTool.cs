@@ -276,8 +276,6 @@ internal sealed class PublishResultTool : IMcpTool
             ["schema"] = schema,
             ["table"] = table,
             ["layerName"] = string.IsNullOrWhiteSpace(argument.LayerName) ? artifact.Label : argument.LayerName,
-            [VerifiedCommittedSinkPublication.SourceJobIdKey] = sourceJobId,
-            [VerifiedCommittedSinkPublication.SourceArtifactIdKey] = artifact.ArtifactId,
         };
 
         if (TryGetMetadata(artifact, MetadataKeys.GeometryColumn, out var geometryColumn))
@@ -300,9 +298,14 @@ internal sealed class PublishResultTool : IMcpTool
             parameters["primaryKey"] = primaryKey;
         }
 
+        // Only a committed sink artifact carries an endpoint fingerprint. It claims the
+        // external-schema exception, so name its source job and artifact for the executor
+        // to re-read before publishing. Other materialized tables publish without a claim.
         if (TryGetMetadata(artifact, MetadataKeys.ConnectionEndpointFingerprint, out var endpointFingerprint))
         {
             parameters[MetadataKeys.ConnectionEndpointFingerprint] = endpointFingerprint;
+            parameters[VerifiedCommittedSinkPublication.SourceJobIdKey] = sourceJobId;
+            parameters[VerifiedCommittedSinkPublication.SourceArtifactIdKey] = artifact.ArtifactId;
         }
 
         return new OperationRequest
