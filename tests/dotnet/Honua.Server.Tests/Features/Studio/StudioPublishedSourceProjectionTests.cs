@@ -178,23 +178,165 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
         response.RootElement.GetProperty("data").GetProperty("sourceCatalog").GetArrayLength().Should().Be(0);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task LocatorBinding_ResolvesPackageSourceIdToTheCanonicalLayer()
+    {
+        var url = await PublishBodyAsync(PackageBody(
+            layers: [new { id = "layer-7", sourceId = "parcels", type = "fill", visible = true }],
+            sourceBindings: new[]
+            {
+                new
+                {
+                    sourceId = "parcels",
+                    protocol = "geoservices_feature_service",
+                    locator = new { serviceId = ServiceId, layerId = 7 },
+                },
+            }), "public");
+        using var response = await ReadAsync(_anonymous, url + "?includeSources=true");
+        var sources = response.RootElement.GetProperty("data").GetProperty("sourceCatalog").EnumerateArray().ToArray();
+        sources.Should().ContainSingle();
+        var source = sources[0];
+        source.GetProperty("id").GetString().Should().Be(SourceId(7));
+        source.GetProperty("protocol").GetString().Should().Be("geoservices-feature-service");
+        source.GetProperty("locator").GetProperty("serviceId").GetString().Should().Be(ServiceId);
+        source.GetProperty("locator").GetProperty("layerId").GetInt32().Should().Be(7);
+        source.GetProperty("locator").GetProperty("url").GetString().Should().EndWith("/rest/services/ActualParcels/FeatureServer");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task MapServerOnlyService_ProjectsTheMapServerLocator()
+    {
+        var service = _graph.Services.Single();
+        SetGraph(_graph with
+        {
+            Services = [service with { Protocols = [ServiceProtocols.MapServer] }],
+        });
+        var url = await PublishAsync(7);
+        using var response = await ReadAsync(_anonymous, url + "?includeSources=true");
+        var source = response.RootElement.GetProperty("data").GetProperty("sourceCatalog").EnumerateArray().Should().ContainSingle().Subject;
+        source.GetProperty("protocol").GetString().Should().Be("geoservices-map-service");
+        source.GetProperty("locator").GetProperty("url").GetString().Should().EndWith("/rest/services/ActualParcels/MapServer");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task MapBinding_SelectsMapServerWhenTheServiceExposesBothProtocols()
+    {
+        var service = _graph.Services.Single();
+        SetGraph(_graph with
+        {
+            Services = [service with { Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer] }],
+        });
+        var url = await PublishBodyAsync(PackageBody(
+            layers: [new { id = "layer-7", sourceId = "parcels", type = "fill", visible = true }],
+            sourceBindings: new[]
+            {
+                new
+                {
+                    sourceId = "parcels",
+                    protocol = "geoservices_map_service",
+                    locator = new { serviceId = ServiceId, layerId = 7 },
+                },
+            }), "public");
+        using var response = await ReadAsync(_anonymous, url + "?includeSources=true");
+        var source = response.RootElement.GetProperty("data").GetProperty("sourceCatalog").EnumerateArray().Should().ContainSingle().Subject;
+        source.GetProperty("protocol").GetString().Should().Be("geoservices-map-service");
+        source.GetProperty("locator").GetProperty("url").GetString().Should().EndWith("/MapServer");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task ConflictingResource_IsRejectedBeforeTheReaderAccessFilter()
+    {
+        var conflicting = _graph.Publications.Single(publication => publication.Metadata.Id == "publication-10") with
+        {
+            LayerIndex = 7,
+            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+        };
+        SetGraph(_graph with
+        {
+            Revision = _graph.Revision + 1,
+            Resources = _graph.Resources.Select(resource => resource.Metadata.Id == "resource-10"
+                ? resource with { AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] } }
+                : resource).ToArray(),
+            Publications = _graph.Publications.Where(publication => publication.Metadata.Id != "publication-10")
+                .Append(conflicting).ToArray(),
+        });
+        var url = await PublishAsync(7);
+        using var response = await _anonymous.GetAsync(url + "?includeSources=true");
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("resource-10").And.NotContain("resource-7").And.NotContain("InvalidOperationException");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task SharedServiceName_DoesNotAdvertiseAnAmbiguousRoute()
+    {
+        var template = _graph.Services.Single();
+        var sharedPublication = _graph.Publications.Single(publication => publication.Metadata.Id == "publication-10") with
+        {
+            Metadata = _graph.Publications.Single(publication => publication.Metadata.Id == "publication-10").Metadata with
+            {
+                Id = "publication-shared",
+            },
+            ServiceId = "other-parcels",
+            LayerIndex = 7,
+            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+        };
+        SetGraph(_graph with
+        {
+            Revision = _graph.Revision + 1,
+            Services = _graph.Services.Append(template with
+            {
+                Metadata = template.Metadata with { Id = "other-parcels" },
+            }).ToArray(),
+            Publications = _graph.Publications.Append(sharedPublication).ToArray(),
+        });
+        var url = await PublishAsync(7);
+        using var response = await _anonymous.GetAsync(url + "?includeSources=true");
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("other-parcels").And.NotContain("resource-10").And.NotContain("InvalidOperationException");
+    }
+
     private void SetGraph(MetadataV2Graph graph) => _provider.SetGraph(graph, schema: _fixture.CurrentSchema);
 
     private static string SourceId(int layerId) => StudioCatalogSourceIdentity.Create(ServiceId, layerId);
 
     private Task<string> PublishAsync(params int[] layers) => PublishAsync(layers, "public");
 
-    private async Task<string> PublishAsync(int[] layers, string visibility, bool legacyAlias = false)
-    {
-        var key = $"audience-{Guid.NewGuid():N}";
-        var body = JsonSerializer.SerializeToElement(new
+    private static JsonElement PackageBody<TLayers>(TLayers layers)
+        => JsonSerializer.SerializeToElement(new
         {
-            mapPackageId = key,
+            mapPackageId = $"audience-{Guid.NewGuid():N}",
             format = "honua_map_package.v1",
             status = "Ready",
             createdAt = "2026-10-20T00:00:00Z",
-            layers = layers.Select(id => new { id = $"layer-{id}", sourceId = legacyAlias ? ServiceId : SourceId(id), type = "fill", visible = true }),
+            layers,
         });
+
+    private static JsonElement PackageBody<TLayers, TBindings>(TLayers layers, TBindings sourceBindings)
+        => JsonSerializer.SerializeToElement(new
+        {
+            mapPackageId = $"audience-{Guid.NewGuid():N}",
+            format = "honua_map_package.v1",
+            status = "Ready",
+            createdAt = "2026-10-20T00:00:00Z",
+            layers,
+            sourceBindings,
+        });
+
+    private async Task<string> PublishAsync(int[] layers, string visibility, bool legacyAlias = false)
+        => await PublishBodyAsync(PackageBody(
+            layers.Select(id => new { id = $"layer-{id}", sourceId = legacyAlias ? ServiceId : SourceId(id), type = "fill", visible = true })),
+            visibility);
+
+    private async Task<string> PublishBodyAsync(JsonElement body, string visibility)
+    {
+        var key = body.GetProperty("mapPackageId").GetString()!;
         var request = new CreateStudioPackageDraftRequest
         {
             PackageKey = key,
