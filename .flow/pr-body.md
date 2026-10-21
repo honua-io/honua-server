@@ -79,4 +79,5 @@ Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions 
 
 
 
-Checkpoint: 2026-10-21T12:03:33+00:00 — the normal combined-driver reservation is acquired. Capability validation and the selected project graph have completed; the required check is restoring its 105-project closure, with both runtime filters still pending. The driver uses the owning shim reservation for sequential nested commands. No runtime pass or final staged receipt is claimed.
+
+Checkpoint: 2026-10-21T12:23:44+00:00 — the reserved Release build has completed Core, Routing, providers, and multiple test-support projects. A dependency-copy memory warning retried successfully and its project completed; the full build and runtime filters remain pending. No staged result receipt has been written.
