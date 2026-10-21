@@ -41,10 +41,16 @@ Verification is in progress. Exact commands and results will be recorded before 
 
 The first current-trunk focused attempt (`timeout 30m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish.trx' --results-directory /tmp/admin-layer-repair-results`) restored and compiled dependencies, then exhausted its outer timeout during compilation (exit 124). No test result is claimed from that attempt. A longer incremental retry and the first fast-gate invocation were stopped while queued (exit 143) after inspection showed a mismatch between the sandbox's PID namespace and the host process identities used by the shared queue. Verification is being retried with normal command escalation and the same PATH shim, worktree exclusion, capacity limit and compiler settings.
 
-The escalated focused retry completed successfully (exit 0): 22 passed, 0 failed, 0 skipped; TRX: `/tmp/admin-layer-repair-results/admin-layer-publish-retry.trx`. The fast gate remains pending.
+The escalated focused retry completed successfully (exit 0): 22 passed, 0 failed, 0 skipped. All six shared-storage theory rows passed, including the historical unscoped publish failure; TRX: `/tmp/admin-layer-repair-results/admin-layer-publish-retry.trx`. The fast gate remains pending.
 
 ```bash
 timeout 60m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish-retry.trx' --results-directory /tmp/admin-layer-repair-results
+```
+
+The escalated fast gate is running; shared build-capacity admission is currently pending. Exact command:
+
+```bash
+timeout 180m scripts/ci/pre-pr-check.sh --fast
 ```
 
 ## Gate Impact
