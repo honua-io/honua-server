@@ -20,7 +20,13 @@ Fix-forward is appropriate: five landings separate the last actual green (`96601
 ## Diagnosis Evidence
 Read the [Core diagnosis comment](https://github.com/honua-io/honua-server/commit/a6581e4d332e65e1202b8d1b45956ef73b6390d7#commitcomment-205853197) and [culprit PR #5823](https://github.com/honua-io/honua-server/pull/5823) before executable bisection. The run artifact listing was checked first: the Core TRX/coverage artifacts have expired. Surviving [attempt-2 job logs](https://github.com/honua-io/honua-server/actions/runs/38135401612/job/114470640465) show exactly three failures in `EsriTileCachePackageReaderTests` (5,303 passed / 3 failed).
 
-Executable boundary results and final verification results will be filled before staging.
+Focused Release verification passed all 33 `EsriTileCachePackageReaderTests`, including the eight new cases:
+
+```bash
+dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter FullyQualifiedName~EsriTileCachePackageReaderTests --logger 'trx;LogFileName=tile-reader-current.trx' --results-directory /tmp/trunkred-a6581e4-core-results
+```
+
+Historical boundary results and the pre-PR check are pending.
 
 ## Testing
 - [x] Unit tests added/updated
