@@ -46,7 +46,7 @@ python3 /tmp/trunkred-a6581e4-core-validate-bisect.py
 
 The harness executes `dotnet test /tmp/trunkred-a6581e4-core-bisect/ReaderBisect.csproj --configuration Release --filter FullyQualifiedName~EsriTileCachePackageReaderTests --logger 'trx;LogFileName=<commit>.trx' --results-directory /tmp/trunkred-a6581e4-core-bisect/results` for each table entry. TRX files and per-commit logs are under `/tmp/trunkred-a6581e4-core-bisect/`.
 
-Pre-PR progress checkpoint: the selected 105-project Release build completed with zero errors. Two MSB3026 asset-copy warnings resolved on retry; both copied assets match their package originals by SHA-256. Final focused reader tests passed 33/33 after the square-tile fixture correction, including all eight new cases. Formatting and the remaining pre-PR checks are pending.
+Pre-PR progress checkpoint: the selected 105-project Release build completed with zero errors. Two MSB3026 asset-copy warnings resolved on retry; both copied assets match their package originals by SHA-256. Final focused reader tests passed 33/33 after the square-tile fixture correction, including all eight new cases. The first scoped format verification reached its 20-minute cap without a formatting diagnostic; the pre-PR script started its bounded fix pass. Formatting and the remaining pre-PR checks are pending.
 
 ## Testing
 - [x] Unit tests added/updated
