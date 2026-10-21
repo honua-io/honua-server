@@ -1,99 +1,74 @@
-docs(operate): replay Operate on accepted pin 93cad86 and document rollback completion proof (#3302)
-# Pull Request
+docs(ci): record superseded MCP grpc-web startup repair
+
+# COVERS: MCP Certification (grpc-web)
 
 ## Issue Link
-Refs #3302 (released: the finding-driven joined deployment transcript and an authenticated Admin CLI execution need a deployment finding producer and an installed CLI session on the candidate that this lane could not run. AWS ECS-small placement replay is billable live AWS work, carried by honua-io/honua-iac#196, now a 2026.2 follow-on. Everything else that can be executed on the accepted pin is delivered here.)
+
+Refs #5921 (historical culprit landing; startup repair already delivered by #5938).
+Refs #5920 (live certification qualification remains separate from this startup repair).
 
 ## Summary
-The accepted platform pin moved to honua-server `93cad86` (`sha256:785de2ae…`, honua-release trunk `8aa2bf63`), but every Operate receipt was bound to `548b7a5`. This PR replays the three installed Operate harnesses on that pin. It also produces the first deployment-actuator evidence on an accepted pin: a Local Docker protected-recovery replay on `honua-yarp-rolling`, plus the honua-devops client against the same server.
 
-The replay found a customer-facing gap. Since #3892 a rollback reports `RolledBack` only after a functional query proves the restored target. The parameters that configure that query (`rollback.functional_query.*`) were documented nowhere. A self-hosted operator following the docs gets every automatic rollback stuck at `RollbackRequested`, then `ManualInterventionRequired` (`rollback.functional_query_unproven`). This PR documents it.
+The historical grpc-web failure at `0f663b066900658f035c07e303f47116d99613c5` is already repaired on current trunk by `5873a38cbe6e5362f1a5670da4e6ad3e30b946dc` (#5938). This staged branch records the diagnosis and local verification; it needs no additional runtime or workflow patch.
+
+Culprit: #5921 / `36fa28bab37e64b68b91ad4de1e6df77a8c77d39`, which first exposed job-level `HONUA_DEV_AUTH=true` to a Development server while activating actual SDK certification. Source replay at every landing from the last green through the target confirms the first rejected startup environment. The earlier green jobs skipped certification; no certification test ran in the failed target job. Its artifact inventory has no MCP receipt/TRX, and the job log confirms deliberate configuration rejection before readiness.
+
+Fix versus revert: retain the already-landed fix forward in #5938. This packet is superseded, so reverting #5921 now would remove active certification scripts, fixture repairs and receipt validation without addressing a remaining occurrence of the diagnosed startup bug. No production guard or test is weakened.
 
 ## Changes Made
-- `docs/guides/deploy/upgrade-and-rollback.md`: new **Rollback completion proof** section covering:
-  - the three conditions (prior identity, healthy endpoint, functional query);
-  - the `rollback.functional_query.*` and `telemetry.golden_query.*` parameters and their precedence;
-  - which ones are required;
-  - the rollback window;
-  - the terminal reason codes.
 
-  Two troubleshooting bullets are corrected or added.
-- `docs/guides/operate/scenario.md`: the Local Docker rollback row names `honua-yarp-rolling` as a real actuator. It also states its preconditions: the host container runtime and the completion-proof parameters.
-- `docs/guides/operate/README.md`: the rollback taxonomy says when `RolledBack` is reported.
-- New receipts in `docs/guides/operate/evidence/`:
-  - `3302-accepted-93cad86-staging.json`: 5/5 scenarios.
-  - `3302-accepted-93cad86-read-observation.json`: passed, 129 descriptors.
-  - `3302-accepted-93cad86-approval.json`: 5/5 checks.
-  - `3302-accepted-93cad86-protected-recovery.json`: 10/11 original cells pass, plus a satisfiable wrong-body cell. DevOps live tests pass 5/5. The receipt embeds every harness adaptation as a diff and the SHA-256 of each raw transcript.
-- `docs/internal/contributor/operate-docs-precut-evidence.md`: new "October 11 accepted-pin replay" section and an updated acceptance disposition.
+- Record the artifact-first diagnosis, culprit boundary, existing upstream repair and evidence limits.
+- Preserve the current SDK pin and all other lanes' work on the shared branch.
+- Stage this handoff without opening a PR, dispatching CI or polling CI.
 
 ## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests added/updated
-- [ ] Architecture tests pass
-- [x] Manual testing performed
 
-Installed replays on Docker Desktop for Windows. Each run pulled `ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db` and checked its RepoDigest and OCI revision label `93cad86ec4fb28fba3ff0b9358059d86aa55dde5` before boot. The manifest was the unmodified release `platform-manifest.yaml` (SHA-256 `bf2a63e6…`).
+- [x] Manual testing performed: seven existing MCP environment regression checks and four certification-receipt unit tests pass.
+- [ ] Unit tests added/updated (no test changes needed).
+- [ ] Integration tests added/updated (no runtime changes).
+- [ ] Architecture tests pass (no new managed-code result claimed).
 
-```
-python scripts/qualification/metadata-release-installed.py --manifest <platform-manifest.yaml> --output <dir>
-python scripts/qualification/operate-read-observation.py --manifest <platform-manifest.yaml> --accepted-manifest --output <dir>
-python scripts/certification/prove-admin-approve-candidate.py --image ghcr.io/honua-io/honua-server@sha256:785de2ae… --source-revision 93cad86ec4fb28fba3ff0b9358059d86aa55dde5 --output <file>
-# honua-devops 28a6419f certification/protected-recovery, adapted as recorded in the receipt:
-PROOF_SERVER_IMAGE=<digest ref> PROOF_DOCKER_CLI=<linux docker cli> MSYS_NO_PATHCONV=1 boot.sh up
-python journey.py --work $PROOF_WORK --out part1.json --cells platform-admin-cross-tenant,fenced-recovery,tenant-bound-recovery,error-rate-regression,latency-regression
-python journey.py --work $PROOF_WORK --out part2.json --cells missing-telemetry,stale-telemetry,controller-crash,failed-recovery,wrong-body-regression,newer-intent
-python journey.py --work $PROOF_WORK --out part3.json --cells wrong-body-regression-satisfiable
-HONUA_DEVOPS_LIVE_PROTECTED_RECOVERY=true ... dotnet test tests/Honua.DevOps.Agent.Tests --filter "FullyQualifiedName~ProtectedRecoveryLiveJourneyTests"   # 5 passed
-boot.sh down
-```
+Commands run from `/home/mike/honua-io/wt-trunkred-0f663b0-mcp-certification-grpc-web`:
 
-`wrong-body-regression` fails as written: its golden-query `expected_contains` and `forbidden_contains` are the same marker. Since #3892 those keys also bind the restored-replica proof, so recovery can never be proven. It settled `Failed` (`rollback.functional_query_failed`), which is the documented rule, not a server defect. The candidate refusal half held: it was refused before cutover and attributed to the golden-query verdict. Its satisfiable variant passes.
+- `python3 scripts/ci/fixtures/validate-mcp-server-auth.py` — passed all 7 checks.
+- `python3 -m unittest scripts.certification.test_verify_mcp_live_certification` — passed all 4 tests.
+- `python3 /tmp/trunkred-0f663b0-startup-boundary.py` — passed the source-only environment replay at the last green, all three landings, the existing repair and current HEAD. No server startup or C# execution is claimed.
+- `git merge-base --is-ancestor 5873a38cbe6e5362f1a5670da4e6ad3e30b946dc HEAD` — passed.
+- `git diff --check origin/trunk` — passed.
+- `scripts/ci/pre-pr-check.sh --fast` — initial run failed in the unrelated early-kill timing fixture. A focused unmodified rerun reproduced it. A trace showed that the lane sleep wrapper added about 1.8 seconds to the fixture's 0.01-second poll.
+- `mkdir -p /tmp/trunkred-0f663b0-tools` and `ln -s /usr/bin/sleep /tmp/trunkred-0f663b0-tools/sleep` — prepare native sleep for timing-sensitive fixtures while retaining the lane dotnet shim and its reservations/cap.
+- `PATH="/tmp/trunkred-0f663b0-tools:$PATH" python3 scripts/ci/test-shard-execution-evidence.py` — passed all 8 tests; no assertions or deadlines changed.
+- `PATH="/tmp/trunkred-0f663b0-tools:$PATH" scripts/ci/pre-pr-check.sh --fast > /tmp/trunkred-0f663b0-pre-pr-native-sleep.log 2>&1` — pending; the complete local pre-PR run is still active, so no pass is claimed yet.
+- `timeout 20m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter FullyQualifiedName~ConfigurationValidationServiceTests --logger 'trx;LogFileName=mcp-configuration.trx' --results-directory /tmp/trunkred-0f663b0-verification` — attempted both sandboxed and escalated, then canceled (exit 143) before execution because shared build reservations were unavailable. No restore, build or .NET test pass is claimed.
 
-Docs gates, run locally:
-- `python scripts/ci/check-doc-links.py` passed: 2547 targets, 12 allowlisted warnings, 13 code-referenced anchors.
-- `check-doc-links.test.py` passed 26 tests.
-- `check-doc-example-surfaces.py --base origin/trunk`, `check-okf-bundle.py` (268 concepts), `generate-llms-txt.py --check` and `generate-capability-concepts.py --check` all passed.
-- `git diff --check` is clean.
-
-`scripts/ci/pre-pr-check.sh` stops on Windows in `validate-testcontainer-images.py`, because Windows Python pipes CRLF into `bash -n`. That is unrelated to this docs-only change; CI runs it on Linux.
+The fast check selected `CI-SHELL-ONLY` automatically for the documentation diff, before generating this staged metadata. No managed projects changed; no dotnet format run was needed. Logs remain under `/tmp/trunkred-0f663b0-pre-pr*.log` on this host.
 
 ## Gate Impact
-- [x] PR gates (build, test, governance)
-- [ ] Nightly gates (conformance, performance, security)
-- [ ] Release gates (packaging, publishing)
-- [ ] Deploy gates (promotion, post-apply validation)
-- [ ] None — no gate impact
+
+- [x] None — documentation and staged handoff only; the existing full trailing matrix remains the live-certification authority.
 
 ## Docs or Contract Impact
-- [x] Documentation updated
-- [ ] OpenAPI spec changed
-- [ ] Protobuf/gRPC contract changed
-- [ ] Control plane SDK surface changed
-- [ ] None — no docs or contract impact
+
+- [x] Documentation updated: historical diagnosis and verification limits.
+- [ ] OpenAPI, Protobuf/gRPC or control-plane SDK contract changed.
 
 ## Release/Deploy Impact
-- [x] None — standard merge-and-release flow
-- [ ] Requires coordinated release across repos
-- [ ] Requires database migration
-- [ ] Requires infrastructure changes
-- [ ] Requires environment variable or secret changes
+
+- [x] None — no new runtime, dependency, seed or deployment change.
 
 ## Breaking Changes
-None
 
-## Follow-ups (not in this PR)
-- honua-devops `certification/protected-recovery`: add the `rollback.functional_query.*` parameters and a satisfiable `wrong-body-regression`. Make `boot.sh` take a Linux CLI path so it runs on Docker Desktop. Accept 409 `recovery_fence_protection_window_absent` for a settled replay (#4989). Without these, the harness cannot certify any image newer than #3892.
-- The pinned image still omits `sourceRevision` from the admin version response.
+None.
 
----
+## Self-review
+
+Completed one review using `honua-flow-work/tools/lib/pr-review-rubric.md`, limited to this branch's diff. Checked diagnosis against the original artifacts, job steps/log and culprit PR; verified the repairing commit is an ancestor of the latest fetched trunk. No P0/P1 findings. The diff adds no protocol implementation, public API, infrastructure type or endpoint, so the rubric's dependency, XML-documentation and endpoint-test requirements introduce no additional work.
+
+P2 follow-up: qualify the actual candidate through the full trailing grpc-web matrix and retain its live receipt. Local environment/source checks are not certification credit. P3 operational follow-up: preserve native sleep semantics for timing-sensitive fixtures in lane tooling; no lane-tool changes are included here. No P3 source-code findings.
 
 ## Pre-PR Checklist
-- [ ] Ran `scripts/ci/pre-pr-check.sh` and all checks passed (stops on a Windows-only CRLF issue; see Testing)
-- [x] Commit messages follow conventional format: `type: description (#issue)`
-- [x] PR title matches main commit message
-- [x] Issue number linked above
-- [ ] Tests added for new functionality
-- [ ] If protocol/auth behavior changed: updated compatibility contract
-- [ ] If breaking admin/control-plane API changes: updated migration guide
-- [ ] `OPENAPI_BREAKING_CHANGE_APPROVED` — intentional Admin API break acknowledged for this PR
+
+- [x] Commit messages use conventional format and the required author/committer identity.
+- [x] Culprit and upstream repair linked with dispositions.
+- [x] No tests weakened or deleted.
+- [x] No PR opened and no CI polling performed.
