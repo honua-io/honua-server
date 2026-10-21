@@ -26,8 +26,8 @@ The cap test blob is identical from the supplied green through the red head. Sou
 ## Testing
 - [x] `MapServerQueryLimitsTests`: Release, 4 passed, 0 failed, 0 skipped.
 - [x] `MapServerIdentifyEndpointTests`: Release, 56 passed, 0 failed, 0 skipped, including all four new precedence cases.
-- [ ] `scripts/ci/pre-pr-check.sh --fast`: Release build passed with zero warnings/errors; scoped formatting and selected tests pending.
-- [ ] Changed-project formatting verified by the fast check.
+- [ ] `scripts/ci/pre-pr-check.sh --fast`: Release build passed with zero warnings/errors and scoped formatting passed; retrying after the host churn governor rejected the literal test-runner argument separator.
+- [x] Changed-project formatting verified by the fast check (one owning project, two included files, `timeout 20m`).
 - [x] `git diff --check`.
 
 Exact successful focused commands:
@@ -46,11 +46,11 @@ Required fast-check command (currently running):
 ```bash
 IFS= read -r HONUA_TEST_DB_URL < /tmp/mapserver-identify-sidecar/db-url
 export HONUA_TEST_DB_URL
-NUGET_PACKAGES=/tmp/mapserver-identify-packages NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget scripts/ci/pre-pr-check.sh --fast
+PATH="/tmp/mapserver-identify-dotnet-compat:$PATH" NUGET_PACKAGES=/tmp/mapserver-identify-packages NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget scripts/ci/pre-pr-check.sh --fast
 git diff --check
 ```
 
-The fast check selects 33 roots / a 105-project closure because the staged description triggers shared-input discovery. It uses Release, warnings as errors, changed-project `dotnet format --include` under `timeout 20m`, selected unit tests, and architecture checks. Log: `/tmp/mapserver-identify-pre-pr-linux-cache.log`. The previous own-worktree attempt encountered CS0009 memory-allocation errors opening dependencies from the Windows 9p-mounted global NuGet cache and was stopped. The retry uses a Linux-local package cache without changing source, package versions, auditing, or compiler settings. An earlier sibling-worktree gate ended without a completion result and is not counted as a pass. All managed commands use the PATH lane shim with its four-node cap and shared compilation enabled. The dedicated local PostGIS sidecar, private connection file, and Linux package cache remain available for the opening-stage rerun; none is tracked.
+The fast check selects 33 roots / a 105-project closure because the staged description triggers shared-input discovery. It uses Release, warnings as errors, changed-project `dotnet format --include` under `timeout 20m`, selected unit tests, and architecture checks. The Linux-cache attempt completed the build and format check, then exited 2 because the host churn governor could not parse `-- RunConfiguration.MaxCpuCount=1`. A temporary local adapter forwards every command to the original lane shim and expresses that exact one-CPU test-runner setting through `/tmp/mapserver-identify-dotnet-compat/single-cpu.runsettings`; governor admission, the four-node build cap, tests, and assertions are retained. Retry log: `/tmp/mapserver-identify-pre-pr-compat.log`. The previous own-worktree attempt encountered CS0009 memory-allocation errors opening dependencies from the Windows 9p-mounted global NuGet cache and was stopped. The retry uses a Linux-local package cache without changing source, package versions, auditing, or compiler settings. An earlier sibling-worktree gate ended without a completion result and is not counted as a pass. All managed commands use the PATH lane shim with its four-node cap and shared compilation enabled. The dedicated local PostGIS sidecar, private connection file, and Linux package cache remain available for the opening-stage rerun; none is tracked.
 
 Staged handoff: verified source is based on `f854f8fac0d5bf9fd9e4719a7f603463469bfb99`. Trunk advanced to `581cda46c63e3bad91f85e405af6d949a4ac4cb3` during local verification. Before opening the PR, sync the then-current default branch and rerun verification as required by the packet's opening-stage instruction. This staged delivery does not open a PR or claim verification of later trunk landings.
 
