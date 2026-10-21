@@ -100,6 +100,32 @@ internal static class RoutingAsyncWebTools
         return document.RootElement.Clone();
     }
 
+    internal static JsonElement? DefaultRouteOutput(string outputName)
+    {
+        // These are empty schemas, not solved features. Native routing clients
+        // need the output FeatureSet's projection when opening the web tool;
+        // the tool extent and input Stops projection do not replace it.
+        // The executor's default output_srid is 4326 and both geometry types
+        // and the fixed fields below are emitted by RoutingJobExecutor.
+        var schema = outputName switch
+        {
+            "Output_Routes" => """
+                {"geometryType":"esriGeometryPolyline","spatialReference":{"wkid":4326},"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"Name","type":"esriFieldTypeString"},{"name":"Total_Minutes","type":"esriFieldTypeDouble"},{"name":"Total_TravelTime","type":"esriFieldTypeDouble"},{"name":"Total_Miles","type":"esriFieldTypeDouble"},{"name":"Total_Kilometers","type":"esriFieldTypeDouble"},{"name":"Total_Length","type":"esriFieldTypeDouble"}],"features":[]}
+                """,
+            "Output_Stops" => """
+                {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID"},{"name":"ID","type":"esriFieldTypeDouble"},{"name":"Name","type":"esriFieldTypeString"},{"name":"Sequence","type":"esriFieldTypeDouble"}],"features":[]}
+                """,
+            "Solve_Succeeded" => null,
+            _ => throw new ArgumentException("Not a FindRoutes output.", nameof(outputName)),
+        };
+        if (schema is null)
+        {
+            return null;
+        }
+        using var document = JsonDocument.Parse(schema);
+        return document.RootElement.Clone();
+    }
+
     internal static Dictionary<string, string> Translate(ProcessDefinition definition, IReadOnlyDictionary<string, string> raw, int? environmentOutSr)
     {
         var translated = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
