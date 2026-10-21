@@ -259,6 +259,52 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_WithGeometrySpatialReference_UsesRequestPrecedence(
+        bool usePost,
+        bool includeExplicitSrid)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["geometry"] = includeExplicitSrid
+                ? """{"x":-122.5,"y":37.5,"spatialReference":{"wkid":3857}}"""
+                : """{"x":-122.5,"y":37.5,"spatialReference":{"wkid":3857,"latestWkid":4326}}""",
+            ["geometryType"] = "esriGeometryPoint",
+            ["layers"] = "all:0",
+            ["mapExtent"] = "-122.52,37.48,-122.48,37.52",
+            ["imageDisplay"] = "1000,1000,96"
+        };
+        if (includeExplicitSrid)
+        {
+            parameters["sr"] = "4326";
+        }
+
+        using var payload = new FormUrlEncodedContent(parameters);
+        var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify";
+        using var response = usePost
+            ? await Fixture.Client.PostAsync(url, payload)
+            : await Fixture.Client.GetAsync(url + "?" + await payload.ReadAsStringAsync());
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        var results = document.RootElement.GetProperty("results");
+        results.GetArrayLength().Should().Be(1,
+            "explicit sr takes precedence over geometry CRS, then latestWkid takes precedence over wkid");
+        var geometry = results[0].GetProperty("geometry");
+        geometry.GetProperty("x").GetDouble().Should().Be(-122.5);
+        geometry.GetProperty("y").GetDouble().Should().Be(37.5);
+        geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Identify)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
