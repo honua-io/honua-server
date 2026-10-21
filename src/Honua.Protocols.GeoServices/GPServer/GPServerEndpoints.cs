@@ -1920,6 +1920,9 @@ internal static partial class GPServerEndpoints
                 Description = $"Output artifact of type {kind}.",
                 DataType = outputName == "Solve_Succeeded" ? "GPBoolean" : GPServerParameterTranslation.ToEsriDataType(kind),
                 Direction = "esriGPParameterDirectionOutput",
+                DefaultValue = definition.ProcessId == RoutingProcessDefinitions.Route
+                    ? RoutingAsyncWebTools.DefaultRouteOutput(outputName)
+                    : null,
                 // Mutually exclusive outputs must NOT all be advertised as
                 // required: exactly one is produced per run, so a client that
                 // enumerates required outputs from task metadata would otherwise
