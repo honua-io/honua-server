@@ -20,7 +20,9 @@ The Protocols failure at 96601c11282f04b375a72e39ec6891bc557a92e1 comes from #58
 - Preserve other lanes' changes when synchronizing the shared branch.
 
 ## Testing
-Verification results will be finalized after the local commands complete.
+Focused regression: PASS, 1 passed / 0 failed / 0 skipped on .NET SDK 10.0.401, Release. TRX: `/tmp/trunkred-96601c1-protocols-verification/reflection-disabled.trx`. The child-process assertions confirm reflection is disabled, the reflection canary throws, all four repaired serialization paths succeed, STAC filters accept/reject the expected items, and the complete time value is preserved.
+
+Pre-PR validation is still running. Its first invocation exited 75 while waiting for this same worktree's active focused build reservation; the same command was retried without bypassing the reservation or CPU cap.
 
 Exact commands:
 ```bash
@@ -31,7 +33,7 @@ git diff --check
 No C# project is changed, so project formatting has no applicable files. Only the focused class and checks selected by the pre-PR script are authorized for this packet.
 
 ## Self-review
-One self-review round completed using the PR reviewer rubric: reviewed the staged diff, culprit-to-fix assertion change, generated serializer metadata, and the child-process assertions. No P0/P1 findings; no P2/P3 follow-ups. This packet changes only the staged description. The complete time-value assertion, reflection-disabled state/canary, positive and negative filters, JSON property checks, and zero child exit code remain present. Final verification results are recorded above once commands complete.
+One self-review round completed using the PR reviewer rubric: reviewed the staged diff, culprit-to-fix assertion change, generated serializer metadata, and the child-process assertions. No P0/P1 findings; no P2/P3 follow-ups. This packet changes only the staged description. The complete time-value assertion, reflection-disabled state/canary, positive and negative filters, JSON property checks, and zero child exit code remain present. The focused verification result is recorded above; the required pre-PR command is pending.
 
 ## Gate Impact
 - [x] PR gates (build, test, governance)
