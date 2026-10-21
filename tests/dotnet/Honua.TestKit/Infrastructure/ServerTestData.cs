@@ -27,13 +27,19 @@ public static class ServerTestData
         await fixture.RunUnderSchemaMutationLockAsync(async () =>
         {
             var assembly = typeof(PostgresRasterStore).Assembly;
-            await using var stream = assembly.GetManifestResourceStream(
-                "Honua.Postgres.Migrations.006_AddRasterTileRendererProvenance.sql")
-                ?? throw new InvalidOperationException("The raster cache provenance migration was not embedded.");
-            using var reader = new StreamReader(stream);
-            var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
-                .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
-            await fixture.ExecuteAsync(ddl).ConfigureAwait(false);
+            foreach (var migration in new[]
+            {
+                "Honua.Postgres.Migrations.006_AddRasterTileRendererProvenance.sql",
+                "Honua.Postgres.Migrations.007_AddRasterSecondBandAlpha.sql",
+            })
+            {
+                await using var stream = assembly.GetManifestResourceStream(migration)
+                    ?? throw new InvalidOperationException($"The raster migration {migration} was not embedded.");
+                using var reader = new StreamReader(stream);
+                var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
+                    .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
+                await fixture.ExecuteAsync(ddl).ConfigureAwait(false);
+            }
         }).ConfigureAwait(false);
     }
 

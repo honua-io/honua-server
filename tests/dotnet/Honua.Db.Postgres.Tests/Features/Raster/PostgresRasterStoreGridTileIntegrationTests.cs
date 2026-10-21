@@ -704,7 +704,7 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             await using var connection = await fixture.GetConnectionAsync(schemaName);
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO raster_data (layer_id, name, raster)
+                INSERT INTO raster_data (layer_id, name, raster, second_band_is_alpha)
                 SELECT @layerId, 'gray-alpha',
                     ST_SetValues(
                         ST_AddBand(
@@ -714,7 +714,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
                                     '8BUI'::text, 1, NULL),
                                 1, 1, 1, ARRAY[[10, 200], [40, 0]]::double precision[][]),
                             '8BUI'::text, 1, NULL),
-                        2, 1, 1, ARRAY[[0, 128], [255, 255]]::double precision[][])
+                        2, 1, 1, ARRAY[[0, 128], [255, 255]]::double precision[][]),
+                    TRUE
                 RETURNING id;
                 """;
             command.Parameters.AddWithValue("layerId", LayerId);
@@ -750,6 +751,69 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
                 reader.GetInt32(0).Should().Be(2);
                 reader.GetDouble(1).Should().Be(gray);
                 reader.GetDouble(2).Should().Be(alpha, "band two is the source alpha, not a NoData mask");
+            }
+
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetImageTileAsync_UnsignedTwoBandWithoutAlphaMetadata_SynthesizesOpacity()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO raster_data (layer_id, name, raster)
+                SELECT @layerId, 'scientific-two-band',
+                    ST_SetValues(
+                        ST_AddBand(
+                            ST_SetValues(
+                                ST_AddBand(
+                                    ST_MakeEmptyRaster(2, 2, 1000, 3000, 1000, -1000, 0, 0, 3857),
+                                    '8BUI'::text, 1, NULL),
+                                1, 1, 1, ARRAY[[10, 200], [40, 0]]::double precision[][]),
+                            '8BUI'::text, 1, NULL),
+                        2, 1, 1, ARRAY[[0, 128], [255, 255]]::double precision[][])
+                RETURNING id;
+                """;
+            command.Parameters.AddWithValue("layerId", LayerId);
+            var rasterId = (long)(await command.ExecuteScalarAsync())!;
+            var window = new RasterTileWindow
+            {
+                MinX = 1000,
+                MinY = 1000,
+                MaxX = 3000,
+                MaxY = 3000,
+                Srid = 3857,
+                TileWidth = 2,
+                TileHeight = 2
+            };
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var tile = await CreateStore(schemaName).GetImageTileAsync(
+                LayerId, rasterId, window, RasterFormat.PNG, deadline.Token)
+                ?? throw new InvalidOperationException("Scientific two-band PNG tile is missing.");
+
+            command.Parameters.Clear();
+            command.CommandText = """
+                WITH image AS (SELECT ST_FromGDALRaster(@png) AS rast)
+                SELECT ST_Value(rast, 2, col, row, FALSE)
+                FROM image, (VALUES (1, 1), (2, 1), (1, 2), (2, 2)) AS sample(col, row)
+                ORDER BY row, col;
+                """;
+            command.Parameters.AddWithValue("png", tile.Data);
+            await using var reader = await command.ExecuteReaderAsync();
+            for (var index = 0; index < 4; index++)
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetDouble(0).Should().Be(255, "unsigned band two is scientific data unless import recorded alpha");
             }
 
             (await reader.ReadAsync()).Should().BeFalse();
@@ -993,7 +1057,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
                 acquisition_date TIMESTAMPTZ,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ,
-                srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+                srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED,
+                second_band_is_alpha BOOLEAN NOT NULL DEFAULT FALSE
             );
             CREATE TABLE IF NOT EXISTS raster_statistics (
                 id BIGSERIAL PRIMARY KEY,
