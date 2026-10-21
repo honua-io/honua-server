@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:eeeecc8cb7bc257109cf5f5436e9758d071a073eaca0049676e3a2b7039df62e",
+  "bundleDigest": "sha256:804295633cf3b1e959fc6ba45ad541054b9bbdb893cbf1a9acc96a22ccd3a02c",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2167,7 +2167,7 @@
     {
       "id": "guides/deploy/docker-compose",
       "path": "guides/deploy/docker-compose.md",
-      "documentDigest": "sha256:a440c0f5e8328d0bea07d1b7b64976afb9999433b88dff2e2f275052e98629ba",
+      "documentDigest": "sha256:4446b1f37464acf9a42f364df745cfebe504289126f04d6bcf890be4c928c24f",
       "metadata": {
         "type": "runbook",
         "title": "Deploy with Docker Compose",
@@ -2178,7 +2178,7 @@
     {
       "id": "guides/deploy/kubernetes",
       "path": "guides/deploy/kubernetes.md",
-      "documentDigest": "sha256:fd4668409d113769877b47b3e9d19e8194661588066bb24b4f814c5cc72711b6",
+      "documentDigest": "sha256:85505287aa37901e6be15e5d8e85df587b4ab20adb10c5e9f06ee730e9bd97cb",
       "metadata": {
         "type": "guide",
         "title": "Deploy on Kubernetes",
@@ -2249,7 +2249,7 @@
     {
       "id": "guides/deploy/upgrade-and-rollback",
       "path": "guides/deploy/upgrade-and-rollback.md",
-      "documentDigest": "sha256:597af7a6d308fe8bdd062208d0ad79c44a330f0b1c3aa9e201dba7e18c670e96",
+      "documentDigest": "sha256:37a01b6789c570222be817894df56f072c7e3b08c12f904936efc0d16c9070db",
       "metadata": {
         "type": "guide",
         "title": "Upgrade and roll back",
@@ -7746,7 +7746,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:3ad4e6f823af3b5f9a7353294cad738e000b1fef988538993debdea6742a6906",
+      "documentDigest": "sha256:b25ab14f894ac03fc6f286c53c71cd062414696275b6f6f97539096e09e9247a",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",
@@ -11691,6 +11691,11 @@
     {
       "source": "guides/deploy/upgrade-and-rollback",
       "relation": "links_to",
+      "target": "guides/deploy/kubernetes"
+    },
+    {
+      "source": "guides/deploy/upgrade-and-rollback",
+      "relation": "links_to",
       "target": "guides/deploy/monitoring"
     },
     {
@@ -15612,6 +15617,11 @@
       "source": "reference/configuration/environment-variables",
       "relation": "links_to",
       "target": "guides/deploy/docker-compose"
+    },
+    {
+      "source": "reference/configuration/environment-variables",
+      "relation": "links_to",
+      "target": "guides/deploy/upgrade-and-rollback"
     },
     {
       "source": "reference/configuration/environment-variables",

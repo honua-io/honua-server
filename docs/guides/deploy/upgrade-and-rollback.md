@@ -116,7 +116,7 @@ trusted ingress or disposable test boundary.
 
 Proceed only when `readyForCoordinatedDeploy` is `true`, no unexpected migrations are pending, and backups are current.
 
-2. Roll out the new image. Migrations run automatically when the new version starts (skip with `HONUA_SKIP_MIGRATIONS=true` if you run them out-of-band — mandatory on serverless).
+2. Roll out the new image. Migrations run automatically when the new version starts. To run them out of band instead, apply them first with [migrate-only mode](#run-migrations-out-of-band) and serve with `HONUA_SKIP_MIGRATIONS=true` (mandatory on serverless).
 
 ```bash
 # Kubernetes / Helm
@@ -127,6 +127,57 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 Single-instance Docker is not zero-downtime: pull the new tag, stop the old container, start the new one with the same env and database, and wait for `/healthz/ready`.
 
 3. Verify the rollout: `/healthz/ready` returns `Ready` on every replica, `GET /api/v1/admin/deploy/preflight` reports no pending migrations, and a known layer queries back with the expected count.
+
+## Run migrations out of band
+
+Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
+
+```bash
+docker run --rm \
+  -e HONUA_MIGRATE_ONLY=true \
+  -e ConnectionStrings__DefaultConnection="$HONUA_DATABASE_CONNECTION" \
+  ghcr.io/honua-io/honua-server:<target-tag>
+```
+
+Migrate-only mode works the same way in the native-AOT and JIT images. It:
+
+- resolves `ConnectionStrings__DefaultConnection` exactly as serving startup does, including `aws:secretsmanager:`, `azure:keyvault:` and `env:` references and `HONUA_SETTINGS_DOCUMENT`;
+- runs the PostGIS preflight, then applies migrations through the same runner, with every `Database__MigrationSafety__*` gate in force: unannotated contract scripts are refused (`Enforce`), reviewed contract scripts on an existing database need their one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce (`ContractApplyPolicy=Gate`), and `BackupCommand` runs before them;
+- starts no HTTP listener, hosted or background service, worker, scheduler or alert dispatcher, and needs no Redis, licence, admin password or encryption key;
+- ignores `HONUA_SKIP_MIGRATIONS`, so it can share the serving replicas' environment;
+- refuses to run inside AWS Lambda, where a failed init is retried. Run it as a container task or Job.
+
+Standard output carries one JSON line; logs go to standard error. The summary (`format: honua.migrate-only/v1`) has these fields:
+
+| Field | Meaning |
+|---|---|
+| `outcome` | `completed`, `refused` (a safety gate or the configuration stopped the run) or `failed`. |
+| `code`, `exitCode` | The typed reason and the process exit code, as in the table below. |
+| `message` | The reason in words. Connection details are never included. |
+| `appliedScripts` | Scripts this run applied, in order. Empty when the journal was already current. |
+| `schemaNumber` | The highest migration number the journal now holds. Set only on success. |
+| `binarySchemaNumber` | The highest migration number this image ships. |
+| `schemaVerified` | `true` once the runner has reconciled the journal with the physical schema. |
+| `journalWasEmpty` | `true` for a fresh install. |
+| `pendingScripts` | The scripts that were pending before the run, each with its classification: `expand`, `contract-annotated` or `contract-unannotated`. |
+| `contractApproval` | On a gated refusal: the `setting` to set and the `nonce` for these exact scripts. |
+| `backupHooks` | Each backup-command run: `outcome`, `succeeded`, `exitCode`, `durationMilliseconds`. |
+
+| Exit code | `code` | What to do |
+|---:|---|---|
+| `0` | `completed` | The journal is current. Start or roll the serving replicas. |
+| `2` | `invalid-configuration` | Fix the named setting: missing connection string, a provider other than PostgreSQL, a malformed switch, Lambda, or an execution-worker launch. |
+| `3` | `database-unavailable` | The database refused, timed out or ran out of connection slots. Retry once it is reachable. |
+| `4` | `database-incompatible` | PostGIS is missing or unsupported. Install or upgrade the extension. |
+| `5` | `contract-approval-required` | Review the scripts in `pendingScripts`, then re-run with `HONUA_APPROVE_CONTRACT_MIGRATIONS=<contractApproval.nonce>`. Unset it afterwards. |
+| `6` | `unannotated-contract-migration` | A contract-phase script lacks its compatibility review. Do not override `Enforce` to get past it; use an image whose scripts are reviewed. |
+| `7` | `backup-failed` | The backup command failed, so nothing was applied. Fix the backup and re-run. |
+| `8` | `schema-newer-than-binary` | The journal holds migrations this image does not know. Use the newer image. |
+| `9` | `migration-lock-timeout` | Another migrator held the migration lock. Let it finish, then re-run. |
+| `10` | `migration-failed` | A script failed, or the journal and the schema disagree. See the log on standard error. |
+| `11` | `cancelled` | The run received SIGTERM or SIGINT. It stops before the next database step, never inside a script. |
+
+A contract-phase upgrade is therefore two runs. The first exits `5` and prints the nonce. After review, the second run with that nonce applies the scripts. Kubernetes and Compose recipes are in [Deploy on Kubernetes](kubernetes.md#run-migrations-as-a-pre-upgrade-job) and [Deploy with Docker Compose](docker-compose.md#upgrade--rollback).
 
 ## Coordinated rollouts via the deploy API
 
