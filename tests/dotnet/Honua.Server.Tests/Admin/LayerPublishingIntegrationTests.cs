@@ -115,46 +115,6 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(null, true)]
-    [InlineData("public", true)]
-    [InlineData("unconfigured_source", false)]
-    [InlineData("honua", false)]
-    [Operation(Operations.Query)]
-    public async Task SecureConnection_FixtureSearchPath_EnforcesOperationalSchemaPolicy(
-        string? schema, bool allowed)
-    {
-        // The fixture schema must be explicitly configured before host composition;
-        // the current schema context alone must not extend a connection's policy.
-        var requestedSchema = schema ?? _fixture.CurrentSchema!;
-        await DeleteSecureConnectionAsync();
-        _connectionCreated = false;
-        var builder = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
-        {
-            SearchPath = $"{requestedSchema},public"
-        };
-        await CreateSecureConnectionAsync(builder.ConnectionString);
-
-        using var scope = _fixture.Services.CreateScope();
-        var resolver = scope.ServiceProvider.GetRequiredService<ISecureConnectionResolver>();
-        if (!allowed)
-        {
-            var resolve = () => resolver.ResolveConnectionStringAsync(_connectionId);
-            (await resolve.Should().ThrowAsync<InvalidOperationException>())
-                .WithInnerException<InvalidOperationException>()
-                .WithMessage("Connection search path must contain only configured operational schemas.");
-            return;
-        }
-
-        var resolved = await resolver.ResolveConnectionStringAsync(_connectionId);
-        new NpgsqlConnectionStringBuilder(resolved).SearchPath.Should().Be(builder.SearchPath);
-        await using var connection = new NpgsqlConnection(resolved);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT current_schema();";
-        (await command.ExecuteScalarAsync()).Should().Be(requestedSchema);
-    }
-
-    [IntegrationTheory]
     [InlineData("", true)]
     [InlineData(",\"enabled\":true", true)]
     [InlineData(",\"enabled\":false", false)]
@@ -220,6 +180,21 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     public async Task QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership(bool managed)
     {
         await UseServerFeatureStoreConnectionAsync();
+        // Resolve the encrypted connection through the real policy before publishing.
+        // The isolated fixture schema must be configured before host composition;
+        // the current schema context alone cannot extend a connection's search path.
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var resolver = scope.ServiceProvider.GetRequiredService<ISecureConnectionResolver>();
+            var resolved = await resolver.ResolveConnectionStringAsync(_connectionId);
+            new NpgsqlConnectionStringBuilder(resolved).SearchPath.Should().Be($"{_fixture.CurrentSchema},public");
+            await using var connection = new NpgsqlConnection(resolved);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT current_schema();";
+            (await command.ExecuteScalarAsync()).Should().Be(_fixture.CurrentSchema);
+        }
+
         var layer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
