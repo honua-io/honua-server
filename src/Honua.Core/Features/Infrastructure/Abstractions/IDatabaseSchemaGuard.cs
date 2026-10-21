@@ -35,6 +35,26 @@ public interface IDatabaseSchemaGuard
     Task VerifyAsync(DbConnection connection, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Checks the complete guarded schema floor, treating the listed journal entries as qualified
+    /// because the migration runner has already re-verified their forward-compatibility declarations
+    /// (#6477). Only the migration runner supplies this set; the <c>HONUA_SKIP_MIGRATIONS</c> startup
+    /// path never does.
+    /// </summary>
+    /// <param name="connection">Open connection to the target database.</param>
+    /// <param name="readerVerifiedMigrations">Unknown journal entries the runner verified as expand-only.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the complete schema floor and journal agree.</returns>
+    /// <remarks>
+    /// The default implementation ignores the set and keeps the strict check, so a guard that does not
+    /// model forward compatibility fails closed.
+    /// </remarks>
+    Task VerifyAsync(
+        DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
+        CancellationToken cancellationToken = default)
+        => VerifyAsync(connection, cancellationToken);
+
+    /// <summary>
     /// Checks journal/physical-schema consistency while permitting migrations that are genuinely
     /// pending (both their journal row and owned objects are absent).
     /// </summary>
@@ -45,6 +65,21 @@ public interface IDatabaseSchemaGuard
     /// The physical schema contradicts the migration journal.
     /// </exception>
     Task VerifyConsistencyAsync(DbConnection connection, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks journal/physical-schema consistency, treating the listed journal entries as qualified
+    /// because the migration runner has already re-verified their forward-compatibility declarations.
+    /// </summary>
+    /// <param name="connection">Open connection to the target database.</param>
+    /// <param name="readerVerifiedMigrations">Unknown journal entries the runner verified as expand-only.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when no partial or contradictory migration state exists.</returns>
+    /// <remarks>The default implementation ignores the set and keeps the strict check (fail closed).</remarks>
+    Task VerifyConsistencyAsync(
+        DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
+        CancellationToken cancellationToken = default)
+        => VerifyConsistencyAsync(connection, cancellationToken);
 
     /// <summary>
     /// Checks a database that has never been migrated (its journal is empty) whose migration-owned

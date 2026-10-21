@@ -368,6 +368,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _rasterFootprintsTables,
     ];
 
+    private static readonly IReadOnlySet<string> _noReaderVerifiedMigrations = new HashSet<string>(StringComparer.Ordinal);
     private readonly string _schemaName;
     private readonly PostgresCoreSchemaMigrationManifest _migrations;
 
@@ -393,12 +394,20 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         await VerifyAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
+    public Task VerifyAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken = default)
+        => VerifyAsync(connection, _noReaderVerifiedMigrations, cancellationToken);
+
+    /// <inheritdoc />
     public async Task VerifyAsync(
         DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(readerVerifiedMigrations);
+        await VerifyReaderCompatibilityAsync(connection, readerVerifiedMigrations, cancellationToken).ConfigureAwait(false);
         var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (state.RequiresRasterFloor)
@@ -468,12 +477,20 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _governedLineageIndexes);
     }
 
+    public Task VerifyConsistencyAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken = default)
+        => VerifyConsistencyAsync(connection, _noReaderVerifiedMigrations, cancellationToken);
+
+    /// <inheritdoc />
     public async Task VerifyConsistencyAsync(
         DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(readerVerifiedMigrations);
+        await VerifyReaderCompatibilityAsync(connection, readerVerifiedMigrations, cancellationToken).ConfigureAwait(false);
         var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (!state.JournalIsEmpty)
@@ -610,7 +627,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             .Select(family => (family.Migration, Present: family.Tables.Where(state.Tables.Contains).ToArray()))
             .Where(family => family.Present.Length > 0);
 
-    private async Task VerifyReaderCompatibilityAsync(DbConnection connection, CancellationToken cancellationToken)
+    private async Task VerifyReaderCompatibilityAsync(
+        DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
+        CancellationToken cancellationToken)
     {
         if (_migrations.KnownMigrationNames is not { } known)
         {
@@ -631,7 +651,9 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var name = reader.GetString(0);
-            if (!known.Contains(name))
+            // Only the migration runner supplies reader-verified entries (#6477): it has already
+            // re-derived their expand-only declaration from the recorded, hash-bound script text.
+            if (!known.Contains(name) && !readerVerifiedMigrations.Contains(name))
             {
                 unknown.Add(name);
             }
