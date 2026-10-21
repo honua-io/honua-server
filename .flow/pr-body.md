@@ -47,16 +47,22 @@ The escalated focused retry completed successfully (exit 0): 22 passed, 0 failed
 timeout 60m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish-retry.trx' --results-directory /tmp/admin-layer-repair-results
 ```
 
-The first escalated fast gate exhausted the default 40-minute admission wait at dependency-graph evaluation (exit 75: `dotnet shim: reservation unavailable; command not started (retryable)`). Managed restore/build/format/test work did not start. Exact command:
+The first escalated fast gate exited 75 at dependency-graph admission: `dotnet shim: reservation unavailable; command not started (retryable)`. The reservation ledger records `waited=2309`, `held=0`, `queue=unavailable`; this was not a measured code/test failure or a clean admission-deadline timeout. Managed restore/build/format/test work did not start. Exact command:
 
 ```bash
 timeout 180m scripts/ci/pre-pr-check.sh --fast
 ```
 
-The same gate is being retried with a longer queue-wait budget, preserving the shared four-slot capacity, four-node MSBuild cap, shared compilation and normal check selection:
+A longer admission-wait retry also exited 75 before managed work; its ledger entry is `waited=731`, `held=0`, `queue=unavailable`. Exact command:
 
 ```bash
 HONUA_BUILD_SLOT_WAIT=7200 timeout 240m scripts/ci/pre-pr-check.sh --fast
+```
+
+The next retry increases both the queue-lock acquisition wait and admission wait. The shared four-slot capacity, four-node MSBuild cap, shared compilation and normal check selection remain unchanged:
+
+```bash
+HONUA_BUILD_SLOT_QLOCK_WAIT=60 HONUA_BUILD_SLOT_WAIT=7200 timeout 240m scripts/ci/pre-pr-check.sh --fast
 ```
 
 ## Gate Impact
