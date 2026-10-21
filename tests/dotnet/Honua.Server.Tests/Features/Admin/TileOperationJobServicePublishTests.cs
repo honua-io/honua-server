@@ -17,6 +17,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
@@ -30,6 +31,54 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed class TileOperationJobServicePublishTests
 {
+    [Theory]
+    [InlineData(1, "res-storage-1", "pub-storage-1")]
+    [InlineData(5, "res-storage-5", "pub-storage-5")]
+    [InlineData(7, "res-publish", "pub-publish")]
+    [InlineData(9, "res-storage-9", "pub-storage-9")]
+    [InlineData(21, "res-storage-21", "pub-storage-21")]
+    [InlineData(22, "res-storage-22", "pub-storage-22")]
+    [InlineData(31, "res-storage-31", "pub-storage-31")]
+    [InlineData(100, "res-storage-100", "pub-storage-100")]
+    public async Task Publish_UnscopedStorageLayer_StampsRoutableSource(
+        int layerId, string resourceId, string publicationId)
+    {
+        var stub = new StubCloudStorage();
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true);
+        var sut = CreateSut(serviceProvider);
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            LayerId = layerId,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Completed, progress.ErrorMessage);
+        progress.PublishedArtifact.Should().NotBeNull();
+        var stored = await stub.GetMetadataAsync(progress.PublishedArtifact!.ArtifactId);
+        stored.Should().NotBeNull();
+        stored!.Metadata.Should().Contain("serviceId", "svc-publish-test")
+            .And.Contain("publicationId", publicationId)
+            .And.Contain("resourceId", resourceId)
+            .And.Contain("storageBindingId", $"{resourceId}-binding");
+
+        // A completed upload must carry the source identity the range proxy will authorize.
+        // In particular, layer 7 is also published by world, so legacy layer-only metadata
+        // would be ambiguous even though archive generation and upload both succeeded.
+        var snapshot = await serviceProvider.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync();
+        var source = PMTilesProxySourceResolver.Resolve(snapshot, stored.Metadata);
+        source.Should().NotBeNull();
+        source!.Service.Metadata.Id.Should().Be("svc-publish-test");
+        source.Publication.Metadata.Id.Should().Be(publicationId);
+        source.Resource.Metadata.Id.Should().Be(resourceId);
+    }
+
     [Theory]
     [InlineData("archive", true, 7)]
     [InlineData("publish", true, 7)]
