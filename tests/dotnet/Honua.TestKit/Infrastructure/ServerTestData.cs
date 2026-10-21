@@ -15,6 +15,12 @@ public static class ServerTestData
     private static readonly string[] _fixtureAttachmentMigrations =
         ["002_CreateAttachmentsTable.sql", "125_AddImportedAttachmentIdentity.sql"];
 
+    private static readonly string[] _rasterSchemaMigrations =
+    [
+        "Honua.Postgres.Migrations.006_AddRasterTileRendererProvenance.sql",
+        "Honua.Postgres.Migrations.007_AddRasterSecondBandAlpha.sql",
+    ];
+
     /// <summary>
     /// Seeds the fixture and applies the production cache provenance DDL to its fixed raster schema.
     /// </summary>
@@ -27,11 +33,7 @@ public static class ServerTestData
         await fixture.RunUnderSchemaMutationLockAsync(async () =>
         {
             var assembly = typeof(PostgresRasterStore).Assembly;
-            foreach (var migration in new[]
-            {
-                "Honua.Postgres.Migrations.006_AddRasterTileRendererProvenance.sql",
-                "Honua.Postgres.Migrations.007_AddRasterSecondBandAlpha.sql",
-            })
+            foreach (var migration in _rasterSchemaMigrations)
             {
                 await using var stream = assembly.GetManifestResourceStream(migration)
                     ?? throw new InvalidOperationException($"The raster migration {migration} was not embedded.");
