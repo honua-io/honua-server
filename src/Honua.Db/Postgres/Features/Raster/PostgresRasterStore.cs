@@ -1439,6 +1439,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         var envelopeGeom = clip.Srid is > 0
             ? "ST_GeomFromWKB(@clipGeom, @clipSrid)"
             : $"ST_GeomFromWKB(@clipGeom, {sourceSrid})";
+        // Sample the exact output pixel centres, as the tile and import paths do. GDAL's
+        // reference-raster warp can lose an edge column when projecting this framed extent.
+        var frameData = algorithm == "NearestNeighbor"
+            ? RasterCorrectedNearestSql.Sample("s.rast", "g.rast")
+            : $"ST_Transform(s.rast, g.rast, '{algorithm}')";
 
         return $"""
             ,
@@ -1458,7 +1463,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM frame_bounds fb
             ),
             frame_data AS (
-                SELECT ST_Transform(s.rast, g.rast, '{algorithm}') AS rast
+                SELECT {frameData} AS rast
                 FROM {sourceCte} s, frame_grid g
                 WHERE s.rast IS NOT NULL
             ),
