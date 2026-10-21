@@ -19,10 +19,14 @@ Fix forward is appropriate because eight landings separate the last actual green
 - Preserve the current trunk implementation and all other lanes' changes.
 
 ## Testing
+
+- [x] Manual verification of existing regression coverage performed
+- [ ] Architecture suites completed
+
 - `python3 scripts/ci/fixtures/validate-mcp-server-auth.py` — passed all 7 environment/mutation checks again on the merged tree.
 - `python3 -m unittest scripts.certification.test_verify_mcp_live_certification` — passed 4 tests again on the merged tree.
 - `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter FullyQualifiedName~ConfigurationValidationServiceTests --logger 'trx;LogFileName=mcp-rest-configuration.trx'` — passed 30 tests, zero failures/skips, Release, on the original branch baseline.
-- `scripts/ci/pre-pr-check.sh --fast` — Release build passed (36 roots, 107 projects in the evaluated closure, zero errors). The combined four-project formatter could not finish loading its MSBuild workspace within its cap; its automatic retry also exited 124. No formatting violation was reported. Equivalent per-project format checks and the selector’s unchanged remaining test actions are in progress.
+- `scripts/ci/pre-pr-check.sh --fast` — Release build passed (36 roots, 107 projects in the evaluated closure, zero errors). The combined four-project formatter could not finish loading its MSBuild workspace within its cap; its automatic retry also exited 124. No formatting violation was reported. A separate scoped formatter admission retry exited 75 after its queue wait expired; no formatter started during that attempt. Equivalent per-project checks are being retried without changing their 20-minute execution cap. The selector’s unchanged remaining test actions are pending.
 
 Current trunk f854f8fac0d5bf9fd9e4719a7f603463469bfb99 was merged without conflict before final verification. Its alerts and ImageServer changes are preserved. The focused configuration class will also be rerun against the merged build.
 
