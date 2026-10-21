@@ -1,5 +1,5 @@
-test(stac): accept the pystac-client 0.9.1 get_collection not-found contract
-# COVERS: Python Integration Tests
+test(ci): cover STAC client and topology promotion regressions
+# COVERS: Python Integration Tests; Server Tests (Server Features Admin Network and Jobs)
 
 ## Issue Link
 Refs trunk-red a6581e4 (Python Integration Tests family; the a6581e4 failures were already repaired on trunk by #5887/#5892, this repairs the current red at 4ff2e7c)
@@ -45,3 +45,29 @@ None
 - P2: trunk `Honua.Architecture.Tests` `FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput` fails at f854f8fac0. #6456/#6465 renamed `AlertEntitlementGateTests` cases (`...ProEdition...` became `...ExpiredPai...`) and `docs/gis/data/feature-catalog.json` was last regenerated in #6450. Needs `scripts/generate-feature-catalog.sh`; outside this packet's `tests/python/**` scope.
 - P3: lane tooling. `churn-governor.py` rejects the `-- RunConfiguration.MaxCpuCount=1` passthrough, so `pre-pr-check.sh` dies at its first `dotnet test` in lanes unless `CHURN_DOTNET_INNER=1` is set.
 - P3: `tests/python/requirements.txt` leaves every client library unpinned (`>=`), so upstream releases can redden the trailing matrix with no trunk change. Consider a constraints file or upper bounds for the certification clients so upgrades land deliberately.
+
+
+## Admin Network and Jobs packet
+
+The original family red is already repaired on trunk by #5887 (`01449eaed0`), which mirrors migration 128 in `tests/seed/server.yaml`. This packet preserves that fix and adds endpoint regression coverage for the request binding introduced by culprit #5828 (`7a71b1ebe4`), rather than reverting it. Five landings separate the last actual green from the reported red, and the repair is already on the current base.
+
+### Diagnosis
+
+Read [the diagnosis comment](https://github.com/honua-io/honua-server/commit/a6581e4d332e65e1202b8d1b45956ef73b6390d7#commitcomment-205862684) and #5828 before independently reproducing the boundary. Checked run 38135401612 artifacts first: the seven-day TRX artifact has expired. Surviving job 114470650669 logs show seven failures in `NetworkTopologyPromotionAdminEndpointsTests`, with PostgreSQL SQLSTATE 42703 from `TryGetIdempotentReplayAsync`: `request_hash` is missing. The test host skips application migrations; its old seed omitted the column added by #5828.
+
+An independent disposable PostgreSQL reproduction extracts each commit's exact seed DDL and `PromotionColumns`, then executes the replay SELECT. `96601c1`, `96dbdb2`, `722aa9a`, and `6ca7204` pass; `7a71b1e` and `a6581e4` fail with missing `request_hash`; repair `01449eaed0` and this branch pass. This is an executable SQL boundary test, not a claim that the full xUnit class ran on every historical commit.
+
+### Changes Made
+
+- Add `Promote_SameIdempotencyKeyWithDifferentRowVersion_Returns409WithoutChangingHistory`. It promotes successfully, changes only the expected row version under the same key, requires the specific idempotency conflict, replays the original request successfully, and confirms one history record and the expected active generation. A legacy row with no request hash would accept the changed version, so the test exercises persisted request binding through the real endpoint and store.
+- Preserve the Python lane's changes and coverage above. Preserve the Core lane's independent shared WIP ref; this lane checkpoints at `wip/fix/trunkred-a6581e4-admin-network-jobs` to avoid overwriting it.
+
+### Verification
+
+- `python3 /home/mike/honua-io/artifacts/trunkred-a658-admin-network-jobs-bisect.py`: PASS, all eight expected SQL boundary outcomes; isolated container removed.
+- Focused Release xUnit verification and required pre-PR check: in progress.
+- The initial sandboxed restore hit NU1900 because NuGet's shared vulnerability cache was read-only. The same focused command was restarted with command escalation; no warning or audit suppression was added.
+
+### Self-review
+
+Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions distinguish idempotency rejection from stale-state rejection, valid replay stays covered, unique dataset IDs isolate history, and all new HTTP responses are disposed. No production API, dependency, authorization, or shared-pipeline change. Final results and any follow-ups will be recorded after verification.
