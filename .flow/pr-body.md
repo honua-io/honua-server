@@ -70,4 +70,8 @@ An independent disposable PostgreSQL reproduction extracts each commit's exact s
 
 ### Self-review
 
-Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions distinguish idempotency rejection from stale-state rejection, valid replay stays covered, unique dataset IDs isolate history, and all new HTTP responses are disposed. No production API, dependency, authorization, or shared-pipeline change. Final results and any follow-ups will be recorded after verification.
+Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions distinguish idempotency rejection from stale-state rejection, valid replay stays covered, unique dataset IDs isolate history, and all new HTTP responses are disposed. No production API, dependency, authorization, or shared-pipeline change. One self-review round is complete; no P0/P1 finding in this lane's diff. `git diff --check origin/trunk` and `PYTHONIOENCODING=utf-8 python3 scripts/ci/local-architecture-review.py` passed. The latter emitted a nonblocking deep-inheritance warning: its heuristic counts every `: ` in the file, including named arguments (13 already occur on trunk); this test class adds no inheritance. Runtime verification remains in progress.
+
+### Admin packet follow-ups
+
+- P3: make the local architecture checker inspect actual base-type declarations instead of counting colon-space text. The reported inheritance concern is a reviewed false positive; no source change is needed here.
