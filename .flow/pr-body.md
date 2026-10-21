@@ -42,7 +42,7 @@ NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget dotnet test tests/dotnet/Hon
 
 The Identify Release dependency and test assembly build completed before the successful `--no-build` run. Its initial automatic-container attempt failed during PostgreSQL fixture initialization, before endpoint assertions. The successful run used the existing TestKit-supported `HONUA_TEST_DB_URL` with a dedicated PostGIS 18 sidecar; each test retained its isolated schema and original assertions. No fixture or runtime code changed. Results: `/tmp/honua-geoservices-6f74305-results/mapserver-query-limits.trx` and `/tmp/mapserver-identify-verification/identify-sidecar.trx`.
 
-Full fast-check command (reserved retry pending):
+Full fast-check command (reserved retry running):
 
 ```bash
 IFS= read -r HONUA_TEST_DB_URL < /tmp/mapserver-identify-sidecar/db-url
@@ -77,7 +77,7 @@ The ignored generated runner can be recreated as `obj/mapserver-pre-pr-reserved.
 ```
 
 ## Self-review
-Completed one round using `honua-flow-work/tools/lib/pr-review-rubric.md`. Existing endpoints and fixtures are reused; the original exact cap assertion remains. No runtime, dependency, security, or public API change. P0/P1: none found. P2/P3 follow-ups: none identified. Both focused classes and all 4,164 retained Server Fast cases passed; the complete reserved fast-check retry remains pending.
+Completed one round using `honua-flow-work/tools/lib/pr-review-rubric.md`. Existing endpoints and fixtures are reused; the original exact cap assertion remains. No runtime, dependency, security, or public API change. P0/P1: none found. P2/P3 follow-ups: none identified. Both focused classes and all 4,164 retained Server Fast cases passed; the complete reserved fast-check retry is admitted and running (105-project closure).
 
 ## Gate Impact
 - [x] PR gates (build, test, governance).
