@@ -26,6 +26,13 @@ namespace Honua.CloudIntegration.Tests;
 /// request, an object above the background threshold is queued without a body read, and an
 /// allow-listed role is assumed with the configured external id.
 /// </summary>
+/// <remarks>
+/// LocalStack Community STS grants every AssumeRole: it does not evaluate trust-policy
+/// conditions (<c>sts:ExternalId</c>), even with <c>ENFORCE_IAM=1</c>, and it issues credentials
+/// for missing roles and foreign accounts too. A refusal cell cannot execute against it, so the
+/// external-id denial is proven in <c>Honua.Aws.UnitTests.AwsImportObjectStoreReaderTests</c>
+/// against an STS double that applies the trust policy, not as a permanently skipped cell here.
+/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 [Trait("Category", "Integration")]
 [Trait("Category", "Emulator")]
@@ -174,25 +181,6 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         var admitted = CreateReader(clients, RoleOptions(bucket, roleArn, ExternalId));
         var head = await admitted.HeadAsync(Location(bucket, key, roleArn), CancellationToken.None);
         Assert.False(string.IsNullOrWhiteSpace(head.ETag));
-    }
-
-    [SkippableFact]
-    public async Task RoleThatRequiresAnExternalId_IsForbiddenWithoutTheConfiguredId()
-    {
-        Skip.IfNot(_fixture.Available, "LocalStack Community not available (Docker daemon absent).");
-        var bucket = NewBucket();
-        using var clients = _fixture.CreateClients();
-        var roleArn = await CreateExternalIdRoleAsync(clients.Iam, bucket);
-        var enforced = !await TryAssumeAsync(clients.Sts, roleArn, externalId: null);
-        Skip.If(
-            !enforced,
-            "LocalStack Community 3.6 did not enforce sts:ExternalId on the role trust policy.");
-
-        var denied = CreateReader(clients, RoleOptions(bucket, roleArn, externalId: null));
-        var forbidden = await Assert.ThrowsAsync<ImportObjectStoreException>(
-            () => denied.HeadAsync(Location(bucket, "layers/assumed.geojson", roleArn), CancellationToken.None));
-        Assert.Equal(ImportObjectStoreProblems.Forbidden, forbidden.Code);
-        Assert.DoesNotContain(ExternalId, forbidden.Message, StringComparison.Ordinal);
     }
 
     private static async Task<ImportObjectStoreCoordinator.Admission> EvaluateAsync(
