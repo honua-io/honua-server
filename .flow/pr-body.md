@@ -34,7 +34,7 @@ Fix forward is already on trunk in #5784. Its fixture graph supplies routable bi
 
 Verification is in progress. Exact commands and results will be recorded before staged delivery. All managed commands use PATH `dotnet`, the lane shim's unchanged four-node cap, and shared compilation. No project source changed, so no formatter is required.
 
-The first current-trunk focused attempt (`timeout 30m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish.trx' --results-directory /tmp/admin-layer-repair-results`) restored and compiled dependencies, then exhausted its outer timeout during compilation (exit 124). No test result is claimed from that attempt. A longer incremental retry is queued after the fast gate.
+The first current-trunk focused attempt (`timeout 30m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish.trx' --results-directory /tmp/admin-layer-repair-results`) restored and compiled dependencies, then exhausted its outer timeout during compilation (exit 124). No test result is claimed from that attempt. A longer incremental retry and the first fast-gate invocation were stopped while queued (exit 143) after inspection showed a mismatch between the sandbox's PID namespace and the host process identities used by the shared queue. Verification is being retried with normal command escalation and the same PATH shim, worktree exclusion, capacity limit and compiler settings.
 
 ## Gate Impact
 - [x] PR gates (build, test, governance): historical Admin Layer Management regression verification
@@ -49,7 +49,7 @@ The first current-trunk focused attempt (`timeout 30m dotnet test tests/dotnet/H
 None.
 
 ## Self-review
-Pending final review against the PR reviewer's rubric after verification. No staged-success receipt has been written.
+Completed one review round against `origin/trunk` using the PR reviewer's rubric. The net diff contains only handoff documents: no runtime changes, test changes, dependency-direction changes, new endpoints or public infrastructure types. Checked the culprit boundary, existing repair, exact verification attempts, archive preservation, commit identity and source-policy assertions; corrected the checkpoint link. No P0/P1 findings. The P2 historical-bisect evidence follow-up is recorded below. `git diff --check origin/trunk...HEAD` passes. Verification remains pending; no staged-success receipt has been written.
 
 ## Known Follow-ups
 P2 evidence follow-up: complete the historical executable bisect when the dedicated bisect worktree's build reservation can be reconciled. Attribution currently relies on the existing green/red CI executions and isolated source delta, not an executed local midpoint.
