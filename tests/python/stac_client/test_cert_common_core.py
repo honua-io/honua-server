@@ -748,10 +748,26 @@ def test_cert_errh_01_unknown_collection(
 ) -> None:
     """An unknown collection surfaces as a structured pystac-client error."""
     started = time.perf_counter()
+    url = f"{base_url.rstrip('/')}/stac/collections/{canonical_fixture.UNKNOWN_COLLECTION_ID}"
 
+    # pystac-client 0.9.1 answers a 404 from get_collection with None and re-raises
+    # every other APIError, so None is the client's own 404 verdict; earlier
+    # releases raise the APIError itself.
+    try:
+        outcome = api_client.get_collection(canonical_fixture.UNKNOWN_COLLECTION_ID)
+    except APIError as error:
+        get_collection_status = getattr(error, "status_code", None)
+        assert get_collection_status == 404, (
+            f"unknown collection produced status {get_collection_status!r}, expected 404"
+        )
+        get_collection_outcome = "raised APIError with status_code=404"
+    else:
+        assert outcome is None, f"unknown collection resolved to {outcome!r}"
+        get_collection_outcome = "returned None (the 0.9.1+ not-found contract)"
+
+    # The client's own transport still surfaces the status as a structured error.
     with pytest.raises(APIError) as raised:
-        api_client.get_collection(canonical_fixture.UNKNOWN_COLLECTION_ID)
-
+        StacApiIO(max_retries=0).request(url)
     error = raised.value
     status = getattr(error, "status_code", None)
     assert status == 404, f"unknown collection produced status {status!r}, expected 404"
@@ -759,9 +775,7 @@ def test_cert_errh_01_unknown_collection(
 
     # The RFC 7807 body is the substantive evidence and APIError only carries the
     # raw text, so it is re-read directly to assert its shape.
-    response = cert_lane.get_json(
-        f"{base_url.rstrip('/')}/stac/collections/{canonical_fixture.UNKNOWN_COLLECTION_ID}"
-    )
+    response = cert_lane.get_json(url)
     body = response.json()
     assert body.get("status") == 404
     assert canonical_fixture.UNKNOWN_COLLECTION_ID in str(body.get("detail", ""))
@@ -771,7 +785,8 @@ def test_cert_errh_01_unknown_collection(
         "pass",
         duration_ms=_elapsed_ms(started),
         notes=(
-            f"Client.get_collection({canonical_fixture.UNKNOWN_COLLECTION_ID!r}) raised "
+            f"Client.get_collection({canonical_fixture.UNKNOWN_COLLECTION_ID!r}) "
+            f"{get_collection_outcome}; StacApiIO raised "
             f"pystac_client.exceptions.APIError with status_code=404; "
             f"body {cert_lane.problem_summary(response)}."
         ),
