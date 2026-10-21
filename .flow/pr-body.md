@@ -34,14 +34,18 @@ Fix forward is already on trunk in #5784. Its fixture graph supplies routable bi
 
 ## Testing
 
-- [ ] Focused `TileOperationJobServicePublishTests` passed in Release
+- [x] Focused `TileOperationJobServicePublishTests` passed in Release: 22 passed, 0 failed, 0 skipped
 - [ ] Ran `scripts/ci/pre-pr-check.sh --fast` and all checks passed
 
 Verification is in progress. Exact commands and results will be recorded before staged delivery. All managed commands use PATH `dotnet`, the lane shim's unchanged four-node cap, and shared compilation. No project source changed, so no formatter is required.
 
 The first current-trunk focused attempt (`timeout 30m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish.trx' --results-directory /tmp/admin-layer-repair-results`) restored and compiled dependencies, then exhausted its outer timeout during compilation (exit 124). No test result is claimed from that attempt. A longer incremental retry and the first fast-gate invocation were stopped while queued (exit 143) after inspection showed a mismatch between the sandbox's PID namespace and the host process identities used by the shared queue. Verification is being retried with normal command escalation and the same PATH shim, worktree exclusion, capacity limit and compiler settings.
 
-Checkpoint: the escalated retry has compiled the server and protocol assemblies and is still building test dependencies. No completed focused-test result or fast-gate success is claimed yet.
+The escalated focused retry completed successfully (exit 0): 22 passed, 0 failed, 0 skipped; TRX: `/tmp/admin-layer-repair-results/admin-layer-publish-retry.trx`. The fast gate remains pending.
+
+```bash
+timeout 60m dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore --configuration Release --filter 'FullyQualifiedName~TileOperationJobServicePublishTests' --logger 'trx;LogFileName=admin-layer-publish-retry.trx' --results-directory /tmp/admin-layer-repair-results
+```
 
 ## Gate Impact
 
