@@ -541,7 +541,7 @@ public sealed class EsriTileCachePackageReaderTests
                   <TileCacheInfo>
                     <SpatialReference>{{spatialReference ?? "<WKID>3857</WKID>"}}</SpatialReference>
                     <TileCols>{{tileCols}}</TileCols>
-                    <TileRows>256</TileRows>
+                    <TileRows>{{tileCols}}</TileRows>
                     <TileOrigin>{{tileOrigin ?? "<X>-20037508.342789244</X><Y>20037508.342789244</Y>"}}</TileOrigin>
                     <LODInfos>{{lodInfos}}</LODInfos>
                   </TileCacheInfo>
