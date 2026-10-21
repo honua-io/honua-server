@@ -26,7 +26,7 @@ The cap test blob is identical from the supplied green through the red head. Sou
 ## Testing
 - [x] `MapServerQueryLimitsTests`: Release, 4 passed, 0 failed, 0 skipped.
 - [x] `MapServerIdentifyEndpointTests`: Release, 56 passed, 0 failed, 0 skipped, including all four new precedence cases.
-- [ ] `scripts/ci/pre-pr-check.sh --fast`: own worktree gate running; restore complete and Release warnings-as-errors build active.
+- [ ] `scripts/ci/pre-pr-check.sh --fast`: Linux-local NuGet cache retry running; restore complete and Release warnings-as-errors build active.
 - [ ] Changed-project formatting verified by the fast check.
 - [x] `git diff --check`.
 
@@ -46,11 +46,11 @@ Required fast-check command (currently running):
 ```bash
 IFS= read -r HONUA_TEST_DB_URL < /tmp/mapserver-identify-sidecar/db-url
 export HONUA_TEST_DB_URL
-NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget scripts/ci/pre-pr-check.sh --fast
+NUGET_PACKAGES=/tmp/mapserver-identify-packages NUGET_HTTP_CACHE_PATH=/tmp/mapserver-identify-nuget scripts/ci/pre-pr-check.sh --fast
 git diff --check
 ```
 
-The fast check selects 33 roots / a 105-project closure because the staged description triggers shared-input discovery. It uses Release, warnings as errors, changed-project `dotnet format --include` under `timeout 20m`, selected unit tests, and architecture checks. Log: `/tmp/mapserver-identify-pre-pr-final.log`. An earlier sibling-worktree gate ended without a completion result and is not counted as a pass. All managed commands use the PATH lane shim with its four-node cap and shared compilation enabled.
+The fast check selects 33 roots / a 105-project closure because the staged description triggers shared-input discovery. It uses Release, warnings as errors, changed-project `dotnet format --include` under `timeout 20m`, selected unit tests, and architecture checks. Log: `/tmp/mapserver-identify-pre-pr-linux-cache.log`. The previous own-worktree attempt encountered CS0009 memory-allocation errors opening dependencies from the Windows 9p-mounted global NuGet cache and was stopped. The retry uses a Linux-local package cache without changing source, package versions, auditing, or compiler settings. An earlier sibling-worktree gate ended without a completion result and is not counted as a pass. All managed commands use the PATH lane shim with its four-node cap and shared compilation enabled.
 
 Staged handoff: verified source is based on `f854f8fac0d5bf9fd9e4719a7f603463469bfb99`. Trunk advanced to `581cda46c63e3bad91f85e405af6d949a4ac4cb3` during local verification. Before opening the PR, sync the then-current default branch and rerun verification as required by the packet's opening-stage instruction. This staged delivery does not open a PR or claim verification of later trunk landings.
 
