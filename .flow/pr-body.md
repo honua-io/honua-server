@@ -80,4 +80,5 @@ Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions 
 
 
 
-Checkpoint: 2026-10-21T12:23:44+00:00 — the reserved Release build has completed Core, Routing, providers, and multiple test-support projects. A dependency-copy memory warning retried successfully and its project completed; the full build and runtime filters remain pending. No staged result receipt has been written.
+
+Checkpoint: 2026-10-21T12:40:41+00:00 — the reserved Release build continues through protocol, hosting, provider, and unit-test assemblies. Core, Routing, job/import runtimes, and STAC assemblies have completed. No source failure has been reported; the full required check and both runtime filters remain pending.
