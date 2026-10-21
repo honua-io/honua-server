@@ -1,99 +1,42 @@
-docs(operate): replay Operate on accepted pin 93cad86 and document rollback completion proof (#3302)
-# Pull Request
+test(stac): accept the pystac-client 0.9.1 get_collection not-found contract
+# COVERS: Python Integration Tests
 
 ## Issue Link
-Refs #3302 (released: the finding-driven joined deployment transcript and an authenticated Admin CLI execution need a deployment finding producer and an installed CLI session on the candidate that this lane could not run. AWS ECS-small placement replay is billable live AWS work, carried by honua-io/honua-iac#196, now a 2026.2 follow-on. Everything else that can be executed on the accepted pin is delivered here.)
+Refs trunk-red a6581e4 (Python Integration Tests family; the a6581e4 failures were already repaired on trunk by #5887/#5892, this repairs the current red at 4ff2e7c)
 
 ## Summary
-The accepted platform pin moved to honua-server `93cad86` (`sha256:785de2ae…`, honua-release trunk `8aa2bf63`), but every Operate receipt was bound to `548b7a5`. This PR replays the three installed Operate harnesses on that pin. It also produces the first deployment-actuator evidence on an accepted pin: a Local Docker protected-recovery replay on `honua-yarp-rolling`, plus the honua-devops client against the same server.
+The packet's original red at a6581e4 (#5827 moved GET STAC paging to `next=offset:N`; `test_nb_page_03`/`test_nb_page_05` still asserted `token=`) was fixed forward on trunk on 10-11 by #5887 and #5892, and the family ran green on trunk through 405198df54 (run 39470379129).
 
-The replay found a customer-facing gap. Since #3892 a rollback reports `RolledBack` only after a functional query proves the restored target. The parameters that configure that query (`rollback.functional_query.*`) were documented nowhere. A self-hosted operator following the docs gets every automatic rollback stuck at `RollbackRequested`, then `ManualInterventionRequired` (`rollback.functional_query_unproven`). This PR documents it.
+The family is red again at 4ff2e7c8c2 (run 39507011395, job 118976528305): `stac_client/test_cert_common_core.py::test_cert_errh_01_unknown_collection - Failed: DID NOT RAISE APIError` (1 failed, 1115 passed). No landing in 405198df54..4ff2e7c8c2 touches STAC (#6457 CI shards, #6456 alert 402 detail, #6455 a Postgres raster test). The cause is the unpinned `pystac-client>=0.8.0` requirement: the green job installed pystac-client 0.9.0, the red job 0.9.1. pystac-client 0.9.1 changed `Client.get_collection` to return `None` when the collection request answers 404 (it still re-raises every other `APIError`). Server behaviour is unchanged. This is an upstream dependency change, so a revert does not apply; this PR fixes forward.
 
 ## Changes Made
-- `docs/guides/deploy/upgrade-and-rollback.md`: new **Rollback completion proof** section covering:
-  - the three conditions (prior identity, healthy endpoint, functional query);
-  - the `rollback.functional_query.*` and `telemetry.golden_query.*` parameters and their precedence;
-  - which ones are required;
-  - the rollback window;
-  - the terminal reason codes.
-
-  Two troubleshooting bullets are corrected or added.
-- `docs/guides/operate/scenario.md`: the Local Docker rollback row names `honua-yarp-rolling` as a real actuator. It also states its preconditions: the host container runtime and the completion-proof parameters.
-- `docs/guides/operate/README.md`: the rollback taxonomy says when `RolledBack` is reported.
-- New receipts in `docs/guides/operate/evidence/`:
-  - `3302-accepted-93cad86-staging.json`: 5/5 scenarios.
-  - `3302-accepted-93cad86-read-observation.json`: passed, 129 descriptors.
-  - `3302-accepted-93cad86-approval.json`: 5/5 checks.
-  - `3302-accepted-93cad86-protected-recovery.json`: 10/11 original cells pass, plus a satisfiable wrong-body cell. DevOps live tests pass 5/5. The receipt embeds every harness adaptation as a diff and the SHA-256 of each raw transcript.
-- `docs/internal/contributor/operate-docs-precut-evidence.md`: new "October 11 accepted-pin replay" section and an updated acceptance disposition.
+- CERT-ERRH-01 accepts either documented client contract for an unknown collection: `APIError` with `status_code == 404` (pystac-client < 0.9.1) or `None` (0.9.1+, which returns `None` only for a 404). Any other resolved value still fails.
+- Adds a transport-level assertion so the "structured pystac-client error" evidence holds on every client version: `StacApiIO(max_retries=0).request(<collection url>)` must raise `APIError` with `status_code == 404` and a non-empty message (the same pattern CERT-AUTH-01 uses).
+- The RFC 7807 body checks (`status == 404`, detail names the collection) are unchanged; the evidence note records which `get_collection` contract was observed.
 
 ## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests added/updated
-- [ ] Architecture tests pass
+- [x] Integration tests added/updated
 - [x] Manual testing performed
 
-Installed replays on Docker Desktop for Windows. Each run pulled `ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db` and checked its RepoDigest and OCI revision label `93cad86ec4fb28fba3ff0b9358059d86aa55dde5` before boot. The manifest was the unmodified release `platform-manifest.yaml` (SHA-256 `bf2a63e6…`).
-
-```
-python scripts/qualification/metadata-release-installed.py --manifest <platform-manifest.yaml> --output <dir>
-python scripts/qualification/operate-read-observation.py --manifest <platform-manifest.yaml> --accepted-manifest --output <dir>
-python scripts/certification/prove-admin-approve-candidate.py --image ghcr.io/honua-io/honua-server@sha256:785de2ae… --source-revision 93cad86ec4fb28fba3ff0b9358059d86aa55dde5 --output <file>
-# honua-devops 28a6419f certification/protected-recovery, adapted as recorded in the receipt:
-PROOF_SERVER_IMAGE=<digest ref> PROOF_DOCKER_CLI=<linux docker cli> MSYS_NO_PATHCONV=1 boot.sh up
-python journey.py --work $PROOF_WORK --out part1.json --cells platform-admin-cross-tenant,fenced-recovery,tenant-bound-recovery,error-rate-regression,latency-regression
-python journey.py --work $PROOF_WORK --out part2.json --cells missing-telemetry,stale-telemetry,controller-crash,failed-recovery,wrong-body-regression,newer-intent
-python journey.py --work $PROOF_WORK --out part3.json --cells wrong-body-regression-satisfiable
-HONUA_DEVOPS_LIVE_PROTECTED_RECOVERY=true ... dotnet test tests/Honua.DevOps.Agent.Tests --filter "FullyQualifiedName~ProtectedRecoveryLiveJourneyTests"   # 5 passed
-boot.sh down
-```
-
-`wrong-body-regression` fails as written: its golden-query `expected_contains` and `forbidden_contains` are the same marker. Since #3892 those keys also bind the restored-replica proof, so recovery can never be proven. It settled `Failed` (`rollback.functional_query_failed`), which is the documented rule, not a server defect. The candidate refusal half held: it was refused before cutover and attributed to the golden-query verdict. Its satisfiable variant passes.
-
-Docs gates, run locally:
-- `python scripts/ci/check-doc-links.py` passed: 2547 targets, 12 allowlisted warnings, 13 code-referenced anchors.
-- `check-doc-links.test.py` passed 26 tests.
-- `check-doc-example-surfaces.py --base origin/trunk`, `check-okf-bundle.py` (268 concepts), `generate-llms-txt.py --check` and `generate-capability-concepts.py --check` all passed.
-- `git diff --check` is clean.
-
-`scripts/ci/pre-pr-check.sh` stops on Windows in `validate-testcontainer-images.py`, because Windows Python pipes CRLF into `bash -n`. That is unrelated to this docs-only change; CI runs it on Linux.
+Verification (exact commands in the staged receipt):
+- Stub STAC server check of the new assertion logic: pystac-client 0.9.0 `get_collection` raises APIError 404, 0.9.1 returns None; `StacApiIO(max_retries=0).request` raises APIError 404 under both.
+- Locally built Release server (`dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release`), `tests/python`, `HONUA_TEST_CONFIGURATION=Release`:
+  - trunk's test file + pystac-client 0.9.1: `pytest stac_client/test_cert_common_core.py -k errh_01` → 1 failed, `DID NOT RAISE APIError` at line 752 (the CI red reproduced).
+  - this branch + pystac-client 0.9.1 (CI's resolved version): `pytest stac_client/test_cert_common_core.py` → 55 passed.
+  - this branch + pystac-client 0.9.0 (the pinned client-compat / cng-conformance version): same file → 55 passed.
+- Local runs used `--timeout 700` and `HONUA_STAC_COMPAT_TIMEOUT=600` because of host load, plus a scratch wrapper outside the repo that starts the already-built `Honua.Server.dll` in place of `dotnet run --no-build` (the lane shim queues `run` for a build slot). No repo test infrastructure was changed.
 
 ## Gate Impact
 - [x] PR gates (build, test, governance)
-- [ ] Nightly gates (conformance, performance, security)
-- [ ] Release gates (packaging, publishing)
-- [ ] Deploy gates (promotion, post-apply validation)
-- [ ] None — no gate impact
 
 ## Docs or Contract Impact
-- [x] Documentation updated
-- [ ] OpenAPI spec changed
-- [ ] Protobuf/gRPC contract changed
-- [ ] Control plane SDK surface changed
-- [ ] None — no docs or contract impact
+- [x] None — no docs or contract impact
 
 ## Release/Deploy Impact
 - [x] None — standard merge-and-release flow
-- [ ] Requires coordinated release across repos
-- [ ] Requires database migration
-- [ ] Requires infrastructure changes
-- [ ] Requires environment variable or secret changes
 
 ## Breaking Changes
 None
 
-## Follow-ups (not in this PR)
-- honua-devops `certification/protected-recovery`: add the `rollback.functional_query.*` parameters and a satisfiable `wrong-body-regression`. Make `boot.sh` take a Linux CLI path so it runs on Docker Desktop. Accept 409 `recovery_fence_protection_window_absent` for a settled replay (#4989). Without these, the harness cannot certify any image newer than #3892.
-- The pinned image still omits `sourceRevision` from the admin version response.
-
----
-
-## Pre-PR Checklist
-- [ ] Ran `scripts/ci/pre-pr-check.sh` and all checks passed (stops on a Windows-only CRLF issue; see Testing)
-- [x] Commit messages follow conventional format: `type: description (#issue)`
-- [x] PR title matches main commit message
-- [x] Issue number linked above
-- [ ] Tests added for new functionality
-- [ ] If protocol/auth behavior changed: updated compatibility contract
-- [ ] If breaking admin/control-plane API changes: updated migration guide
-- [ ] `OPENAPI_BREAKING_CHANGE_APPROVED` — intentional Admin API break acknowledged for this PR
+## Follow-ups (P3)
+- `tests/python/requirements.txt` leaves every client library unpinned (`>=`), so upstream releases can redden the trailing matrix with no trunk change. Consider a constraints file or upper bounds for the certification clients so upgrades land deliberately.
