@@ -77,4 +77,5 @@ Reviewed this lane's diff against the PR reviewer's rubric: endpoint assertions 
 - P3: make the local architecture checker inspect actual base-type declarations instead of counting colon-space text. The reported inheritance concern is a reviewed false positive; no source change is needed here.
 
 
-Checkpoint: 2026-10-21T11:27:22+00:00 — the first combined-driver reservation wait expired with retryable exit 75 before any command started. The identical driver is queued again with `HONUA_BUILD_SLOT_WAIT=14400` (wait only; capacity, ownership checks, CPU cap, and shared compilation unchanged). No runtime pass or staged result receipt is claimed.
+
+Checkpoint: 2026-10-21T11:43:42+00:00 — two combined-driver attempts returned retryable exit 75 before commands started. The durable ledger reports `queue=unavailable`, not an elapsed wait deadline. The same driver is retrying with `HONUA_BUILD_SLOT_WAIT=14400 HONUA_BUILD_SLOT_QLOCK_WAIT=60 HONUA_BUILD_SLOT_POLL=5`, retaining normal queue ordering, capacity, ownership validation, CPU cap, and shared compilation. Runtime verification and the final staged receipt remain pending.
