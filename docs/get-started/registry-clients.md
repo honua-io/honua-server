@@ -19,9 +19,9 @@ manifest. A promoted release must supply its own public install manifest.
 | PyPI | `honua-admin==0.1.12` | Control plane used by this journey | None |
 | PyPI | `honua-sdk==0.1.16` | Data plane used by this journey | None |
 | PyPI | `mcp==2.1.1` | Only if you drive the server over MCP | None |
-| npm | `@honua/sdk-js@0.1.16` | Alternative JS SDK and CLI | None |
+| npm | `@honua/sdk-js@0.2.6` | Alternative JS SDK and CLI | None |
 | npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
-| npm | `@honua/mcp-server@0.1.16` | Alternative MCP proxy | None |
+| npm | `@honua/mcp-server@0.2.6` | Alternative MCP proxy | None |
 | NuGet | `Honua.Sdk` `1.11.1` | Alternative .NET SDK | None |
 | NuGet | `Honua.Sdk.Admin` `1.11.1` | Dedicated .NET control-plane SDK | None |
 
