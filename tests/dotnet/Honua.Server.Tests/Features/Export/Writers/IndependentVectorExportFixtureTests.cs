@@ -7,6 +7,7 @@ using Honua.Io.Export;
 using Honua.Io.Export.Writers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.IO;
+using Honua.TestKit.Attributes;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
@@ -16,7 +17,7 @@ public sealed class IndependentVectorExportFixtureTests
 {
     private const string Wgs84 = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433],AUTHORITY[\"EPSG\",\"4326\"]]";
 
-    [Theory]
+    [UnitTheory]
     [InlineData("point", "POINT ZM (1 2 30 40)", "Point")]
     [InlineData("line", "MULTILINESTRING ZM ((1 2 30 40, 3 4 50 60), (5 6 70 80, 7 8 90 100))", "MultiLineString")]
     [InlineData("polygon", "POLYGON Z ((0 0 10, 4 0 10, 4 4 10, 0 4 10, 0 0 10), (1 1 10, 1 2 10, 2 2 10, 2 1 10, 1 1 10))", "Polygon")]
