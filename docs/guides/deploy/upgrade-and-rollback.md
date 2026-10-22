@@ -410,6 +410,27 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 
 For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
 
+### Rollback target eligibility
+
+Before you roll back the image, check that the target image can protect itself
+against the schema it will find. Image rollback never reverses migrations.
+
+- **Roll back only to images that include the schema-reader guard.** Across
+  additive (expand-only) migrations, that means schema 135 or later: those
+  images verify the forward-compatibility declarations described in
+  [Rollback across additive migrations](#rollback-across-additive-migrations).
+- **Never roll back across a contract-phase migration without a restore.** This
+  applies to scripts marked `-- honua:reader-incompatible` too. Restore the
+  backup that matches the target revision instead
+  ([Back up and restore](backup-and-restore.md)).
+- **`honua-2026.1` is not a safe rollback target across any migration.** Its
+  server image (honua-server `f897700`, schema 106) predates the schema-reader
+  guard. On a newer database it starts and serves without refusing, even
+  across contract-phase migrations, so nothing stops an unsafe rollback. The
+  only safe path back to 2026.1 is to restore the backup you took before you
+  upgraded. Pin rollback targets by digest. The tag named in the 2026.1 release
+  notes has since moved to a rebuild (honua-io/honua-release#776).
+
 ### Rollback completion proof
 
 Moving traffic back is not enough for a rollback to report `RolledBack`. The operation stays `RollbackRequested` (`reason=rollback.awaiting_data_plane` in its current phase) until three things hold on the restored target:

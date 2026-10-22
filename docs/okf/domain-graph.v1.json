@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:075bffb9a7c793270978104f6fc8035fef1d96da93dda0075f36e6bc5d1ce7f2",
+  "bundleDigest": "sha256:20ee1fdedc50881e8379e39c7e52f68ca756a72d5c554615b2bacba62a36e450",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2249,7 +2249,7 @@
     {
       "id": "guides/deploy/upgrade-and-rollback",
       "path": "guides/deploy/upgrade-and-rollback.md",
-      "documentDigest": "sha256:a2b84a07ace2865ea23f1a224a0e2d41e96c141f633565e17a33e9b38a879920",
+      "documentDigest": "sha256:ba04226620f65d6339e31012cb97ac53d1584de631a086074357a9bab346b04f",
       "metadata": {
         "type": "guide",
         "title": "Upgrade and roll back",
