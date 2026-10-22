@@ -6170,7 +6170,18 @@
         "Honua.Server.Tests.Features.Studio.StudioAdminMcpPublicationTests.AdminKey_ProposePublication_PublishesAndReturnsTheActiveRoute",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GetVersion_ContentHashInput_RecomputesToContentHashOnVersionAndPublishedReads",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback",
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl"
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.ConflictingResource_IsRejectedBeforeTheReaderAccessFilter",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.DefaultRead_StaysUnchanged_AndProjectionDoesNotChangeTheSealedVersion",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.LegacyAlias_CannotRetargetToTheOnlyLayerVisibleToTheReader",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.LocatorBinding_ResolvesPackageSourceIdToTheCanonicalLayer",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.MapBinding_SelectsMapServerWhenTheServiceExposesBothProtocols",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.MapServerOnlyService_ProjectsTheMapServerLocator",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.PrivatePublication_StillDeniesAnonymousProjection",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.Projection_RechecksCurrentSourceAccess_AfterPublicAccessIsRevoked",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.Projection_RefusesConflictingResourcesForOneSource_WithoutExposingDetails",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.Projection_UsesCurrentReaderAndActualLocator_WithoutUnrelatedOrCrossTenantSources",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.SharedServiceName_DoesNotAdvertiseAnAmbiguousRoute"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -15961,6 +15972,7 @@
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityEdition_WithEnterpriseCap_DoesNotGrantFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.EnterpriseEdition_AllowsEnterpriseFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.EnterpriseEdition_WithProCap_BlocksEnterpriseFeaturesOnly",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ExpiredPaidEdition_AlertRuleDenial_NamesRequiredEdition",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
@@ -15983,6 +15995,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithZoneIdOnThresholdRule_ReturnsValidationError",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Review_RuleTestPathVariants_DoNotRequireAuditOrPersistRules",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityEdition_ProAlertFeatures_AreBlockedWithEntitlementDetail",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ExpiredPaidEdition_AlertRuleDenial_NamesRequiredEdition",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
@@ -24011,6 +24024,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_InvalidEnvelopeWithSchemaLocation_RejectsWithoutLoadingClientSchema",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests.ConstantHistograms_SoapAndRest_PreserveSqlCentersCountsAndNoData",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHttpAuthorizationTests.RestrictedSoapMetadata_RequiresEntitledPrincipalBeforeReturningGeometryReference",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapTests.CapturedArcGisProRequest_ReturnsReferenceShapedPropertySets",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapTests.PersistedCoverage_SoapPropertySetsPreserveSqlAndRestSemantics",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerNativeCatalogTests.CatalogSoap_DefaultOrNilOutputSpatialReference_MatchesIndependentSql",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerNativeCatalogTests.CatalogSoap_MembershipAndNegativeFilters_MatchIndependentSql",
@@ -24751,6 +24765,7 @@
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_AuditReturnsNoIdentity_RollBackRealPostgresWrites",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Review_ConnectionVariants_CommitAndRollbackWithDurableAudit",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
         "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],

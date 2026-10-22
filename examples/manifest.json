@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1200,
+    "total": 1204,
     "byStatus": {
-      "not-executable": 1185,
+      "not-executable": 1189,
       "unvalidated": 12,
       "passed": 3
     }
@@ -4930,7 +4930,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 357,
+      "line": 371,
       "language": "bash"
     },
     {
@@ -4943,7 +4943,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 326,
+      "line": 328,
       "language": "bash"
     },
     {
@@ -4999,6 +4999,19 @@
       "language": "powershell"
     },
     {
+      "id": "7be8833cbe9817a2",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/docker-compose.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 10,
+      "line": 379,
+      "language": "bash"
+    },
+    {
       "id": "7dfbd7578ff77124",
       "kind": "docs-fence",
       "path": "docs/guides/deploy/docker-compose.md",
@@ -5021,7 +5034,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 349,
+      "line": 348,
       "language": "bash"
     },
     {
@@ -5117,7 +5130,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 415,
+      "line": 453,
       "language": "bash"
     },
     {
@@ -5130,7 +5143,7 @@
         "check": "inventory-classification"
       },
       "fence": 10,
-      "line": 401,
+      "line": 443,
       "language": "bash"
     },
     {
@@ -5144,6 +5157,19 @@
       },
       "fence": 4,
       "line": 163,
+      "language": "bash"
+    },
+    {
+      "id": "3f225cfbf33e121d",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/kubernetes.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 12,
+      "line": 467,
       "language": "bash"
     },
     {
@@ -5195,7 +5221,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 391,
+      "line": 398,
       "language": "bash"
     },
     {
@@ -5563,6 +5589,19 @@
       "language": "sql"
     },
     {
+      "id": "010aee32ca40c72c",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/upgrade-and-rollback.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 406,
+      "language": "bash"
+    },
+    {
       "id": "1e6777304685847a",
       "kind": "docs-fence",
       "path": "docs/guides/deploy/upgrade-and-rollback.md",
@@ -5572,7 +5611,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 121,
+      "line": 177,
       "language": "bash"
     },
     {
@@ -5585,7 +5624,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 285,
+      "line": 191,
       "language": "bash"
     },
     {
@@ -11474,7 +11513,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 124,
+      "line": 126,
       "language": "bash"
     },
     {
@@ -11487,7 +11526,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 104,
+      "line": 106,
       "language": "bash"
     },
     {
@@ -13413,6 +13452,19 @@
       "fence": 2,
       "line": 44,
       "language": "plain"
+    },
+    {
+      "id": "ce0c1d8f8df27934",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/imageserver-multidim-soap-3558-20261022/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 64,
+      "language": "bash"
     },
     {
       "id": "086d687ee40614ae",

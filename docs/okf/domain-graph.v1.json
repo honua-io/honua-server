@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:b9ac623acb31ae7b64004ea762eceaed6a1b9e951dfb0de7a5bfda90c066ba79",
+  "bundleDigest": "sha256:2b16cab2324035e7efe58f78e543dd7948c8cd531e6054095d2ea64c214e409e",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5372,7 +5372,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:ce85f6064c3cfaf70226521f46fb11ec815322ae8a32d46fe749ada522c167b7",
+      "documentDigest": "sha256:5fcd0a48c6843d11725b6d4abb8a2af8c7850a24e64c5f706d6e77e8db49f28c",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5525,7 +5525,7 @@
     {
       "id": "okf/capabilities/alerts.evaluation",
       "path": "okf/capabilities/alerts.evaluation.md",
-      "documentDigest": "sha256:98bdc69029ef1ed2345b897fc37ebfb3991e992944d0c9a902d6aad49a1ff508",
+      "documentDigest": "sha256:94fd035184fea7c5b6395238fc3f06a0d3e1ab2b3585559977fce69cc920a002",
       "metadata": {
         "type": "capability",
         "title": "Alert Evaluation Engine",
@@ -6817,7 +6817,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:6b5b37a6daaafa195a33cbc9025c408635580d7dfc79dca58e7b808d652650ec",
+      "documentDigest": "sha256:a7b0403dcff23a29c8ae9737dc6602c56218c239c134e8631adcd43dccb85d28",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
