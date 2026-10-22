@@ -118,7 +118,7 @@ internal static class MigrateOnlyCommand
 
         await using var services = MigrateOnlyComposition.Build(configuration);
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Honua.MigrateOnly");
-        MigrateOnlyLog.Starting(logger, summary.BinarySchemaNumber?.ToString(CultureInfo.InvariantCulture) ?? "unknown");
+        MigrateOnlyLog.Starting(logger, summary.BinarySchemaNumber);
 
         try
         {
@@ -133,7 +133,7 @@ internal static class MigrateOnlyCommand
         summary.BackupHooks = services.GetRequiredService<MigrateOnlyBackupHookRecorder>().Results;
         if (summary.Outcome == MigrateOnlyOutcome.Completed)
         {
-            MigrateOnlyLog.Completed(logger, summary.AppliedScripts.Count, summary.SchemaNumber?.ToString(CultureInfo.InvariantCulture) ?? "unknown");
+            MigrateOnlyLog.Completed(logger, summary.AppliedScripts.Count, summary.SchemaNumber);
         }
         else
         {
@@ -519,11 +519,11 @@ internal static partial class MigrateOnlyLog
 {
     [LoggerMessage(EventId = 6470, Level = LogLevel.Information,
         Message = "Migrate-only run starting; this binary's schema number is {BinarySchemaNumber}. No HTTP listener or background service is started.")]
-    public static partial void Starting(ILogger logger, string binarySchemaNumber);
+    public static partial void Starting(ILogger logger, int? binarySchemaNumber);
 
     [LoggerMessage(EventId = 6471, Level = LogLevel.Information,
         Message = "Migrate-only run completed: applied {AppliedCount} script(s); schema number {SchemaNumber}.")]
-    public static partial void Completed(ILogger logger, int appliedCount, string schemaNumber);
+    public static partial void Completed(ILogger logger, int appliedCount, int? schemaNumber);
 
     [LoggerMessage(EventId = 6472, Level = LogLevel.Error,
         Message = "Migrate-only run stopped ({Code}, exit {ExitCode}): {Reason}")]
