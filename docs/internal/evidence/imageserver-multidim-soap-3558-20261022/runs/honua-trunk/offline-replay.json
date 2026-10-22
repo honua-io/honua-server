@@ -1,0 +1,132 @@
+{
+  "matching": 9,
+  "replayed": 9,
+  "results": [
+    {
+      "captured": [
+        [
+          200,
+          "60ca3b66b04e3b2409a923e103dc92c6cc62caee5c5459947d86e4108f041bdf"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "GetMessageFormats",
+      "path": "/services",
+      "response_operation": "GetMessageFormatsResponse",
+      "response_shape_sha256": "60ca3b66b04e3b2409a923e103dc92c6cc62caee5c5459947d86e4108f041bdf",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "d888f06536dbfab007e0da3fdda5a78c1ac5d06f3298299f9c36b1c29f329a7c"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "GetMessageVersion",
+      "path": "/services",
+      "response_operation": "GetMessageVersionResponse",
+      "response_shape_sha256": "d888f06536dbfab007e0da3fdda5a78c1ac5d06f3298299f9c36b1c29f329a7c",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "84cfebaf003d24aa49afa227db7db699f920f9ad1b58b398cf63d2c3325d7ef4"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "ExecuteAISRequest",
+      "path": "/services/browser_compat/ImageServer",
+      "response_operation": "ExecuteAISRequestResponse",
+      "response_shape_sha256": "84cfebaf003d24aa49afa227db7db699f920f9ad1b58b398cf63d2c3325d7ef4",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "47f2f36dcb4b6a06bac4ab9f2145c0099f8bab91a3ba5824725775f09f164bbf"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "GetFields",
+      "path": "/services/browser_compat/ImageServer",
+      "response_operation": "GetFieldsResponse",
+      "response_shape_sha256": "47f2f36dcb4b6a06bac4ab9f2145c0099f8bab91a3ba5824725775f09f164bbf",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "762ff8dc80aad130417a906193b9ff4e1c25bf7a0f1e5709a39ff319b72c3c85"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "GetKeyPropertiesX",
+      "path": "/services/browser_compat/ImageServer",
+      "response_operation": "GetKeyPropertiesXResponse",
+      "response_shape_sha256": "762ff8dc80aad130417a906193b9ff4e1c25bf7a0f1e5709a39ff319b72c3c85",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "25b19051d9e3d772abbf68339a3769912e5fd63ba8112bb1201d521b02c58e80"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "GetMultidimensionalInfo",
+      "path": "/services/browser_compat/ImageServer",
+      "response_operation": "GetMultidimensionalInfoResponse",
+      "response_shape_sha256": "25b19051d9e3d772abbf68339a3769912e5fd63ba8112bb1201d521b02c58e80",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "10ecf2da9b5ad229d24ec97f7841e23bd7457e61e78ccec311296c7b50c49940"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "GetServiceInfo",
+      "path": "/services/browser_compat/ImageServer",
+      "response_operation": "GetServiceInfoResponse",
+      "response_shape_sha256": "10ecf2da9b5ad229d24ec97f7841e23bd7457e61e78ccec311296c7b50c49940",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "13fe1b395e3574c8b3ee9080bebecae9635499b0a36d13c248c7709fa4182335"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "GetVersion",
+      "path": "/services/browser_compat/ImageServer",
+      "response_operation": "GetVersionResponse",
+      "response_shape_sha256": "13fe1b395e3574c8b3ee9080bebecae9635499b0a36d13c248c7709fa4182335",
+      "status": 200
+    },
+    {
+      "captured": [
+        [
+          200,
+          "73e0119dd06d7dcfa17ca5129fd008a94f96569280fe44d4ef5512e695bc5f51"
+        ]
+      ],
+      "matches_capture": true,
+      "operation": "IsFixedScaleImage",
+      "path": "/services/browser_compat/ImageServer",
+      "response_operation": "IsFixedScaleImageResponse",
+      "response_shape_sha256": "73e0119dd06d7dcfa17ca5129fd008a94f96569280fe44d4ef5512e695bc5f51",
+      "status": 200
+    }
+  ]
+}
