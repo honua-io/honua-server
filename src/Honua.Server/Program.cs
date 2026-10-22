@@ -472,8 +472,21 @@ if (connectedRedis is not null &&
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
     // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
     // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
-    await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
-    var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+    System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
+    try
+    {
+        await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
+        keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+    }
+    catch (InvalidOperationException ex)
+    {
+        // A missing or unreadable certificate is an operator error. Left unhandled it aborts the
+        // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status
+        // (honua-server#6500). Report it and leave with a plain exit status.
+        Honua.Server.Hosting.StartupRefusal.Exit(ex.Message);
+        return;
+    }
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
