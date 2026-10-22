@@ -1223,6 +1223,54 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_TransientRedisTimeoutWhileObserving_LeavesTheRunningJobAlone()
+    {
+        // honua-server#6507: a Redis timeout during a sweep used to stamp a healthy, heartbeating
+        // Batch import terminal Failed, so its worker lost the execution lease 30 s in.
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new StackExchange.Redis.RedisTimeoutException("Timeout awaiting response", StackExchange.Redis.CommandStatus.Unknown));
+        var job = CreateJobRecord("job-redis-timeout", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(jobStore, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        var act = () => sut.ReconcileExecutionJobAsync("job-redis-timeout");
+        await act.Should().ThrowAsync<StackExchange.Redis.RedisTimeoutException>();
+
+        var stored = (await jobStore.GetAsync("job-redis-timeout"))!;
+        stored.Status.Should().Be(ExecutionJobStatus.Running);
+        stored.CompletedAt.Should().BeNull();
+        stored.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_ProgressStoreFallbackOutage_LeavesTheRunningJobAlone()
+    {
+        // The progress store answers with its own unavailable-state exception, not a Redis one,
+        // until its recovery probe; later sweeps must stay non-terminal too.
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException(
+                "Distributed import progress state is unavailable while attempting to read progress."));
+        var job = CreateJobRecord("job-progress-outage", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(jobStore, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        var act = () => sut.ReconcileExecutionJobAsync("job-progress-outage");
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        (await jobStore.GetAsync("job-progress-outage"))!.Status.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_ExceptionDuringReconciliation_BridgesProgressOnFailure()
     {
         var backend = Substitute.For<IBatchComputeBackend>();
