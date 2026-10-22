@@ -133,6 +133,11 @@ def main() -> int:
             (work / "compose.yaml").write_text(blocks["compose"])
             shell("secrets")
             env_file.update(line.split("=", 1) for line in (work / ".env").read_text().splitlines())
+            # The documented .env names the release channel. Compose pulls that
+            # tag, which is unpublished until promotion, so the proof substitutes
+            # the qualified preview after the documented secrets block has run.
+            if image != documented:
+                env_file["HONUA_IMAGE"] = image
             http, grpc = free_ports()
             env_file.update(COMPOSE_PROJECT_NAME=project, HONUA_HTTP_PORT=str(http), HONUA_GRPC_PORT=str(grpc))
             (work / ".env").write_text("".join(f"{key}={value}\n" for key, value in env_file.items()))
