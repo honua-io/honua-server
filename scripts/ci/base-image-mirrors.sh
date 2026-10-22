@@ -36,6 +36,7 @@ MIRROR_MAP=(
   "runtime-deps-10.0-aot|docker/Dockerfile.aot|DOTNET_RUNTIME_DEPS_IMAGE"
   "sdk-10.0-lambda|docker/Dockerfile.lambda.aot|DOTNET_SDK_IMAGE"
   "runtime-deps-10.0|docker/Dockerfile.lambda.aot|DOTNET_RUNTIME_DEPS_IMAGE"
+  "lambda-adapter-0.9.1|docker/Dockerfile.lambda.aot|LAMBDA_ADAPTER_IMAGE"
 )
 
 DIGEST_REF_PATTERN='^[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$'

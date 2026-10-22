@@ -7,6 +7,9 @@
 # These ARG defaults are the single source of truth for the GHCR mirror of these
 # bases (scripts/ci/base-image-mirrors.sh + the nightly `mirror-base-images` job).
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
+# Lambda Web Adapter. The nightly build mirrors this digest to GHCR and passes the mirror here, because
+# anonymous Public ECR pulls are rate limited (429) from shared runners.
+ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
 ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490
 
 FROM ${DOTNET_SDK_IMAGE} AS restore
@@ -165,6 +168,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" != "true" ]; then rm -rf /app/wwwroot; else rm -rf /app/wwwroot/admin; fi && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
+FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter
+
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
 # Immutable deployment identity (#3038). Keep the SHA in the runtime stage so revision-only
@@ -173,7 +178,7 @@ ARG HONUA_GIT_SHA=
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4 /lambda-adapter /opt/extensions/lambda-adapter
+COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
 
 WORKDIR /var/task
 COPY --from=build /app /var/task
