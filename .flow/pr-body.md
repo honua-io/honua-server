@@ -5,7 +5,7 @@ An uncapped job that hangs holds a runner slot for GitHub's default of **6 hours
 
 ## Enumeration
 
-Scripted sweep (`yaml.safe_load` over every `.github/workflows/*.yml`, jobs with neither `timeout-minutes` nor `uses:`) on trunk `c98cde3203`:
+Scripted sweep (`yaml.safe_load` over every `.github/workflows/*.yml`, jobs with neither `timeout-minutes` nor `uses:`) on trunk `a58c6b5a73` (merged into this branch):
 
 - **3** runner-consuming jobs had no cap. This PR fixes all three.
 - Reusable-workflow callers (`uses: ./.github/workflows/...`) are excluded: `timeout-minutes` is not a valid key on a caller job; their called workflows are already capped (see #4505).
@@ -27,7 +27,7 @@ Observed p99 over the last 30 days via the Actions API (completed, non-skipped, 
 - Sweep: 0 uncapped runner jobs after the change.
 - `actionlint` 1.7.7 on the three changed files: clean. Repo-wide findings (e.g. `portal-group-discovery-contract.yml` `optimize-disk` input) are in untouched files and pre-existing on trunk.
 - `scripts/cloud/test-standing-cert-plan-only.py` (the contract test for `standing-aws-cert-plan.yml`), in `python:3.13-slim`: 18 tests OK.
-- `tests/python/unit/test_capacity_runner_routing.py`, in `python:3.13-slim`: 51 passed.
+- `tests/python/unit/test_capacity_runner_routing.py` (`--noconftest`), in `python:3.13-slim`: 60 passed.
 - `scripts/ci/validate-docker-gate-timeouts.py`: `job=30m, bounded_steps=10` valid.
 - `scripts/ci/validate-tracked-file-encoding.py`: clean.
 
