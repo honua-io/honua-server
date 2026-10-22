@@ -11,7 +11,7 @@ Move `FeatureServerQueryParameterTests` from the serial `Database` collection to
 - The class only reads its own fixture seed through GET/POST query requests. Fixture schema routing and the schema-partitioned metadata graph provide the isolation it needs.
 
 ## Testing
-Fresh Windows verification after merging trunk `a58c6b5a73` is in progress. The baseline build passed with zero warnings/errors in 1197.023 s; the baseline shard has passed 143 logged cases so far, with no failed-test or deadlock signature. Do not publish this intermediate draft as a verified handoff.
+Fresh Windows verification after merging trunk `a58c6b5a73` is in progress. The baseline build passed with zero warnings/errors in 1197.023 s; the baseline shard has passed 207 logged cases so far, with no failed-test or deadlock signature. Do not publish this intermediate draft as a verified handoff.
 
 The native helper acquires `Global\HonuaBuildLock`, sets `DOTNET_PROCESSOR_COUNT=2`, builds Release with warnings as errors, and uses a fresh CI-pinned PostGIS 16 container for each run. The before build temporarily restores only `[Collection("Database")]` and restores the source bytes in `finally`. Run timings exclude build and container startup.
 
