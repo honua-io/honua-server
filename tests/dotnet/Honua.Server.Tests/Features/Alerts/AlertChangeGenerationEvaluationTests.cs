@@ -143,9 +143,9 @@ public sealed class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter 
             hidden.HasCommittedImage.Should().BeTrue();
             hidden.CommittedFeature.HasValue.Should().BeFalse("the list read must not buffer committed images");
 
-            var unprojected = await reader.LoadProjectedSnapshotAsync(hiddenGeneration, layerId);
-            unprojected.Should().NotBeNull();
-            unprojected!.Value.Attributes["objectid"].Should().Be(objectId);
+            var unprojected = await reader.LoadProjectedSnapshotAsync(hiddenGeneration, layerId)
+                ?? throw new InvalidOperationException("The list read must return the committed image.");
+            unprojected.Value.Attributes["objectid"].Should().Be(objectId);
             unprojected.Value.Attributes.Should().ContainKey("secret");
 
             var policy = new FixedSnapshotPolicy(
@@ -160,9 +160,9 @@ public sealed class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter 
                 "SELECT MAX(generation) FROM honua.feature_changes WHERE layer_id = @layer AND objectid = @object AND version_id IS NULL",
                 ("layer", layerId),
                 ("object", objectId + 1));
-            var visible = await projectedReader.LoadProjectedSnapshotAsync(visibleGeneration, layerId);
-            visible.Should().NotBeNull();
-            visible!.Value.Attributes.Should().NotContainKey("secret");
+            var visible = await projectedReader.LoadProjectedSnapshotAsync(visibleGeneration, layerId)
+                ?? throw new InvalidOperationException("The public row must return a committed image.");
+            visible.Value.Attributes.Should().NotContainKey("secret");
             visible.Value.Attributes["objectid"].Should().Be(objectId + 1);
             visible.Value.Attributes["value"].Should().Be(60L);
 

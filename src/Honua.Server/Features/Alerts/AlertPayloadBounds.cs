@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -94,17 +95,9 @@ internal static class AlertPayloadBounds
 
     internal static int LimitBytes(ImmutableArray<AlertChannelType> channels)
     {
-        var limit = int.MaxValue;
-        foreach (var channel in channels)
-        {
-            var channelLimit = LimitBytes(channel);
-            if (channelLimit < limit)
-            {
-                limit = channelLimit;
-            }
-        }
-
-        return limit;
+        return channels.IsDefaultOrEmpty
+            ? int.MaxValue
+            : channels.Select(LimitBytes).Min();
     }
 
     internal static int LimitBytes(AlertChannelType channel)
