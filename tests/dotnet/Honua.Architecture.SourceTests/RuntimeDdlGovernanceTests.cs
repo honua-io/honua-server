@@ -26,6 +26,8 @@ public sealed partial class RuntimeDdlGovernanceTests
     private static readonly IReadOnlyDictionary<string, RuntimeDdlOwner> _allowlist =
         new Dictionary<string, RuntimeDdlOwner>(StringComparer.Ordinal)
         {
+            ["src/Honua.Db/Postgres.Shared/Features/Infrastructure/PostgresDatabaseCompatibilityChecker.cs"] =
+                new(RuntimeDdlCategory.ExtensionBootstrap, 1, "PostgresDatabaseCompatibilityChecker runs one idempotent CREATE EXTENSION IF NOT EXISTS postgis in the startup preflight, which precedes the migrations, so a fresh database that ships the PostGIS packages can boot (#6488). It creates no Honua table or schema; migration 043 issues the same statement."),
             ["src/Honua.Db/Postgres/Features/GeometryService/PostgresGeometryOperationService.cs"] =
                 new(RuntimeDdlCategory.SessionTemporaryFunction, 3, "PostgresGeometryOperationService owns three fixed-name pg_temp geodesic helpers on its leased connection; pool reset or session termination discards them. No persistent schema is modified."),
             ["src/Honua.Db/Postgres/Features/Migration/OgcWfsImportService.cs"] =
@@ -156,5 +158,6 @@ public sealed partial class RuntimeDdlGovernanceTests
         SessionTemporaryFunction,
         SessionTemporaryTable,
         SessionTemporaryView,
+        ExtensionBootstrap,
     }
 }
