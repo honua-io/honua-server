@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute imports and decode Honua exports; compare fresh evidence to a reviewed denominator."""
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -55,10 +56,11 @@ def challenge_reader(output):
             raise ValueError("Challenge scratch path escaped the proof directory")
         mutant = Path(scratch) / "artifacts"
         shutil.copytree(output, mutant)
-        with sqlite3.connect(mutant / "point/export.gpkg") as connection:
+        with closing(sqlite3.connect(mutant / "point/export.gpkg")) as connection:
             updated = connection.execute("UPDATE features SET amount=8 WHERE fid=1")
             if updated.rowcount != 1:
                 raise ValueError("Challenge did not modify exactly one feature")
+            connection.commit()
         result = subprocess.run(reader_command(mutant), cwd=ROOT, text=True,
                                 capture_output=True, timeout=60)
         (output / "rejection-challenge.txt").write_text(result.stdout + result.stderr)
