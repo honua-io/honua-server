@@ -54,7 +54,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         {
             return UnsupportedVersionMappingMessage;
         }
-        var boundConnection = await ResolveBoundConnectionStringAsync().ConfigureAwait(false);
+        var boundConnection = await ResolveBoundConnectionStringAsync(cancellationToken).ConfigureAwait(false);
         if (boundConnection is not null
             && !new NpgsqlConnectionStringBuilder(boundConnection).EquivalentTo(
                 new NpgsqlConnectionStringBuilder(_connectionProvider.GetConnectionString())))
