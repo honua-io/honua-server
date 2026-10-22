@@ -1,4 +1,8 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using Honua.Core.Features.Workflow;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Workflow;
 
@@ -6,7 +10,7 @@ public sealed class WorkflowResolverTests
 {
     private readonly WorkflowBundle _bundle = WorkflowBundle.LoadDefault();
 
-    [Fact]
+    [UnitTest]
     public void SourceAlwaysRequiresExplicitTurnChoice()
     {
         var resolver = new WorkflowResolver(_bundle);
@@ -17,7 +21,7 @@ public sealed class WorkflowResolverTests
         Assert.Equal("clarification", resolver.Resolve(new("use the source", ["dataset"], ClarificationId: "other", Choice: "dataset")).Status);
     }
 
-    [Fact]
+    [UnitTest]
     public void LongestPhrasePrecedesGrantFiltering()
     {
         var resolver = new WorkflowResolver(_bundle);
@@ -27,7 +31,7 @@ public sealed class WorkflowResolverTests
         Assert.Equal("no-match", resolver.Resolve(new("disconnection", ["connection"])).Status);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("publish the layer")]
     [InlineData("publish the data")]
     [InlineData("publish")]
@@ -39,13 +43,13 @@ public sealed class WorkflowResolverTests
         Assert.Contains("publication", result.Clarification.Choices);
     }
 
-    [Fact]
+    [UnitTest]
     public void SchemaFieldIsNotRewrittenAsConversationalSource()
     {
         Assert.Equal("no-match", new WorkflowResolver(_bundle).Resolve(new("source.kind", ["dataset", "connection"])).Status);
     }
 
-    [Fact]
+    [UnitTest]
     public void UnauthorizedChoiceCannotEscapeClarification()
     {
         var result = new WorkflowResolver(_bundle).Resolve(new("source", ["dataset"], ClarificationId: "source-meaning", Choice: "connection"));
@@ -53,7 +57,7 @@ public sealed class WorkflowResolverTests
         Assert.Equal(["dataset"], result.Clarification!.Choices);
     }
 
-    [Fact]
+    [UnitTest]
     public void PathwaysExposeOneMissingPrerequisiteAndUnavailableExecutor()
     {
         var result = _bundle.SuggestPathways([], ["service.publish"], ["serve.geoservices-featureserver"]);
@@ -64,7 +68,7 @@ public sealed class WorkflowResolverTests
         Assert.Empty(_bundle.SuggestPathways(["dataset"], [], ["serve.geoservices-featureserver"]));
     }
 
-    [Fact]
+    [UnitTest]
     public void EffectsDependOnActualTarget()
     {
         Assert.Equal("working-draft", _bundle.GetEffectTier("style.apply", "working-draft"));
