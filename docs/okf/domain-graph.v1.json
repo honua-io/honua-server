@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:20ee1fdedc50881e8379e39c7e52f68ca756a72d5c554615b2bacba62a36e450",
+  "bundleDigest": "sha256:f82e8a3f99be45a990b9f6a261f38535bb5f33bcc5f21e282fca14d554d74495",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -42,7 +42,7 @@
     {
       "id": "cite-status",
       "path": "cite-status.md",
-      "documentDigest": "sha256:903cc10cfbdf77f911f985e523b3bd7bbf9d61c2e718f0c5f6daed9254641a84",
+      "documentDigest": "sha256:c3bbfab0f7a4020b135884f04b20a0e2787eeaa39c5a71b0a0ec2e8a77b824e8",
       "metadata": {
         "type": "reference",
         "title": "CITE status",
