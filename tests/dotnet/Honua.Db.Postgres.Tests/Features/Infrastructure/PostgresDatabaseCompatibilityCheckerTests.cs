@@ -67,7 +67,9 @@ public class PostgresDatabaseCompatibilityCheckerTests
             await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", admin);
             await drop.ExecuteNonQueryAsync();
         }
+    }
 
+    [Fact]
     public async Task CheckCompatibilityAsync_WithPasswordBeginningWithEquals_ReportsMalformedWithoutEchoingIt()
     {
         // honua-server#6495: Terraform renders a generated password that starts with '=' as
