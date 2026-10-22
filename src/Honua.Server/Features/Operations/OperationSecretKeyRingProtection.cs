@@ -186,7 +186,10 @@ internal static class OperationSecretKeyRingProtection
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new InvalidOperationException(
-                $"'{CertificatePathKey}' is required when the durable operation secret channel is enabled.");
+                $"'{CertificatePathKey}' is required when the durable operation secret channel is enabled. "
+                + $"Redis turns that channel on. Mount a PKCS#12 certificate and set '{CertificatePathKey}', or on a "
+                + $"host that cannot mount files (AWS Lambda) set '{CertificateMaterialKey}' to a Secrets Manager reference "
+                + "for the bundle.");
         }
 
         if (!File.Exists(path))
