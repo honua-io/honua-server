@@ -70,6 +70,22 @@ public class PostgresDatabaseCompatibilityCheckerTests
     }
 
     [Fact]
+    public async Task CheckCompatibilityAsync_WithPasswordBeginningWithEquals_ReportsMalformedWithoutEchoingIt()
+    {
+        // honua-server#6495: Terraform renders a generated password that starts with '=' as
+        // "Password==...", which the driver cannot parse. That is a configuration fault: it must
+        // be named as such, not reported as an incompatible database, and must not leak the secret.
+        var result = await _checker.CheckCompatibilityAsync(
+            "Host=127.0.0.1;Port=5432;Database=honua;Username=honua;Password==s3cr3t-tail;SSL Mode=Require");
+
+        result.IsCompatible.Should().BeFalse();
+        result.IsTransientFailure.Should().BeFalse("a malformed connection string never heals by retrying");
+        result.ErrorMessage.Should().Be(PostgresDatabaseCompatibilityChecker.MalformedConnectionStringMessage);
+        result.ErrorMessage.Should().NotContain("s3cr3t-tail");
+        result.Error.Should().BeNull("the driver's exception text repeats the credential");
+    }
+
+    [Fact]
     public async Task CheckCompatibilityAsync_ReturnsEngineVersion()
     {
         var result = await _checker.CheckCompatibilityAsync(_fixture.ConnectionString);

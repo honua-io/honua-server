@@ -21,6 +21,13 @@ internal static class GatedBootShutdown
     internal const string ContractGateRefusalPrefix = "Migration safety gate blocked";
 
     /// <summary>
+    /// Stable prefix of the PostGIS preflight's terminal refusal (an incompatible or unparseable
+    /// database configuration). Startup throws it from the preflight, which leaves the entry point
+    /// through an unhandled exception unless the entry point stops the host itself.
+    /// </summary>
+    internal const string PreflightRefusalPrefix = "PostGIS preflight check failed";
+
+    /// <summary>
     /// Process status for a boot the migration safety gate refused. Operators and orchestrators
     /// treat any non-zero status as a failed start. An abort or segmentation fault is not this status.
     /// </summary>
@@ -36,6 +43,33 @@ internal static class GatedBootShutdown
         ArgumentNullException.ThrowIfNull(exception);
         return exception is InvalidOperationException
             && exception.Message.StartsWith(ContractGateRefusalPrefix, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// True when <paramref name="exception"/> is the PostGIS preflight's terminal refusal.
+    /// </summary>
+    /// <param name="exception">Failure thrown by the startup preflight.</param>
+    /// <returns>Whether boot must stop with <see cref="RefusalExitCode"/>.</returns>
+    internal static bool IsPreflightRefusal(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception is InvalidOperationException
+            && exception.Message.StartsWith(PreflightRefusalPrefix, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// True when the host serves through the in-process test server. A test host runs the entry
+    /// point on a worker thread and needs the refusal as an exception; it has no process to exit.
+    /// </summary>
+    /// <param name="app">Host that has been built.</param>
+    /// <returns>Whether the host is an in-process test server.</returns>
+    internal static bool IsInProcessTestServer(WebApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return string.Equals(
+            app.Services.GetService<Microsoft.AspNetCore.Hosting.Server.IServer>()?.GetType().FullName,
+            "Microsoft.AspNetCore.TestHost.TestServer",
+            StringComparison.Ordinal);
     }
 
     /// <summary>
