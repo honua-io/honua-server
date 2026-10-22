@@ -36,6 +36,9 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
     public Task DisposeAsync() => database.DropSchemaAsync(_schema);
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
     public async Task KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere()
     {
         var instanceA = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
@@ -64,6 +67,7 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
     public async Task ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard()
     {
         var store = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
