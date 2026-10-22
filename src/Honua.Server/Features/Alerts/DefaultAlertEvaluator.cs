@@ -36,6 +36,7 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
 
         var previousInside = currentState?.Inside ?? false;
         var insideNow = DetermineInside(change, feature, zone, previousInside);
+        var preservePreviousCondition = false;
         var enteredAt = ResolveEnteredAt(previousInside, insideNow, currentState?.EnteredAt, evaluatedAt);
         var lastAlertAt = currentState?.LastAlertAt;
         var thresholdStateJson = currentState?.ThresholdStateJson ?? "{}";
@@ -45,19 +46,33 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         switch (rule.TriggerType)
         {
             case AlertTriggerType.Enter:
-                if (!previousInside && insideNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                if (!previousInside && insideNow)
                 {
-                    generatedEvent = CreateEvent(change, rule, evaluatedAt, "enter", feature, zone,
-                        evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Started, 0);
+                    if (CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                    {
+                        generatedEvent = CreateEvent(change, rule, OccurredAt(change), "enter", feature, zone,
+                            OccurrenceToken(change), AlertIncidentStatus.Started, 0);
+                    }
+                    else
+                    {
+                        preservePreviousCondition = true;
+                    }
                 }
                 break;
 
             case AlertTriggerType.Exit:
-                if (previousInside && !insideNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                if (previousInside && !insideNow)
                 {
-                    var durationMs = (long)(evaluatedAt - (currentState?.EnteredAt ?? evaluatedAt)).TotalMilliseconds;
-                    generatedEvent = CreateEvent(change, rule, evaluatedAt, "exit", feature, zone,
-                        evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Ended, durationMs);
+                    if (CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                    {
+                        var durationMs = NonNegativeDuration(evaluatedAt, currentState?.EnteredAt ?? evaluatedAt);
+                        generatedEvent = CreateEvent(change, rule, OccurredAt(change), "exit", feature, zone,
+                            OccurrenceToken(change), AlertIncidentStatus.Ended, durationMs);
+                    }
+                    else
+                    {
+                        preservePreviousCondition = true;
+                    }
                 }
                 break;
 
@@ -70,10 +85,10 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                     var elapsedSeconds = (evaluatedAt - enteredAt!.Value).TotalSeconds;
                     if (elapsedSeconds >= dwellSeconds && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                     {
-                        var durationMs = (long)(evaluatedAt - enteredAt!.Value).TotalMilliseconds;
+                        var durationMs = NonNegativeDuration(evaluatedAt, enteredAt!.Value);
                         var status = lastAlertAt.HasValue ? AlertIncidentStatus.Ongoing : AlertIncidentStatus.Started;
-                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "dwell", feature, zone,
-                            evaluatedAt.ToUnixTimeSeconds(), status, durationMs);
+                        generatedEvent = CreateEvent(change, rule, OccurredAt(change), "dwell", feature, zone,
+                            OccurrenceToken(change), status, durationMs);
                     }
                 }
                 break;
@@ -82,6 +97,15 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                 {
                     var (previousBreached, previousBreachedSince) = ParseThresholdState(currentState?.ThresholdStateJson);
                     var breachedNow = EvaluateThreshold(rule.ConditionsJson, feature);
+                    var wantsStart = !previousBreached && breachedNow;
+                    var wantsResolve = previousBreached && !breachedNow;
+
+                    // A cooldown-suppressed edge stays pending. Advancing the breach flag
+                    // here would drop the transition until some later, unrelated edge.
+                    if ((wantsStart || wantsResolve) && !CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                    {
+                        break;
+                    }
 
                     // Track the breach-start timestamp separately from the last-emitted
                     // timestamp: if cooldown suppresses the "threshold" start event the
@@ -91,16 +115,16 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                         : null;
                     thresholdStateJson = CreateThresholdStateJson(breachedNow, breachedSince);
 
-                    if (!previousBreached && breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                    if (wantsStart)
                     {
-                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold", feature, zone,
-                            evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Started, 0);
+                        generatedEvent = CreateEvent(change, rule, OccurredAt(change), "threshold", feature, zone,
+                            OccurrenceToken(change), AlertIncidentStatus.Started, 0);
                     }
-                    else if (previousBreached && !breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                    else if (wantsResolve)
                     {
-                        var durationMs = (long)(evaluatedAt - (previousBreachedSince ?? evaluatedAt)).TotalMilliseconds;
-                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold_resolved", feature, zone,
-                            evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Ended, durationMs);
+                        var durationMs = NonNegativeDuration(evaluatedAt, previousBreachedSince ?? evaluatedAt);
+                        generatedEvent = CreateEvent(change, rule, OccurredAt(change), "threshold_resolved", feature, zone,
+                            OccurrenceToken(change), AlertIncidentStatus.Ended, durationMs);
                     }
 
                     break;
@@ -120,8 +144,8 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             RuleId = rule.RuleId,
             LayerId = change.LayerId,
             ObjectId = change.ObjectId,
-            Inside = insideNow,
-            EnteredAt = enteredAt,
+            Inside = preservePreviousCondition ? previousInside : insideNow,
+            EnteredAt = preservePreviousCondition ? currentState?.EnteredAt : enteredAt,
             LastAlertAt = lastAlertAt,
             LastGeneration = change.Generation,
             ThresholdStateJson = thresholdStateJson
@@ -170,6 +194,7 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             ["zoneName"] = zone?.ZoneName,
             ["featurePresent"] = feature.HasValue
         };
+        AddFeatureSnapshot(payload, feature);
         AddLineage(payload, "sourceEventId", change.SourceEventId);
         AddLineage(payload, "operationInstanceId", change.OperationInstanceId);
         AddLineage(payload, "correlationId", change.CorrelationId);
@@ -197,6 +222,58 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             AuditId = change.AuditId,
             ProposalId = change.ProposalId
         };
+    }
+
+    private static DateTimeOffset OccurredAt(AlertChange change)
+        => change.ChangedAt.ToUniversalTime();
+
+    private static long OccurrenceToken(AlertChange change)
+        => change.ChangedAt.ToUnixTimeSeconds();
+
+    private static long NonNegativeDuration(DateTimeOffset evaluatedAt, DateTimeOffset startedAt)
+        => Math.Max(0, (long)(evaluatedAt - startedAt).TotalMilliseconds);
+
+    private static void AddFeatureSnapshot(JsonObject payload, Feature? feature)
+    {
+        if (!feature.HasValue)
+        {
+            return;
+        }
+
+        var attributes = new JsonObject();
+        foreach (var pair in feature.Value.Attributes)
+        {
+            attributes[pair.Key] = ToJsonNode(pair.Value);
+        }
+
+        payload["attributes"] = attributes;
+        if (feature.Value.Geometry is { Length: > 0 } geometry)
+        {
+            payload["geometryWkbHex"] = Convert.ToHexString(geometry);
+        }
+    }
+
+    private static JsonNode? ToJsonNode(object? value)
+    {
+        switch (value)
+        {
+            case null:
+                return null;
+            case JsonElement element:
+                return JsonNode.Parse(element.GetRawText());
+            case string text:
+                return JsonValue.Create(text);
+            case bool flag:
+                return JsonValue.Create(flag);
+            case byte or sbyte or short or ushort or int or uint or long:
+                return JsonValue.Create(Convert.ToInt64(value, CultureInfo.InvariantCulture));
+            case ulong unsigned:
+                return JsonValue.Create(unsigned);
+            case float or double or decimal:
+                return JsonValue.Create(Convert.ToDouble(value, CultureInfo.InvariantCulture));
+            default:
+                return JsonValue.Create(Convert.ToString(value, CultureInfo.InvariantCulture));
+        }
     }
 
     private static void AddLineage(JsonObject payload, string name, string? value)

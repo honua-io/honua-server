@@ -442,6 +442,110 @@ public sealed class DefaultAlertEvaluatorTests
         result.UpdatedState!.Inside.Should().BeTrue();
     }
 
+    [UnitTest]
+    public void MonotonicClock_WallJump_DoesNotMoveElapsedTime()
+    {
+        var time = new ScriptedTimeProvider();
+        var clock = new AlertMonotonicClock(time);
+        var start = clock.GetUtcNow();
+
+        time.Wall = time.Wall.AddMinutes(-10);
+        clock.GetUtcNow().Should().Be(start);
+        time.Wall = time.Wall.AddHours(1);
+        clock.GetUtcNow().Should().Be(start);
+
+        time.Elapsed = TimeSpan.FromMinutes(5);
+        clock.GetUtcNow().Should().Be(start.AddMinutes(5));
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_CooldownDwellAndOffsets_UseMonotonicInstants()
+    {
+        var evaluator = new DefaultAlertEvaluator();
+        var start = new DateTimeOffset(2026, 3, 8, 10, 30, 0, TimeSpan.Zero);
+        var threshold = CreateRule(
+            AlertTriggerType.Threshold,
+            """{"field":"value","operator":">","value":50}""",
+            cooldownSeconds: 300);
+        var above = Feature.Create(100, null, ImmutableDictionary<string, object?>.Empty.Add("value", 60L));
+        var below = Feature.Create(100, null, ImmutableDictionary<string, object?>.Empty.Add("value", 10L));
+
+        var started = await evaluator.EvaluateAsync(CreateChange(threshold, 100, start, 1), above, threshold, null, null, start);
+        started.Events.Should().ContainSingle();
+        started.Events[0].IncidentStatus.Should().Be(AlertIncidentStatus.Started);
+
+        var early = await evaluator.EvaluateAsync(
+            CreateChange(threshold, 100, start.AddMinutes(4), 2), below, threshold, null, started.UpdatedState, start.AddMinutes(4));
+        early.Events.Should().BeEmpty();
+        early.UpdatedState!.ThresholdStateJson.Should().Contain("\"breached\":true");
+
+        var resolved = await evaluator.EvaluateAsync(
+            CreateChange(threshold, 100, start.AddMinutes(5), 3), below, threshold, null, early.UpdatedState, start.AddMinutes(5));
+        resolved.Events.Should().ContainSingle();
+        resolved.Events[0].PayloadJson.Should().Contain("\"transition\":\"threshold_resolved\"");
+        resolved.Events[0].IncidentDurationMs.Should().BeGreaterThanOrEqualTo(0);
+
+        var openCooldown = CreateRule(AlertTriggerType.Threshold, """{"field":"value","operator":">","value":50}""");
+        var backward = await evaluator.EvaluateAsync(
+            CreateChange(openCooldown, 100, start, 4),
+            below,
+            openCooldown,
+            null,
+            new AlertStateSnapshot
+            {
+                RuleId = openCooldown.RuleId,
+                LayerId = openCooldown.LayerId,
+                ObjectId = 100,
+                Inside = false,
+                LastGeneration = 1,
+                ThresholdStateJson = "{\"breached\":true,\"breachedSince\":\"2026-03-08T10:30:00.0000000+00:00\"}"
+            },
+            start.AddMinutes(-10));
+        backward.Events.Should().ContainSingle();
+        backward.Events[0].IncidentDurationMs.Should().Be(0);
+
+        var pacific = new DateTimeOffset(2026, 3, 8, 3, 30, 0, TimeSpan.FromHours(-7));
+        var utcEvent = await evaluator.EvaluateAsync(CreateChange(threshold, 100, start, 9), above, threshold, null, null, start);
+        var offsetEvent = await evaluator.EvaluateAsync(CreateChange(threshold, 100, pacific, 9), above, threshold, null, null, start);
+        offsetEvent.Events[0].DedupeKey.Should().Be(utcEvent.Events[0].DedupeKey);
+        offsetEvent.Events[0].PayloadJson.Should().Be(utcEvent.Events[0].PayloadJson);
+
+        var dwell = CreateRule(AlertTriggerType.Dwell, """{"dwellSeconds":300}""", cooldownSeconds: 300);
+        var zone = CreateZone();
+        var inside = CreateFeature(100);
+        var dwelling = new AlertStateSnapshot
+        {
+            RuleId = dwell.RuleId,
+            LayerId = dwell.LayerId,
+            ObjectId = 100,
+            Inside = true,
+            EnteredAt = start,
+            LastGeneration = 1
+        };
+        var beforeDwell = await evaluator.EvaluateAsync(
+            CreateChange(dwell, 100, start.AddMinutes(4), 5), inside, dwell, zone, dwelling, start.AddMinutes(4));
+        beforeDwell.Events.Should().BeEmpty();
+        var atDwell = await evaluator.EvaluateAsync(
+            CreateChange(dwell, 100, start.AddMinutes(5), 6), inside, dwell, zone, beforeDwell.UpdatedState, start.AddMinutes(5));
+        atDwell.Events.Should().ContainSingle();
+        var again = await evaluator.EvaluateAsync(
+            CreateChange(dwell, 100, start.AddMinutes(5), 7), inside, dwell, zone, atDwell.UpdatedState, start.AddMinutes(5));
+        again.Events.Should().BeEmpty();
+    }
+
+    private sealed class ScriptedTimeProvider : TimeProvider
+    {
+        public DateTimeOffset Wall { get; set; } = new(2026, 3, 8, 10, 30, 0, TimeSpan.Zero);
+
+        public TimeSpan Elapsed { get; set; }
+
+        public override DateTimeOffset GetUtcNow() => Wall;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => TimeSpan.TicksPerSecond + Elapsed.Ticks;
+    }
+
     private static AlertChange CreateChange(
         AlertRuleDefinition rule, long objectId, DateTimeOffset changedAt, long generation = 1) =>
         new()

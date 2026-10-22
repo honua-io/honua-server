@@ -1,9 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -25,7 +28,9 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader
     {
         const string sql = """
             SELECT generation, layer_id, objectid, operation, changed_at,
-                   event_id, operation_instance_id, correlation_id, audit_id, proposal_id
+                   event_id, operation_instance_id, correlation_id, audit_id, proposal_id,
+                   CASE WHEN committed_attributes IS NULL THEN NULL ELSE ST_AsEWKB(committed_geometry) END,
+                   committed_attributes::text
             FROM honua.feature_changes
             WHERE generation > @last_generation
             ORDER BY generation
@@ -53,10 +58,24 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader
                 OperationInstanceId = reader.IsDBNull(6) ? null : reader.GetString(6),
                 CorrelationId = reader.IsDBNull(7) ? null : reader.GetString(7),
                 AuditId = reader.IsDBNull(8) ? null : reader.GetString(8),
-                ProposalId = reader.IsDBNull(9) ? null : reader.GetString(9)
+                ProposalId = reader.IsDBNull(9) ? null : reader.GetString(9),
+                CommittedFeature = ReadCommittedFeature(reader)
             });
         }
 
         return changes;
+    }
+
+    private static Feature? ReadCommittedFeature(NpgsqlDataReader reader)
+    {
+        if (reader.IsDBNull(11))
+        {
+            return null;
+        }
+
+        var attributes = new Dictionary<string, object?>(StringComparer.Ordinal);
+        FeatureAttributeJsonReader.ReadInto(reader.GetString(11), attributes);
+        var geometry = reader.IsDBNull(10) ? null : (byte[])reader[10];
+        return Feature.Create(reader.GetInt64(2), geometry, attributes.ToImmutableDictionary(StringComparer.Ordinal));
     }
 }

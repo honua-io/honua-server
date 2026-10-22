@@ -347,6 +347,88 @@ public sealed class AlertPipelineTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task ProcessChangesAsync_CommittedImages_AreNotReplacedByTheLiveRow()
+    {
+        var changeReader = Substitute.For<IAlertChangeReader>();
+        var ruleRepository = Substitute.For<IAlertRuleRepository>();
+        var stateStore = Substitute.For<IAlertStateStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var featureReader = Substitute.For<IFeatureReader>();
+        var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
+        var evaluator = Substitute.For<IAlertEvaluator>();
+        var editionPolicy = Substitute.For<IAlertEditionPolicy>();
+        var rule = CreateRule(AlertTriggerType.Threshold);
+        const string serviceName = "svc-7";
+        var observed = new List<long?>();
+        var changes = new[]
+        {
+            CommittedChange(1, 10),
+            CommittedChange(2, 60),
+            CommittedChange(3, 10),
+        };
+
+        changeReader.GetChangesAfterAsync(0, 10, Arg.Any<CancellationToken>()).Returns(changes);
+        ruleRepository.GetActiveRulesAsync(Arg.Any<IReadOnlyCollection<AlertRuleLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>
+            {
+                [new AlertRuleLookupKey(serviceName, rule.LayerId)] = [rule]
+            });
+        ruleRepository.GetZonesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AlertZoneDefinition>());
+        stateStore.GetManyAsync(Arg.Any<IReadOnlyCollection<AlertStateLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertStateLookupKey, AlertStateSnapshot>());
+        featureReader.GetAsync(rule.LayerId, 100, Arg.Any<CancellationToken>())
+            .Returns(FeatureWithValue(100, 1));
+        editionPolicy.IsRuleAllowed(rule).Returns(true);
+        evaluator.EvaluateAsync(
+                Arg.Any<AlertChange>(),
+                Arg.Any<Feature?>(),
+                rule,
+                Arg.Any<AlertZoneDefinition?>(),
+                Arg.Any<AlertStateSnapshot?>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var feature = call.ArgAt<Feature?>(1);
+                observed.Add(feature.HasValue && feature.Value.Attributes.TryGetValue("value", out var value) ? value as long? : null);
+                return new AlertEvaluationResult();
+            });
+
+        var dispatchWriter = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
+        var sut = new AlertPipeline(
+            changeReader,
+            ruleRepository,
+            stateStore,
+            featureReader,
+            graphProvider,
+            evaluator,
+            editionPolicy,
+            dispatchWriter,
+            NullLogger<AlertPipeline>.Instance);
+
+        var maxGeneration = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
+
+        maxGeneration.Should().Be(3);
+        observed.Should().Equal(10L, 60L, 10L);
+        await featureReader.DidNotReceive().GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    private static AlertChange CommittedChange(long generation, long value)
+        => new()
+        {
+            Generation = generation,
+            LayerId = 7,
+            ObjectId = 100,
+            Operation = AlertChangeOperation.Update,
+            ChangedAt = DateTimeOffset.UnixEpoch.AddMinutes(generation),
+            CommittedFeature = FeatureWithValue(100, value),
+        };
+
+    private static Feature FeatureWithValue(long objectId, long value)
+        => Feature.Create(objectId, geometry: null, ImmutableDictionary<string, object?>.Empty.Add("value", value));
+
     private static AlertRuleDefinition CreateRule(AlertTriggerType triggerType = AlertTriggerType.Enter)
         => new()
         {

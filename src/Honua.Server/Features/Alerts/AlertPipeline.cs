@@ -21,6 +21,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
     private readonly IAlertEvaluator _evaluator;
     private readonly IAlertEditionPolicy _editionPolicy;
     private readonly AlertDispatchWriter _dispatchWriter;
+    private readonly AlertMonotonicClock _clock;
     private readonly ILogger<AlertPipeline> _logger;
 
     public AlertPipeline(
@@ -32,7 +33,8 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         IAlertEvaluator evaluator,
         IAlertEditionPolicy editionPolicy,
         AlertDispatchWriter dispatchWriter,
-        ILogger<AlertPipeline> logger)
+        ILogger<AlertPipeline> logger,
+        AlertMonotonicClock? clock = null)
     {
         _changeReader = changeReader ?? throw new ArgumentNullException(nameof(changeReader));
         _ruleRepository = ruleRepository ?? throw new ArgumentNullException(nameof(ruleRepository));
@@ -43,6 +45,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         _editionPolicy = editionPolicy ?? throw new ArgumentNullException(nameof(editionPolicy));
         _dispatchWriter = dispatchWriter ?? throw new ArgumentNullException(nameof(dispatchWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _clock = clock ?? AlertMonotonicClock.System;
     }
 
     public async Task<long> ProcessChangesAsync(
@@ -66,7 +69,6 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 cancellationToken)
             .ConfigureAwait(false);
         var stateByKey = await LoadStatesForChangesAsync(changes, serviceLookup, rulesByLookup, cancellationToken).ConfigureAwait(false);
-        var featureCache = new Dictionary<(int LayerId, long ObjectId), Feature?>();
         var maxGeneration = lastProcessedGeneration;
 
         foreach (var change in changes)
@@ -90,10 +92,15 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 continue;
             }
 
+            // A committed image belongs to this generation. The live row is only a fallback
+            // for changes recorded before that image existed, and it is not reused across
+            // generations: one batch can contain several versions of the same object.
             var feature = change.Operation == AlertChangeOperation.Delete
                 ? null
-                : await GetFeatureAsync(change.LayerId, change.ObjectId, featureCache, cancellationToken).ConfigureAwait(false);
-            var evaluatedAt = DateTimeOffset.UtcNow;
+                : change.CommittedFeature.HasValue
+                    ? change.CommittedFeature
+                    : await _featureReader.GetAsync(change.LayerId, change.ObjectId, cancellationToken).ConfigureAwait(false);
+            var evaluatedAt = _clock.GetUtcNow();
             var pendingStateUpdates = new List<AlertStateSnapshot>(rules.Count);
             var pendingDispatches = new List<PendingAlertDispatch>();
 

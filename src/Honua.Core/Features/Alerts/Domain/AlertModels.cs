@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Alerts.Domain;
 
@@ -489,6 +490,12 @@ public readonly record struct AlertChange
 
     /// <summary>Approved proposal identity, when applicable.</summary>
     public string? ProposalId { get; init; }
+
+    /// <summary>
+    /// Feature row committed by this generation. Null for deletes and for changes recorded
+    /// before the committed image was captured. Evaluation must prefer this over the live row.
+    /// </summary>
+    public Feature? CommittedFeature { get; init; }
 }
 
 /// <summary>
