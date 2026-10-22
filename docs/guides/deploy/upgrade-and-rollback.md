@@ -116,7 +116,7 @@ trusted ingress or disposable test boundary.
 
 Proceed only when `readyForCoordinatedDeploy` is `true`, no unexpected migrations are pending, and backups are current.
 
-2. Roll out the new image. Migrations run automatically when the new version starts (skip with `HONUA_SKIP_MIGRATIONS=true` if you run them out-of-band — mandatory on serverless).
+2. Roll out the new image. Migrations run automatically when the new version starts. To run them out of band instead, apply them first with [migrate-only mode](#run-migrations-out-of-band) and serve with `HONUA_SKIP_MIGRATIONS=true` (mandatory on serverless).
 
 ```bash
 # Kubernetes / Helm
@@ -127,6 +127,57 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 Single-instance Docker is not zero-downtime: pull the new tag, stop the old container, start the new one with the same env and database, and wait for `/healthz/ready`.
 
 3. Verify the rollout: `/healthz/ready` returns `Ready` on every replica, `GET /api/v1/admin/deploy/preflight` reports no pending migrations, and a known layer queries back with the expected count.
+
+## Run migrations out of band
+
+Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
+
+```bash
+docker run --rm \
+  -e HONUA_MIGRATE_ONLY=true \
+  -e ConnectionStrings__DefaultConnection="$HONUA_DATABASE_CONNECTION" \
+  ghcr.io/honua-io/honua-server:<target-tag>
+```
+
+Migrate-only mode works the same way in the native-AOT and JIT images. It:
+
+- resolves `ConnectionStrings__DefaultConnection` exactly as serving startup does, including `aws:secretsmanager:`, `azure:keyvault:` and `env:` references and `HONUA_SETTINGS_DOCUMENT`;
+- runs the PostGIS preflight, then applies migrations through the same runner, with every `Database__MigrationSafety__*` gate in force: unannotated contract scripts are refused (`Enforce`), reviewed contract scripts on an existing database need their one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce (`ContractApplyPolicy=Gate`), and `BackupCommand` runs before them;
+- starts no HTTP listener, hosted or background service, worker, scheduler or alert dispatcher, and needs no Redis, licence, admin password or encryption key;
+- ignores `HONUA_SKIP_MIGRATIONS`, so it can share the serving replicas' environment;
+- refuses to run inside AWS Lambda, where a failed init is retried. Run it as a container task or Job.
+
+Standard output carries one JSON line; logs go to standard error. The summary (`format: honua.migrate-only/v1`) has these fields:
+
+| Field | Meaning |
+|---|---|
+| `outcome` | `completed`, `refused` (a safety gate or the configuration stopped the run) or `failed`. |
+| `code`, `exitCode` | The typed reason and the process exit code, as in the table below. |
+| `message` | The reason in words. Connection details are never included. |
+| `appliedScripts` | Scripts this run applied, in order. Empty when the journal was already current. |
+| `schemaNumber` | The highest migration number the journal now holds. Set only on success. |
+| `binarySchemaNumber` | The highest migration number this image ships. |
+| `schemaVerified` | `true` once the runner has reconciled the journal with the physical schema. |
+| `journalWasEmpty` | `true` for a fresh install. |
+| `pendingScripts` | The scripts that were pending before the run, each with its classification: `expand`, `contract-annotated` or `contract-unannotated`. |
+| `contractApproval` | On a gated refusal: the `setting` to set and the `nonce` for these exact scripts. |
+| `backupHooks` | Each backup-command run: `outcome`, `succeeded`, `exitCode`, `durationMilliseconds`. |
+
+| Exit code | `code` | What to do |
+|---:|---|---|
+| `0` | `completed` | The journal is current. Start or roll the serving replicas. |
+| `2` | `invalid-configuration` | Fix the named setting: missing connection string, a provider other than PostgreSQL, a malformed switch, Lambda, or an execution-worker launch. |
+| `3` | `database-unavailable` | The database refused, timed out or ran out of connection slots. Retry once it is reachable. |
+| `4` | `database-incompatible` | PostGIS is missing or unsupported. Install or upgrade the extension. |
+| `5` | `contract-approval-required` | Review the scripts in `pendingScripts`, then re-run with `HONUA_APPROVE_CONTRACT_MIGRATIONS=<contractApproval.nonce>`. Unset it afterwards. |
+| `6` | `unannotated-contract-migration` | A contract-phase script lacks its compatibility review. Do not override `Enforce` to get past it; use an image whose scripts are reviewed. |
+| `7` | `backup-failed` | The backup command failed, so nothing was applied. Fix the backup and re-run. |
+| `8` | `schema-newer-than-binary` | The journal holds migrations this image does not know. Use the newer image. |
+| `9` | `migration-lock-timeout` | Another migrator held the migration lock. Let it finish, then re-run. |
+| `10` | `migration-failed` | A script failed, or the journal and the schema disagree. See the log on standard error. |
+| `11` | `cancelled` | The run received SIGTERM or SIGINT. It stops before the next database step, never inside a script. |
+
+A contract-phase upgrade is therefore two runs. The first exits `5` and prints the nonce. After review, the second run with that nonce applies the scripts. Kubernetes and Compose recipes are in [Deploy on Kubernetes](kubernetes.md#run-migrations-as-a-pre-upgrade-job) and [Deploy with Docker Compose](docker-compose.md#upgrade--rollback).
 
 ## Coordinated rollouts via the deploy API
 
@@ -200,6 +251,7 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 - a named preset is not supported, even alongside explicit query overrides;
 - telemetry parameters are set without `telemetry.connection` (outside the `health-only` profile), or the connection is not configured under `ControlPlane__TelemetryConnections`;
 - error-rate or latency signals have no sample floor (`telemetry.sample_count.query` + `telemetry.sample_count.minimum`);
+- `telemetry.error_rate.query` and `telemetry.error_count.query` are both set, or `telemetry.error_count.query` is set on a connection whose provider is not CloudWatch or Azure Monitor;
 - `telemetry.max_staleness_seconds` is set on a CloudWatch or Azure Monitor connection. Only Prometheus checks each sample's observation time; the other providers query a fixed 300-second window, so the bound would be ignored;
 - the rollout splits traffic (a canary weight or ramp) but its metrics are aggregate. Set `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job`, a canary preset, or explicit candidate-scoped queries, so the stable revision's traffic cannot mask a failing candidate;
 - probe settings or golden-query expectations are set without their URL, or `telemetry.healthz.failure_threshold` exceeds `telemetry.healthz.samples`;
@@ -208,9 +260,22 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 
 At runtime, a reading only counts as evidence when it is present, finite, non-negative, from a single series or row, and fresh. Empty results, `NaN`/`±Inf`, negative values, multi-series or multi-row answers, samples below the sample floor, and samples whose timestamp is further from now than the freshness bound all hold the rollout. None of them ever satisfies the gate.
 
+There is one bounded exception, for error counts. AWS publishes ALB `HTTPCode_Target_5XX_Count` / `HTTPCode_ELB_5XX_Count` and Lambda `Errors` datapoints only for periods that had errors, so a healthy candidate has no error series at all. `FILL(…, 0)` does not help, because a `SEARCH` that matches no metric returns no series to fill. For that case, set `telemetry.error_count.query` instead of `telemetry.error_rate.query`. The gate then divides the count by the sample count read for the same 300-second window and compares the ratio against `telemetry.error_rate.threshold`. When the count query completes and matches no series (CloudWatch) or no rows (Azure Monitor) **and** the sample count meets the floor, the count is read as zero. The decision message records that substitution, for example `error-count series absent for a window with 240 samples (floor 20); read as 0 errors`. Everything else still holds:
+
+| Error-count read | Sample-count read | Decision |
+|---|---|---|
+| A value | Meets the floor | The rate is count ÷ samples, compared against the threshold. |
+| No series or rows, query complete | Meets the floor | 0 errors: the error signal passes. |
+| No series or rows, query complete | Empty, multi-series, non-finite or below the floor | Hold. Missing traffic evidence is never read as healthy. |
+| Partial or failed result (CloudWatch `PartialData`, `InternalError` or a paged answer; an Azure Monitor `PartialError`) | Any | Hold, as missing evidence. |
+| Any | Not configured | Rejected at plan time: an error count needs the sample floor. |
+
+The substitution never applies to `telemetry.error_rate.query`, because an empty ratio cannot tell no errors from no traffic, and no preset uses it. The Prometheus presets reach the same result inside PromQL with `or vector(0)`.
+
 | Parameter | Default | Purpose |
 |---|---|---|
 | `telemetry.max_staleness_seconds` | `300` | Freshness bound for Prometheus samples, in (0, 3600]. CloudWatch and Azure Monitor read only the last 300 seconds and reject this key at plan time. |
+| `telemetry.error_count.query` | — (none) | CloudWatch metric-math or Azure Monitor KQL query for the error *count* over the window, used in place of `telemetry.error_rate.query`. Divided by the sample count; an empty result with the sample floor met reads as 0 errors. Needs `telemetry.error_rate.threshold` and the sample floor. |
 | `telemetry.warmup_seconds` | preset (`120` for `honua-http`) | Bake time after the candidate first receives traffic, in (0, 21600]. |
 | `telemetry.evidence_grace_seconds` | `900` | How long missing or invalid evidence (provider outage, unconfigured connection, stale or ambiguous data, unreachable probe) is tolerated after warmup before the rollout is rolled back, in (0, 3600]. |
 | `telemetry.exposure_deadline_seconds` | `1800` | How long a submitted rollout may wait for the candidate to receive traffic. Past it, the rollout is rolled back without the candidate ever being activated. In (0, 7200]. |

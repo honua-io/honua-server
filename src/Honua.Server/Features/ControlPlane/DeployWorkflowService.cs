@@ -25,6 +25,7 @@ internal sealed partial class DeployWorkflowService
     private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
     private const string RollbackSubmissionRetryablePhase = "Rollback provider submission was not confirmed; retry is allowed.";
     private const string MaxStalenessParameterKey = "telemetry.max_staleness_seconds";
+    private const string ErrorCountParameterKey = "telemetry.error_count.query";
 
     /// <summary>
     /// Built-in providers that query a fixed window and never read a sample's observation time, so they
@@ -265,6 +266,18 @@ internal sealed partial class DeployWorkflowService
             return $"Telemetry gate configuration rejected: {MaxStalenessParameterKey} is not honored by connection " +
                 $"'{connection.ConnectionId}': its '{connection.Provider}' provider reads a fixed 300-second query window, " +
                 "so the bound would be silently ignored.";
+        }
+
+        // Only the fixed-window cloud providers read an error-count numerator and report a series that
+        // matched nothing (honua-server#6474). Elsewhere the numerator would never be read and the gate
+        // would hold until the evidence grace expired; Prometheus expresses the same intent with
+        // "or vector(0)" in telemetry.error_rate.query, as the built-in presets do.
+        if (!string.IsNullOrWhiteSpace(policy.ErrorCountQuery) &&
+            !FixedWindowTelemetryProviders.Contains(connection.Provider?.Trim() ?? string.Empty))
+        {
+            return $"Telemetry gate configuration rejected: {ErrorCountParameterKey} is not supported by connection " +
+                $"'{connection.ConnectionId}': its '{connection.Provider}' provider does not read an error-count numerator. " +
+                "Use telemetry.error_rate.query (for Prometheus, add \"or vector(0)\" to the error series).";
         }
 
         return null;
