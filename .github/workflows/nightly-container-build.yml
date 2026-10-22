@@ -562,6 +562,7 @@ jobs:
           build-args: |
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-lambda
             DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0
+            LAMBDA_ADAPTER_IMAGE=${{ env.BASE_REPO }}:lambda-adapter-0.9.1
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
