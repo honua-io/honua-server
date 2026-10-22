@@ -47,7 +47,7 @@ public class OidcAuthenticationOptionsValidatorTests
     [UnitTest]
     public void ConfiguredArrays_OptionsMonitorReloadsConfigurationAndReplacesDefaults()
     {
-        using var configuration = new ConfigurationBuilder()
+        using var configuration = (ConfigurationRoot)new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Oidc:AdminRoles:0"] = "first-approver",
