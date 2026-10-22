@@ -14,20 +14,42 @@ internal static class PostgresMvtReader
     {
         // Sequential access keeps Npgsql from buffering the entire bytea row before
         // its length can be checked. Reject before allocating the response byte array.
-        await using var reader = await command.ExecuteReaderAsync(
-            CommandBehavior.SequentialAccess, cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ||
-            await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false))
+        // A missing catalog grid fails here. Do not retry the tile with a null transform.
+        // The grid error can surface on execute or on the first read, depending on
+        // when PostGIS evaluates the pipeline. Either way it stays a client error.
+        NpgsqlDataReader reader;
+        try
         {
-            return null;
+            reader = await command.ExecuteReaderAsync(
+                CommandBehavior.SequentialAccess, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+        {
+            throw DatumGridException.MissingGrid(ex);
         }
 
-        var encodedBytes = reader.GetBytes(0, 0, null, 0, 0);
-        if (encodedBytes > maxTileSize)
+        await using (reader)
         {
-            throw new TileSizeLimitExceededException(encodedBytes, maxTileSize);
-        }
+            try
+            {
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ||
+                    await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false))
+                {
+                    return null;
+                }
 
-        return await reader.GetFieldValueAsync<byte[]>(0, cancellationToken).ConfigureAwait(false);
+                var encodedBytes = reader.GetBytes(0, 0, null, 0, 0);
+                if (encodedBytes > maxTileSize)
+                {
+                    throw new TileSizeLimitExceededException(encodedBytes, maxTileSize);
+                }
+
+                return await reader.GetFieldValueAsync<byte[]>(0, cancellationToken).ConfigureAwait(false);
+            }
+            catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+            {
+                throw DatumGridException.MissingGrid(ex);
+            }
+        }
     }
 }

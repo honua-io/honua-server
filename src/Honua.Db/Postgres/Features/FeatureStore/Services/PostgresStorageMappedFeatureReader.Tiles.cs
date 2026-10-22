@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Tiles;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -67,13 +68,24 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         }
 
         var geometry = $"{_geometryColumn}::geometry";
+        var tileArea = DatumOutputSelection.AreaForTile(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, targetSrid);
+        var selection = effectiveQuery.OutputDatumTransformation
+            ?? (_storageSrid == targetSrid
+                ? null
+                : DatumOutputSelection.Resolve(DatumCatalog.Shared, _storageSrid, targetSrid, tileArea));
         var geometryForTile = _storageSrid == targetSrid
             ? geometry
             : DatumTransformSql.BuildTransformExpression(
-                geometry, targetSrid, selection: null, fromSrid: _storageSrid);
+                geometry, targetSrid, selection, _storageSrid);
         var envelopeForFilter = _storageSrid == targetSrid
             ? bufferedEnvelope
-            : $"ST_Transform({bufferedEnvelope}, {_storageSrid})";
+            : selection is null
+                ? $"ST_Transform({bufferedEnvelope}, {_storageSrid})"
+                : DatumTransformSql.BuildTransformExpression(
+                    bufferedEnvelope,
+                    _storageSrid,
+                    DatumOutputSelection.Inverse(selection),
+                    targetSrid);
         var extentParameter = sql.AddParameter(tileExtent);
         var bufferParameter = sql.AddParameter(tileOptions.TileBuffer);
         var attributes = BuildAttributesJsonbExpression(effectiveQuery, sql);

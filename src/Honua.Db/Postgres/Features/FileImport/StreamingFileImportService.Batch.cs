@@ -12,6 +12,8 @@ using Npgsql;
 using NpgsqlTypes;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Geometries;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -139,7 +141,7 @@ internal sealed partial class StreamingFileImportService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var feature = features[i];
-            var gate = CreateWkb(feature, wkbWriter, repairTally);
+            var gate = CreateWkb(feature, wkbWriter, repairTally, targetSrid);
 
             // A gate skip must exclude the whole row, not degrade it: a null WKB is a legal
             // null-geometry row, so passing the skipped feature through would silently import
@@ -336,7 +338,7 @@ internal sealed partial class StreamingFileImportService
 
             try
             {
-                var gate = CreateWkb(feature, wkbWriter, repairTally);
+                var gate = CreateWkb(feature, wkbWriter, repairTally, targetSrid);
 
                 // A gate skip excludes the whole row (see InsertBatchFastAsync): inserting the
                 // feature with a NULL wkb would import its properties as a null-geometry row.
@@ -410,7 +412,11 @@ internal sealed partial class StreamingFileImportService
     /// the insert entirely; a null <see cref="WkbGateResult.Wkb"/> without the skip flag is a
     /// legitimate null-geometry row whose properties still import.
     /// </summary>
-    private WkbGateResult CreateWkb(IFeature feature, WKBWriter wkbWriter, GeometryRepairTally repairTally)
+    private WkbGateResult CreateWkb(
+        IFeature feature,
+        WKBWriter wkbWriter,
+        GeometryRepairTally repairTally,
+        int targetSrid)
     {
         if (feature.Geometry == null)
         {
@@ -551,6 +557,29 @@ internal sealed partial class StreamingFileImportService
 
                 geometry = repaired;
                 repairTally.Repaired++;
+            }
+        }
+
+        var stored = AntimeridianCutter.CutStoredGeometry(geometry, targetSrid);
+        if (!ReferenceEquals(stored, geometry))
+        {
+            // A Web Mercator ring cut into the geographic target carries that target SRID,
+            // so the insert does not ST_Transform the already-cut ordinates a second time.
+            feature.Geometry = stored;
+            geometry = stored;
+            var cutSizeResult = ImportGeometrySizeGuard.Check(geometry, _limits.MaxVertices, _limits.MaxRings);
+            if (!cutSizeResult.IsWithinLimits)
+            {
+                if (_limits.SkipInvalidGeometry)
+                {
+                    ImportLog.GeometryTooLargeSkipped(
+                        _logger,
+                        cutSizeResult.Message ?? "Cut geometry exceeds import size limit.");
+                    return WkbGateResult.Skip(repairTally);
+                }
+
+                throw new ImportGeometryTooLargeException(
+                    cutSizeResult.Message ?? "Cut geometry exceeds import size limit.");
             }
         }
 
