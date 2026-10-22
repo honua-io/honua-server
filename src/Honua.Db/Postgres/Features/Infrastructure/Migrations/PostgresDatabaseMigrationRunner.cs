@@ -42,11 +42,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private static readonly IComparer<string> _migrationScriptNameComparer = new MigrationScriptNameComparer();
     private static readonly IReadOnlySet<string> _noReaderVerifiedMigrations = new HashSet<string>(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Forward-compatibility declarations beside the DbUp journal (#6477), created by the expand
-    /// migration <c>135_RecordMigrationReaderCompatibility.sql</c>.
-    /// </summary>
-    internal const string ReaderCompatibilityTable = "public.schema_version_reader_compatibility";
+    /// <summary>Forward-compatibility declarations beside the DbUp journal (#6477).</summary>
+    internal const string ReaderCompatibilityTable = PostgresReaderCompatibilityJournal.Table;
 
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
@@ -499,104 +496,19 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         // numbering is independent and never raises it.
         var readerSchema = MigrationReaderCompatibility.ReaderSchemaOf(
             migrationsAssembly.GetManifestResourceNames().Where(IsSqlScript));
-        var declarations = await ReadReaderCompatibilityDeclarationsAsync(
-            openConnection, connectionString, unknown, cancellationToken).ConfigureAwait(false);
-        var accepted = new HashSet<string>(StringComparer.Ordinal);
-        var refusals = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var name in unknown)
+        if (openConnection is not null)
         {
-            if (!declarations.TryGetValue(name, out var declaration))
-            {
-                continue;
-            }
-
-            var verdict = MigrationReaderCompatibility.Verify(declaration, name, readerSchema);
-            if (verdict.Accepted)
-            {
-                accepted.Add(name);
-            }
-            else
-            {
-                refusals[name] = verdict.RefusalReason!;
-            }
+            return await PostgresReaderCompatibilityJournal.QualifyAsync(
+                openConnection, unknown, readerSchema, cancellationToken).ConfigureAwait(false);
         }
 
-        var refused = unknown.Where(name => !accepted.Contains(name)).ToArray();
-        if (refused.Length > 0)
-        {
-            throw new DatabaseSchemaCompatibilityException(refused, refusals);
-        }
-
-        return accepted;
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await PostgresReaderCompatibilityJournal.QualifyAsync(
+            connection, unknown, readerSchema, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsSqlScript(string name) => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase);
-
-    private static async Task<Dictionary<string, MigrationReaderCompatibilityDeclaration>> ReadReaderCompatibilityDeclarationsAsync(
-        NpgsqlConnection? openConnection,
-        string connectionString,
-        IReadOnlyList<string> scriptNames,
-        CancellationToken cancellationToken)
-    {
-        var declarations = new Dictionary<string, MigrationReaderCompatibilityDeclaration>(StringComparer.Ordinal);
-        NpgsqlConnection? owned = null;
-        try
-        {
-            var connection = openConnection;
-            if (connection is null)
-            {
-                owned = new NpgsqlConnection(connectionString);
-                await owned.OpenAsync(cancellationToken).ConfigureAwait(false);
-                connection = owned;
-            }
-
-            if (!await ReaderCompatibilityTableExistsAsync(connection, cancellationToken).ConfigureAwait(false))
-            {
-                return declarations;
-            }
-
-            await using var command = new NpgsqlCommand(
-                $"""
-                SELECT script_name, declaration_format, classification, script_sha256, min_reader_schema, script_text
-                FROM {ReaderCompatibilityTable}
-                WHERE script_name = ANY(@names)
-                """,
-                connection);
-            _ = command.Parameters.AddWithValue("names", scriptNames.ToArray());
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var declaration = new MigrationReaderCompatibilityDeclaration
-                {
-                    ScriptName = reader.GetString(0),
-                    DeclarationFormat = reader.GetInt32(1),
-                    Classification = reader.GetString(2),
-                    ScriptSha256 = reader.GetString(3),
-                    MinReaderSchema = reader.GetInt32(4),
-                    ScriptText = reader.GetString(5),
-                };
-                declarations[declaration.ScriptName] = declaration;
-            }
-
-            return declarations;
-        }
-        finally
-        {
-            if (owned is not null)
-            {
-                await owned.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static async Task<bool> ReaderCompatibilityTableExistsAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            $"SELECT to_regclass('{ReaderCompatibilityTable}') IS NOT NULL", connection);
-        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
-    }
 
     /// <summary>
     /// Records a forward-compatibility declaration for every journaled script this image ships and
@@ -609,7 +521,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         UpgradeEngine upgrader,
         CancellationToken cancellationToken)
     {
-        if (!await ReaderCompatibilityTableExistsAsync(connection, cancellationToken).ConfigureAwait(false))
+        if (!await PostgresReaderCompatibilityJournal.TableExistsAsync(connection, cancellationToken).ConfigureAwait(false))
         {
             return;
         }

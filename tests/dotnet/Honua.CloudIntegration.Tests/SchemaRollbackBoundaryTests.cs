@@ -144,27 +144,79 @@ public sealed class SchemaRollbackBoundaryTests(LocalSubstratePostgresFixture po
         (await command.ExecuteScalarAsync()).Should().Be(1L);
     }
 
-    [SkippableFact]
-    public async Task StartupGuard_WithMigrationsDisabled_RejectsDeclaredExpandEntryItDoesNotShip()
+    [SkippableTheory]
+    [InlineData("expand", null)]
+    [InlineData("undeclared", null)]
+    [InlineData("contract", "declared contract, not expand")]
+    [InlineData("opted-out", "declared reader-incompatible, not expand")]
+    [InlineData("forged-expand", "this reader classifies the recorded script as contract")]
+    [InlineData("tampered-text", "the recorded script text does not match its recorded hash")]
+    [InlineData("floor-above-reader", "declared compatible from reader schema 9999; this reader is schema ")]
+    public async Task StartupGuard_WithMigrationsDisabled_QualifiesUnknownEntriesThroughDeclarationsReadOnly(
+        string kind, string? refusal)
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is required for the rollback boundary proof.");
-        var connectionString = await postgres.CreateFreshDatabaseAsync();
-        const string future = "Honua.Server.Migrations.999_FutureExpand.sql";
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), ServerCoreSchemaMigrations.Manifest);
+        var migrated = await runner.RunMigrationsAsync(connectionString, typeof(ServerCoreSchemaMigrations).Assembly);
+        migrated.Successful.Should().BeTrue(migrated.ErrorMessage);
+
+        // A newer image (migrate-only or in-process) applied one more script and recorded its
+        // declaration; this image now starts with HONUA_SKIP_MIGRATIONS=true over that database.
+        const string future = "Honua.Server.Migrations.999_FutureSkipProbe.sql";
+        const string additive = "CREATE TABLE IF NOT EXISTS honua.future_skip_probe (id integer PRIMARY KEY);";
+        const string rename = "CREATE TABLE IF NOT EXISTS honua.future_skip_probe (id integer PRIMARY KEY);\nALTER TABLE honua.future_skip_probe RENAME COLUMN id TO probe_id;";
+        var (applied, declaration) = kind switch
+        {
+            "expand" or "undeclared" => (additive, MigrationReaderCompatibility.Declare(future, additive)),
+            "contract" => (rename, MigrationReaderCompatibility.Declare(future, rename)),
+            "opted-out" => (additive, MigrationReaderCompatibility.Declare(
+                future, "-- honua:reader-incompatible reason=older readers violate the new default\n" + additive)),
+            "forged-expand" => (rename, MigrationReaderCompatibility.Declare(future, rename) with
+            {
+                Classification = MigrationReaderCompatibilityClassification.Expand,
+            }),
+            "tampered-text" => (rename, MigrationReaderCompatibility.Declare(future, additive) with { ScriptText = rename }),
+            _ => (additive, MigrationReaderCompatibility.Declare(future, "-- honua:reader-compatible-from schema=9999\n" + additive)),
+        };
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "CREATE TABLE public.schema_versions (scriptname text NOT NULL); " + ReaderCompatibilityJournalScript() +
-            " INSERT INTO public.schema_versions VALUES ('" + future + "');";
+        command.CommandText = applied + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@name, now());";
+        command.Parameters.AddWithValue("name", future);
         await command.ExecuteNonQueryAsync();
-        var declaration = MigrationReaderCompatibility.Declare(future, "CREATE TABLE IF NOT EXISTS honua.future_note (id integer);");
-        MigrationReaderCompatibility.Verify(declaration, future, 135).Accepted.Should().BeTrue();
-        await PostgresDatabaseMigrationRunner.RecordReaderCompatibilityDeclarationsAsync(connection, [declaration], CancellationToken.None);
+        if (kind != "undeclared")
+        {
+            await PostgresDatabaseMigrationRunner.RecordReaderCompatibilityDeclarationsAsync(connection, [declaration], CancellationToken.None);
+        }
 
-        // HONUA_SKIP_MIGRATIONS=true runs only the guard; its reader check is unchanged by #6477.
+        command.Parameters.Clear();
+        command.CommandText = "SELECT (SELECT COUNT(*) FROM public.schema_versions) + (SELECT COUNT(*) FROM public.schema_version_reader_compatibility)";
+        var rowsBefore = await command.ExecuteScalarAsync();
+
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
         var startup = () => guard.VerifyAsync(connectionString);
-        (await startup.Should().ThrowAsync<DatabaseSchemaCompatibilityException>()).Which
-            .UnknownMigrations.Should().Equal(future);
+        if (kind == "expand")
+        {
+            await startup.Should().NotThrowAsync("a verified expand-only declaration qualifies the entry on the skip path");
+        }
+        else
+        {
+            var exception = (await startup.Should().ThrowAsync<DatabaseSchemaCompatibilityException>()).Which;
+            exception.UnknownMigrations.Should().Equal(future);
+            if (refusal is null)
+            {
+                exception.DeclarationRefusals.Should().BeEmpty();
+                exception.Message.Should().EndWith("Application rollback does not reverse database migrations.");
+            }
+            else
+            {
+                exception.DeclarationRefusals.Should().ContainKey(future).WhoseValue.Should().StartWith(refusal);
+            }
+        }
+
+        (await command.ExecuteScalarAsync()).Should().Be(rowsBefore, "the startup guard never applies or records anything");
     }
 
     private static string ReaderCompatibilityJournalScript()
