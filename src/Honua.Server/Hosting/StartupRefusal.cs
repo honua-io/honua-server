@@ -9,7 +9,7 @@ namespace Honua.Server.Hosting;
 /// <remarks>
 /// An exception that escapes the entry point aborts the runtime, and on the AOT image native
 /// finalizers then run after their modules unload, which ends the process with a segmentation
-/// fault instead of the refusal. A configuration refusal that is raised while the builder is still
+/// fault instead of the refusal. Returning from the entry point is an orderly exit and runs no finalizers. A configuration refusal that is raised while the builder is still
 /// being composed has no host to dispose, so it reports the message and returns from the entry point.
 /// </remarks>
 internal static class StartupRefusal
@@ -24,9 +24,5 @@ internal static class StartupRefusal
         ArgumentException.ThrowIfNullOrEmpty(message);
         Environment.ExitCode = ExitCode;
         Console.Error.WriteLine(message);
-
-        // codeql[cs/call-to-gc]: refused boot is exiting and native modules are about to unload
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
     }
 }
