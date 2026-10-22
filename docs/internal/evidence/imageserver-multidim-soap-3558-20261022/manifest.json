@@ -61,8 +61,8 @@
    "sha256": "df404a05dc2f1af82dba3a21f6c05724e056331fe01d55bebe2608f0dd3a180d"
   },
   "tools/binary_soap_strings.py": {
-   "bytes": 877,
-   "sha256": "f61f9e4398cda83e7014b731e3c2c65e70ce3b467a39e1eb0613440e2117ebd6"
+   "bytes": 902,
+   "sha256": "726746088e46515292e685d30bb5485da2dbfce57431d9d5c16630516f16f20b"
   },
   "tools/capture_proxy.py": {
    "bytes": 11769,

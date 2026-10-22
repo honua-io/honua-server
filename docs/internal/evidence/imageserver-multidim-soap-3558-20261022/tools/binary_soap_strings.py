@@ -8,6 +8,7 @@ fingerprint. Numbers are not decoded; only printable strings of length >= 2.
 import hashlib
 import re
 import sys
+from pathlib import Path
 
 UTF16_RUN = re.compile(rb"(?:[\x20-\x7e]\x00){2,}")
 
@@ -23,4 +24,4 @@ def fingerprint(payload: bytes) -> dict:
 
 if __name__ == "__main__":
     for path in sys.argv[1:]:
-        print("\n".join(strings(open(path, "rb").read())))
+        print("\n".join(strings(Path(path).read_bytes())))
