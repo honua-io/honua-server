@@ -1,5 +1,6 @@
 {
   "serverImage": "ghcr.io/honua-io/honua-server:2026.1-rc",
+  "serverImageProof": "ghcr.io/honua-io/honua-server:nightly-0e03bdd",
   "packages": {
     "honua-admin": "0.1.12",
     "honua-sdk": "0.1.18",

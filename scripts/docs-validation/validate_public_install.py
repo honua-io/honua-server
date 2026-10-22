@@ -16,7 +16,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from install_artifacts import ROOT, MANIFEST, check
+from install_artifacts import ROOT, MANIFEST, check, image_to_pull
 
 spec = importlib.util.spec_from_file_location(
     "fences", Path(__file__).with_name("extract-fenced-commands.py"))
@@ -71,13 +71,17 @@ def main() -> int:
     if problems:
         raise ValueError("\n".join(problems))
     blocks = public_blocks()
-    image = json.loads((ROOT / MANIFEST).read_text())["serverImage"]
+    manifest = json.loads((ROOT / MANIFEST).read_text())
+    documented = manifest["serverImage"]
+    image = image_to_pull(manifest)
     for command in ("docker", "python", "openssl", "bash"):
         if not shutil.which(command):
             raise RuntimeError(f"Missing quickstart prerequisite: {command}")
     artifacts = ROOT / "artifacts/docs-validation/public-install"
     artifacts.mkdir(parents=True, exist_ok=True)
-    receipt: dict = {"image": image, "passed": False}
+    receipt: dict = {"image": documented, "pulledImage": image, "passed": False}
+    if image != documented:
+        print(f"Documented channel {documented} is not the pulled image; proof pulls {image}", flush=True)
     project = "honua-docs-" + uuid.uuid4().hex[:12]
     receipt["project"] = project
     with tempfile.TemporaryDirectory(prefix="public-install-", dir=artifacts) as directory:

@@ -29,6 +29,13 @@ class ArtifactTests(unittest.TestCase):
     def test_current_installation_examples_are_consistent(self):
         self.assertEqual([], artifacts.check(self.root))
 
+    def test_unpublished_release_channel_pulls_the_qualified_preview(self):
+        manifest = json.loads((artifacts.ROOT / artifacts.MANIFEST).read_text())
+        self.assertEqual("ghcr.io/honua-io/honua-server:2026.1-rc", manifest["serverImage"])
+        self.assertEqual("ghcr.io/honua-io/honua-server:nightly-0e03bdd", artifacts.image_to_pull(manifest))
+        manifest["serverImage"] = "ghcr.io/honua-io/honua-server:already-published"
+        self.assertEqual(manifest["serverImage"], artifacts.image_to_pull(manifest))
+
     def test_each_installation_page_retains_the_customer_manifest_pointer(self):
         for path in artifacts.INSTALL_PAGES:
             with self.subTest(path=path):
