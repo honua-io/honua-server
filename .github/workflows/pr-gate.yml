@@ -1363,6 +1363,162 @@ jobs:
           scripts/ci/validate-ci-router.sh
           bash scripts/ci/validate-single-merge-authority.sh
 
+  n1-reader-compatibility:
+    # N-1 image compatibility as a per-PR property of every migration change
+    # (#6477). The first upgrade-lane finding -- the prior image refusing
+    # `schema_reader_incompatible` after `helm rollback` across expand-only
+    # migrations -- surfaced months after the scripts landed, in a release lane
+    # (honua-release gate-upgrade run 39675394479). This job starts the PRIOR
+    # image against this PR's full migration set and asserts it serves a seeded
+    # layer read and write, or that a refusal is the typed, declared and
+    # documented one. The prior of record is what a customer runs: the
+    # honua-server image the latest published honua-io/honua-release release
+    # pins, pulled by the digest that release recorded (`priorSource:
+    # published-release`). Trunk `nightly-aot` is used only as labelled
+    # scaffolding (`priorSource: nightly-scaffold`) when no release pin pulls.
+    #
+    # Same shape as ci-router-validation: no paths filter (see the header), the
+    # job always runs and gates its expensive steps on its own diff classifier,
+    # so every other PR pays a checkout and a ~1s self-test.
+    #
+    # Deliberately NOT in `required.needs` yet. Until the prior channel carries
+    # the reader-declaration check (#6478, schema 135), every migration PR gets
+    # a known-blocked outcome (`prior-lacks-reader-declarations`, or
+    # `prior-unguarded` for a release image that predates the #5333 guard), which fails
+    # this job (it is not a pass) and would deadlock #6478 itself if required.
+    # Promotion rule: once a published release pins a prior image at schema >= 135
+    # and the outcome is `compatible` on trunk-based PRs, add this job to
+    # `required.needs`. The script and its outcomes: scripts/ci/n1-reader-compat.py.
+    name: PR Gate / N-1 reader compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Await exact-head review
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
+        run: |
+          echo "Admission passed; exact-head review has not released N-1 reader compatibility yet."
+          exit 1
+
+      # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch tip,
+      # which is what "added by this change" is measured against.
+      - uses: actions/checkout@v7
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        with:
+          fetch-depth: 2
+
+      - name: Self-test the N-1 outcome classifier
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        run: python3 scripts/ci/n1-reader-compat.test.py
+
+      - name: Classify migration-surface diff
+        id: applies
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            # A manual dispatch is a request to run the gate; never classify it away.
+            echo 'applies=true' >> "${GITHUB_OUTPUT}"
+            echo 'applies=true (workflow_dispatch)'
+            exit 0
+          fi
+          python3 scripts/ci/n1-reader-compat.py --applies --base-ref HEAD^1 --github-output
+
+      - name: Setup .NET
+        if: steps.applies.outputs.applies == 'true'
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build candidate server
+        if: steps.applies.outputs.applies == 'true'
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          scripts/ci/dotnet-restore-retry.sh src/Honua.Server/Honua.Server.csproj
+          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release --no-restore /p:TreatWarningsAsErrors=true
+
+      - name: Log in to GHCR for the prior image
+        if: steps.applies.outputs.applies == 'true'
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Start the prior image on this PR's schema
+        id: n1
+        if: steps.applies.outputs.applies == 'true'
+        timeout-minutes: 20
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Read-only API calls for the public honua-release release pin (rate limit only).
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The verdict step below interprets the exit code; this step must reach it.
+          set +e -uo pipefail
+          python3 scripts/ci/n1-reader-compat.py \
+            --output "${RUNNER_TEMP}/n1-reader-compat" \
+            --candidate-dll src/Honua.Server/bin/Release/net10.0/Honua.Server.dll \
+            --candidate-sha "${GITHUB_SHA}" \
+            --candidate-head-sha "${HEAD_SHA}" \
+            --base-ref HEAD^1
+          rc=$?
+          echo "exit_code=${rc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish N-1 receipt summary
+        if: ${{ !cancelled() && steps.n1.conclusion != 'skipped' }}
+        run: |
+          if [[ -f "${RUNNER_TEMP}/n1-reader-compat/summary.md" ]]; then
+            cat "${RUNNER_TEMP}/n1-reader-compat/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo '### N-1 reader compatibility: no receipt was written' >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload N-1 receipt
+        if: ${{ !cancelled() && steps.n1.conclusion != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: n1-reader-compat-receipt
+          path: ${{ runner.temp }}/n1-reader-compat/
+          if-no-files-found: error
+          retention-days: 30
+
+      # Tripwire, same idiom as assert-trx-executed.py: an exit code is not
+      # evidence by itself. Require a receipt that says the prior image was
+      # resolved by digest and actually started against the migrated database
+      # before honouring the script's verdict.
+      - name: Assert the N-1 check executed and honour its verdict
+        if: ${{ !cancelled() && steps.n1.conclusion != 'skipped' }}
+        env:
+          SCRIPT_EXIT: ${{ steps.n1.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          receipt="${RUNNER_TEMP}/n1-reader-compat/receipt.json"
+          if [[ ! -f "${receipt}" ]]; then
+            echo "::error::HONUA_N1_READER_COMPAT_NO_RECEIPT the N-1 check wrote no receipt (exit '${SCRIPT_EXIT:-none}')."
+            exit 1
+          fi
+          outcome="$(jq -r '.outcome' "${receipt}")"
+          explanation="$(jq -r '.explanation' "${receipt}")"
+          digest="$(jq -r '.prior.digest // empty' "${receipt}")"
+          source="$(jq -r '.priorSource // "unresolved"' "${receipt}")"
+          if [[ "${source}" == nightly-scaffold ]]; then
+            echo "::warning::HONUA_N1_READER_COMPAT_SCAFFOLD_PRIOR no published release pin could be pulled; the prior is trunk nightly-aot scaffolding, not a customer image. $(jq -c '.prior.attempts' "${receipt}")"
+          fi
+          if [[ "$(jq -r '.executed' "${receipt}")" != true || "$(jq -r '.prior_started' "${receipt}")" != true || -z "${digest}" ]]; then
+            echo "::error::HONUA_N1_READER_COMPAT_NOT_EXECUTED outcome='${outcome}': the prior image was not resolved by digest and started against the migrated database. ${explanation}"
+            exit 1
+          fi
+          case "${SCRIPT_EXIT:-}" in
+            0) echo "N-1 reader compatibility: ${outcome} (prior ${source} ${digest})." ;;
+            3)
+              echo "::error::HONUA_N1_READER_COMPAT_KNOWN_BLOCKED ${outcome}: ${explanation}"
+              exit 1
+              ;;
+            *)
+              echo "::error::HONUA_N1_READER_COMPAT_FAILED ${outcome}: ${explanation}"
+              exit 1
+              ;;
+          esac
+
   required:
     # Keep the exact branch-protection context stable while both independent
     # verification paths fail closed into it.

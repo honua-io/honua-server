@@ -259,6 +259,48 @@ loop and cross-environment promotion therefore sit in the experimental +
 disabled set (§2 — built + gated off) and can light up post-release when they
 are tested and gated in.
 
+**Amendment (2026-10-21): deterministic image rollback is the floor under
+fix-forward.** The first upgrade-lane run that actually rolled back
+(honua-release gate-upgrade, run
+[39675394479](https://github.com/honua-io/honua-release/actions/runs/39675394479),
+honua-io/honua-server#6477) showed that the floor this section assumed did not
+exist: after an image-only `helm rollback` from schema 128 to schema 125 the
+prior image refused to start with `schema_reader_incompatible` on three
+expand-only scripts (126-128), so any rollback across any migration reduced to a
+database restore. Once honua-io/honua-server#6478 ships, the order of safety
+mechanisms is:
+
+1. **Floor: deterministic image rollback across additive migrations.** A rolled
+   back image accepts a journal entry it does not ship only when the newer
+   server recorded an `expand` declaration for it and the older image re-derives
+   the same declaration from the recorded text with its own classifier. This is
+   a mechanical property of the image and the journal, not an operator decision,
+   and it is verified per PR by `PR Gate / N-1 reader compatibility`
+   (`scripts/ci/n1-reader-compat.py`), which starts the honua-server image the
+   latest published platform release pins (by its recorded digest) against the
+   PR's migrated schema. Trunk `nightly-aot` is only labelled scaffolding when no
+   release image can be pulled; the certified floor is the customer-facing
+   release image, not an internal channel.
+2. **On top: health-gated fix-forward**, as decided above. Fix-forward stays the
+   shipped operate model; rollback is what stays possible when a forward fix is
+   not yet available.
+
+Limits, stated plainly. The floor only exists for rollback targets that contain
+the reader-declaration check (schema 135 and later). Images at schema 134 and
+earlier, including every image built before #6478, still refuse any migration
+they do not ship, and rolling back to them still requires restoring the matching
+backup. Images built before the schema-reader guard itself (#5333) are worse:
+they do not refuse at all. The published `honua-2026.1` release image
+(honua-server `f897700`, schema 106) started and served a seeded layer on a
+schema 135 database with 35 journal entries it does not ship, seven of them
+contract-phase (the N-1 gate reports this as `prior-unguarded`, never as a pass).
+Rolling back to that image is unguarded and unsupported; restore the matching
+backup. Contract-phase scripts and scripts marked `-- honua:reader-incompatible`
+remain explicit rollback boundaries (restore, not rollback). The approval-gated,
+disabled-by-default AI rollback loop in §2 is unchanged by this amendment; the
+floor is the image-level property it would rely on, not an unattended
+auto-rollback.
+
 ## Consequences
 
 - **Positive.** The release has one fixed, evidence-honest in/out line. The
