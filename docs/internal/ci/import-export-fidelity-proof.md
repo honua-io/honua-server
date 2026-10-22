@@ -8,9 +8,13 @@ scorecard is not current execution evidence.
 
 The runner executes three real `StreamingFileImportService` PostGIS fixtures:
 replacement of existing rows, creation of a new target, and local GeoPackage CRS
-resolution with transformed coordinate readback. These are file imports, distinct
-from the GeoServices service/layer orchestration and published SDK receipts owned
-by server#4600, release#316, release#317 and sdk-dotnet#340.
+resolution with transformed coordinate readback. It also executes four real
+GeoServices service/layer fixtures: a faithful import/publish with exact
+(-157.1, 21.3, EPSG:4326) database and catalog readback, publication timeout,
+catalog discrepancy and unavailable catalog verification. The last three prove
+the corresponding incomplete/unverified verdicts cannot become FullFidelity.
+These are separate production paths; published SDK and broader source/target
+receipts remain owned by server#4600, release#316, release#317 and sdk-dotnet#340.
 
 Three writer fixtures call the production CSV, shapefile and GeoPackage writers.
 A digest-pinned upstream GDAL container independently opens those files. Python
@@ -24,7 +28,7 @@ and CRS. Raster nodata does not apply to these vector fixtures.
 
 The reviewed baseline declares the complete import/format denominator and numeric
 counts, not golden output bytes. Each invocation creates a new UUID directory,
-requires exactly three passing export and three passing import results (no skips),
+requires exactly three passing export and seven passing import behavior results (no skips),
 then decodes all nine files before comparison. The successful receipt records
 HEAD, run ID, UTC completion, reader version/image and SHA-256 of the actual files
 and TRX. CI uploads partial evidence on failure and still fails the required gate.
@@ -47,7 +51,8 @@ python scripts/ci/run-import-export-fidelity-proof.py
 
 `--no-build` is available only when both current-checkout test projects have
 already been built in Release. The script uses a four-node MSBuild cap and bounded
-foreground subprocesses. Initial Windows validation: writer fixtures 3 passed,
-0 failed/skipped; PostGIS import fixtures 3 passed, 0 failed/skipped;
-receipt-reader checks 2 passed; client comparator checks 5 passed.
-The complete import/independent-reader result is recorded with the delivering PR.
+foreground subprocesses. Complete Windows validation: writer fixtures 3 passed,
+PostGIS file/GeoServices import behavior fixtures 7 passed, all zero failures/skips;
+all nine independent decode checks and the deliberate-corruption rejection passed.
+Receipt-reader checks 2 passed; client comparator checks 5 passed. The delivering
+PR carries the exact final-head gate links and the fresh receipt location.

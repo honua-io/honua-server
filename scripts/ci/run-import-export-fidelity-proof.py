@@ -16,11 +16,18 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 GDAL_IMAGE = "ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a"
-IMPORTS = [
+FILE_IMPORTS = [
     "ImportFileAsync_ExistingTarget_WithOverwriteTrue_ReplacesLiveRows",
     "ImportFileAsync_WithoutOverwrite_CreatesStagingTableAndSucceeds",
     "ImportFileAsync_GeoPackageWithLocalSrsId_ResolvesEpsgAndTransformsGeometry",
 ]
+SERVICE_IMPORTS = [
+    "ImportLayerAsync_WhenPublicationTimesOut_RetainsRowsAndRequiresReview",
+    "ImportLayerAsync_WhenCatalogReconciliationFails_RoutesToNeedsReviewDespiteGreenDataReconciliation",
+    "ImportLayerAsync_WhenEveryCheckRanAndPassed_ReportsFullFidelity",
+    "ImportLayerAsync_WhenCatalogCheckCannotRun_CompletesAsUnverifiedNotFullFidelity",
+]
+IMPORTS = FILE_IMPORTS + SERVICE_IMPORTS
 NS = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
 
 
@@ -84,7 +91,9 @@ def main():
         "--logger", "trx;LogFileName=exports.trx", env=environment)
     read_results(output / "exports.trx", 3)
     run("dotnet", "test", "tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj", *common,
-        "--filter", "|".join("FullyQualifiedName~StreamingFileImportStagingTableTests." + name for name in IMPORTS),
+        "--filter", "|".join(
+            ["FullyQualifiedName~StreamingFileImportStagingTableTests." + name for name in FILE_IMPORTS]
+            + ["FullyQualifiedName~GeoservicesImportFidelityGateTests." + name for name in SERVICE_IMPORTS]),
         "--logger", "trx;LogFileName=imports.trx", env=environment)
     imported = read_results(output / "imports.trx", len(IMPORTS))
     actual_names = {r.attrib["testName"].rsplit(".", 1)[-1] for r in imported}
