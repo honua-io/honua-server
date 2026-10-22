@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:6dc0828633c752a949070d0324127c0b3834c9718901a994e3164018bd51213c",
+  "bundleDigest": "sha256:fade417860bb5ab724673eb9f5f2a3fc84525c244a6951dedbe45f65b6f86a82",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -8107,7 +8107,7 @@
     {
       "id": "sdks/README",
       "path": "sdks/README.md",
-      "documentDigest": "sha256:432172d745538f9e87c466ce2d0cfa25c4d8d29bf3fd734bcbe65ae09419f873",
+      "documentDigest": "sha256:66a21f60fa9f418c0c351467c8d054c5ef8ed2912d1064bfd8d31c4ac0ea61a4",
       "metadata": {
         "type": "index",
         "title": "SDKs",
