@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Db.Postgres.Features.Publishing;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Configuration;
@@ -160,6 +161,78 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var restart = await runner.RunMigrationsAsync(_connectionString, assembly);
         restart.Successful.Should().BeTrue(restart.ErrorMessage);
         restart.AppliedScripts.Should().BeEmpty("the journal prevents replay on restart");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData("expand", true)]
+    [InlineData("opted-out", false)]
+    [InlineData("contract", false)]
+    public async Task CanonicalRunner_RollbackAcrossNewerDeclaredMigration_StartsOnlyWhenItVerifiesExpand(
+        string kind, bool rollbackStarts)
+    {
+        // #6477: this image is the N-1 reader. A newer image applied one more migration and recorded
+        // its forward-compatibility declaration; image-only rollback keeps that database.
+        var assembly = typeof(Program).Assembly;
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), ServerCoreSchemaMigrations.Manifest);
+        var fresh = await runner.RunMigrationsAsync(_connectionString, assembly);
+        fresh.Successful.Should().BeTrue(fresh.ErrorMessage);
+
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT (SELECT COUNT(*) FROM public.schema_versions),
+                   (SELECT COUNT(*) FROM public.schema_version_reader_compatibility),
+                   (SELECT classification FROM public.schema_version_reader_compatibility
+                    WHERE script_name = 'Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql')
+            """;
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(1).Should().Be(reader.GetInt64(0), "every journaled script this image ships is declared");
+            reader.GetString(2).Should().Be("expand");
+        }
+
+        const string future = "Honua.Server.Migrations.999_FutureRollbackProbe.sql";
+        var sql = kind switch
+        {
+            "expand" => "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);",
+            "opted-out" => "-- honua:reader-incompatible reason=older readers write rows the new trigger rejects\n" +
+                "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);",
+            _ => "-- honua:compatibility-review reason=contract phase after the rollout\n" +
+                "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);\n" +
+                "ALTER TABLE honua.future_rollback_probe RENAME COLUMN id TO probe_id;",
+        };
+        command.CommandText = sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@script, now());";
+        command.Parameters.AddWithValue("script", future);
+        await command.ExecuteNonQueryAsync();
+        await PostgresDatabaseMigrationRunner.RecordReaderCompatibilityDeclarationsAsync(
+            connection, [MigrationReaderCompatibility.Declare(future, sql)], CancellationToken.None);
+
+        var rollback = await runner.RunMigrationsAsync(_connectionString, assembly);
+        var plan = await runner.PlanMigrationsAsync(_connectionString, assembly);
+        if (rollbackStarts)
+        {
+            rollback.Successful.Should().BeTrue(rollback.ErrorMessage);
+            rollback.AppliedScripts.Should().BeEmpty();
+            plan.Successful.Should().BeTrue(plan.ErrorMessage);
+            plan.ExecutedButNotDiscoveredScripts.Should().Equal(future);
+        }
+        else
+        {
+            rollback.Successful.Should().BeFalse();
+            rollback.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>()
+                .Which.DeclarationRefusals.Should().ContainKey(future);
+            plan.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>();
+        }
+
+        // HONUA_SKIP_MIGRATIONS=true runs only the guard, whose reader check stays strict.
+        var skippedMigrationsStartup = () => new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest)
+            .VerifyAsync(_connectionString);
+        (await skippedMigrationsStartup.Should().ThrowAsync<DatabaseSchemaCompatibilityException>())
+            .Which.UnknownMigrations.Should().Equal(future);
     }
 
     [IntegrationTheory]

@@ -12,7 +12,7 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 ## Policy
 
 1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), set `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
-2. Application rollback is allowed only when the previous reader recognizes every applied migration. On startup an unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. This check also runs with `HONUA_SKIP_MIGRATIONS=true` and cannot be bypassed by degraded-start mode. Even an additive migration needs reader qualification; its presence alone is not proof an older image can serve it.
+2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. Degraded-start mode cannot bypass this check. With `HONUA_SKIP_MIGRATIONS=true` the check still runs, but it does not accept declarations: such a reader must ship every applied migration. A migration's presence alone never proves that an older image can serve it.
 3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt.
 
 ### In-flight geoprocessing jobs
@@ -71,6 +71,51 @@ ECS and Lambda + Batch journey receipts.
 Qualify the actual rollback image: it must itself contain the drain and schema-reader
 protections described here. Installing a newer image cannot add those checks to an
 older image.
+
+### Rollback across additive migrations
+
+After each successful migration run, the server records a forward-compatibility
+declaration in `public.schema_version_reader_compatibility` for every journaled
+script it ships. Migration `135_RecordMigrationReaderCompatibility.sql`, an expand
+migration, creates that table. Each declaration holds the script's classification
+(`expand`, `contract` or `reader-incompatible`), its SHA-256, its LF-normalized
+text and the oldest reader schema it is declared safe for. Existing declarations
+are never rewritten.
+
+An image rolled back onto that database (with migrations enabled, the default)
+accepts a journal entry it does not ship only when all of these hold:
+
+1. The entry has a declaration, and the declaration says `expand`.
+2. The declared minimum reader schema is at most the reader's own schema number
+   (its highest numbered migration).
+3. The recorded text matches the recorded hash, and the reader's own classifier,
+   run on that text, also reaches `expand` with the same minimum reader schema.
+   A newer image's claim is never trusted on its own.
+
+Any other unknown entry keeps the `schema_reader_incompatible` refusal. That
+covers contract-phase scripts, opted-out scripts and tampered declarations. It
+also covers journals with no declaration, such as journals written before 135.
+The refusal message names each refused declaration and the reason. Nothing is
+applied or reversed during a rollback, refused or not.
+
+**This only helps rollbacks to images that contain this reader logic** (schema 135
+and later). Older images (schema 134 and earlier) still refuse any migration
+they do not ship. To roll back to them, restore the
+matching backup. `HONUA_SKIP_MIGRATIONS=true` startups keep the strict check
+described in rule 2.
+
+**Rules for migration authors.** The shared classifier decides `expand` vs
+`contract`, but it only reads DDL. Some additive-looking scripts still break the
+previous reader: a new `NOT NULL` column whose default the old code violates,
+new enum values the old code cannot parse, a new constraint, or a trigger that
+changes the meaning of the old code's writes. Mark such a script with
+`-- honua:reader-incompatible reason=<what an older reader would violate>`, so
+that older readers refuse it and the operator restores instead. When a script
+is safe only for readers at or after a known schema, add
+`-- honua:reader-compatible-from schema=<N>`. The highest annotation applies. An
+annotation the reader cannot parse counts as reader-incompatible. Annotations
+are part of the hash-pinned script text, so add them before the migration first
+ships.
 
 ### Configuration binding correction
 

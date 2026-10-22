@@ -578,6 +578,125 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         result.Successful.Should().BeTrue($"the expand baseline must apply. Error: {result.ErrorMessage}");
     }
 
+    [SkippableFact]
+    public async Task RollbackReader_AgainstNewerDeclaredExpandOnlyJournal_StartsAndKeepsNewerData()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        // #6477: a reader built at baseline N (001-002) starts against a journal at N+2 whose extra
+        // scripts are expand-only and were declared by the newer server that applied them.
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var runner = CreateEnforcingRunner();
+        var assemblyName = $"honua_synthetic_rollback_{Guid.NewGuid():N}";
+        (string, string)[] baseline = [("001_expand.sql", ExpandScript), ("002_reader_compatibility.sql", ReaderCompatibilityJournalScript())];
+        var older = SyntheticMigrationsCompiler.Compile(assemblyName, baseline);
+        var newer = SyntheticMigrationsCompiler.Compile(assemblyName,
+            [.. baseline, ("003_add_note.sql", SecondExpandScript), ("004_create_audit.sql", "CREATE TABLE honua_ci_audit (id INTEGER PRIMARY KEY);")]);
+
+        (await runner.RunMigrationsAsync(connectionString, older)).Successful.Should().BeTrue();
+        var upgrade = await runner.RunMigrationsAsync(connectionString, newer);
+        upgrade.Successful.Should().BeTrue(upgrade.ErrorMessage);
+        upgrade.AppliedScripts.Should().HaveCount(2);
+        await ExecuteAsync(connectionString, "INSERT INTO honua_ci_demo (id, legacy_name, note) VALUES (7, 'retained', 'written by N+2')");
+        (await DeclarationsAsync(connectionString)).Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            [GetEmbeddedScriptName(assemblyName, "001_expand.sql")] = "expand",
+            [GetEmbeddedScriptName(assemblyName, "002_reader_compatibility.sql")] = "expand",
+            [GetEmbeddedScriptName(assemblyName, "003_add_note.sql")] = "expand",
+            [GetEmbeddedScriptName(assemblyName, "004_create_audit.sql")] = "expand",
+        });
+
+        var rollback = await runner.RunMigrationsAsync(connectionString, older);
+        rollback.Successful.Should().BeTrue($"declared expand-only scripts are rollback-safe. Error: {rollback.ErrorMessage}");
+        rollback.AppliedScripts.Should().BeEmpty("rollback never reverses or replays migrations");
+        var plan = await runner.PlanMigrationsAsync(connectionString, older);
+        plan.Successful.Should().BeTrue(plan.ErrorMessage);
+        plan.ExecutedButNotDiscoveredScripts.Should().BeEquivalentTo(
+            GetEmbeddedScriptName(assemblyName, "003_add_note.sql"), GetEmbeddedScriptName(assemblyName, "004_create_audit.sql"));
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "note")).Should().BeTrue();
+        (await TableExistsAsync(connectionString, "honua_ci_audit")).Should().BeTrue();
+        (await ScalarAsync(connectionString, "SELECT note FROM honua_ci_demo WHERE id = 7")).Should().Be("written by N+2");
+
+        // The rolled-back reader declares only what it ships and never rewrites the newer declarations.
+        (await DeclarationsAsync(connectionString)).Should().HaveCount(4);
+    }
+
+    [SkippableTheory]
+    [InlineData("opt-out")]
+    [InlineData("contract")]
+    public async Task RollbackReader_WhenNewerJournalAddsContractOrOptedOutScript_StillRefuses(string kind)
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_rollback_refused_{Guid.NewGuid():N}";
+        (string, string)[] baseline = [("001_expand.sql", ExpandScript), ("002_reader_compatibility.sql", ReaderCompatibilityJournalScript())];
+        var (script, sql, reason) = kind == "opt-out"
+            ? ("003_opt_out.sql",
+                "-- honua:reader-incompatible reason=older readers insert rows the new default contradicts\n" + SecondExpandScript,
+                "declared reader-incompatible, not expand")
+            : ("003_drop_legacy.sql", AnnotatedContractScript, "declared contract, not expand");
+        var older = SyntheticMigrationsCompiler.Compile(assemblyName, baseline);
+        var newer = SyntheticMigrationsCompiler.Compile(assemblyName, [.. baseline, (script, sql)]);
+        // Auto policy lets the newer server apply its reviewed contract phase unattended here.
+        var runner = CreateRunner(new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Auto });
+        (await runner.RunMigrationsAsync(connectionString, older)).Successful.Should().BeTrue();
+        var upgrade = await runner.RunMigrationsAsync(connectionString, newer);
+        upgrade.Successful.Should().BeTrue(upgrade.ErrorMessage);
+
+        var rollback = await runner.RunMigrationsAsync(connectionString, older);
+
+        rollback.Successful.Should().BeFalse();
+        var refusal = rollback.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>().Which;
+        refusal.UnknownMigrations.Should().Equal(GetEmbeddedScriptName(assemblyName, script));
+        refusal.DeclarationRefusals.Should().ContainKey(GetEmbeddedScriptName(assemblyName, script))
+            .WhoseValue.Should().Be(reason);
+        rollback.ErrorMessage.Should().Contain(DatabaseSchemaCompatibilityException.ErrorCode);
+        (await runner.PlanMigrationsAsync(connectionString, older)).Error.Should().BeOfType<DatabaseSchemaCompatibilityException>();
+    }
+
+    private static string ReaderCompatibilityJournalScript()
+    {
+        // The production expand migration, so the synthetic reader proves the shipped DDL.
+        using var stream = typeof(ServerCoreSchemaMigrations).Assembly.GetManifestResourceStream(
+            "Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql")
+            ?? throw new InvalidOperationException("Migration 135 is not embedded in the server assembly.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    private static async Task<Dictionary<string, string>> DeclarationsAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT script_name, classification FROM public.schema_version_reader_compatibility", connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        var declarations = new Dictionary<string, string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync())
+        {
+            declarations[reader.GetString(0)] = reader.GetString(1);
+        }
+
+        return declarations;
+    }
+
+    private static async Task ExecuteAsync(string connectionString, string sql)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<object?> ScalarAsync(string connectionString, string sql)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        return await command.ExecuteScalarAsync();
+    }
+
     private static PostgresDatabaseMigrationRunner CreateEnforcingRunner()
         => new(
             new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
