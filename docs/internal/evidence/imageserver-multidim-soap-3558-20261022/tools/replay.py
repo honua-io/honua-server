@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Replay a licensed Pro SOAP capture without ArcGIS Pro (#3558).
 
-Every distinct replayable XML SOAP request in runs/<name>/exchanges.jsonl
+Every distinct replayable XML SOAP request in runs/<name>/requests.json
 (verbatim bytes, credential-scanned at capture time) is POSTed to the same
 service path on --origin. A request passes when the HTTP status and the
 redacted response shape fingerprint equal what Pro received during capture.
@@ -32,13 +32,14 @@ def main() -> int:
         parser.error("--origin must be a bare http(s) origin")
     rewrite = tuple(part.encode() for part in args.rewrite_origin.split("=", 1)) if args.rewrite_origin else None
 
+    requests = json.loads((args.run / "requests.json").read_text(encoding="utf-8"))
     expected = {}
     for line in (args.run / "exchanges.jsonl").read_text(encoding="utf-8").splitlines():
         entry = json.loads(line)
         request = entry["request"]
-        if not request or not request.get("replay_xml") or entry["method"] != "POST":
+        if not request or not request.get("replay_sha256") or entry["method"] != "POST":
             continue
-        key = (entry["path"], request["replay_xml"])
+        key = (entry["path"], requests[request["replay_sha256"]])
         expected.setdefault(key, set()).add((entry["status"], (entry["response"] or {}).get("shape_sha256")))
 
     results = []

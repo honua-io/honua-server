@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One licensed capture: recording proxy + ArcPy driver against one upstream (#3558).
 #   run_capture.sh <run-name> <upstream-origin> <proxy-port> <service-path> <variable> [proxy args...]
-# Writes runs/<run-name>/{exchanges.jsonl,pro-receipt.json}. Raw bytes go to
+# Writes runs/<run-name>/{exchanges.jsonl,shapes.json,requests.json,pro-receipt.json}. Raw bytes go to
 # $HONUA_3558_RAW/<run-name> (outside the repository) for the A/B comparison.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,3 +24,5 @@ done
 rm -f "$run/exchanges.jsonl"
 "$pro_python" "$here/drive_pro.py" --service-url "http://127.0.0.1:$port$service" \
   --variable "$variable" --output "$run/pro-receipt.json" --scratch "$raw/scratch" 2>"$raw/driver.stderr"
+kill $proxy 2>/dev/null || true
+"$pro_python" -I "$here/compact.py" "$run"

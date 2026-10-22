@@ -55,6 +55,43 @@
       "seconds": 16.0,
       "status": "pass",
       "step": "RasterProperties"
+    },
+    {
+      "observed": {
+        "layer_created": true
+      },
+      "seconds": 257.8,
+      "status": "pass",
+      "step": "MakeMultidimensionalRasterLayer"
+    },
+    {
+      "observed": {
+        "StdTime": {
+          "count": 69,
+          "status": "pass",
+          "values": [
+            "2014-04-07T00:00:00+00:00",
+            "2014-04-08T00:00:00+00:00",
+            "2014-04-10T00:00:00+00:00",
+            "2014-04-11T00:00:00+00:00",
+            "2014-04-12T00:00:00+00:00"
+          ]
+        },
+        "StdZ": {
+          "count": 40,
+          "status": "pass",
+          "values": [
+            "-5000.0",
+            "-4000.0",
+            "-3000.0",
+            "-2500.0",
+            "-2000.0"
+          ]
+        }
+      },
+      "seconds": 0.0,
+      "status": "pass",
+      "step": "DimensionValues"
     }
   ],
   "variable": "water_temp"
