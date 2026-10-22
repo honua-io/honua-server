@@ -846,6 +846,7 @@ jobs:
         timeout-minutes: 25
         run: |
           python3 tests/python/unit/test_import_export_fidelity_proof.py
+          python3 tests/python/unit/test_diff_baselines.py
           python3 scripts/ci/run-import-export-fidelity-proof.py
 
       - name: Upload import and independent vector export fidelity evidence

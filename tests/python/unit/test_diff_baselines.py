@@ -78,3 +78,10 @@ def test_exact_client_registry_stays_joined_to_documented_and_baselined_extensio
             evidence.update(diff_baselines.index_results(envelope))
     assert automated <= evidence
     assert "JS-EXT-OL-WFS-GETFEATURE-01" in automated
+
+
+if __name__ == "__main__":
+    import unittest
+    suite = unittest.TestSuite(unittest.FunctionTestCase(value) for name, value in list(globals().items())
+                               if name.startswith("test_"))
+    sys.exit(not unittest.TextTestRunner().run(suite).wasSuccessful())
