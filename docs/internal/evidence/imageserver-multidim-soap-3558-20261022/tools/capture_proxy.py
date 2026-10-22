@@ -124,12 +124,16 @@ def replay_copy(payload: bytes) -> str | None:
     if parsed is None:
         return None
     root, _ = parsed
-    xml = ET.tostring(scrubbed(root), encoding="unicode")
-    return None if "[REDACTED]" in xml else xml
+    # Only a body the scrub leaves unchanged is kept, and then verbatim, so the
+    # regression replays Pro's exact bytes rather than a re-serialized copy.
+    if ET.tostring(scrubbed(root), encoding="unicode") != ET.tostring(root, encoding="unicode"):
+        return None
+    return text
 
 
 class Recorder:
-    def __init__(self, upstream: str, log: Path, raw_dir: Path | None, port: int, force_xml_soap: bool = False):
+    def __init__(self, upstream: str, log: Path, raw_dir: Path | None, port: int, force_xml_soap: bool = False,
+                 rewrite_origin: tuple[bytes, bytes] | None = None):
         target = urlsplit(upstream)
         if target.scheme not in {"http", "https"} or target.username or target.password or target.query:
             raise ValueError("upstream must be a bare http(s) origin")
@@ -139,7 +143,6 @@ class Recorder:
         self.lock = threading.Lock()
         self.sequence = 0
         owner = self
-        force_xml_soap = force_xml_soap
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -174,6 +177,11 @@ class Recorder:
                         # Keep Pro on XML SOAP so the reference and Honua are compared in one encoding.
                         content = content.replace(b"esriServiceCatalogMessageFormatSoapOrBin",
                                                   b"esriServiceCatalogMessageFormatSoap")
+                    if rewrite_origin is not None:
+                        # The fixture advertises its in-network origin; Pro must come back through the proxy.
+                        content = content.replace(*rewrite_origin)
+                        response_headers = [(k, v.replace(*(part.decode() for part in rewrite_origin)))
+                                            for k, v in response_headers]
                 except (OSError, http.client.HTTPException):
                     status, response_headers, content = 502, [("Content-Type", "text/plain")], b"upstream transport failed"
                 owner.record(self.command, self.path, payload, status, response_headers, content,
@@ -214,6 +222,7 @@ class Recorder:
             if self.raw_dir is not None:
                 self.raw_dir.mkdir(parents=True, exist_ok=True)
                 (self.raw_dir / f"{self.sequence:05d}.response").write_bytes(content)
+                (self.raw_dir / f"{self.sequence:05d}.request").write_bytes(payload)
             with self.log.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(entry, sort_keys=True) + "\n")
 
@@ -224,11 +233,14 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--raw-dir", type=Path)
+    parser.add_argument("--rewrite-origin", metavar="FROM=TO",
+                        help="replace an advertised origin in responses, e.g. http://honua:5000=http://127.0.0.1:18659")
     parser.add_argument("--force-xml-soap", action="store_true",
                         help="rewrite GetMessageFormats SoapOrBin to Soap so Pro stays on XML SOAP")
     args = parser.parse_args()
     args.log.parent.mkdir(parents=True, exist_ok=True)
-    recorder = Recorder(args.upstream, args.log, args.raw_dir, args.port, args.force_xml_soap)
+    recorder = Recorder(args.upstream, args.log, args.raw_dir, args.port, args.force_xml_soap,
+                        tuple(part.encode() for part in args.rewrite_origin.split("=", 1)) if args.rewrite_origin else None)
     print(f"recording 127.0.0.1:{args.port} -> {urlsplit(args.upstream).scheme}://{urlsplit(args.upstream).hostname}", flush=True)
     recorder.server.serve_forever()
 
