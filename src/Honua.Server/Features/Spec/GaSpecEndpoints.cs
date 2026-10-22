@@ -97,8 +97,8 @@ internal static class GaSpecEndpoints
         }).ConfigureAwait(false);
     }
 
-    private static string Actor(HttpContext context) => CanonicalSecurityActor.Resolve(context.User)?.ActorId
-        ?? throw new GaSpecBlockedException("durable-actor-required");
+    private static string Actor(HttpContext context) => CanonicalSecurityActor.Resolve(context.User) is
+        { IsDurablyRevalidatable: true } actor ? actor.ActorId : throw new GaSpecBlockedException("durable-actor-required");
     private static string Tenant(ITenantContext tenant) => tenant.RequireTenantId(out var id, out _)
         ? id : throw new GaSpecBlockedException("tenant-required");
     private static IResult View(WorkflowOperationRecord operation) => Results.Json(
