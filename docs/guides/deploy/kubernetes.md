@@ -447,8 +447,16 @@ kubectl -n honua get configmap honua-honua-release-info -o yaml
 helm -n honua history honua
 ```
 
-Application rollback comes first when the previous image remains compatible
-with the migrated schema:
+Application rollback comes first only when the previous image can protect
+itself against the schema it will find. Roll back only to images that include
+the schema-reader guard: schema 135 or later for additive migrations, and never
+across a contract-phase migration without a restore. `honua-2026.1` is not a
+safe rollback target across any migration, and the only safe way back to 2026.1
+is restoring the backup taken before the upgrade. It predates the schema-reader
+guard and serves a newer schema with no refusal. There is no release-named
+immutable tag for that image yet
+([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
+See [Rollback target eligibility](upgrade-and-rollback.md#rollback-target-eligibility).
 
 ```bash
 helm -n honua rollback honua <known-good-revision> --wait --timeout 10m

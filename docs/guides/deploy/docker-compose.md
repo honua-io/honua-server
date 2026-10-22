@@ -321,6 +321,17 @@ follow [upgrade and rollback](upgrade-and-rollback.md). Keep the Gate migration
 policy; a contract migration needs its specific approval nonce. Never skip
 migrations or erase volumes to bypass a failure.
 
+Image rollback keeps the migrated database. Roll back only to images that
+include the schema-reader guard: schema 135 or later for additive migrations,
+and never across a contract-phase migration without a restore. `honua-2026.1`
+is not a safe rollback target across any migration, and the only safe way back
+to 2026.1 is restoring the backup taken before the upgrade. That image predates
+the schema-reader guard, so it starts and serves on a newer schema with no
+refusal. There is no release-named immutable tag for it yet
+([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
+The rules are in
+[Rollback target eligibility](upgrade-and-rollback.md#rollback-target-eligibility).
+
 To see the migrations apply, or refuse, before the new server starts, run them
 out of band with the new image after updating the image tag in `.env`. Stop
 the old server first: this is the single-node downtime window.
