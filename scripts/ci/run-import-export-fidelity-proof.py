@@ -101,6 +101,8 @@ def main():
         raise ValueError(f"Wrong import denominator: {actual_names}")
     run(*reader_command(output))
     decoded = json.loads((output / "independent-reader.json").read_text())
+    if decoded.get("structural_challenges_rejected") != 2:
+        raise ValueError("The independent reader did not prove structural corruption rejection")
     current = {"imports": sorted(actual_names), "exports": decoded["checks"]}
     baseline = json.loads((ROOT / "scripts/ci/fixtures/import-export-fidelity-baseline.json").read_text())
     compare(current, baseline)
@@ -108,6 +110,7 @@ def main():
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     receipt = {"commit": commit, "run_id": run_id, "completed_at": datetime.now(timezone.utc).isoformat(),
                "reader": decoded["reader"], "reader_image": GDAL_IMAGE, "scorecard": current,
+               "structural_challenges_rejected": decoded["structural_challenges_rejected"],
                "artifact_sha256": {str(p.relative_to(output)): hashlib.sha256(p.read_bytes()).hexdigest()
                                    for p in output.rglob("*") if p.is_file()}}
     (output / "scorecard.json").write_text(json.dumps(receipt, indent=2))

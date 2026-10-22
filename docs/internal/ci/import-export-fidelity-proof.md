@@ -21,8 +21,10 @@ A digest-pinned upstream GDAL container independently opens those files. Python
 CSV and SQLite readers also check quoting, missing cells and GeoPackage metadata.
 Expected values are explicit constants: XY/Z/M, two disjoint line parts, a 4x4
 polygon with a 1x1 hole (area 15), amount 7.25, a zero-valued unlocated feature,
-null attributes and EPSG:4326. Ring orientation may change, but closure, vertex
-values, hole/part counts and area must agree. CSV has no embedded CRS and represents
+null attributes and EPSG:4326. Each component's coordinate sequence is compared
+independently: whole line parts may reorder/reverse and rings may rotate/reverse,
+while endpoint connectivity and exterior/hole membership must agree. Geometry
+type, closure, hole/part counts and area must also agree. CSV has no embedded CRS and represents
 null string values as empty cells; the spatial formats must preserve null geometry
 and CRS. Raster nodata does not apply to these vector fixtures.
 
@@ -35,6 +37,9 @@ and TRX. CI uploads partial evidence on failure and still fails the required gat
 The gate also deliberately changes a copied GeoPackage's amount from 7.25 to 8
 and requires the independent reader to reject that corruption for that exact
 value mismatch. An unrelated Docker/reader failure does not satisfy the challenge.
+The reader separately rejects reconnected line endpoints and swapped exterior/hole
+rings, while accepting permitted part-order and orientation differences. The
+reconnected-line challenge failed against the previous flattened-vertex oracle.
 
 The client-compat comparator also rejects passing-status count changes, lost
 measurements and increased absolute error. A delta tolerance must be explicitly
