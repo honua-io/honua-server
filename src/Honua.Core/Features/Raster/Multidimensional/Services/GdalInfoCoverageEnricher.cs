@@ -193,9 +193,8 @@ public static class GdalInfoCoverageEnricher
 
         TemporalExtent? temporal = null;
         VerticalExtent? vertical = null;
-        foreach (var axis in axes)
+        foreach (var samples in axes.Select(static axis => axis.Value))
         {
-            var samples = axis.Value;
             if (samples.Unit is not null && samples.Unit.Contains(" since ", StringComparison.OrdinalIgnoreCase))
             {
                 if (temporal is null &&

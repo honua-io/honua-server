@@ -37,6 +37,13 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
     private const string MetadataContentType = "application/json";
 
+    /// <summary>
+    /// Ceiling for the optional <c>gdalinfo -stats</c> pass. Coordinates are read
+    /// first; statistics must not share the conversion timeout, and a stats
+    /// timeout keeps the coordinate document already obtained.
+    /// </summary>
+    private static readonly TimeSpan StatisticsBudget = TimeSpan.FromSeconds(30);
+
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
@@ -166,11 +173,19 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             await context.ReportProgressAsync(80, "Reading coverage extent", cancellationToken).ConfigureAwait(false);
 
             // Coordinate enrichment must not open the source with the classic netCDF
-            // driver. Prefer gdalinfo on the derived Zarr (DIM_* band metadata). If
-            // that is unavailable, copy the bytes to local scratch and read them
-            // there — a local NetCDF does not need userfaultfd.
+            // driver. Prefer gdalinfo on the derived Zarr, including the multidimensional
+            // array subdataset the classic API exposes for a 3D+ store. If that is
+            // unavailable, copy the bytes to local scratch and read them there — a
+            // local NetCDF does not need userfaultfd.
             var (infoJson, enrichmentWarning) = await ReadCoordinatesAsync(
-                runner, context, vsiPath, zarrRootPath is null ? null : vsiOut, workspace, linked.Token).ConfigureAwait(false);
+                runner,
+                context,
+                vsiPath,
+                zarrRootPath is null ? null : vsiOut,
+                result.StandardOutput,
+                workspace,
+                cancellationToken,
+                linked.Token).ConfigureAwait(false);
             if (enrichmentWarning is not null)
             {
                 Log.EnrichmentFailed(logger, job.OperationId, enrichmentWarning);
@@ -326,29 +341,45 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         IJobExecutionContext context,
         string sourcePath,
         string? zarrPath,
+        string mdimJson,
         string workspace,
-        CancellationToken cancellationToken)
+        CancellationToken jobCancellation,
+        CancellationToken toolCancellation)
     {
         GdalCommandResult? last = null;
         if (zarrPath is not null)
         {
-            last = await RunInfoAsync(runner, context, zarrPath, workspace, cancellationToken).ConfigureAwait(false);
+            last = await RunInfoAsync(
+                runner, context, zarrPath, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
             if (IsCoordinateInfo(last))
             {
                 return (last!.StandardOutput, null);
+            }
+
+            // A 3D+ Zarr, or a store with several arrays, opens as a subdataset list.
+            // The root document has no geotransform; the data array does.
+            foreach (var subdataset in SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson))
+            {
+                last = await RunInfoAsync(
+                    runner, context, subdataset, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                if (IsCoordinateInfo(last))
+                {
+                    return (last!.StandardOutput, null);
+                }
             }
         }
 
         if (IsRemoteVsi(sourcePath))
         {
-            var copied = await TryCopyToScratchAsync(runner, context, sourcePath, workspace, cancellationToken).ConfigureAwait(false);
+            var copied = await TryCopyToScratchAsync(runner, context, sourcePath, workspace, toolCancellation).ConfigureAwait(false);
             if (copied.Path is null)
             {
                 last = copied.Result ?? last;
             }
             else
             {
-                last = await RunInfoAsync(runner, context, copied.Path, workspace, cancellationToken).ConfigureAwait(false);
+                last = await RunInfoAsync(
+                    runner, context, copied.Path, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
                 if (IsCoordinateInfo(last))
                 {
                     return (last!.StandardOutput, null);
@@ -357,7 +388,8 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         }
         else
         {
-            last = await RunInfoAsync(runner, context, sourcePath, workspace, cancellationToken).ConfigureAwait(false);
+            last = await RunInfoAsync(
+                runner, context, sourcePath, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
             if (IsCoordinateInfo(last))
             {
                 return (last!.StandardOutput, null);
@@ -395,28 +427,324 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         IJobExecutionContext context,
         string path,
         string workspace,
-        CancellationToken cancellationToken)
+        CancellationToken jobCancellation,
+        CancellationToken toolCancellation)
     {
+        GdalCommandResult coordinates;
         try
         {
-            var withStats = InfoArguments(path, includeStats: true);
-            await GdalCommandLog.LogCommandAsync(context, "gdalinfo", withStats, workspace, cancellationToken).ConfigureAwait(false);
-            var statsResult = await runner.RunAsync("gdalinfo", withStats, workspace, cancellationToken).ConfigureAwait(false);
-            if (statsResult.Succeeded)
-            {
-                return statsResult;
-            }
-
-            // -stats reads every pixel and some drivers reject it. The coordinate
-            // document does not need statistics, so retry the same path without it.
-            var coordinatesOnly = InfoArguments(path, includeStats: false);
-            await GdalCommandLog.LogCommandAsync(context, "gdalinfo", coordinatesOnly, workspace, cancellationToken).ConfigureAwait(false);
-            return await runner.RunAsync("gdalinfo", coordinatesOnly, workspace, cancellationToken).ConfigureAwait(false);
+            coordinates = await RunGdalInfoOnceAsync(
+                runner, context, path, workspace, includeStats: false, toolCancellation).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (jobCancellation.IsCancellationRequested)
+        {
+            throw;
         }
         catch (OperationCanceledException)
         {
             return null;
         }
+
+        if (!IsCoordinateInfo(coordinates))
+        {
+            return coordinates;
+        }
+
+        // -stats reads every pixel. It has its own budget so a timeout cannot
+        // discard the coordinate document, and it is not tied to the shared
+        // conversion timeout.
+        using var statsBudget = CancellationTokenSource.CreateLinkedTokenSource(jobCancellation);
+        statsBudget.CancelAfter(StatisticsBudget);
+        try
+        {
+            var stats = await RunGdalInfoOnceAsync(
+                runner, context, path, workspace, includeStats: true, statsBudget.Token).ConfigureAwait(false);
+            if (IsCoordinateInfo(stats))
+            {
+                return stats;
+            }
+        }
+        catch (OperationCanceledException) when (jobCancellation.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // Statistics budget elapsed. Coordinates already succeeded.
+        }
+
+        return coordinates;
+    }
+
+    private static async Task<GdalCommandResult> RunGdalInfoOnceAsync(
+        IGdalCommandRunner runner,
+        IJobExecutionContext context,
+        string path,
+        string workspace,
+        bool includeStats,
+        CancellationToken cancellationToken)
+    {
+        var args = InfoArguments(path, includeStats);
+        await GdalCommandLog.LogCommandAsync(context, "gdalinfo", args, workspace, cancellationToken).ConfigureAwait(false);
+        return await runner.RunAsync("gdalinfo", args, workspace, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Picks the Zarr classic-API subdatasets that can carry a geotransform.
+    /// Coordinate arrays (rank 1) are skipped when a multidimensional data array
+    /// is present. At most three candidates are returned, best first.
+    /// </summary>
+    private static List<string> SelectZarrSubdatasets(string? infoJson, string zarrPath, string mdimJson)
+    {
+        var dataArrays = ReadMdimDataArrayNames(mdimJson);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var usable = new List<(string Name, int Score)>();
+        foreach (var (name, description) in ParseSubdatasets(infoJson))
+        {
+            if (!IsUsableSubdatasetName(name, zarrPath) || !seen.Add(name))
+            {
+                continue;
+            }
+
+            var rank = BracketRank(description);
+            var leaf = SubdatasetLeaf(name);
+            var score = 0;
+            if (leaf is not null && dataArrays.Contains(leaf))
+            {
+                score = 100 + rank;
+            }
+            else if (rank >= 2)
+            {
+                score = rank;
+            }
+
+            usable.Add((name, score));
+        }
+
+        if (usable.Count == 0)
+        {
+            return [];
+        }
+
+        usable.Sort(static (left, right) =>
+        {
+            var byScore = right.Score.CompareTo(left.Score);
+            return byScore != 0 ? byScore : string.CompareOrdinal(left.Name, right.Name);
+        });
+
+        var selected = new List<string>();
+        foreach (var candidate in usable)
+        {
+            if (candidate.Score <= 0)
+            {
+                continue;
+            }
+
+            selected.Add(candidate.Name);
+            if (selected.Count == 3)
+            {
+                break;
+            }
+        }
+
+        if (selected.Count == 0 && usable.Count == 1)
+        {
+            selected.Add(usable[0].Name);
+        }
+
+        return selected;
+    }
+
+    private static List<(string Name, string? Description)> ParseSubdatasets(string? infoJson)
+    {
+        var found = new List<(string Name, string? Description)>();
+        if (string.IsNullOrWhiteSpace(infoJson))
+        {
+            return found;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(infoJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return found;
+            }
+
+            if (document.RootElement.TryGetProperty("metadata", out var metadata) &&
+                metadata.ValueKind == JsonValueKind.Object &&
+                metadata.TryGetProperty("SUBDATASETS", out var domain) &&
+                domain.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in domain.EnumerateObject())
+                {
+                    if (!property.Name.EndsWith("_NAME", StringComparison.Ordinal) ||
+                        property.Value.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var descriptionKey = property.Name[..^"_NAME".Length] + "_DESC";
+                    string? description = domain.TryGetProperty(descriptionKey, out var desc) && desc.ValueKind == JsonValueKind.String
+                        ? desc.GetString()
+                        : null;
+                    var name = property.Value.GetString();
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        found.Add((name, description));
+                    }
+                }
+            }
+
+            if (document.RootElement.TryGetProperty("subdatasets", out var subdatasets) &&
+                subdatasets.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in subdatasets.EnumerateArray())
+                {
+                    if (entry.ValueKind != JsonValueKind.Object ||
+                        !entry.TryGetProperty("name", out var nameElement) ||
+                        nameElement.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var name = nameElement.GetString();
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        continue;
+                    }
+
+                    string? description = entry.TryGetProperty("description", out var desc) && desc.ValueKind == JsonValueKind.String
+                        ? desc.GetString()
+                        : null;
+                    found.Add((name, description));
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+
+        return found;
+    }
+
+    private static bool IsUsableSubdatasetName(string name, string zarrPath)
+        => name.Length is > 0 and <= 2048 &&
+           name.StartsWith("ZARR:", StringComparison.Ordinal) &&
+           name.Contains(zarrPath, StringComparison.Ordinal) &&
+           name.AsSpan().IndexOfAny('\r', '\n', '\0') < 0;
+
+    private static HashSet<string> ReadMdimDataArrayNames(string mdimJson)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(mdimJson))
+        {
+            return names;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(mdimJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return names;
+            }
+
+            var coordinates = new HashSet<string>(StringComparer.Ordinal);
+            if (document.RootElement.TryGetProperty("dimensions", out var dimensions) &&
+                dimensions.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var dimension in dimensions.EnumerateArray())
+                {
+                    if (dimension.ValueKind != JsonValueKind.Object ||
+                        !dimension.TryGetProperty("indexing_variable", out var indexing))
+                    {
+                        continue;
+                    }
+
+                    if (indexing.ValueKind == JsonValueKind.String)
+                    {
+                        var leaf = SubdatasetLeaf(indexing.GetString() ?? string.Empty);
+                        if (leaf is not null)
+                        {
+                            coordinates.Add(leaf);
+                        }
+                    }
+                    else if (indexing.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var variable in indexing.EnumerateObject())
+                        {
+                            coordinates.Add(variable.Name);
+                        }
+                    }
+                }
+            }
+
+            if (document.RootElement.TryGetProperty("arrays", out var arrays) &&
+                arrays.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var array in arrays.EnumerateObject())
+                {
+                    if (coordinates.Contains(array.Name))
+                    {
+                        continue;
+                    }
+
+                    if (array.Value.ValueKind == JsonValueKind.Object &&
+                        array.Value.TryGetProperty("full_name", out var fullName) &&
+                        fullName.ValueKind == JsonValueKind.String &&
+                        SubdatasetLeaf(fullName.GetString() ?? string.Empty) is { } fullLeaf &&
+                        coordinates.Contains(fullLeaf))
+                    {
+                        continue;
+                    }
+
+                    names.Add(array.Name);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+
+        return names;
+    }
+
+    private static string? SubdatasetLeaf(string name)
+    {
+        var marker = name.LastIndexOf("\":", StringComparison.Ordinal);
+        var path = marker >= 0 ? name[(marker + 2)..] : name;
+        var slash = path.LastIndexOf('/');
+        var leaf = (slash >= 0 ? path[(slash + 1)..] : path).Trim();
+        return leaf.Length == 0 ? null : leaf;
+    }
+
+    private static int BracketRank(string? description)
+    {
+        if (string.IsNullOrEmpty(description))
+        {
+            return 0;
+        }
+
+        var open = description.IndexOf('[', StringComparison.Ordinal);
+        var close = open < 0 ? -1 : description.IndexOf(']', open + 1);
+        if (open < 0 || close <= open + 1)
+        {
+            return 0;
+        }
+
+        var rank = 1;
+        for (var i = open + 1; i < close; i++)
+        {
+            if (description[i] is 'x' or 'X')
+            {
+                rank++;
+            }
+        }
+
+        return rank;
     }
 
     private static List<string> InfoArguments(string path, bool includeStats)
@@ -438,7 +766,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         string workspace,
         CancellationToken cancellationToken)
     {
-        var destination = Path.Combine(workspace, "coverage-source.bin");
+        var destination = Path.Join(workspace, "coverage-source.bin");
         var args = new List<string> { "copy", sourcePath, destination };
         try
         {

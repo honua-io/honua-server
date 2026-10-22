@@ -152,11 +152,11 @@ public sealed class GdalInfoCoverageEnricherTests
 
         var enriched = GdalInfoCoverageEnricher.Enrich(BaseMetadata(), zarrInfo);
 
-        enriched.Extent.Should().NotBeNull();
-        enriched.Extent!.Value.XMin.Should().BeApproximately(-122.525, 1e-9);
-        enriched.Extent.Value.YMin.Should().BeApproximately(37.675, 1e-9);
-        enriched.Extent.Value.XMax.Should().BeApproximately(-122.325, 1e-9);
-        enriched.Extent.Value.YMax.Should().BeApproximately(37.875, 1e-9);
+        var extent = enriched.Extent ?? throw new InvalidOperationException("Coverage extent was not enriched.");
+        extent.XMin.Should().BeApproximately(-122.525, 1e-9);
+        extent.YMin.Should().BeApproximately(37.675, 1e-9);
+        extent.XMax.Should().BeApproximately(-122.325, 1e-9);
+        extent.YMax.Should().BeApproximately(37.875, 1e-9);
         enriched.Resolution.X.Should().BeApproximately(0.05, 1e-9);
         enriched.Resolution.Y.Should().BeApproximately(0.05, 1e-9);
         enriched.YAxisAscending.Should().BeTrue();
