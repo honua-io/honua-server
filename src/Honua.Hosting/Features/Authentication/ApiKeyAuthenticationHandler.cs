@@ -144,7 +144,7 @@ internal sealed class ApiKeyAuthenticationHandler(
                         ApiKeyRejection.None);
                 }
             }
-            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is RedisException or TimeoutException or System.Data.Common.DbException && ex is not OperationCanceledException)
             {
                 // RedisTimeoutException derives from TimeoutException, not RedisException.
                 // A store outage must not become an unhandled 500, and must not skip the

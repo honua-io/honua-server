@@ -427,6 +427,24 @@ sql:
           PRIMARY KEY (tenant_key, item_id)
       );
   - "CREATE INDEX IF NOT EXISTS ix_portal_item_shares_groups ON honua.portal_item_shares USING GIN (group_ids);"
+  # Migration 136: admin API keys shared by multi-instance Redis-off hosts (#6487). The
+  # migration-skipping test host needs the same table.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.admin_api_keys (
+          id UUID PRIMARY KEY,
+          name TEXT NOT NULL,
+          key_prefix TEXT NOT NULL,
+          key_hash BYTEA NOT NULL,
+          permissions TEXT[] NOT NULL DEFAULT '{}',
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL,
+          expires_at TIMESTAMPTZ,
+          last_used_at TIMESTAMPTZ,
+          rotated_at TIMESTAMPTZ,
+          revoked_at TIMESTAMPTZ,
+          created_by TEXT
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS ux_admin_api_keys_key_hash ON honua.admin_api_keys (key_hash);"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,
