@@ -19,6 +19,7 @@ namespace Honua.Core.Features.Publishing.Content.Domain;
 [JsonSerializable(typeof(ContentPublicationRouteState))]
 [JsonSerializable(typeof(ContentPublicationEvent))]
 [JsonSerializable(typeof(ContentPublicationDetail))]
+[JsonSerializable(typeof(ContentPublicationListResponse))]
 [JsonSerializable(typeof(ContentPublicationPolicyUpdateResponse))]
 [JsonSerializable(typeof(PublishedArtifactView))]
 [JsonSerializable(typeof(ContentPublicationPolicy))]

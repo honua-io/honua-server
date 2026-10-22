@@ -64,6 +64,15 @@ Secrets don't have to be inlined. Two mechanisms exist:
    `env:NAME` and the URI form `env://NAME` both read the process environment variable `NAME`; a missing or empty variable is a resolution failure, and the value is never logged. Use the `env` provider for harness/dev hosts and CI-injected secrets, and a managed store (`aws:secretsmanager:`, `azure:keyvault:`) in production.
 2. **Metadata secret references** — connection metadata stores a structured reference instead of a value: `{"provider": "env", "ref": "MY_DB_PASSWORD"}` (optional `version`), with providers like `env`, `azure-key-vault`, or `connection-registry`.
 
+For AWS references, valid explicit environment credentials take precedence. A
+configured ECS or Pod Identity provider must succeed; missing tokens, rejected
+endpoints, malformed responses and incomplete environment credentials refuse
+resolution instead of borrowing the EC2 node role. EC2 credentials are used only
+when none of these environment-selected providers is configured. The built-in secret resolver refuses
+unsupported IRSA credentials; AWS SDK clients have a separate credential chain.
+Keep tokens and secret values outside prompts and use an operator-allowed
+reference. See [Pod Identity and IRSA](kubernetes.md#pod-identity-and-irsa).
+
 ### References supplied in a request
 
 Imports, workflow source steps and registered connections can name a server-side secret instead of carrying the value (`accessTokenSecretReference`, `passwordSecretReference`, `honuaApiKeySecretReference`, workflow `tokenSecretReference`/`passwordSecretReference`, and a connection's `secretReference`). These references are governed by an operator allowlist and are **refused by default**: with no entry configured, no request-supplied reference is resolved. References in the server's own configuration (the mechanisms above, the admin password, licensing and storage credentials) are not affected.

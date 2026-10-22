@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -22,6 +23,7 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
     private const string ErrorRateQuery = "requests | summarize errors=todouble(countif(success==false))/count()";
     private const string LatencyQuery = "requests | summarize percentile(duration, 95)";
     private const string SampleQuery = "requests | summarize count()";
+    private const string ErrorCountQuery = "requests | where success == false | summarize count() by bin(timestamp, 5m)";
     private const string WorkspaceId = "11111111-2222-3333-4444-555555555555";
 
     [Fact]
@@ -216,6 +218,92 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
         AzureMonitorLogsQueryClient.ParseScalar(document.RootElement).Should().Be(0.0125);
     }
 
+    [UnitTest]
+    public void ParseScalarReading_EmptyRowsOnlyWhenTheTableIsPresentAndComplete()
+    {
+        using var empty = JsonDocument.Parse("""{"tables":[{"columns":[{"name":"v","type":"long"}],"rows":[]}]}""");
+        using var noTables = JsonDocument.Parse("""{"tables":[]}""");
+        using var partial = JsonDocument.Parse("""{"tables":[{"columns":[{"name":"v","type":"long"}],"rows":[]}],"error":{"code":"PartialError"}}""");
+
+        AzureMonitorLogsQueryClient.ParseScalarReading(empty.RootElement).Should().Be(AzureMonitorScalarReading.Empty);
+        AzureMonitorLogsQueryClient.ParseScalarReading(noTables.RootElement).Should().Be(AzureMonitorScalarReading.Unavailable);
+        AzureMonitorLogsQueryClient.ParseScalarReading(partial.RootElement).Should().Be(AzureMonitorScalarReading.Unavailable,
+            "a partial result is not proof that no error was logged");
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountNoRowsWithSampleFloorMet_PromotesWithZeroErrors()
+    {
+        // honua-server#6474 parity: a binned error count over an error-free window has no rows.
+        var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleQuery] = 80,
+            [LatencyQuery] = 120
+        })
+        {
+            EmptyQueries = { ErrorCountQuery }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("read as 0 errors");
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountNoRowsWithSampleCountBelowFloor_Holds()
+    {
+        var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleQuery] = 2,
+            [LatencyQuery] = 120
+        })
+        {
+            EmptyQueries = { ErrorCountQuery }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountAndSampleCountBothEmpty_Holds()
+    {
+        var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [LatencyQuery] = 120
+        })
+        {
+            EmptyQueries = { SampleQuery, ErrorCountQuery }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("an empty denominator is no evidence of traffic");
+        decision.Message.Should().Contain("no sample-count signal");
+    }
+
+    private static async Task<DeployTelemetryDecision?> EvaluateErrorCount(FakeAzureMonitorMetricClient client)
+    {
+        var evaluator = CreateDispatcher(client);
+        return await evaluator.EvaluateAsync(CreateOperation(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-azmon",
+            ["telemetry.error_count.query"] = ErrorCountQuery,
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.latency_p95.query"] = LatencyQuery,
+            ["telemetry.latency_p95.threshold_ms"] = "2000",
+            ["telemetry.sample_count.query"] = SampleQuery,
+            ["telemetry.sample_count.minimum"] = "10"
+        }));
+    }
+
     private static async Task<DeployTelemetryDecision?> Evaluate(
         FakeAzureMonitorMetricClient client,
         string baseUrl = "https://api.loganalytics.io")
@@ -309,7 +397,10 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
 
         public string? LastEndpointOverride { get; private set; }
 
-        public Task<double?> GetScalarValueAsync(
+        /// <summary>Queries answered by a successful, row-less result table.</summary>
+        public HashSet<string> EmptyQueries { get; } = new(StringComparer.Ordinal);
+
+        public Task<AzureMonitorScalarReading> GetScalarReadingAsync(
             string workspaceId,
             string query,
             TimeSpan window,
@@ -319,7 +410,14 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
             LastWorkspaceId = workspaceId;
             LastEndpointOverride = endpointOverride;
             RequestedQueries.Enqueue(query);
-            return Task.FromResult(values.TryGetValue(query, out var value) ? value : null);
+            if (EmptyQueries.Contains(query))
+            {
+                return Task.FromResult(AzureMonitorScalarReading.Empty);
+            }
+
+            return Task.FromResult(values.TryGetValue(query, out var value)
+                ? new AzureMonitorScalarReading(value, NoRows: false)
+                : AzureMonitorScalarReading.Unavailable);
         }
     }
 }

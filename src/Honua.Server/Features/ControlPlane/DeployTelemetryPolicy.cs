@@ -62,6 +62,7 @@ internal sealed record DeployTelemetryPolicy
         "telemetry.policy",
         "telemetry.error_rate.query",
         "telemetry.error_rate.threshold",
+        "telemetry.error_count.query",
         "telemetry.latency_p95.query",
         "telemetry.latency_p95.threshold_ms",
         "telemetry.sample_count.query",
@@ -94,6 +95,7 @@ internal sealed record DeployTelemetryPolicy
     private static readonly string[] MetricParameterPrefixes =
     [
         "telemetry.error_rate.",
+        "telemetry.error_count.",
         "telemetry.latency_p95.",
         "telemetry.sample_count.",
         "telemetry.prometheus.",
@@ -103,6 +105,18 @@ internal sealed record DeployTelemetryPolicy
     public required string ConnectionId { get; init; }
 
     public string? ErrorRateQuery { get; init; }
+
+    /// <summary>
+    /// Explicit error-count numerator (<c>telemetry.error_count.query</c>, honua-server#6474). The gate
+    /// divides it by the sample count read for the same window and compares the ratio against
+    /// <see cref="ErrorRateThreshold"/>. Mutually exclusive with <see cref="ErrorRateQuery"/>; no preset
+    /// synthesizes it.
+    /// </summary>
+    public string? ErrorCountQuery { get; init; }
+
+    /// <summary>Whether an error signal (a rate query or a count numerator) is configured.</summary>
+    public bool HasErrorSignal =>
+        !string.IsNullOrWhiteSpace(ErrorRateQuery) || !string.IsNullOrWhiteSpace(ErrorCountQuery);
 
     public double? ErrorRateThreshold { get; init; }
 
@@ -209,7 +223,7 @@ internal sealed record DeployTelemetryPolicy
 
     /// <summary>Indicates at least one queryable metric signal (error-rate / latency / sample-count) is configured.</summary>
     public bool HasMetricSignals =>
-        !string.IsNullOrWhiteSpace(ErrorRateQuery) ||
+        HasErrorSignal ||
         !string.IsNullOrWhiteSpace(LatencyP95Query) ||
         !string.IsNullOrWhiteSpace(MinimumSampleQuery);
 
@@ -232,6 +246,7 @@ internal sealed record DeployTelemetryPolicy
         {
             ConnectionId = ConnectionId,
             ErrorRateQuery = ErrorRateQuery,
+            ErrorCountQuery = ErrorCountQuery,
             ErrorRateThreshold = ErrorRateThreshold,
             LatencyP95Query = LatencyP95Query,
             LatencyP95ThresholdMs = LatencyP95ThresholdMs,
@@ -324,6 +339,7 @@ internal sealed record DeployTelemetryPolicy
         }
 
         string? errorRateQuery = null;
+        string? errorCountQuery = null;
         string? latencyQuery = null;
         string? sampleQuery = null;
         double? errorThreshold = null;
@@ -374,7 +390,16 @@ internal sealed record DeployTelemetryPolicy
             var explicitErrorQuery = Get(parameters, "telemetry.error_rate.query");
             var explicitLatencyQuery = Get(parameters, "telemetry.latency_p95.query");
             var explicitSampleQuery = Get(parameters, "telemetry.sample_count.query");
-            errorRateQuery = explicitErrorQuery ?? preset?.ErrorRateQuery;
+            errorCountQuery = Get(parameters, "telemetry.error_count.query");
+            // An error-count numerator replaces the error-rate signal, including a preset's rate query:
+            // the gate derives the rate from the count and the sample count of the same window.
+            errorRateQuery = explicitErrorQuery ?? (errorCountQuery == null ? preset?.ErrorRateQuery : null);
+            if (explicitErrorQuery != null && errorCountQuery != null)
+            {
+                errors.Add("Deploy telemetry policy is invalid because telemetry.error_rate.query and telemetry.error_count.query " +
+                    "are both set; configure one error signal.");
+            }
+
             latencyQuery = explicitLatencyQuery ?? preset?.LatencyP95Query;
             sampleQuery = explicitSampleQuery ?? preset?.MinimumSampleQuery;
 
@@ -399,6 +424,7 @@ internal sealed record DeployTelemetryPolicy
             // threshold checks below validate the override-only policy.
             hasExplicitQueryOverride =
                 !string.IsNullOrWhiteSpace(explicitErrorQuery) ||
+                !string.IsNullOrWhiteSpace(errorCountQuery) ||
                 !string.IsNullOrWhiteSpace(explicitLatencyQuery) ||
                 !string.IsNullOrWhiteSpace(explicitSampleQuery);
             if (!hasExplicitQueryOverride && preset?.ValidationError is { } presetError)
@@ -419,7 +445,8 @@ internal sealed record DeployTelemetryPolicy
                     "or telemetry.prometheus.canary_job, a canary preset, or explicit candidate-scoped queries.");
             }
 
-            if (!string.IsNullOrWhiteSpace(errorRateQuery) && !errorThreshold.HasValue && !hasErrorThreshold)
+            if ((!string.IsNullOrWhiteSpace(errorRateQuery) || !string.IsNullOrWhiteSpace(errorCountQuery)) &&
+                !errorThreshold.HasValue && !hasErrorThreshold)
             {
                 errors.Add("Deploy telemetry policy is invalid because telemetry.error_rate.threshold is missing.");
             }
@@ -436,7 +463,9 @@ internal sealed record DeployTelemetryPolicy
 
             // A sample floor is what distinguishes "healthy" from "no traffic yet": without one, a
             // zero-traffic error ratio or an empty latency histogram can satisfy the gate (#4617).
-            if ((!string.IsNullOrWhiteSpace(errorRateQuery) || !string.IsNullOrWhiteSpace(latencyQuery)) &&
+            if ((!string.IsNullOrWhiteSpace(errorRateQuery) ||
+                 !string.IsNullOrWhiteSpace(errorCountQuery) ||
+                 !string.IsNullOrWhiteSpace(latencyQuery)) &&
                 string.IsNullOrWhiteSpace(sampleQuery))
             {
                 errors.Add("Deploy telemetry policy is invalid because error-rate/latency signals require a sample floor " +
@@ -445,6 +474,7 @@ internal sealed record DeployTelemetryPolicy
 
             if (connectionId != null &&
                 string.IsNullOrWhiteSpace(errorRateQuery) &&
+                string.IsNullOrWhiteSpace(errorCountQuery) &&
                 string.IsNullOrWhiteSpace(latencyQuery) &&
                 string.IsNullOrWhiteSpace(sampleQuery) &&
                 presetResolution.Error == null)
@@ -462,6 +492,7 @@ internal sealed record DeployTelemetryPolicy
             // replaces them with operator queries whose scope the parser cannot verify.
             IsCandidateScoped = preset?.IsCandidateScoped == true && !hasExplicitQueryOverride,
             ErrorRateQuery = errorRateQuery,
+            ErrorCountQuery = errorCountQuery,
             ErrorRateThreshold = errorThreshold,
             LatencyP95Query = latencyQuery,
             LatencyP95ThresholdMs = latencyThreshold,

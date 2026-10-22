@@ -27,7 +27,14 @@ public enum DeploymentSourceKind
     /// A <see cref="Geoprocessing.Domain.AppPackage"/> promoted from a packaging workflow.
     /// </summary>
     [JsonStringEnumMemberName("app_package")]
-    AppPackage = 2
+    AppPackage = 2,
+
+    /// <summary>
+    /// An immutable, accepted Studio map or app version served by a Studio publication
+    /// route. Its item/version/hash are distinct from geoprocessing package identifiers.
+    /// </summary>
+    [JsonStringEnumMemberName("studio_published_version")]
+    StudioPublishedVersion = 3
 }
 
 /// <summary>
@@ -63,7 +70,13 @@ public enum DeploymentKind
     /// An application embedded inside a host shell, exposed under a route prefix.
     /// </summary>
     [JsonStringEnumMemberName("embedded_app")]
-    EmbeddedApp = 4
+    EmbeddedApp = 4,
+
+    /// <summary>
+    /// A Studio published route serving the current approved immutable version.
+    /// </summary>
+    [JsonStringEnumMemberName("studio_published_route")]
+    StudioPublishedRoute = 5
 }
 
 /// <summary>

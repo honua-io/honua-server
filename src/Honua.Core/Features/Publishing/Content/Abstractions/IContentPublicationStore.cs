@@ -40,6 +40,27 @@ public interface IContentPublicationStore
         int limit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lists immutable versions for many publications in one round-trip, newest first,
+    /// at most <paramref name="limit"/> versions per publication. Publications with no
+    /// versions, and ids that are not publication ids, are omitted.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>> ListVersionsByPublicationIdsAsync(
+        IReadOnlyCollection<string> publicationIds,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists route-state rows, oldest first, optionally restricted to one lifecycle.
+    /// <paramref name="offset"/> and <paramref name="limit"/> select the page; the total
+    /// counts every matching route, not just the page.
+    /// </summary>
+    Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
+        ContentPublicationLifecycle? lifecycle,
+        int offset,
+        int limit,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Returns the highest revision for a publication, or 0 when none exist.</summary>
     Task<long> GetMaxRevisionAsync(
         string publicationId,

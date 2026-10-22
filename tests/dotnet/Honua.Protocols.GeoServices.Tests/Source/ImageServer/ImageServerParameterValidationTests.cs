@@ -629,8 +629,9 @@ public sealed class ImageServerParameterFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await App.InitializeAsync();
-        App.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId,
-            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
+        ImageServerRasterResourceAccess.Restrict(
+            App,
+            new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
         var token = await App.GetService<IPortalTokenIssuer>().IssueAsync(
             new PortalTokenIssueRequest(
                 "imagery-parameter-reader",

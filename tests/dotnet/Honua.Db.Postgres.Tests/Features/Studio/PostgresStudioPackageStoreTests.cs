@@ -7,11 +7,14 @@ using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.Db.Postgres.Features.Publishing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -21,6 +24,210 @@ namespace Honua.Db.Postgres.Tests.Features.Studio;
 [Collection("Database")]
 public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 {
+    [IntegrationTest]
+    public async Task AcceptedMapPublication_CommitsCanonicalDeploymentWithPointer_AndRepublishSupersedes()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests) + "_Deploy");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var writer = new PostgresStudioPackageStore(provider, schema);
+            var deploymentReader = new PostgresDeploymentStore(fixture.DataSource, schema);
+            var map = MapPackage.CreateDraft("map-provenance", "honua_map_package.v1", [], []);
+            var draft = BuildDraft("1=1", "map-provenance") with
+            {
+                Family = StudioPackageFamily.Map,
+                TenantId = "tenant-map",
+                Envelope = new StudioPackageEnvelope
+                {
+                    Family = StudioPackageFamily.Map,
+                    SchemaVersion = "studio_map.v1",
+                    Format = map.Format,
+                    Body = JsonSerializer.SerializeToElement(map, PackagingJsonContext.Default.MapPackage)
+                }
+            };
+            draft = await writer.CreateDraftAsync(draft);
+            var firstVersion = await writer.CreateVersionAsync(draft, "approved map", "tester");
+
+            StudioPublicationRequest Request(
+                StudioContentVersion version,
+                string? route,
+                DateTimeOffset? createdAt = null) => new()
+                {
+                    RequestId = Guid.NewGuid(),
+                    ItemId = version.ItemId,
+                    VersionId = version.VersionId,
+                    Intent = route is null ? null : new StudioPublicationIntent { Route = route, Visibility = "public" },
+                    Status = StudioPublicationRequestStatus.Accepted,
+                    Validation = version.Validation,
+                    RequestedBy = "approver",
+                    CreatedAt = createdAt ?? DateTimeOffset.UtcNow
+                };
+
+            var blank = await writer.CreatePublicationRequestAsync(Request(firstVersion, null), firstVersion.VersionId);
+            blank.DeploymentId.Should().BeNull();
+
+            var firstRequest = Request(firstVersion, "/maps/first", DateTimeOffset.UtcNow.AddHours(1)) with
+            {
+                Intent = new StudioPublicationIntent
+                {
+                    Route = "/maps/first",
+                    Visibility = "public",
+                    Metadata = JsonSerializer.Deserialize<JsonElement>(
+                        "{\"zz\":1,\"a\":{\"later\":2,\"earlier\":1}}")
+                }
+            };
+            var first = await writer.CreatePublicationRequestAsync(firstRequest, firstVersion.VersionId);
+            first.DeploymentId.Should().NotBeNullOrWhiteSpace();
+            first.DeploymentResourceUri.Should().Be($"honua://deployments/{first.DeploymentId}");
+            var equivalentReplay = firstRequest with
+            {
+                Intent = firstRequest.Intent! with
+                {
+                    Metadata = JsonSerializer.Deserialize<JsonElement>(
+                        "{\"a\":{\"earlier\":1,\"later\":2},\"zz\":1}")
+                }
+            };
+            var replay = await writer.CreatePublicationRequestAsync(equivalentReplay, firstVersion.VersionId);
+            replay.DeploymentId.Should().Be(first.DeploymentId,
+                "a lost response with semantically equal JSONB must replay the committed deployment identity");
+            var changedMetadataReplay = async () => await writer.CreatePublicationRequestAsync(
+                firstRequest with
+                {
+                    Intent = firstRequest.Intent! with
+                    {
+                        Metadata = JsonSerializer.Deserialize<JsonElement>(
+                            "{\"a\":{\"earlier\":1,\"later\":3},\"zz\":1}")
+                    }
+                }, firstVersion.VersionId);
+            await changedMetadataReplay.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("The Studio publication request ID is already bound to different content.");
+            var conflictingReplay = async () => await writer.CreatePublicationRequestAsync(
+                firstRequest with { Intent = new StudioPublicationIntent { Route = "/maps/forged", Visibility = "public" } },
+                firstVersion.VersionId);
+            await conflictingReplay.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("The Studio publication request ID is already bound to different content.");
+            var freshStore = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var activeFirst = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first");
+            activeFirst!.DeploymentId.Should().Be(first.DeploymentId);
+            activeFirst.ActiveDeploymentId.Should().Be(first.DeploymentId);
+            var firstDeployment = await deploymentReader.GetAsync(first.DeploymentId!);
+            firstDeployment.Should().NotBeNull();
+            firstDeployment!.Source.Kind.Should().Be(DeploymentSourceKind.StudioPublishedVersion);
+            firstDeployment.Source.StudioItemId.Should().Be(firstVersion.ItemId);
+            firstDeployment.Source.StudioVersionId.Should().Be(firstVersion.VersionId);
+            firstDeployment.Source.StudioContentHash.Should().Be(firstVersion.ContentHash);
+            firstDeployment.Source.StudioOwnerId.Should().Be("tester");
+            firstDeployment.Source.StudioPublicationRequestId.Should().Be(first.RequestId);
+            firstDeployment.Source.StudioFamily.Should().Be(StudioPackageFamily.Map);
+            firstDeployment.Audit.TenantId.Should().Be("tenant-map");
+            firstDeployment.Audit.RequestedBy.Should().Be("approver");
+            firstDeployment.Status.Should().Be(DeploymentStatus.Active);
+            firstDeployment.PublicationState.Should().Be(DeploymentPublicationState.Published);
+            firstDeployment.Runtime.Health.Should().Be(RuntimeHealth.Unknown,
+                "a committed route pointer is not an HTTP health observation");
+            firstDeployment.Target.RoutePrefix.Should().Be(StudioPublishedRoutes.BuildActiveUrl("/maps/first"));
+
+            var bridgedDraft = await writer.CreateDraftAsync(BuildDraft("1=1", "bridged-route-hint"));
+            var bridgedVersion = await writer.CreateVersionAsync(bridgedDraft, "native bridge", "bridge-owner");
+            var bridged = await writer.CreatePublicationRequestAsync(
+                Request(bridgedVersion, "/maps/first") with { GovernsStudioRoutes = false },
+                bridgedVersion.VersionId);
+            bridged.DeploymentId.Should().BeNull();
+            bridged.PublicationUrl.Should().BeNull();
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first"))!.RequestId
+                .Should().Be(first.RequestId,
+                    "a native bridge hint does not claim the hosted Studio route");
+
+            var secondVersion = await writer.CreateVersionAsync(draft, "republish map", "tester");
+            var second = await writer.CreatePublicationRequestAsync(
+                Request(secondVersion, "/maps/second", DateTimeOffset.UtcNow.AddHours(-1)),
+                secondVersion.VersionId);
+            second.DeploymentId.Should().NotBe(first.DeploymentId);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first")).Should().BeNull();
+            var activeSecond = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second");
+            activeSecond!.DeploymentId.Should().Be(second.DeploymentId);
+            activeSecond.ActiveDeploymentId.Should().Be(second.DeploymentId);
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(second.RequestId,
+                    "the item row lock records accepted publication order even with inverted request timestamps");
+            var superseded = await deploymentReader.GetAsync(first.DeploymentId!);
+            superseded!.Status.Should().Be(DeploymentStatus.Superseded);
+            superseded.SupersededByDeploymentId.Should().Be(second.DeploymentId);
+            superseded.Version.Should().Be(1);
+            (await deploymentReader.GetAsync(second.DeploymentId!))!.Status.Should().Be(DeploymentStatus.Active);
+
+            var rollback = await writer.RollbackAsync(
+                firstVersion.ItemId, firstVersion.VersionId, StudioRollbackPointer.Published,
+                "rollback-operator", "restore approved map");
+            rollback.Pointers.PublishedVersionId.Should().Be(firstVersion.VersionId);
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(second.RequestId,
+                    "rollback restores a version on the governing accepted route");
+            var afterRollback = await deploymentReader.ListActiveAsync();
+            var restored = afterRollback.Should().ContainSingle(candidate =>
+                candidate.Source.StudioItemId == firstVersion.ItemId).Subject;
+            restored.Source.StudioVersionId.Should().Be(firstVersion.VersionId);
+            restored.Source.StudioContentHash.Should().Be(firstVersion.ContentHash);
+            restored.Source.StudioPublicationRequestId.Should().Be(second.RequestId);
+            restored.Source.StudioRollbackRequestId.Should().Be(rollback.RequestId);
+            restored.Audit.RequestedBy.Should().Be("rollback-operator");
+            restored.Target.RoutePrefix.Should().Be(StudioPublishedRoutes.BuildActiveUrl("/maps/second"));
+            restored.Runtime.Health.Should().Be(RuntimeHealth.Unknown);
+            rollback.DeploymentId.Should().Be(restored.DeploymentId);
+            rollback.DeploymentResourceUri.Should().Be($"honua://deployments/{restored.DeploymentId}");
+            (await ReadRollbackDeploymentIdAsync(schema, rollback.RequestId))
+                .Should().Be(restored.DeploymentId,
+                    "the rollback receipt must retain its successor identity after the transaction");
+            var activeAfterRollback = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second");
+            activeAfterRollback!.RequestId.Should().Be(second.RequestId);
+            activeAfterRollback.VersionId.Should().Be(second.VersionId);
+            activeAfterRollback.DeploymentId.Should().Be(second.DeploymentId,
+                "the governing publication's historical request/version/deployment tuple is immutable");
+            activeAfterRollback.ActiveDeploymentId.Should().Be(restored.DeploymentId);
+            activeAfterRollback.ActiveDeploymentResourceUri.Should().Be(rollback.DeploymentResourceUri);
+            (await freshStore.GetPublicationRequestAsync(second.ItemId, second.VersionId, second.RequestId))!
+                .DeploymentId.Should().Be(second.DeploymentId,
+                    "the original immutable publication receipt keeps its own deployment identity");
+            var retiredByRollback = await deploymentReader.GetAsync(second.DeploymentId!);
+            retiredByRollback!.Status.Should().Be(DeploymentStatus.Superseded);
+            retiredByRollback.SupersededByDeploymentId.Should().Be(restored.DeploymentId);
+
+            var withdrawn = await writer.CreatePublicationRequestAsync(
+                Request(secondVersion, null), secondVersion.VersionId);
+            withdrawn.DeploymentId.Should().BeNull();
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(withdrawn.RequestId);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first")).Should().BeNull();
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second")).Should().BeNull();
+            var retiredOnWithdrawal = await deploymentReader.GetAsync(restored.DeploymentId);
+            retiredOnWithdrawal!.Status.Should().Be(DeploymentStatus.Retired);
+            retiredOnWithdrawal.PublicationState.Should().Be(DeploymentPublicationState.Retired);
+            retiredOnWithdrawal.Version.Should().Be(1);
+            (await deploymentReader.ListActiveAsync()).Should().BeEmpty();
+
+            var reclaimDraft = await writer.CreateDraftAsync(BuildDraft("1=1", "map-route-reclaim") with
+            {
+                Family = StudioPackageFamily.Map,
+                TenantId = "tenant-map",
+                Envelope = draft.Envelope
+            });
+            var reclaimVersion = await writer.CreateVersionAsync(reclaimDraft, "new route owner", "tester");
+            var reclaimed = await writer.CreatePublicationRequestAsync(
+                Request(reclaimVersion, "/maps/second"), reclaimVersion.VersionId);
+            reclaimed.DeploymentId.Should().NotBeNullOrWhiteSpace();
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second"))!.RequestId
+                .Should().Be(reclaimed.RequestId);
+            (await deploymentReader.ListActiveAsync()).Should().ContainSingle(deployment =>
+                deployment.DeploymentId == reclaimed.DeploymentId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task CheckpointVersion_AssociationCommitsWithVersionAndSupportsRecoveryLookup()
     {
@@ -1109,6 +1316,25 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    private async Task<Guid?> ReadGoverningPublicationRequestIdAsync(string schema, Guid itemId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT governing_publication_request_id FROM \"{schema}\".studio_content_items WHERE item_id = @item_id";
+        command.Parameters.AddWithValue("@item_id", itemId);
+        var value = await command.ExecuteScalarAsync();
+        return value is Guid requestId ? requestId : null;
+    }
+
+    private async Task<string?> ReadRollbackDeploymentIdAsync(string schema, Guid requestId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT deployment_id FROM \"{schema}\".studio_rollback_requests WHERE request_id = @request_id";
+        command.Parameters.AddWithValue("@request_id", requestId);
+        return await command.ExecuteScalarAsync() as string;
+    }
+
     private async Task EnsureStudioTablesAsync(string schema)
     {
         var root = FindRepoRoot();
@@ -1122,6 +1348,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                  {
                      "035_CreateStudioPackageLifecycle.sql",
                      "036_CreateContentPublications.sql",
+                     "082_CreatePromotionStores.sql",
                      "089_AddStudioContentEnumerationIndexes.sql",
                      "090_AddStudioContentItemOwner.sql",
                      "092_CreateSavedMapOperationLog.sql",
@@ -1134,6 +1361,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      // Migration 126 adds the persisted canonical content-hash input the version
                      // insert and single-version read carry (honua-server#5449).
                      "126_AddStudioContentHashInput.sql",
+                     "134_VersionCanonicalDeployments.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);
@@ -1145,6 +1373,10 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
         var sql = await File.ReadAllTextAsync(migrationPath);
         sql = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
+        if (migrationFile == "082_CreatePromotionStores.sql")
+        {
+            sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        }
         await fixture.ExecuteAsync(sql, schema);
     }
 

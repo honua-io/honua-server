@@ -1084,14 +1084,22 @@ internal sealed class PostgresRasterStore : IRasterStore
         return $"ST_MapAlgebra({baseExpr}, {bandText}, '8BUI', '{expression}', NULL::double precision)";
     }
 
+    private string PreserveSecondBandAlphaSql(bool mosaic)
+        => mosaic
+            ? $"SELECT COALESCE(bool_and(second_band_is_alpha), FALSE) FROM {_rasterDataTable} WHERE id = ANY(@rasterIds)"
+            : $"SELECT second_band_is_alpha FROM {_rasterDataTable} WHERE id = @rasterId";
+
     /// <summary>
     /// Frames default tile presentation. Numeric PNGs display band one with an explicit alpha
     /// derived before stretching: a valid minimum can become zero without becoming NoData.
-    /// Secondary scientific bands are data, not an implicit PNG alpha channel.
+    /// Band two stays alpha only when <paramref name="preserveAlphaExpression"/> is true.
+    /// That expression must come from import metadata, not from matching pixel types:
+    /// a scientific two-band raster can share an unsigned type with a gray-plus-alpha PNG.
     /// </summary>
     internal static string BuildTileDisplayRasterExpression(
         string sourceExpression, string gridExpression, RasterFormat format,
-        IReadOnlyList<StretchBounds>? stretchBounds)
+        IReadOnlyList<StretchBounds>? stretchBounds,
+        string preserveAlphaExpression = "FALSE")
     {
         var stretched = stretchBounds is { Count: > 0 }
             ? BuildStretchedRasterExpression(format == RasterFormat.PNG ? "i.rast" : sourceExpression, stretchBounds)
@@ -1104,14 +1112,39 @@ internal sealed class PostgresRasterStore : IRasterStore
         var grayExpression = stretchBounds is { Count: > 0 }
             ? BuildStretchMapAlgebraExpression(stretchBounds[0].Lo, stretchBounds[0].Hi)
             : "LEAST(255.0, GREATEST(0.0, [rast.val]))";
+        var framedBand = RasterGridFrameSql.FrameAlignedRaster("ST_Band(i.rast, 1)", "i.grid");
+        var framedAlpha = RasterGridFrameSql.FrameAlignedRaster("i.rast", "i.grid");
+        var framedColor = RasterGridFrameSql.FrameAlignedRaster(stretched, "i.grid");
         return $"""
             (
                 WITH display_input AS MATERIALIZED (
-                    SELECT {sourceExpression} AS rast, {gridExpression} AS grid
+                    SELECT {sourceExpression} AS rast, {gridExpression} AS grid,
+                           ({preserveAlphaExpression}) AS preserve_alpha
                 )
-                SELECT CASE WHEN ST_NumBands(i.rast) IN (1, 2) THEN (
+                SELECT CASE
+                    WHEN i.preserve_alpha
+                     AND ST_NumBands(i.rast) = 2
+                     AND ST_BandPixelType(i.rast, 1) IN ('8BUI', '16BUI')
+                     AND ST_BandPixelType(i.rast, 2) = ST_BandPixelType(i.rast, 1)
+                    THEN (
+                        WITH alpha_input AS MATERIALIZED (
+                            SELECT {framedAlpha} AS rast
+                        )
+                        SELECT ST_AddBand(
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(a.rast, 1, '8BUI', '{grayExpression}', 0), 1, NULL::double precision),
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(a.rast, 2, '8BUI',
+                                    CASE WHEN ST_BandPixelType(a.rast, 2) = '16BUI'
+                                         THEN 'LEAST(255.0, GREATEST(0.0, [rast.val] / 257.0))'
+                                         ELSE '[rast.val]' END,
+                                    0), 1, NULL::double precision),
+                            1)
+                        FROM alpha_input a
+                    )
+                    WHEN ST_NumBands(i.rast) IN (1, 2) THEN (
                     WITH numeric_input AS MATERIALIZED (
-                        SELECT {RasterGridFrameSql.FrameAlignedRaster("ST_Band(i.rast, 1)", "i.grid")} AS rast
+                        SELECT {framedBand} AS rast
                     )
                     SELECT ST_AddBand(
                         ST_SetBandNoDataValue(
@@ -1119,7 +1152,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                         ST_SetBandNoDataValue(
                             ST_MapAlgebra(n.rast, 1, '8BUI', '255', 0), 1, NULL::double precision), 1)
                     FROM numeric_input n
-                ) ELSE {RasterGridFrameSql.FrameAlignedRaster(stretched, "i.grid")} END
+                ) ELSE {framedColor} END
                 FROM display_input i WHERE i.rast IS NOT NULL
             )
             """;
@@ -2624,7 +2657,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         dynCommand.CommandText = $"""
             {tileBoundsCte}
             SELECT ST_AsGDALRaster(
-                {BuildTileDisplayRasterExpression(sourceResampleExpr, "tile_ref.rast", format, tileStretchBounds)},
+                {BuildTileDisplayRasterExpression(sourceResampleExpr, "tile_ref.rast", format, tileStretchBounds, PreserveSecondBandAlphaSql(mosaic: false))},
                 '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
             FROM {_rasterDataTable}, tile_bounds tb, tile_ref
@@ -2745,7 +2778,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM source
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster({BuildTileDisplayRasterExpression(mosaicTileExpr, "(SELECT rast FROM tile_ref)", format, mosaicTileBounds)}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            SELECT ST_AsGDALRaster({BuildTileDisplayRasterExpression(mosaicTileExpr, "(SELECT rast FROM tile_ref)", format, mosaicTileBounds, PreserveSecondBandAlphaSql(mosaic: true))}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
             FROM merged
             WHERE rast IS NOT NULL
             """;
@@ -2808,7 +2841,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         dynCommand.CommandText = $"""
             WITH {BuildTileWindowCte(window)}
             SELECT ST_AsGDALRaster(
-                {BuildTileDisplayRasterExpression(resampleExpr, "tile_ref.rast", format, tileStretchBounds)},
+                {BuildTileDisplayRasterExpression(resampleExpr, "tile_ref.rast", format, tileStretchBounds, PreserveSecondBandAlphaSql(mosaic: false))},
                 '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
             FROM (
@@ -2910,7 +2943,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM source
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster({BuildTileDisplayRasterExpression(mosaicTileExpr, "(SELECT rast FROM tile_ref)", format, mosaicTileBounds)}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            SELECT ST_AsGDALRaster({BuildTileDisplayRasterExpression(mosaicTileExpr, "(SELECT rast FROM tile_ref)", format, mosaicTileBounds, PreserveSecondBandAlphaSql(mosaic: true))}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
             FROM merged
             WHERE rast IS NOT NULL
             """;

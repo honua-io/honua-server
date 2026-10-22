@@ -37,6 +37,39 @@ namespace Honua.Server.Tests.Admin;
 public sealed partial class LayerPublishingIntegrationTests
 {
     [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task CommittedSinkFingerprintWithoutVerifiedSource_CannotOpenExternalSchemaScope()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        using var scope = _fixture.Services.CreateScope();
+        var connection = await scope.ServiceProvider
+            .GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionResolver>()
+            .ResolveConnectionStringAsync(_connectionId);
+        var publisher = scope.ServiceProvider.GetRequiredService<ILayerPublishingService>();
+        var fingerprint = ConnectionEndpointFingerprint.TryCompute(connection);
+        fingerprint.Should().NotBeNull();
+
+        await FluentActions.Invoking(() => publisher.ValidateTableForPublishAsync(connection,
+                new TablePublishValidationRequest
+                {
+                    Schema = "results",
+                    Table = "output",
+                    LayerName = "Output",
+                    ConnectionEndpointFingerprint = fingerprint
+                }, CancellationToken.None))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => publisher.PublishLayerAsync(connection,
+                new LayerPublishRequest
+                {
+                    Schema = "results",
+                    Table = "output",
+                    LayerName = "Output",
+                    ConnectionEndpointFingerprint = fingerprint
+                }, CancellationToken.None))
+            .Should().ThrowAsync<LayerPublishingException>();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.OperationsProgress)]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers/jobs/{jobId}")]
     public async Task PollLayerPublish_UnknownJob_ReturnsTypedNotFound()

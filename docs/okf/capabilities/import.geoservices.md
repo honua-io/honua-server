@@ -18,7 +18,7 @@ Import layers from ArcGIS REST services.
 | Edition | Enterprise |
 | Surface maturity | 10 implemented |
 | Registry entries | 10 |
-| Proving tests | 48 |
+| Proving tests | 49 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

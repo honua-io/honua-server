@@ -694,6 +694,7 @@ internal static class McpToolOutputSchemas
                   "serviceId": { "type": "string" },
                   "serviceName": { "type": "string" },
                   "layerId": { "type": "integer" },
+                  "studioSourceId": { "type": "string", "description": "Existing Studio catalog key for composition layer.sourceId; not a composition layer.id or a data permission." },
                   "name": { "type": "string" },
                   "type": { "type": "string" },
                   "geometryType": { "type": "string" },
@@ -1178,6 +1179,8 @@ internal static class McpToolOutputSchemas
             "status": { "type": "string", "minLength": 1 },
             "humanConfirmationRequired": { "type": "boolean" },
             "shareUrl": { "type": "string", "minLength": 1 },
+            "deploymentId": { "type": "string", "minLength": 1 },
+            "deploymentResourceUri": { "type": "string", "pattern": "^honua://deployments/.+" },
             "message": { "type": "string" }
           }
         }

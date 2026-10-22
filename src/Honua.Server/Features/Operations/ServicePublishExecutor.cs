@@ -24,7 +24,8 @@ namespace Honua.Server.Features.Operations;
 /// calls <c>PublishLayerAsync</c>. The resulting Metadata v2 revision is surfaced on the
 /// returned handle.
 /// </summary>
-internal sealed class ServicePublishExecutor : IOperationExecutor
+internal sealed class ServicePublishExecutor
+    : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
     private readonly ILayerPublishingService _publishingService;
     private readonly ISecureConnectionResolver _connectionResolver;
@@ -33,6 +34,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     private readonly IMcpNotificationPublisher? _notifications;
     private readonly ILayerPublishJobs? _jobs;
     private readonly IPublishedServiceStore? _publishedServices;
+    private readonly CommittedSinkPublicationSources? _sourceProof;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ServicePublishExecutor"/>.
@@ -47,6 +49,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     /// directly; production composition always supplies it.
     /// </param>
     /// <param name="publishedServices">Optional persisted service store for promotion identity checks.</param>
+    /// <param name="sourceProof">Durable source jobs and result-package catalog for committed sink publication.</param>
     public ServicePublishExecutor(
         ILayerPublishingService publishingService,
         ISecureConnectionResolver connectionResolver,
@@ -54,7 +57,8 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         TimeProvider clock,
         IMcpNotificationPublisher? notifications = null,
         ILayerPublishJobs? jobs = null,
-        IPublishedServiceStore? publishedServices = null)
+        IPublishedServiceStore? publishedServices = null,
+        CommittedSinkPublicationSources? sourceProof = null)
     {
         ArgumentNullException.ThrowIfNull(publishingService);
         ArgumentNullException.ThrowIfNull(connectionResolver);
@@ -67,10 +71,77 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         _notifications = notifications;
         _jobs = jobs;
         _publishedServices = publishedServices;
+        _sourceProof = sourceProof;
     }
 
     /// <inheritdoc />
     public string OperationId => ServicePublishOperation.OperationId;
+
+    /// <inheritdoc />
+    public async Task<OperationRequest> PrepareAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        var sourceJobId = GetOptional(request, VerifiedCommittedSinkPublication.SourceJobIdKey);
+        var sourceArtifactId = GetOptional(request, VerifiedCommittedSinkPublication.SourceArtifactIdKey);
+        var claimedFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey);
+        var claimedPublisher = GetOptional(request, VerifiedCommittedSinkPublication.PublisherActorIdKey);
+        var claimedAdministrator = GetOptional(request, VerifiedCommittedSinkPublication.PublisherWasAdministratorKey);
+        if (sourceJobId is null && sourceArtifactId is null)
+        {
+            if (claimedFingerprint is not null || claimedPublisher is not null || claimedAdministrator is not null)
+            {
+                throw new InvalidOperationException("A committed sink publication requires its source job and artifact.");
+            }
+
+            return request with { VerifiedCommittedSinkPublication = null };
+        }
+
+        if (sourceJobId is null || sourceArtifactId is null ||
+            _sourceProof is null ||
+            !Guid.TryParse(request.ConnectionId, out var connectionId) || connectionId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(context.PrincipalId) ||
+            (claimedPublisher is not null &&
+             !string.Equals(claimedPublisher, context.PrincipalId, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("The committed sink source cannot be verified.");
+        }
+
+        var isAdministrator = context.Roles.Contains("admin", StringComparer.OrdinalIgnoreCase);
+        if (claimedAdministrator is not null)
+        {
+            if (!bool.TryParse(claimedAdministrator, out var wasAdministrator) ||
+                (!isAdministrator &&
+                 !(wasAdministrator && context.ApprovedProposalId is not null &&
+                   string.Equals(claimedPublisher, context.PrincipalId, StringComparison.Ordinal))))
+            {
+                throw new InvalidOperationException("The committed sink publisher cannot be verified.");
+            }
+
+            isAdministrator = wasAdministrator;
+        }
+
+        var verified = await _sourceProof.VerifyAsync(
+            sourceJobId, sourceArtifactId, connectionId,
+            GetRequired(request, "schema"), GetRequired(request, "table"), claimedFingerprint,
+            context.TenantId, context.PrincipalId, isAdministrator,
+            expectedSourceOwnerActorId: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal)
+        {
+            [ConnectionEndpointFingerprint.MetadataKey] = verified.EndpointFingerprint,
+            [VerifiedCommittedSinkPublication.PublisherActorIdKey] = verified.PublisherActorId,
+            [VerifiedCommittedSinkPublication.PublisherWasAdministratorKey] =
+                verified.PublisherWasAdministrator.ToString()
+        };
+        return request with
+        {
+            Parameters = parameters,
+            VerifiedCommittedSinkPublication = verified
+        };
+    }
 
     /// <inheritdoc />
     public async Task<OperationValidation> ValidateAsync(
@@ -78,6 +149,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        VerifyPreparedSink(request);
 
         var connectionString = await ResolveConnectionStringAsync(request.ConnectionId, cancellationToken)
             .ConfigureAwait(false);
@@ -90,7 +162,9 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             TargetSrid = GetInt(request, "srid"),
             GeometryColumn = GetOptional(request, "geometryColumn"),
             PrimaryKey = GetOptional(request, "primaryKey"),
-            Fields = request.Fields
+            Fields = request.Fields,
+            ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey),
+            CommittedSinkPublication = request.VerifiedCommittedSinkPublication
         };
 
         var result = await _publishingService
@@ -113,6 +187,13 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+        VerifyPreparedSink(request);
+        if (request.VerifiedCommittedSinkPublication is { } prepared &&
+            (!string.Equals(prepared.PublisherActorId, context.PrincipalId, StringComparison.Ordinal) ||
+             !string.Equals(prepared.TenantId, context.TenantId, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("The committed sink publisher changed after verification.");
+        }
 
         var connectionString = context.ResolvedConnectionString
             ?? await ResolveConnectionStringAsync(request.ConnectionId, cancellationToken).ConfigureAwait(false);
@@ -128,8 +209,10 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             PrimaryKey = GetOptional(request, "primaryKey"),
             Fields = request.Fields,
             ServiceName = request.ServiceName,
-            ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null
+            ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null,
+            ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
         };
+        publishRequest.CommittedSinkPublication = request.VerifiedCommittedSinkPublication;
 
         PublishedLayerSummary summary;
         if (_jobs is not null)
@@ -175,6 +258,15 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         }
         else
         {
+            if (publishRequest.CommittedSinkPublication is { } claim)
+            {
+                publishRequest.CommittedSinkPublication = await (_sourceProof ??
+                    throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                        "Committed sink source evidence is unavailable.")).RevalidateAsync(
+                    claim, publishRequest.ConnectionId ?? Guid.Empty, publishRequest.Schema, publishRequest.Table,
+                    publishRequest.ConnectionEndpointFingerprint, context.TenantId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             summary = await _publishingService
                 .PublishLayerAsync(connectionString, publishRequest, cancellationToken)
                 .ConfigureAwait(false);
@@ -504,6 +596,35 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         => request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value!
             : throw new ArgumentException($"Required operation parameter '{name}' is missing.");
+
+    private static void VerifyPreparedSink(OperationRequest request)
+    {
+        var fingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey);
+        var sourceJobId = GetOptional(request, VerifiedCommittedSinkPublication.SourceJobIdKey);
+        var sourceArtifactId = GetOptional(request, VerifiedCommittedSinkPublication.SourceArtifactIdKey);
+        if (fingerprint is null && sourceJobId is null && sourceArtifactId is null)
+        {
+            return;
+        }
+
+        var proof = request.VerifiedCommittedSinkPublication;
+        if (proof is null ||
+            !string.Equals(proof.SourceJobId, sourceJobId, StringComparison.Ordinal) ||
+            !string.Equals(proof.SourceArtifactId, sourceArtifactId, StringComparison.Ordinal) ||
+            !Guid.TryParse(request.ConnectionId, out var connectionId) ||
+            connectionId != proof.ConnectionId ||
+            !string.Equals(GetRequired(request, "schema"), proof.Schema, StringComparison.Ordinal) ||
+            !string.Equals(GetRequired(request, "table"), proof.Table, StringComparison.Ordinal) ||
+            !string.Equals(GetOptional(request, VerifiedCommittedSinkPublication.PublisherActorIdKey),
+                proof.PublisherActorId, StringComparison.Ordinal) ||
+            !bool.TryParse(GetOptional(request, VerifiedCommittedSinkPublication.PublisherWasAdministratorKey),
+                out var publisherWasAdministrator) ||
+            publisherWasAdministrator != proof.PublisherWasAdministrator ||
+            !string.Equals(fingerprint, proof.EndpointFingerprint, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The committed sink publication has no verified source artifact.");
+        }
+    }
 
     private static string? GetOptional(OperationRequest request, string name)
         => request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)

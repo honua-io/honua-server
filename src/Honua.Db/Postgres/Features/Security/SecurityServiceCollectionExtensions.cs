@@ -60,24 +60,7 @@ internal static class SecurityServiceCollectionExtensions
             new ConnectionHostAllowlist(BindConnectionHostAllowlistOptions(configuration)));
 
         // Register secret resolvers
-        services.AddAwsSecretsManagerSupport(configuration);
-        services.AddAzureKeyVaultSupport(configuration);
-
-        services.TryAddSingleton<EnvironmentSecretResolver>();
-        services.TryAddSingleton<NullSecretResolver>();
-
-        services.AddSingleton<IConnectionSecretResolver>(serviceProvider =>
-        {
-            var logger = serviceProvider.GetRequiredService<ILogger<CompositeSecretResolver>>();
-            var resolvers = new IConnectionSecretResolver[]
-            {
-                serviceProvider.GetRequiredService<EnvironmentSecretResolver>(),
-                serviceProvider.GetRequiredService<AwsSecretsManagerResolver>(),
-                serviceProvider.GetRequiredService<AzureKeyVaultResolver>(),
-                serviceProvider.GetRequiredService<NullSecretResolver>() // Fallback
-            };
-            return new CompositeSecretResolver(resolvers, logger);
-        });
+        services.AddConnectionSecretResolution(configuration);
 
         // Request-supplied secret references (imports, workflow source steps, registered
         // connections) resolve through the operator policy, never through the resolver above.
@@ -250,6 +233,42 @@ internal static class SecurityServiceCollectionExtensions
             Func<Task> operation,
             CancellationToken cancellationToken = default)
             => _inner.ExecuteWithDeadlockRetryAsync(operation, cancellationToken);
+    }
+
+    /// <summary>
+    /// Registers the operator-side <see cref="IConnectionSecretResolver"/> chain (<c>env:</c>,
+    /// <c>aws:secretsmanager:</c>, <c>azure:keyvault:</c>, then pass-through) that resolves
+    /// <c>ConnectionStrings:DefaultConnection</c>. It needs no encryption key, registry or request
+    /// policy, so the migrate-only host (honua-server#6470) resolves the connection string with the
+    /// same chain as serving startup without composing the rest of the secure-connection services.
+    /// </summary>
+    /// <param name="services">Service collection to configure.</param>
+    /// <param name="configuration">Application configuration.</param>
+    /// <returns>Updated service collection for chaining.</returns>
+    public static IServiceCollection AddConnectionSecretResolution(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddAwsSecretsManagerSupport(configuration);
+        services.AddAzureKeyVaultSupport(configuration);
+
+        services.TryAddSingleton<EnvironmentSecretResolver>();
+        services.TryAddSingleton<NullSecretResolver>();
+
+        services.AddSingleton<IConnectionSecretResolver>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<CompositeSecretResolver>>();
+            var resolvers = new IConnectionSecretResolver[]
+            {
+                serviceProvider.GetRequiredService<EnvironmentSecretResolver>(),
+                serviceProvider.GetRequiredService<AwsSecretsManagerResolver>(),
+                serviceProvider.GetRequiredService<AzureKeyVaultResolver>(),
+                serviceProvider.GetRequiredService<NullSecretResolver>() // Fallback
+            };
+            return new CompositeSecretResolver(resolvers, logger);
+        });
+
+        return services;
     }
 
     /// <summary>

@@ -14,6 +14,8 @@ namespace Honua.Core.Configuration;
 /// <c>HONUA_DB_DEGRADED_START</c>). Degraded start only suppresses the crash for <em>transient</em>
 /// connectivity failures; genuine misconfiguration (bad migration SQL, incompatible PostGIS) still
 /// fails loudly.
+/// The host enables recovery by default on Lambda and Development containers when neither
+/// configuration setting is explicit; other host defaults remain fail-fast.
 /// </remarks>
 public sealed record StartupResilienceOptions
 {

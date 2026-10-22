@@ -80,6 +80,12 @@ internal sealed class DeploymentResource : IMcpResource
             throw new GeoprocessingNotFoundException($"Deployment '{deploymentId}' not found.");
         }
 
+        if (!await StudioDeploymentReadAuthority.CanReadAsync(
+                httpContext, deployment, cancellationToken).ConfigureAwait(false))
+        {
+            throw new GeoprocessingNotFoundException($"Deployment '{deploymentId}' not found.");
+        }
+
         McpLog.DeploymentRead(_logger, deploymentId, deployment.Status.ToString());
 
         var view = ToView(deployment);
@@ -96,6 +102,13 @@ internal sealed class DeploymentResource : IMcpResource
         SourceKind = deployment.Source.Kind.ToString(),
         SourceId = deployment.Source.SourceId,
         SourceResourceUri = ResolveSourceResourceUri(deployment.Source),
+        StudioItemId = deployment.Source.StudioItemId,
+        StudioVersionId = deployment.Source.StudioVersionId,
+        StudioContentHash = deployment.Source.StudioContentHash,
+        StudioOwnerId = deployment.Source.StudioOwnerId,
+        StudioPublicationRequestId = deployment.Source.StudioPublicationRequestId,
+        StudioRollbackRequestId = deployment.Source.StudioRollbackRequestId,
+        StudioFamily = deployment.Source.StudioFamily?.ToString(),
         TargetId = deployment.Target.TargetId,
         TargetKind = deployment.Target.Kind.ToString(),
         HostingMode = deployment.Target.HostingMode.ToString(),

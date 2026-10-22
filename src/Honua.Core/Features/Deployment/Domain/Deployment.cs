@@ -19,6 +19,12 @@ public sealed record Deployment
     public required string DeploymentId { get; init; }
 
     /// <summary>
+    /// Optimistic concurrency revision of the durable lifecycle record. Creation starts at
+    /// zero; every accepted transition advances this value exactly once.
+    /// </summary>
+    public long Version { get; init; }
+
+    /// <summary>
     /// Promoted artifact backing this deployment.
     /// </summary>
     public required DeploymentSource Source { get; init; }

@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -708,6 +709,67 @@ public sealed class DeployTelemetryPolicyTests
         policy.ErrorRateQuery.Should().Be(
             "(sum(rate(honua_http_request_total{job=\"honua-prod\",status_code=~\"5..\"}[5m])) or vector(0)) / " +
             "clamp_min(sum(rate(honua_http_request_total{job=\"honua-prod\"}[5m])), 0.001)");
+    }
+
+    [UnitTest]
+    public void Parse_ErrorCountNumerator_IsAnExplicitErrorSignalWithTheRateThreshold()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-cw",
+            ["telemetry.error_count.query"] = "SUM(SEARCH('HTTPCode_Target_5XX_Count', 'Sum', 300))",
+            ["telemetry.error_rate.threshold"] = "0.02",
+            ["telemetry.sample_count.query"] = "SUM(SEARCH('RequestCount', 'Sum', 300))",
+            ["telemetry.sample_count.minimum"] = "20"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue(policy.ValidationError);
+        policy.ErrorCountQuery.Should().StartWith("SUM(SEARCH('HTTPCode_Target_5XX_Count'");
+        policy.ErrorRateQuery.Should().BeNull();
+        policy.HasErrorSignal.Should().BeTrue();
+        policy.HasExplicitQueryOverride.Should().BeTrue();
+        policy.ToDescriptor().ErrorCountQuery.Should().Be(policy.ErrorCountQuery);
+    }
+
+    [UnitTest]
+    public void Parse_ErrorCountNumeratorReplacesThePresetErrorRateQuery()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.policy"] = "kubernetes-honua-http",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            ["telemetry.error_count.query"] = "errors_total"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue(policy.ValidationError);
+        policy.ErrorRateQuery.Should().BeNull("one error signal is evaluated, never both");
+        policy.ErrorRateThreshold.Should().Be(0.05, "the preset threshold still applies to the derived rate");
+    }
+
+    [UnitTheory]
+    [InlineData("telemetry.error_rate.query", "errors / requests", "telemetry.error_rate.query and telemetry.error_count.query are both set")]
+    [InlineData("telemetry.error_rate.threshold", "often", "telemetry.error_rate.threshold")]
+    [InlineData("telemetry.error_count.unit", "requests", "'telemetry.error_count.unit' is not a recognized deploy telemetry parameter")]
+    public void Parse_InvalidErrorCountNumerator_IsRejected(string extraKey, string extraValue, string expectedError)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-cw",
+            ["telemetry.error_count.query"] = "target_5xx_count",
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.sample_count.query"] = "request_count",
+            ["telemetry.sample_count.minimum"] = "10",
+            [extraKey] = extraValue
+        };
+
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(parameters));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should().Contain(expectedError);
     }
 
     private static DeployOperationSpec CreateSpec(IReadOnlyDictionary<string, string> parameters)

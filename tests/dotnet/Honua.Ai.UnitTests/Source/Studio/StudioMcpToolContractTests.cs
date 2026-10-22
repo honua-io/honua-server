@@ -230,6 +230,7 @@ public sealed class StudioMcpToolContractTests
                     VersionId = versionId,
                     Status = StudioPublicationRequestStatus.Accepted,
                     Intent = new StudioPublicationIntent { Route = route, Visibility = "organization" },
+                    DeploymentId = "dep-admin-published-map",
                     CreatedAt = now,
                 },
             });
@@ -263,6 +264,9 @@ public sealed class StudioMcpToolContractTests
         structuredContent.GetProperty("status").GetString().Should().Be("Published");
         structuredContent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
         structuredContent.GetProperty("shareUrl").GetString().Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+        structuredContent.GetProperty("deploymentId").GetString().Should().Be("dep-admin-published-map");
+        structuredContent.GetProperty("deploymentResourceUri").GetString()
+            .Should().Be("honua://deployments/dep-admin-published-map");
         structuredContent.TryGetProperty("proposalId", out _).Should().BeFalse();
         structuredContent.TryGetProperty("proposalUri", out _).Should().BeFalse();
         await runtime.Received(1).CreatePublicationRequestAsync(
@@ -280,6 +284,7 @@ public sealed class StudioMcpToolContractTests
         schema.Should().NotContain("\"const\": \"AwaitingApproval\"");
         schema.Should().NotContain("\"const\": true");
         schema.Should().Contain("\"shareUrl\"");
+        schema.Should().Contain("\"deploymentResourceUri\"");
     }
 
     [UnitTest]

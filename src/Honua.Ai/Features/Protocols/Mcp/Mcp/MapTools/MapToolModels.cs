@@ -88,6 +88,10 @@ internal sealed class McpLayerSummary
     [JsonPropertyName("layerId")]
     public int LayerId { get; set; }
 
+    /// <summary>Existing Studio catalog key for composition layer.sourceId; not a data permission.</summary>
+    [JsonPropertyName("studioSourceId")]
+    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, LayerId);
+
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
@@ -168,6 +172,10 @@ internal sealed class McpDescribeLayerOutput
 
     [JsonPropertyName("layerId")]
     public int LayerId { get; set; }
+
+    /// <summary>Existing Studio catalog key for composition layer.sourceId; not a data permission.</summary>
+    [JsonPropertyName("studioSourceId")]
+    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, LayerId);
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;

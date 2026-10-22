@@ -16,13 +16,16 @@ NAMES = ('Server Features Admin Runtime Operations', 'Server Features Admin Laye
 CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for n in NAMES]
 PROJECT = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 METHODS = MODULE.selection_pool(MODULE.enumerate_test_classes(), PROJECT)
-EXPECTED = {m for m in METHODS if MODULE._eval(MODULE._FilterParser(ORIGINAL['filter']).parse(), m)}
+ORIGINAL_FILTER = MODULE._FilterParser(ORIGINAL['filter']).parse()
+EXPECTED = {m for m in METHODS if MODULE._eval(ORIGINAL_FILTER, m)}
 PUBLISHING = set(EVIDENCE['selectedPublishingMethods'])
 assert EXPECTED and len(PUBLISHING) == 48 and PUBLISHING < EXPECTED
 
 
 def check(children):
-    selected = [{m for m in METHODS if MODULE._eval(MODULE._FilterParser(s['filter']).parse(), m)} for s in children]
+    # Parse each current filter once; mutated checks still receive fresh trees.
+    filters = [MODULE._FilterParser(child['filter']).parse() for child in children]
+    selected = [{m for m in METHODS if MODULE._eval(node, m)} for node in filters]
     assert all(selected), 'Empty child.'
     assert set.union(*selected) == EXPECTED, 'Lost original methods or leaked foreign methods.'
     assert sum(map(len, selected)) == len(EXPECTED), 'Duplicate method ownership.'

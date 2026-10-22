@@ -41,6 +41,11 @@ internal static class ContentPublicationEndpoints
             .WithSummary("Publishes a new immutable artifact version and claims a server-owned route.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
+        group.MapGet("/", HandleList)
+            .WithDisplayName("List Content Publications")
+            .WithSummary("Lists publications with cursor paging. Optional lifecycle filter. An empty registry returns an empty page.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         group.MapGet("/{publicationId}", HandleGet)
             .WithDisplayName("Get Content Publication")
             .WithSummary("Returns the server-owned route state plus the publication's immutable versions.")
@@ -108,6 +113,70 @@ internal static class ContentPublicationEndpoints
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.publish", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while publishing content.");
         }
+    }
+
+    private static async Task<IResult> HandleList(
+        [FromServices] IContentPublicationService service,
+        [FromServices] ILogger<ContentPublicationManagementLog> logger,
+        HttpContext context,
+        [FromQuery] string? cursor = null,
+        [FromQuery] int limit = 25,
+        [FromQuery] string? lifecycle = null)
+    {
+        try
+        {
+            if (!TryParseLifecycleFilter(lifecycle, out var lifecycleFilter, out var lifecycleError))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, lifecycleError);
+            }
+
+            var page = await service.ListAsync(
+                new ContentPublicationListQuery
+                {
+                    Cursor = cursor,
+                    Limit = limit,
+                    Lifecycle = lifecycleFilter,
+                },
+                context.RequestAborted).ConfigureAwait(false);
+
+            ContentPublicationEndpointsLog.Listed(logger, page.Items.Count, page.Total);
+            return Results.Json(page, ContentPublicationJsonContext.Default.ContentPublicationListResponse);
+        }
+        catch (ContentPublicationException ex)
+        {
+            return ToProblem(context, ex);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content publication list endpoint.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.list", ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while listing content publications.");
+        }
+    }
+
+    private static bool TryParseLifecycleFilter(string? lifecycle, out ContentPublicationLifecycle? parsed, out string error)
+    {
+        parsed = null;
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(lifecycle))
+        {
+            return true;
+        }
+
+        if (!Enum.TryParse<ContentPublicationLifecycle>(lifecycle.Trim(), ignoreCase: true, out var value)
+            || !Enum.IsDefined(value))
+        {
+            error = "lifecycle must be active, suspended, or archived.";
+            return false;
+        }
+
+        parsed = value;
+        return true;
     }
 
     private static async Task<IResult> HandleGet(

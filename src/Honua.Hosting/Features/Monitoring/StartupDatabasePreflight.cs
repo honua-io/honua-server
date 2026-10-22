@@ -28,6 +28,9 @@ internal static class StartupDatabasePreflight
     /// <summary>Set by the AWS Lambda runtime in every function's environment.</summary>
     internal const string AwsLambdaFunctionNameKey = "AWS_LAMBDA_FUNCTION_NAME";
 
+    /// <summary>Set by the .NET container images used by the local quickstart.</summary>
+    internal const string RunningInContainerKey = "DOTNET_RUNNING_IN_CONTAINER";
+
     /// <summary>Delays before each retry of a transient preflight result (two quick retries).</summary>
     internal static readonly IReadOnlyList<TimeSpan> TransientRetryDelays =
     [
@@ -43,7 +46,7 @@ internal static class StartupDatabasePreflight
     /// Gateway answers 5xx (without CORS headers) on every route and each retry cold-starts another
     /// instance that asks RDS for more connections. Starting degraded instead serves non-database
     /// routes, reports <c>/healthz/ready</c> 503 with the reason, and recovers in the background.
-    /// An explicit <c>false</c> keeps fail-fast. Long-lived hosts keep the fail-fast default.
+    /// An explicit <c>false</c> keeps fail-fast. Other host profiles are unchanged by this default.
     /// </remarks>
     /// <param name="options">Options bound from configuration (environment override applied).</param>
     /// <param name="configuration">Application configuration, environment variables included.</param>
@@ -55,15 +58,44 @@ internal static class StartupDatabasePreflight
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var explicitlyConfigured = !string.IsNullOrWhiteSpace(configuration[DegradedStartKey])
-            || !string.IsNullOrWhiteSpace(configuration[DegradedStartEnvironmentKey]);
-        if (explicitlyConfigured || string.IsNullOrWhiteSpace(configuration[AwsLambdaFunctionNameKey]))
+        if (IsExplicitlyConfigured(configuration) || string.IsNullOrWhiteSpace(configuration[AwsLambdaFunctionNameKey]))
         {
             return options;
         }
 
         return options with { DegradedStartEnabled = true };
     }
+
+    /// <summary>
+    /// Lets the local Development container recover after Docker restarts it before PostgreSQL is ready.
+    /// Explicit operator settings win; non-container and non-Development defaults are unchanged.
+    /// </summary>
+    public static StartupResilienceOptions ApplyDevelopmentContainerDefault(
+        StartupResilienceOptions options,
+        IConfiguration configuration,
+        bool isDevelopment)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (!isDevelopment || IsExplicitlyConfigured(configuration)
+            || !bool.TryParse(configuration[RunningInContainerKey], out var inContainer) || !inContainer)
+        {
+            return options;
+        }
+
+        return options with { DegradedStartEnabled = true };
+    }
+
+    private static bool IsExplicitlyConfigured(IConfiguration configuration)
+        => !string.IsNullOrWhiteSpace(configuration[DegradedStartKey])
+            || !string.IsNullOrWhiteSpace(configuration[DegradedStartEnvironmentKey]);
+
+    /// <summary>
+    /// Explicit recovery settings use fail-fast for failures they cannot recover, including an
+    /// explicit false in Development. Only the unconfigured local Development path stays permissive.
+    /// </summary>
+    public static bool ShouldFailStartup(StartupResilienceOptions options, IConfiguration configuration, bool isDevelopment)
+        => !isDevelopment || options.DegradedStartEnabled || IsExplicitlyConfigured(configuration);
 
     /// <summary>
     /// Runs the compatibility check, retrying only a transient (database unavailable) result, at

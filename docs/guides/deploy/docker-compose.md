@@ -45,6 +45,19 @@ hostname, and permit access to the proxy through the host firewall. Do not expos
 PostgreSQL, Redis or the unauthenticated health probe on a separate public port.
 Configure the Docker daemon to start on boot so the stack comes back after a host restart.
 
+The Development container profile enables database startup recovery by default.
+Docker's restart policy does not repeat Compose's dependency health ordering, so
+Honua can start while PostgreSQL is still recovering. During a transient outage,
+liveness remains available, readiness returns 503, and mutation requests are
+refused until the canonical migration or schema verification succeeds. Permanent
+database incompatibility or migration failures still require operator action.
+An explicit `HONUA_DB_DEGRADED_START` or
+`Database__StartupResilience__DegradedStartEnabled` setting takes precedence;
+Production container defaults retain fail-fast behavior unless opted in. If
+background migrations are disabled, recovery verifies the externally prepared
+schema rather than assuming it is current. Docker health based on liveness is
+not evidence that Honua is ready: check `/healthz/ready` and its typed reason.
+
 After the proxy is configured, set its hostname, browser origin and actual source
 address as seen by Honua. The original loopback route remains
 available for local diagnostics and recovery. This example accepts one forwarded
@@ -307,6 +320,28 @@ admin client or the [API explorer](../../reference/openapi-and-explorer.md), the
 follow [upgrade and rollback](upgrade-and-rollback.md). Keep the Gate migration
 policy; a contract migration needs its specific approval nonce. Never skip
 migrations or erase volumes to bypass a failure.
+
+To see the migrations apply, or refuse, before the new server starts, run them
+out of band with the new image after updating the image tag in `.env`. Stop
+the old server first: this is the single-node downtime window.
+
+```bash
+dc stop honua
+dc pull honua
+dc run --rm --no-deps -e HONUA_MIGRATE_ONLY=true honua
+dc up -d --wait --wait-timeout 180
+```
+
+The run starts no listener and prints one JSON summary line. Exit `0` means the
+journal is current. Exit `5` means a reviewed contract migration is pending:
+read `contractApproval.nonce` from the summary, review the scripts it names,
+and re-run with `-e HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>`. Every other
+exit code and field is listed in
+[Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band).
+If the run refuses, nothing was applied: restore the previous image tag in
+`.env` and start the old server while you resolve it. After a successful run
+the new server finds the journal current and applies nothing, so
+`HONUA_SKIP_MIGRATIONS=true` is only needed where several servers start at once.
 
 ## Diagnostics and scoped teardown
 

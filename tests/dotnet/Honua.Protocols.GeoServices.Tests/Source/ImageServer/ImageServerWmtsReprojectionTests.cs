@@ -76,13 +76,25 @@ public sealed class ImageServerWmtsReprojectionTests
                         await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
                         await using (var dimensions = connection.CreateCommand())
                         {
-                            dimensions.CommandText = "SELECT ST_Width(r), ST_Height(r), ST_BandNoDataValue(r, 1) FROM (SELECT ST_FromGDALRaster(@data) r) decoded;";
+                            dimensions.CommandText = format == "png"
+                                ? "SELECT ST_Width(r), ST_Height(r), ST_NumBands(r), ST_BandNoDataValue(r, 1), ST_BandNoDataValue(r, 2) FROM (SELECT ST_FromGDALRaster(@data) r) decoded;"
+                                : "SELECT ST_Width(r), ST_Height(r), ST_NumBands(r), ST_BandNoDataValue(r, 1) FROM (SELECT ST_FromGDALRaster(@data) r) decoded;";
                             dimensions.Parameters.AddWithValue("data", data);
                             await using var reader = await dimensions.ExecuteReaderAsync();
                             (await reader.ReadAsync()).Should().BeTrue();
                             reader.GetInt32(0).Should().Be(256);
                             reader.GetInt32(1).Should().Be(256);
-                            reader.GetDouble(2).Should().Be(255);
+                            if (format == "png")
+                            {
+                                reader.GetInt32(2).Should().Be(2, "numeric PNG carries grayscale and independent validity alpha");
+                                reader.IsDBNull(3).Should().BeTrue("the grayscale display band has no NoData sentinel");
+                                reader.IsDBNull(4).Should().BeTrue("alpha, not a NoData sentinel, encodes transparency");
+                            }
+                            else
+                            {
+                                reader.GetInt32(2).Should().Be(1);
+                                reader.GetDouble(3).Should().Be(255);
+                            }
                         }
 
                         for (var sourceRow = 0; sourceRow < 3; sourceRow++)
@@ -102,19 +114,33 @@ public sealed class ImageServerWmtsReprojectionTests
                                 var pixelCol = 1 + (int)Math.Floor((x - (originX + col * span)) / (span / 256));
                                 var pixelRow = 1 + (int)Math.Floor(((originY - row * span) - y) / (span / 256));
                                 await using var pixel = connection.CreateCommand();
-                                pixel.CommandText = "SELECT ST_Value(ST_FromGDALRaster(@data), 1, @col, @row);";
+                                pixel.CommandText = format == "png"
+                                    ? "SELECT ST_Value(r, 1, @col, @row), ST_Value(r, 2, @col, @row) FROM (SELECT ST_FromGDALRaster(@data) r) decoded;"
+                                    : "SELECT ST_Value(ST_FromGDALRaster(@data), 1, @col, @row);";
                                 pixel.Parameters.AddWithValue("data", data);
                                 pixel.Parameters.AddWithValue("col", pixelCol);
                                 pixel.Parameters.AddWithValue("row", pixelRow);
-                                var actual = await pixel.ExecuteScalarAsync();
                                 var expected = SourceValues[sourceRow, sourceCol];
-                                if (expected is { } value)
+                                if (format == "png")
                                 {
-                                    actual.Should().Be(value, $"source cell r{sourceRow}c{sourceCol} must survive reprojection, including valid zero");
+                                    await using var pixelReader = await pixel.ExecuteReaderAsync();
+                                    (await pixelReader.ReadAsync()).Should().BeTrue();
+                                    pixelReader.GetDouble(0).Should().Be(expected ?? 0,
+                                        $"source cell r{sourceRow}c{sourceCol} must retain its grayscale value, including valid zero");
+                                    pixelReader.GetDouble(1).Should().Be(expected.HasValue ? 255 : 0,
+                                        $"source cell r{sourceRow}c{sourceCol} must retain its independent validity alpha");
                                 }
                                 else
                                 {
-                                    actual.Should().Be(DBNull.Value, "the source NoData cell must remain NoData");
+                                    var actual = await pixel.ExecuteScalarAsync();
+                                    if (expected is { } value)
+                                    {
+                                        actual.Should().Be(value, $"source cell r{sourceRow}c{sourceCol} must survive reprojection, including valid zero");
+                                    }
+                                    else
+                                    {
+                                        actual.Should().Be(DBNull.Value, "the source NoData cell must remain NoData");
+                                    }
                                 }
                                 checkedCells++;
                             }
@@ -124,10 +150,22 @@ public sealed class ImageServerWmtsReprojectionTests
                         // the fixture footprint. Padding must not stretch a source cell over them.
                         var outsidePixel = row == rows[0] ? 1 : 256;
                         await using var outside = connection.CreateCommand();
-                        outside.CommandText = "SELECT ST_Value(ST_FromGDALRaster(@data), 1, @pixel, @pixel);";
+                        outside.CommandText = format == "png"
+                            ? "SELECT ST_Value(r, 1, @pixel, @pixel), ST_Value(r, 2, @pixel, @pixel) FROM (SELECT ST_FromGDALRaster(@data) r) decoded;"
+                            : "SELECT ST_Value(ST_FromGDALRaster(@data), 1, @pixel, @pixel);";
                         outside.Parameters.AddWithValue("data", data);
                         outside.Parameters.AddWithValue("pixel", outsidePixel);
-                        (await outside.ExecuteScalarAsync()).Should().Be(DBNull.Value);
+                        if (format == "png")
+                        {
+                            await using var outsideReader = await outside.ExecuteReaderAsync();
+                            (await outsideReader.ReadAsync()).Should().BeTrue();
+                            outsideReader.GetDouble(0).Should().Be(0, "uncovered grayscale padding has no source data");
+                            outsideReader.GetDouble(1).Should().Be(0, "uncovered padding must be transparent");
+                        }
+                        else
+                        {
+                            (await outside.ExecuteScalarAsync()).Should().Be(DBNull.Value);
+                        }
                     }
                 }
                 checkedCells.Should().Be(12, "all eleven valid cells and the NoData cell must be checked");

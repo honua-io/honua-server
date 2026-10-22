@@ -266,6 +266,33 @@ public sealed class GPServerSoapExecutionTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /services/{serviceId}/GPServer")]
+    public void Result_EmptyFeatureSet_EncodesRecordSetWithNoRecords()
+    {
+        using var document = JsonDocument.Parse("""
+            {"geometryType":"esriGeometryPolyline","spatialReference":{"wkid":4326},
+            "fields":[{"name":"Name","type":"esriFieldTypeString"}],"features":[]}
+            """);
+        var output = GPServerSoapExecution.BuildResult(
+            [new GPResultResponse
+            {
+                ParamName = "routes",
+                DataType = "GPFeatureRecordSetLayer",
+                Value = document.RootElement.Clone()
+            }],
+            []).Element("Values")!.Element("GPValue")!;
+
+        output.Attribute(XsiType)!.Value.Should().Be("tns:GPFeatureRecordSetLayer");
+        output.Descendants("Record").Should().BeEmpty();
+        var name = output.Descendants("Field").Single(field => field.Element("Name")!.Value == "Name");
+        name.Element("Type")!.Value.Should().Be("esriFieldTypeString");
+        name.Element("Length")!.Value.Should().Be("255");
+        output.Descendants("GeometryType").Single().Value.Should().Be("esriGeometryPolyline");
+        output.Descendants("WKID").Single().Value.Should().Be("4326");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
     public void Result_GeographicPointWithZ_EncodesPointNOrdinatesAndCoordinateSystemKind()
     {
         const string geoJson = """{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[10.5,-20.25,7]}}""";

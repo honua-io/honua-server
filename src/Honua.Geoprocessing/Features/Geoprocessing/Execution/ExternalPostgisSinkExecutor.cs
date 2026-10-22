@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Security.Abstractions;
@@ -158,6 +159,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         }
 
         connectionString = resolvedConnection.ConnectionString!;
+        var endpointFingerprint = ConnectionEndpointFingerprint.TryCompute(connectionString);
 
         var batchId = inputs.GetOrDefault("batchId", job.OperationId);
 
@@ -243,12 +245,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                     await context.PublishArtifactAsync(
                         SinkResultArtifact.Build(
                             HandledProcessId,
-                            ("schema", schema),
-                            ("table", table),
-                            ("batchId", batchId),
-                            ("featuresWritten", written),
-                            ("featuresRejected", rejected),
-                            ("partial", true)),
+                            ReceiptMembers(schema, table, batchId, written, rejected, endpointFingerprint, committed: false)),
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception publishEx) when (publishEx is not OutOfMemoryException)
@@ -267,16 +264,37 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         await context.RecordCommittedEffectAsync(
             SinkResultArtifact.Build(
                 HandledProcessId,
-                ("schema", schema),
-                ("table", table),
-                ("batchId", batchId),
-                ("committed", true),
-                ("featuresWritten", written),
-                ("featuresRejected", rejected)),
+                ReceiptMembers(schema, table, batchId, written, rejected, endpointFingerprint, committed: true)),
             CancellationToken.None).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
+    }
+
+    private static (string Name, object Value)[] ReceiptMembers(
+        string schema,
+        string table,
+        string batchId,
+        long written,
+        long rejected,
+        string? endpointFingerprint,
+        bool committed)
+    {
+        var members = new List<(string Name, object Value)>
+        {
+            ("schema", schema),
+            ("table", table),
+            ("batchId", batchId),
+            (committed ? "committed" : "partial", true),
+            ("featuresWritten", written),
+            ("featuresRejected", rejected),
+        };
+        if (endpointFingerprint is not null)
+        {
+            members.Add(("endpointFingerprint", endpointFingerprint));
+        }
+
+        return members.ToArray();
     }
 
     private async Task<(string? ConnectionString, string? Error)> ResolveConnectionStringAsync(

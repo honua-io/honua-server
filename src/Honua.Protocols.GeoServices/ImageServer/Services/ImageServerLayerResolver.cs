@@ -160,7 +160,12 @@ internal sealed class MetadataV2ImageServerLayerResolver(
                 snapshot.ResolveStorageLayerId(publication),
                 snapshot.ResolveResource(publication),
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ? service : null))
-            .Where(candidate => candidate.StorageLayerId == layerId && candidate.Resource is not null)
+            // Storage-layer ids collide across stores. The pixels for this route always come
+            // from raster storage, so a feature publication on the same id must not supply
+            // the access policy (#6452).
+            .Where(candidate =>
+                candidate.StorageLayerId == layerId
+                && candidate.Resource is { Type: MetadataV2ResourceType.RasterDataset })
             .ToArray();
 
         if (candidates.Length == 0)

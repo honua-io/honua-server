@@ -84,7 +84,7 @@ for resource ownership and cleanup.
 
 **Latest recorded trunk evidence: 1138/1138 (100%) across 14 OGC CITE conformance suites.**
 
-Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals from the 2026-09-18 trunk run [35345482813](https://github.com/honua-io/honua-server/actions/runs/35345482813), source `80e23bedfe8ff7b43362c8d8ea22bfae1756df7d`, artifact `cite-conformance-evidence-23`:
+Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals from the 2026-10-16 trunk run [38904075523](https://github.com/honua-io/honua-server/actions/runs/38904075523), source `2882cf07d8aea72e1684962303555dfc8c8e9c3f`, artifact `cite-conformance-evidence-27`:
 
 | Suite | Profile | Passed / Total | Pass Rate |
 |---|---|---:|---:|
@@ -108,7 +108,7 @@ The CITE result directories (`cite-*-results/`) are gitignored — empty local d
 **WFS 2.0 evidence history:** The August 28 snapshot recorded 166/167.
 [PR #3817](https://github.com/honua-io/honua-server/pull/3817) subsequently added
 atomic multi-layer `rollbackOnFailure=true` transactions in trunk commit
-`dd7d14506c27faea5ce22c338d76353c7eaa34f4`, an ancestor of the September 18
+`dd7d14506c27faea5ce22c338d76353c7eaa34f4`, an ancestor of the October 16
 evidence source. That bundle records `basic` at 167/167. These are the recorded
 run results, not a new conformance execution for every later trunk commit.
 See `docs/cite-status.md` and its linked run receipt.

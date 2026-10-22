@@ -28,26 +28,26 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     private static readonly IPAddress _eksPodIdentityEndpointV6 = IPAddress.Parse("fd00:ec2::23");
     private static readonly Action<ILogger, Exception?> _logImdsTokenFailed =
         LoggerMessage.Define(LogLevel.Debug, new EventId(6403, "AwsImdsTokenRequestFailed"), "AWS IMDS token request failed");
-    private static readonly Action<ILogger, string, Exception?> _logRejectedEcsCredentialsUri =
-        LoggerMessage.Define<string>(
+    private static readonly Action<ILogger, Exception?> _logRejectedEcsCredentialsUri =
+        LoggerMessage.Define(
             LogLevel.Warning,
             new EventId(6404, "AwsEcsCredentialsUriRejected"),
-            "Rejected AWS container credentials URI '{Uri}' because it is not a trusted local endpoint.");
+            "Rejected AWS container credentials URI because it is not a trusted local endpoint.");
     private static readonly Action<ILogger, string, string, Exception?> _logContainerTokenFileUnusable =
         LoggerMessage.Define<string, string>(
             LogLevel.Warning,
             new EventId(6405, "AwsContainerAuthorizationTokenFileUnusable"),
-            "{Variable} is set but the token file could not be used ({Reason}); skipping the container credentials provider and falling back to the next AWS credential source.");
+            "{Variable} is set but the token file could not be used ({Reason}); refusing the selected container credentials provider without fallback.");
     private static readonly Action<ILogger, int, Exception?> _logContainerCredentialsRejected =
         LoggerMessage.Define<int>(
             LogLevel.Warning,
             new EventId(6406, "AwsContainerCredentialsRequestRejected"),
-            "AWS container credentials endpoint returned status code {StatusCode}; falling back to the next AWS credential source. On EKS Pod Identity this usually means AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE is missing or stale.");
+            "AWS container credentials endpoint returned status code {StatusCode}; refusing the selected container credentials provider without fallback. On EKS Pod Identity this usually means AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE is missing or stale.");
     private static readonly Action<ILogger, Exception?> _logWebIdentityNotSupported =
         LoggerMessage.Define(
             LogLevel.Warning,
             new EventId(6407, "AwsWebIdentityCredentialsNotSupported"),
-            "AWS_WEB_IDENTITY_TOKEN_FILE is set (IRSA) but the built-in AWS Secrets Manager resolver does not support web-identity credentials; falling back to EC2 instance metadata (the node role). Use EKS Pod Identity or explicit credentials for aws:secretsmanager: references.");
+            "Web-identity credentials are configured (IRSA) but the built-in AWS Secrets Manager resolver does not support them; refusing without querying EC2 instance metadata. Use a qualified EKS Pod Identity or explicit-credentials profile for aws:secretsmanager: references.");
 
     internal const string ContainerAuthorizationTokenVariable = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
     internal const string ContainerAuthorizationTokenFileVariable = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE";
@@ -60,6 +60,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     private bool _disposed;
 
     private AwsCredentials? _cachedCredentials;
+    private CredentialSource? _selectedCredentialSource;
 
     /// <inheritdoc />
     public string ProviderName => ProviderType;
@@ -533,38 +534,47 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
     private async Task<AwsCredentials> GetCredentialsAsync(CancellationToken cancellationToken)
     {
-        if (TryGetCachedCredentials(out var cached))
-        {
-            return cached;
-        }
-
         await _credentialsLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (TryGetCachedCredentials(out cached))
+            var selected = SelectCredentialSource();
+            if (_selectedCredentialSource is { } prior && prior != selected)
+            {
+                throw new InvalidOperationException("The selected AWS credential provider changed. Restart the resolver with the intended credential configuration.");
+            }
+
+            _selectedCredentialSource = selected;
+            if (TryGetCachedCredentials(out var cached))
             {
                 return cached;
             }
 
-            if (TryGetEnvCredentials(out var credentials))
+            if (selected == CredentialSource.Environment)
             {
-                _cachedCredentials = credentials;
-                return credentials;
+                if (!TryGetEnvCredentials(out var environmentCredentials))
+                {
+                    throw new InvalidOperationException("Explicit AWS environment credentials are incomplete; refusing other credential providers.");
+                }
+
+                _cachedCredentials = environmentCredentials;
+                return environmentCredentials;
             }
 
-            credentials = await TryGetEcsCredentialsAsync(cancellationToken).ConfigureAwait(false);
-            if (credentials != null)
+            if (selected == CredentialSource.Container)
             {
-                _cachedCredentials = credentials;
-                return credentials;
+                var containerCredentials = await TryGetEcsCredentialsAsync(cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("Selected AWS container credentials are unavailable or invalid; refusing other credential providers.");
+                _cachedCredentials = containerCredentials;
+                return containerCredentials;
             }
 
-            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_WEB_IDENTITY_TOKEN_FILE")))
+            if (selected == CredentialSource.WebIdentity)
             {
                 _logWebIdentityNotSupported(_logger, null);
+                throw new InvalidOperationException("The built-in AWS Secrets Manager resolver does not support configured web-identity credentials; refusing other credential providers.");
             }
 
-            credentials = await TryGetImdsCredentialsAsync(cancellationToken).ConfigureAwait(false);
+            var credentials = await TryGetImdsCredentialsAsync(cancellationToken).ConfigureAwait(false);
             if (credentials != null)
             {
                 _cachedCredentials = credentials;
@@ -577,6 +587,27 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         {
             _credentialsLock.Release();
         }
+    }
+
+    private static CredentialSource SelectCredentialSource()
+    {
+        static bool Configured(string name) => Environment.GetEnvironmentVariable(name) is not null;
+
+        if (Configured("AWS_ACCESS_KEY_ID") || Configured("AWS_ACCESS_KEY")
+            || Configured("AWS_SECRET_ACCESS_KEY") || Configured("AWS_SESSION_TOKEN"))
+        {
+            return CredentialSource.Environment;
+        }
+
+        if (Configured("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") || Configured("AWS_CONTAINER_CREDENTIALS_FULL_URI")
+            || Configured(ContainerAuthorizationTokenVariable) || Configured(ContainerAuthorizationTokenFileVariable))
+        {
+            return CredentialSource.Container;
+        }
+
+        return Configured("AWS_WEB_IDENTITY_TOKEN_FILE") || Configured("AWS_ROLE_ARN")
+            ? CredentialSource.WebIdentity
+            : CredentialSource.InstanceMetadata;
     }
 
     private bool TryGetCachedCredentials(out AwsCredentials credentials)
@@ -625,7 +656,10 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         // cached: EKS Pod Identity rotates the projected token file underneath the running pod.
         if (!TryResolveContainerAuthorizationToken(out var authToken, out var tokenProblem))
         {
-            _logContainerTokenFileUnusable(_logger, ContainerAuthorizationTokenFileVariable, tokenProblem!, null);
+            var tokenVariable = Environment.GetEnvironmentVariable(ContainerAuthorizationTokenVariable) is not null
+                ? ContainerAuthorizationTokenVariable
+                : ContainerAuthorizationTokenFileVariable;
+            _logContainerTokenFileUnusable(_logger, tokenVariable, tokenProblem!, null);
             return null;
         }
 
@@ -638,20 +672,39 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_metadataTimeout);
 
-        using var response = await _metadataClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            _logContainerCredentialsRejected(_logger, (int)response.StatusCode, null);
-            return null;
-        }
+            using var response = await _metadataClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logContainerCredentialsRejected(_logger, (int)response.StatusCode, null);
+                return null;
+            }
 
-        var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
-        return ParseCredentials(content);
+            var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
+            try
+            {
+                var credentials = ParseCredentials(content);
+                return credentials is not null && credentials.ExpiresAt > DateTimeOffset.UtcNow ? credentials : null;
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            {
+                return null;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            throw new InvalidOperationException("Selected AWS container credential endpoint could not be reached.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("Selected AWS container credential endpoint timed out.");
+        }
     }
 
     /// <summary>
-    /// Resolves the <c>Authorization</c> header value for the container credentials endpoint the way
-    /// the AWS SDKs do: <c>AWS_CONTAINER_AUTHORIZATION_TOKEN</c> wins when set (ECS / custom agents);
+    /// Resolves the <c>Authorization</c> header value for the container credentials endpoint:
+    /// <c>AWS_CONTAINER_AUTHORIZATION_TOKEN</c> wins when set (ECS / custom agents);
     /// otherwise <c>AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE</c> is read (EKS Pod Identity, whose agent at
     /// <c>http://169.254.170.23/v1/credentials</c> rejects requests without the projected token). The
     /// file is read fresh on every call because the kubelet rotates it. Returns <see langword="false"/>
@@ -662,17 +715,30 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     {
         problem = null;
         var envToken = Environment.GetEnvironmentVariable(ContainerAuthorizationTokenVariable);
-        if (!string.IsNullOrWhiteSpace(envToken))
+        if (envToken is not null)
         {
             token = envToken.Trim();
+            if (token.Length == 0 || token.AsSpan().IndexOfAny('\r', '\n') >= 0)
+            {
+                token = null;
+                problem = "environment token is empty or contains more than one line";
+                return false;
+            }
+
             return true;
         }
 
         token = null;
         var tokenFile = Environment.GetEnvironmentVariable(ContainerAuthorizationTokenFileVariable);
-        if (string.IsNullOrWhiteSpace(tokenFile))
+        if (tokenFile is null)
         {
             return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(tokenFile))
+        {
+            problem = "file path is empty";
+            return false;
         }
 
         string contents;
@@ -711,7 +777,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         {
             if (!relativeUri.StartsWith('/'))
             {
-                _logRejectedEcsCredentialsUri(_logger, relativeUri, null);
+                _logRejectedEcsCredentialsUri(_logger, null);
                 return null;
             }
 
@@ -726,7 +792,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         if (!Uri.TryCreate(fullUri, UriKind.Absolute, out var endpoint) ||
             !IsAllowedEcsCredentialsEndpoint(endpoint))
         {
-            _logRejectedEcsCredentialsUri(_logger, fullUri, null);
+            _logRejectedEcsCredentialsUri(_logger, null);
             return null;
         }
 
@@ -828,7 +894,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
             return await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             _logImdsTokenFailed(_logger, ex);
             return null;
@@ -887,6 +953,14 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     }
 
     private sealed record CacheEntry(string Value, DateTimeOffset ExpiresAt);
+
+    private enum CredentialSource
+    {
+        Environment,
+        Container,
+        WebIdentity,
+        InstanceMetadata
+    }
 
     private sealed record AwsCredentials(
         string AccessKeyId,

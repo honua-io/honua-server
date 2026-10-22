@@ -65,7 +65,13 @@ public class ExecutionQualificationBarrierTests : IDisposable
             // This later callback runs first and holds the cancellation dispatcher.
             // The delay can expire and the wait can observe cancellation before the
             // earlier signal callback runs. The receipt must still precede the wait.
-            cancellation = cancelled.CancelAsync();
+            // CancelAsync queues callbacks on the shared thread pool. Under the full Fast
+            // suite that queue can be saturated before this callback starts, making the
+            // two-second ordering assertion measure scheduler admission instead of the
+            // barrier. A dedicated thread preserves the same synchronous LIFO callbacks.
+            cancellation = Task.Factory.StartNew(
+                () => cancelled.Cancel(), CancellationToken.None,
+                TaskCreationOptions.LongRunning, TaskScheduler.Default);
             await callbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () => wait.WaitAsync(TimeSpan.FromSeconds(2)));
@@ -76,7 +82,9 @@ public class ExecutionQualificationBarrierTests : IDisposable
             callbackReleased.Set();
             if (!cancelled.IsCancellationRequested)
             {
-                cancellation = cancelled.CancelAsync();
+                cancellation = Task.Factory.StartNew(
+                    () => cancelled.Cancel(), CancellationToken.None,
+                    TaskCreationOptions.LongRunning, TaskScheduler.Default);
             }
 
             await cancellation.WaitAsync(TimeSpan.FromSeconds(5));

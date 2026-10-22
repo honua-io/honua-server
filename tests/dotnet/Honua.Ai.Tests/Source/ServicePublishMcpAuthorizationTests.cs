@@ -191,6 +191,63 @@ public sealed class ServicePublishMcpAuthorizationTests
         await invoker.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default!, default);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task PublishResult_ClaimsCommittedSinkSourceOnlyForFingerprintedArtifact(bool committedSink)
+    {
+        var principal = CreatePrincipal(PrincipalProfile.AdminWrite);
+        var gate = new OperatorApprovalGate(
+            Substitute.For<IOperatorAuthorizationEvaluator>(),
+            new MatrixApprovalEvaluator(required: false),
+            NullLogger<OperatorApprovalGate>.Instance);
+        OperationRequest? captured = null;
+        var invoker = Substitute.For<IOperationInvoker>();
+        invoker.SubmitAsync(
+                Arg.Do<OperationRequest>(request => captured = request),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationHandle
+            {
+                OperationId = PublishResultTool.PublishOperationId,
+                OperationInstanceId = "matrix-op",
+                CorrelationId = "matrix-correlation",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Status = OperationHandleStatus.Completed,
+                MetadataRevision = 42,
+            });
+        var fingerprint = committedSink
+            ? ConnectionEndpointFingerprint.TryCompute("Host=localhost;Database=test")
+            : null;
+        var context = CreateContext(principal, new MatrixAuthorizationService(), gate, invoker);
+        var tool = new PublishResultTool(CreateJobService(fingerprint), NullLogger<PublishResultTool>.Instance);
+
+        var result = await tool.InvokeAsync(
+            context, CreateArguments(PublishTool.PublishResult), CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        captured.Should().NotBeNull();
+        if (committedSink)
+        {
+            // A fingerprint claims the external-schema exception, so the executor must
+            // be told which durable job and artifact to re-read as proof.
+            captured!.Parameters[ConnectionEndpointFingerprint.MetadataKey].Should().Be(fingerprint);
+            captured.Parameters[VerifiedCommittedSinkPublication.SourceJobIdKey].Should().Be("matrix-job");
+            captured.Parameters[VerifiedCommittedSinkPublication.SourceArtifactIdKey]
+                .Should().Be("matrix-artifact");
+        }
+        else
+        {
+            captured!.Parameters.Should().NotContainKeys(
+                ConnectionEndpointFingerprint.MetadataKey,
+                VerifiedCommittedSinkPublication.SourceJobIdKey,
+                VerifiedCommittedSinkPublication.SourceArtifactIdKey);
+        }
+    }
+
     private static async Task<AdmissionOutcome> EvaluateRestTwinAsync(
         HttpContext httpContext,
         ClaimsPrincipal principal,
@@ -294,8 +351,19 @@ public sealed class ServicePublishMcpAuthorizationTests
         return publishing;
     }
 
-    private static IGeoprocessingJobService CreateJobService()
+    private static IGeoprocessingJobService CreateJobService(string? endpointFingerprint = null)
     {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["connectionId"] = ConnectionId,
+            ["schema"] = "public",
+            ["table"] = "parcels",
+        };
+        if (endpointFingerprint is not null)
+        {
+            metadata[ConnectionEndpointFingerprint.MetadataKey] = endpointFingerprint;
+        }
+
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobResultsAsync(
                 Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
@@ -309,12 +377,7 @@ public sealed class ServicePublishMcpAuthorizationTests
                     Label = "Parcels",
                     Uri = "honua://analysis/artifacts/matrix-artifact",
                     ContentType = "application/json",
-                    Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        ["connectionId"] = ConnectionId,
-                        ["schema"] = "public",
-                        ["table"] = "parcels",
-                    },
+                    Metadata = metadata,
                 }],
                 [],
                 new ProvenanceRecord { Sources = [], ProcessDefinitions = [] }));
