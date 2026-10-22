@@ -492,10 +492,17 @@ public readonly record struct AlertChange
     public string? ProposalId { get; init; }
 
     /// <summary>
-    /// Feature row committed by this generation. Null for deletes and for changes recorded
-    /// before the committed image was captured. Evaluation must prefer this over the live row.
+    /// Feature row committed by this generation. Null for deletes, for changes recorded
+    /// before the committed image was captured, and for images that are loaded separately
+    /// so a metadata read does not buffer every geometry in the batch.
     /// </summary>
     public Feature? CommittedFeature { get; init; }
+
+    /// <summary>
+    /// True when this generation stored a committed image. The image itself is loaded
+    /// only if a rule will evaluate the change.
+    /// </summary>
+    public bool HasCommittedImage { get; init; }
 }
 
 /// <summary>

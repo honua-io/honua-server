@@ -40,6 +40,7 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         var enteredAt = ResolveEnteredAt(previousInside, insideNow, currentState?.EnteredAt, evaluatedAt);
         var lastAlertAt = currentState?.LastAlertAt;
         var thresholdStateJson = currentState?.ThresholdStateJson ?? "{}";
+        var armedPending = false;
 
         AlertEventEnvelope? generatedEvent = null;
 
@@ -56,6 +57,8 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                     else
                     {
                         preservePreviousCondition = true;
+                        thresholdStateJson = ArmPendingEdge(thresholdStateJson, "enter", PendingDueAt(rule, lastAlertAt, evaluatedAt));
+                        armedPending = true;
                     }
                 }
                 break;
@@ -72,6 +75,8 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                     else
                     {
                         preservePreviousCondition = true;
+                        thresholdStateJson = ArmPendingEdge(thresholdStateJson, "exit", PendingDueAt(rule, lastAlertAt, evaluatedAt));
+                        armedPending = true;
                     }
                 }
                 break;
@@ -104,6 +109,13 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                     // here would drop the transition until some later, unrelated edge.
                     if ((wantsStart || wantsResolve) && !CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                     {
+                        // Leave the breach flag where it is and record when the edge may fire.
+                        // The sweep reevaluates that due time even when no later edit arrives.
+                        thresholdStateJson = ArmPendingEdge(
+                            thresholdStateJson,
+                            wantsResolve ? "resolve" : "start",
+                            PendingDueAt(rule, lastAlertAt, evaluatedAt));
+                        armedPending = true;
                         break;
                     }
 
@@ -137,6 +149,11 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         if (generatedEvent is not null)
         {
             lastAlertAt = evaluatedAt;
+        }
+
+        if (!armedPending)
+        {
+            thresholdStateJson = ClearPendingEdge(thresholdStateJson);
         }
 
         var updatedState = new AlertStateSnapshot
@@ -358,6 +375,62 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         }
 
         return existingEnteredAt ?? evaluatedAt;
+    }
+
+    internal static bool HasPendingCooldown(string? stateJson)
+    {
+        if (string.IsNullOrWhiteSpace(stateJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(stateJson);
+            return document.RootElement.TryGetProperty("pendingDueAt", out var due)
+                && due.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(due.GetString());
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static DateTimeOffset PendingDueAt(AlertRuleDefinition rule, DateTimeOffset? lastAlertAt, DateTimeOffset evaluatedAt)
+        => (lastAlertAt ?? evaluatedAt).AddSeconds(Math.Max(rule.CooldownSeconds, 0));
+
+    private static string ArmPendingEdge(string stateJson, string edge, DateTimeOffset dueAt)
+    {
+        var node = ParseStateObject(stateJson);
+        node["pendingEdge"] = edge;
+        node["pendingDueAt"] = dueAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+        return node.ToJsonString();
+    }
+
+    private static string ClearPendingEdge(string stateJson)
+    {
+        var node = ParseStateObject(stateJson);
+        node.Remove("pendingEdge");
+        node.Remove("pendingDueAt");
+        return node.ToJsonString();
+    }
+
+    private static JsonObject ParseStateObject(string? stateJson)
+    {
+        if (string.IsNullOrWhiteSpace(stateJson))
+        {
+            return new JsonObject();
+        }
+
+        try
+        {
+            return JsonNode.Parse(stateJson) as JsonObject ?? new JsonObject();
+        }
+        catch (JsonException)
+        {
+            return new JsonObject();
+        }
     }
 
     private static bool CanEmit(int cooldownSeconds, DateTimeOffset? lastAlertAt, DateTimeOffset evaluatedAt)

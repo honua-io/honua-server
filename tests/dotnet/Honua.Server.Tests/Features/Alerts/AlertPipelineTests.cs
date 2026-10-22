@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
@@ -70,7 +71,7 @@ public sealed class AlertPipelineTests
             dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
-        var maxGeneration = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
+        var maxGeneration = await sut.ProcessChangesAsync(0, 10, cancellationToken: CancellationToken.None);
 
         maxGeneration.Should().Be(2);
         await ruleRepository.Received(1).GetActiveRulesAsync(
@@ -208,7 +209,7 @@ public sealed class AlertPipelineTests
             dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
-        _ = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
+        _ = await sut.ProcessChangesAsync(0, 10, cancellationToken: CancellationToken.None);
 
         await outbox.Received(1).CommitEvaluationAsync(
             Arg.Is<IReadOnlyCollection<AlertStateSnapshot>>(states =>
@@ -330,7 +331,7 @@ public sealed class AlertPipelineTests
             dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
-        var maxGeneration = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
+        var maxGeneration = await sut.ProcessChangesAsync(0, 10, cancellationToken: CancellationToken.None);
 
         maxGeneration.Should().Be(4);
         await evaluator.DidNotReceive().EvaluateAsync(
@@ -408,11 +409,263 @@ public sealed class AlertPipelineTests
             dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
-        var maxGeneration = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
+        var maxGeneration = await sut.ProcessChangesAsync(0, 10, cancellationToken: CancellationToken.None);
 
         maxGeneration.Should().Be(3);
         observed.Should().Equal(10L, 60L, 10L);
         await featureReader.DidNotReceive().GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ProcessChangesAsync_ProjectsCommittedSnapshotsBeforeEvaluation()
+    {
+        var raw = Feature.Create(
+            100,
+            null,
+            ImmutableDictionary<string, object?>.Empty.Add("value", 60L).Add("secret", "leak"));
+        var reader = new ProjectingChangeReader(new AlertChange
+        {
+            Generation = 4,
+            LayerId = 7,
+            ObjectId = 100,
+            Operation = AlertChangeOperation.Update,
+            ChangedAt = DateTimeOffset.UnixEpoch,
+            HasCommittedImage = true,
+            CommittedFeature = raw
+        });
+        var ruleRepository = Substitute.For<IAlertRuleRepository>();
+        var stateStore = Substitute.For<IAlertStateStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var featureReader = Substitute.For<IFeatureReader>();
+        var evaluator = Substitute.For<IAlertEvaluator>();
+        var editionPolicy = Substitute.For<IAlertEditionPolicy>();
+        var rule = CreateRule(AlertTriggerType.Threshold);
+        var observed = new List<bool>();
+
+        ruleRepository.GetActiveRulesAsync(Arg.Any<IReadOnlyCollection<AlertRuleLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>
+            {
+                [new AlertRuleLookupKey("svc-7", rule.LayerId)] = [rule]
+            });
+        ruleRepository.GetZonesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AlertZoneDefinition>());
+        stateStore.GetManyAsync(Arg.Any<IReadOnlyCollection<AlertStateLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertStateLookupKey, AlertStateSnapshot>());
+        editionPolicy.IsRuleAllowed(rule).Returns(true);
+        evaluator.EvaluateAsync(
+                Arg.Any<AlertChange>(),
+                Arg.Any<Feature?>(),
+                rule,
+                Arg.Any<AlertZoneDefinition?>(),
+                Arg.Any<AlertStateSnapshot?>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var feature = call.ArgAt<Feature?>(1);
+                observed.Add(feature.HasValue && feature.Value.Attributes.ContainsKey("secret"));
+                return new AlertEvaluationResult();
+            });
+
+        var sut = new AlertPipeline(
+            reader,
+            ruleRepository,
+            stateStore,
+            featureReader,
+            CreateGraphProviderWithService("svc-7", layerId: 7),
+            evaluator,
+            editionPolicy,
+            new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance),
+            NullLogger<AlertPipeline>.Instance);
+
+        _ = await sut.ProcessChangesAsync(0, 10, cancellationToken: CancellationToken.None);
+
+        reader.Loads.Should().Be(1);
+        observed.Should().Equal(false);
+        await featureReader.DidNotReceive().GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SweepDwellAsync_ReevaluatesCooldownSuppressedThreshold_WithoutANewEdit()
+    {
+        var changeReader = Substitute.For<IAlertChangeReader>();
+        var ruleRepository = Substitute.For<IAlertRuleRepository>();
+        var stateStore = Substitute.For<IAlertStateStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var featureReader = Substitute.For<IFeatureReader>();
+        var editionPolicy = Substitute.For<IAlertEditionPolicy>();
+        var rule = CreateRule(AlertTriggerType.Threshold) with
+        {
+            ConditionsJson = """{"field":"value","operator":">","value":50}""",
+            CooldownSeconds = 300,
+            Channels = ImmutableArray<AlertChannelType>.Empty
+        };
+        var due = new DateTimeOffset(2026, 3, 8, 10, 5, 0, TimeSpan.Zero);
+        var state = new AlertStateSnapshot
+        {
+            RuleId = rule.RuleId,
+            LayerId = rule.LayerId,
+            ObjectId = 100,
+            Inside = false,
+            LastAlertAt = due.AddMinutes(-5),
+            LastGeneration = 4,
+            ThresholdStateJson = """{"breached":true,"breachedSince":"2026-03-08T10:00:00.0000000+00:00","pendingEdge":"resolve","pendingDueAt":"2026-03-08T10:05:00.0000000+00:00"}"""
+        };
+        IReadOnlyList<AlertOutboxEntry>? captured = null;
+
+        stateStore.GetDwellCandidatesAsync(due, 10, Arg.Any<CancellationToken>()).Returns([state]);
+        ruleRepository.GetRulesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AlertRuleDefinition> { [rule.RuleId] = rule });
+        ruleRepository.GetZonesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AlertZoneDefinition>());
+        featureReader.GetAsync(rule.LayerId, 100, Arg.Any<CancellationToken>())
+            .Returns(FeatureWithValue(100, 10));
+        editionPolicy.IsRuleAllowed(rule).Returns(true);
+        outbox.CommitEvaluationAsync(
+                Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+                Arg.Do<IReadOnlyList<AlertOutboxEntry>>(entries => captured = entries),
+                Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create(true));
+
+        var sut = new AlertPipeline(
+            changeReader,
+            ruleRepository,
+            stateStore,
+            featureReader,
+            CreateGraphProviderWithService("svc-7", layerId: 7),
+            new DefaultAlertEvaluator(),
+            editionPolicy,
+            new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance),
+            NullLogger<AlertPipeline>.Instance);
+
+        var evaluated = await sut.SweepDwellAsync(due, 10, CancellationToken.None);
+
+        evaluated.Should().Be(1);
+        captured.Should().NotBeNull();
+        captured.Should().ContainSingle();
+        captured![0].AlertEvent.PayloadJson.Should().Contain("\"transition\":\"threshold_resolved\"");
+    }
+
+    [UnitTest]
+    public async Task ProcessChangesAsync_BoundsPayloadToTheSelectedChannel_BeforeEnqueue()
+    {
+        var changeReader = Substitute.For<IAlertChangeReader>();
+        var ruleRepository = Substitute.For<IAlertRuleRepository>();
+        var stateStore = Substitute.For<IAlertStateStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var featureReader = Substitute.For<IFeatureReader>();
+        var evaluator = Substitute.For<IAlertEvaluator>();
+        var editionPolicy = Substitute.For<IAlertEditionPolicy>();
+        var rule = CreateRule(AlertTriggerType.Threshold) with
+        {
+            Channels = ImmutableArray.Create(AlertChannelType.AwsSns)
+        };
+        var geometry = new byte[5 * 1024 * 1024];
+        var payload = new JsonObject
+        {
+            ["geometryWkbHex"] = Convert.ToHexString(geometry),
+            ["attributes"] = new JsonObject { ["value"] = 60 },
+            ["layerId"] = rule.LayerId,
+            ["objectId"] = 100,
+            ["generation"] = 1
+        };
+        var alertEvent = new AlertEventEnvelope
+        {
+            DedupeKey = "large",
+            RuleId = rule.RuleId,
+            ServiceId = rule.ServiceId,
+            LayerId = rule.LayerId,
+            ObjectId = 100,
+            TriggerType = rule.TriggerType,
+            Generation = 1,
+            Severity = rule.Severity,
+            OccurredAt = DateTimeOffset.UnixEpoch,
+            PayloadJson = payload.ToJsonString()
+        };
+        IReadOnlyList<AlertOutboxEntry>? captured = null;
+
+        changeReader.GetChangesAfterAsync(0, 10, Arg.Any<CancellationToken>()).Returns(
+        [
+            new AlertChange
+            {
+                Generation = 1,
+                LayerId = rule.LayerId,
+                ObjectId = 100,
+                Operation = AlertChangeOperation.Update,
+                ChangedAt = DateTimeOffset.UnixEpoch,
+                CommittedFeature = FeatureWithValue(100, 60)
+            }
+        ]);
+        ruleRepository.GetActiveRulesAsync(Arg.Any<IReadOnlyCollection<AlertRuleLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>
+            {
+                [new AlertRuleLookupKey("svc-7", rule.LayerId)] = [rule]
+            });
+        ruleRepository.GetZonesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AlertZoneDefinition>());
+        stateStore.GetManyAsync(Arg.Any<IReadOnlyCollection<AlertStateLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertStateLookupKey, AlertStateSnapshot>());
+        editionPolicy.IsRuleAllowed(rule).Returns(true);
+        editionPolicy.IsChannelAllowed(AlertChannelType.AwsSns).Returns(true);
+        editionPolicy.IsChannelConfigured(AlertChannelType.AwsSns).Returns(true);
+        evaluator.EvaluateAsync(
+                Arg.Any<AlertChange>(),
+                Arg.Any<Feature?>(),
+                rule,
+                Arg.Any<AlertZoneDefinition?>(),
+                Arg.Any<AlertStateSnapshot?>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new AlertEvaluationResult
+            {
+                UpdatedState = CreateState(rule.RuleId, rule.LayerId, 100, 1),
+                Events = ImmutableArray.Create(alertEvent)
+            });
+        outbox.CommitEvaluationAsync(
+                Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+                Arg.Do<IReadOnlyList<AlertOutboxEntry>>(entries => captured = entries),
+                Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create(true));
+
+        var sut = new AlertPipeline(
+            changeReader,
+            ruleRepository,
+            stateStore,
+            featureReader,
+            CreateGraphProviderWithService("svc-7", layerId: 7),
+            evaluator,
+            editionPolicy,
+            new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance),
+            NullLogger<AlertPipeline>.Instance);
+
+        _ = await sut.ProcessChangesAsync(0, 10, cancellationToken: CancellationToken.None);
+
+        captured.Should().NotBeNull();
+        var stored = captured.Should().ContainSingle().Subject.AlertEvent.PayloadJson;
+        System.Text.Encoding.UTF8.GetByteCount(stored).Should().BeLessThanOrEqualTo(AlertPayloadBounds.SnsLimitBytes);
+        stored.Should().Contain("\"geometryOmitted\":true");
+        stored.Should().NotContain("geometryWkbHex");
+    }
+
+    private sealed class ProjectingChangeReader(AlertChange change) : IAlertChangeReader, IAlertCommittedSnapshotSource
+    {
+        public int Loads { get; private set; }
+
+        public Task<IReadOnlyList<AlertChange>> GetChangesAfterAsync(
+            long lastGeneration,
+            int maxCount,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AlertChange>>([change]);
+
+        public Task<Feature?> LoadProjectedSnapshotAsync(
+            long generation,
+            int layerId,
+            CancellationToken cancellationToken = default)
+        {
+            Loads++;
+            var raw = change.CommittedFeature!.Value;
+            return Task.FromResult<Feature?>(raw with { Attributes = raw.Attributes.Remove("secret") });
+        }
     }
 
     private static AlertChange CommittedChange(long generation, long value)

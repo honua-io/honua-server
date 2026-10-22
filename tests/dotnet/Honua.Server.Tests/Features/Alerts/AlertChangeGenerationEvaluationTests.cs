@@ -14,6 +14,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Alerts;
 using Honua.Server.Tests.Infrastructure;
 using Honua.Server.Tests.Infrastructure.Telemetry;
@@ -110,6 +111,171 @@ public sealed class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter 
         {
             await CleanupAsync(features);
         }
+    }
+
+    [IntegrationTest(Timeout = 180000)]
+    public async Task CommittedSnapshots_ProjectVisibility_RestoreObjectId_AndSkipVersionedRows()
+    {
+        const int layerId = 386412;
+        const long objectId = 38641201;
+        const long branchObjectId = 38641299;
+        var migrationSchema = await database.CreateIsolatedSchemaAsync(nameof(CommittedSnapshots_ProjectVisibility_RestoreObjectId_AndSkipVersionedRows));
+        var migration = await database.RunEmbeddedMigrationsUnderLockAsync(
+            migrationSchema,
+            Assembly.GetAssembly(typeof(Program))!);
+        migration.Successful.Should().BeTrue(migration.Error?.ToString());
+        await database.DropSchemaAsync(migrationSchema);
+
+        var features = await FindFeatureTableAsync();
+        var provider = new TestConnectionProvider(database.DataSource);
+        await CleanupLayerAsync(features, layerId);
+        try
+        {
+            await InsertJsonFeatureAsync(features, layerId, objectId, """{"value":60,"secret":"leak","classification":"secret"}""");
+            var hiddenGeneration = await ScalarAsync<long>(
+                "SELECT MAX(generation) FROM honua.feature_changes WHERE layer_id = @layer AND objectid = @object AND version_id IS NULL",
+                ("layer", layerId),
+                ("object", objectId));
+
+            var reader = new PostgresAlertChangeReader(provider);
+            var listed = await reader.GetChangesAfterAsync(hiddenGeneration - 1, 20);
+            var hidden = listed.Should().ContainSingle(change => change.ObjectId == objectId).Subject;
+            hidden.HasCommittedImage.Should().BeTrue();
+            hidden.CommittedFeature.HasValue.Should().BeFalse("the list read must not buffer committed images");
+
+            var unprojected = await reader.LoadProjectedSnapshotAsync(hiddenGeneration, layerId);
+            unprojected.Should().NotBeNull();
+            unprojected!.Value.Attributes["objectid"].Should().Be(objectId);
+            unprojected.Value.Attributes.Should().ContainKey("secret");
+
+            var policy = new FixedSnapshotPolicy(
+                new SqlFragment("attributes ->> 'classification' = @p0", ["public"]),
+                "secret");
+            var projectedReader = new PostgresAlertChangeReader(provider, policy);
+            var hiddenSnapshot = await projectedReader.LoadProjectedSnapshotAsync(hiddenGeneration, layerId);
+            hiddenSnapshot.Should().BeNull("a permanent filter must hide the committed image before evaluation");
+
+            await InsertJsonFeatureAsync(features, layerId, objectId + 1, """{"value":60,"secret":"leak","classification":"public"}""");
+            var visibleGeneration = await ScalarAsync<long>(
+                "SELECT MAX(generation) FROM honua.feature_changes WHERE layer_id = @layer AND objectid = @object AND version_id IS NULL",
+                ("layer", layerId),
+                ("object", objectId + 1));
+            var visible = await projectedReader.LoadProjectedSnapshotAsync(visibleGeneration, layerId);
+            visible.Should().NotBeNull();
+            visible!.Value.Attributes.Should().NotContainKey("secret");
+            visible.Value.Attributes["objectid"].Should().Be(objectId + 1);
+            visible.Value.Attributes["value"].Should().Be(60L);
+
+            var branchGeneration = await ScalarAsync<long>("""
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, operation, version_id, committed_attributes)
+                VALUES
+                    (nextval('honua.sync_generation'), @layer, @object, 2, gen_random_uuid(), '{"value":999}'::jsonb)
+                RETURNING generation
+                """,
+                ("layer", layerId),
+                ("object", branchObjectId));
+            var afterBranch = await reader.GetChangesAfterAsync(branchGeneration - 1, 20);
+            afterBranch.Should().NotContain(change => change.ObjectId == branchObjectId);
+
+            await InsertSweepRulesAsync(layerId);
+            var states = new PostgresAlertStateStore(provider, NullLogger<PostgresAlertStateStore>.Instance);
+            var due = DateTimeOffset.Parse("2026-03-08T10:05:00.0000000+00:00", CultureInfo.InvariantCulture);
+            await states.UpsertAsync(new AlertStateSnapshot
+            {
+                RuleId = 38641201,
+                LayerId = layerId,
+                ObjectId = 1,
+                Inside = false,
+                LastGeneration = 8,
+                ThresholdStateJson = """{"breached":true,"pendingEdge":"resolve","pendingDueAt":"2026-03-08T10:05:00.0000000+00:00"}"""
+            });
+            await states.UpsertAsync(new AlertStateSnapshot
+            {
+                RuleId = 38641202,
+                LayerId = layerId,
+                ObjectId = 2,
+                Inside = true,
+                EnteredAt = due.AddMinutes(-30),
+                LastGeneration = 8,
+                ThresholdStateJson = """{"breached":true}"""
+            });
+            await states.UpsertAsync(new AlertStateSnapshot
+            {
+                RuleId = 38641203,
+                LayerId = layerId,
+                ObjectId = 3,
+                Inside = true,
+                EnteredAt = due.AddMinutes(-30),
+                LastGeneration = 8,
+                ThresholdStateJson = "{}"
+            });
+
+            var candidates = await states.GetDwellCandidatesAsync(due, 5000);
+            candidates.Where(state => state.LayerId == layerId).Select(static state => state.ObjectId)
+                .Should().BeEquivalentTo(new long[] { 1, 3 });
+        }
+        finally
+        {
+            await CleanupLayerAsync(features, layerId);
+        }
+    }
+
+    private async Task InsertJsonFeatureAsync(FeatureTable features, int layerId, long objectId, string attributes)
+    {
+        await using var connection = await database.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"""
+            INSERT INTO {features.Qualified} (objectid, layer_id, geometry, attributes)
+            VALUES (@object, @layer, ST_SetSRID(ST_MakePoint(1, 2), 4326), @attributes::jsonb)
+            """, connection);
+        command.Parameters.AddWithValue("object", objectId);
+        command.Parameters.AddWithValue("layer", layerId);
+        command.Parameters.AddWithValue("attributes", attributes);
+        _ = await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertSweepRulesAsync(int layerId)
+    {
+        await using var connection = await database.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO honua.alert_rules
+                (rule_id, service_id, layer_id, zone_id, rule_name, trigger_type, conditions,
+                 cooldown_seconds, severity, edition_required, channels, is_active)
+            VALUES
+                (38641201, 'alert-review-3864', @layer, NULL, 'pending threshold', 4, '{}'::jsonb, 300, 'warning', 1, '{}'::text[], TRUE),
+                (38641202, 'alert-review-3864', @layer, NULL, 'idle threshold', 4, '{}'::jsonb, 300, 'warning', 1, '{}'::text[], TRUE),
+                (38641203, 'alert-review-3864', @layer, NULL, 'dwell', 3, '{}'::jsonb, 0, 'warning', 1, '{}'::text[], TRUE)
+            """, connection);
+        command.Parameters.AddWithValue("layer", layerId);
+        _ = await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task CleanupLayerAsync(FeatureTable? features, int layerId)
+    {
+        await using var connection = await database.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("""
+            DELETE FROM honua.alert_state WHERE layer_id = @layer;
+            DELETE FROM honua.alert_rules WHERE layer_id = @layer;
+            DELETE FROM honua.feature_changes WHERE layer_id = @layer;
+            """, connection);
+        command.Parameters.AddWithValue("layer", layerId);
+        _ = await command.ExecuteNonQueryAsync();
+        if (features is null)
+        {
+            return;
+        }
+
+        await using var featureCommand = new NpgsqlCommand(
+            $"DELETE FROM {features.Value.Qualified} WHERE layer_id = @layer",
+            connection);
+        featureCommand.Parameters.AddWithValue("layer", layerId);
+        _ = await featureCommand.ExecuteNonQueryAsync();
+    }
+
+    private sealed class FixedSnapshotPolicy(SqlFragment? filter, params string[] masks) : ICommittedSnapshotPolicy
+    {
+        public Task<CommittedSnapshotPolicy> ResolveAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new CommittedSnapshotPolicy(filter, masks.ToImmutableArray()));
     }
 
     private static long ObjectIdFor(string name) => name switch

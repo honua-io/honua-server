@@ -4,7 +4,6 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Alerts;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -55,12 +54,12 @@ internal static class AlertOpsAdminEndpoints
         int? maxCount,
         [FromServices] IAlertDispatchStore store,
         [FromServices] IAuditLog auditLog,
-        [FromServices] AlertMonotonicClock clock,
+        [FromServices] TimeProvider timeProvider,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         var limit = maxCount is > 0 ? Math.Min(maxCount.Value, MaxRedriveBatchLimit) : DefaultRedriveBatchLimit;
-        var now = clock.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         var redriven = await store.RedriveDeadLettersAsync(now, limit, cancellationToken).ConfigureAwait(false);
 
         await RecordAuditAsync(

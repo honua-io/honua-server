@@ -23,20 +23,20 @@ internal sealed class AlertDispatchHealthCheck : IHealthCheck
 {
     private readonly IAlertDispatchHealth _dispatcherHealth;
     private readonly AlertOptions _options;
-    private readonly AlertMonotonicClock _clock;
+    private readonly TimeProvider _time;
 
     public AlertDispatchHealthCheck(
         IAlertDispatchHealth dispatcherHealth,
         IOptions<AlertOptions> options,
-        AlertMonotonicClock? clock = null)
+        TimeProvider? time = null)
     {
         _dispatcherHealth = dispatcherHealth ?? throw new ArgumentNullException(nameof(dispatcherHealth));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-        _clock = clock ?? AlertMonotonicClock.System;
+        _time = time ?? TimeProvider.System;
     }
 
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
-        => Task.FromResult(Evaluate(_clock.GetUtcNow()));
+        => Task.FromResult(Evaluate(_time.GetUtcNow()));
 
     internal HealthCheckResult Evaluate(DateTimeOffset now)
     {

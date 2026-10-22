@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Alerts.Abstractions;
 
@@ -21,6 +22,28 @@ public interface IAlertChangeReader
     Task<IReadOnlyList<AlertChange>> GetChangesAfterAsync(
         long lastGeneration,
         int maxCount,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Loads one committed feature image for a change the metadata read already selected.
+/// The list read does not buffer geometry or attributes. Implementations apply the same
+/// row-visibility filter and field masks as a live feature read before returning the image.
+/// A null result means the image is hidden or was not stored, and callers must not
+/// substitute the live row.
+/// </summary>
+public interface IAlertCommittedSnapshotSource
+{
+    /// <summary>
+    /// Loads and projects the committed image for one generation.
+    /// </summary>
+    /// <param name="generation">Change generation whose image to load.</param>
+    /// <param name="layerId">Layer that owns the change.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The projected feature, or null when the image is hidden or absent.</returns>
+    Task<Feature?> LoadProjectedSnapshotAsync(
+        long generation,
+        int layerId,
         CancellationToken cancellationToken = default);
 }
 
@@ -130,9 +153,10 @@ public interface IAlertStateStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns active state rows that are due for dwell evaluation.
+    /// Returns state rows due for dwell evaluation or a cooldown-suppressed edge whose
+    /// persisted due time has arrived. Pending edges are reevaluated without a new edit.
     /// </summary>
-    /// <param name="dueBefore">Upper bound timestamp for dwell candidates</param>
+    /// <param name="dueBefore">Upper bound timestamp for due candidates</param>
     /// <param name="maxCount">Maximum number of rows to return</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>State rows due for dwell processing</returns>

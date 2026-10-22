@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -443,19 +445,161 @@ public sealed class DefaultAlertEvaluatorTests
     }
 
     [UnitTest]
-    public void MonotonicClock_WallJump_DoesNotMoveElapsedTime()
+    public async Task PersistedInstants_FollowTheSharedWallClock_WithoutSleeping()
     {
         var time = new ScriptedTimeProvider();
-        var clock = new AlertMonotonicClock(time);
-        var start = clock.GetUtcNow();
+        var evaluator = new DefaultAlertEvaluator();
+        var start = time.GetUtcNow();
+        var threshold = CreateRule(
+            AlertTriggerType.Threshold,
+            """{"field":"value","operator":">","value":50}""",
+            cooldownSeconds: 300);
+        var above = Feature.Create(100, null, ImmutableDictionary<string, object?>.Empty.Add("value", 60L));
+        var below = Feature.Create(100, null, ImmutableDictionary<string, object?>.Empty.Add("value", 10L));
 
-        time.Wall = time.Wall.AddMinutes(-10);
-        clock.GetUtcNow().Should().Be(start);
-        time.Wall = time.Wall.AddHours(1);
-        clock.GetUtcNow().Should().Be(start);
+        var started = await evaluator.EvaluateAsync(
+            CreateChange(threshold, 100, start, 1), above, threshold, null, null, time.GetUtcNow());
+        started.Events.Should().ContainSingle();
+        started.UpdatedState!.LastAlertAt.Should().Be(start);
 
-        time.Elapsed = TimeSpan.FromMinutes(5);
-        clock.GetUtcNow().Should().Be(start.AddMinutes(5));
+        time.Wall = time.Wall.AddHours(3);
+        var jumped = time.GetUtcNow();
+        jumped.Should().Be(start.AddHours(3));
+
+        var resolved = await evaluator.EvaluateAsync(
+            CreateChange(threshold, 100, jumped, 2), below, threshold, null, started.UpdatedState, jumped);
+        resolved.Events.Should().ContainSingle();
+        resolved.UpdatedState!.LastAlertAt.Should().Be(jumped);
+
+        var otherReplica = new ScriptedTimeProvider();
+        otherReplica.GetUtcNow().Should().Be(start);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_CooldownSuppressedThreshold_ResolvesOnTheSameGenerationWhenDue()
+    {
+        var evaluator = new DefaultAlertEvaluator();
+        var start = new DateTimeOffset(2026, 3, 8, 10, 0, 0, TimeSpan.Zero);
+        var rule = CreateRule(
+            AlertTriggerType.Threshold,
+            """{"field":"value","operator":">","value":50}""",
+            cooldownSeconds: 300);
+        var above = Feature.Create(100, null, ImmutableDictionary<string, object?>.Empty.Add("value", 60L));
+        var below = Feature.Create(100, null, ImmutableDictionary<string, object?>.Empty.Add("value", 10L));
+
+        var started = await evaluator.EvaluateAsync(CreateChange(rule, 100, start, 1), above, rule, null, null, start);
+        var suppressed = await evaluator.EvaluateAsync(
+            CreateChange(rule, 100, start.AddMinutes(1), 2), below, rule, null, started.UpdatedState, start.AddMinutes(1));
+        suppressed.Events.Should().BeEmpty();
+        suppressed.UpdatedState!.ThresholdStateJson.Should().Contain("\"breached\":true");
+        suppressed.UpdatedState.ThresholdStateJson.Should().Contain("pendingDueAt");
+        suppressed.UpdatedState.LastGeneration.Should().Be(2);
+
+        var sweepChange = CreateChange(rule, 100, start.AddMinutes(1), generation: 2);
+        var tooEarly = await evaluator.EvaluateAsync(
+            sweepChange, below, rule, null, suppressed.UpdatedState, start.AddMinutes(4));
+        tooEarly.Events.Should().BeEmpty();
+        tooEarly.UpdatedState!.ThresholdStateJson.Should().Contain("\"breached\":true");
+
+        var due = await evaluator.EvaluateAsync(
+            sweepChange, below, rule, null, tooEarly.UpdatedState, start.AddMinutes(6));
+        due.Events.Should().ContainSingle();
+        due.Events[0].PayloadJson.Should().Contain("\"transition\":\"threshold_resolved\"");
+        due.UpdatedState!.ThresholdStateJson.Should().Contain("\"breached\":false");
+        due.UpdatedState.ThresholdStateJson.Should().NotContain("pendingDueAt");
+        due.UpdatedState.LastGeneration.Should().Be(2);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_CooldownSuppressedExit_StaysPendingUntilDue_WithoutANewGeneration()
+    {
+        var evaluator = new DefaultAlertEvaluator();
+        var start = new DateTimeOffset(2026, 3, 8, 10, 0, 0, TimeSpan.Zero);
+        var rule = CreateRule(AlertTriggerType.Exit, cooldownSeconds: 300);
+        var zone = CreateZone();
+        var inside = new AlertStateSnapshot
+        {
+            RuleId = rule.RuleId,
+            LayerId = rule.LayerId,
+            ObjectId = 100,
+            Inside = true,
+            EnteredAt = start,
+            LastAlertAt = start,
+            LastGeneration = 1
+        };
+
+        var suppressed = await evaluator.EvaluateAsync(
+            CreateChange(rule, 100, start.AddMinutes(1), 2),
+            CreateFeatureOutsideZone(100),
+            rule,
+            zone,
+            inside,
+            start.AddMinutes(1));
+        suppressed.Events.Should().BeEmpty();
+        suppressed.UpdatedState!.Inside.Should().BeTrue();
+        suppressed.UpdatedState.ThresholdStateJson.Should().Contain("\"pendingEdge\":\"exit\"");
+        suppressed.UpdatedState.LastGeneration.Should().Be(2);
+
+        var sweepChange = CreateChange(rule, 100, start.AddMinutes(1), generation: 2);
+        var tooEarly = await evaluator.EvaluateAsync(
+            sweepChange, CreateFeatureOutsideZone(100), rule, zone, suppressed.UpdatedState, start.AddMinutes(4));
+        tooEarly.Events.Should().BeEmpty();
+        tooEarly.UpdatedState!.Inside.Should().BeTrue();
+
+        var due = await evaluator.EvaluateAsync(
+            sweepChange, CreateFeatureOutsideZone(100), rule, zone, tooEarly.UpdatedState, start.AddMinutes(6));
+        due.Events.Should().ContainSingle();
+        due.Events[0].PayloadJson.Should().Contain("\"transition\":\"exit\"");
+        due.UpdatedState!.Inside.Should().BeFalse();
+        due.UpdatedState.ThresholdStateJson.Should().NotContain("pendingDueAt");
+    }
+
+    [UnitTest]
+    public void Fit_OmitsGeometryThatExceedsTheSelectedChannelLimit_AndKeepsSmallGeometry()
+    {
+        var tiny = EventWithGeometry(new byte[] { 1, 2, 3, 4 });
+        var fittedTiny = AlertPayloadBounds.Fit(tiny, ImmutableArray.Create(AlertChannelType.AwsSns));
+        fittedTiny.PayloadJson.Should().Contain("geometryWkbHex");
+        fittedTiny.PayloadJson.Should().NotContain("geometryOmitted");
+
+        var large = EventWithGeometry(new byte[5 * 1024 * 1024]);
+        var fitted = AlertPayloadBounds.Fit(large, ImmutableArray.Create(AlertChannelType.AwsSns));
+        Encoding.UTF8.GetByteCount(fitted.PayloadJson).Should().BeLessThanOrEqualTo(AlertPayloadBounds.SnsLimitBytes);
+        fitted.PayloadJson.Should().Contain("\"geometryOmitted\":true");
+        fitted.PayloadJson.Should().Contain("geometryRef");
+        fitted.PayloadJson.Should().NotContain("geometryWkbHex");
+        fitted.DedupeKey.Should().Be(large.DedupeKey);
+
+        var webhook = AlertPayloadBounds.Fit(large, ImmutableArray.Create(AlertChannelType.Webhook));
+        webhook.PayloadJson.Should().Contain("\"geometryOmitted\":true");
+        webhook.PayloadJson.Should().NotContain("geometryWkbHex");
+    }
+
+    private static AlertEventEnvelope EventWithGeometry(byte[] geometry)
+    {
+        var payload = new JsonObject
+        {
+            ["serviceId"] = "svc-1",
+            ["layerId"] = 7,
+            ["objectId"] = 100,
+            ["ruleId"] = 44,
+            ["generation"] = 3,
+            ["geometryWkbHex"] = Convert.ToHexString(geometry),
+            ["attributes"] = new JsonObject { ["value"] = 60 }
+        };
+        return new AlertEventEnvelope
+        {
+            DedupeKey = "dedupe",
+            RuleId = 44,
+            ServiceId = "svc-1",
+            LayerId = 7,
+            ObjectId = 100,
+            TriggerType = AlertTriggerType.Threshold,
+            Generation = 3,
+            Severity = AlertSeverity.Warning,
+            OccurredAt = DateTimeOffset.UnixEpoch,
+            PayloadJson = payload.ToJsonString()
+        };
     }
 
     [UnitTest]
@@ -478,12 +622,14 @@ public sealed class DefaultAlertEvaluatorTests
             CreateChange(threshold, 100, start.AddMinutes(4), 2), below, threshold, null, started.UpdatedState, start.AddMinutes(4));
         early.Events.Should().BeEmpty();
         early.UpdatedState!.ThresholdStateJson.Should().Contain("\"breached\":true");
+        early.UpdatedState.ThresholdStateJson.Should().Contain("pendingDueAt");
 
         var resolved = await evaluator.EvaluateAsync(
             CreateChange(threshold, 100, start.AddMinutes(5), 3), below, threshold, null, early.UpdatedState, start.AddMinutes(5));
         resolved.Events.Should().ContainSingle();
         resolved.Events[0].PayloadJson.Should().Contain("\"transition\":\"threshold_resolved\"");
         resolved.Events[0].IncidentDurationMs.Should().BeGreaterThanOrEqualTo(0);
+        resolved.UpdatedState!.ThresholdStateJson.Should().NotContain("pendingDueAt");
 
         var openCooldown = CreateRule(AlertTriggerType.Threshold, """{"field":"value","operator":">","value":50}""");
         var backward = await evaluator.EvaluateAsync(

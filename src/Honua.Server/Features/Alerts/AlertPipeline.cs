@@ -21,7 +21,6 @@ internal sealed partial class AlertPipeline : IAlertPipeline
     private readonly IAlertEvaluator _evaluator;
     private readonly IAlertEditionPolicy _editionPolicy;
     private readonly AlertDispatchWriter _dispatchWriter;
-    private readonly AlertMonotonicClock _clock;
     private readonly ILogger<AlertPipeline> _logger;
 
     public AlertPipeline(
@@ -33,8 +32,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         IAlertEvaluator evaluator,
         IAlertEditionPolicy editionPolicy,
         AlertDispatchWriter dispatchWriter,
-        ILogger<AlertPipeline> logger,
-        AlertMonotonicClock? clock = null)
+        ILogger<AlertPipeline> logger)
     {
         _changeReader = changeReader ?? throw new ArgumentNullException(nameof(changeReader));
         _ruleRepository = ruleRepository ?? throw new ArgumentNullException(nameof(ruleRepository));
@@ -45,12 +43,12 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         _editionPolicy = editionPolicy ?? throw new ArgumentNullException(nameof(editionPolicy));
         _dispatchWriter = dispatchWriter ?? throw new ArgumentNullException(nameof(dispatchWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _clock = clock ?? AlertMonotonicClock.System;
     }
 
     public async Task<long> ProcessChangesAsync(
         long lastProcessedGeneration,
         int batchSize,
+        DateTimeOffset? evaluatedAt = null,
         CancellationToken cancellationToken = default)
     {
         var changes = await _changeReader
@@ -92,15 +90,11 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 continue;
             }
 
-            // A committed image belongs to this generation. The live row is only a fallback
-            // for changes recorded before that image existed, and it is not reused across
-            // generations: one batch can contain several versions of the same object.
-            var feature = change.Operation == AlertChangeOperation.Delete
-                ? null
-                : change.CommittedFeature.HasValue
-                    ? change.CommittedFeature
-                    : await _featureReader.GetAsync(change.LayerId, change.ObjectId, cancellationToken).ConfigureAwait(false);
-            var evaluatedAt = _clock.GetUtcNow();
+            // A committed image belongs to this generation. Load it on its own, after row
+            // visibility and field masks, and do not replace a hidden image with the live row.
+            // The live row is only a fallback for changes recorded before that image existed.
+            var instant = evaluatedAt ?? DateTimeOffset.UtcNow;
+            var feature = await SelectFeatureAsync(change, cancellationToken).ConfigureAwait(false);
             var pendingStateUpdates = new List<AlertStateSnapshot>(rules.Count);
             var pendingDispatches = new List<PendingAlertDispatch>();
 
@@ -123,7 +117,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 var zone = ResolveZone(rule.ZoneId, zones);
 
                 var evaluation = await _evaluator
-                    .EvaluateAsync(change, feature, rule, zone, currentState, evaluatedAt, cancellationToken)
+                    .EvaluateAsync(change, feature, rule, zone, currentState, instant, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (evaluation.UpdatedState is not null)
@@ -142,7 +136,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
                 foreach (var alertEvent in evaluation.Events)
                 {
-                    pendingDispatches.Add(new PendingAlertDispatch(alertEvent, GetDeliverableChannels(rule)));
+                    pendingDispatches.Add(BoundDispatch(alertEvent, rule));
                 }
             }
 
@@ -189,7 +183,13 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 continue;
             }
 
-            if (rule is null || !rule.IsActive || rule.TriggerType != AlertTriggerType.Dwell)
+            if (rule is null || !rule.IsActive)
+            {
+                continue;
+            }
+
+            if (rule.TriggerType != AlertTriggerType.Dwell
+                && !DefaultAlertEvaluator.HasPendingCooldown(state.ThresholdStateJson))
             {
                 continue;
             }
@@ -222,7 +222,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
             foreach (var alertEvent in evaluation.Events)
             {
-                pendingDispatches.Add(new PendingAlertDispatch(alertEvent, GetDeliverableChannels(rule)));
+                pendingDispatches.Add(BoundDispatch(alertEvent, rule));
             }
 
             evaluated++;
@@ -322,6 +322,40 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         return await _ruleRepository.GetZonesAsync(zoneIds, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<Feature?> SelectFeatureAsync(AlertChange change, CancellationToken cancellationToken)
+    {
+        if (change.Operation == AlertChangeOperation.Delete)
+        {
+            return null;
+        }
+
+        if (change.HasCommittedImage && _changeReader is IAlertCommittedSnapshotSource snapshots)
+        {
+            return await snapshots
+                .LoadProjectedSnapshotAsync(change.Generation, change.LayerId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (change.CommittedFeature.HasValue)
+        {
+            return change.CommittedFeature;
+        }
+
+        return await _featureReader.GetAsync(change.LayerId, change.ObjectId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private PendingAlertDispatch BoundDispatch(AlertEventEnvelope alertEvent, AlertRuleDefinition rule)
+    {
+        var channels = GetDeliverableChannels(rule);
+        var bounded = AlertPayloadBounds.Fit(alertEvent, channels);
+        if (!string.Equals(bounded.PayloadJson, alertEvent.PayloadJson, StringComparison.Ordinal))
+        {
+            LogPayloadReduced(_logger, rule.RuleId, alertEvent.ObjectId, AlertPayloadBounds.LimitBytes(channels));
+        }
+
+        return new PendingAlertDispatch(bounded, channels);
+    }
+
     private async Task<Feature?> GetFeatureAsync(
         int layerId,
         long objectId,
@@ -377,4 +411,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
     [LoggerMessage(EventId = 9440, Level = LogLevel.Warning, Message = "Skipping alert channel {ChannelType} for rule {RuleId} because it is unavailable under the current {Reason} policy.")]
     private static partial void LogChannelSkipped(ILogger logger, long ruleId, AlertChannelType channelType, string reason);
+
+    [LoggerMessage(EventId = 9441, Level = LogLevel.Warning, Message = "Alert payload for rule {RuleId} object {ObjectId} exceeded the {LimitBytes}-byte channel limit and was reduced before enqueue.")]
+    private static partial void LogPayloadReduced(ILogger logger, long ruleId, long objectId, int limitBytes);
 }

@@ -13,7 +13,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
     private readonly ILeaderElectionStrategy _leaderElection;
     private readonly AlertOptions _options;
     private readonly AlertPipelineMetrics _metrics;
-    private readonly AlertMonotonicClock _clock;
+    private readonly TimeProvider _time;
     private readonly ILogger<AlertEvaluationBackgroundService> _logger;
 
     private volatile bool _isRunning;
@@ -27,14 +27,14 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         IOptions<AlertOptions> options,
         AlertPipelineMetrics metrics,
         ILogger<AlertEvaluationBackgroundService> logger,
-        AlertMonotonicClock? clock = null)
+        TimeProvider? time = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _leaderElection = leaderElection ?? throw new ArgumentNullException(nameof(leaderElection));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _clock = clock ?? AlertMonotonicClock.System;
+        _time = time ?? TimeProvider.System;
     }
 
     /// <inheritdoc />
@@ -84,7 +84,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 {
                     // Heartbeat every iteration so the health check can prove the loop is alive
                     // independently of whether this node currently leads.
-                    Interlocked.Exchange(ref _lastHeartbeatAtTicks, _clock.GetUtcNow().UtcTicks);
+                    Interlocked.Exchange(ref _lastHeartbeatAtTicks, _time.GetUtcNow().UtcTicks);
 
                     var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
                     UpdateLeaderAcquisitionState();
@@ -112,11 +112,11 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                     var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
 
                     var previousGeneration = activeCheckpoint.LastGeneration;
+                    var now = _time.GetUtcNow();
                     var nextGeneration = await pipeline
-                        .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
+                        .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, now, stoppingToken)
                         .ConfigureAwait(false);
 
-                    var now = _clock.GetUtcNow();
                     var shouldSweep = !activeCheckpoint.LastDwellSweepAt.HasValue ||
                         now - activeCheckpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
 
@@ -139,7 +139,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
                     // Record a productive leader-pass heartbeat: this node holds leadership and
                     // completed a pass, so a stale value here means the leader is wedged.
-                    Interlocked.Exchange(ref _lastLeaderPassAtTicks, _clock.GetUtcNow().UtcTicks);
+                    Interlocked.Exchange(ref _lastLeaderPassAtTicks, _time.GetUtcNow().UtcTicks);
 
                     // Delay only when the batch made no progress; a productive batch loops
                     // immediately so a change backlog drains at full speed.
@@ -183,7 +183,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         if (_leaderElection.LastAcquireFaulted)
         {
             // Start the window on the first fault; keep the original start on subsequent faults.
-            Interlocked.CompareExchange(ref _leaderAcquisitionFailingSinceTicks, _clock.GetUtcNow().UtcTicks, 0);
+            Interlocked.CompareExchange(ref _leaderAcquisitionFailingSinceTicks, _time.GetUtcNow().UtcTicks, 0);
             _metrics.RecordEvaluationLeaderAcquisitionFailing(true);
         }
         else
