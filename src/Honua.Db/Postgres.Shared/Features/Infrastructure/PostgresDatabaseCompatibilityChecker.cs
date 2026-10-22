@@ -14,6 +14,10 @@ namespace Honua.Db.Postgres.Features.Infrastructure;
 /// </summary>
 internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
 {
+    internal const string MalformedConnectionStringMessage =
+        "The database connection string could not be parsed (malformed-connection-string). "
+        + "Quote any value that contains '=' or ';', for example a generated password that begins with '='.";
+
     private readonly ILogger<PostgresDatabaseCompatibilityChecker> _logger;
 
     public PostgresDatabaseCompatibilityChecker(ILogger<PostgresDatabaseCompatibilityChecker> logger)
@@ -24,6 +28,20 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     public async Task<DatabaseCompatibilityResult> CheckCompatibilityAsync(
         string connectionString, CancellationToken cancellationToken = default)
     {
+        // A connection string the driver cannot parse is a configuration fault, not a database fault.
+        // The driver's message repeats the offending text, which includes the password, so only the
+        // exception type is reported (honua-server#6495: a generated password that begins with '='
+        // reads as "Password==..." and fails here).
+        try
+        {
+            _ = new NpgsqlConnectionStringBuilder(connectionString);
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException)
+        {
+            LogConnectionStringMalformed(_logger, ex.GetType().Name);
+            return DatabaseCompatibilityResult.Incompatible(MalformedConnectionStringMessage);
+        }
+
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
@@ -229,4 +247,10 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         Level = LogLevel.Warning,
         Message = "Database compatibility check could not obtain a usable connection ({CauseClass}: {FailureClass}).")]
     private static partial void LogCompatibilityCheckUnavailable(ILogger logger, string causeClass, string failureClass, Exception ex);
+
+    [LoggerMessage(
+        EventId = 7919,
+        Level = LogLevel.Error,
+        Message = "The configured database connection string could not be parsed ({ExceptionType}). The value is not logged because it contains credentials.")]
+    private static partial void LogConnectionStringMalformed(ILogger logger, string exceptionType);
 }

@@ -1804,7 +1804,20 @@ Honua.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
 
 // Run PostGIS preflight compatibility check (before migrations — migration scripts
 // create GEOMETRY columns and GiST indexes that require PostGIS to be installed)
-await RunPostGisPreflightCheckAsync();
+try
+{
+    await RunPostGisPreflightCheckAsync();
+}
+catch (InvalidOperationException ex)
+    when (Honua.Server.Hosting.GatedBootShutdown.IsPreflightRefusal(ex)
+        && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+{
+    // An unhandled exception aborts the runtime, and on the AOT image native finalizers then run
+    // after their modules unload, so the container exits 139 instead of reporting the refusal
+    // (honua-server#6488, #6495). Leave through the host dispose path with a plain exit status.
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
+}
 
 // Run database migrations on startup. A migration safety gate refusal is terminal, but it
 // must leave through the host dispose path: an unhandled exception aborts the runtime and
