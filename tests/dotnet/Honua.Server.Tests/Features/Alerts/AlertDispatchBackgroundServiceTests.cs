@@ -23,6 +23,65 @@ namespace Honua.Server.Tests.Features.Alerts;
 public sealed class AlertDispatchBackgroundServiceTests
 {
     [UnitTest]
+    public async Task Dispatcher_ClaimInstant_FollowsSharedWallClockWithoutSleeping()
+    {
+        var time = new ScriptedTimeProvider();
+        var seen = new ConcurrentQueue<DateTimeOffset>();
+        var store = Substitute.For<IAlertDispatchStore>();
+        store.ClaimPendingAsync(Arg.Any<int>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                seen.Enqueue(call.ArgAt<DateTimeOffset>(1));
+                return Array.Empty<AlertDispatchItem>();
+            });
+        store.GetBacklogAsync(Arg.Any<CancellationToken>()).Returns(new AlertDispatchBacklog
+        {
+            PendingCount = 0,
+            DeadLetteredCount = 0,
+        });
+        var options = Options.Create(new AlertOptions
+        {
+            Enabled = true,
+            Dispatch = new AlertDispatchOptions
+            {
+                IdleDelay = TimeSpan.FromMilliseconds(10),
+                InitialBackoff = TimeSpan.FromMilliseconds(10),
+                BacklogRefreshInterval = TimeSpan.FromHours(1),
+                DeliveredRetention = TimeSpan.Zero,
+            },
+        });
+        var services = new ServiceCollection();
+        services.AddSingleton(store);
+        services.AddSingleton(Substitute.For<IAlertEventStore>());
+        services.AddSingleton(Substitute.For<IAlertLifecycleStore>());
+        await using var provider = services.BuildServiceProvider();
+        using var dispatcher = new AlertDispatchBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(), [], new AlertNotificationRateLimiter(),
+            new AlertChannelCircuitBreaker(options), options, TestTelemetry.CreateAlertPipelineMetrics(),
+            NullLogger<AlertDispatchBackgroundService>.Instance, time);
+
+        await dispatcher.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitUntilAsync(() => seen.Contains(time.Wall));
+            var jumped = time.Wall.AddHours(4);
+            time.Wall = jumped;
+            await WaitUntilAsync(() => seen.Contains(jumped));
+        }
+        finally
+        {
+            await dispatcher.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private sealed class ScriptedTimeProvider : TimeProvider
+    {
+        public DateTimeOffset Wall { get; set; } = new(2026, 3, 8, 10, 30, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => Wall;
+    }
+
+    [UnitTest]
     public async Task Dispatcher_FailedPollRetainsSuccessfulBacklogTime_RecoveryCollectsNewObservation()
     {
         var failing = 0;

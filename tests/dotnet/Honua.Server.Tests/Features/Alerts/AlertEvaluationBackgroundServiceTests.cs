@@ -77,6 +77,32 @@ public sealed class AlertEvaluationBackgroundServiceTests
         service.ExecuteTask.IsCompleted.Should().BeTrue();
     }
 
+    [UnitTest]
+    public async Task Execute_PersistedEvaluationInstant_FollowsSharedWallClockWithoutSleeping()
+    {
+        var time = new ScriptedTimeProvider();
+        var leader = new ScriptedLeader { Allow = true };
+        var store = new MutableCheckpointStore(initialGeneration: 10);
+        var pipeline = new RecordingPipeline();
+        await using var provider = CreateProvider(store, pipeline);
+        var service = CreateService(provider, leader, time);
+
+        try
+        {
+            await service.StartAsync(CancellationToken.None);
+            await WaitUntilAsync(() => pipeline.EvaluatedAt == time.Wall);
+
+            var jumped = time.Wall.AddHours(2);
+            time.Wall = jumped;
+            await WaitUntilAsync(() => pipeline.EvaluatedAt == jumped);
+            pipeline.EvaluatedAt.Should().Be(jumped);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
     private static ServiceProvider CreateProvider(IAlertCheckpointStore store, IAlertPipeline pipeline)
     {
         var services = new ServiceCollection();
@@ -85,7 +111,10 @@ public sealed class AlertEvaluationBackgroundServiceTests
         return services.BuildServiceProvider();
     }
 
-    private static AlertEvaluationBackgroundService CreateService(ServiceProvider provider, ILeaderElectionStrategy leader)
+    private static AlertEvaluationBackgroundService CreateService(
+        ServiceProvider provider,
+        ILeaderElectionStrategy leader,
+        TimeProvider? time = null)
     {
         var options = Options.Create(new AlertOptions
         {
@@ -103,7 +132,15 @@ public sealed class AlertEvaluationBackgroundServiceTests
             leader,
             options,
             TestTelemetry.CreateAlertPipelineMetrics(),
-            NullLogger<AlertEvaluationBackgroundService>.Instance);
+            NullLogger<AlertEvaluationBackgroundService>.Instance,
+            time);
+    }
+
+    private sealed class ScriptedTimeProvider : TimeProvider
+    {
+        public DateTimeOffset Wall { get; set; } = new(2026, 3, 8, 10, 30, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => Wall;
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -191,11 +228,15 @@ public sealed class AlertEvaluationBackgroundServiceTests
     {
         public ConcurrentQueue<long> Generations { get; } = new();
 
+        public DateTimeOffset? EvaluatedAt { get; private set; }
+
         public Task<long> ProcessChangesAsync(
             long lastProcessedGeneration,
             int batchSize,
+            DateTimeOffset? evaluatedAt = null,
             CancellationToken cancellationToken = default)
         {
+            EvaluatedAt = evaluatedAt;
             Generations.Enqueue(lastProcessedGeneration);
             return Task.FromResult(lastProcessedGeneration);
         }
