@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Honua.Core.Configuration;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
@@ -51,8 +52,36 @@ internal static class PostgresDataSourceFactory
         limits.StatementTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.StatementTimeout), limits.StatementTimeout);
         limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
 
+        // A Lambda instance is frozen between invocations, so Npgsql never prunes below
+        // MinPoolSize. The long-lived defaults (min 20, idle 600s) clamp the floor up to
+        // the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
+        // for the floor). Every warm API instance then holds its whole pool, and the
+        // control-plane functions — cap 2 — still open that floor on top of their
+        // invocation. Leave an explicit operator value alone.
+        if (ControlPlaneEventHandlerHost.IsLambda(configuration))
+        {
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
+            {
+                limits.MinConnectionPoolSize = 0;
+            }
+
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionIdleLifetimeSeconds)]))
+            {
+                limits.ConnectionIdleLifetimeSeconds = Math.Max(
+                    LambdaIdleConnectionLifetimeSeconds,
+                    limits.ConnectionPruningIntervalSeconds);
+            }
+        }
+
         return limits;
     }
+
+    /// <summary>
+    /// Idle lifetime applied on Lambda when <c>Limits:Connections:ConnectionIdleLifetimeSeconds</c>
+    /// is unset. Matches the connection-string lifetime honua-iac puts on the RDS Proxy cell and
+    /// stays at or above the default pruning interval.
+    /// </summary>
+    internal const int LambdaIdleConnectionLifetimeSeconds = 60;
 
     public static NpgsqlDataSource Create(
         string connectionString,

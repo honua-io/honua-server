@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
@@ -86,13 +87,19 @@ internal static class AlertsServiceCollectionExtensions
         // and the readiness path read the live snapshot.
         services.AddSingleton<AlertEvaluationBackgroundService>();
         services.AddSingleton<IAlertEvaluationHealth>(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
-        services.AddHostedService(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
 
         // Register the dispatcher once and expose it both as the hosted service and as the
         // health-state source, so the dispatch-backlog health check reads the live snapshot.
         services.AddSingleton<AlertDispatchBackgroundService>();
         services.AddSingleton<IAlertDispatchHealth>(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
-        services.AddHostedService(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
+        // Evaluation, dispatch, and the audit reconciler each take a pooled connection, and
+        // evaluation holds a dedicated advisory-lock connection. An event-handler Lambda
+        // cannot spare that from a pool of 2 (honua-server#6515).
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
+            services.AddHostedService(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
+        }
 
         // Alert domain audit outbox (#3865). Registered unconditionally: the operator
         // lifecycle endpoints are mapped regardless of the geofence capability flag,
@@ -102,7 +109,10 @@ internal static class AlertsServiceCollectionExtensions
         services.AddScoped<AlertAuditOutboxCompleter>();
         services.AddScoped<IAlertAuditCompleter>(sp => sp.GetRequiredService<AlertAuditOutboxCompleter>());
         services.AddSingleton<AlertAuditOutboxReconciler>();
-        services.AddHostedService(sp => sp.GetRequiredService<AlertAuditOutboxReconciler>());
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<AlertAuditOutboxReconciler>());
+        }
 
         return services;
     }

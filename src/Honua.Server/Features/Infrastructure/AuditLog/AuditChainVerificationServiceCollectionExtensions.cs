@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Microsoft.Extensions.Configuration;
@@ -43,7 +44,12 @@ internal static class AuditChainVerificationServiceCollectionExtensions
         services.AddSingleton<AuditChainVerificationBackgroundService>();
         services.AddSingleton<IAuditChainIntegritySignal>(
             static sp => sp.GetRequiredService<AuditChainVerificationBackgroundService>());
-        services.AddHostedService(static sp => sp.GetRequiredService<AuditChainVerificationBackgroundService>());
+        // The verification pass opens a connection on its interval. Skip it on the
+        // event-handler Lambdas, whose pool is released when the invocation ends.
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService(static sp => sp.GetRequiredService<AuditChainVerificationBackgroundService>());
+        }
 
         return services;
     }

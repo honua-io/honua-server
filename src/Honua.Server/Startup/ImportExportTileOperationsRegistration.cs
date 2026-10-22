@@ -11,6 +11,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.TileOperations;
@@ -63,14 +64,23 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILogger<RedisImportJobManager>>(),
                 sp.GetRequiredService<IHostEnvironment>(),
                 sp.GetService<IConnectionMultiplexer>()));
-        services.AddHostedService<GeoservicesImportBackgroundService>();
+        // Event-handler Lambdas (pool cap 2, frozen between invocations) do not poll.
+        // The API Lambda still does. honua-server#6515.
+        var hostPollingLoops = ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration);
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<GeoservicesImportBackgroundService>();
+        }
 
         // Footprint-driven batch import orchestration (#1253). The orchestrator
         // composes the per-layer Geoservices import pipeline into an ordered,
         // resumable batch run; the background service advances active batches
         // under the shared import leader election.
         services.AddScoped<IMigrationBatchOrchestrator, MigrationBatchOrchestrator>();
-        services.AddHostedService<MigrationBatchBackgroundService>();
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<MigrationBatchBackgroundService>();
+        }
         services.AddSingleton<GeoServerImportJobManager>(sp =>
             new GeoServerImportJobManager(
                 sp.GetRequiredService<IUniversalProgressStore>(),
@@ -78,7 +88,10 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
                 sp.GetRequiredService<IHostEnvironment>(),
                 sp.GetService<IConnectionMultiplexer>()));
-        services.AddHostedService<GeoServerImportBackgroundService>();
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<GeoServerImportBackgroundService>();
+        }
 
         // Migration performance evidence store (#1033 slice 5).
         // Surface the source-generated JsonTypeInfo so the Postgres store can round-trip the artifact
@@ -117,7 +130,10 @@ internal static class ImportExportTileOperationsRegistration
                 licensePolicy: sp.GetRequiredService<ILicenseOperationPolicy>()));
         services.AddSingleton<IJobCancellationNotifier>(sp =>
             (ExportJobService)sp.GetRequiredService<IExportJobService>());
-        services.AddHostedService<ExportBackgroundService>();
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<ExportBackgroundService>();
+        }
 
         // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
         // cross-request resume state must not live only on a serving pod's memory. The in-memory
@@ -152,8 +168,11 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILicenseOperationPolicy>()));
         services.Configure<TileCacheWarmingOptions>(
             configuration.GetSection(TileCacheWarmingOptions.SectionName));
-        services.AddHostedService<TileCacheWarmingHostedService>();
-        services.AddHostedService<TileOperationBackgroundService>();
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<TileCacheWarmingHostedService>();
+            services.AddHostedService<TileOperationBackgroundService>();
+        }
 
         // Scheduled tile-cache expiry/invalidation (#1837): the time-based complement to the
         // per-tileset Cache-Control TTL (#1794). Disabled unless TileCacheExpiry:Enabled is set.
