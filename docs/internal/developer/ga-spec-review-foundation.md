@@ -61,7 +61,8 @@ identity/advisory lock for duplicate prevention, and never treats an artifact
 cache hit as success. `expectEnabled` is hashed separately from the effect.
 Only enabled layers with matching source and display identity can be noop.
 Update/drift and multiple matches refuse. The readback oracle verifies catalog
-publication/enablement; it does not prove dataset-content fidelity.
+publication/enablement; it does not prove dataset-content fidelity. The final independent readback hash is persisted
+with the layer identity in the durable review context.
 
 Configuration is scoped per registered connection:
 

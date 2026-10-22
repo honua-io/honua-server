@@ -121,7 +121,7 @@ internal sealed class GaSpecReviewService(IWorkflowOperationStore store, GaLayer
                 Status = verified ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Failed,
                 UpdatedAt = DateTimeOffset.UtcNow, CompletedAt = DateTimeOffset.UtcNow,
                 BlockingReasons = verified ? [] : ["verification-failed"],
-                SpecReview = operation.SpecReview! with { LayerId = observed.LayerId, Evidence = verified ? "verified" : "unverified" }
+                SpecReview = operation.SpecReview! with { LayerId = observed.LayerId, ReadbackHash = observed.Observation, Evidence = verified ? "verified" : "unverified" }
             };
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

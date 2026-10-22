@@ -65,6 +65,9 @@ public sealed record SpecReviewContext
     /// <summary>ObservedHash binding.</summary>
     public string ObservedHash { get; init; } = string.Empty;
 
+    /// <summary>Hash of the independent catalog readback after Apply, when observed.</summary>
+    public string? ReadbackHash { get; init; }
+
     /// <summary>PolicyRevision binding.</summary>
     public string PolicyRevision { get; init; } = string.Empty;
 
