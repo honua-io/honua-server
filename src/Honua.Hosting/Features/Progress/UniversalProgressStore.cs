@@ -755,7 +755,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         Log.RedisFailed(_logger, operation, ex);
     }
 
-    private static InvalidOperationException CreateDistributedStateUnavailableException(string operation, Exception? innerException = null)
+    private static DistributedProgressStateUnavailableException CreateDistributedStateUnavailableException(string operation, Exception? innerException = null)
         => new($"Distributed import progress state is unavailable while attempting to {operation}.", innerException);
 
     private async Task<IReadOnlyList<string>> GetActiveOperationIdsInternalAsync(

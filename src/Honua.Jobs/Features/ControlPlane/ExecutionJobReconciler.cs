@@ -703,6 +703,7 @@ internal sealed partial class ExecutionJobReconciler(
             or TimeoutException
             or System.Net.Sockets.SocketException
             or System.Data.Common.DbException
+            or Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException
             || exception.InnerException is { } inner && IsTransientInfrastructureFailure(inner);
 
     internal static partial class Log

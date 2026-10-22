@@ -1247,6 +1247,28 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_ProgressStoreFallbackOutage_LeavesTheRunningJobAlone()
+    {
+        // The progress store answers with its own unavailable-state exception, not a Redis one,
+        // until its recovery probe; later sweeps must stay non-terminal too.
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException(
+                "Distributed import progress state is unavailable while attempting to read progress."));
+        var job = CreateJobRecord("job-progress-outage", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(jobStore, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        var act = () => sut.ReconcileExecutionJobAsync("job-progress-outage");
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        (await jobStore.GetAsync("job-progress-outage"))!.Status.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_ExceptionDuringReconciliation_BridgesProgressOnFailure()
     {
         var backend = Substitute.For<IBatchComputeBackend>();
