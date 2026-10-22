@@ -22,8 +22,7 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "endpoint"
       ],
       "observation": {
         "required": true,
@@ -33,7 +32,9 @@
         "verdicts": [
           "verify"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -63,8 +64,8 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "target",
+        "deploymentId"
       ],
       "observation": {
         "required": true,
@@ -79,7 +80,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -121,8 +124,11 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "store",
+        "host",
+        "port",
+        "database",
+        "name"
       ],
       "observation": {
         "required": true,
@@ -142,7 +148,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -178,8 +186,9 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "source.kind",
+        "source.identity",
+        "name"
       ],
       "observation": {
         "required": true,
@@ -193,7 +202,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -238,8 +249,9 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "connection",
+        "source.schema",
+        "source.table"
       ],
       "observation": {
         "required": true,
@@ -254,7 +266,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -291,8 +305,9 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "dataset",
+        "protocol",
+        "name"
       ],
       "observation": {
         "required": true,
@@ -308,7 +323,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": [
@@ -348,8 +365,10 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "connection",
+        "schema",
+        "table",
+        "name"
       ],
       "observation": {
         "required": true,
@@ -366,7 +385,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -400,8 +421,8 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "service",
+        "layer"
       ],
       "observation": {
         "required": true,
@@ -415,7 +436,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -451,8 +474,9 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "targetKind",
+        "targetId",
+        "layer"
       ],
       "observation": {
         "required": true,
@@ -467,7 +491,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": [
@@ -504,8 +530,8 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "draftId",
+        "revision"
       ],
       "observation": {
         "required": true,
@@ -520,7 +546,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -554,8 +582,8 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "draftId",
+        "revision"
       ],
       "observation": {
         "required": true,
@@ -569,7 +597,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -604,8 +634,9 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "target",
+        "version",
+        "hash"
       ],
       "observation": {
         "required": true,
@@ -620,7 +651,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -655,8 +688,9 @@
         "tenant",
         "workspace",
         "environment",
-        "parentResource",
-        "resourceKey"
+        "proposal",
+        "version",
+        "hash"
       ],
       "observation": {
         "required": true,
@@ -671,7 +705,9 @@
           "noop",
           "refuse"
         ],
-        "binding": "unavailable"
+        "binding": "unavailable",
+        "multipleMatches": "refuse",
+        "incompatibleExisting": "refuse"
       },
       "binding": {
         "mcpTools": []
@@ -683,5 +719,29 @@
         "commandIdentity"
       ]
     }
-  ]
+  ],
+  "hashContracts": {
+    "actionHash": {
+      "includes": [
+        "canonicalOperation",
+        "desiredEffect",
+        "pinnedInputs",
+        "secretBindingRevision",
+        "destinationPolicyRevision"
+      ],
+      "excludes": [
+        "expect",
+        "oracleVersions"
+      ]
+    },
+    "verificationHash": {
+      "includes": [
+        "actionHash",
+        "expect",
+        "oracleVersions"
+      ]
+    },
+    "effectfulCacheHit": "reobserve-required",
+    "uncertainPriorOutcome": "refuse"
+  }
 }
