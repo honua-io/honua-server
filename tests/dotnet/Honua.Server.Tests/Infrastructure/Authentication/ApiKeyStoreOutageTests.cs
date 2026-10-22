@@ -67,11 +67,30 @@ public sealed class ApiKeyStoreOutageTests
         Assert.Null(other);
     }
 
-    private static IAdminApiKeyStore UnavailableStore()
+    [UnitTest]
+    public async Task DatabaseOutage_BreakGlassPasswordStillAuthenticates_OnHeaderAndPortalPaths()
+    {
+        // The PostgreSQL registry used on multi-instance Redis-off hosts (#6487) fails with a
+        // DbException, which must degrade exactly like a Redis outage.
+        var store = UnavailableStore(new Npgsql.NpgsqlException("database unavailable"));
+
+        var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
+            BreakGlassPassword, "ApiKey", Dependencies(store), NullLogger.Instance, CancellationToken.None);
+        var verifier = new AdminPortalCredentialVerifier(
+            Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
+            adminApiKeyStore: store,
+            logger: NullLogger<AdminPortalCredentialVerifier>.Instance);
+        var admin = await verifier.VerifyAsync("admin", BreakGlassPassword, CancellationToken.None);
+
+        Assert.Equal(ApiKeyRejection.None, bootstrap.Rejection);
+        Assert.NotNull(admin);
+    }
+
+    private static IAdminApiKeyStore UnavailableStore(Exception? failure = null)
     {
         var store = Substitute.For<IAdminApiKeyStore>();
         store.ValidateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new TimeoutException("redis timeout"));
+            .ThrowsAsync(failure ?? new TimeoutException("redis timeout"));
         return store;
     }
 
