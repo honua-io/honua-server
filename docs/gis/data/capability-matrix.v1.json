@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 388,
-      "provingTestCount": 1419,
+      "provingTestCount": 1430,
       "maturity": {
         "implemented": 385,
         "preview": 2,
@@ -238,7 +238,7 @@
       "edition": "Pro",
       "status": "preview",
       "entryCount": 18,
-      "provingTestCount": 106,
+      "provingTestCount": 109,
       "maturity": {
         "preview": 18
       },
@@ -1819,7 +1819,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 143,
-      "provingTestCount": 485,
+      "provingTestCount": 486,
       "maturity": {
         "preview": 143
       },
