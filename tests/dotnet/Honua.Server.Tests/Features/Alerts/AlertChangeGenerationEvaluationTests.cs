@@ -145,8 +145,8 @@ public sealed class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter 
 
             var unprojected = await reader.LoadProjectedSnapshotAsync(hiddenGeneration, layerId)
                 ?? throw new InvalidOperationException("The list read must return the committed image.");
-            unprojected.Value.Attributes["objectid"].Should().Be(objectId);
-            unprojected.Value.Attributes.Should().ContainKey("secret");
+            unprojected.Attributes["objectid"].Should().Be(objectId);
+            unprojected.Attributes.Should().ContainKey("secret");
 
             var policy = new FixedSnapshotPolicy(
                 new SqlFragment("attributes ->> 'classification' = @p0", ["public"]),
@@ -162,9 +162,9 @@ public sealed class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter 
                 ("object", objectId + 1));
             var visible = await projectedReader.LoadProjectedSnapshotAsync(visibleGeneration, layerId)
                 ?? throw new InvalidOperationException("The public row must return a committed image.");
-            visible.Value.Attributes.Should().NotContainKey("secret");
-            visible.Value.Attributes["objectid"].Should().Be(objectId + 1);
-            visible.Value.Attributes["value"].Should().Be(60L);
+            visible.Attributes.Should().NotContainKey("secret");
+            visible.Attributes["objectid"].Should().Be(objectId + 1);
+            visible.Attributes["value"].Should().Be(60L);
 
             var branchGeneration = await ScalarAsync<long>("""
                 INSERT INTO honua.feature_changes
