@@ -28,6 +28,9 @@ requires exactly three passing export and three passing import results (no skips
 then decodes all nine files before comparison. The successful receipt records
 HEAD, run ID, UTC completion, reader version/image and SHA-256 of the actual files
 and TRX. CI uploads partial evidence on failure and still fails the required gate.
+The gate also deliberately changes a copied GeoPackage's amount from 7.25 to 8
+and requires the independent reader to reject that corruption for that exact
+value mismatch. An unrelated Docker/reader failure does not satisfy the challenge.
 
 The client-compat comparator also rejects passing-status count changes, lost
 measurements and increased absolute error. A delta tolerance must be explicitly

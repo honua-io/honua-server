@@ -70,7 +70,7 @@ for name in EXPECTED:
         assert srs is not None and srs.GetAuthorityCode(None) == "4326"
         rows = list(layer)
         assert rows[0].GetField("label") == 'alpha, "quoted"'
-        assert rows[0].GetField("amount") == 7.25
+        assert rows[0].GetField("amount") == 7.25, "amount mismatch"
         assert rows[0].GetField("missing") is None
         check_geometry(name, rows[0].GetGeometryRef())
         assert rows[1].GetField("label") == "unlocated"
