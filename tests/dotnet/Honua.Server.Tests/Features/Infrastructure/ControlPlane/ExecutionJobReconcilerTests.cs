@@ -1223,6 +1223,7 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task ReconcileExecutionJob_TransientRedisTimeoutWhileObserving_LeavesTheRunningJobAlone()
     {
         // honua-server#6507: a Redis timeout during a sweep used to stamp a healthy, heartbeating
@@ -1247,6 +1248,7 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task ReconcileExecutionJob_ProgressStoreFallbackOutage_LeavesTheRunningJobAlone()
     {
         // The progress store answers with its own unavailable-state exception, not a Redis one,
