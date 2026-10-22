@@ -34,7 +34,10 @@ public enum WorkflowOperationKind
     /// Conduct a coordinated platform-upgrade release that composes a container rollout, an additive DB
     /// script migration, and a metadata-v2 activation as one ordered, gated, rollback-able operation.
     /// </summary>
-    CoordinatedRelease
+    CoordinatedRelease,
+
+    /// <summary>Human-reviewed GA spec execution; never dispatched by deploy reconcilers.</summary>
+    SpecApply
 }
 
 /// <summary>
@@ -1123,6 +1126,9 @@ public sealed record WorkflowOperationRecord
     /// that conduct a container rollout, a DB script migration, and a metadata-v2 activation as one op.
     /// </summary>
     public CoordinatedReleaseContext? CoordinatedRelease { get; init; }
+
+    /// <summary>Revision-pinned GA layer publication review and execution evidence.</summary>
+    public SpecReviewContext? SpecReview { get; init; }
 }
 
 /// <summary>

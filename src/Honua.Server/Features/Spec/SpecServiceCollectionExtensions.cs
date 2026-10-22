@@ -23,6 +23,9 @@ internal static class SpecServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddSpecCore(configuration);
+        services.TryAddScoped<IGaSpecContextReader, UnavailableGaSpecContextReader>();
+        services.AddScoped<GaLayerPublicationAdapter>();
+        services.AddScoped<GaSpecReviewService>();
 
         services.TryAddSingleton<ISpecComputeExecutor>(_ => new SpecComputeExecutor());
 

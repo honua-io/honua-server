@@ -39,6 +39,7 @@ internal static class SpecEndpoints
     public static IEndpointRouteBuilder MapSpecEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+        endpoints.MapGaSpecEndpoints();
 
         var group = endpoints.MapGroup("/v1/spec")
             .WithTags("Spec")
