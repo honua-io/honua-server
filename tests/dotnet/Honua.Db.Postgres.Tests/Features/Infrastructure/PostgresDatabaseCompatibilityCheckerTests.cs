@@ -34,6 +34,42 @@ public class PostgresDatabaseCompatibilityCheckerTests
     }
 
     [Fact]
+    public async Task CheckCompatibilityAsync_OnFreshDatabaseWithoutPostGis_CreatesTheExtensionAndIsCompatible()
+    {
+        // honua-server#6488: the customer-install database ships the PostGIS packages but has not run
+        // CREATE EXTENSION, and the preflight runs before the migrations that would create it.
+        var databaseName = "fresh_preflight_" + Guid.NewGuid().ToString("N");
+        await using (var admin = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\" TEMPLATE template0", admin);
+            await create.ExecuteNonQueryAsync();
+        }
+
+        var fresh = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
+        {
+            Database = databaseName,
+            Pooling = false,
+        }.ConnectionString;
+
+        try
+        {
+            var result = await _checker.CheckCompatibilityAsync(fresh);
+
+            result.IsCompatible.Should().BeTrue(result.ErrorMessage);
+            result.PostGisVersion.Should().NotBeNullOrWhiteSpace();
+            result.InstalledExtensions.Should().Contain("postgis");
+        }
+        finally
+        {
+            await using var admin = new NpgsqlConnection(_fixture.ConnectionString);
+            await admin.OpenAsync();
+            await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", admin);
+            await drop.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
     public async Task CheckCompatibilityAsync_ReturnsEngineVersion()
     {
         var result = await _checker.CheckCompatibilityAsync(_fixture.ConnectionString);

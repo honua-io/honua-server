@@ -36,6 +36,16 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
             // 2. Get installed extensions
             var extensions = await GetInstalledExtensionsAsync(connection, cancellationToken).ConfigureAwait(false);
 
+            // A fresh database (for example the customer-install pgrouting image) ships the PostGIS
+            // packages but has not run CREATE EXTENSION yet. The preflight runs before migrations,
+            // so create it here when the role is allowed to (honua-server#6488). A role without the
+            // privilege falls through to the incompatible-database refusal below.
+            if (!extensions.Any(e => string.Equals(e.Name, "postgis", StringComparison.OrdinalIgnoreCase))
+                && await TryCreatePostGisExtensionAsync(connection, cancellationToken).ConfigureAwait(false))
+            {
+                extensions = await GetInstalledExtensionsAsync(connection, cancellationToken).ConfigureAwait(false);
+            }
+
             var hasPostGis = false;
             var hasPostGisRaster = false;
             string? postGisVersion = null;
@@ -117,6 +127,29 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         }
     }
 
+    private async Task<bool> TryCreatePostGisExtensionAsync(
+        NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS postgis", connection);
+            command.CommandTimeout = 60;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            LogPostGisCreated(_logger);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Insufficient privilege or the packages are absent: report the missing extension.
+            LogPostGisCreateFailed(_logger, ex.GetType().Name, ex.Message);
+            return false;
+        }
+    }
+
     private static async Task<string> GetEngineVersionAsync(
         NpgsqlConnection connection, CancellationToken cancellationToken)
     {
@@ -160,6 +193,18 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         Level = LogLevel.Information,
         Message = "PostGIS raster: {RasterVersion}")]
     private static partial void LogPostGisRasterVersion(ILogger logger, string rasterVersion);
+
+    [LoggerMessage(
+        EventId = 7917,
+        Level = LogLevel.Information,
+        Message = "PostGIS extension was not installed; created it with CREATE EXTENSION postgis.")]
+    private static partial void LogPostGisCreated(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 7918,
+        Level = LogLevel.Warning,
+        Message = "Could not create the PostGIS extension ({ExceptionType}): {Reason}. Run CREATE EXTENSION postgis as a privileged role.")]
+    private static partial void LogPostGisCreateFailed(ILogger logger, string exceptionType, string reason);
 
     [LoggerMessage(
         EventId = 7913,
