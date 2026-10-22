@@ -60,8 +60,9 @@ internal static class AuthenticationOptionsRegistration
         });
 
         // OIDC authentication options
-        services.Configure<OidcAuthenticationOptions>(
-            configuration.GetSection(OidcAuthenticationOptions.SectionName));
+        services.Configure<OidcAuthenticationOptions>(options =>
+            OidcAuthenticationExtensions.BindOptions(
+                configuration.GetSection(OidcAuthenticationOptions.SectionName), options));
 
         // Console-consumable operator bearer (#2258, Option C). Options and validation
         // service are registered unconditionally so issuance can report a fail-closed

@@ -501,7 +501,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/token",
                 "https://auth.example.com/logout"));
 
-        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+        var oidcFixture = CreateGenericOidcFixture(stubFactory)
+            .ConfigureWebHost(builder => builder.UseSetting("Oidc:AdminAuthCallbackUri", "https://console.example.com/admin/auth/callback"));
 
         try
         {
@@ -523,6 +524,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 });
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            stubFactory.LastTokenFormValues.Should().BeEmpty();
         }
         finally
         {
@@ -539,9 +541,11 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("https://console.example.com/admin/auth/callback")]
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
-    public async Task CreateAuthorizeUrl_UsesConfiguredPublicBaseUrlForRedirectUri()
+    public async Task CreateAuthorizeUrl_UsesPinnedCallbackOrPublicBaseDefault(string? callback)
     {
         using var stubFactory = new StubHttpClientFactory(
             "https://auth.example.com/.well-known/openid-configuration",
@@ -551,7 +555,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/logout"));
 
         var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua"));
+            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua")
+                .UseSetting("Oidc:AdminAuthCallbackUri", callback));
 
         try
         {
@@ -563,7 +568,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 new
                 {
                     state = "state-123",
-                    codeChallenge = "challenge-123"
+                    codeChallenge = "challenge-123",
+                    redirectUri = "https://untrusted.example.com/admin/auth/callback"
                 });
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -572,7 +578,10 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
             var authorizeUri = new Uri(content!.AuthorizeUrl);
             var parameters = QueryHelpers.ParseQuery(authorizeUri.Query);
-            parameters["redirect_uri"].ToString().Should().Be("https://public.example.com/honua/admin/auth/callback");
+            parameters["state"].ToString().Should().NotBe("state-123");
+            parameters["code_challenge"].ToString().Should().NotBe("challenge-123");
+            parameters["code_challenge_method"].ToString().Should().Be("S256");
+            parameters["redirect_uri"].ToString().Should().Be(callback ?? "https://public.example.com/honua/admin/auth/callback");
         }
         finally
         {
@@ -580,9 +589,11 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("https://console.example.com/admin/auth/callback")]
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
-    public async Task RequestToken_UsesConfiguredPublicBaseUrlForRedirectUri()
+    public async Task RequestToken_UsesSamePinnedCallbackOrPublicBaseDefault(string? callback)
     {
         using var stubFactory = new StubHttpClientFactory(
             "https://auth.example.com/.well-known/openid-configuration",
@@ -592,7 +603,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/logout"));
 
         var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua"));
+            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua")
+                .UseSetting("Oidc:AdminAuthCallbackUri", callback));
 
         try
         {
@@ -614,13 +626,17 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 {
                     grantType = "authorization_code",
                     code = "code-123",
-                    state = authorizeParameters["state"].ToString()
+                    state = authorizeParameters["state"].ToString(),
+                    redirectUri = "https://untrusted.example.com/admin/auth/callback"
                 });
 
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             stubFactory.LastTokenFormValues.Should().ContainKey("redirect_uri");
-            stubFactory.LastTokenFormValues["redirect_uri"].Should().Be("https://public.example.com/honua/admin/auth/callback");
+            stubFactory.LastTokenFormValues["redirect_uri"].Should().Be(callback ?? "https://public.example.com/honua/admin/auth/callback");
             stubFactory.LastTokenFormValues.Should().ContainKey("code_verifier");
+            stubFactory.LastTokenFormValues["redirect_uri"].Should().Be(authorizeParameters["redirect_uri"].ToString());
+            WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(stubFactory.LastTokenFormValues["code_verifier"])))
+                .Should().Be(authorizeParameters["code_challenge"].ToString());
 
             var raw = await response.Content.ReadAsStringAsync();
             raw.Should().BeEmpty();
