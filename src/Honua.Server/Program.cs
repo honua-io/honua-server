@@ -976,10 +976,33 @@ builder.Services.AddScoped(static sp => new Honua.Core.Features.FeatureStore.Ser
     sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProviderRegistry>()));
+// Redis is the shared registry when it is connected. Without it, a host that runs as several
+// instances (AWS Lambda, Deployment:Mode=MultiNode) keeps the keys in the shared database, so a key
+// minted on one instance authenticates on the others (honua-server#6487). A single instance keeps
+// the in-process registry.
+var adminKeysNeedSharedStore = Honua.Ai.Protocols.Mcp.McpSessionModeResolver.DescribeMultiInstanceHost(
+    builder.Configuration, Environment.GetEnvironmentVariable) is not null;
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
-    sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
-        ? new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>())
-        : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+{
+    if (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis)
+    {
+        return new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>());
+    }
+
+    if (adminKeysNeedSharedStore && sp.GetService<Npgsql.NpgsqlDataSource>() is { } dataSource)
+    {
+        return new Honua.Server.Features.Admin.Services.PostgresAdminApiKeyStore(
+            dataSource, sp.GetService<TimeProvider>(), builder.Configuration["Database:Schema"]);
+    }
+
+    if (adminKeysNeedSharedStore)
+    {
+        ProgramLog.AdminApiKeysPerInstance(
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Honua.AdminApiKeys"));
+    }
+
+    return new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>());
+});
 builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
