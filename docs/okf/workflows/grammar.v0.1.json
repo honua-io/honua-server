@@ -1,0 +1,687 @@
+{
+  "bundleVersion": "ga-workflow-0.1.0",
+  "grammarVersion": "1.1.0-draft",
+  "maxAutomaticRepairs": 2,
+  "operations": [
+    {
+      "id": "platform.verify",
+      "inputs": [
+        "endpoint"
+      ],
+      "requires": [],
+      "produces": [
+        "platform"
+      ],
+      "capability": "admin.control-plane",
+      "effectByTarget": {
+        "default": "read"
+      },
+      "approval": "none",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "endpoint"
+        ],
+        "verdicts": [
+          "verify"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": []
+    },
+    {
+      "id": "platform.install",
+      "inputs": [
+        "target",
+        "image",
+        "config"
+      ],
+      "requires": [],
+      "produces": [
+        "platform"
+      ],
+      "capability": null,
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "target",
+          "image",
+          "config"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": false,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "connection.create",
+      "inputs": [
+        "name",
+        "store",
+        "host",
+        "port",
+        "database",
+        "username",
+        "password",
+        "sslMode"
+      ],
+      "requires": [
+        "platform"
+      ],
+      "produces": [
+        "connection"
+      ],
+      "capability": "admin.control-plane",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [
+        "password"
+      ],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "name",
+          "store",
+          "host",
+          "port",
+          "database",
+          "username",
+          "password",
+          "sslMode"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "dataset.import",
+      "inputs": [
+        "name",
+        "source"
+      ],
+      "requires": [
+        "platform"
+      ],
+      "produces": [
+        "dataset"
+      ],
+      "capability": "import.file",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [
+        "source.tokenRef"
+      ],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "name",
+          "source"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ],
+      "capabilityBySourceKind": {
+        "file": "import.file",
+        "esri-service": "import.geoservices"
+      },
+      "conditionalProducts": {
+        "mirror_service": [
+          "service",
+          "layer"
+        ]
+      }
+    },
+    {
+      "id": "dataset.register",
+      "inputs": [
+        "name",
+        "connection",
+        "source"
+      ],
+      "requires": [
+        "connection"
+      ],
+      "produces": [
+        "dataset"
+      ],
+      "capability": "admin.control-plane",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "name",
+          "connection",
+          "source"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "service.publish",
+      "inputs": [
+        "name",
+        "dataset",
+        "protocol",
+        "access"
+      ],
+      "requires": [
+        "dataset"
+      ],
+      "produces": [
+        "service",
+        "layer"
+      ],
+      "capability": "serve.geoservices-featureserver",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "name",
+          "dataset",
+          "protocol",
+          "access"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": [
+          "honua_publish_service"
+        ]
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "layer.publish",
+      "inputs": [
+        "connection",
+        "dataset",
+        "schema",
+        "table",
+        "name"
+      ],
+      "requires": [
+        "connection",
+        "dataset"
+      ],
+      "produces": [
+        "layer"
+      ],
+      "capability": "admin.control-plane",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "connection",
+          "dataset",
+          "schema",
+          "table",
+          "name"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "layer.configure",
+      "inputs": [
+        "layer",
+        "metadata"
+      ],
+      "requires": [
+        "layer"
+      ],
+      "produces": [
+        "layer"
+      ],
+      "capability": "admin.control-plane",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "layer",
+          "metadata"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "style.apply",
+      "inputs": [
+        "layer",
+        "preset",
+        "definition"
+      ],
+      "requires": [
+        "layer"
+      ],
+      "produces": [
+        "style"
+      ],
+      "capability": "styling.defaults",
+      "effectByTarget": {
+        "working-draft": "working-draft",
+        "shared-catalog": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "layer",
+          "preset",
+          "definition"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": [
+          "honua_apply_style_preset"
+        ]
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "map.compose",
+      "inputs": [
+        "name",
+        "kind",
+        "layers"
+      ],
+      "requires": [
+        "layer"
+      ],
+      "produces": [
+        "map"
+      ],
+      "capability": "admin.control-plane",
+      "effectByTarget": {
+        "default": "working-draft"
+      },
+      "approval": "none",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "name",
+          "kind",
+          "layers"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "map.save",
+      "inputs": [
+        "draft",
+        "revision"
+      ],
+      "requires": [
+        "map"
+      ],
+      "produces": [
+        "saved-version"
+      ],
+      "capability": "admin.control-plane",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "explicit-save",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "draft",
+          "revision"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "publication.propose",
+      "inputs": [
+        "target",
+        "version",
+        "hash"
+      ],
+      "requires": [
+        "saved-version"
+      ],
+      "produces": [
+        "proposal"
+      ],
+      "capability": "operations.proposals",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "human-apply",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "target",
+          "version",
+          "hash"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": true,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    },
+    {
+      "id": "publication.approve",
+      "inputs": [
+        "proposal",
+        "version",
+        "hash"
+      ],
+      "requires": [
+        "proposal"
+      ],
+      "produces": [
+        "publication"
+      ],
+      "capability": "operations.proposals",
+      "effectByTarget": {
+        "default": "server-state"
+      },
+      "approval": "separate-human",
+      "secretReferenceFields": [],
+      "identity": [
+        "tenant",
+        "workspace",
+        "environment",
+        "parentResource",
+        "resourceKey"
+      ],
+      "observation": {
+        "required": true,
+        "comparedFields": [
+          "proposal",
+          "version",
+          "hash"
+        ],
+        "verdicts": [
+          "create",
+          "update",
+          "noop",
+          "refuse"
+        ],
+        "binding": "unavailable"
+      },
+      "binding": {
+        "mcpTools": []
+      },
+      "executor": "unavailable",
+      "consoleAllowed": false,
+      "concurrencyPreconditions": [
+        "expectedResourceVersion",
+        "commandIdentity"
+      ]
+    }
+  ]
+}
