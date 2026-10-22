@@ -145,8 +145,19 @@ internal sealed class ImageServerMetadataHandler
                 context.Response.Headers.CacheControl = "no-store";
             }
 
+            // A registered multidimensional coverage is the raster the slices come from.
+            // Describe that grid instead of a co-registered base raster (#6493).
+            var coverageGrid = await _multidimensionalInfoBuilder
+                .DescribeGridAsync(layerId, cancellationToken)
+                .ConfigureAwait(false);
+            if (coverageGrid is not null)
+            {
+                referenceRaster = ImageServerCoverageRaster.Apply(referenceRaster, coverageGrid);
+                statistics = ImageServerCoverageRaster.Statistics(coverageGrid);
+            }
+
             // Get raster extent
-            var extent = aggregateExtent;
+            var extent = coverageGrid?.Extent ?? aggregateExtent;
             if (extent == null)
             {
                 ImageServerLog.ExtentNotAvailable(_logger, layerId);
@@ -195,8 +206,11 @@ internal sealed class ImageServerMetadataHandler
                 BlockWidth = null,
                 BlockHeight = null,
                 SpatialReference = CreateSpatialReference(extent.Value.Srid ?? referenceRaster.Srid),
-                PixelSizeX = CalculatePixelSize(rasters, extent.Value),
-                PixelSizeY = CalculatePixelSize(rasters, extent.Value, isHeight: true),
+                // A coverage grid replaces the base mosaic. Its geotransform is the
+                // cell size; the base rasters' transforms would keep advertising the
+                // co-registered raster (#6493).
+                PixelSizeX = CalculatePixelSize(coverageGrid is null ? rasters : [referenceRaster], extent.Value),
+                PixelSizeY = CalculatePixelSize(coverageGrid is null ? rasters : [referenceRaster], extent.Value, isHeight: true),
                 BandCount = referenceRaster.BandCount,
                 PixelType = MapPixelType(referenceRaster.PixelType),
                 MinPixelSize = MinPixelSize,

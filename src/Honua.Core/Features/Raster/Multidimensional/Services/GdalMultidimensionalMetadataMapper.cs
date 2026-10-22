@@ -123,10 +123,10 @@ public static class GdalMultidimensionalMetadataMapper
             var name = GetString(dim, "name") ?? string.Empty;
             var fullName = GetString(dim, "full_name") ?? name;
             var size = dim.TryGetProperty("size", out var sizeEl) && sizeEl.TryGetInt64(out var s) ? s : 0L;
-            var axisType = GetString(dim, "type");
+            var axis = ClassifyAxis(dim);
             var unit = ReadIndexingVariableUnit(dim);
 
-            byFullName[fullName] = new DimensionInfo(name, fullName, size, axisType, unit);
+            byFullName[fullName] = new DimensionInfo(name, fullName, size, axis, unit);
         }
 
         return byFullName;
@@ -205,7 +205,10 @@ public static class GdalMultidimensionalMetadataMapper
                     size = info.Size;
                 }
 
-                variableDimensions.Add(new MultidimensionalCoverageDimension(dimName, size));
+                variableDimensions.Add(new MultidimensionalCoverageDimension(dimName, size)
+                {
+                    Axis = found ? info.Axis : MultidimensionalAxisKind.Unknown,
+                });
                 index++;
             }
         }
@@ -340,6 +343,77 @@ public static class GdalMultidimensionalMetadataMapper
         return int.TryParse(wkt.AsSpan(start, end - start), NumberStyles.Integer, CultureInfo.InvariantCulture, out epsg) && epsg > 0;
     }
 
+    private static MultidimensionalAxisKind ClassifyAxis(JsonElement dimension)
+    {
+        var fromType = GetString(dimension, "type") switch
+        {
+            "HORIZONTAL_X" => MultidimensionalAxisKind.HorizontalX,
+            "HORIZONTAL_Y" => MultidimensionalAxisKind.HorizontalY,
+            "TEMPORAL" => MultidimensionalAxisKind.Temporal,
+            "VERTICAL" => MultidimensionalAxisKind.Vertical,
+            _ => MultidimensionalAxisKind.Unknown,
+        };
+        if (fromType != MultidimensionalAxisKind.Unknown)
+        {
+            return fromType;
+        }
+
+        // Remote NetCDF opened by the HDF5 driver keeps CF attributes but often
+        // leaves the dimension type unset. Persist that classification here so
+        // slice advertising does not guess from the axis name alone.
+        if (!dimension.TryGetProperty("indexing_variable", out var indexing) ||
+            indexing.ValueKind != JsonValueKind.Object)
+        {
+            return MultidimensionalAxisKind.Unknown;
+        }
+
+        foreach (var variable in indexing.EnumerateObject())
+        {
+            if (variable.Value.ValueKind != JsonValueKind.Object ||
+                !variable.Value.TryGetProperty("attributes", out var attributes) ||
+                attributes.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var classified = ClassifyCfAttribute(GetString(attributes, "axis"), GetString(attributes, "standard_name"));
+            if (classified != MultidimensionalAxisKind.Unknown)
+            {
+                return classified;
+            }
+        }
+
+        return MultidimensionalAxisKind.Unknown;
+    }
+
+    private static MultidimensionalAxisKind ClassifyCfAttribute(string? axis, string? standardName)
+    {
+        if (string.Equals(axis, "X", StringComparison.OrdinalIgnoreCase) ||
+            standardName is "longitude" or "projection_x_coordinate")
+        {
+            return MultidimensionalAxisKind.HorizontalX;
+        }
+
+        if (string.Equals(axis, "Y", StringComparison.OrdinalIgnoreCase) ||
+            standardName is "latitude" or "projection_y_coordinate")
+        {
+            return MultidimensionalAxisKind.HorizontalY;
+        }
+
+        if (string.Equals(axis, "T", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(standardName, "time", StringComparison.Ordinal))
+        {
+            return MultidimensionalAxisKind.Temporal;
+        }
+
+        if (string.Equals(axis, "Z", StringComparison.OrdinalIgnoreCase))
+        {
+            return MultidimensionalAxisKind.Vertical;
+        }
+
+        return MultidimensionalAxisKind.Unknown;
+    }
+
     private static string? ReadIndexingVariableUnit(JsonElement dimension)
     {
         if (!dimension.TryGetProperty("indexing_variable", out var indexing) ||
@@ -382,5 +456,5 @@ public static class GdalMultidimensionalMetadataMapper
         return slash >= 0 && slash < fullName.Length - 1 ? fullName[(slash + 1)..] : fullName;
     }
 
-    private readonly record struct DimensionInfo(string Name, string FullName, long Size, string? AxisType, string? Unit);
+    private readonly record struct DimensionInfo(string Name, string FullName, long Size, MultidimensionalAxisKind Axis, string? Unit);
 }

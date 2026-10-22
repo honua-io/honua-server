@@ -124,10 +124,63 @@ public class ImageServerMultidimensionalInfoHandlerTests
         // 5 evenly-spaced levels between 1000 and 50000 inclusive.
         verticalDimension.Values!.Should().Equal(1000.0, 13250.0, 25500.0, 37750.0, 50000.0);
 
-        // The horizontal axis stays under its source name with size only.
+        // An unclassified axis is not guessed from its name. "x" here has no
+        // HORIZONTAL_X classification, so it stays a generic dimension.
         variable.Dimensions.Should().ContainSingle(d => d.Name == "x")
             .Which.DimensionSize.Should().Be(360);
     }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetMultidimensionalInfoAsync_LatLonTime_OmitsHorizontalAxesAndAdvertisesStdTime()
+    {
+        _store.ListByLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns([CreateRegistration(metadata: CreateSeaSurfaceMetadata())]);
+
+        var handler = CreateHandler();
+        var context = CreateImageServerContext();
+
+        var result = await handler.GetMultidimensionalInfoAsync(context, 1);
+
+        var variable = result.Should().BeOfType<JsonHttpResult<MultidimensionalInfoResponse>>().Which
+            .Value!.MultidimensionalInfo.Variables.Should().ContainSingle().Subject;
+        variable.Name.Should().Be("sea_surface_temperature");
+        variable.Dimensions.Select(dimension => dimension.Name).Should().Equal("StdTime");
+        variable.Dimensions[0].Values.Should().Equal(1_704_067_200_000d, 1_704_153_600_000d);
+        variable.Dimensions[0].DimensionSize.Should().Be(2);
+    }
+
+    private static MultidimensionalCoverageMetadata CreateSeaSurfaceMetadata() => new()
+    {
+        Format = MultidimensionalCoverageFormat.NetCdf4,
+        Srid = 4326,
+        Extent = new RasterExtent { XMin = -122.525, YMin = 37.675, XMax = -122.325, YMax = 37.875, Srid = 4326 },
+        Resolution = (0.05, 0.05),
+        Temporal = new TemporalExtent(
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero),
+            StepCount: 2),
+        YAxisAscending = true,
+        HasYAxisOrientation = true,
+        Statistics = new CoverageSampleStatistics(11, 35, 23, null),
+        Variables =
+        [
+            new MultidimensionalCoverageVariable(
+                Name: "sea_surface_temperature",
+                DataType: "Float32",
+                Dimensions:
+                [
+                    new MultidimensionalCoverageDimension("time", 2) { Axis = MultidimensionalAxisKind.Temporal },
+                    new MultidimensionalCoverageDimension("latitude", 4) { Axis = MultidimensionalAxisKind.HorizontalY },
+                    new MultidimensionalCoverageDimension("longitude", 4) { Axis = MultidimensionalAxisKind.HorizontalX },
+                ],
+                ChunkLayout: null,
+                Units: "degC",
+                LongName: "Sea Surface Temperature",
+                StandardName: "sea_surface_temperature",
+                NoData: -9999)
+        ]
+    };
 
     private static MultidimensionalCoverageMetadata CreateTemperatureMetadata() => new()
     {
