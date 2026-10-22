@@ -18,6 +18,34 @@ sys.modules[SPEC.name] = diff_baselines
 SPEC.loader.exec_module(diff_baselines)
 
 
+def test_passing_status_does_not_hide_numeric_regressions():
+    baseline = {"measured_count": 10, "measured_delta": 0.001}
+    assert not diff_baselines.measurement_regression(baseline, dict(baseline))
+    assert not diff_baselines.measurement_regression(baseline, {**baseline, "measured_delta": 0})
+    for value in (9, 11, None, True, "10", float("nan"), float("inf")):
+        assert diff_baselines.measurement_regression(baseline, {**baseline, "measured_count": value})
+    for value in (0.002, -0.002, None, False, "0", float("nan"), float("inf")):
+        assert diff_baselines.measurement_regression(baseline, {**baseline, "measured_delta": value})
+
+
+def test_measurement_regression_reaches_strict_diff_classification():
+    key = ("gdal", "exports")
+    baseline = {key: {"results": [{"test_case_id": "export", "status": "pass", "measured_count": 2}]}}
+    current = {key: {"results": [{"test_case_id": "export", "status": "pass", "measured_count": 1}]}}
+    changes = diff_baselines.diff(baseline, current)
+    assert len(changes) == 1 and changes[0].classification == "regression"
+    assert "measured_count changed" in changes[0].notes
+
+
+def test_delta_tolerance_is_explicit_finite_and_nonnegative():
+    baseline = {"measured_delta": 0, "measured_delta_tolerance": 0.01}
+    assert not diff_baselines.measurement_regression(baseline, {"measured_delta": -0.01})
+    assert diff_baselines.measurement_regression(baseline, {"measured_delta": 0.011})
+    for value in (-1, True, None, float("nan"), float("inf")):
+        assert diff_baselines.measurement_regression(
+            {**baseline, "measured_delta_tolerance": value}, {"measured_delta": 0})
+
+
 def test_index_results_includes_lane_extensions() -> None:
     envelope = {
         "results": [{"test_case_id": "CERT-CONN-01", "status": "pass"}],

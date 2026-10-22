@@ -58,6 +58,9 @@ In ``--strict`` mode the script exits non-zero when **any** of these hold:
   7. An ``expected-pairs.json`` entry has no committed baseline, even if the
      current run produced evidence — a never-baselined lane cannot pass the
      gate by emitting unreviewed pass/skip evidence.
+  8. A baseline pass/current pass loses a numeric measurement, changes its
+     measured count, or increases absolute measured delta beyond the explicit
+     per-case baseline ``measured_delta_tolerance`` (default zero).
 
 Without those checks a crashed lane (lane-job exit 0 ⊕ no envelope written),
 an all-fail brand-new lane, or a never-baselined lane that quietly emits
@@ -67,6 +70,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -152,6 +156,36 @@ def classify(baseline: str | None, current: str | None) -> str:
     return "transition"
 
 
+def measurement_regression(baseline: dict, current: dict) -> str:
+    """A passing status cannot conceal a changed count or increased error.
+
+    Null baseline measurements are explicitly unmeasured. Once reviewed numeric
+    evidence exists, dropping it also regresses. Delta tolerances are explicit
+    per-case baseline policy, in the measurement's own units, never guessed.
+    """
+    for field in ("measured_count", "measured_delta"):
+        expected = baseline.get(field)
+        actual = current.get(field)
+        if expected is None:
+            continue
+        if (isinstance(expected, bool) or not isinstance(expected, (int, float))
+                or not math.isfinite(expected)):
+            return f"invalid baseline {field}"
+        if (isinstance(actual, bool) or not isinstance(actual, (int, float))
+                or not math.isfinite(actual)):
+            return f"missing or invalid current {field}"
+        if field == "measured_count" and actual != expected:
+            return f"measured_count changed: {expected} -> {actual}"
+        if field == "measured_delta":
+            tolerance = baseline.get("measured_delta_tolerance", 0)
+            if (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float))
+                    or not math.isfinite(tolerance) or tolerance < 0):
+                return "invalid baseline measured_delta_tolerance"
+            if abs(actual) > abs(expected) + tolerance:
+                return f"measured_delta increased: {expected} -> {actual} (tolerance {tolerance})"
+    return ""
+
+
 def diff(
     baselines: dict[tuple[str, str], dict],
     current: dict[tuple[str, str], dict],
@@ -168,11 +202,18 @@ def diff(
             b = baseline_results.get(cid, {}).get("status")
             c = current_results.get(cid, {}).get("status")
             classification = classify(b, c)
+            measurement_note = ""
+            if b == "pass" and c == "pass":
+                measurement_note = measurement_regression(baseline_results[cid], current_results[cid])
+                if measurement_note:
+                    classification = "regression"
             if classification in ("stable", "transition"):
                 # Stable runs are not actionable; "transition" is a non-pass↔
                 # non-pass move (skip↔not-applicable) which is also noise.
                 continue
             notes = current_results.get(cid, {}).get("notes") or baseline_results.get(cid, {}).get("notes") or ""
+            if measurement_note:
+                notes = measurement_note + "; " + notes
             changes.append(CaseChange(
                 lane=lane,
                 protocol=protocol,
