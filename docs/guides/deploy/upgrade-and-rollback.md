@@ -117,6 +117,17 @@ annotation the reader cannot parse counts as reader-incompatible. Annotations
 are part of the hash-pinned script text, so add them before the migration first
 ships.
 
+**Every migration change is checked against the previous image.** The pull
+request check `PR Gate / N-1 reader compatibility` applies the change's full
+migration set to a fresh database, starts the server image of the latest
+published platform release on it (pulled by the digest the release recorded) with
+migrations enabled, and requires it to become ready and to read and write a
+seeded layer. A refusal passes only when every refused script is classified
+`contract` or carries `-- honua:reader-incompatible`; each such script must also
+carry `-- honua:compatibility-review` and be named, by its file name, in a
+rollback-boundary note in this guide that tells operators to restore instead of
+rolling back.
+
 ### Configuration binding correction
 
 Recent releases correct source-generated binding for options that previously used
