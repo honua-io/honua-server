@@ -111,7 +111,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<PostgresBoundConnectionProvider>(),
                 preferSerialBoundedSpatialReads,
                 disableJitForSourceSpatialCounts,
-                preferSerialSourceSpatialCounts: preferSerialSourceSpatialCounts));
+                preferSerialSourceSpatialCounts: preferSerialSourceSpatialCounts,
+                secretReferenceResolver: provider.GetService<Honua.Core.Features.Security.Abstractions.IRequestSecretReferenceResolver>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

@@ -42,6 +42,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly FeatureStorageMapping _mapping;
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
+    private readonly IRequestSecretReferenceResolver? _secretReferenceResolver;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver _readSecurity;
     private readonly ILogger _logger;
@@ -72,8 +73,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         PostgresBoundConnectionProvider? boundConnectionProvider = null,
         bool? preferSerialBoundedSpatialReads = null,
         bool disableJitForSourceSpatialCounts = false,
-        bool? preferSerialSourceSpatialCounts = null)
+        bool? preferSerialSourceSpatialCounts = null,
+        IRequestSecretReferenceResolver? secretReferenceResolver = null)
     {
+        _secretReferenceResolver = secretReferenceResolver;
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
         _resource = resource ?? throw new ArgumentNullException(nameof(resource));
@@ -1659,6 +1662,26 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
+        // An external secret reference resolves through the operator-allow-listed resolver, the
+        // same path the admin connection test and the secure resolver use (honua-server#6499).
+        // A refusal or lookup failure falls through to the loud failure below, never to the
+        // default database.
+        if (!string.IsNullOrWhiteSpace(_connection.SecretRef) && _secretReferenceResolver is not null)
+        {
+            try
+            {
+                var resolved = await _secretReferenceResolver.ResolveAsync(_connection.SecretRef).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(resolved))
+                {
+                    return _resolvedBoundConnectionString = resolved;
+                }
+            }
+            catch (RequestSecretReferenceException)
+            {
+                LogSecretReferenceUnresolved(_logger, _qualifiedTableName, _connection.Id);
+            }
+        }
+
         // No bound connection string could be resolved. Decide whether to fall back to the
         // default catalog connection (the same source render + OGC reads use) or to fail
         // loudly. The single-DB / default-connection deployment is the common case: a layer
@@ -1699,6 +1722,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         LogDefaultConnectionFallback(_logger, _qualifiedTableName, _connection.Id);
         return null;
     }
+
+    [LoggerMessage(
+        EventId = 7143,
+        Level = LogLevel.Warning,
+        Message = "Storage-mapped table {Table} is bound to data connection '{ConnectionId}' whose secret "
+            + "reference was refused by the request secret-reference policy or could not be resolved. Check "
+            + "Security:RequestSecretReferences:AllowedSecretReferencePrefixes and the host's access to the secret.")]
+    private static partial void LogSecretReferenceUnresolved(ILogger logger, string table, string connectionId);
 
     [LoggerMessage(
         EventId = 7110,
