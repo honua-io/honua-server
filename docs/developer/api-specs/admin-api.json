@@ -44516,6 +44516,13 @@
             "description": "Failure detail when the job failed; null otherwise.",
             "nullable": true
           },
+          "warnings": {
+            "type": "array",
+            "description": "Non-fatal scan warnings. Includes a failed coordinate enrichment when the structural scan still succeeded.",
+            "items": {
+              "type": "string"
+            }
+          },
           "coverage": {
             "$ref": "#/components/schemas/MultidimCoverageResponse"
           }

@@ -201,6 +201,51 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_CoverageGrid_DescribesTheCoverageNotTheBaseRaster()
+    {
+        SetupSuccessfulMetadata();
+        var extent = new RasterExtent
+        {
+            XMin = -122.525,
+            YMin = 37.675,
+            XMax = -122.325,
+            YMax = 37.875,
+            Srid = 4326,
+        };
+        _multidimensionalInfoBuilder.DescribeGridAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new ImageServerCoverageGrid
+            {
+                Extent = extent,
+                PixelSizeX = 0.05,
+                PixelSizeY = 0.05,
+                Width = 4,
+                Height = 4,
+                StoredPixelType = "32BF",
+                NoDataValue = -9999,
+                Minimum = 11,
+                Maximum = 35,
+                Mean = 23,
+                YAxisAscending = true,
+            });
+
+        var result = await _handler.GetServiceInfoAsync(CreateImageServerContext(), 1);
+
+        var info = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which.Value!;
+        info.PixelType.Should().Be("F32");
+        info.BandCount.Should().Be(1);
+        info.PixelSizeX.Should().BeApproximately(0.05, 1e-9);
+        info.PixelSizeY.Should().BeApproximately(0.05, 1e-9);
+        info.Extent.XMin.Should().BeApproximately(-122.525, 1e-9);
+        info.Extent.YMin.Should().BeApproximately(37.675, 1e-9);
+        info.Extent.XMax.Should().BeApproximately(-122.325, 1e-9);
+        info.Extent.YMax.Should().BeApproximately(37.875, 1e-9);
+        info.MinValues.Should().Equal(11);
+        info.MaxValues.Should().Equal(35);
+        info.MeanValues.Should().Equal(23);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_ResponseDoesNotAdvertiseUnroutedTilemapContract()
     {
         SetupSuccessfulMetadata();

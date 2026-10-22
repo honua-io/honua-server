@@ -140,18 +140,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            await context.ReportProgressAsync(70, "Reading coverage extent", cancellationToken).ConfigureAwait(false);
-
-            // Best-effort enrichment: gdalmdiminfo carries structure but no coordinate
-            // values, so a classic gdalinfo pass supplies the spatial extent, cell
-            // resolution, and temporal/vertical bounds. A failure here is non-fatal —
-            // the server still materializes structural metadata from gdalmdiminfo.
-            string? infoJson = null;
-            var infoResult = await RunInfoAsync(runner, vsiPath, workspace, linked.Token).ConfigureAwait(false);
-            if (infoResult is { Succeeded: true } && !string.IsNullOrWhiteSpace(infoResult.StandardOutput))
-            {
-                infoJson = infoResult.StandardOutput;
-            }
+            await context.ReportProgressAsync(70, "Converting to Zarr", cancellationToken).ConfigureAwait(false);
 
             // Classic NetCDF raster views normalize rows to north-up, while
             // gdalmdimtranslate preserves storage order. Read only the Y coordinate
@@ -159,20 +148,41 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             var yAxisAscending = await ReadYAxisAscendingAsync(
                 runner, vsiPath, result.StandardOutput, workspace, linked.Token).ConfigureAwait(false);
 
-            cancellationToken.ThrowIfCancellationRequested();
-            await context.ReportProgressAsync(80, "Converting to Zarr", cancellationToken).ConfigureAwait(false);
-
             // Best-effort convert so pixel slices resolve through the existing Zarr
             // reader (ADR-0039 Path B). This is a multidimensional dataset, so use
             // gdalmdimtranslate rather than the classic-raster gdal_translate CLI.
-            // Writes a derived Zarr beside the source via GDAL's VSI layer; a failure
-            // here leaves metadata serving intact.
+            // The same derived store is what classic gdalinfo can open inside a
+            // container: GDAL's netCDF driver refuses /vsi sources unless Linux
+            // userfaultfd is available, and Docker's default seccomp blocks it.
             string? zarrRootPath = DeriveZarrRootPath(objectKey);
             var vsiOut = GdalVsiPath.Build(provider, bucket, zarrRootPath);
-            var convertResult = await RunConvertAsync(runner, vsiPath, vsiOut, workspace, linked.Token).ConfigureAwait(false);
+            var convertResult = await RunConvertAsync(runner, context, vsiPath, vsiOut, workspace, linked.Token).ConfigureAwait(false);
             if (convertResult is not { Succeeded: true })
             {
                 zarrRootPath = null;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await context.ReportProgressAsync(80, "Reading coverage extent", cancellationToken).ConfigureAwait(false);
+
+            // Coordinate enrichment must not open the source with the classic netCDF
+            // driver. Prefer gdalinfo on the derived Zarr (DIM_* band metadata). If
+            // that is unavailable, copy the bytes to local scratch and read them
+            // there — a local NetCDF does not need userfaultfd.
+            var (infoJson, enrichmentWarning) = await ReadCoordinatesAsync(
+                runner, context, vsiPath, zarrRootPath is null ? null : vsiOut, workspace, linked.Token).ConfigureAwait(false);
+            if (enrichmentWarning is not null)
+            {
+                Log.EnrichmentFailed(logger, job.OperationId, enrichmentWarning);
+                await context.AppendLogAsync(
+                    new ExecutionLogEntry
+                    {
+                        Timestamp = DateTimeOffset.UtcNow,
+                        Level = ExecutionLogLevel.Warning,
+                        Message = enrichmentWarning,
+                        Phase = "Reading coverage extent",
+                    },
+                    cancellationToken).ConfigureAwait(false);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -191,7 +201,9 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             await context.ReportProgressAsync(100, "Coverage metadata completed", cancellationToken).ConfigureAwait(false);
 
             Log.MetadataCompleted(logger, job.OperationId, provider.ToString(), payload.Length);
-            return JobExecutionResult.Succeeded();
+            return enrichmentWarning is null
+                ? JobExecutionResult.Succeeded()
+                : JobExecutionResult.Succeeded([enrichmentWarning]);
         }
         finally
         {
@@ -309,16 +321,97 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
                 standardName.GetString() is "latitude" or "projection_y_coordinate");
     }
 
+    private static async Task<(string? InfoJson, string? Warning)> ReadCoordinatesAsync(
+        IGdalCommandRunner runner,
+        IJobExecutionContext context,
+        string sourcePath,
+        string? zarrPath,
+        string workspace,
+        CancellationToken cancellationToken)
+    {
+        GdalCommandResult? last = null;
+        if (zarrPath is not null)
+        {
+            last = await RunInfoAsync(runner, context, zarrPath, workspace, cancellationToken).ConfigureAwait(false);
+            if (IsCoordinateInfo(last))
+            {
+                return (last!.StandardOutput, null);
+            }
+        }
+
+        if (IsRemoteVsi(sourcePath))
+        {
+            var copied = await TryCopyToScratchAsync(runner, context, sourcePath, workspace, cancellationToken).ConfigureAwait(false);
+            if (copied.Path is null)
+            {
+                last = copied.Result ?? last;
+            }
+            else
+            {
+                last = await RunInfoAsync(runner, context, copied.Path, workspace, cancellationToken).ConfigureAwait(false);
+                if (IsCoordinateInfo(last))
+                {
+                    return (last!.StandardOutput, null);
+                }
+            }
+        }
+        else
+        {
+            last = await RunInfoAsync(runner, context, sourcePath, workspace, cancellationToken).ConfigureAwait(false);
+            if (IsCoordinateInfo(last))
+            {
+                return (last!.StandardOutput, null);
+            }
+        }
+
+        return (null, DescribeEnrichmentFailure(last, workspace));
+    }
+
+    private static bool IsRemoteVsi(string path)
+        => path.StartsWith("/vsi", StringComparison.Ordinal);
+
+    private static bool IsCoordinateInfo(GdalCommandResult? result)
+        => result is { Succeeded: true } &&
+           !string.IsNullOrWhiteSpace(result.StandardOutput) &&
+           (result.StandardOutput.Contains("geoTransform", StringComparison.Ordinal) ||
+            result.StandardOutput.Contains("NETCDF_DIM_", StringComparison.Ordinal) ||
+            result.StandardOutput.Contains("DIM_", StringComparison.Ordinal));
+
+    private static string DescribeEnrichmentFailure(GdalCommandResult? result, string workspace)
+    {
+        if (result is { Succeeded: false })
+        {
+            var detail = GdalErrorSanitizer.Sanitize(result.StandardError, workspace);
+            return string.IsNullOrWhiteSpace(detail)
+                ? $"Coordinate enrichment failed: the GDAL read exited with code {result.ExitCode}."
+                : $"Coordinate enrichment failed: {detail}";
+        }
+
+        return "Coordinate enrichment failed: gdalinfo returned no geotransform or dimension coordinates.";
+    }
+
     private static async Task<GdalCommandResult?> RunInfoAsync(
         IGdalCommandRunner runner,
-        string vsiPath,
+        IJobExecutionContext context,
+        string path,
         string workspace,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await runner.RunAsync("gdalinfo", new List<string> { "-json", vsiPath }, workspace, cancellationToken)
-                .ConfigureAwait(false);
+            var withStats = InfoArguments(path, includeStats: true);
+            await GdalCommandLog.LogCommandAsync(context, "gdalinfo", withStats, workspace, cancellationToken).ConfigureAwait(false);
+            var statsResult = await runner.RunAsync("gdalinfo", withStats, workspace, cancellationToken).ConfigureAwait(false);
+            if (statsResult.Succeeded)
+            {
+                return statsResult;
+            }
+
+            // -stats reads every pixel and some drivers reject it. The coordinate
+            // document does not need statistics, so retry the same path without it.
+            var coordinatesOnly = InfoArguments(path, includeStats: false);
+            await GdalCommandLog.LogCommandAsync(context, "gdalinfo", coordinatesOnly, workspace, cancellationToken).ConfigureAwait(false);
+            return await runner.RunAsync("gdalinfo", coordinatesOnly, workspace, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -326,18 +419,52 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         }
     }
 
+    private static List<string> InfoArguments(string path, bool includeStats)
+    {
+        var args = new List<string> { "--config", "GDAL_PAM_ENABLED", "NO", "-json" };
+        if (includeStats)
+        {
+            args.Add("-stats");
+        }
+
+        args.Add(path);
+        return args;
+    }
+
+    private static async Task<(string? Path, GdalCommandResult? Result)> TryCopyToScratchAsync(
+        IGdalCommandRunner runner,
+        IJobExecutionContext context,
+        string sourcePath,
+        string workspace,
+        CancellationToken cancellationToken)
+    {
+        var destination = Path.Combine(workspace, "coverage-source.bin");
+        var args = new List<string> { "copy", sourcePath, destination };
+        try
+        {
+            await GdalCommandLog.LogCommandAsync(context, "gdalmanage", args, workspace, cancellationToken).ConfigureAwait(false);
+            var result = await runner.RunAsync("gdalmanage", args, workspace, cancellationToken).ConfigureAwait(false);
+            return result.Succeeded ? (destination, result) : (null, result);
+        }
+        catch (OperationCanceledException)
+        {
+            return (null, null);
+        }
+    }
+
     private static async Task<GdalCommandResult?> RunConvertAsync(
         IGdalCommandRunner runner,
+        IJobExecutionContext context,
         string vsiIn,
         string vsiOut,
         string workspace,
         CancellationToken cancellationToken)
     {
+        var args = new List<string> { "-of", "Zarr", vsiIn, vsiOut };
         try
         {
-            return await runner
-                .RunAsync("gdalmdimtranslate", new List<string> { "-of", "Zarr", vsiIn, vsiOut }, workspace, cancellationToken)
-                .ConfigureAwait(false);
+            await GdalCommandLog.LogCommandAsync(context, "gdalmdimtranslate", args, workspace, cancellationToken).ConfigureAwait(false);
+            return await runner.RunAsync("gdalmdimtranslate", args, workspace, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -425,5 +552,9 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         [LoggerMessage(9304, LogLevel.Information,
             "GDAL multidim coverage executor completed job {OperationId}: provider={Provider}, bytes={Bytes}")]
         public static partial void MetadataCompleted(ILogger logger, string operationId, string provider, long bytes);
+
+        [LoggerMessage(9305, LogLevel.Warning,
+            "GDAL multidim coverage executor job {OperationId} completed without coordinate enrichment: {Warning}")]
+        public static partial void EnrichmentFailed(ILogger logger, string operationId, string warning);
     }
 }
