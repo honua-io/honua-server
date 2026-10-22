@@ -1,3 +1,8 @@
+---
+type: reference
+title: Generated workflow grammar
+---
+
 # Generated workflow grammar
 
 Do not edit: generated from grammar.v0.1.json. All executors require qualification.

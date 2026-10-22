@@ -63,7 +63,7 @@ def main():
     args = parser.parse_args()
     bundle = build()
     output = json.dumps(bundle, indent=2) + '\n'
-    documentation = '# Generated workflow grammar\n\nDo not edit: generated from grammar.v0.1.json. All executors require qualification.\n\n' + '\n'.join('## ' + op['id'] + '\n\nRequires: ' + ', '.join(op['requires']) + '. Produces: ' + ', '.join(op['produces']) + '. Executor: ' + op['executor'] + '.\n' for op in bundle['grammar']['operations'])
+    documentation = '---\ntype: reference\ntitle: Generated workflow grammar\n---\n\n# Generated workflow grammar\n\nDo not edit: generated from grammar.v0.1.json. All executors require qualification.\n\n' + '\n'.join('## ' + op['id'] + '\n\nRequires: ' + ', '.join(op['requires']) + '. Produces: ' + ', '.join(op['produces']) + '. Executor: ' + op['executor'] + '.\n' for op in bundle['grammar']['operations'])
     path = BASE / 'generated/bundle.v0.1.json'
     if args.check:
         if path.read_text() != output or (BASE / 'generated/grammar.v0.1.md').read_text() != documentation: raise SystemExit('Workflow bundle is stale; regenerate it')
