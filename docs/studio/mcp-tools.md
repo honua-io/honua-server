@@ -18,8 +18,8 @@ is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 | `honua_studio_create_draft` | Create a map, app, or dashboard draft. |
 | `honua_studio_get_draft` | Read the current draft and generation. |
 | `honua_studio_update_draft` | Replace a draft envelope at an expected generation. |
-| `honua_studio_validate_draft` | Validate without mutating the draft. |
-| `honua_studio_preview_draft` | Return a preview plan without publishing. |
+| `honua_studio_validate_draft` | Check envelope structure without mutating the draft, querying sources or rendering. |
+| `honua_studio_preview_draft` | Return a plan without querying sources, rendering a canvas or publishing. |
 | `honua_studio_add_layer` | Add one layer. |
 | `honua_studio_remove_layer` | Remove one layer. |
 | `honua_studio_set_layer_style` | Replace a layer's typed style. |
@@ -51,6 +51,24 @@ with the requested `route` and `visibility` to `honua_studio_propose_publication
 The configure prompts tell an admin to finish that call in the same session and to
 read the share URL from the result. A caller who is not an admin receives a proposal
 and does not get a share URL.
+
+## Layer identity and observed rendering
+
+Discover readable published layers through `honua_list_layers` or `honua_describe_layer`.
+Copy the returned `studioSourceId` into a catalog-backed composition layer's `sourceId`.
+Choose a separate `layer.id` for that drawing element. The source identity follows the
+existing Studio catalog contract; it grants no data or publication permission.
+Catalog-backed editing does not require portable `sourceBindings` or a `mapSpec`
+export. Supported portable bindings and `metadata.honua.source` overrides remain
+separate mechanisms with their existing contracts.
+
+Validation reports structure. Preview reports a plan for every package family.
+A successful result from either tool leaves source resolution, current data access
+and rendering unverified. `honua_render_map` can produce an image of the requested
+published data; that image does not verify a saved Studio composition. Open that
+exact composition in the actual Studio canvas or a supported consumer before
+claiming its layers, styles and viewport rendered correctly. Saving and publication
+also require their own receipts and audience checks.
 
 ## Composition policy
 

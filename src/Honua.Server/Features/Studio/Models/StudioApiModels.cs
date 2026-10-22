@@ -40,6 +40,46 @@ public sealed class CreateStudioPackageDraftRequest
     public required StudioPackageEnvelope Envelope { get; init; }
 }
 
+/// <summary>A currently authorized catalog source referenced by a published composition.</summary>
+public sealed record StudioPublishedSource
+{
+    /// <summary>Canonical Studio source identity.</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    /// <summary>Current authorized source title.</summary>
+    [JsonPropertyName("title")]
+    public required string Title { get; init; }
+
+    /// <summary>Rendering protocol exposed by the canonical service directory.</summary>
+    [JsonPropertyName("protocol")]
+    public string Protocol { get; init; } = "geoservices-feature-service";
+
+    /// <summary>Catalog geometry hint; actual feature payloads remain authoritative.</summary>
+    [JsonPropertyName("geometryType")]
+    public required string GeometryType { get; init; }
+
+    /// <summary>Actual service URL and local layer identity.</summary>
+    [JsonPropertyName("locator")]
+    public required StudioPublishedSourceLocator Locator { get; init; }
+}
+
+/// <summary>Current public locator of a source; never a credential or a grant.</summary>
+public sealed record StudioPublishedSourceLocator
+{
+    /// <summary>Service URL advertised by the canonical directory for this reader.</summary>
+    [JsonPropertyName("url")]
+    public required string Url { get; init; }
+
+    /// <summary>Canonical service identity.</summary>
+    [JsonPropertyName("serviceId")]
+    public required string ServiceId { get; init; }
+
+    /// <summary>Service-local layer index.</summary>
+    [JsonPropertyName("layerId")]
+    public required int LayerId { get; init; }
+}
+
 /// <summary>
 /// Request body for updating a mutable Studio package draft.
 /// </summary>
@@ -362,6 +402,11 @@ public sealed class StudioPublishedArtifact
     /// <summary>When the governing publication request was accepted.</summary>
     [JsonPropertyName("publishedAt")]
     public required DateTimeOffset PublishedAt { get; init; }
+
+    /// <summary>Opt-in current-reader source metadata, outside the sealed envelope and its hash.</summary>
+    [JsonPropertyName("sourceCatalog")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<StudioPublishedSource>? SourceCatalog { get; init; }
 
     /// <summary>The Active version's sealed package envelope.</summary>
     [JsonPropertyName("envelope")]

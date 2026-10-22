@@ -108,10 +108,6 @@ workflow:
         - name: workspace
           concept: /concepts/domain/studio-workspace.md
           description: "Current design paired with the preview generated for this revision."
-      interfaces:
-        - kind: mcp
-          operation: honua_studio_preview_draft
-          contract: /studio/mcp-tools.md
       effect: read
       effectTarget: observation
       preconditions:
@@ -135,6 +131,8 @@ A request such as “put the layer list beside the map and make the selected fea
 The current Studio implementation has typed composition commands, a live MapLibre canvas, local undo/redo history, and server draft synchronization.[^studio] History records composition revisions; undo restores and resynchronizes an earlier state, and a new edit clears the redo stack.[^history]
 
 The Git workspace contract described here is the intended source-asset adapter, not a claim of a shipped Git-backed Studio UI. It binds a change to the actual worktree, base commit, staged and unstaged content, and selected files. A worktree's `.git` can be a file. Preserve untracked and unrelated work. A whole-worktree reset cannot stand in for undoing one design turn.
+
+The preview action requires the actual Studio host's rendered canvas for the current design. The MCP `honua_studio_preview_draft` tool returns a plan; it does not query source data or render that canvas. Structural validation, a preview plan and a saved version each leave the visual outcome unverified until the exact composition is opened in a supported renderer.
 
 Preview freshness is part of the contract: if a slower render for an older revision finishes later, it must not replace the newest design's preview. Keep enough basis and change identity to explain or reverse the specific turn.
 

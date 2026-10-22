@@ -37,11 +37,15 @@ public sealed class AlertEntitlementGateTests
 {
     private const string RulesRoute = "/api/v1/admin/alerts/rules";
 
-    private static WebAppFixture CreateFixture(HonuaEdition edition, AlertEdition? alertsEditionCap = null)
+    private static WebAppFixture CreateFixture(
+        HonuaEdition edition,
+        AlertEdition? alertsEditionCap = null,
+        LicenseValidationState validationState = LicenseValidationState.Valid,
+        string[]? entitlements = null)
     {
         var fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
-            .WithTestLicense(edition)
+            .WithTestLicense(edition, validationState, entitlements)
             .ConfigureWebHost(builder => builder.UseEnvironment("Test"));
 
         if (alertsEditionCap is { } cap)
@@ -75,14 +79,35 @@ public sealed class AlertEntitlementGateTests
         isActive = true,
     };
 
-    private static async Task AssertBlockedAsync(HttpClient client, object payload, string expectedKey)
+    private static async Task AssertBlockedAsync(
+        HttpClient client,
+        object payload,
+        string expectedKey,
+        string requiredEdition,
+        bool includeUpdate = false)
     {
-        using var response = await client.PostAsJsonAsync(RulesRoute, payload);
+        await AssertDenialAsync(() => client.PostAsJsonAsync(RulesRoute, payload), expectedKey, requiredEdition);
+        if (includeUpdate)
+        {
+            await AssertDenialAsync(
+                () => client.PutAsJsonAsync($"{RulesRoute}/1", payload),
+                expectedKey,
+                requiredEdition);
+        }
+    }
+
+    private static async Task AssertDenialAsync(
+        Func<Task<HttpResponseMessage>> send,
+        string expectedKey,
+        string requiredEdition)
+    {
+        using var response = await send();
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(
             response.StatusCode == HttpStatusCode.PaymentRequired,
             $"Expected 402 for '{expectedKey}' but got {(int)response.StatusCode}: {body}");
-        Assert.Contains($"entitlement: {expectedKey}", body);
+        Assert.Contains($"entitlement: {expectedKey}", body, StringComparison.Ordinal);
+        Assert.Contains($"requires an active {requiredEdition} entitlement", body, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -123,8 +148,8 @@ public sealed class AlertEntitlementGateTests
         {
             using var client = fixture.CreateAdminClient();
 
-            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit");
-            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "channels.webhook");
+            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit", "Pro");
+            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "channels.webhook", "Pro");
 
             // On-demand rule evaluation (POST /rules/test) is the alerts.evaluation surface.
             using var testResponse = await client.PostAsJsonAsync(
@@ -141,6 +166,7 @@ public sealed class AlertEntitlementGateTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
+    [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}")]
     [Endpoint("POST /api/v1/admin/alerts/rules/test")]
     public async Task ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures()
     {
@@ -160,12 +186,15 @@ public sealed class AlertEntitlementGateTests
             await AssertBlockedAsync(
                 client,
                 RulePayload("dwell", "webhook", conditionsJson: "{\"dwellSeconds\":60}"),
-                "alerts.dwell");
+                "alerts.dwell",
+                "Enterprise",
+                includeUpdate: true);
             await AssertBlockedAsync(
                 client,
                 RulePayload("threshold", "webhook", conditionsJson: "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}"),
-                "alerts.threshold");
-            await AssertBlockedAsync(client, RulePayload("enter", "email"), "channels.email");
+                "alerts.threshold",
+                "Enterprise");
+            await AssertBlockedAsync(client, RulePayload("enter", "email"), "channels.email", "Enterprise", includeUpdate: true);
         }
         finally
         {
@@ -240,11 +269,62 @@ public sealed class AlertEntitlementGateTests
         {
             using var client = fixture.CreateAdminClient();
 
-            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit");
+            await AssertBlockedAsync(client, RulePayload("enter", "webhook"), "alerts.enter-exit", "Pro");
             await AssertBlockedAsync(
                 client,
                 RulePayload("dwell", "webhook", conditionsJson: "{\"dwellSeconds\":60}"),
-                "alerts.dwell");
+                "alerts.dwell",
+                "Enterprise");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// An expired Pro or Enterprise snapshot still carries <c>RequiredEdition</c>, but the gate
+    /// replaces the catalog upgrade sentence with a renewal sentence. The 402 must name both
+    /// the renewal and the edition the missing key requires.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules")]
+    [Endpoint("POST /api/v1/admin/alerts/rules/test")]
+    public async Task ExpiredPaidEdition_AlertRuleDenial_NamesRequiredEdition()
+    {
+        var fixture = CreateFixture(
+            HonuaEdition.Enterprise,
+            validationState: LicenseValidationState.Expired,
+            entitlements: []);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            var payload = RulePayload("dwell", "email", conditionsJson: "{\"dwellSeconds\":60}");
+
+            using var response = await client.PostAsJsonAsync(RulesRoute, payload);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(
+                response.StatusCode == HttpStatusCode.PaymentRequired,
+                $"Expected 402 but got {(int)response.StatusCode}: {body}");
+            Assert.Contains("entitlement: alerts.evaluation", body, StringComparison.Ordinal);
+            Assert.Contains("entitlement: alerts.dwell", body, StringComparison.Ordinal);
+            Assert.Contains("entitlement: channels.email", body, StringComparison.Ordinal);
+            Assert.Contains("requires an active Pro entitlement", body, StringComparison.Ordinal);
+            Assert.Contains("requires an active Enterprise entitlement", body, StringComparison.Ordinal);
+            Assert.Contains("Renew the configured license.", body, StringComparison.Ordinal);
+
+            using var testResponse = await client.PostAsJsonAsync(
+                RulesRoute + "/test",
+                new { rule = RulePayload("enter", "webhook") });
+            var testBody = await testResponse.Content.ReadAsStringAsync();
+            Assert.True(
+                testResponse.StatusCode == HttpStatusCode.PaymentRequired,
+                $"Expected 402 but got {(int)testResponse.StatusCode}: {testBody}");
+            Assert.Contains("entitlement: alerts.evaluation", testBody, StringComparison.Ordinal);
+            Assert.Contains("requires an active Pro entitlement", testBody, StringComparison.Ordinal);
+            Assert.Contains("Renew the configured license.", testBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("requires an active Enterprise entitlement", testBody, StringComparison.Ordinal);
         }
         finally
         {

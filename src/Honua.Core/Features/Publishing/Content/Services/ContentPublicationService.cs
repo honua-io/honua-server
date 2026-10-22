@@ -53,6 +53,9 @@ public sealed class ContentPublicationService : IContentPublicationService
         "https://www.opengis.net/def/crs/OGC/1.3/CRS84",
     };
 
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>> EmptyVersionsByPublication =
+        new Dictionary<string, IReadOnlyList<ContentPublicationVersion>>();
+
     private readonly IContentPublicationStore _store;
     private readonly TimeProvider _timeProvider;
     private readonly IMetadataV2GraphProvider? _graphProvider;
@@ -182,13 +185,18 @@ public sealed class ContentPublicationService : IContentPublicationService
         var limit = query.Limit <= 0 ? DefaultListLimit : Math.Min(query.Limit, MaxListLimit);
         var offset = DecodeListCursor(query.Cursor);
         var (routes, total) = await _store.ListRoutesAsync(query.Lifecycle, offset, limit, cancellationToken).ConfigureAwait(false);
+        var versionsByPublication = routes.Count == 0
+            ? EmptyVersionsByPublication
+            : await _store.ListVersionsByPublicationIdsAsync(
+                routes.Select(static route => route.PublicationId).ToArray(),
+                VersionPageSize,
+                cancellationToken).ConfigureAwait(false);
 
         var items = new List<ContentPublicationDetail>(routes.Count);
         foreach (var route in routes)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var versions = await _store.ListVersionsAsync(route.PublicationId, VersionPageSize, cancellationToken).ConfigureAwait(false);
-            items.Add(new ContentPublicationDetail { Route = route, Versions = versions });
+            versionsByPublication.TryGetValue(route.PublicationId, out var versions);
+            items.Add(new ContentPublicationDetail { Route = route, Versions = versions ?? [] });
         }
 
         var nextOffset = offset + items.Count;

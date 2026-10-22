@@ -90,14 +90,22 @@ internal static class AlertAdminEndpoints
             // IAlertEditionPolicy instead of a boot-time gate.
             .AddEndpointFilter((invocationContext, next) =>
             {
-                var gate = LicenseGate.RequireEntitlement(
-                    invocationContext.HttpContext,
-                    FeatureCatalog.AlertsEvaluationKey,
-                    "Alert rule evaluation");
+                var context = invocationContext.HttpContext;
+                var decision = LicenseGate.CheckEntitlement(
+                    context.RequestServices,
+                    FeatureCatalog.AlertsEvaluationKey);
+                if (decision.IsActive)
+                {
+                    return next(invocationContext);
+                }
 
-                return gate is null
-                    ? next(invocationContext)
-                    : ValueTask.FromResult<object?>(gate);
+                // Expired paid licenses keep RequiredEdition but replace the catalog sentence
+                // with a renewal sentence. Name the edition here so the 402 still says which
+                // tier the evaluation engine needs.
+                return ValueTask.FromResult<object?>(StandardErrorHelpers.CreatePaymentRequired(
+                    context,
+                    AppendExpiredEdition(decision, FeatureCatalog.AlertsEvaluationKey, decision.UpgradeMessage),
+                    [$"entitlement: {FeatureCatalog.AlertsEvaluationKey}"]));
             });
 
         group.MapPut("/rules/{ruleId:long}", HandleUpdateRule)
@@ -638,8 +646,12 @@ internal static class AlertAdminEndpoints
     /// #2998: license-entitlement gate for alert-rule mutations. Collects every
     /// <c>alerts.*</c>/<c>channels.*</c> entitlement the rule requires but the active license does
     /// not carry, and returns the standard 402 payment-required response naming each missing key
-    /// (one <c>entitlement: {key}</c> detail per key, mirroring <c>LicenseGate.RequireEntitlement</c>)
-    /// so the block is observable as an entitlement denial. Returns null when nothing is missing.
+    /// (one <c>entitlement: {key}</c> detail per key) and that key's required edition in the same
+    /// upgrade sentence <c>LicenseGate</c> / <c>FileBackedLicenseService</c> use
+    /// (<c>requires an active {edition} entitlement</c>). An expired or otherwise invalid paid
+    /// license keeps <c>RequiredEdition</c> while <see cref="LicenseGate.CheckEntitlement"/>
+    /// replaces the catalog upgrade sentence, so that 402 also names the required edition.
+    /// Returns null when nothing is missing.
     /// </summary>
     /// <remarks>
     /// Only <see cref="AlertEditionDenialReason.MissingEntitlement"/> produces the 402. A denial
@@ -699,10 +711,71 @@ internal static class AlertAdminEndpoints
             return null;
         }
 
+        var messages = new string[deniedKeys.Count];
+        for (var i = 0; i < deniedKeys.Count; i++)
+        {
+            messages[i] = DescribeMissingEntitlement(context, deniedKeys[i]);
+        }
+
         return StandardErrorHelpers.CreatePaymentRequired(
             context,
-            "The active license does not include the entitlements this alert rule requires.",
+            string.Join(' ', messages),
             deniedKeys.Select(key => $"entitlement: {key}").ToArray());
+    }
+
+    /// <summary>
+    /// Upgrade sentence for one denied alert or channel key. Prefers the live
+    /// <see cref="LicenseGate"/> decision so the wording stays identical to every other
+    /// entitlement 402, and falls back to the catalog edition when that decision has no message.
+    /// An invalid paid license keeps <see cref="LicenseEntitlementDecision.RequiredEdition"/>
+    /// while the renewal sentence omits it, so that edition is appended.
+    /// </summary>
+    private static string DescribeMissingEntitlement(HttpContext context, string entitlementKey)
+    {
+        var decision = LicenseGate.CheckEntitlement(context.RequestServices, entitlementKey);
+        if (!string.IsNullOrWhiteSpace(decision.UpgradeMessage))
+        {
+            return AppendExpiredEdition(decision, entitlementKey, decision.UpgradeMessage);
+        }
+
+        var feature = FeatureCatalog.All.FirstOrDefault(item =>
+            string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
+        var requiredEdition = (decision.RequiredEdition ?? feature?.MinimumEdition)?.ToString() ?? "paid";
+        var featureName = feature?.DisplayName ?? entitlementKey;
+        return AppendExpiredEdition(
+            decision,
+            entitlementKey,
+            $"{featureName} requires an active {requiredEdition} entitlement. " +
+            $"Current edition is {decision.Edition}; install a license that includes '{entitlementKey}'.");
+    }
+
+    /// <summary>
+    /// Adds the required-edition sentence when an invalid paid license's message does not
+    /// already name it. Valid licenses and Community keep the message unchanged.
+    /// </summary>
+    private static string AppendExpiredEdition(
+        LicenseEntitlementDecision decision,
+        string entitlementKey,
+        string message)
+    {
+        if (decision.Edition <= HonuaEdition.Community
+            || decision.ValidationState == LicenseValidationState.Valid
+            || decision.RequiredEdition is not { } required)
+        {
+            return message;
+        }
+
+        var edition = required.ToString();
+        if (message.Contains(edition, StringComparison.Ordinal))
+        {
+            return message;
+        }
+
+        var feature = FeatureCatalog.All.FirstOrDefault(item =>
+            string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
+        var featureName = feature?.DisplayName ?? entitlementKey;
+        var sentence = $"{featureName} requires an active {edition} entitlement.";
+        return string.IsNullOrWhiteSpace(message) ? sentence : $"{message} {sentence}";
     }
 
     /// <summary>

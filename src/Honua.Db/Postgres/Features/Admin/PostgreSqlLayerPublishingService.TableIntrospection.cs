@@ -24,7 +24,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string table,
         CancellationToken cancellationToken)
     {
-        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
         {
             return null;
         }
@@ -68,7 +68,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string table,
         CancellationToken cancellationToken)
     {
-        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
         {
             return null;
         }
@@ -93,7 +93,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string table,
         CancellationToken cancellationToken)
     {
-        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
         {
             return false;
         }
@@ -122,7 +122,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string table,
         CancellationToken cancellationToken)
     {
-        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
         {
             return null;
         }
@@ -150,7 +150,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string table,
         CancellationToken cancellationToken)
     {
-        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
         {
             return [];
         }

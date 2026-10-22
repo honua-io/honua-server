@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Infrastructure.Models;
@@ -43,8 +44,10 @@ internal static class StudioPublishedRouteEndpoints
 
     private static async Task<IResult> HandleRead(
         string? route,
+        [FromQuery] bool? includeSources,
         [FromServices] IStudioPackageLifecycleService service,
         [FromServices] StudioEndpointAuthorization authorization,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ILogger<StudioPublishedRouteLog> logger,
         HttpContext context)
     {
@@ -116,6 +119,10 @@ internal static class StudioPublishedRouteEndpoints
                 ContentHashInput = version.ContentHashInput,
                 PublishedAt = publication.CreatedAt,
                 Envelope = version.Envelope,
+                SourceCatalog = includeSources == true
+                    ? await StudioPublishedSourceProjection.ReadAsync(
+                        context, graphProvider, version.Envelope.Body, context.RequestAborted).ConfigureAwait(false)
+                    : null,
             };
             return Results.Json(
                 ApiResponse<StudioPublishedArtifact>.CreateSuccess(artifact),

@@ -225,3 +225,50 @@ def test_downloaded_release_code_requires_exact_protected_trunk_history(monkeypa
             assert "credential-bearing" not in str(error.value)
     assert script.index("<<'TRUSTED_RELEASE'") < script.index('root="https://raw.githubusercontent.com/')
     assert script.index("\nTRUSTED_RELEASE") < script.index("curl --retry")
+
+
+@pytest.mark.parametrize("mutation", [None, "two-parents", "parent-off-trunk", "no-prepared-ref", "prepared-ref-moved",
+                                    "code-change", "rename-from-code", "two-commits", "empty-change"])
+def test_release_preparation_on_trunk_is_admitted_only_for_its_data_files(monkeypatch, mutation):
+    """honua-release#604 dispatches with its prepared, unadmitted inputs: one data-only commit on trunk."""
+    step = next(step for step in workflow()["jobs"]["soak"]["steps"] if step.get("id") == "lock")
+    code = step["run"].split("<<'TRUSTED_RELEASE'\n", 1)[1].split("\nTRUSTED_RELEASE", 1)[0]
+    repo = "repos/honua-io/honua-release"
+    parent = "d" * 40
+    diverged = {"status": "diverged", "base_commit": {"sha": SOURCE}, "merge_base_commit": {"sha": parent}}
+    files = [{"filename": "platform-manifest.yaml", "status": "modified", "previous_filename": None},
+             {"filename": "compatibility-matrix.yaml", "status": "modified", "previous_filename": None},
+             {"filename": "deployment-preparation.json", "status": "added", "previous_filename": None}]
+    data = {repo: {"full_name": "honua-io/honua-release", "default_branch": "trunk"},
+            repo + "/branches/trunk": {"protected": True, "commit": {"sha": TRUNK}},
+            repo + "/commits/" + SOURCE: {"sha": SOURCE, "parents": [{"sha": parent}]},
+            repo + "/compare/" + SOURCE + "..." + TRUNK: diverged,
+            repo + "/compare/" + parent + "..." + TRUNK: {
+                "status": "ahead", "base_commit": {"sha": parent}, "merge_base_commit": {"sha": parent}},
+            repo + "/git/ref/prepared-deployments/" + SOURCE: {
+                "ref": "refs/prepared-deployments/" + SOURCE, "object": {"sha": SOURCE, "type": "commit"}},
+            repo + "/compare/" + parent + "..." + SOURCE: {
+                "status": "ahead", "ahead_by": 1, "base_commit": {"sha": parent}, "files": files}}
+    change = data[repo + "/compare/" + parent + "..." + SOURCE]
+    if mutation == "two-parents": data[repo + "/commits/" + SOURCE]["parents"].append({"sha": "e" * 40})
+    if mutation == "parent-off-trunk": data[repo + "/compare/" + parent + "..." + TRUNK]["status"] = "diverged"
+    if mutation == "no-prepared-ref": del data[repo + "/git/ref/prepared-deployments/" + SOURCE]
+    if mutation == "prepared-ref-moved": data[repo + "/git/ref/prepared-deployments/" + SOURCE]["object"]["sha"] = "c" * 40
+    if mutation == "code-change": files.append({"filename": "tools/check_capacity_soak.py", "status": "modified"})
+    if mutation == "rename-from-code": files[0].update(status="renamed", previous_filename="tools/release_runner_policy.py")
+    if mutation == "two-commits": change["ahead_by"] = 2
+    if mutation == "empty-change": change["files"] = []
+    def api(args, **kwargs):
+        assert args[:2] == ["gh", "api"] and kwargs["stderr"] == subprocess.DEVNULL
+        if args[2] not in data:
+            raise subprocess.CalledProcessError(1, args, stderr="404 credential-bearing details")
+        return json.dumps(data[args[2]])
+    with monkeypatch.context() as patch:
+        patch.setenv("RELEASE_SHA", SOURCE)
+        patch.setattr(subprocess, "check_output", api)
+        if mutation is None:
+            exec(compile(code, str(WORKFLOW) + ":release-source", "exec"), {})
+        else:
+            with pytest.raises(SystemExit) as error:
+                exec(compile(code, str(WORKFLOW) + ":release-source", "exec"), {})
+            assert "credential-bearing" not in str(error.value)

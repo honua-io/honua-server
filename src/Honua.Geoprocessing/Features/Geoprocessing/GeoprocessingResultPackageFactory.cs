@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Import.Domain;
 using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing;
@@ -248,7 +250,8 @@ internal static class GeoprocessingResultPackageFactory
 
         var schema = inputs.GetOrDefault("schema", "public");
         if (!ValidPostgisIdentifier(schema) ||
-            !TryReadCommittedSinkReceipt(reference, processId, schema, table!))
+            ImportTargetSchemaPolicy.IsReserved(schema, [ImportTargetSchemaPolicy.DefaultMetadataSchema]) ||
+            !TryReadCommittedSinkReceipt(reference, processId, schema, table!, out var endpointFingerprint))
         {
             return;
         }
@@ -256,14 +259,17 @@ internal static class GeoprocessingResultPackageFactory
         metadata["connectionId"] = connectionId.ToString("D");
         metadata["schema"] = schema;
         metadata["table"] = table!;
+        metadata[ConnectionEndpointFingerprint.MetadataKey] = endpointFingerprint;
     }
 
     private static bool TryReadCommittedSinkReceipt(
         string reference,
         string processId,
         string schema,
-        string table)
+        string table,
+        out string endpointFingerprint)
     {
+        endpointFingerprint = string.Empty;
         const string prefix = Execution.SinkResultArtifact.DataUriPrefix;
         // This sink emits a tiny fixed-shape descriptor. Bound decoding even if a
         // corrupt durable record supplies a much larger reference.
@@ -293,18 +299,27 @@ internal static class GeoprocessingResultPackageFactory
                 }
             }
 
-            return root.TryGetProperty("processId", out var actualProcess) &&
-                   actualProcess.ValueKind == JsonValueKind.String &&
-                   string.Equals(actualProcess.GetString(), processId, StringComparison.Ordinal) &&
-                   root.TryGetProperty("schema", out var actualSchema) &&
-                   actualSchema.ValueKind == JsonValueKind.String &&
-                   string.Equals(actualSchema.GetString(), schema, StringComparison.Ordinal) &&
-                   root.TryGetProperty("table", out var actualTable) &&
-                   actualTable.ValueKind == JsonValueKind.String &&
-                   string.Equals(actualTable.GetString(), table, StringComparison.Ordinal) &&
-                   root.TryGetProperty("committed", out var committed) &&
-                   committed.ValueKind == JsonValueKind.True &&
-                   !root.TryGetProperty("partial", out _);
+            if (!root.TryGetProperty("processId", out var actualProcess) ||
+                actualProcess.ValueKind != JsonValueKind.String ||
+                !string.Equals(actualProcess.GetString(), processId, StringComparison.Ordinal) ||
+                !root.TryGetProperty("schema", out var actualSchema) ||
+                actualSchema.ValueKind != JsonValueKind.String ||
+                !string.Equals(actualSchema.GetString(), schema, StringComparison.Ordinal) ||
+                !root.TryGetProperty("table", out var actualTable) ||
+                actualTable.ValueKind != JsonValueKind.String ||
+                !string.Equals(actualTable.GetString(), table, StringComparison.Ordinal) ||
+                !root.TryGetProperty("committed", out var committed) ||
+                committed.ValueKind != JsonValueKind.True ||
+                root.TryGetProperty("partial", out _) ||
+                !root.TryGetProperty("endpointFingerprint", out var fingerprint) ||
+                fingerprint.ValueKind != JsonValueKind.String ||
+                !ConnectionEndpointFingerprint.IsWellFormed(fingerprint.GetString()))
+            {
+                return false;
+            }
+
+            endpointFingerprint = fingerprint.GetString()!;
+            return true;
         }
         catch (FormatException)
         {

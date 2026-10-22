@@ -57,6 +57,8 @@ internal sealed class PublishResultTool : IMcpTool
         public const string ConnectionId = "connectionId";
         public const string Schema = "schema";
         public const string Table = "table";
+        public const string ConnectionEndpointFingerprint =
+            Honua.Core.Features.Admin.Domain.ConnectionEndpointFingerprint.MetadataKey;
         public const string GeometryColumn = "geometryColumn";
         public const string GeometryType = "geometryType";
         public const string Srid = "srid";
@@ -160,7 +162,7 @@ internal sealed class PublishResultTool : IMcpTool
                 new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
-        var request = BuildRequest(argument, artifact, connectionId, schema, table);
+        var request = BuildRequest(argument, artifact, sourceId, connectionId, schema, table);
         var context = new OperationPolicyContext
         {
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
@@ -264,6 +266,7 @@ internal sealed class PublishResultTool : IMcpTool
     private static OperationRequest BuildRequest(
         McpPublishResultArgument argument,
         ArtifactRef artifact,
+        string sourceJobId,
         string connectionId,
         string schema,
         string table)
@@ -293,6 +296,16 @@ internal sealed class PublishResultTool : IMcpTool
         if (TryGetMetadata(artifact, MetadataKeys.PrimaryKey, out var primaryKey))
         {
             parameters["primaryKey"] = primaryKey;
+        }
+
+        // Only a committed sink artifact carries an endpoint fingerprint. It claims the
+        // external-schema exception, so name its source job and artifact for the executor
+        // to re-read before publishing. Other materialized tables publish without a claim.
+        if (TryGetMetadata(artifact, MetadataKeys.ConnectionEndpointFingerprint, out var endpointFingerprint))
+        {
+            parameters[MetadataKeys.ConnectionEndpointFingerprint] = endpointFingerprint;
+            parameters[VerifiedCommittedSinkPublication.SourceJobIdKey] = sourceJobId;
+            parameters[VerifiedCommittedSinkPublication.SourceArtifactIdKey] = artifact.ArtifactId;
         }
 
         return new OperationRequest

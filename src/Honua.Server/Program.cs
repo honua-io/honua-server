@@ -122,6 +122,19 @@ var builder = WebApplication.CreateBuilder(args);
 // resolution steps so aws:secretsmanager: references inside the document resolve exactly as if
 // they had come from the environment. Precedence: appsettings < document < env vars < command line.
 await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
+
+// Migrate-only mode (honua-server#6470): HONUA_MIGRATE_ONLY=true applies the database migrations
+// through the same runner and MigrationSafety gates as serving startup, prints one JSON summary to
+// standard output and exits with a typed code. It composes its own minimal service graph and never
+// builds this web host, so no listener, hosted service, Redis, licence or admin credential is
+// involved. Unset (the default, including every Lambda init), the switch is a no-op.
+if (Honua.Server.Hosting.MigrateOnly.MigrateOnlyMode.Resolve(builder.Configuration) !=
+    Honua.Server.Hosting.MigrateOnly.MigrateOnlyRequest.NotRequested)
+{
+    Environment.ExitCode = await Honua.Server.Hosting.MigrateOnly.MigrateOnlyCommand.RunFromEntryPointAsync(builder.Configuration);
+    return;
+}
+
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute

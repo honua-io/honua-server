@@ -60,6 +60,20 @@ public sealed class McpMapToolTests
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
+    [InlineData("svc-parcels", 0, "svc-parcels/0")]
+    [InlineData("svc/Harbor:O'ahu!*()", 12, "svc%2FHarbor%3AO'ahu!*()/12")]
+    [InlineData("Mānoa 50%", 3, "M%C4%81noa%2050%25/3")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public void CatalogIdentity_MatchesExistingStudioUriComponentContract(string serviceId, int layerId, string expected)
+    {
+        StudioCatalogSourceIdentity.Create(serviceId, layerId).Should().Be(expected);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData(true, false)]
     [InlineData(false, false)]
     [InlineData(true, true)]
@@ -199,6 +213,8 @@ public sealed class McpMapToolTests
         var layer = structured.GetProperty("layers")[0];
         layer.GetProperty("serviceId").GetString().Should().Be(ServiceId);
         layer.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        layer.GetProperty("studioSourceId").GetString().Should().Be("svc-parcels/0");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.ListLayersOutputSchema);
         layer.GetProperty("geometryType").GetString().Should().Be(nameof(MetadataV2GeometryType.Polygon));
         layer.GetProperty("extent").GetProperty("minX").GetDouble().Should().Be(-10);
     }
@@ -418,6 +434,9 @@ public sealed class McpMapToolTests
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("serviceId").GetString().Should().Be(ServiceId);
         structured.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        structured.GetProperty("studioSourceId").GetString().Should().Be("svc-parcels/0");
+        StructuredContentShouldMatchOutputSchema(result, new DescribeLayerTool(_jobService,
+            NullLogger<DescribeLayerTool>.Instance).Describe().OutputSchema!.Value);
         structured.GetProperty("geometryType").GetString().Should().Be(nameof(MetadataV2GeometryType.Polygon));
         structured.GetProperty("srid").GetInt32().Should().Be(4326);
         structured.GetProperty("rowCount").GetInt64().Should().Be(42);

@@ -6,6 +6,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using ProgressStatus = Honua.Core.Features.Infrastructure.Domain.OperationStatus;
@@ -204,6 +205,66 @@ public sealed class LayerPublishJobTests
         Assert.Equal(5, progress.RowsMaterialized);
         Assert.Equal(7, progress.LayerId);
         Assert.Equal(11, progress.MetadataRevision);
+    }
+
+    [UnitTest]
+    public async Task Execute_QueuedCommittedSink_RechecksDurableSourceBeforePublishing()
+    {
+        const string jobId = "publish-job";
+        var connectionId = Guid.NewGuid();
+        var fingerprint = ConnectionEndpointFingerprint.TryCompute(Connection)!;
+        var claim = new VerifiedCommittedSinkPublication
+        {
+            SourceJobId = "missing-source-job",
+            SourceArtifactId = "missing-source-job:artifact:1",
+            ConnectionId = connectionId,
+            Schema = "public",
+            Table = "roads",
+            EndpointFingerprint = fingerprint,
+            SourceOwnerActorId = "alice",
+            PublisherActorId = "alice",
+            TenantId = "tenant-a"
+        };
+        var payload = new LayerPublishJobPayload
+        {
+            ConnectionId = connectionId,
+            ConnectionKey = "roads",
+            RowCount = 5,
+            Request = HttpRequest(),
+            TenantId = "tenant-a",
+            ConnectionEndpointFingerprint = fingerprint,
+            CommittedSinkPublication = claim
+        };
+        var parsed = LayerPublishJobPayload.TryParse(
+            new Dictionary<string, string> { [LayerPublishJobPayload.ParameterName] = payload.ToJson() },
+            out var restarted, out var parseError);
+        Assert.True(parsed, parseError);
+        Assert.Equal(claim, restarted!.CommittedSinkPublication);
+
+        var progress = new MemoryProgress();
+        await progress.SetProgressAsync(jobId, new LayerPublishJobProgress
+        {
+            OperationId = jobId,
+            Status = ProgressStatus.Queued,
+            RowsTotal = 5,
+            TenantId = "tenant-a",
+            StartedAt = DateTimeOffset.UtcNow,
+        });
+        var publisher = Substitute.For<ILayerPublishingService>();
+        var sourceJobs = Substitute.For<IExecutionJobStore>();
+        sourceJobs.GetAsync(claim.SourceJobId, Arg.Any<CancellationToken>())
+            .Returns((ExecutionJobRecord?)null);
+        var result = await LayerPublishJobWork.ExecuteAsync(
+            ScopeFactory(publisher, jobStore: sourceJobs,
+                processCatalog: Substitute.For<IProcessCatalog>()),
+            progress, NullLogger<LayerPublishJobTests>.Instance,
+            restarted, jobId, context: null, CancellationToken.None);
+
+        Assert.Equal(ExecutionJobStatus.Failed, result.Status);
+        Assert.False(result.IsRetryable);
+        await sourceJobs.Received(1).GetAsync(claim.SourceJobId, Arg.Any<CancellationToken>());
+        await publisher.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -632,7 +693,9 @@ public sealed class LayerPublishJobTests
 
     private static IServiceScopeFactory ScopeFactory(
         ILayerPublishingService publisher,
-        ISecureConnectionResolver? resolver = null)
+        ISecureConnectionResolver? resolver = null,
+        IExecutionJobStore? jobStore = null,
+        IProcessCatalog? processCatalog = null)
     {
         resolver ??= Substitute.For<ISecureConnectionResolver>();
         var provider = Substitute.For<IServiceProvider>();
@@ -641,6 +704,8 @@ public sealed class LayerPublishJobTests
         provider.GetService(typeof(ISchemaContext)).Returns(new SchemaContext());
         provider.GetService(typeof(ILayerPublishingService)).Returns(publisher);
         provider.GetService(typeof(ISecureConnectionResolver)).Returns(resolver);
+        provider.GetService(typeof(IExecutionJobStore)).Returns(jobStore);
+        provider.GetService(typeof(IProcessCatalog)).Returns(processCatalog);
         provider.GetService(typeof(IOptions<LayerPublishingOptions>))
             .Returns(Options.Create(new LayerPublishingOptions { MaterializationTimeoutSeconds = 30 }));
         var scope = Substitute.For<IServiceScope>();

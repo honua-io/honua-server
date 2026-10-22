@@ -1822,6 +1822,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PollLayerPublish_UnknownJob_ReturnsTypedNotFound",
+        "Honua.Server.Tests.Admin.McpPublishedServicePostgresDurabilityTests.PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -5222,6 +5223,23 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-console-publications",
+      "route": "/api/v1/console/publications",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.List_EmptyThenAfterPublish_ReturnsOkPageNotMethodNotAllowed",
+        "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.List_WithLifecycleFilter_RestrictsThePageAndRejectsUnknownState",
+        "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.List_WithLimit_ReturnsPagedResults",
+        "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.List_WithoutAdmin_ReturnsSameStatusAsItemGet"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-console-publications-publicationid",
       "route": "/api/v1/console/publications/{publicationId}",
       "method": "GET",
@@ -5230,6 +5248,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.Get_WithMalformedPublicationId_ReturnsBadRequestWithoutLeakingInternals",
+        "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.List_WithoutAdmin_ReturnsSameStatusAsItemGet",
         "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.Publish_ThenGet_ReturnsDurableImmutableVersionAndActiveRoute"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -5752,6 +5771,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.McpPublishedServicePostgresDurabilityTests.PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri",
         "Honua.Server.Tests.Features.OperationsToolset.AdminAccessInstallerCredentialTests.InstallerCredential_ListsAndResolvesItsEffectivePermissions_ThroughCanonicalOperations",
         "Honua.Server.Tests.Features.OperationsToolset.AdminAccessProposalRestartTests.DestructiveAccessOperation_ProposalIdentitiesAndIdempotencySurviveHostRestart",
         "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.GetHandleStatus_AfterSubmit_ReturnsCompletedStatus",
@@ -10148,6 +10168,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.CountryCodes_MalformedFilterReturns400_ValidFilterReachesProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.FindAddressCandidates_InvalidFormat_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.FindAddressCandidates_OversizedSingleLine_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.FindAddressCandidates_PjsonFormat_ReturnsJson",
@@ -10193,6 +10214,7 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_MissingRecords_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_PrimaryFails_FallsBackToSecondary",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.CountryCodes_MalformedFilterReturns400_ValidFilterReachesProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeAddresses_WithOutFields_ProjectsAttributes",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithEnterpriseEntitlement_ReachesEndpoint",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithProEntitlement_StillReturns402",
@@ -10826,6 +10848,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedCopy_FromUploadedData_WritesAndReadsTheSameRows",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishNamespace_ScopesEntireGraphIgnoresWireTenantAndServesOwner",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile",
+        "Honua.Server.Tests.Admin.McpPublishedServicePostgresDurabilityTests.PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri",
         "Honua.Server.Tests.AdvancedSpatialQueryTests.QueryFeatures_BeyondDistance_ReturnsFarFeatures",
         "Honua.Server.Tests.AdvancedSpatialQueryTests.QueryFeatures_DistanceWithGeoJsonFormat_ReturnsGeoJsonFeatures",
         "Honua.Server.Tests.AdvancedSpatialQueryTests.QueryFeatures_DistanceWithWhereClause_ReturnsFilteredNearbyFeatures",
@@ -16931,6 +16954,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithMissingGeoServerUrl_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.Start_WithPlaintextPassword_ReturnsBadRequest",
@@ -16991,6 +17015,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.BackgroundWorker_WithUnsafeStoredServiceUrl_FailsJobBeforeImport",
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_OwnershipConflict_IsAcceptedThenReportsStableTerminalFailure",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenDistributedCoordinationIsUnavailable_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState",
@@ -19929,6 +19954,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.McpPublishService_CompletedPublication_ReturnedResourceIsReadableByFreshClient",
+        "Honua.Server.Tests.Admin.McpPublishedServicePostgresDurabilityTests.PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.EvidenceBoundProposal_BootstrapAdminIsRejectedBeforePersistence",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.FullProposalEvidenceJourney_EmitsExactDenominator_WithZeroSkippedScenarios",
         "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpNotification_SuppressesJsonRpcResponseWithoutHandlerSideEffects",
@@ -23934,7 +23961,15 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobOperation_ValidBinding_ReturnsCanonicalStatus",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapSubmitJob_ArgumentNamespaceForms_BindTheSameInputs",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapSubmitJob_UnrecognisedArgument_IsRejectedBeforeSubmission"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapSubmitJob_UnrecognisedArgument_IsRejectedBeforeSubmission",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.CatalogCollision_DiscoveryAndExecutionCannotFallBackToPublicRouting",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.Execute_PointRecordSet_ReachesTheRoutingProviderAndReturnsTypedGeometry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.Execute_WrongStopsType_ReturnsAClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.GetExecutionType_VirtualRouting_MatchesTheSynchronousServiceContract",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.GetToolInfo_UnpublishedTask_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.GetToolInfo_VirtualRouting_ReturnsTheNamedSolverDefinition",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.GetToolInfos_VirtualRouting_ExposesCompleteTypedParameters",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingVirtualSoapContractTests.GetToolNames_VirtualRouting_MatchesThePublishedCallableTasks"
       ],
       "proof_ledger_surface": "gpserver-soap-discovery",
       "maturity": "implemented",

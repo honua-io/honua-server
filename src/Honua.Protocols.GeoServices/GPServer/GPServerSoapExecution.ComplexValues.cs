@@ -547,7 +547,9 @@ internal static partial class GPServerSoapExecution
             "esriFieldTypeDouble" or "esriFieldTypeDate" => 8,
             "esriFieldTypeGUID" or "esriFieldTypeGlobalID" => 38,
             // Esri string fields declare a maximum length; never declare one shorter than a value.
-            _ => Math.Max(255, features.Max(feature =>
+            // An empty record set has no values to measure. Max would throw and turn a valid
+            // empty solve into a SOAP 500.
+            _ => features.Length == 0 ? 255 : Math.Max(255, features.Max(feature =>
                 feature.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object &&
                 attributes.TryGetProperty(name, out var value) && value.ValueKind != JsonValueKind.Null
                     ? (value.ValueKind == JsonValueKind.String ? value.GetString()!.Length : value.GetRawText().Length)

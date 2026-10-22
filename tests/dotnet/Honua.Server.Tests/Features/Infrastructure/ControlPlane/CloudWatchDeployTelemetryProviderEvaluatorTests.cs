@@ -2,12 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -20,6 +22,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     private const string ErrorRateExpression = "errors / requests";
     private const string LatencyExpression = "p95_latency";
     private const string SampleExpression = "request_count";
+    private const string ErrorCountExpression = "target_5xx_count";
 
     [Fact]
     public async Task EvaluateAsync_HealthyCloudWatchMetrics_ReturnsPromoteSignal()
@@ -355,6 +358,218 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         decision.Message.Should().Contain("telemetry query backend is unavailable");
     }
 
+    [UnitTest]
+    public void SelectSignalReading_CompletedWithoutSeriesOrDatapoints_IsAbsentSeries()
+    {
+        // A SEARCH over HTTPCode_Target_5XX_Count that matches no metric returns no result, and a
+        // matched metric with no datapoint in the window returns a Complete result with no values.
+        AwsSdkCloudWatchMetricClient.SelectSignalReading(new GetMetricDataResponse { MetricDataResults = [] })
+            .Should().Be(CloudWatchSignalReading.Absent);
+        AwsSdkCloudWatchMetricClient.SelectSignalReading(new GetMetricDataResponse
+        {
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", StatusCode = StatusCode.Complete, Values = [] }]
+        }).Should().Be(CloudWatchSignalReading.Absent);
+    }
+
+    [UnitTest]
+    public void SelectSignalReading_PartialFailedPagedOrNonFinite_IsNotAbsentSeries()
+    {
+        AwsSdkCloudWatchMetricClient.SelectSignalReading(new GetMetricDataResponse
+        {
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", StatusCode = StatusCode.PartialData, Values = [] }]
+        }).Should().Be(CloudWatchSignalReading.Unavailable, "a partial result is not proof that no error was published");
+        AwsSdkCloudWatchMetricClient.SelectSignalReading(new GetMetricDataResponse
+        {
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", StatusCode = StatusCode.InternalError, Values = [] }]
+        }).Should().Be(CloudWatchSignalReading.Unavailable);
+        AwsSdkCloudWatchMetricClient.SelectSignalReading(new GetMetricDataResponse
+        {
+            NextToken = "more",
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", StatusCode = StatusCode.Complete, Values = [] }]
+        }).Should().Be(CloudWatchSignalReading.Unavailable, "a paged answer is not the whole answer");
+        AwsSdkCloudWatchMetricClient.SelectSignalReading(new GetMetricDataResponse
+        {
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", Values = [double.NaN] }]
+        }).Should().Be(CloudWatchSignalReading.Unavailable);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountSeriesAbsentWithSampleFloorMet_PromotesWithZeroErrors()
+    {
+        // honua-server#6474: a healthy ALB target group publishes no HTTPCode_Target_5XX_Count datapoint.
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 120,
+            [LatencyExpression] = 120
+        })
+        {
+            ResponseOverrides = { [ErrorCountExpression] = new GetMetricDataResponse { MetricDataResults = [] } }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse("a floor-meeting window without a 5XX series has zero errors");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("error-count series absent").And.Contain("read as 0 errors",
+            "the decision evidence records the substitution");
+        client.RequestedExpressions.Should().Contain(ErrorCountExpression);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountSeriesAbsentWithSampleCountMissing_HoldsAndNeverReadsTheNumerator()
+    {
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [LatencyExpression] = 120
+        })
+        {
+            ResponseOverrides =
+            {
+                [SampleExpression] = new GetMetricDataResponse { MetricDataResults = [] },
+                [ErrorCountExpression] = new GetMetricDataResponse { MetricDataResults = [] }
+            }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("an empty sample-count series is no evidence of traffic");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("no sample-count signal");
+        client.RequestedExpressions.Should().NotContain(ErrorCountExpression);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountSeriesAbsentWithSampleCountBelowFloor_Holds()
+    {
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 3,
+            [LatencyExpression] = 120
+        })
+        {
+            ResponseOverrides = { [ErrorCountExpression] = new GetMetricDataResponse { MetricDataResults = [] } }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.Message.Should().Contain("below the required minimum");
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountSampleCountMultiSeries_HoldsInsteadOfPassing()
+    {
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [LatencyExpression] = 120
+        })
+        {
+            ResponseOverrides =
+            {
+                [SampleExpression] = new GetMetricDataResponse
+                {
+                    MetricDataResults =
+                    [
+                        new MetricDataResult { Id = "honua_deploy_signal", Label = "stable", Values = [500] },
+                        new MetricDataResult { Id = "honua_deploy_signal", Label = "candidate", Values = [40] }
+                    ]
+                },
+                [ErrorCountExpression] = new GetMetricDataResponse { MetricDataResults = [] }
+            }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("an ambiguous denominator never licenses reading the numerator as zero");
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorCountPartialRead_HoldsInsteadOfReadingZero()
+    {
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 120,
+            [LatencyExpression] = 120
+        })
+        {
+            ResponseOverrides =
+            {
+                [ErrorCountExpression] = new GetMetricDataResponse
+                {
+                    MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", StatusCode = StatusCode.PartialData, Values = [] }]
+                }
+            }
+        };
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.Message.Should().Contain("no error-count signal");
+    }
+
+    [UnitTheory]
+    [InlineData(1, false)]
+    [InlineData(30, true)]
+    public async Task EvaluateAsync_ErrorCountPresent_DividesBySampleCountOfTheSameWindow(double errors, bool rollback)
+    {
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 100,
+            [ErrorCountExpression] = errors,
+            [LatencyExpression] = 120
+        });
+
+        var decision = await EvaluateErrorCount(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+        decision.RollbackRecommended.Should().Be(rollback, "the threshold is 0.05 and the rate is errors / 100");
+        decision.Message.Should().Contain($"{errors} errors over 100 samples");
+        client.LastPeriodSeconds.Should().Be(300);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ErrorRateSeriesAbsent_StillHolds()
+    {
+        // The substitution is bounded to an error-count numerator: an empty ratio cannot tell no
+        // errors from no traffic, so telemetry.error_rate.query keeps the #4617 behaviour.
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 120,
+            [LatencyExpression] = 120
+        })
+        {
+            ResponseOverrides = { [ErrorRateExpression] = new GetMetricDataResponse { MetricDataResults = [] } }
+        };
+
+        var decision = await Evaluate(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.Message.Should().Contain("no error-rate signal");
+    }
+
+    private static async Task<DeployTelemetryDecision?> EvaluateErrorCount(FakeCloudWatchMetricClient client)
+    {
+        var evaluator = CreateDispatcher(client);
+        return await evaluator.EvaluateAsync(CreateOperation(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-cw",
+            ["telemetry.error_count.query"] = ErrorCountExpression,
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.latency_p95.query"] = LatencyExpression,
+            ["telemetry.latency_p95.threshold_ms"] = "2000",
+            ["telemetry.sample_count.query"] = SampleExpression,
+            ["telemetry.sample_count.minimum"] = "10"
+        }));
+    }
+
     private static async Task<DeployTelemetryDecision?> Evaluate(
         FakeCloudWatchMetricClient client,
         string? region = null,
@@ -450,10 +665,12 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
 
         public string? LastServiceUrl { get; private set; }
 
+        public int LastPeriodSeconds { get; private set; }
+
         /// <summary>Raw responses read through the production response reader instead of a canned value.</summary>
         public Dictionary<string, GetMetricDataResponse> ResponseOverrides { get; } = new(StringComparer.Ordinal);
 
-        public Task<double?> GetExpressionValueAsync(
+        public Task<CloudWatchSignalReading> GetExpressionReadingAsync(
             string? region,
             string expression,
             DateTime startUtc,
@@ -464,13 +681,16 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         {
             LastRegion = region;
             LastServiceUrl = serviceUrl;
+            LastPeriodSeconds = periodSeconds;
             RequestedExpressions.Enqueue(expression);
             if (ResponseOverrides.TryGetValue(expression, out var response))
             {
-                return Task.FromResult(AwsSdkCloudWatchMetricClient.SelectSignalValue(response));
+                return Task.FromResult(AwsSdkCloudWatchMetricClient.SelectSignalReading(response));
             }
 
-            return Task.FromResult(values.TryGetValue(expression, out var value) ? value : null);
+            return Task.FromResult(values.TryGetValue(expression, out var value)
+                ? new CloudWatchSignalReading(value, SeriesAbsent: false)
+                : CloudWatchSignalReading.Unavailable);
         }
     }
 }

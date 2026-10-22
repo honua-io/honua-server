@@ -321,6 +321,28 @@ follow [upgrade and rollback](upgrade-and-rollback.md). Keep the Gate migration
 policy; a contract migration needs its specific approval nonce. Never skip
 migrations or erase volumes to bypass a failure.
 
+To see the migrations apply, or refuse, before the new server starts, run them
+out of band with the new image after updating the image tag in `.env`. Stop
+the old server first: this is the single-node downtime window.
+
+```bash
+dc stop honua
+dc pull honua
+dc run --rm --no-deps -e HONUA_MIGRATE_ONLY=true honua
+dc up -d --wait --wait-timeout 180
+```
+
+The run starts no listener and prints one JSON summary line. Exit `0` means the
+journal is current. Exit `5` means a reviewed contract migration is pending:
+read `contractApproval.nonce` from the summary, review the scripts it names,
+and re-run with `-e HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>`. Every other
+exit code and field is listed in
+[Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band).
+If the run refuses, nothing was applied: restore the previous image tag in
+`.env` and start the old server while you resolve it. After a successful run
+the new server finds the journal current and applies nothing, so
+`HONUA_SKIP_MIGRATIONS=true` is only needed where several servers start at once.
+
 ## Diagnostics and scoped teardown
 
 ```bash

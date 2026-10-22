@@ -95,6 +95,61 @@ public sealed class ContentPublicationServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task List_LoadsPageVersionsInOneBatch_NewestFirstAndOmitsUnknownIds()
+    {
+        var store = new CountingPublicationStore(new InMemoryContentPublicationStore());
+        var service = new ContentPublicationService(
+            store,
+            TimeProvider.System,
+            graphProvider: null,
+            publishedServiceStore: null,
+            NullLogger<ContentPublicationService>.Instance);
+
+        var first = await service.PublishAsync(
+            new PublishContentRequest { Kind = ContentPublicationKind.Map, RouteSlug = "page-a", Title = "first" },
+            Actor,
+            null);
+        await service.RepublishAsync(
+            first.Route.PublicationId,
+            new RepublishContentRequest { ExpectedEtag = first.Route.Etag, Title = "second" },
+            Actor,
+            null);
+        var second = await service.PublishAsync(
+            new PublishContentRequest { Kind = ContentPublicationKind.Dashboard, RouteSlug = "page-b" },
+            Actor,
+            null);
+
+        store.ResetCounts();
+        var archived = await service.ListAsync(new ContentPublicationListQuery
+        {
+            Lifecycle = ContentPublicationLifecycle.Archived,
+        });
+        archived.Items.Should().BeEmpty();
+        store.BatchVersionListCalls.Should().Be(0);
+        store.SingleVersionListCalls.Should().Be(0);
+
+        var page = await service.ListAsync(new ContentPublicationListQuery { Limit = 25 });
+
+        store.SingleVersionListCalls.Should().Be(0);
+        store.BatchVersionListCalls.Should().Be(1);
+        store.LastBatchIds.Should().BeEquivalentTo([first.Route.PublicationId, second.Route.PublicationId]);
+        page.Total.Should().Be(2);
+        page.Items.Select(item => item.Route.PublicationId).Should().Equal(
+            first.Route.PublicationId,
+            second.Route.PublicationId);
+        page.Items[0].Versions.Select(version => version.Revision).Should().Equal(2, 1);
+        page.Items[0].Versions[0].Title.Should().Be("second");
+        page.Items[1].Versions.Should().ContainSingle().Which.Revision.Should().Be(1);
+
+        var bounded = await store.ListVersionsByPublicationIdsAsync(
+            [first.Route.PublicationId, first.Route.PublicationId, "not-a-guid"],
+            limit: 1);
+        bounded.Should().ContainSingle().Which.Key.Should().Be(first.Route.PublicationId);
+        bounded[first.Route.PublicationId].Should().ContainSingle().Which.Revision.Should().Be(2);
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     public async Task Publish_DuplicateSlug_ThrowsConflict()
     {
@@ -624,6 +679,83 @@ public sealed class ContentPublicationServiceTests
                 .ToArray(),
         };
         return new StubGraphProvider(new MetadataV2GraphSnapshot(graph, "etag-test-1", DateTimeOffset.UtcNow));
+    }
+
+    private sealed class CountingPublicationStore(IContentPublicationStore inner) : IContentPublicationStore
+    {
+        public int SingleVersionListCalls { get; private set; }
+
+        public int BatchVersionListCalls { get; private set; }
+
+        public IReadOnlyCollection<string>? LastBatchIds { get; private set; }
+
+        public void ResetCounts()
+        {
+            SingleVersionListCalls = 0;
+            BatchVersionListCalls = 0;
+            LastBatchIds = null;
+        }
+
+        public Task<ContentPublicationRouteState?> GetRouteByPublicationIdAsync(string publicationId, CancellationToken cancellationToken = default)
+            => inner.GetRouteByPublicationIdAsync(publicationId, cancellationToken);
+
+        public Task<ContentPublicationRouteState?> GetRouteBySlugAsync(string routeSlug, CancellationToken cancellationToken = default)
+            => inner.GetRouteBySlugAsync(routeSlug, cancellationToken);
+
+        public Task<ContentPublicationVersion?> GetVersionByIdAsync(string publicationId, string versionId, CancellationToken cancellationToken = default)
+            => inner.GetVersionByIdAsync(publicationId, versionId, cancellationToken);
+
+        public Task<ContentPublicationVersion?> GetVersionByRevisionAsync(string publicationId, long revision, CancellationToken cancellationToken = default)
+            => inner.GetVersionByRevisionAsync(publicationId, revision, cancellationToken);
+
+        public Task<IReadOnlyList<ContentPublicationVersion>> ListVersionsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
+        {
+            SingleVersionListCalls++;
+            return inner.ListVersionsAsync(publicationId, limit, cancellationToken);
+        }
+
+        public Task<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>> ListVersionsByPublicationIdsAsync(
+            IReadOnlyCollection<string> publicationIds,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            BatchVersionListCalls++;
+            LastBatchIds = publicationIds;
+            return inner.ListVersionsByPublicationIdsAsync(publicationIds, limit, cancellationToken);
+        }
+
+        public Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
+            ContentPublicationLifecycle? lifecycle,
+            int offset,
+            int limit,
+            CancellationToken cancellationToken = default)
+            => inner.ListRoutesAsync(lifecycle, offset, limit, cancellationToken);
+
+        public Task<long> GetMaxRevisionAsync(string publicationId, CancellationToken cancellationToken = default)
+            => inner.GetMaxRevisionAsync(publicationId, cancellationToken);
+
+        public Task<IReadOnlyDictionary<string, ContentPublicationRouteState>> GetLatestRouteStatesBySourceContentIdsAsync(
+            IReadOnlyCollection<string> sourceContentIds,
+            CancellationToken cancellationToken = default)
+            => inner.GetLatestRouteStatesBySourceContentIdsAsync(sourceContentIds, cancellationToken);
+
+        public Task AppendVersionAndSetRouteAsync(
+            ContentPublicationVersion version,
+            ContentPublicationRouteState routeState,
+            ContentPublicationEvent auditEvent,
+            string? expectedEtag,
+            CancellationToken cancellationToken = default)
+            => inner.AppendVersionAndSetRouteAsync(version, routeState, auditEvent, expectedEtag, cancellationToken);
+
+        public Task SetRouteAsync(
+            ContentPublicationRouteState routeState,
+            ContentPublicationEvent auditEvent,
+            string? expectedEtag,
+            CancellationToken cancellationToken = default)
+            => inner.SetRouteAsync(routeState, auditEvent, expectedEtag, cancellationToken);
+
+        public Task<IReadOnlyList<ContentPublicationEvent>> ListEventsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
+            => inner.ListEventsAsync(publicationId, limit, cancellationToken);
     }
 
     private sealed class StubGraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider

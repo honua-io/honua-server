@@ -386,6 +386,58 @@ Then run the digest-pinned `helm upgrade --install ... --atomic --wait` command.
 `--atomic` restores Kubernetes resources after a failed upgrade; it does not
 undo a database migration or object-store write.
 
+### Run migrations as a pre-upgrade Job
+
+To keep migrations out of the serving pods, run the target image once as a Job
+with `HONUA_MIGRATE_ONLY=true`, then upgrade the release with
+`HONUA_SKIP_MIGRATIONS=true`. The Job starts no listener and needs only the
+connection string. Every migration safety gate still applies. It exits `0` when
+the journal is current and with a typed non-zero code when it refuses. See
+[Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band).
+
+```bash
+cat > honua-migrate-job.yaml <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: honua-migrate
+  namespace: honua
+spec:
+  backoffLimit: 0   # a refusal is not transient; re-run deliberately
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/honua-io/honua-server@${HONUA_IMAGE_DIGEST}
+          env:
+            - name: HONUA_MIGRATE_ONLY
+              value: "true"
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: honua-runtime
+                  key: ConnectionStrings__DefaultConnection
+EOF
+kubectl -n honua delete job honua-migrate --ignore-not-found
+kubectl -n honua apply -f honua-migrate-job.yaml
+kubectl -n honua wait --for=condition=complete --timeout=30m job/honua-migrate
+kubectl -n honua logs job/honua-migrate | grep '"format":"honua.migrate-only/v1"'
+```
+
+`kubectl logs` interleaves both streams, so the `grep` keeps only the summary
+line. If the Job fails, the pod's exit code and the summary's `code` name the
+reason. A pending contract migration exits `5`: review the scripts in
+`pendingScripts`, then re-create the Job with
+`HONUA_APPROVE_CONTRACT_MIGRATIONS` set to the summary's
+`contractApproval.nonce`. After the Job completes, upgrade with
+`--set-string config.env.HONUA_SKIP_MIGRATIONS=true` added to the digest-pinned
+command. The serving pods then verify the journal at startup instead of
+migrating. `RollingUpdate` still needs the reviewed forward and backward
+compatibility described above, because the old pods keep serving the migrated
+schema until they are replaced.
+
 Capture and verify each revision:
 
 ```bash
