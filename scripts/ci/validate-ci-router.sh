@@ -64,6 +64,8 @@ else
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/okf/generate-workflow-bundle.py --check
+  "${PYTHON_BIN}" scripts/okf/test-workflow-bundle.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-output-diff.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-files.py
 fi

@@ -92,8 +92,4 @@
     <InternalsVisibleTo Include="Honua.Snowflake.UnitTests" />
   </ItemGroup>
 
-  <Target Name="ValidateWorkflowBundle" BeforeTargets="BeforeCompile">
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)/../.." Command="python3 scripts/okf/generate-workflow-bundle.py --check" />
-  </Target>
-
 </Project>
