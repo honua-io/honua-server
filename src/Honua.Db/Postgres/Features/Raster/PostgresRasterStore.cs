@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -2379,6 +2380,20 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var pointSrid = srid ?? 4326;
+        var rasterSrid = await ReadRasterSridAsync(connection, layerId, rasterId, cancellationToken).ConfigureAwait(false);
+        if (rasterSrid is null)
+        {
+            return new PixelValueResult
+            {
+                X = x,
+                Y = y,
+                Srid = srid,
+                BandValues = new Dictionary<int, object?>(),
+                HasData = false
+            };
+        }
+
+        var samplePoint = DatumSamplePointSql.Build(pointSrid, rasterSrid.Value);
 
         // When a renderingRule is supplied the sampled value reflects the rendered output
         // (clip mask -> display stretch -> colormap), matching the export pipeline, instead of
@@ -2406,7 +2421,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             FROM rendered,
                  LATERAL generate_series(1, ST_NumBands(rast)) AS band,
                  LATERAL ST_Value(rast, band,
-                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))
+                    {samplePoint}
                  ) AS val
             ORDER BY band
             """;
@@ -2423,8 +2438,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using var reader = await ExecuteIdentifyReaderAsync(command, cancellationToken).ConfigureAwait(false);
+        while (await ReadIdentifyRowAsync(reader, cancellationToken).ConfigureAwait(false))
         {
             var band = reader.GetInt32(0);
             var val = reader.IsDBNull(1) ? null : (object?)reader.GetDouble(1);
@@ -2475,6 +2490,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var pointSrid = srid ?? 4326;
+        var rasterSrid = await ReadUniformRasterSridAsync(connection, layerId, rasterIds, cancellationToken)
+            .ConfigureAwait(false);
+        var samplePoint = rasterSrid is int sharedSrid
+            ? DatumSamplePointSql.Build(pointSrid, sharedSrid)
+            : "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))";
 
         // Apply the renderingRule (clip -> stretch -> colormap) to the merged mosaic so the
         // sampled value matches the rendered mosaic export. Without a rule the merged raw
@@ -2515,7 +2535,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             FROM rendered,
                  LATERAL generate_series(1, ST_NumBands(rast)) AS band,
                  LATERAL ST_Value(rast, band,
-                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))
+                    {samplePoint}
                  ) AS val
             WHERE rast IS NOT NULL
             ORDER BY band
@@ -2533,8 +2553,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using var reader = await ExecuteIdentifyReaderAsync(command, cancellationToken).ConfigureAwait(false);
+        while (await ReadIdentifyRowAsync(reader, cancellationToken).ConfigureAwait(false))
         {
             var band = reader.GetInt32(0);
             var val = reader.IsDBNull(1) ? null : (object?)reader.GetDouble(1);
@@ -5229,6 +5249,77 @@ internal sealed class PostgresRasterStore : IRasterStore
         var available = result != null;
         _gdalDriverCache.TryAdd(driverName, available);
         return available;
+    }
+
+    private async Task<int?> ReadRasterSridAsync(
+        DbConnection connection,
+        int layerId,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT ST_SRID(raster)
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return value is null or DBNull ? null : Convert.ToInt32(value, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<int?> ReadUniformRasterSridAsync(
+        DbConnection connection,
+        int layerId,
+        long[] rasterIds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT MIN(ST_SRID(raster)), COUNT(DISTINCT ST_SRID(raster))
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = ANY(@rasterIds)
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterIds", rasterIds);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            || reader.IsDBNull(0)
+            || Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture) != 1)
+        {
+            return null;
+        }
+
+        return reader.GetInt32(0);
+    }
+
+    private static async Task<bool> ReadIdentifyRowAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+        {
+            throw DatumGridException.MissingGrid(ex);
+        }
+    }
+
+    private static async Task<DbDataReader> ExecuteIdentifyReaderAsync(
+        DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+        {
+            throw DatumGridException.MissingGrid(ex);
+        }
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

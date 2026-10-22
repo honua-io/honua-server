@@ -6,9 +6,11 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -18,7 +20,9 @@ namespace Honua.Db.Postgres.Features.Scene;
 /// <summary>
 /// Postgres/PostGIS implementation of <see cref="ISceneFeatureSource"/>. Streams
 /// the canonical 3D Tiles input shape (WGS-84 lon/lat plus optional Z) for a
-/// metadata v2 feature resource using <c>ST_AsBinary(ST_Transform(geom, 4326))</c>.
+/// metadata v2 feature resource. The geometry is reprojected to EPSG:4326 with the
+/// layer's datum-catalog selection, or two-argument <c>ST_Transform</c> when the
+/// catalog has no entry.
 /// </summary>
 internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
 {
@@ -62,7 +66,9 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         // preserves dimensionality without losing the writer's contract.
         var selectColumns = new StringBuilder();
         selectColumns.Append(DatabaseSchema.ObjectIdColumn).Append(" AS pk, ");
-        selectColumns.Append("ST_AsBinary(ST_Transform(").Append(DatabaseSchema.GeometryColumn).Append(", 4326)) AS geom_wkb");
+        selectColumns.Append("ST_AsBinary(")
+            .Append(BuildPublishedGeometrySql(resource.ReadSrid()))
+            .Append(") AS geom_wkb");
         for (var i = 0; i < attributeFields.Count; i++)
         {
             selectColumns.Append(", ").Append(DatabaseSchema.AttributesColumn)
@@ -131,59 +137,104 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
                 attributeFields[i].Name));
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        var results = new List<SceneFeature>(PageSize);
-
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        NpgsqlDataReader reader;
+        try
         {
-            var pk = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
-            byte[]? wkb = reader.IsDBNull(1) ? null : (byte[])reader.GetValue(1);
-            if (wkb is null)
-            {
-                continue;
-            }
+            reader = (NpgsqlDataReader)await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+        {
+            throw DatumGridException.MissingGrid(ex);
+        }
 
-            var geometry = WkbGeometryReader.Parse(wkb);
-            if (geometry is null)
-            {
-                continue;
-            }
+        await using (reader)
+        {
+            var results = new List<SceneFeature>(PageSize);
 
-            var attributes = new Dictionary<string, object?>(attributeFields.Count, StringComparer.Ordinal);
-            for (var i = 0; i < attributeFields.Count; i++)
+            while (await ReadSceneRowAsync(reader, cancellationToken).ConfigureAwait(false))
             {
-                var fieldName = attributeFields[i].Name;
-                if (IsObjectIdAlias(fieldName))
+                var pk = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                byte[]? wkb = reader.IsDBNull(1) ? null : (byte[])reader.GetValue(1);
+                if (wkb is null)
                 {
-                    // The shared features table stores the row identifier in
-                    // the objectid column, NOT in the attributes JSONB bag.
-                    // Reading attributes ->> 'objectid' returns null whenever
-                    // the JSONB does not duplicate the PK, which silently
-                    // wrote 0 into the GLB metadata column for identify
-                    // workflows. Project from the primary key so the
-                    // generated metadata always carries the source row id.
-                    attributes[fieldName] = pk;
                     continue;
                 }
 
-                // attributes ->> @field returns TEXT; the GLB writer's
-                // ToInt32/ToInt64/ToFloat coercions parse string values
-                // back to the declared SCHEMA/COMPONENT type, so handing
-                // raw JSON text through is enough to round-trip integer,
-                // float, and string columns from the JSONB store.
-                var raw = reader.IsDBNull(2 + i) ? null : reader.GetValue(2 + i);
-                attributes[fieldName] = raw;
+                var geometry = WkbGeometryReader.Parse(wkb);
+                if (geometry is null)
+                {
+                    continue;
+                }
+
+                var attributes = new Dictionary<string, object?>(attributeFields.Count, StringComparer.Ordinal);
+                for (var i = 0; i < attributeFields.Count; i++)
+                {
+                    var fieldName = attributeFields[i].Name;
+                    if (IsObjectIdAlias(fieldName))
+                    {
+                        // The shared features table stores the row identifier in
+                        // the objectid column, NOT in the attributes JSONB bag.
+                        // Reading attributes ->> 'objectid' returns null whenever
+                        // the JSONB does not duplicate the PK, which silently
+                        // wrote 0 into the GLB metadata column for identify
+                        // workflows. Project from the primary key so the
+                        // generated metadata always carries the source row id.
+                        attributes[fieldName] = pk;
+                        continue;
+                    }
+
+                    // attributes ->> @field returns TEXT; the GLB writer's
+                    // ToInt32/ToInt64/ToFloat coercions parse string values
+                    // back to the declared SCHEMA/COMPONENT type, so handing
+                    // raw JSON text through is enough to round-trip integer,
+                    // float, and string columns from the JSONB store.
+                    var raw = reader.IsDBNull(2 + i) ? null : reader.GetValue(2 + i);
+                    attributes[fieldName] = raw;
+                }
+
+                results.Add(new SceneFeature
+                {
+                    Id = pk,
+                    Geometry = geometry,
+                    Attributes = attributes
+                });
             }
 
-            results.Add(new SceneFeature
-            {
-                Id = pk,
-                Geometry = geometry,
-                Attributes = attributes
-            });
+            return results;
+        }
+    }
+
+    private static async Task<bool> ReadSceneRowAsync(
+        NpgsqlDataReader reader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+        {
+            throw DatumGridException.MissingGrid(ex);
+        }
+    }
+
+    /// <summary>
+    /// WGS 84 geometry expression for scene publishing. A catalog entry uses that
+    /// pipeline; otherwise the expression stays two-argument <c>ST_Transform</c>.
+    /// </summary>
+    internal static string BuildPublishedGeometrySql(int? layerSrid)
+    {
+        var column = DatabaseSchema.GeometryColumn;
+        if (layerSrid is not int from || from == 4326)
+        {
+            return $"ST_Transform({column}, 4326)";
         }
 
-        return results;
+        return DatumTransformSql.BuildTransformExpression(
+            column,
+            4326,
+            DatumOutputSelection.Resolve(DatumCatalog.Shared, from, 4326),
+            from);
     }
 
     private static List<MetadataV2Field> ResolveAttributeFields(

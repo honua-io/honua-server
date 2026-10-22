@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -307,9 +308,13 @@ internal sealed partial class FeatureQueryBuilder
     /// </summary>
     private static string EnsureWgs84(string geometryOperand, int? sourceSrid)
     {
-        if (sourceSrid.HasValue && sourceSrid.Value != 4326)
+        if (sourceSrid is int from && from != 4326)
         {
-            return $"ST_Transform({geometryOperand}, 4326)";
+            return DatumTransformSql.BuildTransformExpression(
+                geometryOperand,
+                4326,
+                DatumOutputSelection.Resolve(DatumCatalog.Shared, from, 4326),
+                from);
         }
 
         // SRID is null (unknown) or already 4326 — pass through unchanged.
