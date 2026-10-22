@@ -24,11 +24,15 @@ internal static class DatumOutputSelection
     /// reach WGS 84 only through NAD83 use that grid; the NAD83 to WGS 84 step stays the
     /// catalog no-operation. No catalog entry returns null so the caller keeps two-argument
     /// <c>ST_Transform</c>.
+    /// When <paramref name="area"/> is set, a pair that has areas of use must match exactly
+    /// one of them. No match, or more than one, stays null instead of the no-envelope default
+    /// (the CONUS NAD27 grid), which does not cover an Alaska tile or the world at zoom 0.
     /// </remarks>
     public static DatumTransformationSelection? Resolve(
         IDatumTransformationCatalog catalog,
         int fromSrid,
-        int toSrid)
+        int toSrid,
+        DatumAreaEnvelope? area = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         if (fromSrid <= 0 || toSrid <= 0 || fromSrid == toSrid)
@@ -36,9 +40,14 @@ internal static class DatumOutputSelection
             return null;
         }
 
-        if (catalog.TryGetDefault(fromSrid, toSrid, out var direct))
+        if (TryPair(catalog, fromSrid, toSrid, area, out var direct))
         {
             return direct;
+        }
+
+        if (area is not null && catalog.HasAreaOfUse(fromSrid, toSrid))
+        {
+            return null;
         }
 
         var geographicTarget = SpatialReferenceExtensions.IsWebMercatorSrid(toSrid) ? Wgs84 : toSrid;
@@ -47,16 +56,28 @@ internal static class DatumOutputSelection
             return null;
         }
 
-        if (catalog.TryGetDefault(fromSrid, geographicTarget, out var geographic))
+        if (TryPair(catalog, fromSrid, geographicTarget, area, out var geographic))
         {
             return geographic;
         }
 
+        if (area is not null && catalog.HasAreaOfUse(fromSrid, geographicTarget))
+        {
+            return null;
+        }
+
         // A Web Mercator click sampled on a geographic raster uses the WGS 84 pair.
         if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid)
-            && catalog.TryGetDefault(Wgs84, toSrid, out var fromWgs84))
+            && TryPair(catalog, Wgs84, toSrid, area, out var fromWgs84))
         {
             return fromWgs84;
+        }
+
+        if (area is not null
+            && SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid)
+            && catalog.HasAreaOfUse(Wgs84, toSrid))
+        {
+            return null;
         }
 
         // NAD27 (and the other NADCON/NTv2 datums) have no direct WGS 84 row. Their
@@ -66,19 +87,77 @@ internal static class DatumOutputSelection
         // and is left unset. The same grid, inverted, samples a NAD27 raster from WGS 84.
         if (geographicTarget == Wgs84
             && fromSrid != Nad83
-            && TryNad83Grid(catalog, fromSrid, out var forward))
+            && TryNad83Grid(catalog, fromSrid, area, out var forward))
         {
             return forward;
         }
 
         if (GeographicBase(fromSrid) == Wgs84
             && toSrid != Nad83
-            && TryNad83Grid(catalog, toSrid, out var rasterForward))
+            && TryNad83Grid(catalog, toSrid, area, out var rasterForward))
         {
             return Inverse(rasterForward);
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Geographic degrees for a tile envelope. Web Mercator bounds are inverse-projected.
+    /// Any other projected tile CRS returns null; the caller then keeps two-argument
+    /// <c>ST_Transform</c> when the datum pair has areas of use.
+    /// </summary>
+    public static DatumAreaEnvelope? AreaForTile(
+        double xMin,
+        double yMin,
+        double xMax,
+        double yMax,
+        int tileSrid)
+    {
+        if (GeographicSridClassifier.IsGeographicSrid(tileSrid))
+        {
+            return new DatumAreaEnvelope(xMin, yMin, xMax, yMax);
+        }
+
+        if (!SpatialReferenceExtensions.IsWebMercatorSrid(tileSrid))
+        {
+            return null;
+        }
+
+        var (west, south) = WebMercatorMath.WebMercatorToLonLat(xMin, yMin);
+        var (east, north) = WebMercatorMath.WebMercatorToLonLat(xMax, yMax);
+        return new DatumAreaEnvelope(west, south, east, north);
+    }
+
+    private static bool TryPair(
+        IDatumTransformationCatalog catalog,
+        int fromSrid,
+        int toSrid,
+        DatumAreaEnvelope? area,
+        out DatumTransformationSelection? selection)
+    {
+        if (area is { } envelope)
+        {
+            if (catalog.TryGetForEnvelope(
+                    fromSrid,
+                    toSrid,
+                    envelope.West,
+                    envelope.South,
+                    envelope.East,
+                    envelope.North,
+                    out selection))
+            {
+                return true;
+            }
+
+            if (catalog.HasAreaOfUse(fromSrid, toSrid))
+            {
+                selection = null;
+                return false;
+            }
+        }
+
+        return catalog.TryGetDefault(fromSrid, toSrid, out selection);
     }
 
     private static int GeographicBase(int srid)
@@ -87,6 +166,7 @@ internal static class DatumOutputSelection
     private static bool TryNad83Grid(
         IDatumTransformationCatalog catalog,
         int datumSrid,
+        DatumAreaEnvelope? area,
         out DatumTransformationSelection forward)
     {
         forward = null!;
@@ -94,11 +174,29 @@ internal static class DatumOutputSelection
         // it as one would relabel a Web Mercator to WGS 84 projection as a datum step.
         if (datumSrid == Nad83
             || datumSrid == Wgs84
-            || !catalog.TryGetDefault(datumSrid, Nad83, out var toNad83)
-            || toNad83.ProjPipeline is not { Length: > 0 } pipeline
-            || pipeline.Trim().Equals("+proj=noop", StringComparison.Ordinal)
             || !catalog.TryGetDefault(Nad83, Wgs84, out var nad83ToWgs84)
             || nad83ToWgs84.ProjPipeline?.Trim() != "+proj=noop")
+        {
+            return false;
+        }
+
+        // A tile whose bounds are known must use the one grid that contains them.
+        // Several areas, or none, keep two-argument ST_Transform instead of CONUS.
+        DatumTransformationSelection? toNad83;
+        if (area is not null && catalog.HasAreaOfUse(datumSrid, Nad83))
+        {
+            if (!TryPair(catalog, datumSrid, Nad83, area, out toNad83))
+            {
+                return false;
+            }
+        }
+        else if (!catalog.TryGetDefault(datumSrid, Nad83, out toNad83))
+        {
+            return false;
+        }
+
+        if (toNad83?.ProjPipeline is not { Length: > 0 } pipeline
+            || pipeline.Trim().Equals("+proj=noop", StringComparison.Ordinal))
         {
             return false;
         }

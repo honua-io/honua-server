@@ -660,8 +660,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 {
                     // Route through the shared clamp so a polar vertex in a geographic layer
                     // cannot abort the Web Mercator tile statement (#6109). The catalog
-                    // selection is the same pipeline feature query output uses (#5194).
-                    var selection = TileDatumSelection(query, layerSrid, targetTileSrid);
+                    // selection is the grid whose area contains this tile (#5194).
+                    var selection = TileDatumSelection(query, layerSrid, targetTileSrid, tileBounds);
                     geometryForTile = DatumTransformSql.BuildTransformExpression(
                         geometryOperand, targetTileSrid, selection, layerSrid);
                     tileEnvelopeForFilter = selection is null
@@ -795,7 +795,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.
             // A geographic layer aimed at a Web Mercator gridset is clamped first (#6109).
             // The catalog selection matches feature query output (#5194).
-            var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid);
+            var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid, tileBounds);
             var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
                 ? DatumTransformSql.BuildTransformExpression(
                     geometryOperand, targetTileSrid, selection, storageSrid)
@@ -883,12 +883,14 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
     /// <summary>
     /// Catalog pipeline for a tile reprojection. An explicit query selection wins.
-    /// No catalog entry stays null so the SQL keeps two-argument <c>ST_Transform</c>.
+    /// The tile envelope picks the catalog area (Alaska, not CONUS). No single area,
+    /// and no catalog entry, stays null so the SQL keeps two-argument <c>ST_Transform</c>.
     /// </summary>
     private static DatumTransformationSelection? TileDatumSelection(
         FeatureQuery? query,
         int? layerSrid,
-        int targetSrid)
+        int targetSrid,
+        TileBounds tileBounds)
     {
         if (query?.OutputDatumTransformation is { } chosen)
         {
@@ -900,6 +902,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             return null;
         }
 
-        return DatumOutputSelection.Resolve(DatumCatalog.Shared, from, targetSrid);
+        var area = DatumOutputSelection.AreaForTile(
+            tileBounds.XMin, tileBounds.YMin, tileBounds.XMax, tileBounds.YMax, targetSrid);
+        return DatumOutputSelection.Resolve(DatumCatalog.Shared, from, targetSrid, area);
     }
 }

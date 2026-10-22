@@ -23,27 +23,36 @@ public sealed class DatumDrawPathSqlTests
     private static readonly IDatumTransformationCatalog Catalog = EsriDatumTransformationCatalog.Create();
 
     [UnitTest]
-    public void Mvt_Nad27ToWebMercator_UsesCatalogGrid()
+    public void Mvt_Nad27ToWebMercator_UsesTheGridThatContainsTheTile()
     {
-        var sql = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4267 });
+        var conus = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4267 }, 56, 101, 8);
+        var alaska = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4267 }, 21, 68, 8);
+        var world = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4267 }, 0, 0, 0);
 
-        sql.Should().Contain("ST_TransformPipeline(");
-        sql.Should().Contain("us_noaa_conus.tif");
+        conus.Should().Contain("us_noaa_conus.tif");
+        conus.Should().NotContain("us_noaa_alaska.tif");
+        alaska.Should().Contain("us_noaa_alaska.tif");
+        alaska.Should().NotContain("us_noaa_conus.tif");
+        world.Should().NotContain("ST_TransformPipeline(");
+        world.Should().Contain("ST_Transform(");
     }
 
     [UnitTest]
-    public void Mvt_Nad27ToWorldCrs84Quad_UsesCatalogGrid()
+    public void Mvt_Nad27ToWorldCrs84Quad_UsesTheGridThatContainsTheTile()
     {
-        var sql = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4267, OutputSrid = 4326 });
+        var conus = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4267, OutputSrid = 4326 }, 14, 9, 5);
+        var alaska = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4267, OutputSrid = 4326 }, 5, 4, 5);
 
-        sql.Should().Contain("ST_TransformPipeline(");
-        sql.Should().Contain("us_noaa_conus.tif");
+        conus.Should().Contain("us_noaa_conus.tif");
+        conus.Should().NotContain("us_noaa_alaska.tif");
+        alaska.Should().Contain("us_noaa_alaska.tif");
+        alaska.Should().NotContain("us_noaa_conus.tif");
     }
 
     [UnitTest]
     public void Mvt_UnknownPair_KeepsTwoArgumentTransform()
     {
-        var sql = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 2154 });
+        var sql = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 2154 }, 56, 101, 8);
 
         sql.Should().Contain("ST_Transform(");
         sql.Should().NotContain("ST_TransformPipeline(");
@@ -56,7 +65,7 @@ public sealed class DatumDrawPathSqlTests
     [UnitTest]
     public void Mvt_Nad83ToWgs84_StaysNoOperation()
     {
-        var sql = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4269, OutputSrid = 4326 });
+        var sql = BuildMvt(new FeatureQuery { SpatialReferenceSrid = 4269, OutputSrid = 4326 }, 14, 9, 5);
 
         sql.Should().Contain("ST_SetSRID(");
         sql.Should().NotContain("hgridshift");
@@ -82,12 +91,12 @@ public sealed class DatumDrawPathSqlTests
         DatumSamplePointSql.Build(4326, 4326).Should().Be("ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid)");
     }
 
-    private static string BuildMvt(FeatureQuery query)
+    private static string BuildMvt(FeatureQuery query, int x, int y, int z)
     {
         var pool = new DefaultObjectPoolProvider().Create(
             new Honua.Db.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
         return new FeatureQueryBuilder(pool, new GeometryProcessor()).BuildMvtTileQuery(
-            1, 0, 0, 1,
+            1, x, y, z,
             query,
             new TileOptions { TileBuffer = 0, TileExtent = 4096, SimplifyZoom = -1 },
             new TileLimits()).Sql;

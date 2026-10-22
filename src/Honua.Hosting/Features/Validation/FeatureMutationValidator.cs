@@ -87,7 +87,20 @@ internal sealed class FeatureMutationValidator
             : geometry;
         if (geographicSrid is int layerSrid && finalGeometry is { Length: > 0 })
         {
-            finalGeometry = CutAntimeridian(finalGeometry, layerSrid);
+            var cut = CutAntimeridian(finalGeometry, layerSrid);
+            if (!ReferenceEquals(cut, finalGeometry))
+            {
+                // The cut adds vertices and can split one ring into several polygons
+                // after ValidateCompleteAsync has already counted the input.
+                var limitResult = _geometryValidator.ValidateWkb(cut);
+                if (!limitResult.IsValid)
+                {
+                    var limitErrors = string.Join("; ", limitResult.Errors.Select(error => error.Message));
+                    return GeometryMutationResult.Failure(limitErrors);
+                }
+
+                finalGeometry = cut;
+            }
         }
 
         return GeometryTypeEnforcement.Enforce(

@@ -88,8 +88,10 @@ public sealed class DatumAndAntimeridianIntegrationTests(PostgresFixture fixture
                 VALUES (1, 1, ST_GeomFromText('POINT(-100 40)', 4267), jsonb_build_object());
                 """);
 
+            // Zoom 8 tile 56,101 is inside the CONUS NAD27 area, so the catalog selects
+            // us_noaa_conus.tif. A world tile matches no single area and stays on ST_Transform.
             var act = () => ReadTileAsync(
-                fixture.ConnectionString, schema, geographic: false, zoom: 4, x: 0, y: 0, layerSrid: 4267);
+                fixture.ConnectionString, schema, geographic: false, zoom: 8, x: 56, y: 101, layerSrid: 4267);
 
             var error = await act.Should().ThrowAsync<ValidationException>();
             error.Which.Message.Should().Contain("grid");
