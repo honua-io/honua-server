@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:222281f892718a37d800211e23f6be085e8b883a0fd60fd89eeac3a11b37d080",
+  "bundleDigest": "sha256:d749d6103f93019347bc2e9a7792d0ee64c7cbd3947c49bdceeb9e12f0dd8c24",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2167,7 +2167,7 @@
     {
       "id": "guides/deploy/docker-compose",
       "path": "guides/deploy/docker-compose.md",
-      "documentDigest": "sha256:4446b1f37464acf9a42f364df745cfebe504289126f04d6bcf890be4c928c24f",
+      "documentDigest": "sha256:df51cbcaa27f9d5b32d909e65dfbf2908dc18002e542ac4f99e86c2d4bad3b35",
       "metadata": {
         "type": "runbook",
         "title": "Deploy with Docker Compose",
@@ -2178,7 +2178,7 @@
     {
       "id": "guides/deploy/kubernetes",
       "path": "guides/deploy/kubernetes.md",
-      "documentDigest": "sha256:85505287aa37901e6be15e5d8e85df587b4ab20adb10c5e9f06ee730e9bd97cb",
+      "documentDigest": "sha256:2ea75ba55af519cdccae147f34b29bbc6af4db6f9d03a6b815e1484a0c0572d6",
       "metadata": {
         "type": "guide",
         "title": "Deploy on Kubernetes",
