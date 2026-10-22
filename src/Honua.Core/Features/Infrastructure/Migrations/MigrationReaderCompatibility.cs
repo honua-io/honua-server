@@ -195,16 +195,12 @@ public static partial class MigrationReaderCompatibility
     public static int ReaderSchemaOf(IEnumerable<string> scriptNames)
     {
         ArgumentNullException.ThrowIfNull(scriptNames);
-        var schema = 0;
-        foreach (var name in scriptNames)
-        {
-            if (ReadSchemaNumber(name) is { } number && number > schema)
-            {
-                schema = number;
-            }
-        }
-
-        return schema;
+        return scriptNames
+            .Select(ReadSchemaNumber)
+            .Where(number => number.HasValue)
+            .Select(number => number!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
     }
 
     /// <summary>The migration number in a script identity such as <c>Honua.Server.Migrations.135_X.sql</c>.</summary>
@@ -232,21 +228,21 @@ public static partial class MigrationReaderCompatibility
 
     private static (int MinReaderSchema, bool Malformed) ReadMinReaderSchema(string text)
     {
-        var floor = 0;
-        foreach (Match marker in ReaderCompatibleFromMarker().Matches(text))
-        {
-            var parsed = ReaderCompatibleFromValue().Match(marker.Value);
-            if (!parsed.Success
-                || !int.TryParse(parsed.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
-            {
-                // Fail safe: an annotation the reader cannot parse never widens acceptance.
-                return (floor, true);
-            }
+        var floors = ReaderCompatibleFromMarker().Matches(text)
+            .Select(marker => ParseFloor(marker.Value))
+            .ToArray();
 
-            floor = Math.Max(floor, value);
-        }
+        // Fail safe: an annotation the reader cannot parse never widens acceptance.
+        return (floors.Max() ?? 0, floors.Any(floor => floor is null));
+    }
 
-        return (floor, false);
+    private static int? ParseFloor(string marker)
+    {
+        var parsed = ReaderCompatibleFromValue().Match(marker);
+        return parsed.Success
+            && int.TryParse(parsed.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
+                ? value
+                : null;
     }
 
     // Any reader-incompatible marker forces refusal, with or without a reason; the reason is
