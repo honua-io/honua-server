@@ -464,6 +464,17 @@ kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 helm -n honua test honua
 ```
 
+`helm rollback` restores that revision's saved values, including
+`HONUA_SKIP_MIGRATIONS=true` when the revision was installed that way after an
+out-of-band migration Job. With the skip switch the reader still checks the
+journal, but it does not accept forward-compatibility declarations: it must
+ship every applied migration. A newer expand-only entry is refused, and
+`--wait` times out instead of serving. To roll back across additive migrations,
+start the previous image with migrations enabled (leave
+`HONUA_SKIP_MIGRATIONS` unset) so it can verify those declarations. A saved
+skip-migrations revision is a safe rollback only when that image ships every
+applied migration.
+
 Helm cannot downgrade the database schema. If the previous image is not
 compatible, stop writes and restore the matching PostGIS backup and file-store
 snapshot, or roll forward. See [Upgrade and roll back](upgrade-and-rollback.md)

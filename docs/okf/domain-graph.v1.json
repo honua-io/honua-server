@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:0914b87e0d669c5d0985f753af406b2b90acb1479508db30a473a331e744dab8",
+  "bundleDigest": "sha256:d749d6103f93019347bc2e9a7792d0ee64c7cbd3947c49bdceeb9e12f0dd8c24",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2178,7 +2178,7 @@
     {
       "id": "guides/deploy/kubernetes",
       "path": "guides/deploy/kubernetes.md",
-      "documentDigest": "sha256:c34b5cf07b132b9b6b1c8b2637e95a089f14e5334060f7c5d57954a11c186126",
+      "documentDigest": "sha256:2ea75ba55af519cdccae147f34b29bbc6af4db6f9d03a6b815e1484a0c0572d6",
       "metadata": {
         "type": "guide",
         "title": "Deploy on Kubernetes",
