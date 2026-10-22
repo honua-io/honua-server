@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:8dd693160f44f93e036d694161ba2bb67cfba4c0e59df72b968b43cb1a6523c1",
+  "bundleDigest": "sha256:a948db2f370362d6a4c8e4b32c4edb1feb3431c955df0e54ae9caf4ee9428b5b",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1901,7 +1901,7 @@
     {
       "id": "get-started/first-map",
       "path": "get-started/first-map.md",
-      "documentDigest": "sha256:d16c13d8d4f924e28f49b19bac5ec94b624b2fe88a91cfff0293056a94bf3f92",
+      "documentDigest": "sha256:dd47705e387ac5e4a8ff38718ee17585dd08b92f1d38d790d165c39d6ed911cf",
       "metadata": {
         "type": "guide",
         "title": "Make your first map",
@@ -1912,7 +1912,7 @@
     {
       "id": "get-started/linux-packages",
       "path": "get-started/linux-packages.md",
-      "documentDigest": "sha256:61ba170991d220888784a09bd3868d27049915dfc7b9a656c7cf852bbc97bfdb",
+      "documentDigest": "sha256:5f237acbd1b64bc6e8ebdc5fa07605c326940cf54a8b2df9a00e0148c8d265db",
       "metadata": {
         "type": "guide",
         "title": "Linux: install published packages",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:b228f71e54482d0b28269c0010b2512fe9b0008c093c47bdf48723d169e84301",
+      "documentDigest": "sha256:c2b6b087f1b464f71db0fea87461e9c32716ef5cb03ece768c654d49232f5b81",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -1936,7 +1936,7 @@
     {
       "id": "get-started/registry-clients",
       "path": "get-started/registry-clients.md",
-      "documentDigest": "sha256:fa2cff9f419cba804543acd7f05d82f63d600b483dfefaa185921fcf61da054a",
+      "documentDigest": "sha256:3c6f37686b91ce43ae20ec01df05de872df996cb4b84307aa22251dcad7f7b20",
       "metadata": {
         "type": "guide",
         "title": "Client packages and registries",
@@ -1948,7 +1948,7 @@
     {
       "id": "get-started/windows-packages",
       "path": "get-started/windows-packages.md",
-      "documentDigest": "sha256:1325239f1729499ed9c86602148ab1ceb2ccd12d7c258a82994e4e5a8f87f514",
+      "documentDigest": "sha256:4e76c05ea046f1482d3733cdb3193d23d1cb1301a8d2b290c0a739deceb5f97f",
       "metadata": {
         "type": "guide",
         "title": "Install on Windows from published packages",
@@ -8107,7 +8107,7 @@
     {
       "id": "sdks/README",
       "path": "sdks/README.md",
-      "documentDigest": "sha256:7d37ccb536710c9b7d37ca255113d99904535e9d0ed4ad268308770f1f52481d",
+      "documentDigest": "sha256:ed4c4ffb2933023f4ab2976bbb7b173cd7a42d7ebcc3b3cb01dbdcd05a1a9345",
       "metadata": {
         "type": "index",
         "title": "SDKs",
@@ -8130,7 +8130,7 @@
     {
       "id": "sdks/dotnet/dotnet-getting-started",
       "path": "sdks/dotnet/dotnet-getting-started.md",
-      "documentDigest": "sha256:f8a1d566b604d82197039fa31cbd82808a562bdd3215055a54273a959a159723",
+      "documentDigest": "sha256:f579c4ca202b8edda6cf626bb4360a51b5fa0b027a12c53d81b1773b3969515f",
       "metadata": {
         "type": "reference",
         "title": "Get started with the .NET SDK",
@@ -10664,11 +10664,6 @@
       "target": "guides/deploy/docker-compose"
     },
     {
-      "source": "get-started/linux-packages",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
-    },
-    {
       "source": "get-started/quickstart",
       "relation": "links_to",
       "target": "concepts/protocols"
@@ -10719,19 +10714,9 @@
       "target": "guides/deploy/troubleshooting"
     },
     {
-      "source": "get-started/quickstart",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
-    },
-    {
       "source": "get-started/registry-clients",
       "relation": "links_to",
       "target": "get-started/quickstart"
-    },
-    {
-      "source": "get-started/registry-clients",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/windows-packages",
@@ -10752,11 +10737,6 @@
       "source": "get-started/windows-packages",
       "relation": "links_to",
       "target": "guides/deploy/docker-compose"
-    },
-    {
-      "source": "get-started/windows-packages",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/with-ai",

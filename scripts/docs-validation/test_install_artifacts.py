@@ -63,7 +63,12 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue(any("honua-sdk" in error for error in artifacts.check(self.root)))
 
     def test_release_prose_is_not_a_contract_assertion(self):
-        self.replace("docs/get-started/quickstart.md", "2026.1-rc", "future-release")
+        # The GA tag is prose. The executable pin is the rc channel assignment.
+        self.replace(
+            "docs/get-started/quickstart.md",
+            "(`ghcr.io/honua-io/honua-server:2026.1` at GA)",
+            "(a later generally available tag)",
+        )
         self.assertEqual([], artifacts.check(self.root))
 
     def test_public_recipe_extraction_and_missing_annotation(self):
