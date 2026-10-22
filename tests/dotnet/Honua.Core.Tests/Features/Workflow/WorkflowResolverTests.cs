@@ -3,15 +3,18 @@
 
 using Honua.Core.Features.Workflow;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Workflow;
 
+[Protocol(ProtocolNames.TestQuality)]
+[Operation(Operations.Query)]
 public sealed class WorkflowResolverTests
 {
     private readonly WorkflowBundle _bundle = WorkflowBundle.LoadDefault();
 
     [UnitTest]
-    public void SourceAlwaysRequiresExplicitTurnChoice()
+    public void Resolve_AmbiguousSource_RequiresExplicitTurnChoice()
     {
         var resolver = new WorkflowResolver(_bundle);
         var result = resolver.Resolve(new("use the source", ["dataset", "connection"]));
@@ -22,7 +25,7 @@ public sealed class WorkflowResolverTests
     }
 
     [UnitTest]
-    public void LongestPhrasePrecedesGrantFiltering()
+    public void Resolve_LongestPhrase_PrecedesGrantFiltering()
     {
         var resolver = new WorkflowResolver(_bundle);
         Assert.Equal("no-match", resolver.Resolve(new("database connection", ["dataset"])).Status);
@@ -35,7 +38,7 @@ public sealed class WorkflowResolverTests
     [InlineData("publish the layer")]
     [InlineData("publish the data")]
     [InlineData("publish")]
-    public void PublicationNeverSilentlySelectsCatalogMutation(string text)
+    public void Resolve_PublicationPhrase_RequiresClarification(string text)
     {
         var result = new WorkflowResolver(_bundle).Resolve(new(text, ["service", "publication"]));
         Assert.Equal("clarification", result.Status);
@@ -44,13 +47,13 @@ public sealed class WorkflowResolverTests
     }
 
     [UnitTest]
-    public void SchemaFieldIsNotRewrittenAsConversationalSource()
+    public void Resolve_SchemaField_DoesNotRewriteSource()
     {
         Assert.Equal("no-match", new WorkflowResolver(_bundle).Resolve(new("source.kind", ["dataset", "connection"])).Status);
     }
 
     [UnitTest]
-    public void UnauthorizedChoiceCannotEscapeClarification()
+    public void Resolve_UnauthorizedChoice_PreservesClarification()
     {
         var result = new WorkflowResolver(_bundle).Resolve(new("source", ["dataset"], ClarificationId: "source-meaning", Choice: "connection"));
         Assert.Equal("clarification", result.Status);
@@ -58,7 +61,7 @@ public sealed class WorkflowResolverTests
     }
 
     [UnitTest]
-    public void PathwaysExposeOneMissingPrerequisiteAndUnavailableExecutor()
+    public void SuggestPathways_MissingPrerequisite_ExposesExecutorBlocker()
     {
         var result = _bundle.SuggestPathways([], ["service.publish"], ["serve.geoservices-featureserver"]);
         var pathway = Assert.Single(result);
@@ -69,7 +72,7 @@ public sealed class WorkflowResolverTests
     }
 
     [UnitTest]
-    public void EffectsDependOnActualTarget()
+    public void GetEffectTier_StyleTarget_ClassifiesActualEffect()
     {
         Assert.Equal("working-draft", _bundle.GetEffectTier("style.apply", "working-draft"));
         Assert.Equal("server-state", _bundle.GetEffectTier("style.apply", "shared-catalog"));
