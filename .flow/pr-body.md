@@ -11,7 +11,7 @@ Move `FeatureServerQueryParameterTests` from the serial `Database` collection to
 - The class only reads its own fixture seed through GET/POST query requests. Fixture schema routing and the schema-partitioned metadata graph provide the isolation it needs.
 
 ## Testing
-Fresh Windows verification after merging trunk `a58c6b5a73` is in progress. The baseline build passed with zero warnings/errors in 1197.023 s; the completed baseline shard passed 375/375 cases in 3097.524 s, with zero deadlock signatures in the test and PostgreSQL logs. The target class passed 60/60 cases. Do not publish this intermediate draft as a verified handoff.
+Fresh Windows verification after merging trunk `a58c6b5a73` is in progress. The baseline build passed with zero warnings/errors in 1197.023 s; the completed baseline shard passed 375/375 cases in 3097.524 s, with zero deadlock signatures in the test and PostgreSQL logs. The target class passed 60/60 cases. The migrated-state build also passed with zero warnings/errors in 768.024 s. Byte comparison against trunk passed: only the collection attribute differs in the complete target source. After-run #1 is running; do not publish this intermediate draft as a verified handoff.
 
 The native helper acquires `Global\HonuaBuildLock`, sets `DOTNET_PROCESSOR_COUNT=2`, builds Release with warnings as errors, and uses a fresh CI-pinned PostGIS 16 container for each run. The before build temporarily restores only `[Collection("Database")]` and restores the source bytes in `finally`. Run timings exclude build and container startup.
 
@@ -24,6 +24,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/mike/honua-io/query
 powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/mike/honua-io/query-parameters-resume-20261022.ps1 -Phase After2
 powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/mike/honua-io/query-parameters-resume-20261022.ps1 -Phase Format
 python C:/Users/mike/honua-io/query-parameters-summary-20261022.py
+python C:/Users/mike/honua-io/query-parameters-preserve-20261022.py
 ```
 
 - [x] Integration test wiring updated; test verification pending.
