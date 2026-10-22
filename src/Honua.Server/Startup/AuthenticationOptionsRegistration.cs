@@ -60,8 +60,10 @@ internal static class AuthenticationOptionsRegistration
         });
 
         // OIDC authentication options
-        services.Configure<OidcAuthenticationOptions>(options =>
-            OidcAuthenticationExtensions.BindOptions(
+        services.Configure<OidcAuthenticationOptions>(
+            configuration.GetSection(OidcAuthenticationOptions.SectionName));
+        services.PostConfigure<OidcAuthenticationOptions>(options =>
+            OidcAuthenticationExtensions.ReplaceConfiguredArrays(
                 configuration.GetSection(OidcAuthenticationOptions.SectionName), options));
 
         // Console-consumable operator bearer (#2258, Option C). Options and validation

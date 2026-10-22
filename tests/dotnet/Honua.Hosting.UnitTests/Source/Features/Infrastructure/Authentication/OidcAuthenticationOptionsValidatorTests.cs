@@ -45,6 +45,40 @@ public class OidcAuthenticationOptionsValidatorTests
     }
 
     [UnitTest]
+    public void ConfiguredArrays_OptionsMonitorReloadsConfigurationAndReplacesDefaults()
+    {
+        using var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Oidc:AdminRoles:0"] = "first-approver",
+                ["Oidc:Generic:Scopes:0"] = "openid",
+                ["Oidc:AdminAuthCallbackUri"] = "https://first.example.com/admin/auth/callback"
+            })
+            .Build();
+        var section = configuration.GetSection(OidcAuthenticationOptions.SectionName);
+        var services = new ServiceCollection();
+        services.Configure<OidcAuthenticationOptions>(section);
+        services.PostConfigure<OidcAuthenticationOptions>(options =>
+            OidcAuthenticationExtensions.ReplaceConfiguredArrays(section, options));
+        using var provider = services.BuildServiceProvider();
+        var monitor = provider.GetRequiredService<IOptionsMonitor<OidcAuthenticationOptions>>();
+        Assert.Equal(["first-approver"], monitor.CurrentValue.AdminRoles);
+        Assert.Equal(["openid"], monitor.CurrentValue.Generic!.Scopes);
+        var changes = 0;
+        using var listener = monitor.OnChange(_ => changes++);
+
+        configuration["Oidc:AdminRoles:0"] = "second-approver";
+        configuration["Oidc:Generic:Scopes:0"] = "profile";
+        configuration["Oidc:AdminAuthCallbackUri"] = "https://second.example.com/admin/auth/callback";
+        configuration.Reload();
+
+        Assert.Equal(1, changes);
+        Assert.Equal(["second-approver"], monitor.CurrentValue.AdminRoles);
+        Assert.Equal(["profile"], monitor.CurrentValue.Generic!.Scopes);
+        Assert.Equal("https://second.example.com/admin/auth/callback", monitor.CurrentValue.AdminAuthCallbackUri);
+    }
+
+    [UnitTest]
     public void BindOptions_UnconfiguredArraysRetainDefaults()
     {
         var configuration = new ConfigurationBuilder()

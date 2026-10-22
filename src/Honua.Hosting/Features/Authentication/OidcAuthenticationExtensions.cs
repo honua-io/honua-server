@@ -79,6 +79,11 @@ public static partial class OidcAuthenticationExtensions
     internal static void BindOptions(IConfiguration section, OidcAuthenticationOptions options)
     {
         section.Bind(options);
+        ReplaceConfiguredArrays(section, options);
+    }
+
+    internal static void ReplaceConfiguredArrays(IConfiguration section, OidcAuthenticationOptions options)
+    {
         var roles = section.GetSection(nameof(OidcAuthenticationOptions.AdminRoles));
         if (roles.Exists())
         {
