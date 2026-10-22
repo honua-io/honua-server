@@ -33,7 +33,7 @@ publicly available; the preview instructions below do not depend on it.
 
 The clients are pinned:
 [honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
-[honua-sdk 0.1.16](https://pypi.org/project/honua-sdk/0.1.16/).
+[honua-sdk 0.1.18](https://pypi.org/project/honua-sdk/0.1.18/).
 
 For a lasting deployment, continue to
 [production Compose](../guides/deploy/docker-compose.md). For a locked-down
@@ -250,7 +250,7 @@ Install the two public clients, ideally in a virtual environment:
 <!-- docs-validation:install.clients mode=run -->
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.16'
+pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.18'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,
