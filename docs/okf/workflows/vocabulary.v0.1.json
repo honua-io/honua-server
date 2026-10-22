@@ -1,0 +1,1049 @@
+{
+  "schemaVersion": "0.1.0",
+  "status": "ga-foundation",
+  "terms": [
+    {
+      "id": "connection",
+      "definition": "A stored, named, tested link from the platform to an external data store (database, object store). Holds coordinates and a secret reference, never data and never the secret value.",
+      "resource": "honua://capability/admin.control-plane",
+      "aliases": [
+        {
+          "text": "connection",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "datasource",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "data connection",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "database connection",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "source",
+          "ambiguous": true,
+          "clarification": "source-meaning",
+          "contexts": []
+        },
+        {
+          "text": "data source",
+          "ambiguous": true,
+          "clarification": "source-meaning",
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "secret-reference",
+      "definition": "A tenant/workspace-authorized credential name, resolved only inside an executor adapter. Console accepts approved aws-sm/vault adapters; env/file are restricted to operator-run local CLI. Secret values never enter model inputs or artifacts.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "secret-reference",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "secretRef",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "credential reference",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "secret ref",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "dataset",
+      "definition": "Stored data owned or referenced independently of publication. File/table imports produce a dataset; service-source imports may additionally mirror the source service and layers under an explicit mirror_service policy.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "dataset",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "table",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "feature class",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "source",
+          "ambiguous": true,
+          "clarification": "source-meaning",
+          "contexts": []
+        },
+        {
+          "text": "data source",
+          "ambiguous": true,
+          "clarification": "source-meaning",
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "dataset.esri-service",
+      "definition": "A remote ArcGIS/GeoServices FeatureServer or MapServer layer, copied into the platform by an import job (owned copy).",
+      "resource": "honua://capability/import.geoservices",
+      "aliases": [
+        {
+          "text": "dataset.esri-service",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "esri service",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "ArcGIS REST service",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "GeoServices source",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "feature service",
+          "ambiguous": true,
+          "clarification": "feature-service-meaning",
+          "contexts": []
+        },
+        {
+          "text": "source",
+          "ambiguous": true,
+          "clarification": "source-meaning",
+          "contexts": []
+        },
+        {
+          "text": "data source",
+          "ambiguous": true,
+          "clarification": "source-meaning",
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "dataset.postgis-table",
+      "definition": "A table or view in a PostGIS database reached through a connection and published in place (no copy). Validated before publish.",
+      "resource": "honua://capability/admin.control-plane",
+      "aliases": [
+        {
+          "text": "dataset.postgis-table",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "postgis table",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "database table",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "spatial table",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "registered table",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "dataset.file",
+      "definition": "An uploaded file (GeoJSON, Shapefile, GeoPackage, CSV and others the platform lists) imported into an owned table via an upload and a background import job.",
+      "resource": "honua://capability/import.file",
+      "aliases": [
+        {
+          "text": "dataset.file",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "upload",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "file import",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "geojson file",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "vector file",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "service",
+      "definition": "One protocol surface over a dataset (GeoServices FeatureServer, OGC API Features, WMS, WFS, WMTS, STAC, vector tiles, ...). One dataset can have many services. A service has one or more layers; the default is one layer named after the dataset. Publishing never imports.",
+      "resource": "honua://capability/serve.geoservices-featureserver",
+      "aliases": [
+        {
+          "text": "service",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "endpoint",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "feature service",
+          "ambiguous": true,
+          "clarification": "feature-service-meaning",
+          "contexts": []
+        },
+        {
+          "text": "map service",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "published service",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "publish",
+          "ambiguous": true,
+          "clarification": "publication-meaning",
+          "contexts": []
+        },
+        {
+          "text": "publish the layer",
+          "ambiguous": true,
+          "clarification": "publication-meaning",
+          "contexts": []
+        },
+        {
+          "text": "publish the data",
+          "ambiguous": true,
+          "clarification": "publication-meaning",
+          "contexts": []
+        },
+        {
+          "text": "collection",
+          "ambiguous": true,
+          "clarification": "collection-meaning",
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "layer",
+      "definition": "A named feature or raster collection inside a service. Default: one layer named after the dataset.",
+      "resource": "honua://capability/admin.control-plane",
+      "aliases": [
+        {
+          "text": "feature layer",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "published layer",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "sublayer",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "layer",
+          "ambiguous": true,
+          "clarification": "layer-meaning",
+          "contexts": []
+        },
+        {
+          "text": "collection",
+          "ambiguous": true,
+          "clarification": "collection-meaning",
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "style",
+      "definition": "A renderer/symbology definition bound to a layer, stored in a portable form (honua style JSON, optionally SLD/OGC Styles). Presets and auto-suggestions are ways to produce one.",
+      "resource": "honua://capability/styling.defaults",
+      "aliases": [
+        {
+          "text": "style",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "symbology",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "renderer",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "theme",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "preset",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "cartography",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "map",
+      "definition": "A map composition with working drafts and explicit saved versions. Draft edits do not save or publish a version.",
+      "resource": "honua://capability/admin.control-plane",
+      "aliases": [
+        {
+          "text": "map",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "dashboard",
+          "ambiguous": true,
+          "clarification": "dashboard-meaning",
+          "contexts": []
+        },
+        {
+          "text": "map document",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "map package",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "map project",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "web map",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "webmap",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "composition",
+      "definition": "The umbrella for authored, versioned, publishable content items: a map or a dashboard (and other package families). Journey stage 6 calls them 'durable compositions'.",
+      "resource": "honua://capability/admin.control-plane",
+      "aliases": [
+        {
+          "text": "composition",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "content item",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "package",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "portal item",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "app package",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "definition": "A dashboard composition of widgets bound to maps/layers. Package-family IDs and schema versions require runtime discovery.",
+      "resource": "honua://capability/admin.control-plane",
+      "aliases": [
+        {
+          "text": "dashboard",
+          "ambiguous": true,
+          "clarification": "dashboard-meaning",
+          "contexts": []
+        },
+        {
+          "text": "operations dashboard",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "app",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "experience",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "report page",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "geoprocessing-job",
+      "definition": "A bounded, durable, cancellable execution of a geoprocessing operation (e.g. geometry.buffer) on the job runtime, identified by jobId and read back by it. Not an operation-gateway call.",
+      "resource": "honua://capability/process.geoprocessing",
+      "aliases": [
+        {
+          "text": "geoprocessing-job",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "GP job",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "process execution",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "analysis job",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "task execution",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "compute node run",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "publication",
+      "definition": "Governed publication of an exact saved item/version/hash, proposed by an applying human and approved separately by another authorized human. Service publication remains a distinct operation.",
+      "resource": "honua://capability/operations.proposals",
+      "aliases": [
+        {
+          "text": "publication",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "go live",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "release",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "share",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "publish",
+          "ambiguous": true,
+          "clarification": "publication-meaning",
+          "contexts": []
+        },
+        {
+          "text": "publish the layer",
+          "ambiguous": true,
+          "clarification": "publication-meaning",
+          "contexts": []
+        },
+        {
+          "text": "publish the data",
+          "ambiguous": true,
+          "clarification": "publication-meaning",
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "proposal",
+      "definition": "A durable record of a requested governed operation in state AwaitingApproval, bound to the exact item/version/hash, with proposalId.",
+      "resource": "honua://capability/operations.proposals",
+      "aliases": [
+        {
+          "text": "proposal",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "operation proposal",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "publication request",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "change request",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "approval",
+      "definition": "The decision by a principal different from the proposer, with admin:approve, that allows a proposal to execute (or rejects it).",
+      "resource": "honua://capability/operations.proposals",
+      "aliases": [
+        {
+          "text": "approval",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "sign-off",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "authorize",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "review",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "principal",
+      "definition": "An authenticated human or agent identity established by the server. A spec as field never switches credentials or grants authority.",
+      "resource": "honua://capability/admin.control-plane",
+      "aliases": [
+        {
+          "text": "principal",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "api key",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "user",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "identity",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "role",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "definition": "A running Honua installation: server, its database, cache and workers, on a deployment target. The thing every other node is applied to.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "platform",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "deployment",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "installation",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "environment",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "instance",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "stack",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "cell",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "platform.docker-local",
+      "definition": "Platform on the local Docker engine via the owned compose fixture (server, PostGIS, Redis).",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "platform.docker-local",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "local",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "docker",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "compose",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "dev install",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "local-docker",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "platform.aws-ecs",
+      "definition": "Platform on AWS ECS behind an ALB with RDS; multiple tasks.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "platform.aws-ecs",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "ecs",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "fargate",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "platform.aws-lambda",
+      "definition": "Platform on AWS Lambda (serverless, API function from a mirrored ECR image) with RDS.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "platform.aws-lambda",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "lambda",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "serverless",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "aws-serverless",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "spec",
+      "definition": "A canonical spec document: grammarVersion, processFamilyVersion, nodes[]. Validated, planned into a content-hashed DAG, applied with streamed events.",
+      "resource": "honua://capability/ai.spec-apply",
+      "aliases": [
+        {
+          "text": "spec",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "plan",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "manifest",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "playbook",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "workflow",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "capability",
+      "definition": "An entry in the platform capability registry, keyed honua://capability/<key>, with edition and lifecycle status. The join between vocabulary, docs, licensing and routes.",
+      "resource": "honua://capability/discovery.capability-manifest",
+      "aliases": [
+        {
+          "text": "capability",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "feature",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "entitlement key",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "capability key",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "platform.workers",
+      "definition": "`workers` attribute of a platform: a worker pool for gp or import work (e.g. backed by AWS Batch). Not a target.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "platform.workers",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "aws-batch",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "worker pool",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "batch workers",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "platform.eks",
+      "definition": "Platform on AWS EKS installed from the Helm chart.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "platform.eks",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "aws-eks",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "eks",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "helm",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "k8s",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        },
+        {
+          "text": "kubernetes",
+          "ambiguous": false,
+          "clarification": null,
+          "contexts": []
+        }
+      ]
+    },
+    {
+      "id": "map-layer",
+      "definition": "A reference to a service layer inside a working map draft.",
+      "resource": null,
+      "aliases": [
+        {
+          "text": "layer",
+          "ambiguous": true,
+          "clarification": "layer-meaning",
+          "contexts": []
+        }
+      ]
+    }
+  ],
+  "clarifications": [
+    {
+      "id": "source-meaning",
+      "question": "Do you mean a connection, stored dataset, or remote service source?",
+      "choices": [
+        "connection",
+        "dataset",
+        "dataset.esri-service"
+      ]
+    },
+    {
+      "id": "publication-meaning",
+      "question": "Publish a one-layer service, or propose publication of a saved content version?",
+      "choices": [
+        "service",
+        "publication"
+      ]
+    },
+    {
+      "id": "layer-meaning",
+      "question": "Do you mean a service layer or a reference inside a map?",
+      "choices": [
+        "layer",
+        "map-layer"
+      ]
+    },
+    {
+      "id": "collection-meaning",
+      "question": "Do you mean a service or a layer within it?",
+      "choices": [
+        "service",
+        "layer"
+      ]
+    },
+    {
+      "id": "feature-service-meaning",
+      "question": "Which meaning of feature service do you intend?",
+      "choices": [
+        "dataset.esri-service",
+        "service"
+      ]
+    },
+    {
+      "id": "dashboard-meaning",
+      "question": "Which meaning of dashboard do you intend?",
+      "choices": [
+        "map",
+        "dashboard"
+      ]
+    }
+  ]
+}
