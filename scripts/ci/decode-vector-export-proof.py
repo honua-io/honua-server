@@ -11,6 +11,8 @@ import sqlite3
 import sys
 from osgeo import gdal, ogr
 
+if not __debug__:
+    raise RuntimeError("Independent fidelity assertions must not run with Python optimization enabled")
 gdal.UseExceptions()
 ogr.UseExceptions()
 ROOT = Path(sys.argv[1])
@@ -36,7 +38,7 @@ def vertices(geometry):
 def check_geometry(name, geometry):
     assert geometry is not None
     assert geometry.Is3D()
-    assert bool(geometry.IsMeasured()) == (name != "polygon")
+    assert bool(geometry.IsMeasured()) == (name != "polygon"), (name, geometry.ExportToIsoWkt())
     assert sorted(vertices(geometry)) == sorted(EXPECTED[name]), (name, geometry.ExportToIsoWkt())
     if name == "polygon":
         assert geometry.GetGeometryCount() == 2, "exterior and hole must remain separate"
@@ -59,6 +61,7 @@ for name in EXPECTED:
     check_geometry(name, ogr.CreateGeometryFromWkt(rows[0]["WKT"]))
     checks.append({"format": "csv", "fixture": name, "measured_count": 2, "measured_delta": 0})
     for suffix in ("shp", "gpkg"):
+        print(f"Checking {name}/export.{suffix}", flush=True)
         dataset = gdal.OpenEx(str(directory / f"export.{suffix}"), gdal.OF_VECTOR)
         assert dataset is not None
         layer = dataset.GetLayer(0)

@@ -45,5 +45,6 @@ python scripts/ci/run-import-export-fidelity-proof.py
 `--no-build` is available only when both current-checkout test projects have
 already been built in Release. The script uses a four-node MSBuild cap and bounded
 foreground subprocesses. Initial Windows validation: writer fixtures 3 passed,
-0 failed/skipped; receipt-reader checks 2 passed; client comparator checks 5 passed.
+0 failed/skipped; PostGIS import fixtures 3 passed, 0 failed/skipped;
+receipt-reader checks 2 passed; client comparator checks 5 passed.
 The complete import/independent-reader result is recorded with the delivering PR.

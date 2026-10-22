@@ -29,7 +29,9 @@ public sealed class IndependentVectorExportFixtureTests
         try
         {
             var geometry = new WKTReader().Read(wkt);
-            var wkb = new WKBWriter(ByteOrder.LittleEndian, false, true, true).Write(geometry);
+            // The polygon fixture is XYZ, while point/line carry real measures.
+            // Setting emitM for XYZ would manufacture an extra NaN M dimension.
+            var wkb = new WKBWriter(ByteOrder.LittleEndian, false, true, name != "polygon").Write(geometry);
             var attributes = ImmutableDictionary<string, object?>.Empty
                 .Add("label", "alpha, \"quoted\"").Add("amount", 7.25).Add("missing", null);
             Feature[] features = [Feature.Create(1, wkb, attributes), Feature.Create(2, null,
