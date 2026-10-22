@@ -259,8 +259,9 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             "serving (Database:MigrationSafety:ContractApplyPolicy=Gate). Review them first via " +
             "'GET /api/v1/admin/deploy/preflight' and 'GET /api/v1/admin/observability/migrations', then set " +
             $"'{MigrationSafetyOptions.ApproveContractMigrationsKey}={expectedNonce}' to apply them (a one-shot " +
-            "token bound to these exact scripts that will not approve any later contract migration), or run " +
-            "migrations out-of-band with HONUA_SKIP_MIGRATIONS=true, which owns its own safety.");
+            "token bound to these exact scripts that will not approve any later contract migration). To apply " +
+            "them out of band, run the target image once with HONUA_MIGRATE_ONLY=true and the same approval " +
+            "before the serving replicas start with HONUA_SKIP_MIGRATIONS=true; migrate-only applies the same gates.");
     }
 
     internal static string? ComputeApprovalNonce(
