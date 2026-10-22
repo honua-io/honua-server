@@ -35,6 +35,30 @@ public sealed class KeyRingCertificateRefusalExitTests
     [Operation(Operations.ContractTesting)]
     public async Task RedisWithoutKeyRingCertificate_RefusesNamingTheSettingAndExitsWithRefusalCode()
     {
+        var output = await RunRefusedBootAsync(certificatePath: null);
+        output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePath");
+        output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePkcs12");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task RedisWithMalformedKeyRingCertificate_RefusesWithoutAbortingTheRuntime()
+    {
+        var path = Path.Join(Path.GetTempPath(), "honua-bad-keyring-" + Guid.NewGuid().ToString("N") + ".pfx");
+        await File.WriteAllBytesAsync(path, [1, 2, 3, 4, 5]);
+        try
+        {
+            var output = await RunRefusedBootAsync(path);
+            output.Should().Contain("PKCS#12");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static async Task<string> RunRefusedBootAsync(string? certificatePath)
+    {
         var serverDirectory = AppContext.BaseDirectory;
         var serverAssembly = Path.Join(serverDirectory, "Honua.Server.dll");
         File.Exists(serverAssembly).Should().BeTrue("the cached test payload contains the server runtime ({0})", serverDirectory);
@@ -63,6 +87,11 @@ public sealed class KeyRingCertificateRefusalExitTests
             "Host=127.0.0.1;Port=5432;Database=honua;Username=honua;Password=unused";
         start.Environment["ConnectionStrings__redis"] = redis.GetConnectionString();
         start.Environment["DataSource__Provider"] = "postgis";
+        if (certificatePath is not null)
+        {
+            start.Environment["Operations__SecretChannel__KeyRingCertificatePath"] = certificatePath;
+        }
+
         start.Environment["HONUA_ADMIN_PASSWORD"] = "KeyRing-Refusal-1a";
         start.Environment["Security__ConnectionEncryption__MasterKey"] = "keyring-refusal-connection-encryption-key";
         start.Environment["Security__ConnectionEncryption__Salt"] = "a2V5cmluZy1yZWZ1c2FsLXNhbHQ=";
@@ -94,9 +123,8 @@ public sealed class KeyRingCertificateRefusalExitTests
             process.ExitCode,
             Environment.NewLine,
             tail);
-        output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePath");
-        output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePkcs12");
         output.Should().NotContain("Unhandled exception");
         output.Should().NotContain("Now listening on:");
+        return output;
     }
 }

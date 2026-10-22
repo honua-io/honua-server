@@ -478,6 +478,15 @@ if (connectedRedis is not null &&
         await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
         keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
     }
+    catch (System.Security.Cryptography.CryptographicException ex)
+    {
+        // A malformed bundle or wrong export password. The exception text can describe the
+        // certificate, so only its type is reported.
+        Honua.Server.Hosting.StartupRefusal.Exit(
+            $"'{OperationSecretKeyRingProtection.CertificatePathKey}' or '{OperationSecretKeyRingProtection.CertificateMaterialKey}' "
+            + $"could not be loaded as a PKCS#12 certificate ({ex.GetType().Name}). Check the bundle and its export password.");
+        return;
+    }
     catch (InvalidOperationException ex)
     {
         // A missing or unreadable certificate is an operator error. Left unhandled it aborts the
