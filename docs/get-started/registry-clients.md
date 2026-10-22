@@ -17,7 +17,7 @@ manifest. A promoted release must supply its own public install manifest.
 | Registry | Manifest pin | Role | Package-read credentials |
 | --- | --- | --- | --- |
 | PyPI | `honua-admin==0.1.12` | Control plane used by this journey | None |
-| PyPI | `honua-sdk==0.1.16` | Data plane used by this journey | None |
+| PyPI | `honua-sdk==0.1.18` | Data plane used by this journey | None |
 | PyPI | `mcp==2.1.1` | Only if you drive the server over MCP | None |
 | npm | `@honua/sdk-js@0.2.6` | Alternative JS SDK and CLI | None |
 | npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
