@@ -38,6 +38,8 @@ def main():
     parser.add_argument("--service-url", required=True)
     parser.add_argument("--variable", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--scratch", type=Path, required=True,
+                        help="ArcPy workspace; keep it outside the repository")
     parser.add_argument("--window", type=int, default=4,
                         help="pixel window read from each raster; the Honua fixture is exactly 4x4")
     args = parser.parse_args()
@@ -48,8 +50,8 @@ def main():
 
     arcpy.SetLogHistory(False)
     arcpy.SetLogMetadata(False)
-    scratch = args.output.parent / "scratch"
-    scratch.mkdir(exist_ok=True)
+    scratch = args.scratch
+    scratch.mkdir(parents=True, exist_ok=True)
     arcpy.env.workspace = str(scratch.resolve())
     arcpy.env.scratchWorkspace = str(scratch.resolve())
     arcpy.env.overwriteOutput = True
@@ -95,14 +97,13 @@ def main():
         raster = arcpy.Raster(url, True)
         state["raster"] = raster
         extent = raster.extent
+        names = list(raster.getDimensionNames(args.variable)) if raster.variables else []
+        state["dimension_names"] = names
         return {
             "is_multidimensional": raster.isMultidimensional,
             "variables": list(raster.variables or []),
             "variable_attributes": raster.getVariableAttributes(args.variable) if raster.variables else None,
-            "dimension_names": list(raster.getDimensionNames(args.variable)) if raster.variables else None,
-            "dimension_values": {name: [str(v) for v in raster.getDimensionValues(args.variable, name)]
-                                 for name in (raster.getDimensionNames(args.variable) if raster.variables else [])},
-            "slice_count": len(raster.slices or []) if hasattr(raster, "slices") else None,
+            "dimension_names": names,
             "extent": [extent.XMin, extent.YMin, extent.XMax, extent.YMax],
             "spatial_reference_wkid": raster.spatialReference.factoryCode,
             "band_count": raster.bandCount,
@@ -112,6 +113,20 @@ def main():
             "height": raster.height,
             "cell_size": [raster.meanCellWidth, raster.meanCellHeight],
         }
+
+    def dimension_values():
+        # Each dimension separately: one dimension without values must not hide the others.
+        observed = {}
+        for name in state.get("dimension_names", []):
+            try:
+                values = list(state["raster"].getDimensionValues(args.variable, name))
+                state.setdefault("dimension_values", {})[name] = values
+                observed[name] = {"status": "pass", "count": len(values), "values": [str(v) for v in values[:5]]}
+            except Exception as error:
+                observed[name] = {"status": "fail", "error_type": type(error).__name__}
+        if not state.get("dimension_values"):
+            raise RuntimeError("no dimension returned values")
+        return observed
 
     def describe_service():
         info = arcpy.Describe(state.get("layer") or url)
@@ -126,18 +141,20 @@ def main():
         return {"shape": list(block.shape), "values": block.tolist()}
 
     def raster_read():
-        # Pro reads a multidimensional raster object slice-stacked.
-        return array_summary(state["raster"].read(ncols=args.window, nrows=args.window, nodata_to_value=-32768.0))
+        return array_summary(arcpy.RasterToNumPyArray(
+            state["raster"], ncols=args.window, nrows=args.window, nodata_to_value=-32768.0))
+
+    def slice_text(value):
+        return value.strftime("%Y-%m-%dT%H:%M:%S") if hasattr(value, "strftime") else str(value)
 
     def slice_values():
-        raster = state["raster"]
-        dimension = list(raster.getDimensionNames(args.variable))[0]
+        dimension, values = next(iter(state["dimension_values"].items()))
         slices = []
-        for index, value in enumerate(list(raster.getDimensionValues(args.variable, dimension))[:2]):
+        for index, value in enumerate(values[:2]):
             layer = arcpy.md.MakeMultidimensionalRasterLayer(
                 url, f"md_slice_{index}", args.variable, "BY_VALUES",
-                dimension_values=[[dimension, str(value)]]).getOutput(0)
-            entry = {"dimension": dimension, "index": index, "value": str(value)}
+                dimension_values=[[dimension, slice_text(value)]]).getOutput(0)
+            entry = {"dimension": dimension, "index": index, "value": slice_text(value)}
             entry.update(array_summary(arcpy.RasterToNumPyArray(
                 layer, ncols=args.window, nrows=args.window, nodata_to_value=-32768.0)))
             slices.append(entry)
@@ -148,8 +165,10 @@ def main():
     step("RasterProperties", raster_properties)
     step("MakeMultidimensionalRasterLayer", multidimensional_layer)
     if "raster" in state:
+        step("DimensionValues", dimension_values)
         step("RasterRead", raster_read)
-        step("SliceValues", slice_values)
+        if state.get("dimension_values"):
+            step("SliceValues", slice_values)
     receipt["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
     write()
 
