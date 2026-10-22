@@ -12,6 +12,8 @@ using Npgsql;
 using NpgsqlTypes;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Geometries;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -552,6 +554,11 @@ internal sealed partial class StreamingFileImportService
                 geometry = repaired;
                 repairTally.Repaired++;
             }
+        }
+
+        if (GeographicSridClassifier.IsGeographicSrid(geometry.SRID))
+        {
+            geometry = AntimeridianCutter.Cut(geometry);
         }
 
         var writer = SelectWkbWriter(geometry, wkbWriter);
