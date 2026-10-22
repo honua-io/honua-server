@@ -12,7 +12,7 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 ## Policy
 
 1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), set `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
-2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. Degraded-start mode cannot bypass this check. With `HONUA_SKIP_MIGRATIONS=true` the check still runs, but it does not accept declarations: such a reader must ship every applied migration. A migration's presence alone never proves that an older image can serve it.
+2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
 3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt.
 
 ### In-flight geoprocessing jobs
@@ -82,8 +82,11 @@ migration, creates that table. Each declaration holds the script's classificatio
 text and the oldest reader schema it is declared safe for. Existing declarations
 are never rewritten.
 
-An image rolled back onto that database (with migrations enabled, the default)
-accepts a journal entry it does not ship only when all of these hold:
+An image rolled back onto that database accepts a journal entry it does not ship
+only when all of these hold. That is true whether it starts with migrations
+enabled (the default) or with `HONUA_SKIP_MIGRATIONS=true` after an out-of-band
+[migrate-only](#run-migrations-out-of-band) upgrade, and also during degraded-start
+recovery:
 
 1. The entry has a declaration, and the declaration says `expand`.
 2. The declared minimum reader schema is at most the reader's own schema number
@@ -96,13 +99,16 @@ Any other unknown entry keeps the `schema_reader_incompatible` refusal. That
 covers contract-phase scripts, opted-out scripts and tampered declarations. It
 also covers journals with no declaration, such as journals written before 135.
 The refusal message names each refused declaration and the reason. Nothing is
-applied or reversed during a rollback, refused or not.
+applied or reversed during a rollback, refused or not. With
+`HONUA_SKIP_MIGRATIONS=true` the check only reads: the serving image records no
+declarations of its own.
 
 **This only helps rollbacks to images that contain this reader logic** (schema 135
 and later). Older images (schema 134 and earlier) still refuse any migration
 they do not ship. To roll back to them, restore the
-matching backup. `HONUA_SKIP_MIGRATIONS=true` startups keep the strict check
-described in rule 2.
+matching backup. Some schema 135 images predate the skip-path check. They accept
+declarations only with migrations enabled, and with `HONUA_SKIP_MIGRATIONS=true`
+they still require every applied migration to be one they ship.
 
 **Rules for migration authors.** The shared classifier decides `expand` vs
 `contract`, but it only reads DDL. Some additive-looking scripts still break the
@@ -186,7 +192,7 @@ Single-instance Docker is not zero-downtime: pull the new tag, stop the old cont
 
 ## Run migrations out of band
 
-Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
+Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records the forward-compatibility declarations, so rolling the serving replicas back to the previous image keeps the database when every newer migration is expand-only (see [Rollback across additive migrations](#rollback-across-additive-migrations)). The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
 
 ```bash
 docker run --rm \

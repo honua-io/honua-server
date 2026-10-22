@@ -4,6 +4,7 @@
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.SensorThings;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -644,26 +645,40 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             return;
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT scriptname FROM public.schema_versions ORDER BY scriptname";
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var unknown = new List<string>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using (var command = connection.CreateCommand())
         {
-            var name = reader.GetString(0);
-            // Only the migration runner supplies reader-verified entries (#6477): it has already
-            // re-derived their expand-only declaration from the recorded, hash-bound script text.
-            if (!known.Contains(name) && !readerVerifiedMigrations.Contains(name))
+            command.CommandText = "SELECT scriptname FROM public.schema_versions ORDER BY scriptname";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                unknown.Add(name);
+                var name = reader.GetString(0);
+                // The migration runner may hand over entries it has already qualified (#6477).
+                if (!known.Contains(name) && !readerVerifiedMigrations.Contains(name))
+                {
+                    unknown.Add(name);
+                }
             }
         }
 
-        if (unknown.Count > 0)
+        if (unknown.Count == 0)
         {
-            throw new DatabaseSchemaCompatibilityException(unknown);
+            return;
         }
+
+        // Read-only qualification through the recorded forward-compatibility declarations, the same
+        // check the migration runner applies (#6477). This is the HONUA_SKIP_MIGRATIONS=true and
+        // degraded-start path: it never applies or records anything. Without the declaration table
+        // every unknown entry is refused exactly as before.
+        await PostgresReaderCompatibilityJournal.QualifyAsync(connection, unknown, ReaderSchema(known), cancellationToken)
+            .ConfigureAwait(false);
     }
+
+    // The reader's own schema is its highest application migration; provider-root numbering is
+    // independent and never raises it.
+    private int ReaderSchema(IReadOnlySet<string> known)
+        => MigrationReaderCompatibility.ReaderSchemaOf(known.Where(name =>
+            name.StartsWith(_migrations.ApplicationMigrationAssemblyName + ".", StringComparison.Ordinal)));
 
     private void VerifyConsistency(SchemaState state)
     {

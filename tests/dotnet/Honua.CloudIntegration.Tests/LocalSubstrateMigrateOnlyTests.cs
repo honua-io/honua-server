@@ -5,7 +5,10 @@ using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Server.Hosting.MigrateOnly;
+using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Xunit;
@@ -77,6 +80,76 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         second.Summary.GetProperty("appliedScripts").GetArrayLength().Should().Be(0, "a current journal applies nothing");
         second.Summary.GetProperty("schemaNumber").GetInt32()
             .Should().Be(first.Summary.GetProperty("schemaNumber").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task MigrateOnlyAtNPlusK_ThenSkipMigrationsReaderAtN_StartsOnVerifiedExpandAndRefusesOthers()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migrate-only lane.");
+        var connectionString = await _postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+
+        // The newer image (N+k) runs out of process in migrate-only mode, exactly as a pre-upgrade
+        // Job or one-shot task would, and records a declaration for every script it applied.
+        var migrate = await RunServerProcessAsync(connectionString);
+        migrate.ExitCode.Should().Be(0, migrate.Describe());
+
+        // The rollback image (N) ships every script except the newest k, and starts with
+        // HONUA_SKIP_MIGRATIONS=true, so only its startup schema guard runs (#6477).
+        var full = ServerCoreSchemaMigrations.Manifest;
+        var newest = full.KnownMigrationNames!
+            .Where(name => name.StartsWith("Honua.Server.Migrations.", StringComparison.Ordinal))
+            .OrderByDescending(name => MigrationReaderCompatibility.ReadSchemaNumber(name))
+            .Take(3)
+            .ToHashSet(StringComparer.Ordinal);
+        var olderReader = new PostgresCoreSchemaGuard(new PostgresCoreSchemaMigrationManifest(
+            full.ApplicationMigrationAssemblyName,
+            full.MetadataV2SnapshotMigration,
+            full.MetadataV2ReleasePackagesMigration,
+            full.RasterExternalStorageMigration,
+            full.SensorThingsMigration,
+            full.RasterOverviewsMigration,
+            full.RasterFootprintsMigration,
+            full.ConfiguredSchemaAdoptionMigration,
+            full.GovernedLineageMigration,
+            full.InitialSchemaMigration,
+            full.SensorThingsIdSequencesMigration,
+            full.SensorThingsSensingMigration)
+        {
+            Attachments = full.Attachments,
+            KnownMigrationNames = full.KnownMigrationNames!.Where(name => !newest.Contains(name)).ToHashSet(StringComparer.Ordinal),
+        });
+        newest.Should().HaveCount(3);
+        foreach (var name in newest)
+        {
+            MigrationReaderCompatibility.ReadSchemaNumber(name).Should().BeGreaterThan(
+                MigrationReaderCompatibility.ReaderSchemaOf(full.KnownMigrationNames!.Except(newest)), name);
+        }
+
+        var journalBefore = await ReadJournalAsync(connectionString);
+        await olderReader.Invoking(guard => guard.VerifyAsync(connectionString)).Should().NotThrowAsync(
+            "the newest shipped scripts are expand-only and their recorded declarations verify for the older reader");
+        (await ReadJournalAsync(connectionString)).Should().BeEquivalentTo(journalBefore, "the skip path applies nothing");
+
+        // Sibling: the newer image also applied a script its author opted out of forward compatibility.
+        const string optedOut = "Honua.Server.Migrations.999_OptedOutProbe.sql";
+        const string sql = "-- honua:reader-incompatible reason=older readers write rows the new trigger rejects\n" +
+            "CREATE TABLE IF NOT EXISTS honua.opted_out_probe (id integer PRIMARY KEY);";
+        await using (var connection = new NpgsqlConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@name, now());", connection);
+            command.Parameters.AddWithValue("name", optedOut);
+            await command.ExecuteNonQueryAsync();
+            await PostgresDatabaseMigrationRunner.RecordReaderCompatibilityDeclarationsAsync(
+                connection, [MigrationReaderCompatibility.Declare(optedOut, sql)], CancellationToken.None);
+        }
+
+        var refusal = (await olderReader.Invoking(guard => guard.VerifyAsync(connectionString))
+            .Should().ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException>()).Which;
+        refusal.UnknownMigrations.Should().Equal(optedOut);
+        refusal.DeclarationRefusals.Should().ContainKey(optedOut)
+            .WhoseValue.Should().Be("declared reader-incompatible, not expand");
     }
 
     [SkippableFact]

@@ -37,8 +37,8 @@ public interface IDatabaseSchemaGuard
     /// <summary>
     /// Checks the complete guarded schema floor, treating the listed journal entries as qualified
     /// because the migration runner has already re-verified their forward-compatibility declarations
-    /// (#6477). Only the migration runner supplies this set; the <c>HONUA_SKIP_MIGRATIONS</c> startup
-    /// path never does.
+    /// (#6477). Only the migration runner supplies this set. A guard that models forward compatibility
+    /// still qualifies any other unknown entry itself, read-only, through the recorded declarations.
     /// </summary>
     /// <param name="connection">Open connection to the target database.</param>
     /// <param name="readerVerifiedMigrations">Unknown journal entries the runner verified as expand-only.</param>
