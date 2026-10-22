@@ -22,6 +22,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     private readonly AlertNotificationRateLimiter _rateLimiter;
     private readonly AlertChannelCircuitBreaker _circuitBreaker;
     private readonly AlertPipelineMetrics _metrics;
+    private readonly AlertMonotonicClock _clock;
     private readonly ILogger<AlertDispatchBackgroundService> _logger;
 
     private volatile bool _isRunning;
@@ -36,7 +37,8 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         AlertChannelCircuitBreaker circuitBreaker,
         IOptions<AlertOptions> options,
         AlertPipelineMetrics metrics,
-        ILogger<AlertDispatchBackgroundService> logger)
+        ILogger<AlertDispatchBackgroundService> logger,
+        AlertMonotonicClock? clock = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _sinks = (sinks ?? throw new ArgumentNullException(nameof(sinks))).ToDictionary(static sink => sink.ChannelType);
@@ -45,6 +47,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _clock = clock ?? AlertMonotonicClock.System;
     }
 
     /// <inheritdoc />
@@ -100,7 +103,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             {
                 try
                 {
-                    var now = DateTimeOffset.UtcNow;
+                    var now = _clock.GetUtcNow();
                     await using var scope = _scopeFactory.CreateAsyncScope();
                     var dispatchStore = scope.ServiceProvider.GetRequiredService<IAlertDispatchStore>();
                     var eventStore = scope.ServiceProvider.GetRequiredService<IAlertEventStore>();
@@ -182,7 +185,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         CancellationToken cancellationToken)
     {
         var backlog = await dispatchStore.GetBacklogAsync(cancellationToken).ConfigureAwait(false);
-        Volatile.Write(ref _lastBacklogObservation, new AlertDispatchObservation(backlog, DateTimeOffset.UtcNow));
+        Volatile.Write(ref _lastBacklogObservation, new AlertDispatchObservation(backlog, _clock.GetUtcNow()));
         _storagePollFailing = false;
         _metrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount);
         return backlog;
@@ -217,7 +220,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         AlertDispatchItem item,
         CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _clock.GetUtcNow();
 
         // Re-check the channel entitlement immediately before the sink call. Admission gated it
         // when the row was written, but delivery can happen much later, so an expired license

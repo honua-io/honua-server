@@ -99,6 +99,7 @@ internal static class AlertsServiceCollectionExtensions
         // and an unreconciled audit intent is a control-plane integrity gap whether or
         // not the evaluation pipeline is running.
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<AlertMonotonicClock>();
         services.AddScoped<AlertAuditOutboxCompleter>();
         services.AddScoped<IAlertAuditCompleter>(sp => sp.GetRequiredService<AlertAuditOutboxCompleter>());
         services.AddSingleton<AlertAuditOutboxReconciler>();
