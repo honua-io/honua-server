@@ -179,6 +179,16 @@ internal sealed partial class ExecutionJobReconciler(
             Log.ExecutionJobLeaseLost(logger, operationId);
             return;
         }
+        catch (Exception ex) when (IsTransientInfrastructureFailure(ex))
+        {
+            // A Redis or database timeout while observing says nothing about the job. A running
+            // worker keeps heartbeating, and stamping the record terminal Failed here makes that
+            // worker lose its lease and cancel a healthy attempt (honua-server#6507). Leave the
+            // record as it is and let the next sweep observe it again.
+            reconcileOutcome = "transient_error";
+            Log.ExecutionJobReconciliationDeferred(logger, operationId, ex.GetType().Name);
+            throw;
+        }
         catch (Exception ex)
         {
             reconcileOutcome = "error";
@@ -688,8 +698,18 @@ internal sealed partial class ExecutionJobReconciler(
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
 
+    internal static bool IsTransientInfrastructureFailure(Exception exception)
+        => exception is StackExchange.Redis.RedisException
+            or TimeoutException
+            or System.Net.Sockets.SocketException
+            or System.Data.Common.DbException
+            || exception.InnerException is { } inner && IsTransientInfrastructureFailure(inner);
+
     internal static partial class Log
     {
+        [LoggerMessage(9039, LogLevel.Warning, "Execution-job reconciliation for operation {OperationId} hit a transient infrastructure failure ({ExceptionType}); the job is left as it is for the next sweep")]
+        public static partial void ExecutionJobReconciliationDeferred(ILogger logger, string operationId, string exceptionType);
+
         [LoggerMessage(9030, LogLevel.Debug, "Reconciled execution job {OperationId} to status {Status} ({PercentComplete}%)")]
         public static partial void ExecutionJobReconciled(ILogger logger, string operationId, string status, double percentComplete);
 
