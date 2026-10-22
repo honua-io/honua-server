@@ -228,11 +228,20 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             plan.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>();
         }
 
-        // HONUA_SKIP_MIGRATIONS=true runs only the guard, whose reader check stays strict.
+        // HONUA_SKIP_MIGRATIONS=true (and degraded start) runs only the guard. It applies the same
+        // read-only declaration check, so it reaches the same verdict as the runner.
         var skippedMigrationsStartup = () => new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest)
             .VerifyAsync(_connectionString);
-        (await skippedMigrationsStartup.Should().ThrowAsync<DatabaseSchemaCompatibilityException>())
-            .Which.UnknownMigrations.Should().Equal(future);
+        if (rollbackStarts)
+        {
+            await skippedMigrationsStartup.Should().NotThrowAsync();
+        }
+        else
+        {
+            var refusal = (await skippedMigrationsStartup.Should().ThrowAsync<DatabaseSchemaCompatibilityException>()).Which;
+            refusal.UnknownMigrations.Should().Equal(future);
+            refusal.DeclarationRefusals.Should().ContainKey(future);
+        }
     }
 
     [IntegrationTheory]
