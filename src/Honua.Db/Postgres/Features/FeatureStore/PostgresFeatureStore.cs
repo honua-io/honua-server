@@ -61,6 +61,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly LayerReadSecurityResolver _readSecurity;
     private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
     private readonly IRequestSecretReferenceResolver? _secretReferenceResolver;
+    private readonly IResolvedConnectionStringValidator? _resolvedConnectionStringValidator;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
@@ -94,9 +95,11 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         bool? preferSerialBoundedSpatialReads = null,
         bool disableJitForSourceSpatialCounts = false,
         bool? preferSerialSourceSpatialCounts = null,
-        IRequestSecretReferenceResolver? secretReferenceResolver = null)
+        IRequestSecretReferenceResolver? secretReferenceResolver = null,
+        IResolvedConnectionStringValidator? resolvedConnectionStringValidator = null)
     {
         _secretReferenceResolver = secretReferenceResolver;
+        _resolvedConnectionStringValidator = resolvedConnectionStringValidator;
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
@@ -149,7 +152,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             _preferSerialBoundedSpatialReads,
             _disableJitForSourceSpatialCounts,
             preferSerialSourceSpatialCounts: _preferSerialSourceSpatialCounts,
-            secretReferenceResolver: _secretReferenceResolver);
+            secretReferenceResolver: _secretReferenceResolver,
+            resolvedConnectionStringValidator: _resolvedConnectionStringValidator);
     }
 
     public ITileProvider CreateTileProviderForBinding(FeatureProviderBinding binding)

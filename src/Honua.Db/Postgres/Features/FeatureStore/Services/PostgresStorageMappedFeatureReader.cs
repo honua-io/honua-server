@@ -43,6 +43,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
     private readonly IRequestSecretReferenceResolver? _secretReferenceResolver;
+    private readonly IResolvedConnectionStringValidator? _resolvedConnectionStringValidator;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver _readSecurity;
     private readonly ILogger _logger;
@@ -74,9 +75,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         bool? preferSerialBoundedSpatialReads = null,
         bool disableJitForSourceSpatialCounts = false,
         bool? preferSerialSourceSpatialCounts = null,
-        IRequestSecretReferenceResolver? secretReferenceResolver = null)
+        IRequestSecretReferenceResolver? secretReferenceResolver = null,
+        IResolvedConnectionStringValidator? resolvedConnectionStringValidator = null)
     {
         _secretReferenceResolver = secretReferenceResolver;
+        _resolvedConnectionStringValidator = resolvedConnectionStringValidator;
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
         _resource = resource ?? throw new ArgumentNullException(nameof(resource));
@@ -1612,7 +1615,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private async Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
     {
-        var connectionString = await ResolveBoundConnectionStringAsync().ConfigureAwait(false);
+        var connectionString = await ResolveBoundConnectionStringAsync(cancellationToken).ConfigureAwait(false);
         if (connectionString == null)
         {
             // Return the provider's lease intact: for a gated/secure provider the lease's
@@ -1631,7 +1634,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             _connection!.Id, connectionString, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<string?> ResolveBoundConnectionStringAsync()
+    private async Task<string?> ResolveBoundConnectionStringAsync(CancellationToken cancellationToken = default)
     {
         if (_connection == null)
         {
@@ -1666,13 +1669,22 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         // same path the admin connection test and the secure resolver use (honua-server#6499).
         // A refusal or lookup failure falls through to the loud failure below, never to the
         // default database.
-        if (!string.IsNullOrWhiteSpace(_connection.SecretRef) && _secretReferenceResolver is not null)
+        if (!string.IsNullOrWhiteSpace(_connection.SecretRef)
+            && _secretReferenceResolver is not null
+            && _resolvedConnectionStringValidator is not null)
         {
             try
             {
-                var resolved = await _secretReferenceResolver.ResolveAsync(_connection.SecretRef).ConfigureAwait(false);
+                var resolved = await _secretReferenceResolver
+                    .ResolveAsync(_connection.SecretRef, cancellationToken).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(resolved))
                 {
+                    // The referenced value can change after registration, so it gets the same
+                    // keyword, search-path, TLS and host allow-list checks SecureConnectionResolver
+                    // applies before anything connects. A rejection is not a resolution failure to
+                    // swallow: it propagates.
+                    await _resolvedConnectionStringValidator
+                        .ValidateConnectionStringAsync(_connection, resolved, cancellationToken).ConfigureAwait(false);
                     return _resolvedBoundConnectionString = resolved;
                 }
             }
