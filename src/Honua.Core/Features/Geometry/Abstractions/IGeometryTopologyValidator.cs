@@ -30,3 +30,15 @@ public interface IGeometryTopologyValidator
         byte[] wkb,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Validates an ordered set of geometries without opening a database connection for each one.
+/// A provider that cannot preserve one result per input should fail the whole probe.
+/// </summary>
+public interface IBatchGeometryTopologyValidator
+{
+    /// <summary>Returns topology results in the same order as the input WKB values.</summary>
+    Task<IReadOnlyList<GeometryValidationResult>> ValidateTopologiesAsync(
+        IReadOnlyList<byte[]> wkbs,
+        CancellationToken cancellationToken = default);
+}

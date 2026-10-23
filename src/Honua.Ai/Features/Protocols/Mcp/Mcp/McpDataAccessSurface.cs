@@ -714,12 +714,7 @@ internal sealed class McpDataAccessSurface
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
-            // Contract-first stubs return a structured `not_implemented` payload.
-            // Tag telemetry with that status so dashboards can distinguish stubs
-            // from functional tools without inspecting response bodies.
-            var completionStatus = tool is IStubMcpTool
-                ? McpTelemetry.Status.NotImplemented
-                : McpTelemetry.Status.Ok;
+            var completionStatus = McpTelemetry.Status.Ok;
             McpTelemetry.ToolCallCount.Add(
                 1,
                 new KeyValuePair<string, object?>("tool_name", tool.Name),
@@ -959,12 +954,7 @@ internal sealed class McpDataAccessSurface
                 return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
             }
 
-            // Contract-first stub resources return `not_implemented` envelopes.
-            // Tag the counter accordingly so dashboards can separate stub reads
-            // from functional reads.
-            var completionStatus = handler is IStubMcpResource
-                ? McpTelemetry.Status.NotImplemented
-                : McpTelemetry.Status.Ok;
+            var completionStatus = McpTelemetry.Status.Ok;
             McpTelemetry.ResourceReadCount.Add(
                 1,
                 new KeyValuePair<string, object?>("resource_family", resourceFamily),

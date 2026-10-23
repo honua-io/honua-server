@@ -17,6 +17,23 @@ namespace Honua.Server.Tests.Features.AgentWorkspace;
 
 public sealed class AgentWorkspaceCapturedContextTests
 {
+    [UnitTest]
+    public void StoredAgentCannotOmitOriginalTurnWhileHumanNavigationRemainsAvailable()
+    {
+        var workspace = new AgentWorkspaceDocument
+        { WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", Members = ["human-1"] };
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity([
+                new Claim("api_key_id", Guid.NewGuid().ToString()),
+                new Claim("permission", "agent:workspace")], "ApiKey"))
+        };
+        var read = () => AgentWorkspaceCapturedContext.ReadBoundTurn(context, workspace);
+        read.Should().Throw<AgentWorkspaceConflictException>();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "human-1")], "Bearer"));
+        read().Should().BeNull();
+    }
+
     [UnitTheory]
     [InlineData("honua_workspace_create_draft")]
     [InlineData("honua_workspace_set_context")]

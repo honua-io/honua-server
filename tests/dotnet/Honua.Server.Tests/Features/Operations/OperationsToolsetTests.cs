@@ -20,6 +20,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Hosting;
@@ -1649,6 +1650,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task SubmitAsync_With_AllowAll_Calls_PublishLayer_And_Handle_Carries_MetadataRevision()
     {
+        const long expectedRevision = 42;
         var publishing = Substitute.For<ILayerPublishingService>();
         publishing
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
@@ -1660,16 +1662,11 @@ public sealed class OperationsToolsetTests
                 Table = "parcels",
                 GeometryType = "Polygon",
                 Srid = 4326,
-                ServiceName = "default"
+                ServiceName = "default",
+                MetadataRevision = expectedRevision
             });
 
-        const long expectedRevision = 42;
-        var snapshot = new MetadataV2GraphSnapshot(
-            new MetadataV2Graph { Revision = expectedRevision }, "\"etag\"", DateTimeOffset.UtcNow);
         var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
-        graphProvider
-            .GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(snapshot);
 
         var notifications = Substitute.For<IMcpNotificationPublisher>();
         var executor = BuildExecutor(publishing, graphProvider, notifications);
@@ -1682,6 +1679,7 @@ public sealed class OperationsToolsetTests
         handle.Result.Should().NotBeNull();
         handle.Result!.Details["layerId"].Should().Be("7");
         handle.Result.Details["metadataRevision"].Should().Be("42");
+        await graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
 
         // Policy was Allow → publish was actually invoked with the mapped request.
         await publishing.Received(1).PublishLayerAsync(
@@ -1689,6 +1687,45 @@ public sealed class OperationsToolsetTests
             Arg.Is<LayerPublishRequest>(r => r.Schema == "public" && r.Table == "parcels" && r.LayerName == "Parcels"),
             Arg.Any<CancellationToken>());
         notifications.Received(1).BroadcastResourcesListChanged();
+        notifications.Received(1).BroadcastToolsListChanged();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_PostCommitReadbackAndNotificationFaults_KeepCompletedWithoutRetry()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        publishing.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishedLayerSummary
+            {
+                LayerId = 7,
+                LayerName = "Parcels",
+                Schema = "public",
+                Table = "parcels",
+                GeometryType = "Polygon",
+                Srid = 4326,
+                ServiceName = "default",
+                MetadataRevision = 42,
+            });
+        var promotions = Substitute.For<IPublishedServiceStore>();
+        promotions.FindByPublicIdAsync("default", Arg.Any<CancellationToken>())
+            .Returns<Task<Honua.Core.Features.Publishing.Domain.PublishedServiceRecord?>>(
+                _ => throw new InvalidOperationException("transient promotion read failure"));
+        var notifications = Substitute.For<IMcpNotificationPublisher>();
+        notifications.When(publisher => publisher.BroadcastResourcesListChanged())
+            .Do(_ => throw new InvalidOperationException("transient notification failure"));
+        var dispatcher = BuildDispatcher(
+            BuildExecutor(publishing, notifications: notifications, publishedServices: promotions),
+            new AllowAllPolicyDecisionPoint());
+
+        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.MetadataRevision.Should().Be(42);
+        handle.Result!.Details["readbackStatus"].Should().Be("Unavailable");
+        handle.Result.Details.Should().NotContainKey("serviceName");
+        handle.ResourceIds.Should().NotContainKey("serviceName");
+        await publishing.Received(1).PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
         notifications.Received(1).BroadcastToolsListChanged();
     }
 
@@ -2100,7 +2137,8 @@ public sealed class OperationsToolsetTests
     private static ServicePublishExecutor BuildExecutor(
         ILayerPublishingService publishing,
         IMetadataV2GraphProvider? graphProvider = null,
-        IMcpNotificationPublisher? notifications = null)
+        IMcpNotificationPublisher? notifications = null,
+        IPublishedServiceStore? publishedServices = null)
     {
         publishing
             .ValidateTableForPublishAsync(
@@ -2126,7 +2164,8 @@ public sealed class OperationsToolsetTests
             resolver,
             graphProvider ?? Substitute.For<IMetadataV2GraphProvider>(),
             TimeProvider.System,
-            notifications);
+            notifications,
+            publishedServices: publishedServices);
     }
 
     private static AdminOperateOperationExecutor BuildAdminExecutor(

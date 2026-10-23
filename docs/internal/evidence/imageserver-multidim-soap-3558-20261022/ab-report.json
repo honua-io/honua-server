@@ -1,0 +1,333 @@
+{
+  "band_values": {
+    "oracle_north_up": [
+      [
+        [
+          22.0,
+          23.0,
+          24.0,
+          25.0
+        ],
+        [
+          18.0,
+          19.0,
+          20.0,
+          21.0
+        ],
+        [
+          14.0,
+          15.0,
+          16.0,
+          17.0
+        ],
+        [
+          null,
+          11.0,
+          12.0,
+          13.0
+        ]
+      ],
+      [
+        [
+          23.0,
+          22.0,
+          21.0,
+          null
+        ],
+        [
+          27.0,
+          26.0,
+          25.0,
+          24.0
+        ],
+        [
+          31.0,
+          30.0,
+          29.0,
+          28.0
+        ],
+        [
+          35.0,
+          34.0,
+          33.0,
+          32.0
+        ]
+      ]
+    ],
+    "pass": false,
+    "pro_raster_read": {
+      "status": "fail"
+    },
+    "pro_slice_read": {
+      "observed": null,
+      "status": "not-run (no dimension values)"
+    }
+  },
+  "baseline_a_nil_response": {
+    "now": "non-nil typed property sets on trunk (#5775); see soap_shape",
+    "source": "issue #3558 comments 2026-09-01: certified image sha256:e6db39f6... returned <Result xsi:nil=true/>"
+  },
+  "defects": {
+    "#6491": "scan enrichment never runs for /vsi NetCDF in containers -> no StdTime / coordinate values",
+    "#6492": "horizontal axes advertised as slice dimensions",
+    "#6493": "service raster info describes the layer's base raster, not the coverage"
+  },
+  "issue": "honua-io/honua-server#3558",
+  "metadata": {
+    "description": {
+      "honua_via_pro": "Sea Surface Temperature",
+      "oracle": "Sea Surface Temperature",
+      "pass": true
+    },
+    "dimension_names": {
+      "honua_via_pro": [
+        "latitude",
+        "longitude",
+        "time"
+      ],
+      "oracle": [
+        "StdTime"
+      ],
+      "pass": false
+    },
+    "extent": {
+      "honua_via_pro": [
+        -122.45,
+        37.730000000000004,
+        -122.38000000000001,
+        37.8
+      ],
+      "oracle": [
+        -122.525,
+        37.675,
+        -122.325,
+        37.875
+      ],
+      "pass": false
+    },
+    "height": {
+      "honua_via_pro": 64,
+      "oracle": 4,
+      "pass": false
+    },
+    "no_data_value": {
+      "honua_via_pro": 0.0,
+      "oracle": -9999.0,
+      "pass": false
+    },
+    "pixel_type": {
+      "honua_via_pro": "U8",
+      "oracle": "F32",
+      "pass": false
+    },
+    "time_values": {
+      "honua_via_pro": null,
+      "oracle": [
+        "2024-01-01T00:00:00",
+        "2024-01-02T00:00:00"
+      ],
+      "pass": false
+    },
+    "unit": {
+      "honua_via_pro": "degC",
+      "oracle": "degC",
+      "pass": true
+    },
+    "variables": {
+      "honua_via_pro": [
+        "sea_surface_temperature"
+      ],
+      "oracle": [
+        "sea_surface_temperature"
+      ],
+      "pass": true
+    },
+    "width": {
+      "honua_via_pro": 64,
+      "oracle": 4,
+      "pass": false
+    }
+  },
+  "pro": {
+    "product": "ArcView",
+    "version": "3.7.2"
+  },
+  "pro_steps": {
+    "honua": {
+      "Describe": "pass",
+      "DimensionValues": "fail",
+      "MakeImageServerLayer": "pass",
+      "MakeMultidimensionalRasterLayer": "pass",
+      "RasterProperties": "pass",
+      "RasterRead": "fail"
+    },
+    "reference": {
+      "Describe": "pass",
+      "DimensionValues": "pass",
+      "MakeImageServerLayer": "pass",
+      "MakeMultidimensionalRasterLayer": "pass",
+      "RasterProperties": "pass"
+    }
+  },
+  "reference_pro_view": {
+    "band_count": 1,
+    "dimension_names": [
+      "StdTime",
+      "StdZ"
+    ],
+    "is_multidimensional": true,
+    "pixel_type": "F32",
+    "variables": [
+      "water_temp(StdTime=69, StdZ=40)"
+    ]
+  },
+  "soap_operations": {
+    "honua": {
+      "ExecuteAISRequest": {
+        "xml:200:ExecuteAISRequestResponse": 38
+      },
+      "GetFields": {
+        "xml:200:GetFieldsResponse": 51
+      },
+      "GetKeyPropertiesX": {
+        "xml:200:GetKeyPropertiesXResponse": 48
+      },
+      "GetMessageFormats": {
+        "xml:200:GetMessageFormatsResponse": 186
+      },
+      "GetMessageVersion": {
+        "xml:200:GetMessageVersionResponse": 186
+      },
+      "GetMultidimensionalInfo": {
+        "xml:200:GetMultidimensionalInfoResponse": 78
+      },
+      "GetServiceInfo": {
+        "xml:200:GetServiceInfoResponse": 191
+      },
+      "GetVersion": {
+        "xml:200:GetVersionResponse": 48
+      },
+      "IsFixedScaleImage": {
+        "xml:200:IsFixedScaleImageResponse": 66
+      }
+    },
+    "reference": {
+      "ExecuteAISRequest": {
+        "binary:200:ExecuteResponse": 6
+      },
+      "ExportImage": {
+        "xml:200:ExportImageResponse": 1
+      },
+      "GetFields": {
+        "binary:200:GetFieldsResponse": 2
+      },
+      "GetImage": {
+        "binary:200:GetImageResponse": 275
+      },
+      "GetKeyPropertiesX": {
+        "binary:200:GetKeyPropertiesXResponse": 6
+      },
+      "GetMessageFormats": {
+        "xml:200:GetMessageFormatsResponse": 35
+      },
+      "GetMessageVersion": {
+        "xml:200:GetMessageVersionResponse": 34
+      },
+      "GetMultidimensionalInfo": {
+        "binary:200:GetMultidimensionalInfoResponse": 8,
+        "xml:200:Fault": 1
+      },
+      "GetServiceInfo": {
+        "binary:200:GetServiceInfoResponse": 1
+      },
+      "GetVersion": {
+        "binary:200:GetVersionResponse": 2,
+        "xml:200:GetVersionResponse": 1
+      },
+      "IsFixedScaleImage": {
+        "binary:200:IsFixedScaleMapResponse": 2
+      }
+    }
+  },
+  "soap_shape": {
+    "dimension_keys_subset_of_reference": true,
+    "dimension_names_follow_reference_convention": false,
+    "honua": {
+      "DimensionAttributes": {
+        "sea_surface_temperature": {
+          "latitude": [
+            "Count",
+            "HasRegularIntervals",
+            "HasRanges"
+          ],
+          "longitude": [
+            "Count",
+            "HasRegularIntervals",
+            "HasRanges"
+          ],
+          "time": [
+            "Count",
+            "HasRegularIntervals",
+            "HasRanges"
+          ]
+        }
+      },
+      "DimensionValues": {
+        "sea_surface_temperature": []
+      },
+      "Variables": {
+        "sea_surface_temperature": [
+          "Unit",
+          "Description"
+        ]
+      },
+      "names": [
+        "Variables",
+        "DimensionAttributes",
+        "DimensionValues"
+      ]
+    },
+    "honua_dimension_values_populated": false,
+    "property_set_names_equal": true,
+    "reference": {
+      "DimensionAttributes": {
+        "StdTime": [
+          "Description",
+          "Unit",
+          "Count",
+          "Minimum",
+          "Maximum",
+          "Interval",
+          "IntervalUnit",
+          "HasRegularIntervals",
+          "HasRanges"
+        ],
+        "StdZ": [
+          "Description",
+          "Unit",
+          "Count",
+          "Minimum",
+          "Maximum",
+          "Interval",
+          "IntervalUnit",
+          "HasRegularIntervals",
+          "HasRanges"
+        ]
+      },
+      "DimensionValues": [
+        "StdTime",
+        "StdZ"
+      ],
+      "names": [
+        "Variables",
+        "DimensionAttributes",
+        "DimensionValues"
+      ],
+      "variable_keys": [
+        "Description",
+        "Unit"
+      ]
+    },
+    "variable_keys_subset_of_reference": true
+  }
+}

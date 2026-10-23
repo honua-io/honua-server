@@ -8,6 +8,7 @@ using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Db.Postgres.Features.Publishing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -60,6 +61,38 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task PublishedServiceStore_PublicIdentityLookupFindsCaseVariantAndRefusesAmbiguity()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresPromotionStoreTests) + "_PublicId");
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var store = new PostgresPublishedServiceStore(fixture.DataSource, schema);
+            var upper = BuildPublishedService("ROADS", "result-1") with
+            {
+                Status = PublishedServiceStatus.Suspended,
+            };
+            (await store.TryCreateAsync(upper)).Should().BeTrue();
+            (await store.GetAsync("roads")).Should().BeNull();
+            (await store.FindByPublicIdAsync("roads")).Should().BeEquivalentTo(upper);
+            (await store.FindCollidingPublicIdsAsync(["roads", "missing", "ROADS"]))
+                .Should().BeEquivalentTo(["roads", "ROADS"]);
+
+            (await store.TryCreateAsync(BuildPublishedService("roads", "result-2"))).Should().BeTrue();
+            await FluentActions.Invoking(() => store.FindByPublicIdAsync("roads"))
+                .Should().ThrowAsync<PublishedServiceIdentityAmbiguousException>();
+            await store.SetAsync(upper with { Status = PublishedServiceStatus.Decommissioned });
+            (await store.FindCollidingPublicIdsAsync(["roads", "missing"]))
+                .Should().ContainSingle().Which.Should().Be("roads",
+                    "because inactive records still reserve the public URI");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeploymentStore_RoundTripsTransitions_AndFiltersLifecycleSourceAndTarget()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresPromotionStoreTests) + "_Deployments");
@@ -82,11 +115,74 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
             (await reader.ListByTargetAsync("production"))
                 .Should().ContainSingle(item => item.DeploymentId == deployment.DeploymentId);
 
-            var retired = deployment.WithRetired("superseded by release");
-            await writer.SetAsync(retired);
+            var retired = deployment.WithRetired("superseded by release") with { Version = 1 };
+            (await writer.TrySetAsync(retired, expectedVersion: 0)).Should().BeTrue();
+            (await reader.TrySetAsync(deployment.WithRetired("stale transition") with { Version = 1 }, expectedVersion: 0))
+                .Should().BeFalse("a stale writer cannot overwrite the committed retirement");
+
+            var changedSource = retired with
+            {
+                Source = DeploymentSource.FromPublishedService("unrelated-service"),
+                Version = 2
+            };
+            (await writer.TrySetAsync(changedSource, expectedVersion: 1))
+                .Should().BeFalse("a lifecycle transition cannot rewrite its promoted source");
 
             (await reader.GetAsync(deployment.DeploymentId)).Should().BeEquivalentTo(retired);
             (await reader.ListActiveAsync()).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task DeploymentStore_RejectsSameIndexedIdentityWithChangedStudioProvenanceOrRoute()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresPromotionStoreTests) + "_Immutable");
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var store = new PostgresDeploymentStore(fixture.DataSource, schema);
+            var itemId = Guid.NewGuid();
+            var versionId = Guid.NewGuid();
+            var source = DeploymentSource.FromStudioPublishedVersion(
+                itemId, versionId, new string('a', 64), "owner", Guid.NewGuid(), StudioPackageFamily.Map);
+            var deployment = Deployment.CreateDraft(
+                "studio-deployment", source, DeploymentTarget.ForStudioPublishedRoute("/maps/one"),
+                audit: new OperationAuditInfo { RequestedBy = "owner", TenantId = "tenant-one" })
+                .WithProvisioning()
+                .WithRollingOut()
+                .WithActive();
+
+            (await store.TryCreateAsync(deployment)).Should().BeTrue();
+            var next = deployment.WithRetired("replaced") with { Version = 1 };
+            (await store.TrySetAsync(next with
+            {
+                Source = next.Source with { StudioItemId = Guid.NewGuid() }
+            }, expectedVersion: 0)).Should().BeFalse();
+            (await store.TrySetAsync(next with
+            {
+                Source = next.Source with { StudioContentHash = new string('b', 64) }
+            }, expectedVersion: 0)).Should().BeFalse();
+            (await store.TrySetAsync(next with
+            {
+                Source = next.Source with { StudioPublicationRequestId = Guid.NewGuid() }
+            }, expectedVersion: 0)).Should().BeFalse();
+            (await store.TrySetAsync(next with
+            {
+                Target = next.Target with { RoutePrefix = "/api/v1/studio/published/other" }
+            }, expectedVersion: 0)).Should().BeFalse();
+            (await store.TrySetAsync(next with { CreatedAt = next.CreatedAt.AddSeconds(1) }, expectedVersion: 0))
+                .Should().BeFalse();
+            (await store.TrySetAsync(next with
+            {
+                Audit = next.Audit with { TenantId = "tenant-two" }
+            }, expectedVersion: 0)).Should().BeFalse();
+
+            (await store.TrySetAsync(next, expectedVersion: 0)).Should().BeTrue();
+            (await store.GetAsync(deployment.DeploymentId)).Should().BeEquivalentTo(next);
         }
         finally
         {
@@ -195,6 +291,7 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
                 source_id TEXT NOT NULL,
                 target_id TEXT NOT NULL,
                 status TEXT NOT NULL,
+                version BIGINT NOT NULL DEFAULT 0,
                 document JSONB NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL

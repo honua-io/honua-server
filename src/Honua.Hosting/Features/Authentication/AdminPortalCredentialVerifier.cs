@@ -138,7 +138,7 @@ internal sealed class AdminPortalCredentialVerifier(
         {
             return await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is RedisException or TimeoutException or System.Data.Common.DbException && ex is not OperationCanceledException)
         {
             if (_logger is not null)
             {

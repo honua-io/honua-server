@@ -14,6 +14,10 @@ namespace Honua.Db.Postgres.Features.Infrastructure;
 /// </summary>
 internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
 {
+    internal const string MalformedConnectionStringMessage =
+        "The database connection string could not be parsed (malformed-connection-string). "
+        + "Quote any value that contains '=' or ';', for example a generated password that begins with '='.";
+
     private readonly ILogger<PostgresDatabaseCompatibilityChecker> _logger;
 
     public PostgresDatabaseCompatibilityChecker(ILogger<PostgresDatabaseCompatibilityChecker> logger)
@@ -24,6 +28,20 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     public async Task<DatabaseCompatibilityResult> CheckCompatibilityAsync(
         string connectionString, CancellationToken cancellationToken = default)
     {
+        // A connection string the driver cannot parse is a configuration fault, not a database fault.
+        // The driver's message repeats the offending text, which includes the password, so only the
+        // exception type is reported (honua-server#6495: a generated password that begins with '='
+        // reads as "Password==..." and fails here).
+        try
+        {
+            _ = new NpgsqlConnectionStringBuilder(connectionString);
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException)
+        {
+            LogConnectionStringMalformed(_logger, ex.GetType().Name);
+            return DatabaseCompatibilityResult.Incompatible(MalformedConnectionStringMessage);
+        }
+
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
@@ -35,6 +53,16 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
             // 2. Get installed extensions
             var extensions = await GetInstalledExtensionsAsync(connection, cancellationToken).ConfigureAwait(false);
+
+            // A fresh database (for example the customer-install pgrouting image) ships the PostGIS
+            // packages but has not run CREATE EXTENSION yet. The preflight runs before migrations,
+            // so create it here when the role is allowed to (honua-server#6488). A role without the
+            // privilege falls through to the incompatible-database refusal below.
+            if (!extensions.Any(e => string.Equals(e.Name, "postgis", StringComparison.OrdinalIgnoreCase))
+                && await TryCreatePostGisExtensionAsync(connection, cancellationToken).ConfigureAwait(false))
+            {
+                extensions = await GetInstalledExtensionsAsync(connection, cancellationToken).ConfigureAwait(false);
+            }
 
             var hasPostGis = false;
             var hasPostGisRaster = false;
@@ -117,6 +145,29 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         }
     }
 
+    private async Task<bool> TryCreatePostGisExtensionAsync(
+        NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS postgis", connection);
+            command.CommandTimeout = 60;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            LogPostGisCreated(_logger);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Insufficient privilege or the packages are absent: report the missing extension.
+            LogPostGisCreateFailed(_logger, ex.GetType().Name, ex.Message);
+            return false;
+        }
+    }
+
     private static async Task<string> GetEngineVersionAsync(
         NpgsqlConnection connection, CancellationToken cancellationToken)
     {
@@ -162,6 +213,18 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     private static partial void LogPostGisRasterVersion(ILogger logger, string rasterVersion);
 
     [LoggerMessage(
+        EventId = 7917,
+        Level = LogLevel.Information,
+        Message = "PostGIS extension was not installed; created it with CREATE EXTENSION postgis.")]
+    private static partial void LogPostGisCreated(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 7918,
+        Level = LogLevel.Warning,
+        Message = "Could not create the PostGIS extension ({ExceptionType}): {Reason}. Run CREATE EXTENSION postgis as a privileged role.")]
+    private static partial void LogPostGisCreateFailed(ILogger logger, string exceptionType, string reason);
+
+    [LoggerMessage(
         EventId = 7913,
         Level = LogLevel.Warning,
         Message = "PostGIS extension is not installed. Honua requires PostGIS for spatial operations.")]
@@ -184,4 +247,10 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         Level = LogLevel.Warning,
         Message = "Database compatibility check could not obtain a usable connection ({CauseClass}: {FailureClass}).")]
     private static partial void LogCompatibilityCheckUnavailable(ILogger logger, string causeClass, string failureClass, Exception ex);
+
+    [LoggerMessage(
+        EventId = 7919,
+        Level = LogLevel.Error,
+        Message = "The configured database connection string could not be parsed ({ExceptionType}). The value is not logged because it contains credentials.")]
+    private static partial void LogConnectionStringMalformed(ILogger logger, string exceptionType);
 }

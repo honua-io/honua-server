@@ -17,18 +17,83 @@ public class ExecutionQualificationBarrierTests : IDisposable
     private readonly string _root = Path.Join(Path.GetTempPath(), $"honua-barrier-{Guid.NewGuid():N}");
     private readonly string? _previousRoot = Environment.GetEnvironmentVariable(
         ExecutionQualificationBarrier.RootEnvironmentVariable);
+    private readonly string? _previousPauseAt = Environment.GetEnvironmentVariable(
+        ExecutionQualificationBarrier.PauseAtEnvironmentVariable);
 
     public ExecutionQualificationBarrierTests()
     {
         Directory.CreateDirectory(_root);
         Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.RootEnvironmentVariable, _root);
+        Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.PauseAtEnvironmentVariable, null);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.RootEnvironmentVariable, _previousRoot);
+        Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.PauseAtEnvironmentVariable, _previousPauseAt);
         Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task WaitAsync_SelectedNativeBarrier_SkipsEarlierPauseAndStillObservesCancellation()
+    {
+        Environment.SetEnvironmentVariable(
+            ExecutionQualificationBarrier.PauseAtEnvironmentVariable, "native-process-started");
+        using var scope = ExecutionQualificationBarrier.Begin("selected-op", "worker-9");
+        await ExecutionQualificationBarrier.WaitAsync("claimed", CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(Directory.Exists(Path.Join(_root, "selected-op")));
+
+        using var cancelled = new CancellationTokenSource();
+        var wait = ExecutionQualificationBarrier.WaitAsync(
+            "native-process-started", cancelled.Token, childProcessId: 4242);
+        var callbackEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var callbackReleased = new ManualResetEventSlim();
+        using var laterRegistration = cancelled.Token.Register(() =>
+        {
+            callbackEntered.TrySetResult();
+            callbackReleased.Wait(TimeSpan.FromSeconds(10));
+        });
+        Task cancellation = Task.CompletedTask;
+        try
+        {
+            Assert.False(wait.IsCompleted);
+            Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.ready.json")));
+
+            // This later callback runs first and holds the cancellation dispatcher.
+            // The delay can expire and the wait can observe cancellation before the
+            // earlier signal callback runs. The receipt must still precede the wait.
+            // CancelAsync queues callbacks on the shared thread pool. Under the full Fast
+            // suite that queue can be saturated before this callback starts, making the
+            // two-second ordering assertion measure scheduler admission instead of the
+            // barrier. A dedicated thread preserves the same synchronous LIFO callbacks.
+            cancellation = Task.Factory.StartNew(
+                () => cancelled.Cancel(), CancellationToken.None,
+                TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            await callbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => wait.WaitAsync(TimeSpan.FromSeconds(2)));
+            Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.signal-observed.json")));
+        }
+        finally
+        {
+            callbackReleased.Set();
+            if (!cancelled.IsCancellationRequested)
+            {
+                cancellation = Task.Factory.StartNew(
+                    () => cancelled.Cancel(), CancellationToken.None,
+                    TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+
+            await cancellation.WaitAsync(TimeSpan.FromSeconds(5));
+            if (!wait.IsCompleted)
+            {
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => wait.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+        }
     }
 
     [Trait("Tier", "Fast")]

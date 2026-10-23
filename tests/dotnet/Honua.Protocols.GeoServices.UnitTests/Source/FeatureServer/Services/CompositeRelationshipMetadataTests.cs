@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 
@@ -136,6 +137,142 @@ public sealed class CompositeRelationshipMetadataTests
             snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         mixedService.AllowGeometryUpdates.Should().BeTrue();
     }
+
+    [UnitTest]
+    public void SameService_AdvertisesPolygonLayerAndSummaryTableWithReciprocalCompositeMetadata()
+    {
+        var capabilities = new[] { "Query", "Create", "Update", "Delete" };
+        var builder = new TestMetadataV2GraphBuilder()
+            .AddService("census", "Census", options: new Dictionary<string, JsonElement>
+            {
+                ["capabilities"] = JsonSerializer.SerializeToElement(capabilities)
+            })
+            .AddResource(
+                "parent",
+                "Aggregated Polygons",
+                spatial: new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.MultiPolygon })
+            .AddResource("child", "groupbySummary", MetadataV2ResourceType.Table)
+            .AddStorageBinding("bind-parent", "parent", "aggregated_polygons", storageLayerId: 579)
+            .AddStorageBinding("bind-child", "child", "groupby_summary", storageLayerId: 877)
+            .AddPublication(
+                "pub-parent",
+                "census",
+                "parent",
+                layerIndex: 0,
+                storageBindingId: "bind-parent",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                isPrimary: true)
+            .AddPublication(
+                "pub-child",
+                "census",
+                "child",
+                layerIndex: 1,
+                storageBindingId: "bind-child",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                isPrimary: true);
+
+        var drafted = builder.Build();
+        var parent = drafted.Resources.Single(resource => resource.Metadata.Id == "parent") with
+        {
+            Editing = new MetadataV2ResourceEditing { CanModify = false },
+            Relationships =
+            [
+                new MetadataV2Relationship
+                {
+                    Id = "summary",
+                    Name = "AggregatedPolygonsToSummary",
+                    RelatedResourceId = "child",
+                    Composite = true,
+                    Role = "esriRelRoleOrigin",
+                    Cardinality = "one-to-many",
+                    OriginField = "Join_ID",
+                    DestinationField = "Join_ID",
+                    EsriRelationshipId = 0
+                }
+            ]
+        };
+        var child = drafted.Resources.Single(resource => resource.Metadata.Id == "child") with
+        {
+            Editing = new MetadataV2ResourceEditing { CanModify = false },
+            Relationships =
+            [
+                parent.Relationships[0] with
+                {
+                    Id = "summary-destination",
+                    RelatedResourceId = "parent",
+                    Role = "esriRelRoleDestination"
+                }
+            ]
+        };
+        var graph = drafted with { Resources = [parent, child] };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "census", DateTimeOffset.UnixEpoch);
+        var service = graph.Services.Single();
+        var pairs = graph.Publications
+            .Select(publication => (publication, snapshot.Index.ResourcesById[publication.ResourceId]))
+            .ToArray();
+
+        var response = FeatureServerEndpoints.MapServiceToResponseV2(
+            service, pairs, snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
+        response.Layers.Should().ContainSingle();
+        response.Layers[0].Id.Should().Be(0);
+        response.Layers[0].Name.Should().Be("Aggregated Polygons");
+        response.Layers[0].Type.Should().Be("Feature Layer");
+        response.Layers[0].GeometryType.Should().Be("esriGeometryPolygon");
+        var table = response.Tables.Should().ContainSingle().Subject.Should().BeOfType<LayerInfo>().Subject;
+        table.Id.Should().Be(1);
+        table.Name.Should().Be("groupbySummary");
+        table.Type.Should().Be("Table");
+        table.GeometryType.Should().BeNull();
+        response.Layers[0].Id.Should().NotBe(579);
+        table.Id.Should().NotBe(877);
+        response.Capabilities.Split(',').Should().Equal("Query");
+        response.AllowGeometryUpdates.Should().BeFalse();
+        response.Relationships.Should().ContainSingle().Which.Id.Should().Be(0);
+
+        var serviceRelationship = FeatureServerEndpoints.BuildServiceRelationshipResponseV2(pairs, snapshot)
+            .Should().ContainSingle().Subject;
+        serviceRelationship.Composite.Should().BeTrue();
+        serviceRelationship.OriginLayerId.Should().Be(0);
+        serviceRelationship.DestinationLayerId.Should().Be(1);
+        serviceRelationship.OriginPrimaryKey.Should().Be("Join_ID");
+        serviceRelationship.OriginForeignKey.Should().Be("Join_ID");
+        serviceRelationship.Cardinality.Should().Be("esriRelCardinalityOneToMany");
+
+        var parentPublication = graph.Publications.Single(publication => publication.ResourceId == "parent");
+        var childPublication = graph.Publications.Single(publication => publication.ResourceId == "child");
+        var parentLayer = MapLayer(service, parent, parentPublication, snapshot);
+        var childLayer = MapLayer(service, child, childPublication, snapshot);
+        parentLayer.Type.Should().Be("Feature Layer");
+        parentLayer.GeometryType.Should().Be("esriGeometryPolygon");
+        parentLayer.Capabilities.Split(',').Should().Equal("Query");
+        var parentRelationship = parentLayer.Relationships.Should().ContainSingle().Subject;
+        parentRelationship.Composite.Should().BeTrue();
+        parentRelationship.Role.Should().Be("esriRelRoleOrigin");
+        parentRelationship.RelatedTableId.Should().Be(1);
+        parentRelationship.KeyField.Should().Be("Join_ID");
+        parentRelationship.OriginKeyField.Should().Be("Join_ID");
+        parentRelationship.DestinationKeyField.Should().Be("Join_ID");
+
+        childLayer.Type.Should().Be("Table");
+        childLayer.GeometryType.Should().BeNull();
+        childLayer.Capabilities.Split(',').Should().Equal("Query");
+        var childRelationship = childLayer.Relationships.Should().ContainSingle().Subject;
+        childRelationship.Composite.Should().BeTrue();
+        childRelationship.Role.Should().Be("esriRelRoleDestination");
+        childRelationship.RelatedTableId.Should().Be(0);
+        childRelationship.KeyField.Should().Be("Join_ID");
+        childRelationship.OriginKeyField.Should().Be("Join_ID");
+        childRelationship.DestinationKeyField.Should().Be("Join_ID");
+    }
+
+    private static LayerResponse MapLayer(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2GraphSnapshot snapshot)
+        => FeatureServerEndpoints.MapLayerToResponseV2(
+            service, resource, publication, snapshot, new QueryLimits(),
+            null, null, null, null, false, false, false, offlineSyncEnabled: false);
 
     private static (MetadataV2Service Service, MetadataV2GraphSnapshot Snapshot) RelationshipSnapshot(
         params MetadataV2Resource[] resources)

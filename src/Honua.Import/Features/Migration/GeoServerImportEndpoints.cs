@@ -249,7 +249,13 @@ internal static partial class GeoServerImportEndpoints
         try
         {
             jobManager = context.RequestServices.GetRequiredService<GeoServerImportJobManager>();
-            if (!jobManager.CanAcceptNewJobs)
+            // Probe recovery before refusing (#4877); see GeoservicesImportEndpoints.
+            if (!await ImportCoordinationRecovery.TryAdmitAsync(
+                    jobManager,
+                    jobManager.JobQueue,
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    cancellationToken).ConfigureAwait(false))
             {
                 await AdminResponseWriter.WriteErrorAsync(
                     context,

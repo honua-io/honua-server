@@ -59,6 +59,15 @@ public sealed record DeployTelemetryPolicyDescriptor
     /// <summary>Backend-dialect query that yields the error rate, or <c>null</c> when unused.</summary>
     public string? ErrorRateQuery { get; init; }
 
+    /// <summary>
+    /// Backend-dialect query that yields the error <em>count</em> over the evaluation window, or
+    /// <c>null</c> when unused. It replaces <see cref="ErrorRateQuery"/>: the gate divides the count by
+    /// the sample count read for the same window. A provider that can tell "the query matched no
+    /// series" apart from a failed read reports that as <see cref="DeployTelemetryReadings.ErrorCountSeriesAbsent"/>,
+    /// and the gate reads it as zero errors only when the sample floor is met (honua-server#6474).
+    /// </summary>
+    public string? ErrorCountQuery { get; init; }
+
     /// <summary>Maximum acceptable error rate before rollback is recommended.</summary>
     public double? ErrorRateThreshold { get; init; }
 
@@ -99,6 +108,21 @@ public sealed record DeployTelemetryReadings
 
     /// <summary>Observed error rate, or <c>null</c> when unavailable.</summary>
     public double? ErrorRate { get; init; }
+
+    /// <summary>
+    /// Observed error count for <see cref="DeployTelemetryPolicyDescriptor.ErrorCountQuery"/>, or
+    /// <c>null</c> when unavailable or when the query matched no series.
+    /// </summary>
+    public double? ErrorCount { get; init; }
+
+    /// <summary>
+    /// <see langword="true"/> only when the error-count query completed and matched no series or rows
+    /// at all. AWS omits ALB <c>HTTPCode_Target_5XX_Count</c> and Lambda <c>Errors</c> datapoints for
+    /// periods without errors, so this is how a healthy candidate looks. A failed, partial or ambiguous
+    /// read never sets it. The gate treats it as zero errors only when the sample count read for the
+    /// same window meets the sample floor (honua-server#6474).
+    /// </summary>
+    public bool ErrorCountSeriesAbsent { get; init; }
 
     /// <summary>Observed p95 latency in milliseconds, or <c>null</c> when unavailable.</summary>
     public double? LatencyP95 { get; init; }

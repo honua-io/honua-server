@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.Alerts.Domain;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -19,20 +21,30 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
 
     private readonly NpgsqlDataSource _lockDataSource;
     private readonly ILogger<PostgresAdvisoryLockLeaderElectionStrategy> _logger;
+    private readonly int _probeTimeoutSeconds;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private NpgsqlConnection? _lockConnection;
 
     public PostgresAdvisoryLockLeaderElectionStrategy(
         NpgsqlDataSource dataSource,
-        ILogger<PostgresAdvisoryLockLeaderElectionStrategy> logger)
+        ILogger<PostgresAdvisoryLockLeaderElectionStrategy> logger,
+        IOptions<AlertOptions>? options = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        var lease = options?.Value.Evaluation.LeaderLeaseDuration ?? TimeSpan.FromSeconds(30);
+        if (lease <= TimeSpan.Zero)
+        {
+            lease = TimeSpan.FromSeconds(30);
+        }
+
+        _probeTimeoutSeconds = (int)Math.Clamp(Math.Ceiling(lease.TotalSeconds), 1, 30);
         // Session advisory locks are not pinned to a multiplexed connection, and a
         // multiplexed pool forces keepalive off. Hold the lock on a dedicated
-        // non-multiplexed source so a dead backend cannot keep reporting leadership.
-        _lockDataSource = CreateDedicatedLockDataSource(dataSource);
+        // non-multiplexed source so a dead backend cannot keep reporting leadership
+        // past LeaderLeaseDuration.
+        _lockDataSource = CreateDedicatedLockDataSource(dataSource, lease);
         InstanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
     }
 
@@ -49,8 +61,12 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
     /// other way around.
     /// </summary>
     internal static NpgsqlDataSource CreateDedicatedLockDataSource(NpgsqlDataSource dataSource)
+        => CreateDedicatedLockDataSource(dataSource, TimeSpan.FromSeconds(30));
+
+    internal static NpgsqlDataSource CreateDedicatedLockDataSource(NpgsqlDataSource dataSource, TimeSpan leaderLease)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
+        var seconds = (int)Math.Clamp(Math.Ceiling(leaderLease.TotalSeconds), 1, 600);
         var builder = new NpgsqlConnectionStringBuilder(dataSource.ConnectionString)
         {
             Multiplexing = false,
@@ -58,8 +74,8 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
             MaxPoolSize = 2,
             MinPoolSize = 0,
         };
-        builder.KeepAlive = 30;
-        builder.TcpKeepAliveTime = 30;
+        builder.KeepAlive = seconds;
+        builder.TcpKeepAliveTime = seconds;
         builder.TcpKeepAliveInterval = 2;
         return NpgsqlDataSource.Create(builder.ConnectionString);
     }
@@ -171,7 +187,7 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
 
         try
         {
-            return await IsLockHeldAsync(_lockConnection, cancellationToken).ConfigureAwait(false);
+            return await IsLockHeldAsync(_lockConnection, _probeTimeoutSeconds, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
@@ -182,7 +198,10 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
         }
     }
 
-    private static async Task<bool> IsLockHeldAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<bool> IsLockHeldAsync(
+        NpgsqlConnection connection,
+        int probeTimeoutSeconds,
+        CancellationToken cancellationToken)
     {
         if (connection.State != System.Data.ConnectionState.Open)
         {
@@ -201,7 +220,7 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
-        command.CommandTimeout = 5;
+        command.CommandTimeout = probeTimeoutSeconds;
         // Pass the unsigned halves as bigint and cast in SQL. The low half does not
         // fit in a signed int, and Npgsql's oid parameter is easy to truncate.
         command.Parameters.AddWithValue("class_id", NpgsqlDbType.Bigint, (long)LockClassId);

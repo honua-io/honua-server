@@ -18,6 +18,7 @@ public sealed class DatumGridPostgresFixture : IAsyncDisposable
 {
     private PostgreSqlContainer? _container;
     private NpgsqlDataSource? _source;
+    private string? _connectionString;
 
     /// <summary>Starts an isolated operation database without changing the shared base-image fixture.</summary>
     /// <param name="includeNadconGrid">Whether to install the pinned NOAA grid for NADCON operations.</param>
@@ -50,10 +51,19 @@ public sealed class DatumGridPostgresFixture : IAsyncDisposable
         }
         _container = builder.Build();
         await _container.StartAsync();
-        _source = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _connectionString = _container.GetConnectionString();
+        _source = NpgsqlDataSource.Create(_connectionString);
         await using var command = _source.CreateCommand("CREATE EXTENSION IF NOT EXISTS postgis");
         await command.ExecuteNonQueryAsync();
     }
+
+    /// <summary>The grid database. Call <see cref="InitializeAsync"/> first.</summary>
+    public NpgsqlDataSource DataSource
+        => _source ?? throw new InvalidOperationException("Initialize the datum fixture first.");
+
+    /// <summary>Connection string including the password. <see cref="NpgsqlDataSource.ConnectionString"/> redacts it.</summary>
+    public string ConnectionString
+        => _connectionString ?? throw new InvalidOperationException("Initialize the datum fixture first.");
 
     /// <summary>Uses the real provider against the grid database for HTTP geometry operations.</summary>
     public WebAppFixture ConfigureGeometryService(WebAppFixture fixture)

@@ -28,11 +28,6 @@ internal static class McpWorkflowViewDescriptorClassifier
         ArgumentNullException.ThrowIfNull(tool);
 
         var descriptor = tool.Describe();
-        if (tool is IStubMcpTool)
-        {
-            return descriptor;
-        }
-
         // Server-authored views are the positive classification signal. A name prefix alone
         // cannot opt a tool into a native model's executable catalog.
         var view = tool is StudioDraftToolBase

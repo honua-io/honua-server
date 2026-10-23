@@ -65,6 +65,7 @@ internal static class ODataServiceCollectionExtensions
 
         services.AddScoped<ODataMetadataService>();
         services.AddScoped<ODataQueryService>();
+        services.AddHttpContextAccessor();
         services.AddScoped(sp => new ODataCrudDependencies(
             sp.GetRequiredService<IResourceValidator>(),
             sp.GetRequiredService<IFeatureReader>(),
@@ -74,7 +75,8 @@ internal static class ODataServiceCollectionExtensions
             sp.GetRequiredService<IETagService>(),
             sp.GetRequiredService<FeatureMutationValidator>(),
             sp.GetRequiredService<IEditParameterAdapter<ODataEditRequest>>(),
-            sp.GetRequiredService<IEditProcessor>()));
+            sp.GetRequiredService<IEditProcessor>(),
+            sp.GetRequiredService<IHttpContextAccessor>()));
         services.AddScoped<ODataCrudService>();
         services.AddScoped(sp => new ODataSearchDependencies(
             sp.GetRequiredService<IFeatureReader>(),

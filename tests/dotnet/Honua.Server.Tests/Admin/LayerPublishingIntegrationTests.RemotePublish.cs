@@ -37,6 +37,39 @@ namespace Honua.Server.Tests.Admin;
 public sealed partial class LayerPublishingIntegrationTests
 {
     [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task CommittedSinkFingerprintWithoutVerifiedSource_CannotOpenExternalSchemaScope()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        using var scope = _fixture.Services.CreateScope();
+        var connection = await scope.ServiceProvider
+            .GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionResolver>()
+            .ResolveConnectionStringAsync(_connectionId);
+        var publisher = scope.ServiceProvider.GetRequiredService<ILayerPublishingService>();
+        var fingerprint = ConnectionEndpointFingerprint.TryCompute(connection);
+        fingerprint.Should().NotBeNull();
+
+        await FluentActions.Invoking(() => publisher.ValidateTableForPublishAsync(connection,
+                new TablePublishValidationRequest
+                {
+                    Schema = "results",
+                    Table = "output",
+                    LayerName = "Output",
+                    ConnectionEndpointFingerprint = fingerprint
+                }, CancellationToken.None))
+            .Should().ThrowAsync<LayerPublishingException>();
+        await FluentActions.Invoking(() => publisher.PublishLayerAsync(connection,
+                new LayerPublishRequest
+                {
+                    Schema = "results",
+                    Table = "output",
+                    LayerName = "Output",
+                    ConnectionEndpointFingerprint = fingerprint
+                }, CancellationToken.None))
+            .Should().ThrowAsync<LayerPublishingException>();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.OperationsProgress)]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers/jobs/{jobId}")]
     public async Task PollLayerPublish_UnknownJob_ReturnsTypedNotFound()
@@ -167,8 +200,12 @@ public sealed partial class LayerPublishingIntegrationTests
         progress.RowsTotal.Should().Be(2);
         progress.RowsMaterialized.Should().Be(2);
         progress.LayerId.Should().BeGreaterThan(0);
+        var metadataRevision = progress.MetadataRevision
+            ?? throw new InvalidOperationException("Completed publication did not persist its metadata revision.");
+        metadataRevision.Should().BeGreaterThan(0);
         _layerId = progress.LayerId;
-        completed.CommittedEffectReferences.Should().Contain($"layer-publish:{_layerId}:2:2");
+        completed.CommittedEffectReferences.Should().Contain(
+            $"layer-publish:{_layerId}:2:2:{metadataRevision}");
         (await GetManagedStoreRowCountAsync(_layerId!.Value)).Should().Be(2);
     }
 }

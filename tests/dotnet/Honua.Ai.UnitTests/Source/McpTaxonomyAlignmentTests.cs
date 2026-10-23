@@ -650,15 +650,14 @@ public sealed partial class McpTaxonomyAlignmentTests
         // McpGeospatialMcpSchemaConformanceTests.EveryImplementedTool_IsMappedToAStandardSchema):
         // every concrete IMcpTool in the production assembly — except the dynamic
         // honua_op_* projection (certified by
-        // DynamicOperationTools_ErrorEnvelopeMatchesAdvertisedOutputSchema) and
-        // not-implemented stubs — must appear in BuildLiveToolRoster(). A newly
-        // registered tool that is not added to the roster fails here loudly rather
-        // than silently escaping envelope certification (#2853).
+        // DynamicOperationTools_ErrorEnvelopeMatchesAdvertisedOutputSchema) — must
+        // appear in BuildLiveToolRoster(). A newly registered tool that is not
+        // added to the roster fails here loudly rather than silently escaping
+        // envelope certification (#2853).
         var mcpAssembly = typeof(ValidatePackageTool).Assembly;
         var registeredToolTypes = mcpAssembly.GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false })
             .Where(t => typeof(IMcpTool).IsAssignableFrom(t))
-            .Where(t => !typeof(IStubMcpTool).IsAssignableFrom(t))
             .Where(t => t != typeof(PublishedOperationTool))
             .ToArray();
 

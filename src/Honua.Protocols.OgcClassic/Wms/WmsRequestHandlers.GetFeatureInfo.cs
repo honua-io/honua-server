@@ -285,7 +285,12 @@ internal static partial class WmsRequestHandlers
             // would address the wrong table when the protocol-facing index differs
             // from the storage handle (the common case once a graph has migrated its
             // bindings). Matches the resolution order the WMTS V2 port uses.
-            var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
+            var layerReader = await ResolveLayerReaderAsync(
+                context,
+                layer,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+            var queryResult = await layerReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
             if (queryResult.Items.Length == 0)
             {
                 continue;

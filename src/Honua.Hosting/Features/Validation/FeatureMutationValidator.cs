@@ -8,6 +8,8 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
+using Honua.Core.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Validation;
 
@@ -42,7 +44,12 @@ internal sealed class FeatureMutationValidator
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        return ValidateGeometryAsync(geometry, ResolveLayerGeometryType(resource), cancellationToken);
+        var layerSrid = resource.ReadSrid();
+        return ValidateGeometryAsync(
+            geometry,
+            ResolveLayerGeometryType(resource),
+            layerSrid is int srid && GeographicSridClassifier.IsGeographicSrid(srid) ? srid : null,
+            cancellationToken);
     }
 
     /// <summary>
@@ -51,9 +58,16 @@ internal sealed class FeatureMutationValidator
     /// <see cref="MetadataV2GeometryType.None"/> only when the geometry was not supplied by
     /// the request (for example an existing geometry carried through a property-only update).
     /// </summary>
-    public async Task<GeometryMutationResult> ValidateGeometryAsync(
+    public Task<GeometryMutationResult> ValidateGeometryAsync(
         byte[]? geometry,
         MetadataV2GeometryType layerGeometryType,
+        CancellationToken cancellationToken)
+        => ValidateGeometryAsync(geometry, layerGeometryType, geographicSrid: null, cancellationToken);
+
+    private async Task<GeometryMutationResult> ValidateGeometryAsync(
+        byte[]? geometry,
+        MetadataV2GeometryType layerGeometryType,
+        int? geographicSrid,
         CancellationToken cancellationToken)
     {
         if (geometry == null || geometry.Length == 0)
@@ -71,6 +85,23 @@ internal sealed class FeatureMutationValidator
         var finalGeometry = validationResult.WasRepaired
             ? validationResult.RepairedWkb
             : geometry;
+        if (geographicSrid is int layerSrid && finalGeometry is { Length: > 0 })
+        {
+            var cut = CutAntimeridian(finalGeometry, layerSrid);
+            if (!ReferenceEquals(cut, finalGeometry))
+            {
+                // The cut adds vertices and can split one ring into several polygons
+                // after ValidateCompleteAsync has already counted the input.
+                var limitResult = _geometryValidator.ValidateWkb(cut);
+                if (!limitResult.IsValid)
+                {
+                    var limitErrors = string.Join("; ", limitResult.Errors.Select(error => error.Message));
+                    return GeometryMutationResult.Failure(limitErrors);
+                }
+
+                finalGeometry = cut;
+            }
+        }
 
         return GeometryTypeEnforcement.Enforce(
             geometry,
@@ -86,6 +117,34 @@ internal sealed class FeatureMutationValidator
     /// </summary>
     public static MetadataV2GeometryType ResolveLayerGeometryType(MetadataV2Resource resource)
         => resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+
+    private static byte[] CutAntimeridian(byte[] wkb, int layerSrid)
+    {
+        NetTopologySuite.Geometries.Geometry geometry;
+        try
+        {
+            geometry = new WKBReader().Read(wkb);
+        }
+        catch (Exception ex) when (ex is ArgumentException or ParseException
+            or IOException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            return wkb;
+        }
+
+        if (geometry.SRID <= 0)
+        {
+            geometry.SRID = layerSrid;
+        }
+
+        var cut = AntimeridianCutter.Cut(geometry);
+        if (ReferenceEquals(cut, geometry))
+        {
+            return wkb;
+        }
+
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: cut.SRID > 0);
+        return writer.Write(cut);
+    }
 }
 
 /// <summary>

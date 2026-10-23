@@ -79,15 +79,11 @@ internal static class ImportBackgroundServiceCoordinator
                     // waiting on the flags first would prevent their recovery forever.
                     // Probe before leader election so non-leader HTTP nodes recover
                     // admission too. No job is dequeued and no local work is accepted.
-                    _ = await jobManager.JobQueue.GetQueueLengthAsync(stoppingToken).ConfigureAwait(false);
-                    if (jobManager.RequestStore is IProgressStoreRecovery requestRecovery)
-                    {
-                        await requestRecovery.ProbeRecoveryAsync(stoppingToken).ConfigureAwait(false);
-                    }
-                    if (jobManager.ProgressStore is IProgressStoreRecovery progressRecovery)
-                    {
-                        await progressRecovery.ProbeRecoveryAsync(stoppingToken).ConfigureAwait(false);
-                    }
+                    await ImportCoordinationRecovery.ProbeAsync(
+                        jobManager.JobQueue,
+                        jobManager.RequestStore,
+                        jobManager.ProgressStore,
+                        stoppingToken).ConfigureAwait(false);
                 }
 
                 var isLeader = await jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken).ConfigureAwait(false);

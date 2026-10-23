@@ -116,6 +116,8 @@ internal static class McpServiceCollectionExtensions
     /// Hosts that have registered canonical persistence call
     /// <see cref="AddMcpPromotionSurface"/> to advertise those resources; the
     /// Postgres server profile does this through the server composition gate.
+    /// Metadata-backed ordinary publications use <see cref="AddMcpCatalogPublicationSurface"/>
+    /// when the promotion stores are absent.
     /// </summary>
     public static IServiceCollection AddMcpDataAccessSurface(
         this IServiceCollection services,
@@ -524,6 +526,28 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<Tools.IMcpToolSource, Tools.PublishedOperationToolSource>());
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers persisted catalog publication readback without manufacturing
+    /// promotion or deployment stores. Deployment/package resources stay absent.
+    /// </summary>
+    public static IServiceCollection AddMcpCatalogPublicationSurface(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, PublishedServiceResource>(provider =>
+            new PublishedServiceResource(
+                provider.GetService<Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore>(),
+                provider.GetService<Honua.Core.Features.Deployment.Abstractions.IDeploymentStore>(),
+                provider.GetRequiredService<Honua.Geoprocessing.IGeoprocessingJobService>(),
+                provider.GetRequiredService<ILogger<PublishedServiceResource>>())));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, PromotionSurfaceIndexResource>(provider =>
+            new PromotionSurfaceIndexResource(
+                provider.GetService<Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore>(),
+                provider.GetService<Honua.Core.Features.Deployment.Abstractions.IDeploymentStore>(),
+                provider.GetRequiredService<Honua.Geoprocessing.IGeoprocessingJobService>(),
+                provider.GetRequiredService<ILogger<PromotionSurfaceIndexResource>>())));
         return services;
     }
 

@@ -36,11 +36,36 @@ and require admin authorization.
 | Method | Route | Success | Purpose |
 | --- | --- | --- | --- |
 | `POST` | `/` | `201 ContentPublicationDetail` | Publish a new immutable artifact version and claim a server-owned route slug. |
+| `GET` | `/` | `200 ContentPublicationListResponse` | List publications, oldest first, with cursor paging. An empty registry is an empty page, not 404. |
 | `GET` | `/{publicationId}` | `200 ContentPublicationDetail` | Return the route state and newest immutable versions for a publication. |
 | `GET` | `/{publicationId}/versions/{versionSelector}` | `200 ContentPublicationVersion` | Return one immutable version by revision number, `v{n}`, or version id. |
 | `POST` | `/{publicationId}/republish` | `200 ContentPublicationDetail` | Create a new immutable version and move the active route pointer to it. |
 | `POST` | `/{publicationId}/rollback` | `200 ContentPublicationDetail` | Move the active route pointer to an earlier immutable version without creating a new version. |
 | `PATCH` | `/{publicationId}/policy` | `200 ContentPublicationPolicyUpdateResponse` | Update server-owned visibility/share/embed/service/public-link policy. |
+
+`GET /api/v1/console/publications` uses the same admin authorization as the item
+GET. Query parameters follow the neighboring console list: `limit` (default 25,
+clamped to 1000; values below 1 use the default) and an opaque `cursor`. An
+optional `lifecycle` filter accepts `active`, `suspended`, or `archived`. The
+body is the page itself, not an `ApiResponse<T>` envelope:
+
+```json
+{
+  "items": [
+    {
+      "route": { "publicationId": "…", "lifecycle": "active", "routeSlug": "quarterly-map" },
+      "versions": [ { "title": "Quarterly Map" } ]
+    }
+  ],
+  "total": 1,
+  "nextCursor": null
+}
+```
+
+Each item is a `ContentPublicationDetail`, the same record as
+`GET /{publicationId}`. The publication id is `route.publicationId`, the display
+name is the active version `title` (falling back to `route.routeSlug`), and the
+state is `route.lifecycle`. `nextCursor` is null on the last page.
 
 The public route endpoint lives under `/api/v{version:apiVersion}/published`.
 

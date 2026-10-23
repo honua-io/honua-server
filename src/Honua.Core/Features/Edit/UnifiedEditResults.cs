@@ -47,6 +47,12 @@ public sealed record UnifiedEditResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
+    /// HTTP status the protocol should surface for <see cref="ErrorMessage"/> when the failure
+    /// is not a generic client error. Null keeps the caller's existing status.
+    /// </summary>
+    public int? ErrorStatusCode { get; init; }
+
+    /// <summary>
     /// Creates a successful edit result.
     /// </summary>
     /// <param name="result">Edit result.</param>
@@ -75,9 +81,10 @@ public sealed record UnifiedEditResult
     /// Creates a failed edit result.
     /// </summary>
     /// <param name="errorMessage">Error message.</param>
+    /// <param name="errorStatusCode">Optional HTTP status. Null keeps the caller's existing status.</param>
     /// <returns>Failed result.</returns>
-    public static UnifiedEditResult Failure(string errorMessage)
-        => new() { IsSuccess = false, ErrorMessage = errorMessage };
+    public static UnifiedEditResult Failure(string errorMessage, int? errorStatusCode = null)
+        => new() { IsSuccess = false, ErrorMessage = errorMessage, ErrorStatusCode = errorStatusCode };
 }
 
 /// <summary>

@@ -213,6 +213,17 @@ internal static partial class Log
     public static partial void DatabaseMigrationsSkipped(ILogger logger);
 
     /// <summary>
+    /// Logs that a pre-existing raster provider baseline was journaled as adopted, not executed.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="scriptName">Journal script name recorded as adopted.</param>
+    [LoggerMessage(
+        EventId = 4031,
+        Level = LogLevel.Information,
+        Message = "Adopted raster provider baseline {ScriptName} into public.schema_versions without executing the migration")]
+    public static partial void RasterProviderBaselineAdopted(ILogger logger, string scriptName);
+
+    /// <summary>
     /// Logs when an individual migration script has been successfully applied.
     /// </summary>
     /// <param name="logger">The logger instance.</param>

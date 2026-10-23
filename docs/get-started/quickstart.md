@@ -19,21 +19,16 @@ else: no repository checkout, no compiler, and **no registry credentials** —
 the server image and both Python clients are public. The 2026.1 release runs
 with licensing disabled, so there is no licence or edition-selection step.
 
-For local evaluation, this guide uses the published preview image
-`ghcr.io/honua-io/honua-server:nightly-0e03bdd`. Its source and immutable registry
-identity are recorded in the [preview artifact receipt](../reference/local-preview-artifact.md).
-This is a development preview, not a promoted 2026.1 release. The public image
-and pinned clients below can be used without a customer install manifest.
-
-After release promotion, the release channel will be
+The server image is the 2026.1 release channel
 `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA).
-The exact digest is in the release's `customer-install-manifest.json`
-(`server.image`). Use that channel only when its image and install manifest are
-publicly available; the preview instructions below do not depend on it.
+Only release promotion moves that tag. The exact digest for a release is
+`server.image` in that release's `customer-install-manifest.json`.
+Step 2 sets `HONUA_IMAGE` to the channel tag. The public image and the pinned
+clients below can be used without registry credentials.
 
 The clients are pinned:
 [honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
-[honua-sdk 0.1.16](https://pypi.org/project/honua-sdk/0.1.16/).
+[honua-sdk 0.1.18](https://pypi.org/project/honua-sdk/0.1.18/).
 
 For a lasting deployment, continue to
 [production Compose](../guides/deploy/docker-compose.md). For a locked-down
@@ -144,7 +139,7 @@ than inventing them.
 umask 077
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -161,7 +156,7 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
@@ -250,7 +245,7 @@ Install the two public clients, ideally in a virtual environment:
 <!-- docs-validation:install.clients mode=run -->
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.16'
+pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.18'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,

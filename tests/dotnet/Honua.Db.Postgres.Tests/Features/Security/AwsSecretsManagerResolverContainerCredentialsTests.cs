@@ -100,17 +100,18 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
 
     [SecurityTest]
     [Fact]
-    public async Task MissingTokenFile_LogsTheVariableName_AndFallsBackToTheNextCredentialSource()
+    public async Task MissingTokenFile_LogsTheVariableName_AndRefusesNodeRoleFallback()
     {
         using var agent = new FakeCredentialsAgent();
         var missingFile = Path.Join(_tempDirectory, "does-not-exist");
         using var env = CredentialEnvironment(fullUri: agent.Uri, token: null, tokenFile: missingFile);
         using var harness = new ResolverHarness();
 
-        (await harness.Resolver.ResolveSecretAsync("aws:secretsmanager:missing-file")).Should().Be("resolved");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:missing-file"));
 
         agent.AuthorizationHeaders.Should().BeEmpty("an unauthenticated request to the Pod Identity agent is pointless");
-        harness.SigningAccessKeys.Should().Equal(NodeRoleAccessKey);
+        harness.SigningAccessKeys.Should().BeEmpty();
+        harness.ImdsRequests.Should().BeEmpty();
         var warning = harness.Logger.Messages.Should().ContainSingle(m => m.Contains("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", StringComparison.Ordinal)).Subject;
         warning.Should().Contain("file not found");
     }
@@ -125,10 +126,11 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
         using var env = CredentialEnvironment(fullUri: agent.Uri, token: null, tokenFile: tokenFile);
         using var harness = new ResolverHarness();
 
-        (await harness.Resolver.ResolveSecretAsync("aws:secretsmanager:malformed")).Should().Be("resolved");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:malformed"));
 
         agent.AuthorizationHeaders.Should().BeEmpty();
-        harness.SigningAccessKeys.Should().Equal(NodeRoleAccessKey);
+        harness.SigningAccessKeys.Should().BeEmpty();
+        harness.ImdsRequests.Should().BeEmpty();
         harness.Logger.Messages.Should().Contain(m => m.Contains("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", StringComparison.Ordinal));
         harness.Logger.Messages.Should().NotContain(m => m.Contains("super-secret", StringComparison.Ordinal));
     }
@@ -150,6 +152,218 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
         harness.ImdsRequests.Should().BeEmpty();
     }
 
+    [SecurityTest]
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("directory")]
+    [InlineData("blank-path")]
+    public async Task UnusableTokenFile_RefusesWithoutNodeOrSecretRequests(string kind)
+    {
+        using var agent = new FakeCredentialsAgent();
+        var tokenFile = kind == "blank-path" ? "  " : Path.Join(_tempDirectory, "unusable-token");
+        if (kind == "directory") Directory.CreateDirectory(tokenFile);
+        else if (kind == "empty") await File.WriteAllTextAsync(tokenFile, "  ");
+        using var env = CredentialEnvironment(agent.Uri, null, tokenFile);
+        using var harness = new ResolverHarness();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:unusable"));
+
+        agent.AuthorizationHeaders.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+        harness.ImdsRequests.Should().BeEmpty();
+    }
+
+    [SecurityTest]
+    [Theory]
+    [InlineData("  ")]
+    [InlineData("synthetic-private-first\nsynthetic-private-second")]
+    public async Task UnusableEnvironmentToken_RefusesWithoutLeakingOrBorrowingCredentials(string token)
+    {
+        using var agent = new FakeCredentialsAgent();
+        using var env = CredentialEnvironment(agent.Uri, token, null);
+        using var harness = new ResolverHarness();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:bad-token"));
+
+        agent.AuthorizationHeaders.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.Logger.Messages.Should().NotContain(message => message.Contains("synthetic-private", StringComparison.Ordinal));
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task CancelledContainerRequest_PreservesCancellationWithoutNodeFallback()
+    {
+        using var agent = new FakeCredentialsAgent { PauseResponses = true };
+        using var env = CredentialEnvironment(agent.Uri, "synthetic-token", null);
+        using var harness = new ResolverHarness();
+        using var cancellation = new CancellationTokenSource();
+        var request = harness.Resolver.ResolveSecretAsync("aws:secretsmanager:cancelled", cancellation.Token);
+        await agent.RequestReceived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
+
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+    }
+
+    [SecurityTest]
+    [Theory]
+    [InlineData("denied")]
+    [InlineData("malformed")]
+    [InlineData("missing-fields")]
+    [InlineData("expired")]
+    public async Task FailedContainerResponse_RefusesWithoutBorrowingNodeCredentials(string failure)
+    {
+        using var agent = new FakeCredentialsAgent
+        {
+            ResponseStatus = failure == "denied" ? "403 Forbidden" : "200 OK",
+            ResponseBody = failure switch
+            {
+                "malformed" => "synthetic-private-response-must-not-leak",
+                "missing-fields" => "{\"AccessKeyId\":\"synthetic-private-access-key\"}",
+                "expired" => CredentialsJson(PodIdentityAccessKey, DateTimeOffset.UtcNow.AddMinutes(-2)),
+                _ => "{\"Message\":\"synthetic-private-response-must-not-leak\"}"
+            }
+        };
+        using var env = CredentialEnvironment(agent.Uri, "synthetic-token-must-not-leak", null);
+        using var harness = new ResolverHarness();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:refused"));
+
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+        error.Message.Should().NotContain("synthetic-private").And.NotContain("synthetic-token");
+        harness.Logger.Messages.Should().NotContain(message => message.Contains("synthetic-", StringComparison.Ordinal));
+    }
+
+    [SecurityTest]
+    [Theory]
+    [InlineData("AWS_ACCESS_KEY_ID")]
+    [InlineData("AWS_ACCESS_KEY")]
+    [InlineData("AWS_SECRET_ACCESS_KEY")]
+    [InlineData("AWS_SESSION_TOKEN")]
+    public async Task PartialEnvironmentCredentials_RefuseOtherProviders(string variable)
+    {
+        using var env = new EnvironmentVariableScope(BaseEnvironment((variable, "synthetic-partial-credential")));
+        using var harness = new ResolverHarness();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:partial"));
+
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+    }
+
+    [SecurityTest]
+    [Theory]
+    [InlineData("AWS_WEB_IDENTITY_TOKEN_FILE")]
+    [InlineData("AWS_ROLE_ARN")]
+    public async Task UnsupportedWebIdentity_RefusesBeforeMetadataOrSecretRequests(string variable)
+    {
+        using var env = new EnvironmentVariableScope(BaseEnvironment((variable, "synthetic-web-identity-setting")));
+        using var harness = new ResolverHarness();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:web-identity"));
+
+        error.Message.Should().Contain("web-identity");
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+        harness.Logger.Messages.Should().NotContain(message => message.Contains("synthetic-web-identity", StringComparison.Ordinal));
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task RejectedContainerUri_DoesNotFallBackOrLogItsPrivateQuery()
+    {
+        using var env = CredentialEnvironment(new Uri("https://untrusted.invalid/credentials?token=synthetic-private-token"), null, null);
+        using var harness = new ResolverHarness();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:bad-uri"));
+
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+        harness.Logger.Messages.Should().NotContain(message => message.Contains("synthetic-private-token", StringComparison.Ordinal));
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task TokenFileWithoutContainerEndpoint_RefusesNodeFallback()
+    {
+        using var env = new EnvironmentVariableScope(BaseEnvironment(("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "/synthetic-token-path")));
+        using var harness = new ResolverHarness();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:missing-endpoint"));
+
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.SigningAccessKeys.Should().BeEmpty();
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task ValidEnvironmentCredentials_RetainPrecedenceOverWorkloadConfiguration()
+    {
+        using var env = new EnvironmentVariableScope(BaseEnvironment(
+            ("AWS_ACCESS_KEY_ID", "AKIA_EXPLICIT_ENVIRONMENT"), ("AWS_SECRET_ACCESS_KEY", "synthetic-secret"),
+            ("AWS_WEB_IDENTITY_TOKEN_FILE", "/synthetic-token-path"), ("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/v2/credentials/task-guid")));
+        using var harness = new ResolverHarness();
+
+        (await harness.Resolver.ResolveSecretAsync("aws:secretsmanager:explicit-env")).Should().Be("resolved");
+
+        harness.SigningAccessKeys.Should().Equal("AKIA_EXPLICIT_ENVIRONMENT");
+        harness.ImdsRequests.Should().BeEmpty();
+        harness.EcsRelativeRequests.Should().BeEmpty();
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task NoExplicitProvider_RetainsOrdinaryEc2RoleResolution()
+    {
+        using var env = new EnvironmentVariableScope(BaseEnvironment());
+        using var harness = new ResolverHarness();
+
+        (await harness.Resolver.ResolveSecretAsync("aws:secretsmanager:ec2")).Should().Be("resolved");
+
+        harness.SigningAccessKeys.Should().Equal(NodeRoleAccessKey);
+        harness.ImdsRequests.Should().HaveCount(3);
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task TokenRemovedDuringRefresh_RefusesInsteadOfChangingProvider()
+    {
+        using var agent = new FakeCredentialsAgent();
+        var tokenFile = Path.Join(_tempDirectory, "rotating-token");
+        await File.WriteAllTextAsync(tokenFile, "synthetic-initial-token");
+        using var env = CredentialEnvironment(agent.Uri, null, tokenFile);
+        using var harness = new ResolverHarness();
+        (await harness.Resolver.ResolveSecretAsync("aws:secretsmanager:initial")).Should().Be("resolved");
+        File.Delete(tokenFile);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:after-rotation"));
+
+        harness.SigningAccessKeys.Should().Equal(PodIdentityAccessKey);
+        harness.ImdsRequests.Should().BeEmpty();
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task ProviderConfigurationRemovedDuringRefresh_RefusesNodeFallback()
+    {
+        using var agent = new FakeCredentialsAgent();
+        using var env = CredentialEnvironment(agent.Uri, "synthetic-container-token", null);
+        using var harness = new ResolverHarness();
+        (await harness.Resolver.ResolveSecretAsync("aws:secretsmanager:before-removal")).Should().Be("resolved");
+        Environment.SetEnvironmentVariable("AWS_CONTAINER_CREDENTIALS_FULL_URI", null);
+        Environment.SetEnvironmentVariable("AWS_CONTAINER_AUTHORIZATION_TOKEN", null);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Resolver.ResolveSecretAsync("aws:secretsmanager:after-removal"));
+
+        harness.SigningAccessKeys.Should().Equal(PodIdentityAccessKey);
+        harness.ImdsRequests.Should().BeEmpty();
+    }
+
     private static EnvironmentVariableScope CredentialEnvironment(Uri fullUri, string? token, string? tokenFile)
         => new(BaseEnvironment(
             ("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", null),
@@ -165,15 +379,20 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
             ("AWS_SECRET_ACCESS_KEY", null),
             ("AWS_SESSION_TOKEN", null),
             ("AWS_WEB_IDENTITY_TOKEN_FILE", null),
+            ("AWS_ROLE_ARN", null),
+            ("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", null),
+            ("AWS_CONTAINER_CREDENTIALS_FULL_URI", null),
+            ("AWS_CONTAINER_AUTHORIZATION_TOKEN", null),
+            ("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", null),
             ("AWS_REGION", "us-east-1"),
             ("AWS_DEFAULT_REGION", null),
             .. overrides,
         ];
 
-    private static string CredentialsJson(string accessKey)
+    private static string CredentialsJson(string accessKey, DateTimeOffset? expiration = null)
         => "{\"AccessKeyId\":\"" + accessKey + "\",\"SecretAccessKey\":\"secret\",\"Token\":\"session\",\"Expiration\":\""
            // Inside the resolver's one-minute refresh window, so every resolution refetches.
-           + DateTimeOffset.UtcNow.AddSeconds(30).ToString("o", CultureInfo.InvariantCulture) + "\"}";
+           + (expiration ?? DateTimeOffset.UtcNow.AddSeconds(30)).ToString("o", CultureInfo.InvariantCulture) + "\"}";
 
     /// <summary>
     /// Wires the resolver: the Secrets Manager client is stubbed (and records which access key signed
@@ -280,6 +499,14 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
 
         public ConcurrentQueue<string> AuthorizationHeaders { get; } = new();
 
+        public string? ResponseStatus { get; init; }
+
+        public string? ResponseBody { get; init; }
+
+        public bool PauseResponses { get; init; }
+
+        public TaskCompletionSource RequestReceived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public void Dispose()
         {
             _stopping.Cancel();
@@ -338,6 +565,12 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
                 .Select(static line => line["Authorization:".Length..].Trim())
                 .LastOrDefault();
 
+            RequestReceived.TrySetResult();
+            if (PauseResponses)
+            {
+                await Task.Delay(Timeout.Infinite, _stopping.Token).ConfigureAwait(false);
+            }
+
             string status;
             string body;
             if (authorization is null)
@@ -352,6 +585,8 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
                 body = CredentialsJson(PodIdentityAccessKey);
             }
 
+            status = ResponseStatus ?? status;
+            body = ResponseBody ?? body;
             var bodyBytes = Encoding.UTF8.GetBytes(body);
             var head = $"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n";
             await stream.WriteAsync(Encoding.ASCII.GetBytes(head), _stopping.Token).ConfigureAwait(false);
@@ -381,7 +616,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
         {
             foreach (var (key, value) in values)
             {
-                _originalValues[key] = Environment.GetEnvironmentVariable(key);
+                _originalValues.TryAdd(key, Environment.GetEnvironmentVariable(key));
                 Environment.SetEnvironmentVariable(key, value);
             }
         }

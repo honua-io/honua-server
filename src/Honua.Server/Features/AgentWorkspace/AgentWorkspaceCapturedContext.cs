@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Authentication;
+
 namespace Honua.Server.Features.AgentWorkspace;
 
 internal static class AgentWorkspaceCapturedContext
@@ -9,7 +11,12 @@ internal static class AgentWorkspaceCapturedContext
     {
         var workspaceId = context.Request.Headers["X-Honua-Workspace"].ToString();
         var turnId = context.Request.Headers["X-Honua-Turn"].ToString();
-        if (workspaceId.Length == 0 && turnId.Length == 0) return null;
+        if (workspaceId.Length == 0 && turnId.Length == 0)
+        {
+            if (AgentCredentialAuthority.IsAgent(context.User))
+                throw new AgentWorkspaceConflictException("An agent request requires its original submitted turn scope.");
+            return null;
+        }
         if (workspaceId != workspace.WorkspaceId || !AgentWorkspaceState.IsIdentifier(turnId) ||
             !workspace.Turns.TryGetValue(turnId, out var turn) || turn.Context.WorkspaceId != workspace.WorkspaceId ||
             turn.Context.TargetId != workspace.TargetId || turn.Context.TenantId != workspace.TenantId)

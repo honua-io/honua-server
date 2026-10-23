@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Import.Domain;
 using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing;
@@ -155,6 +158,11 @@ internal static class GeoprocessingResultPackageFactory
                 metadata[GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey] = outputName;
             }
 
+            // The sink's committed receipt and immutable job spec are the two halves of
+            // a materialized destination identity. Neither caller-authored output kinds
+            // nor an arbitrary artifact URI may by themselves authorize publication.
+            AppendCommittedPostgisDestination(metadata, job, reference, index, kind);
+
             // Typed raster output descriptors (#3089) become metadata-rich artifacts.
             // Staged objects use the protocol-neutral authenticated content route as
             // their canonical Uri, while bounded inline descriptors keep the legacy
@@ -206,6 +214,132 @@ internal static class GeoprocessingResultPackageFactory
         }
 
         return artifacts;
+    }
+
+    private static void AppendCommittedPostgisDestination(
+        Dictionary<string, string> metadata,
+        ExecutionJobRecord job,
+        string reference,
+        int index,
+        ArtifactKind kind)
+    {
+        const string processId = Execution.ExternalPostgisSinkExecutor.HandledProcessId;
+        if (job.Status != ExecutionJobStatus.Succeeded ||
+            job.Spec.Kind != ExecutionJobKind.Geoprocessing ||
+            kind != ArtifactKind.FeatureLayer ||
+            index != 0 ||
+            job.ArtifactReferences.Count != 1 ||
+            job.CommittedEffectReferences.Count != 1 ||
+            !string.Equals(job.CommittedEffectReferences[0], reference, StringComparison.Ordinal) ||
+            !job.Spec.Parameters.TryGetValue(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions, out var processes) ||
+            !string.Equals(processes, processId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var inputs = new Execution.StepInputReader(job.Spec.Parameters);
+        if (!inputs.TryGet("connectionId", out var rawConnectionId) ||
+            inputs.TryGet("connectionName", out _) ||
+            !Guid.TryParse(rawConnectionId, out var connectionId) ||
+            connectionId == Guid.Empty ||
+            !inputs.TryGet("table", out var table) ||
+            !ValidPostgisIdentifier(table))
+        {
+            return;
+        }
+
+        var schema = inputs.GetOrDefault("schema", "public");
+        if (!ValidPostgisIdentifier(schema) ||
+            ImportTargetSchemaPolicy.IsReserved(schema, [ImportTargetSchemaPolicy.DefaultMetadataSchema]) ||
+            !TryReadCommittedSinkReceipt(reference, processId, schema, table!, out var endpointFingerprint))
+        {
+            return;
+        }
+
+        metadata["connectionId"] = connectionId.ToString("D");
+        metadata["schema"] = schema;
+        metadata["table"] = table!;
+        metadata[ConnectionEndpointFingerprint.MetadataKey] = endpointFingerprint;
+    }
+
+    private static bool TryReadCommittedSinkReceipt(
+        string reference,
+        string processId,
+        string schema,
+        string table,
+        out string endpointFingerprint)
+    {
+        endpointFingerprint = string.Empty;
+        const string prefix = Execution.SinkResultArtifact.DataUriPrefix;
+        // This sink emits a tiny fixed-shape descriptor. Bound decoding even if a
+        // corrupt durable record supplies a much larger reference.
+        if (!reference.StartsWith(prefix, StringComparison.Ordinal) || reference.Length > 4096)
+        {
+            return false;
+        }
+
+        try
+        {
+            var bytes = Convert.FromBase64String(reference[prefix.Length..]);
+            using var document = JsonDocument.Parse(bytes);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            // Duplicate names can make different JSON consumers choose different
+            // values. Reject them before comparing the receipt with the job spec.
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in root.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    return false;
+                }
+            }
+
+            if (!root.TryGetProperty("processId", out var actualProcess) ||
+                actualProcess.ValueKind != JsonValueKind.String ||
+                !string.Equals(actualProcess.GetString(), processId, StringComparison.Ordinal) ||
+                !root.TryGetProperty("schema", out var actualSchema) ||
+                actualSchema.ValueKind != JsonValueKind.String ||
+                !string.Equals(actualSchema.GetString(), schema, StringComparison.Ordinal) ||
+                !root.TryGetProperty("table", out var actualTable) ||
+                actualTable.ValueKind != JsonValueKind.String ||
+                !string.Equals(actualTable.GetString(), table, StringComparison.Ordinal) ||
+                !root.TryGetProperty("committed", out var committed) ||
+                committed.ValueKind != JsonValueKind.True ||
+                root.TryGetProperty("partial", out _) ||
+                !root.TryGetProperty("endpointFingerprint", out var fingerprint) ||
+                fingerprint.ValueKind != JsonValueKind.String ||
+                !ConnectionEndpointFingerprint.IsWellFormed(fingerprint.GetString()))
+            {
+                return false;
+            }
+
+            endpointFingerprint = fingerprint.GetString()!;
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ValidPostgisIdentifier(string? value)
+    {
+        if (string.IsNullOrEmpty(value) ||
+            !(char.IsAsciiLetter(value[0]) || value[0] == '_'))
+        {
+            return false;
+        }
+
+        return value.Skip(1).All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
     }
 
     private static bool IsValidDescriptorForJob(
@@ -383,6 +517,14 @@ internal static class GeoprocessingResultPackageFactory
     {
         if (!string.IsNullOrWhiteSpace(reference))
         {
+            // A committed sink's data URI contains a JSON receipt describing the
+            // materialized layer, not inline GeoJSON geometry. Its media type must
+            // describe the bytes even when the artifact kind is FeatureLayer.
+            if (reference.StartsWith(Execution.SinkResultArtifact.DataUriPrefix, StringComparison.Ordinal))
+            {
+                return "application/json";
+            }
+
             if (reference.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase) ||
                 reference.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && kind == ArtifactKind.FeatureLayer)
             {

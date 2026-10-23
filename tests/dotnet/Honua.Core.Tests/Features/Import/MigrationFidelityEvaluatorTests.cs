@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -70,6 +71,102 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Expected.Should().Be("StatusDomain");
         difference.Actual.Should().Be("(none)");
         evaluation.BlockingReason.Should().Contain(MigrationCatalogReconciliationCodes.DomainMissing);
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenCompositeCatalogWasDowngraded_StaysBlockingDespiteSuccessfulRelationshipWrite()
+    {
+        var input = FullyVerifiedInput() with
+        {
+            Relationships =
+            [
+                new MigrationRelationshipApplyOutcome
+                {
+                    SourceRelationshipId = "summary",
+                    Outcome = MigrationCatalogWriteOutcome.Created,
+                    Message = "Inserted honua.relationships row.",
+                    TargetRelationshipRef = "rel-10-0",
+                    Deferred = false
+                }
+            ],
+            CatalogReconciliation = CatalogReport(
+                "resource:Helicopter:layer:0",
+                MigrationCatalogReconciliationClassifications.Fail,
+                new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.RelationshipCompositeDowngraded,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = "summary",
+                    Expected = "composite",
+                    Actual = "simple",
+                    Summary = "Relationship 'summary' was published without composite ownership."
+                },
+                new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.FieldMissing,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = "Join_ID",
+                    Expected = "Join_ID",
+                    Actual = "(none)",
+                    Summary = "Join_ID is missing from the published catalog entry."
+                })
+        };
+
+        var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.CatalogReconciliationFailed
+            && difference.Subject == "resource:Helicopter:layer:0:summary");
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.CatalogReconciliationFailed
+            && difference.Subject == "resource:Helicopter:layer:0:Join_ID");
+        evaluation.Differences.Should().NotContain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted);
+    }
+
+    [UnitTest]
+    public void EvaluateBatch_SuccessfulRelationshipWriteDoesNotClearChildReview()
+    {
+        var evaluation = MigrationBatchFidelityEvaluator.Evaluate(new MigrationBatchFidelityInput
+        {
+            ConstructAccounting = new MigrationConstructAccountingReport { Executed = true },
+            RelationshipApplyRequested = true,
+            RelationshipApplyExecuted = true,
+            Relationships =
+            [
+                new MigrationRelationshipApplyOutcome
+                {
+                    SourceRelationshipId = "summary",
+                    Outcome = MigrationCatalogWriteOutcome.Created,
+                    Message = "Appended composite relationship.",
+                    TargetRelationshipRef = "rel-10-0",
+                    Deferred = false
+                }
+            ],
+            Children =
+            [
+                new MigrationBatchChildRecord
+                {
+                    BatchId = "batch",
+                    Ordinal = 0,
+                    SourceResourceId = "resource:Helicopter:layer:0",
+                    ServiceUrl = "https://example.test/FeatureServer",
+                    SourceLayerId = 0,
+                    TableName = "aggregated_polygons",
+                    Status = MigrationBatchChildStatus.NeedsReview,
+                    FidelityVerdict = MigrationFidelityVerdicts.Incomplete,
+                    StatusNote = "geometry census mismatch"
+                }
+            ]
+        });
+
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.ServiceLayerIncomplete
+            && difference.Summary.Contains("geometry census mismatch", StringComparison.Ordinal));
+        evaluation.Differences.Should().NotContain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted);
     }
 
     [Trait("Tier", "Fast")]
@@ -642,6 +739,67 @@ public sealed class MigrationFidelityEvaluatorTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [UnitTest]
+    public void Evaluate_WhenInheritedNullGeometryMatches_StaysFullFidelity()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with
+        {
+            DataReconciliation = GeometryArtifact(
+                inherited: 1,
+                rewrites: 0,
+                losses: 0,
+                classification: MigrationReconciliationClassifications.Pass)
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
+        evaluation.IsBlocking.Should().BeFalse();
+        evaluation.Differences.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenWellFormedTargetReplacesSourceDefect_IsUnverifiedNotRepaired()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with
+        {
+            DataReconciliation = GeometryArtifact(
+                inherited: 0,
+                rewrites: 1,
+                losses: 0,
+                classification: MigrationReconciliationClassifications.Warn)
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+        evaluation.IsBlocking.Should().BeFalse();
+        var difference = evaluation.Differences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.GeometrySourceNotRepaired);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Unverified);
+        difference.Summary.Should().Contain("not a successful repair");
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenTransferLossAccompaniesSourceDefectRewrite_StaysIncompleteAndVisible()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with
+        {
+            DataReconciliation = GeometryArtifact(
+                inherited: 0,
+                rewrites: 2,
+                losses: 1,
+                classification: MigrationReconciliationClassifications.Fail,
+                reasons: ["1 source geometries were lost in transfer."])
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.DataReconciliationFailed &&
+            difference.Severity == MigrationFidelityDifferenceSeverities.Blocking);
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.GeometrySourceNotRepaired &&
+            difference.Severity == MigrationFidelityDifferenceSeverities.Unverified &&
+            difference.Summary.Contains("not a successful repair", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// A run where every required check executed and reported parity, with no data, attachment or
     /// relationship loss. The only input shape that may be reported as a full-fidelity migration.
@@ -674,6 +832,64 @@ public sealed class MigrationFidelityEvaluatorTests
             Reasons = reasons,
             Options = new LayerReconciliationOptions()
         };
+
+    private static MigrationReconciliationArtifact GeometryArtifact(
+        int inherited,
+        int rewrites,
+        int losses,
+        string classification,
+        params string[] reasons)
+    {
+        var geometryClassification = losses > 0
+            ? MigrationReconciliationClassifications.Fail
+            : rewrites > 0
+                ? MigrationReconciliationClassifications.Warn
+                : MigrationReconciliationClassifications.Pass;
+        return new MigrationReconciliationArtifact
+        {
+            RunId = "run-4826",
+            SourceKind = "arcgis-geoservices-rest",
+            Classification = classification,
+            StartedAt = DateTimeOffset.UnixEpoch,
+            CompletedAt = DateTimeOffset.UnixEpoch,
+            Summary = new MigrationReconciliationSummary
+            {
+                LayerCount = 1,
+                PassCount = classification == MigrationReconciliationClassifications.Pass ? 1 : 0,
+                WarnCount = classification == MigrationReconciliationClassifications.Warn ? 1 : 0,
+                FailCount = classification == MigrationReconciliationClassifications.Fail ? 1 : 0
+            },
+            Layers =
+            [
+                new MigrationReconciliationLayerReport
+                {
+                    SourceLayerId = "svc#0",
+                    Classification = classification,
+                    Count = new MigrationReconciliationCountProbe
+                    {
+                        Classification = MigrationReconciliationClassifications.Pass
+                    },
+                    Geometry = new MigrationReconciliationGeometryProbe
+                    {
+                        InheritedSourceDefects = inherited,
+                        SourceDefectRewrites = rewrites,
+                        MigrationLosses = losses,
+                        Classification = geometryClassification
+                    },
+                    Content = new MigrationReconciliationContentProbe
+                    {
+                        Classification = MigrationReconciliationClassifications.Pass
+                    },
+                    Extent = new MigrationReconciliationExtentProbe
+                    {
+                        Classification = MigrationReconciliationClassifications.Pass
+                    }
+                }
+            ],
+            Reasons = reasons,
+            Options = new LayerReconciliationOptions()
+        };
+    }
 
     private static MigrationCatalogReconciliationReport CatalogReport(
         string sourceResourceId,

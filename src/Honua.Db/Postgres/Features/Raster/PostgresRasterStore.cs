@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -1084,6 +1085,80 @@ internal sealed class PostgresRasterStore : IRasterStore
         return $"ST_MapAlgebra({baseExpr}, {bandText}, '8BUI', '{expression}', NULL::double precision)";
     }
 
+    private string PreserveSecondBandAlphaSql(bool mosaic)
+        => mosaic
+            ? $"SELECT COALESCE(bool_and(second_band_is_alpha), FALSE) FROM {_rasterDataTable} WHERE id = ANY(@rasterIds)"
+            : $"SELECT second_band_is_alpha FROM {_rasterDataTable} WHERE id = @rasterId";
+
+    /// <summary>
+    /// Frames default tile presentation. Numeric PNGs display band one with an explicit alpha
+    /// derived before stretching: a valid minimum can become zero without becoming NoData.
+    /// Band two stays alpha only when <paramref name="preserveAlphaExpression"/> is true.
+    /// That expression must come from import metadata, not from matching pixel types:
+    /// a scientific two-band raster can share an unsigned type with a gray-plus-alpha PNG.
+    /// </summary>
+    internal static string BuildTileDisplayRasterExpression(
+        string sourceExpression, string gridExpression, RasterFormat format,
+        IReadOnlyList<StretchBounds>? stretchBounds,
+        string preserveAlphaExpression = "FALSE")
+    {
+        var stretched = stretchBounds is { Count: > 0 }
+            ? BuildStretchedRasterExpression(format == RasterFormat.PNG ? "i.rast" : sourceExpression, stretchBounds)
+            : format == RasterFormat.PNG ? "i.rast" : sourceExpression;
+        if (format != RasterFormat.PNG)
+        {
+            return RasterGridFrameSql.FrameAlignedRaster(stretched, gridExpression);
+        }
+
+        var grayExpression = stretchBounds is { Count: > 0 }
+            ? BuildStretchMapAlgebraExpression(stretchBounds[0].Lo, stretchBounds[0].Hi)
+            : "LEAST(255.0, GREATEST(0.0, [rast.val]))";
+        var framedBand = RasterGridFrameSql.FrameAlignedRaster("ST_Band(i.rast, 1)", "i.grid");
+        var framedAlpha = RasterGridFrameSql.FrameAlignedRaster("i.rast", "i.grid");
+        var framedColor = RasterGridFrameSql.FrameAlignedRaster(stretched, "i.grid");
+        return $"""
+            (
+                WITH display_input AS MATERIALIZED (
+                    SELECT {sourceExpression} AS rast, {gridExpression} AS grid,
+                           ({preserveAlphaExpression}) AS preserve_alpha
+                )
+                SELECT CASE
+                    WHEN i.preserve_alpha
+                     AND ST_NumBands(i.rast) = 2
+                     AND ST_BandPixelType(i.rast, 1) IN ('8BUI', '16BUI')
+                     AND ST_BandPixelType(i.rast, 2) = ST_BandPixelType(i.rast, 1)
+                    THEN (
+                        WITH alpha_input AS MATERIALIZED (
+                            SELECT {framedAlpha} AS rast
+                        )
+                        SELECT ST_AddBand(
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(a.rast, 1, '8BUI', '{grayExpression}', 0), 1, NULL::double precision),
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(a.rast, 2, '8BUI',
+                                    CASE WHEN ST_BandPixelType(a.rast, 2) = '16BUI'
+                                         THEN 'LEAST(255.0, GREATEST(0.0, [rast.val] / 257.0))'
+                                         ELSE '[rast.val]' END,
+                                    0), 1, NULL::double precision),
+                            1)
+                        FROM alpha_input a
+                    )
+                    WHEN ST_NumBands(i.rast) IN (1, 2) THEN (
+                    WITH numeric_input AS MATERIALIZED (
+                        SELECT {framedBand} AS rast
+                    )
+                    SELECT ST_AddBand(
+                        ST_SetBandNoDataValue(
+                            ST_MapAlgebra(n.rast, 1, '8BUI', '{grayExpression}', 0), 1, NULL::double precision),
+                        ST_SetBandNoDataValue(
+                            ST_MapAlgebra(n.rast, 1, '8BUI', '255', 0), 1, NULL::double precision), 1)
+                    FROM numeric_input n
+                ) ELSE {framedColor} END
+                FROM display_input i WHERE i.rast IS NOT NULL
+            )
+            """;
+    }
+
     private static string FormatStretchNumber(double value)
         => value.ToString("G17", CultureInfo.InvariantCulture);
 
@@ -2032,7 +2107,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     // (elevation, analytic, float reflectance) would otherwise render near-black.
     // Apply an automatic MinMax stretch only when the band statistics fall outside
     // the 8-bit display range, leaving display-ready 8-bit rasters untouched.
-    private static IReadOnlyList<StretchBounds>? BuildAutoTileStretchBounds(RasterStatistics[] stats)
+    internal static IReadOnlyList<StretchBounds>? BuildAutoTileStretchBounds(RasterStatistics[] stats)
     {
         if (stats.Length == 0 || !RequiresAutoTileStretch(stats))
         {
@@ -2305,6 +2380,20 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var pointSrid = srid ?? 4326;
+        var rasterSrid = await ReadRasterSridAsync(connection, layerId, rasterId, cancellationToken).ConfigureAwait(false);
+        if (rasterSrid is null)
+        {
+            return new PixelValueResult
+            {
+                X = x,
+                Y = y,
+                Srid = srid,
+                BandValues = new Dictionary<int, object?>(),
+                HasData = false
+            };
+        }
+
+        var samplePoint = DatumSamplePointSql.Build(pointSrid, rasterSrid.Value);
 
         // When a renderingRule is supplied the sampled value reflects the rendered output
         // (clip mask -> display stretch -> colormap), matching the export pipeline, instead of
@@ -2332,7 +2421,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             FROM rendered,
                  LATERAL generate_series(1, ST_NumBands(rast)) AS band,
                  LATERAL ST_Value(rast, band,
-                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))
+                    {samplePoint}
                  ) AS val
             ORDER BY band
             """;
@@ -2349,8 +2438,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using var reader = await ExecuteIdentifyReaderAsync(command, cancellationToken).ConfigureAwait(false);
+        while (await ReadIdentifyRowAsync(reader, cancellationToken).ConfigureAwait(false))
         {
             var band = reader.GetInt32(0);
             var val = reader.IsDBNull(1) ? null : (object?)reader.GetDouble(1);
@@ -2401,6 +2490,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var pointSrid = srid ?? 4326;
+        var rasterSrid = await ReadUniformRasterSridAsync(connection, layerId, rasterIds, cancellationToken)
+            .ConfigureAwait(false);
+        var samplePoint = rasterSrid is int sharedSrid
+            ? DatumSamplePointSql.Build(pointSrid, sharedSrid)
+            : "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))";
 
         // Apply the renderingRule (clip -> stretch -> colormap) to the merged mosaic so the
         // sampled value matches the rendered mosaic export. Without a rule the merged raw
@@ -2441,7 +2535,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             FROM rendered,
                  LATERAL generate_series(1, ST_NumBands(rast)) AS band,
                  LATERAL ST_Value(rast, band,
-                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(src))
+                    {samplePoint}
                  ) AS val
             WHERE rast IS NOT NULL
             ORDER BY band
@@ -2459,8 +2553,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using var reader = await ExecuteIdentifyReaderAsync(command, cancellationToken).ConfigureAwait(false);
+        while (await ReadIdentifyRowAsync(reader, cancellationToken).ConfigureAwait(false))
         {
             var band = reader.GetInt32(0);
             var val = reader.IsDBNull(1) ? null : (object?)reader.GetDouble(1);
@@ -2579,15 +2673,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
 
         var sourceResampleExpr = RasterCorrectedNearestSql.Sample("raster", "tile_ref.rast");
-        if (tileStretchBounds is { Count: > 0 })
-        {
-            sourceResampleExpr = BuildStretchedRasterExpression(sourceResampleExpr, tileStretchBounds);
-        }
 
         dynCommand.CommandText = $"""
             {tileBoundsCte}
             SELECT ST_AsGDALRaster(
-                {RasterGridFrameSql.FrameAlignedRaster(sourceResampleExpr, "tile_ref.rast")},
+                {BuildTileDisplayRasterExpression(sourceResampleExpr, "tile_ref.rast", format, tileStretchBounds, PreserveSecondBandAlphaSql(mosaic: false))},
                 '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
             FROM {_rasterDataTable}, tile_bounds tb, tile_ref
@@ -2601,7 +2691,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(dynCommand, "@col", col);
         AddParameter(dynCommand, "@row", row);
 
-        var result = await dynCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RasterTileExecution.ExecuteScalarAsync(dynCommand, cancellationToken).ConfigureAwait(false);
         if (result is not byte[] data || data.Length == 0)
         {
             return null;
@@ -2654,10 +2744,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", "(SELECT rast FROM tile_metadata)");
         var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
-        if (mosaicTileBounds is { Count: > 0 })
-        {
-            mosaicTileExpr = BuildStretchedRasterExpression(mosaicTileExpr, mosaicTileBounds);
-        }
 
         await using var command = connection.CreateCommand();
         // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256Ã—256
@@ -2706,11 +2792,13 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM tile_metadata_raw
             ),
             merged AS (
-                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                -- Every source is already sampled onto tile_ref, including its coverage mask.
+                -- Repeating general mosaic alignment here only replans an identical grid.
+                SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy)} AS rast
                 FROM source
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster({RasterGridFrameSql.FrameAlignedRaster(mosaicTileExpr, "(SELECT rast FROM tile_ref)")}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            SELECT ST_AsGDALRaster({BuildTileDisplayRasterExpression(mosaicTileExpr, "(SELECT rast FROM tile_ref)", format, mosaicTileBounds, PreserveSecondBandAlphaSql(mosaic: true))}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
             FROM merged
             WHERE rast IS NOT NULL
             """;
@@ -2720,7 +2808,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@col", col);
         AddParameter(command, "@row", row);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RasterTileExecution.ExecuteScalarAsync(command, cancellationToken).ConfigureAwait(false);
         if (result is not byte[] data || data.Length == 0)
         {
             return null;
@@ -2768,16 +2856,12 @@ internal sealed class PostgresRasterStore : IRasterStore
         // ST_Transform uses that reference directly to reproject into the gridset CRS and register the
         // output onto the exact tile envelope (nodata for uncovered pixels).
         var resampleExpr = RasterCorrectedNearestSql.Sample("src.rast", "tile_ref.rast");
-        if (tileStretchBounds is { Count: > 0 })
-        {
-            resampleExpr = BuildStretchedRasterExpression(resampleExpr, tileStretchBounds);
-        }
 
         await using var dynCommand = connection.CreateCommand();
         dynCommand.CommandText = $"""
             WITH {BuildTileWindowCte(window)}
             SELECT ST_AsGDALRaster(
-                {RasterGridFrameSql.FrameAlignedRaster(resampleExpr, "tile_ref.rast")},
+                {BuildTileDisplayRasterExpression(resampleExpr, "tile_ref.rast", format, tileStretchBounds, PreserveSecondBandAlphaSql(mosaic: false))},
                 '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
             FROM (
@@ -2792,7 +2876,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(dynCommand, "@rasterId", rasterId);
         AddTileWindowParameters(dynCommand, window);
 
-        var result = await dynCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RasterTileExecution.ExecuteScalarAsync(dynCommand, cancellationToken).ConfigureAwait(false);
         if (result is not byte[] data || data.Length == 0)
         {
             return null;
@@ -2842,10 +2926,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", "(SELECT rast FROM tile_metadata)");
         var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
-        if (mosaicTileBounds is { Count: > 0 })
-        {
-            mosaicTileExpr = BuildStretchedRasterExpression(mosaicTileExpr, mosaicTileBounds);
-        }
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -2878,11 +2958,12 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM tile_metadata_raw
             ),
             merged AS (
-                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                -- Corrected sampling has already aligned every source to this exact tile grid.
+                SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy)} AS rast
                 FROM source
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster({RasterGridFrameSql.FrameAlignedRaster(mosaicTileExpr, "(SELECT rast FROM tile_ref)")}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            SELECT ST_AsGDALRaster({BuildTileDisplayRasterExpression(mosaicTileExpr, "(SELECT rast FROM tile_ref)", format, mosaicTileBounds, PreserveSecondBandAlphaSql(mosaic: true))}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
             FROM merged
             WHERE rast IS NOT NULL
             """;
@@ -2890,7 +2971,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@rasterIds", rasterIds);
         AddTileWindowParameters(command, window);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RasterTileExecution.ExecuteScalarAsync(command, cancellationToken).ConfigureAwait(false);
         if (result is not byte[] data || data.Length == 0)
         {
             return null;
@@ -5168,6 +5249,77 @@ internal sealed class PostgresRasterStore : IRasterStore
         var available = result != null;
         _gdalDriverCache.TryAdd(driverName, available);
         return available;
+    }
+
+    private async Task<int?> ReadRasterSridAsync(
+        DbConnection connection,
+        int layerId,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT ST_SRID(raster)
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return value is null or DBNull ? null : Convert.ToInt32(value, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<int?> ReadUniformRasterSridAsync(
+        DbConnection connection,
+        int layerId,
+        long[] rasterIds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT MIN(ST_SRID(raster)), COUNT(DISTINCT ST_SRID(raster))
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = ANY(@rasterIds)
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterIds", rasterIds);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            || reader.IsDBNull(0)
+            || Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture) != 1)
+        {
+            return null;
+        }
+
+        return reader.GetInt32(0);
+    }
+
+    private static async Task<bool> ReadIdentifyRowAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+        {
+            throw DatumGridException.MissingGrid(ex);
+        }
+    }
+
+    private static async Task<DbDataReader> ExecuteIdentifyReaderAsync(
+        DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (DatumGridException.IsMissingGrid(ex))
+        {
+            throw DatumGridException.MissingGrid(ex);
+        }
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

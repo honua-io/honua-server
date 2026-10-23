@@ -1,6 +1,8 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+-- honua:compatibility-review reason=Transactionally replaces only the new derived style-index triggers; existing canonical package columns, function signatures, and reader data remain unchanged.
+
 -- A derived index, never a second package/style authority. Immutable version
 -- sidecars reuse the lifecycle dependency index; mutable drafts need their own
 -- cascading sidecar. Reserved style-index kinds are never accepted from callers.
@@ -17,7 +19,7 @@ CREATE INDEX IF NOT EXISTS idx_studio_draft_style_dependencies_ref
 CREATE OR REPLACE FUNCTION $HonuaSchema$.studio_derived_style_refs(
     package_envelope JSONB, package_family TEXT, package_workspace TEXT, package_tenant TEXT)
 RETURNS TABLE(dependency_kind TEXT, dependency_ref TEXT)
-LANGUAGE SQL STABLE AS $function$
+LANGUAGE SQL STABLE AS $$
     WITH body AS (SELECT package_envelope -> 'body' AS value),
     styles AS (
         SELECT entry
@@ -60,10 +62,10 @@ LANGUAGE SQL STABLE AS $function$
     UNION
     SELECT 'server-version-reference', lower(entry ->> 'ref') FROM bindings
         WHERE entry ->> 'kind' = 'content-version' AND jsonb_typeof(entry -> 'ref') = 'string'
-$function$;
+$$;
 
 CREATE OR REPLACE FUNCTION $HonuaSchema$.refresh_studio_style_dependency_index()
-RETURNS TRIGGER LANGUAGE plpgsql AS $function$
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     -- Canonical stores acquire this shared barrier before any row lock. The
     -- trigger also protects trusted maintenance/backfill writes transactionally.
@@ -84,7 +86,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END
-$function$;
+$$;
 
 DROP TRIGGER IF EXISTS studio_draft_style_dependencies ON $HonuaSchema$.studio_package_drafts;
 CREATE TRIGGER studio_draft_style_dependencies AFTER INSERT OR UPDATE OF envelope, workspace_id, tenant_id

@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Ai.Protocols.Mcp;
 
@@ -16,9 +19,23 @@ namespace Honua.Server.Features.Operations;
 /// composing the database-backed publishing graph. Selecting service.publish in such a host
 /// returns a typed, actionable validation failure instead of failing the entire dispatcher.
 /// </summary>
-internal sealed class DeferredServicePublishExecutor(IServiceProvider services) : IOperationExecutor
+internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
+    : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
     public string OperationId => ServicePublishOperation.OperationId;
+
+    public Task<OperationRequest> PrepareAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryResolve(out var executor, out _))
+        {
+            return Task.FromResult(request);
+        }
+
+        return executor!.PrepareAsync(request, context, cancellationToken);
+    }
 
     public Task<OperationValidation> ValidateAsync(
         OperationRequest request,
@@ -104,13 +121,20 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services) 
             return false;
         }
 
+        var sourceJobs = services.GetService<IExecutionJobStore>();
+        var processCatalog = services.GetService<IProcessCatalog>();
+        var sourceProof = sourceJobs is not null && processCatalog is not null
+            ? new CommittedSinkPublicationSources(sourceJobs, processCatalog)
+            : null;
         executor = new ServicePublishExecutor(
             publishingService!,
             connectionResolver!,
             graphProvider!,
             clock!,
             services.GetService<IMcpNotificationPublisher>(),
-            services.GetService<ILayerPublishJobs>());
+            services.GetService<ILayerPublishJobs>(),
+            services.GetService<IPublishedServiceStore>(),
+            sourceProof);
         unavailable = null;
         return true;
     }

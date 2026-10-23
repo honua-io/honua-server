@@ -194,6 +194,8 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             Status = "Published",
             HumanConfirmationRequired = false,
             ShareUrl = StudioPublishedRoutes.BuildActiveUrl(route!),
+            DeploymentId = publication.DeploymentId,
+            DeploymentResourceUri = publication.DeploymentResourceUri,
             Message = "Saved Studio version was published.",
         };
     }

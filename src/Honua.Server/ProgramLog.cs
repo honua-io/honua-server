@@ -10,6 +10,15 @@ internal static partial class ProgramLog
     public static partial void RedisStartupConnectionFailed(ILogger logger, Exception exception);
 
     /// <summary>
+    /// Admin API keys fall back to process memory on a multi-instance host that has neither Redis
+    /// nor a PostgreSQL data source (honua-server#6487).
+    /// </summary>
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Admin API keys are held in process memory on a multi-instance host without Redis or a PostgreSQL database; a key minted on one instance is unknown to the others.")]
+    public static partial void AdminApiKeysPerInstance(ILogger logger);
+
+    /// <summary>
     /// Startup line for an accepted Redis durability attestation (information; owner ruling
     /// 2026-10-10 makes the attestation informational rather than a capability gate).
     /// </summary>

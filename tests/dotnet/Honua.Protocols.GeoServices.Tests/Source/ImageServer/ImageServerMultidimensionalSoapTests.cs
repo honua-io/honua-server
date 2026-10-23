@@ -133,6 +133,65 @@ public sealed class ImageServerMultidimensionalSoapTests
         finally { await fixture.DisposeAsync(); }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task CapturedArcGisProRequest_ReturnsReferenceShapedPropertySets()
+    {
+        // Pro's exact bytes must still be the ones the licensed lane captured.
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(CapturedProRequest)))
+            .Should().Be(CapturedProRequestSha256);
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, accessPolicy: new AccessPolicy { AllowAnonymous = true });
+            SetImagePublicationState(fixture, allowAnonymous: true);
+            await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+            {
+                using var scope = fixture.Services.CreateScope();
+                var store = scope.ServiceProvider.GetRequiredService<IMultidimensionalCoverageStore>();
+                var registration = await store.RegisterAsync(Registration());
+                try
+                {
+                    await store.UpdateMetadataAsync(registration.Id, Metadata());
+                    var sets = AssertShape(await PostAsync(fixture, envelope: CapturedProRequest));
+
+                    Keys(Property(sets[0], "temperature")).Should().NotBeEmpty().And.BeSubsetOf(ReferenceVariableKeys);
+                    var attributes = Property(sets[1], "temperature");
+                    Keys(attributes).Should().Equal("StdTime", "StdZ");
+                    foreach (var dimension in Keys(attributes))
+                    {
+                        Keys(Property(attributes, dimension)).Should().BeSubsetOf(ReferenceDimensionKeys)
+                            .And.Contain(["Count", "HasRegularIntervals", "HasRanges", "Minimum", "Maximum"]);
+                    }
+                    Keys(Property(sets[2], "temperature")).Should().Equal(Keys(attributes));
+                }
+                finally { await store.UnregisterAsync(registration.Id); }
+            });
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
+    // Verbatim ArcGIS Pro 3.7.2 request from the licensed capture in
+    // docs/internal/evidence/imageserver-multidim-soap-3558-20261022 (runs/honua-trunk).
+    private const string CapturedProRequest =
+        """<?xml version="1.0" encoding="utf-8" ?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://www.esri.com/schemas/ArcGIS/10.8"><soap:Body><tns:GetMultidimensionalInfo></tns:GetMultidimensionalInfo></soap:Body></soap:Envelope>""";
+    private const string CapturedProRequestSha256 = "6905eea88938ed1e916ad9bc82de521929db6278ced75fd5131109587dc77b5a";
+
+    // Keys the Esri reference SeaTemperature ImageServer returned to Pro in the same capture.
+    private static readonly string[] ReferenceVariableKeys = ["Unit", "Description"];
+    private static readonly string[] ReferenceDimensionKeys =
+        ["Description", "Unit", "Count", "Minimum", "Maximum", "Interval", "IntervalUnit", "HasRegularIntervals", "HasRanges"];
+
+    private static string[] Keys(XElement set)
+        => Child(set, "PropertyArray").Elements().Select(property => Child(property, "Key").Value).ToArray();
+
     private static void SetImagePublicationState(WebAppFixture fixture, bool allowAnonymous, bool enabled = true)
     {
         var snapshot = fixture.GetCurrentV2GraphSnapshot();
@@ -202,9 +261,9 @@ public sealed class ImageServerMultidimensionalSoapTests
     };
 
     private static async Task<XElement> PostAsync(WebAppFixture fixture, HttpStatusCode expectedStatus = HttpStatusCode.OK,
-        string operation = "GetMultidimensionalInfo")
+        string operation = "GetMultidimensionalInfo", string? envelope = null)
     {
-        using var content = new StringContent($"""
+        using var content = new StringContent(envelope ?? $"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
               <soap:Body><{operation} xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
             </soap:Envelope>

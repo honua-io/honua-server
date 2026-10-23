@@ -121,9 +121,13 @@ class WorkerPublicationTests(unittest.TestCase):
         events = workflow.get("on", workflow.get(True))
         self.assertIs(False, events["workflow_dispatch"]["inputs"]["publish_nightly"]["default"])
         policy = json.loads((ROOT / ".github/native-image-impact.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(events["pull_request"]["paths"]), set(policy["legacy"]["worker_patterns"]))
-        for path in ("scripts/ci/worker_publication.py", "scripts/ci/test_worker_publication.py"):
+        self.assertEqual(events["pull_request"]["paths"], policy["legacy"]["worker_patterns"])
+        for path in ("scripts/ci/worker_publication.py", "scripts/ci/test_worker_publication.py",
+                     "scripts/qualification/gp_native_observer.py",
+                     "scripts/qualification/verify_native_entry_image.py",
+                     "tests/dotnet/Honua.Worker.Gdal.Tests/NativeEntryQualificationTests.cs"):
             self.assertIn(path, policy["worker_native_patterns"])
+            self.assertIn(path, events["pull_request"]["paths"])
         jobs = workflow["jobs"]
         publish = jobs["publish-nightly"]
         for term in ("github.event_name == 'workflow_dispatch'", "inputs.publish_nightly == true",
@@ -140,7 +144,9 @@ class WorkerPublicationTests(unittest.TestCase):
         self.assertEqual("native-tools", build["no-cache-filters"])
         self.assertNotIn("no-cache", build)
         export = names.index("Prepare exact tested worker publication bundle")
-        for name in ("Verify native tools and smoke the real worker entrypoint",
+        for name in ("Prove managed native entry cleanup and loader floor",
+                     "Prove actual image native entry hold and cancellation",
+                     "Verify native tools and smoke the real worker entrypoint",
                      "Prove the container handoff cases ran, not skipped", "Prove the PDAL cases ran, not skipped",
                      "Prove native public API submit poll and decoded output", "Enforce worker vulnerability policy"):
             self.assertLess(names.index(name), export)

@@ -78,6 +78,7 @@ public sealed class LocalProcessWorkspaceHttpIntegrationTests(RedisFixture redis
         var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
+            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);

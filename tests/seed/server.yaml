@@ -1,5 +1,7 @@
 version: 1
 embedded_migrations:
+  - Honua.Server.Migrations.002_CreateAttachmentsTable.sql
+  - Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql
   - Honua.Server.Migrations.127_CompleteSensorThingsSensing.sql
 sql:
   - "CREATE SCHEMA IF NOT EXISTS honua;"
@@ -400,6 +402,49 @@ sql:
       );
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_scim_group_members_group_user_lower ON honua.scim_group_members (group_id, LOWER(user_id));"
   - "CREATE INDEX IF NOT EXISTS ix_scim_group_members_user_lower ON honua.scim_group_members (LOWER(user_id));"
+  # Migration 133: Portal sharing is persisted on the same Postgres profile as
+  # metadata. The migration-skipping test host needs these exact tables too.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.portal_community_groups (
+          group_id VARCHAR(64) PRIMARY KEY,
+          tenant_key TEXT NOT NULL DEFAULT '',
+          title TEXT NOT NULL,
+          description TEXT,
+          owner_name TEXT NOT NULL,
+          access_level TEXT NOT NULL,
+          tags TEXT[] NOT NULL DEFAULT '{}',
+          members TEXT[] NOT NULL DEFAULT '{}',
+          created_at TIMESTAMPTZ NOT NULL,
+          modified_at TIMESTAMPTZ NOT NULL
+      );
+  - "CREATE INDEX IF NOT EXISTS ix_portal_community_groups_tenant ON honua.portal_community_groups (tenant_key, group_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.portal_item_shares (
+          tenant_key TEXT NOT NULL DEFAULT '',
+          item_id TEXT NOT NULL,
+          owner_name TEXT NOT NULL,
+          group_ids TEXT[] NOT NULL DEFAULT '{}',
+          PRIMARY KEY (tenant_key, item_id)
+      );
+  - "CREATE INDEX IF NOT EXISTS ix_portal_item_shares_groups ON honua.portal_item_shares USING GIN (group_ids);"
+  # Migration 136: admin API keys shared by multi-instance Redis-off hosts (#6487). The
+  # migration-skipping test host needs the same table.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.admin_api_keys (
+          id UUID PRIMARY KEY,
+          name TEXT NOT NULL,
+          key_prefix TEXT NOT NULL,
+          key_hash BYTEA NOT NULL,
+          permissions TEXT[] NOT NULL DEFAULT '{}',
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL,
+          expires_at TIMESTAMPTZ,
+          last_used_at TIMESTAMPTZ,
+          rotated_at TIMESTAMPTZ,
+          revoked_at TIMESTAMPTZ,
+          created_by TEXT
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS ux_admin_api_keys_key_hash ON honua.admin_api_keys (key_hash);"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,
@@ -498,6 +543,7 @@ sql:
           band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
           pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
           srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED,
+          second_band_is_alpha BOOLEAN NOT NULL DEFAULT FALSE,
           CONSTRAINT raster_data_layer_id_fk FOREIGN KEY (layer_id) REFERENCES honua.layers(layer_id) ON DELETE CASCADE
       );
   # Migration-owned storage policy (055_SetRasterDataExternalStorage.sql); the core
@@ -651,36 +697,7 @@ sql:
           BEFORE UPDATE ON honua.multidim_coverage_catalog
           FOR EACH ROW
           EXECUTE FUNCTION honua.update_multidim_coverage_catalog_updated_at();
-  - |
-      CREATE TABLE IF NOT EXISTS honua.attachments (
-          id BIGSERIAL PRIMARY KEY,
-          feature_id BIGINT NOT NULL,
-          layer_id INT NOT NULL,
-          filename TEXT NOT NULL,
-          content_type TEXT NOT NULL,
-          size BIGINT NOT NULL CHECK (size >= 0),
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          storage_path TEXT NOT NULL,
-          keywords TEXT,
-          attachment_origin TEXT CHECK (attachment_origin IN ('honua', 'geoservices')),
-          import_source TEXT,
-          import_parent_id BIGINT,
-          import_attachment_id BIGINT,
-          import_generation UUID,
-          CONSTRAINT ck_attachment_import_identity CHECK (
-              (import_source IS NULL AND import_parent_id IS NULL AND import_attachment_id IS NULL AND import_generation IS NULL)
-              OR (import_source IS NOT NULL AND import_parent_id IS NOT NULL AND import_attachment_id IS NOT NULL AND import_generation IS NOT NULL)),
-          CONSTRAINT uq_attachment_import_identity UNIQUE (layer_id, import_source, import_parent_id, import_attachment_id)
-      );
-  - "CREATE INDEX IF NOT EXISTS idx_attachments_feature_layer ON honua.attachments(layer_id, feature_id);"
-  - "CREATE INDEX IF NOT EXISTS idx_attachments_created_at ON honua.attachments(created_at);"
-  - "CREATE INDEX IF NOT EXISTS idx_attachments_layer_id ON honua.attachments(layer_id);"
-  - |
-      CREATE TABLE IF NOT EXISTS honua.import_attachment_cleanup (
-          storage_path TEXT PRIMARY KEY,
-          layer_id INT NOT NULL,
-          feature_id BIGINT NOT NULL
-      );
+  # Attachment002/125 DDL is applied from the immutable resources to the owned fixture schema.
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
           outbox_id        uuid        NOT NULL DEFAULT gen_random_uuid(),

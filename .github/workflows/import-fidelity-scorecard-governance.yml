@@ -35,13 +35,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Smoke test import-fidelity regression gate (identical scorecard passes)
-        run: |
-          bash scripts/ci/check-import-fidelity-scorecard-regression.sh \
-            tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json \
-            tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json
+      # The required PR Gate runs run-import-export-fidelity-proof.py against
+      # fresh PostGIS imports and Honua-written files decoded by pinned GDAL.
+      # This workflow only validates the optional external parity gate policy.
 
-      # honua-server#4420: the step above compared the baseline to itself, which is trivially
+      # honua-server#4420: the old step compared the baseline to itself, which is trivially
       # equal regardless of whether check-import-fidelity-scorecard-regression.sh's diff logic
       # actually works — a script that always exits 0 would pass it identically. This step feeds
       # it a copy with one previously-passing check ("esri_census_states"/"all_fields_diff")

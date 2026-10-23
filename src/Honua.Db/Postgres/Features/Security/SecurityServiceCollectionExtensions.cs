@@ -22,33 +22,6 @@ namespace Honua.Db.Postgres.Features.Security;
 /// </summary>
 internal static class SecurityServiceCollectionExtensions
 {
-    /// <summary>Registers the same configuration-owned secret resolvers without the connection registry.</summary>
-    internal static IServiceCollection AddConnectionSecretResolvers(
-        this IServiceCollection services, IConfiguration configuration)
-    {
-        // Register secret resolvers
-        services.AddAwsSecretsManagerSupport(configuration);
-        services.AddAzureKeyVaultSupport(configuration);
-
-        services.TryAddSingleton<EnvironmentSecretResolver>();
-        services.TryAddSingleton<NullSecretResolver>();
-
-        services.AddSingleton<IConnectionSecretResolver>(serviceProvider =>
-        {
-            var logger = serviceProvider.GetRequiredService<ILogger<CompositeSecretResolver>>();
-            var resolvers = new IConnectionSecretResolver[]
-            {
-                serviceProvider.GetRequiredService<EnvironmentSecretResolver>(),
-                serviceProvider.GetRequiredService<AwsSecretsManagerResolver>(),
-                serviceProvider.GetRequiredService<AzureKeyVaultResolver>(),
-                serviceProvider.GetRequiredService<NullSecretResolver>() // Fallback
-            };
-            return new CompositeSecretResolver(resolvers, logger);
-        });
-
-        return services;
-    }
-
     /// <summary>
     /// Adds secure connection management services to the service collection.
     /// </summary>
@@ -76,6 +49,7 @@ internal static class SecurityServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<ConnectionEncryptionService>>()));
 
         services.TryAddSingleton<IDatabaseConnectionStringBuilder, PostgresConnectionStringBuilder>();
+        services.TryAddSingleton<ICatalogConnectionIdentityMatcher, PostgresCatalogConnectionIdentityMatcher>();
         services.TryAddSingleton<IConnectionHealthTester, PostgresConnectionHealthTester>();
 
         // Outbound data-source connection host policy (#354): an operator-configured
@@ -85,7 +59,8 @@ internal static class SecurityServiceCollectionExtensions
         services.TryAddSingleton<IConnectionHostAllowlist>(_ =>
             new ConnectionHostAllowlist(BindConnectionHostAllowlistOptions(configuration)));
 
-        services.AddConnectionSecretResolvers(configuration);
+        // Register secret resolvers
+        services.AddConnectionSecretResolution(configuration);
 
         // Request-supplied secret references (imports, workflow source steps, registered
         // connections) resolve through the operator policy, never through the resolver above.
@@ -258,6 +233,42 @@ internal static class SecurityServiceCollectionExtensions
             Func<Task> operation,
             CancellationToken cancellationToken = default)
             => _inner.ExecuteWithDeadlockRetryAsync(operation, cancellationToken);
+    }
+
+    /// <summary>
+    /// Registers the operator-side <see cref="IConnectionSecretResolver"/> chain (<c>env:</c>,
+    /// <c>aws:secretsmanager:</c>, <c>azure:keyvault:</c>, then pass-through) that resolves
+    /// <c>ConnectionStrings:DefaultConnection</c>. It needs no encryption key, registry or request
+    /// policy, so the migrate-only host (honua-server#6470) resolves the connection string with the
+    /// same chain as serving startup without composing the rest of the secure-connection services.
+    /// </summary>
+    /// <param name="services">Service collection to configure.</param>
+    /// <param name="configuration">Application configuration.</param>
+    /// <returns>Updated service collection for chaining.</returns>
+    public static IServiceCollection AddConnectionSecretResolution(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddAwsSecretsManagerSupport(configuration);
+        services.AddAzureKeyVaultSupport(configuration);
+
+        services.TryAddSingleton<EnvironmentSecretResolver>();
+        services.TryAddSingleton<NullSecretResolver>();
+
+        services.AddSingleton<IConnectionSecretResolver>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<CompositeSecretResolver>>();
+            var resolvers = new IConnectionSecretResolver[]
+            {
+                serviceProvider.GetRequiredService<EnvironmentSecretResolver>(),
+                serviceProvider.GetRequiredService<AwsSecretsManagerResolver>(),
+                serviceProvider.GetRequiredService<AzureKeyVaultResolver>(),
+                serviceProvider.GetRequiredService<NullSecretResolver>() // Fallback
+            };
+            return new CompositeSecretResolver(resolvers, logger);
+        });
+
+        return services;
     }
 
     /// <summary>

@@ -391,6 +391,15 @@ internal static partial class ImageServerSoapEndpoints
         }
 
         var raster = SelectReferenceRaster(service.Rasters);
+        var viewExtent = service.Extent!.Value;
+        var viewGrid = await ReadCoverageGridAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        if (viewGrid is not null)
+        {
+            raster = ImageServerCoverageRaster.Apply(raster, viewGrid);
+            viewExtent = viewGrid.Extent;
+        }
+
         var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(raster);
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return CreateSoapResponse(
@@ -401,7 +410,7 @@ internal static partial class ImageServerSoapEndpoints
                 new XAttribute(xsi + "type", "tns:ImageView"),
                 new XElement("VID", string.Empty),
                 new XElement("Description", string.Empty),
-                BuildEnvelope(service.Extent!.Value),
+                BuildEnvelope(viewExtent),
                 new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
                 new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
                 new XElement("BandCount", raster.BandCount),
@@ -425,12 +434,24 @@ internal static partial class ImageServerSoapEndpoints
         var rasters = service.Rasters;
         var extent = service.Extent!.Value;
         var referenceRaster = SelectReferenceRaster(rasters);
-        var statistics = await ReadServiceStatisticsAsync(
-            request.HttpContext,
-            service.Resolution.LayerId,
-            rasters,
-            service.Resolution.MergeStrategy,
-            cancellationToken).ConfigureAwait(false);
+        var coverageGrid = await ReadCoverageGridAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        RasterStatistics[] statistics;
+        if (coverageGrid is not null)
+        {
+            referenceRaster = ImageServerCoverageRaster.Apply(referenceRaster, coverageGrid);
+            extent = coverageGrid.Extent;
+            statistics = ImageServerCoverageRaster.Statistics(coverageGrid);
+        }
+        else
+        {
+            statistics = await ReadServiceStatisticsAsync(
+                request.HttpContext,
+                service.Resolution.LayerId,
+                rasters,
+                service.Resolution.MergeStrategy,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(referenceRaster);
         XNamespace xsi = XmlSchemaInstanceNamespace;

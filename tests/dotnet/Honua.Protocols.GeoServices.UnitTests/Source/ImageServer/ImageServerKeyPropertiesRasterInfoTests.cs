@@ -1,11 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Xml.Linq;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Multidimensional.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,6 +23,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 public sealed class ImageServerKeyPropertiesRasterInfoTests
 {
     private const string Xsi = "http://www.w3.org/2001/XMLSchema-instance";
+
+    private static double Parse(XElement element)
+        => double.Parse(element.Value, CultureInfo.InvariantCulture);
     private static readonly RasterInfo Raster = new()
     {
         Id = 7,
@@ -85,6 +90,59 @@ public sealed class ImageServerKeyPropertiesRasterInfoTests
         {
             noDataElement.Attribute(XName.Get("nil", Xsi))!.Value.Should().Be("true");
         }
+    }
+
+    [UnitTest]
+    public void CoverageGrid_SoapRasterInfoMatchesTheMultidimensionalCoverage()
+    {
+        var metadata = new MultidimensionalCoverageMetadata
+        {
+            Format = MultidimensionalCoverageFormat.NetCdf4,
+            Srid = 4326,
+            Extent = new RasterExtent { XMin = -122.525, YMin = 37.675, XMax = -122.325, YMax = 37.875, Srid = 4326 },
+            Resolution = (0.05, 0.05),
+            YAxisAscending = true,
+            HasYAxisOrientation = true,
+            Statistics = new CoverageSampleStatistics(11, 35, 23, null),
+            Variables =
+            [
+                new MultidimensionalCoverageVariable(
+                    "sea_surface_temperature",
+                    "Float32",
+                    [
+                        new MultidimensionalCoverageDimension("time", 2) { Axis = MultidimensionalAxisKind.Temporal },
+                        new MultidimensionalCoverageDimension("latitude", 4) { Axis = MultidimensionalAxisKind.HorizontalY },
+                        new MultidimensionalCoverageDimension("longitude", 4) { Axis = MultidimensionalAxisKind.HorizontalX },
+                    ],
+                    null,
+                    "degC",
+                    "Sea Surface Temperature",
+                    "sea_surface_temperature",
+                    -9999)
+            ]
+        };
+
+        var grid = ImageServerCoverageRaster.TryDescribe(metadata);
+        grid.Should().NotBeNull();
+        var applied = ImageServerCoverageRaster.Apply(Raster, grid!);
+        var value = ImageServerSoapEndpoints.BuildKeyPropertiesRasterInfo(
+            applied, grid.Extent, ImageServerCoverageRaster.Statistics(grid), []);
+
+        value.Element("BandCount")!.Value.Should().Be("1");
+        value.Element("PixelType")!.Value.Should().Be("F32");
+        Parse(value.Element("PixelSizeX")!).Should().BeApproximately(0.05, 1e-9);
+        Parse(value.Element("PixelSizeY")!).Should().BeApproximately(0.05, 1e-9);
+        value.Element("NoData")!.Element("AnyType")!.Value.Should().Be("-9999");
+        var envelope = value.Element("NativeExtent")!;
+        Parse(envelope.Element("XMin")!).Should().BeApproximately(-122.525, 1e-9);
+        Parse(envelope.Element("YMin")!).Should().BeApproximately(37.675, 1e-9);
+        Parse(envelope.Element("XMax")!).Should().BeApproximately(-122.325, 1e-9);
+        Parse(envelope.Element("YMax")!).Should().BeApproximately(37.875, 1e-9);
+        var statistics = value.Element("RasterStatistics_0")!;
+        Parse(statistics.Element("Min")!).Should().Be(11);
+        Parse(statistics.Element("Max")!).Should().Be(35);
+        applied.Width.Should().Be(4);
+        applied.Height.Should().Be(4);
     }
 
     [UnitTest]

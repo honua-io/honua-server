@@ -1,0 +1,6 @@
+ Container honua-3558-multidim-fixture-run-c80ae4ad3d3e Creating 
+ Container honua-3558-multidim-fixture-run-c80ae4ad3d3e Created 
+Zarr oracle: all 32 values, both fill masks, dimensions, dtype, units and coordinates passed
+ImageServer slice 0: all RGBA values, north-up orientation and nodata alpha passed
+ImageServer slice 1: all RGBA values, north-up orientation and nodata alpha passed
+real multidimensional fixture verified: NetCDF -> native scan -> Zarr -> ImageServer slice

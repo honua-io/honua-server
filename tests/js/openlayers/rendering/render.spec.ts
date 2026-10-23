@@ -1,5 +1,7 @@
 /** Real Honua MVT geometry and independent canvas assertions for each style slice. */
 import { test, expect } from '@playwright/test';
+import MVT from 'ol/format/MVT.js';
+import { assertFixtureGeometry, FIXTURE_TILE } from './fixture-geometry-oracle.js';
 import { EvidenceCollector } from '../shared/evidence.js';
 import { renderingVerdict } from './rendering-oracle.js';
 
@@ -21,6 +23,16 @@ for (const fixture of CASES) {
       const metadata = await fetch(metadataUrl, { headers: { Accept: 'application/json' } });
       expect(metadata.ok).toBe(true);
       expect(await metadata.json()).toBeTruthy();
+      // Decode without a map extent/projection: canonical OpenLayers returns raw
+      // integer tile coordinates (X right, Y down), independently graded below.
+      const tile = await fetch(`${metadataUrl}/${FIXTURE_TILE.z}/${FIXTURE_TILE.y}/${FIXTURE_TILE.x}`);
+      expect(tile.status).toBe(200);
+      const decoded = new MVT().readFeatures(await tile.arrayBuffer());
+      assertFixtureGeometry(fixture.collection, decoded.map(feature => ({
+        name: feature.get('name'), layer: feature.get('layer'), type: feature.getType(),
+        flatCoordinates: feature.getFlatCoordinates(), ends: feature.getEnds(),
+      })));
+
       await page.goto(`${PAGE_URL}/test-page.html?baseUrl=${encodeURIComponent(PAGE_URL)}&collectionId=${fixture.collection}`);
       await page.waitForFunction(() => window.__RENDER_COMPLETE === true, null, { timeout: 30_000 });
       expect(await page.evaluate(() => window.__ERROR)).toBeNull();
@@ -45,7 +57,7 @@ for (const fixture of CASES) {
       for (const id of ['CERT-RNDR-01', 'CERT-RNDR-URL-01', fixture.cert]) {
         evidence.record(id, 'pass', {
           measuredCount: measured,
-          notes: `${fixture.geometry} decoded from Honua collection ${fixture.collection}; ${measured} independently colored canvas pixels`,
+          notes: `${fixture.geometry} decoded from Honua collection ${fixture.collection}; ${measured} independently colored canvas pixels; exact authored names/vertices decoded by OpenLayers`,
           evidenceRef: 'openlayers/rendering/render.spec.ts',
         });
       }

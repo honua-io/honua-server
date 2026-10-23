@@ -11,6 +11,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Ai.Protocols.Mcp;
@@ -85,6 +86,41 @@ public sealed class McpIngestDatasetToolTests
 
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("geojson", 3857)]
+    [InlineData("geojson", 32610)]
+    [InlineData("csv", 3857)]
+    [InlineData("csv", 32610)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ProjectedInput_ReturnsStoredTargetSridForPublication(string format, int sourceSrid)
+    {
+        var importService = Substitute.For<IFileImportService>();
+        ImportRequest? captured = null;
+        importService.ImportFileAsync(Arg.Do<ImportRequest>(request => captured = request), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateSuccess(
+                "projected", format == "csv" ? SupportedFileFormat.Csv : SupportedFileFormat.GeoJson,
+                featureCount: 1, detectedSrid: sourceSrid,
+                physicalTableName: "imported_projected", schema: "honua_data"));
+        var data = format == "csv"
+            ? "id,wkt\n1,POINT (1000 0)\n"
+            : """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1000,0]},"properties":{"id":1}}]}""";
+        var arguments = $$"""{"format":"{{format}}","data":{{JsonSerializer.Serialize(data)}},"datasetName":"projected","sourceSrid":{{sourceSrid}}}""";
+
+        var structured = AssertToolSucceeded(await DispatchAsync(BuildServices(importService), arguments));
+
+        structured.GetProperty("success").GetBoolean().Should().BeTrue();
+        structured.GetProperty("srid").GetInt32().Should().Be(4326,
+            "the publish hint describes the stored table, while DetectedSrid describes its input");
+        captured.Should().NotBeNull();
+        captured!.SourceSrid.Should().Be(sourceSrid);
+        captured.TargetSrid.Should().Be(4326);
+        structured.GetProperty("table").GetString().Should().Be("imported_projected");
+    }
+
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
@@ -103,12 +139,21 @@ public sealed class McpIngestDatasetToolTests
                 schema: "honua_data"));
 
         var resolver = Substitute.For<ISecureConnectionResolver>();
-        resolver.GetAvailableConnectionsAsync(Arg.Any<CancellationToken>())
-            .Returns((IReadOnlyList<string>)["other-db", "catalog"]);
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetActiveConnectionsAsync(Arg.Any<CancellationToken>())
+            .Returns((IEnumerable<DataConnection>)[
+                new() { Name = "other-db", Provider = "postgis", IsActive = true },
+                new() { Name = "catalog", Provider = "postgis", IsActive = true }
+            ]);
         resolver.ResolveConnectionStringAsync("other-db", Arg.Any<CancellationToken>())
             .Returns("Host=elsewhere;Database=other");
         resolver.ResolveConnectionStringAsync("catalog", Arg.Any<CancellationToken>())
             .Returns("Database=honua;Host=localhost"); // segment order differs on purpose
+        var matcher = Substitute.For<ICatalogConnectionIdentityMatcher>();
+        matcher.IsMatch("postgis", "Host=localhost;Database=honua", "Host=elsewhere;Database=other")
+            .Returns(false);
+        matcher.IsMatch("postgis", "Host=localhost;Database=honua", "Database=honua;Host=localhost")
+            .Returns(true);
 
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -116,7 +161,7 @@ public sealed class McpIngestDatasetToolTests
         }).Build();
 
         var response = await DispatchAsync(
-            BuildServices(importService, resolver: resolver, configuration: configuration),
+            BuildServices(importService, resolver: resolver, registry: registry, matcher: matcher, configuration: configuration),
             $$"""
             {"format":"csv","data":"name,lon,lat\nA,-97.7,30.2\nB,-97.8,30.3\n","datasetName":"stops","longitudeColumn":"lon","latitudeColumn":"lat"}
             """);
@@ -130,6 +175,116 @@ public sealed class McpIngestDatasetToolTests
         captured.CsvOptions.LatitudeColumn.Should().Be("lat");
         captured.CsvOptions.AddressColumn.Should().BeNull();
         captured.CsvOptions.AddressGeocoder.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_IngestWithAmbiguousCatalogRegistrations_LeavesConnectionHintUnset()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        importService.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateSuccess(
+                "stops", SupportedFileFormat.Csv, featureCount: 1, detectedSrid: 4326,
+                physicalTableName: "imported_stops", schema: "honua_data"));
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetActiveConnectionsAsync(Arg.Any<CancellationToken>())
+            .Returns((IEnumerable<DataConnection>)[
+                new() { Name = "catalog-a", Provider = "postgis", IsActive = true },
+                new() { Name = "catalog-b", Provider = "postgis", IsActive = true }
+            ]);
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Host=localhost;Database=honua;Username=owner");
+        var matcher = Substitute.For<ICatalogConnectionIdentityMatcher>();
+        matcher.IsMatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua;Username=owner"
+        }).Build();
+
+        var response = await DispatchAsync(
+            BuildServices(importService, resolver: resolver, registry: registry, matcher: matcher, configuration: configuration),
+            """{"format":"csv","data":"name,lon,lat\nA,-97.7,30.2\n","datasetName":"stops"}""");
+
+        var structured = AssertToolSucceeded(response);
+        structured.GetProperty("success").GetBoolean().Should().BeTrue();
+        structured.TryGetProperty("connectionId", out _).Should().BeFalse();
+        structured.GetProperty("warnings").EnumerateArray()
+            .Should().Contain(w => w.GetString()!.Contains("More than one registered", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_Ingest_IgnoresInactiveOrUnresolvableRegistrations()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        importService.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateSuccess(
+                "stops", SupportedFileFormat.Csv, featureCount: 1, detectedSrid: 4326,
+                physicalTableName: "imported_stops", schema: "honua_data"));
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetActiveConnectionsAsync(Arg.Any<CancellationToken>())
+            .Returns((IEnumerable<DataConnection>)[
+                new() { Name = "inactive", Provider = "postgis", IsActive = false },
+                new() { Name = "broken", Provider = "postgis", IsActive = true },
+                new() { Name = "catalog", Provider = "postgis", IsActive = true }
+            ]);
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync("broken", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string>(new InvalidOperationException("secret unavailable")));
+        resolver.ResolveConnectionStringAsync("catalog", Arg.Any<CancellationToken>())
+            .Returns("Host=localhost;Database=honua;Username=owner");
+        var matcher = Substitute.For<ICatalogConnectionIdentityMatcher>();
+        matcher.IsMatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua;Username=owner"
+        }).Build();
+
+        var response = await DispatchAsync(
+            BuildServices(importService, resolver: resolver, registry: registry, matcher: matcher, configuration: configuration),
+            """{"format":"csv","data":"name,lon,lat\nA,-97.7,30.2\n","datasetName":"stops"}""");
+
+        var structured = AssertToolSucceeded(response);
+        structured.GetProperty("connectionId").GetString().Should().Be("catalog");
+        await resolver.DidNotReceive().ResolveConnectionStringAsync("inactive", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_Ingest_CatalogScanCancellationPropagates()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        importService.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateSuccess(
+                "stops", SupportedFileFormat.Csv, featureCount: 1, detectedSrid: 4326,
+                physicalTableName: "imported_stops", schema: "honua_data"));
+        using var cancellation = new CancellationTokenSource();
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetActiveConnectionsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            cancellation.Cancel();
+            return Task.FromCanceled<IEnumerable<DataConnection>>(cancellation.Token);
+        });
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua;Username=owner"
+        }).Build();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => DispatchAsync(
+            BuildServices(importService,
+                resolver: Substitute.For<ISecureConnectionResolver>(),
+                registry: registry,
+                matcher: Substitute.For<ICatalogConnectionIdentityMatcher>(),
+                configuration: configuration),
+            """{"format":"csv","data":"name,lon,lat\nA,-97.7,30.2\n","datasetName":"stops"}""",
+            cancellation.Token));
     }
 
     [UnitTest]
@@ -351,6 +506,8 @@ public sealed class McpIngestDatasetToolTests
         IGeocodeCoordinatorService? coordinator = null,
         ILicenseEntitlementService? license = null,
         ISecureConnectionResolver? resolver = null,
+        ISecureConnectionRegistry? registry = null,
+        ICatalogConnectionIdentityMatcher? matcher = null,
         IConfiguration? configuration = null)
     {
         var services = new ServiceCollection();
@@ -373,6 +530,16 @@ public sealed class McpIngestDatasetToolTests
             services.AddSingleton(resolver);
         }
 
+        if (registry is not null)
+        {
+            services.AddSingleton(registry);
+        }
+
+        if (matcher is not null)
+        {
+            services.AddSingleton(matcher);
+        }
+
         if (configuration is not null)
         {
             services.AddSingleton(configuration);
@@ -381,7 +548,10 @@ public sealed class McpIngestDatasetToolTests
         return services.BuildServiceProvider();
     }
 
-    private async Task<McpJsonRpcResponse?> DispatchAsync(ServiceProvider services, string argumentsJson)
+    private async Task<McpJsonRpcResponse?> DispatchAsync(
+        ServiceProvider services,
+        string argumentsJson,
+        CancellationToken cancellationToken = default)
     {
         var surface = new McpDataAccessSurface(
             [new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance)],
@@ -402,7 +572,7 @@ public sealed class McpIngestDatasetToolTests
                     {"name":"{{IngestDatasetTool.ToolName}}","arguments":{{argumentsJson}}}
                     """)
             },
-            CancellationToken.None);
+            cancellationToken);
     }
 
     private static ILicenseEntitlementService ActiveLicense(string entitlementKey)

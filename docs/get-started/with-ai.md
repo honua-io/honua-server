@@ -68,9 +68,13 @@ is broken or that the evaluator needs registry credentials.
 
 ### Start, connect, and prove the installation
 
-Follow the [package quickstart](quickstart.md), using its published preview and
-[artifact receipt](../reference/local-preview-artifact.md) for local evaluation:
-create an isolated Compose
+Follow the [package quickstart](quickstart.md). Its `HONUA_IMAGE` is the
+2026.1 release channel `ghcr.io/honua-io/honua-server:2026.1-rc`. That tag is
+not published until release promotion. The
+[artifact receipt](../reference/local-preview-artifact.md) qualifies
+`nightly-0e03bdd` only; do not treat its digest or checks as evidence for the
+RC tag. Until the channel tag exists, a local evaluation uses that preview
+image and says so. Create an isolated Compose
 project, generate installation secrets directly into protected local files,
 start Honua/PostGIS/Redis with persistent volumes, and verify readiness and an
 authenticated operation. Then connect the agent as described in step 3. For a

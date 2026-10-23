@@ -15,6 +15,7 @@ using Honua.Core.Features.Infrastructure.Validation;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -1050,6 +1051,47 @@ public sealed class DeployWorkflowServiceTests
 
         submitted!.Status.Should().NotBe(WorkflowOperationStatus.Planned);
         backend.StartCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task PlanAsync_WithErrorCountNumerator_IsReadyOnlyForFixedWindowCloudProviders()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-cw", Provider = "cloudwatch", BaseUrl = "https://monitoring.us-east-1.amazonaws.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-az", Provider = "azuremonitor", Region = "workspace-id" }
+                ]
+            }));
+
+        static Dictionary<string, string> ErrorCountGate(string connectionId) => new()
+        {
+            ["telemetry.connection"] = connectionId,
+            ["telemetry.error_count.query"] = "target_5xx_count",
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.sample_count.query"] = "request_count",
+            ["telemetry.sample_count.minimum"] = "10"
+        };
+
+        var cloudWatch = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: ErrorCountGate("prod-cw"));
+        var azure = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: ErrorCountGate("prod-az"));
+        var prometheus = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: ErrorCountGate("prod-prom"));
+
+        cloudWatch!.Plan.IsReadyToSubmit.Should().BeTrue();
+        azure!.Plan.IsReadyToSubmit.Should().BeTrue();
+        prometheus!.Plan.IsReadyToSubmit.Should().BeFalse("the prometheus provider never reads an error-count numerator");
+        prometheus.Plan.BlockingReasons.Should().ContainSingle()
+            .Which.Should().Contain("telemetry.error_count.query is not supported by connection 'prod-prom'");
+        backend.StartCount.Should().Be(0);
     }
 
     private static Dictionary<string, string> MetricGate(string connectionId, string? maxStalenessSeconds)

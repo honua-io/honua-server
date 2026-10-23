@@ -184,7 +184,10 @@ public sealed record MigrationReconciliationCountProbe
 /// </summary>
 public sealed record MigrationReconciliationGeometryProbe
 {
-    /// <summary>Number of features sampled (clamped by available rows).</summary>
+    /// <summary>
+    /// Features compared. A source census reads the filtered population; without one, this is the
+    /// configured sample.
+    /// </summary>
     public int Sampled { get; init; }
 
     /// <summary>Number of sampled features whose geometry was present and well-formed.</summary>
@@ -192,22 +195,29 @@ public sealed record MigrationReconciliationGeometryProbe
 
     /// <summary>
     /// Valid / Sampled when no source census is available. With a census, inherited absent
-    /// source geometries are excluded from both terms. Returns <c>1</c> when the denominator is zero.
+    /// and topologically invalid source geometries are excluded from both terms. Returns <c>1</c>
+    /// when the denominator is zero.
     /// </summary>
     public double Ratio { get; init; }
 
     /// <summary>
-    /// Sampled features whose source geometry was absent and whose target geometry is also
-    /// absent. These are inherited source defects, not transfer loss (#4826). Zero when the
-    /// importer did not supply a geometry census.
+    /// Features whose source geometry was null or topologically invalid and whose target geometry
+    /// is still missing or not well-formed. Inherited source defects, not transfer loss (#4826).
+    /// Zero when the importer did not supply a geometry census.
     /// </summary>
     public int InheritedSourceDefects { get; init; }
 
     /// <summary>
-    /// Source geometries that were present and did not survive on the target, including rows
-    /// whose conversion stored null. Zero when the importer did not supply a geometry census.
+    /// Source geometries that were present and valid and did not survive on the target, including
+    /// rows whose conversion stored null. Zero when the importer did not supply a geometry census.
     /// </summary>
     public int MigrationLosses { get; init; }
+
+    /// <summary>
+    /// Features whose source geometry was null or invalid and whose target geometry is well-formed.
+    /// The target value is not a successful repair of the source defect (#4826).
+    /// </summary>
+    public int SourceDefectRewrites { get; init; }
 
     /// <summary>Pass / warn / fail / skipped.</summary>
     public required string Classification { get; init; }

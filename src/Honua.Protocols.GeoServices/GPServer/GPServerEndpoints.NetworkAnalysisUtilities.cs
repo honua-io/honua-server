@@ -26,6 +26,7 @@ namespace Honua.Protocols.GeoServices.GPServer;
 internal static partial class GPServerEndpoints
 {
     private const string NetworkAnalysisUtilitiesContentType = "application/json";
+    private const string RoutingUtilityExecutionType = "esriExecutionTypeSynchronous";
 
     private static bool IsRoutingUtilityService(string serviceId)
         => serviceId.Equals("Routing", StringComparison.OrdinalIgnoreCase);
@@ -74,10 +75,8 @@ internal static partial class GPServerEndpoints
             $"Routing task '{taskName}' is not supported by the configured routing provider.");
     }
 
-    private static async Task<IResult> HandleRoutingUtilityServiceInfoAsync(HttpContext context, CancellationToken ct)
+    private static string[] BuildRoutingUtilityTaskNames(RoutingProviderCapabilities capabilities)
     {
-        var routing = context.RequestServices.GetRequiredService<IRoutingProvider>();
-        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         var tasks = new List<string>();
         if (capabilities.SupportsRoute)
         {
@@ -91,18 +90,29 @@ internal static partial class GPServerEndpoints
 
         if (tasks.Count == 0)
         {
-            return StandardErrorHelpers.CreateNotFound(context, "The configured routing provider does not support synchronous routing tools.");
+            return [];
         }
 
         tasks.Add(NAServerMetadata.GetTravelModesTask);
         tasks.Add(NAServerMetadata.GetToolInfoTask);
+        return [.. tasks];
+    }
+
+    private static async Task<IResult> HandleRoutingUtilityServiceInfoAsync(HttpContext context, CancellationToken ct)
+    {
+        var routing = context.RequestServices.GetRequiredService<IRoutingProvider>();
+        var tasks = BuildRoutingUtilityTaskNames(await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false));
+        if (tasks.Length == 0)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "The configured routing provider does not support synchronous routing tools.");
+        }
 
         // https://developers.arcgis.com/rest/services-reference/enterprise/gp-service/
-        // These are REST synchronous tools, not the unrelated catalog's SOAP/job tasks.
+        // REST and SOAP share these synchronous provider tools; catalog jobs remain separate.
         return Results.Json(new GPServiceInfoResponse
         {
             ServiceDescription = "Routing tools for the configured routing provider",
-            ExecutionType = "esriExecutionTypeSynchronous",
+            ExecutionType = RoutingUtilityExecutionType,
             Capabilities = string.Empty,
             ResultMapServerName = string.Empty,
             Tasks = [.. tasks]
@@ -128,7 +138,8 @@ internal static partial class GPServerEndpoints
     private static async Task<IResult> HandleNetworkAnalysisUtilityExecuteAsync(
         HttpContext context,
         string taskName,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<IReadOnlyDictionary<string, string>>? readSoapParameters = null)
     {
         var routingError = await ValidateRoutingUtilityTaskAsync(context, taskName, ct).ConfigureAwait(false);
         if (routingError is not null)
@@ -138,15 +149,17 @@ internal static partial class GPServerEndpoints
 
         if (taskName.Equals(NAServerMetadata.FindRoutesTask, StringComparison.OrdinalIgnoreCase))
         {
-            return await FindRoutesWebTool.ExecuteAsync(context, ct).ConfigureAwait(false);
+            return await FindRoutesWebTool.ExecuteAsync(context, ct, readSoapParameters).ConfigureAwait(false);
         }
 
         if (taskName.Equals(NAServerMetadata.GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase))
         {
-            return await GenerateServiceAreasWebTool.ExecuteAsync(context, ct).ConfigureAwait(false);
+            return await GenerateServiceAreasWebTool.ExecuteAsync(context, ct, readSoapParameters).ConfigureAwait(false);
         }
 
-        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var parameters = readSoapParameters is null
+            ? await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct).ConfigureAwait(false)
+            : readSoapParameters();
         var formatError = ValidateJsonFormat(context, parameters);
         if (formatError is not null)
         {

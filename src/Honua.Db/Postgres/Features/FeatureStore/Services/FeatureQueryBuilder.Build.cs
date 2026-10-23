@@ -6,6 +6,7 @@ using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -658,10 +659,18 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 if (layerSrid != targetTileSrid)
                 {
                     // Route through the shared clamp so a polar vertex in a geographic layer
-                    // cannot abort the Web Mercator tile statement (#6109).
+                    // cannot abort the Web Mercator tile statement (#6109). The catalog
+                    // selection is the grid whose area contains this tile (#5194).
+                    var selection = TileDatumSelection(query, layerSrid, targetTileSrid, tileBounds);
                     geometryForTile = DatumTransformSql.BuildTransformExpression(
-                        geometryOperand, targetTileSrid, selection: null, fromSrid: layerSrid);
-                    tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
+                        geometryOperand, targetTileSrid, selection, layerSrid);
+                    tileEnvelopeForFilter = selection is null
+                        ? $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})"
+                        : DatumTransformSql.BuildTransformExpression(
+                            tileEnvelopeWithBuffer,
+                            layerSrid,
+                            DatumOutputSelection.Inverse(selection),
+                            targetTileSrid);
                 }
             }
             else
@@ -785,16 +794,24 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.
             // A geographic layer aimed at a Web Mercator gridset is clamped first (#6109).
+            // The catalog selection matches feature query output (#5194).
+            var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid, tileBounds);
             var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
                 ? DatumTransformSql.BuildTransformExpression(
-                    geometryOperand, targetTileSrid, selection: null, fromSrid: storageSrid)
+                    geometryOperand, targetTileSrid, selection, storageSrid)
                 : DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
             string filterGeometryOperand;
             string tileEnvelopeForFilter;
             if (query.HasValue && query.Value.SpatialReferenceSrid is { } layerSrid && layerSrid != targetTileSrid)
             {
                 filterGeometryOperand = geometryOperand;
-                tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
+                tileEnvelopeForFilter = selection is null
+                    ? $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})"
+                    : DatumTransformSql.BuildTransformExpression(
+                        tileEnvelopeWithBuffer,
+                        layerSrid,
+                        DatumOutputSelection.Inverse(selection),
+                        targetTileSrid);
             }
             else if (query.HasValue && query.Value.SpatialReferenceSrid is { } sameSrid && sameSrid == targetTileSrid)
             {
@@ -863,4 +880,30 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
     private static string SqlDouble(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Catalog pipeline for a tile reprojection. An explicit query selection wins.
+    /// The tile envelope picks the catalog area (Alaska, not CONUS). No single area,
+    /// and no catalog entry, stays null so the SQL keeps two-argument <c>ST_Transform</c>.
+    /// </summary>
+    private static DatumTransformationSelection? TileDatumSelection(
+        FeatureQuery? query,
+        int? layerSrid,
+        int targetSrid,
+        TileBounds tileBounds)
+    {
+        if (query?.OutputDatumTransformation is { } chosen)
+        {
+            return chosen;
+        }
+
+        if (layerSrid is not int from || from == targetSrid)
+        {
+            return null;
+        }
+
+        var area = DatumOutputSelection.AreaForTile(
+            tileBounds.XMin, tileBounds.YMin, tileBounds.XMax, tileBounds.YMax, targetSrid);
+        return DatumOutputSelection.Resolve(DatumCatalog.Shared, from, targetSrid, area);
+    }
 }

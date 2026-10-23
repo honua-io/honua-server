@@ -157,31 +157,43 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
 
         // Migrations skipped by configuration: degraded start deferred the journal/schema guard,
         // it did not waive it.
-        if (_context.SchemaGuardPending
-            && _services.GetService(typeof(IDatabaseSchemaGuard)) is IDatabaseSchemaGuard schemaGuard)
+        if (_context.SchemaGuardPending || (_context.MigrationsPending && !_options.RetryMigrationsInBackground))
         {
+            var schemaGuard = _services.GetService(typeof(IDatabaseSchemaGuard)) as IDatabaseSchemaGuard
+                ?? throw new InvalidOperationException("Database recovery requires the deferred schema guard.");
+            if (_context.SchemaGuardPending)
+            {
+                var adoptedBaseline = schemaGuard.TryAdoptMatchingRasterBaselineAsync(connectionString, cancellationToken);
+                if (adoptedBaseline is not null)
+                {
+                    var adoptedScript = await adoptedBaseline.ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(adoptedScript))
+                    {
+                        MonitoringLog.RasterProviderBaselineAdopted(_logger, adoptedScript);
+                    }
+                }
+            }
+
             await schemaGuard.VerifyAsync(connectionString, cancellationToken);
             _migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified after recovery.");
             return;
         }
 
         // Rerun migrations if they were pending at degraded start.
-        if (_context.MigrationsPending
-            && _options.RetryMigrationsInBackground
-            && _services.GetService(typeof(IDatabaseMigrationRunner)) is IDatabaseMigrationRunner runner)
+        if (_context.MigrationsPending)
         {
-            var assembly = _context.MigrationsAssembly ?? Assembly.GetEntryAssembly();
-            if (assembly is not null)
+            var runner = _services.GetService(typeof(IDatabaseMigrationRunner)) as IDatabaseMigrationRunner
+                ?? throw new InvalidOperationException("Database recovery requires the deferred migration runner.");
+            var assembly = _context.MigrationsAssembly ?? Assembly.GetEntryAssembly()
+                ?? throw new InvalidOperationException("Database recovery requires the migration assembly.");
+            _migrationState.MarkRunning("Re-applying database migrations after recovery.");
+            var result = await runner.RunMigrationsAsync(connectionString, assembly, cancellationToken);
+            if (!result.Successful)
             {
-                _migrationState.MarkRunning("Re-applying database migrations after recovery.");
-                var result = await runner.RunMigrationsAsync(connectionString, assembly, cancellationToken);
-                if (!result.Successful)
-                {
-                    var error = result.Error
-                        ?? new InvalidOperationException(result.ErrorMessage ?? "Database migration failed.");
-                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
-                    return; // unreachable; satisfies the compiler
-                }
+                var error = result.Error
+                    ?? new InvalidOperationException(result.ErrorMessage ?? "Database migration failed.");
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+                return; // unreachable; satisfies the compiler
             }
         }
 

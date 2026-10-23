@@ -7,12 +7,8 @@ description: "You'll turn a published layer into a live MapLibre map using vecto
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.12, `honua-sdk` 0.1.16) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.12, `honua-sdk` 0.1.18) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
-> **Candidate verification is still pending for step 1.** The server now implements the
-> access-policy MCP tool ([honua-server#5741](https://github.com/honua-io/honua-server/pull/5741)).
-> The exact client block below still needs a successful executable-docs replay against the
-> selected release candidate ([honua-server#5737](https://github.com/honua-io/honua-server/issues/5737)).
 > The browser fetches tiles without credentials, so steps 2–6 require anonymous reads to be
 > enabled on the published service. Do not proceed after a refused policy change.
 
@@ -30,10 +26,8 @@ The tool requires the Redis-backed operator workflow capability. A Redis-off dep
 refuses the operation; it does not enable anonymous access. Use the Redis-backed quickstart
 profile and retain a successful policy-change result before opening the map.
 
-<!-- doc-run: blocked https://github.com/honua-io/honua-server/issues/5737 -->
-
 ```bash
-python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.16' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.18' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
 import os

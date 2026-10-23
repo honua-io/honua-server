@@ -20,13 +20,6 @@ namespace Honua.Ai.NlQuery.Models;
 [JsonSerializable(typeof(SpatialClause))]
 [JsonSerializable(typeof(TemporalClause))]
 [JsonSerializable(typeof(NestedClause))]
-[JsonSerializable(typeof(OpenAiChatCompletionRequest))]
-[JsonSerializable(typeof(OpenAiChatCompletionResponse))]
-[JsonSerializable(typeof(OpenAiMessage))]
-[JsonSerializable(typeof(OpenAiResponseFormat))]
-[JsonSerializable(typeof(OpenAiJsonSchema))]
-[JsonSerializable(typeof(OpenAiChoice))]
-[JsonSerializable(typeof(OpenAiUsage))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class NlQueryJsonContext : JsonSerializerContext
 {

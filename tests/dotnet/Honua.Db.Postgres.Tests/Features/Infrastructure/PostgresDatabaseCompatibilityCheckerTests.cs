@@ -34,6 +34,58 @@ public class PostgresDatabaseCompatibilityCheckerTests
     }
 
     [Fact]
+    public async Task CheckCompatibilityAsync_OnFreshDatabaseWithoutPostGis_CreatesTheExtensionAndIsCompatible()
+    {
+        // honua-server#6488: the customer-install database ships the PostGIS packages but has not run
+        // CREATE EXTENSION, and the preflight runs before the migrations that would create it.
+        var databaseName = "fresh_preflight_" + Guid.NewGuid().ToString("N");
+        await using (var admin = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\" TEMPLATE template0", admin);
+            await create.ExecuteNonQueryAsync();
+        }
+
+        var fresh = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
+        {
+            Database = databaseName,
+            Pooling = false,
+        }.ConnectionString;
+
+        try
+        {
+            var result = await _checker.CheckCompatibilityAsync(fresh);
+
+            result.IsCompatible.Should().BeTrue(result.ErrorMessage);
+            result.PostGisVersion.Should().NotBeNullOrWhiteSpace();
+            result.InstalledExtensions.Should().Contain("postgis");
+        }
+        finally
+        {
+            await using var admin = new NpgsqlConnection(_fixture.ConnectionString);
+            await admin.OpenAsync();
+            await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", admin);
+            await drop.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
+    public async Task CheckCompatibilityAsync_WithPasswordBeginningWithEquals_ReportsMalformedWithoutEchoingIt()
+    {
+        // honua-server#6495: Terraform renders a generated password that starts with '=' as
+        // "Password==...", which the driver cannot parse. That is a configuration fault: it must
+        // be named as such, not reported as an incompatible database, and must not leak the secret.
+        var result = await _checker.CheckCompatibilityAsync(
+            "Host=127.0.0.1;Port=5432;Database=honua;Username=honua;Password==s3cr3t-tail;SSL Mode=Require");
+
+        result.IsCompatible.Should().BeFalse();
+        result.IsTransientFailure.Should().BeFalse("a malformed connection string never heals by retrying");
+        result.ErrorMessage.Should().Be(PostgresDatabaseCompatibilityChecker.MalformedConnectionStringMessage);
+        result.ErrorMessage.Should().NotContain("s3cr3t-tail");
+        result.Error.Should().BeNull("the driver's exception text repeats the credential");
+    }
+
+    [Fact]
     public async Task CheckCompatibilityAsync_ReturnsEngineVersion()
     {
         var result = await _checker.CheckCompatibilityAsync(_fixture.ConnectionString);

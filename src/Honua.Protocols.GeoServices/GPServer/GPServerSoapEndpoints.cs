@@ -55,6 +55,12 @@ internal static class GPServerSoapEndpoints
             .WithTag(HonuaTelemetry.Tags.Operation, name);
         try
         {
+            var routingResponse = await GPServerEndpoints.TryHandleRoutingSoapAsync(context, operation, soap, ct).ConfigureAwait(false);
+            if (routingResponse is not null)
+            {
+                return Complete(scope, routingResponse);
+            }
+
             var validation = await GPServerEndpoints.ValidateServiceAsync(context, serviceId, logger, ct).ConfigureAwait(false);
             if (!validation.IsValid)
             {

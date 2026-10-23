@@ -114,9 +114,19 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
                 fields = new { connectionId = sourceConnection!.Value.ToString(), schema = "public", table = sourceTable, serviceName = "http-review", layerName = "initial" },
             }), HttpStatusCode.OK);
             string draftPath = root + "/drafts/" + draft.GetProperty("id").GetString();
+            var editContext = await Read(await human.GetAsync(root + "?viewId=tab-a"), HttpStatusCode.OK);
+            await Read(await human.PostAsJsonAsync(root + "/turns", new
+            {
+                turnId = "turn-edit", viewId = "tab-a", contextRevision = editContext.GetProperty("revision").GetInt64(),
+                prompt = "Review this initial draft"
+            }), HttpStatusCode.OK);
+            agent.DefaultRequestHeaders.Add("X-Honua-Workspace", created.GetProperty("workspaceId").GetString());
+            agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-edit");
             var edited = await Read(await agent.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = 0, changes = new { layerName = "reviewed" } }), HttpStatusCode.OK);
             (await human.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = 0, changes = new { layerName = "stale" } })).StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await agent.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = 1, changes = new { password = "must-not-be-shared" } })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            agent.DefaultRequestHeaders.Remove("X-Honua-Workspace");
+            agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
             var captured = await Read(await human.GetAsync(root + "?viewId=tab-a"), HttpStatusCode.OK);
             long capturedRevision = captured.GetProperty("revision").GetInt64();
             var turnRequest = new { turnId = "turn-one", viewId = "tab-a", contextRevision = capturedRevision, prompt = "Review this exact draft" };
@@ -381,6 +391,8 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             var store = fixture.Services.GetRequiredService<IAgentWorkspaceStore>();
             var document = (await store.GetAsync(workspaceId))!;
             (await store.SaveAsync(document with { Members = [.. document.Members, $"apikey:api-key:{observerKey.Id}"] })).Should().BeTrue();
+            observer.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
+            observer.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-crash");
             var observerRequest = new { commandId = "observer-must-not-consume", expectedRevision = 0, viewId = "tab-a" };
             (await observer.PostAsJsonAsync(draftPath + "/submit", observerRequest)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
             (await store.GetAsync(workspaceId))!.Commands.Should().BeEmpty();

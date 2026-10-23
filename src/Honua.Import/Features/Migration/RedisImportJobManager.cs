@@ -234,6 +234,14 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Completion is not a poll. The 30-second retry throttle must not leave a
+        // finished job in the processing list, or in-flight recovery redelivers it
+        // and repeats catalog mutations (#4877).
+        if (!_useRedis && _redisDb != null)
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (_useRedis && _redisDb != null)
         {
             try

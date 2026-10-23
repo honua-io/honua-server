@@ -14,8 +14,9 @@ The task needs network access to the intended database and a connection with
 migration permissions. PostgreSQL and PostGIS must already be provisioned. For
 AWS, run inside the approved VPC and use the applied infrastructure's database
 secret reference and network configuration. Do not expose a private database to
-make initialization reachable. The infrastructure bootstrap owns extension
-installation; this mode does not create missing PostGIS extensions.
+make initialization reachable. The canonical PostGIS preflight creates a missing
+PostGIS extension when the migration role has permission; otherwise provision it
+through the approved infrastructure bootstrap before retrying.
 
 Pass the connection through `ConnectionStrings__DefaultConnection`, preferably
 as an `aws:secretsmanager:`, `azure:keyvault:`, or `env:` reference supported by
@@ -27,14 +28,16 @@ credential or an exactly-once execution guarantee.
 This mode uses the same migration journal, advisory lock, compatibility check,
 expand/contract safety policy, backup hook and physical schema guard as ordinary
 startup. It does not start HTTP, Redis, background workers or a control plane.
-`HONUA_SKIP_MIGRATIONS=true`, execution-worker launch variables, and non-Postgres
+The migrate-only command ignores `HONUA_SKIP_MIGRATIONS=true`; it still applies
+and verifies migrations. Execution-worker launch variables and non-Postgres
 providers are rejected. Development and degraded-start settings cannot turn a
 failed initialization into success.
 
 ## Result contract
 
-The process emits a line beginning `HONUA_MIGRATION_RESULT ` followed by JSON
-with `schemaVersion: "honua.migration-run/v1"`. Exit status zero requires
+The process emits exactly one JSON line on standard output using the canonical
+`format: "honua.migrate-only/v1"` contract. Logs use standard error. There is no
+receipt prefix. Exit status zero requires
 `outcome: "completed"` and `schemaVerified: true`. The receipt includes:
 
 - The run ID and UTC start/completion timestamps.
@@ -45,12 +48,13 @@ with `schemaVersion: "honua.migration-run/v1"`. Exit status zero requires
   Passwords, usernames and connection options are excluded. An explicit single
   host and database are required. This binds a configured locator; it does not
   attest physical database identity or equate a proxy with its backend.
-- The metadata schema, applied script names/count, and server informational version.
+- The metadata schema, `appliedScripts` array, and server informational version.
 - `packagedMigrationManifestSha256`: a SHA-256 over sorted embedded SQL resource
   names and their content hashes, encoded as `name + newline + lowercase SHA-256
   + newline`. This identifies packaged migration inputs, not a database backup.
 
-Failures and cancellations return nonzero and a fixed `errorCode`, with no
+Failures and cancellations return the canonical nonzero typed exit status and
+stable `code` described in [Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band), with no
 success claim or raw provider exception text. A failed or interrupted task may
 have committed migrations; reconcile against the same target using the canonical
 runner. A repeat run against an already-current database verifies the schema and

@@ -229,6 +229,34 @@ public sealed class DatabasePreflightTransientClassificationTests
 
     [UnitTheory]
     [Operation(Operations.HealthCheck)]
+    [InlineData(true, "true", null, null, true)]
+    [InlineData(true, "true", "false", null, false)]
+    [InlineData(true, "true", null, "false", false)]
+    [InlineData(true, "true", "true", null, true)]
+    [InlineData(true, "false", null, null, false)]
+    [InlineData(true, null, null, null, false)]
+    [InlineData(true, "invalid", null, null, false)]
+    [InlineData(false, "true", null, null, false)]
+    public void DevelopmentContainerDefault_RecoversOnlyTheLocalProfileAndHonorsExplicitSettings(
+        bool isDevelopment, string? container, string? configured, string? environmentOverride, bool expected)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [StartupDatabasePreflight.RunningInContainerKey] = container,
+            [StartupDatabasePreflight.DegradedStartKey] = configured,
+            [StartupDatabasePreflight.DegradedStartEnvironmentKey] = environmentOverride
+        }).Build();
+        var bound = new StartupResilienceOptions
+        {
+            DegradedStartEnabled = bool.TryParse(environmentOverride ?? configured, out var enabled) && enabled
+        };
+
+        StartupDatabasePreflight.ApplyDevelopmentContainerDefault(bound, configuration, isDevelopment)
+            .DegradedStartEnabled.Should().Be(expected);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.HealthCheck)]
     [InlineData("28P01", DatabasePreflightCauseClasses.Auth)]                   // invalid_password
     [InlineData("28000", DatabasePreflightCauseClasses.Auth)]                   // invalid_authorization_specification
     [InlineData("08001", DatabasePreflightCauseClasses.ConnectionRefused)]      // sqlclient_unable_to_establish_sqlconnection

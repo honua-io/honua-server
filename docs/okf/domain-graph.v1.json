@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:8ef759c58fea5a9eef1716d4af620d231f60b188b85bf1afb1eeb48eff3be7e7",
+  "bundleDigest": "sha256:f49922bc3857f9609d02a1db6ce6a926083652472f3d205caf72a7939d68cb71",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -42,7 +42,7 @@
     {
       "id": "cite-status",
       "path": "cite-status.md",
-      "documentDigest": "sha256:903cc10cfbdf77f911f985e523b3bd7bbf9d61c2e718f0c5f6daed9254641a84",
+      "documentDigest": "sha256:c3bbfab0f7a4020b135884f04b20a0e2787eeaa39c5a71b0a0ec2e8a77b824e8",
       "metadata": {
         "type": "reference",
         "title": "CITE status",
@@ -1890,7 +1890,7 @@
     {
       "id": "get-started/first-dataset",
       "path": "get-started/first-dataset.md",
-      "documentDigest": "sha256:39bb24e22ec6389c82e75073a4d51cf00289bae17503c3c27c8c66e356c6dc34",
+      "documentDigest": "sha256:d57d137e92b42aa1b440f1db03087fb6f2549b5ef3a1523a79b0ed92b5f6f51e",
       "metadata": {
         "type": "guide",
         "title": "Publish your first dataset",
@@ -1901,7 +1901,7 @@
     {
       "id": "get-started/first-map",
       "path": "get-started/first-map.md",
-      "documentDigest": "sha256:f1871236e0a018ef270316030d3d2065b45bcaf6e8849231be734e67546c5f5c",
+      "documentDigest": "sha256:dd47705e387ac5e4a8ff38718ee17585dd08b92f1d38d790d165c39d6ed911cf",
       "metadata": {
         "type": "guide",
         "title": "Make your first map",
@@ -1912,7 +1912,7 @@
     {
       "id": "get-started/linux-packages",
       "path": "get-started/linux-packages.md",
-      "documentDigest": "sha256:982f91f3f0f591c3a5b2e1e1ed2593184d7150ba973d7ea1fbc711d0e67bde24",
+      "documentDigest": "sha256:5f237acbd1b64bc6e8ebdc5fa07605c326940cf54a8b2df9a00e0148c8d265db",
       "metadata": {
         "type": "guide",
         "title": "Linux: install published packages",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:463f260f8b53446d881c8c769c58224731b54b04e11391da4935a911e272b35e",
+      "documentDigest": "sha256:c2b6b087f1b464f71db0fea87461e9c32716ef5cb03ece768c654d49232f5b81",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -1936,7 +1936,7 @@
     {
       "id": "get-started/registry-clients",
       "path": "get-started/registry-clients.md",
-      "documentDigest": "sha256:f93444740b8f3f1c75ed3ee9c62b3b058724999a0a23aa45ec3874967224650c",
+      "documentDigest": "sha256:3c6f37686b91ce43ae20ec01df05de872df996cb4b84307aa22251dcad7f7b20",
       "metadata": {
         "type": "guide",
         "title": "Client packages and registries",
@@ -1948,7 +1948,7 @@
     {
       "id": "get-started/windows-packages",
       "path": "get-started/windows-packages.md",
-      "documentDigest": "sha256:b063167912374e39fbb9a4022b3a62dc1ddc4b11ee09fce89dd59f70370ce5bf",
+      "documentDigest": "sha256:4e76c05ea046f1482d3733cdb3193d23d1cb1301a8d2b290c0a739deceb5f97f",
       "metadata": {
         "type": "guide",
         "title": "Install on Windows from published packages",
@@ -1960,7 +1960,7 @@
     {
       "id": "get-started/with-ai",
       "path": "get-started/with-ai.md",
-      "documentDigest": "sha256:a6ceecf180d8458f719bafc6a143669fa02716eb8e4e391d6ecea9d72ef60005",
+      "documentDigest": "sha256:d868df8d500a421a1ed2541e57c3a80bccc12ac1a86868563bda8cadc9e2aeaf",
       "metadata": {
         "type": "guide",
         "title": "Get started with AI",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:e5723290daa073134b439db86cb7ec01063fd209df8a0efe770252090ff0a5da",
+      "documentDigest": "sha256:eb7fd249689557e29283098f25a3af63ce308f7f199ad5896097cc89b811a01a",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2145,7 +2145,7 @@
     {
       "id": "guides/deploy/cloud-deployments",
       "path": "guides/deploy/cloud-deployments.md",
-      "documentDigest": "sha256:50ba7f1fc70f99ba1b662d701d7ddedbec5495a9ecc0ec2e34b01cda835609fb",
+      "documentDigest": "sha256:8e2d0a217a147e699c8dff9ea2d7f46c4b9e9f66598da51452ac23d4f410d4a3",
       "metadata": {
         "type": "runbook",
         "title": "Deploy on AWS and Azure",
@@ -2156,7 +2156,7 @@
     {
       "id": "guides/deploy/configuration",
       "path": "guides/deploy/configuration.md",
-      "documentDigest": "sha256:67057a60692a9a56a82b6763a476ed8494814e4481ae24f3c940c1d250617e4e",
+      "documentDigest": "sha256:9742db48da0b2f73c204a92dfb965d0b6c58a289f383a03529964bfde7fb2c90",
       "metadata": {
         "type": "guide",
         "title": "Configure Honua Server",
@@ -2178,7 +2178,7 @@
     {
       "id": "guides/deploy/docker-compose",
       "path": "guides/deploy/docker-compose.md",
-      "documentDigest": "sha256:9b9d3e8a9118037534e7ce3e77054c1f751cdc935db1e5b005a070a7cf746288",
+      "documentDigest": "sha256:df51cbcaa27f9d5b32d909e65dfbf2908dc18002e542ac4f99e86c2d4bad3b35",
       "metadata": {
         "type": "runbook",
         "title": "Deploy with Docker Compose",
@@ -2189,7 +2189,7 @@
     {
       "id": "guides/deploy/kubernetes",
       "path": "guides/deploy/kubernetes.md",
-      "documentDigest": "sha256:44d7aaf54748eb91abbe956a61700ac5b14743b9b54b20a111b51ba1d2ac9db8",
+      "documentDigest": "sha256:2ea75ba55af519cdccae147f34b29bbc6af4db6f9d03a6b815e1484a0c0572d6",
       "metadata": {
         "type": "guide",
         "title": "Deploy on Kubernetes",
@@ -2260,7 +2260,7 @@
     {
       "id": "guides/deploy/upgrade-and-rollback",
       "path": "guides/deploy/upgrade-and-rollback.md",
-      "documentDigest": "sha256:91d7b293d6b4828fd49f21ac3c44c8c374e303d40a10b55e769e7c90062dce6f",
+      "documentDigest": "sha256:1dadc8d8085a5e90ee08636bf65df1c480ab8699bb8ba21b1b8d8de0c1a8167f",
       "metadata": {
         "type": "guide",
         "title": "Upgrade and roll back",
@@ -2330,7 +2330,7 @@
     {
       "id": "guides/migrate/from-arcgis-server",
       "path": "guides/migrate/from-arcgis-server.md",
-      "documentDigest": "sha256:ad0ae096dbd6ebf54fa36fbb5c426e04d7300cfc774dbe2834c9f96c74dcf3a4",
+      "documentDigest": "sha256:b54cb9dda8859285db8e334a60697f1acbdf25252f3e4b90c487ffa4c3da9359",
       "metadata": {
         "type": "guide",
         "title": "Migrate from ArcGIS Server",
@@ -2601,7 +2601,7 @@
     {
       "id": "guides/query-analyze/run-geoprocessing",
       "path": "guides/query-analyze/run-geoprocessing.md",
-      "documentDigest": "sha256:603ba96d3b4761f3528174e7caf63de83ca7df2536168fb356d73d2ebcb8b558",
+      "documentDigest": "sha256:60ea93240a44559b5b70ecc2495948388ff42baa1757ad2ee0cb3d1356bdc49a",
       "metadata": {
         "type": "guide",
         "title": "Run geoprocessing",
@@ -3117,7 +3117,7 @@
     {
       "id": "guides/workflows/compose-map",
       "path": "guides/workflows/compose-map.md",
-      "documentDigest": "sha256:a56467b2d5259c30b5ae5d5bd1797ec9ad442ae4eea47346ba4e5e8d0f615305",
+      "documentDigest": "sha256:13771c6a8bf66fc904b959702af33956d6889cabaa8653b69581719e4a681510",
       "metadata": {
         "type": "guide",
         "title": "Compose a map from readable layers",
@@ -3259,18 +3259,6 @@
             },
             {
               "id": "preview",
-              "interfaces": [
-                {
-                  "kind": "mcp",
-                  "operation": "honua_studio_validate_draft",
-                  "contract": "/studio/mcp-tools.md"
-                },
-                {
-                  "kind": "mcp",
-                  "operation": "honua_studio_preview_draft",
-                  "contract": "/studio/mcp-tools.md"
-                }
-              ],
               "verb": "validate_preview",
               "inputs": [
                 {
@@ -3566,7 +3554,7 @@
     {
       "id": "guides/workflows/design-studio",
       "path": "guides/workflows/design-studio.md",
-      "documentDigest": "sha256:5d63f686dfbc6c6c347029a8383150429e0454f2e9c6cdc7bb203f9b67c8820b",
+      "documentDigest": "sha256:e1d5b2058c583ea567d04bdd5742215b6e56a22bbba18ce805c34cbbb30b28d6",
       "metadata": {
         "type": "guide",
         "title": "Design a map application through prompt and preview",
@@ -3745,13 +3733,6 @@
                   "name": "workspace",
                   "concept": "/concepts/domain/studio-workspace.md",
                   "description": "Current design paired with the preview generated for this revision."
-                }
-              ],
-              "interfaces": [
-                {
-                  "kind": "mcp",
-                  "operation": "honua_studio_preview_draft",
-                  "contract": "/studio/mcp-tools.md"
                 }
               ],
               "effect": "read",
@@ -5402,7 +5383,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:b34262dc7e246f44a5330ec97910aea7e54e3f2e50c31b6aa3d1072c086ea559",
+      "documentDigest": "sha256:5fcd0a48c6843d11725b6d4abb8a2af8c7850a24e64c5f706d6e77e8db49f28c",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5470,7 +5451,7 @@
     {
       "id": "okf/capabilities/ai.mcp-discovery",
       "path": "okf/capabilities/ai.mcp-discovery.md",
-      "documentDigest": "sha256:6056e93f5b25285a86ce3a093fcbdd46bb06d33769d316674e2a2a95e0d2d78f",
+      "documentDigest": "sha256:35aa438712bfd5e7dac8facf69b1fd7e94f1b9af2b8bda9294e6ae3c8cb08e2b",
       "metadata": {
         "type": "capability",
         "title": "MCP Discovery & Query",
@@ -5555,7 +5536,7 @@
     {
       "id": "okf/capabilities/alerts.evaluation",
       "path": "okf/capabilities/alerts.evaluation.md",
-      "documentDigest": "sha256:98bdc69029ef1ed2345b897fc37ebfb3991e992944d0c9a902d6aad49a1ff508",
+      "documentDigest": "sha256:94fd035184fea7c5b6395238fc3f06a0d3e1ab2b3585559977fce69cc920a002",
       "metadata": {
         "type": "capability",
         "title": "Alert Evaluation Engine",
@@ -5963,7 +5944,7 @@
     {
       "id": "okf/capabilities/discovery.capability-manifest",
       "path": "okf/capabilities/discovery.capability-manifest.md",
-      "documentDigest": "sha256:59e8967b7cecbbcbd688de78bf3c3c69ece9a5364876036c7ac81c67675af3f2",
+      "documentDigest": "sha256:9855173969d665e4a179ebf2fd5c83963bcbbc2e71d10c5234260b4e900d0d5b",
       "metadata": {
         "type": "capability",
         "title": "Capability Manifest",
@@ -6065,7 +6046,7 @@
     {
       "id": "okf/capabilities/editing.featureserver-edits",
       "path": "okf/capabilities/editing.featureserver-edits.md",
-      "documentDigest": "sha256:028d7b61d2a0e08674d8a2dc1e55a453b5f6d972701a6efe906a21c7969d6f14",
+      "documentDigest": "sha256:cc427a15620da98ae2bfa1305ce419befb1e2127712ddd4869e03fb7540ee39e",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Editing",
@@ -6150,7 +6131,7 @@
     {
       "id": "okf/capabilities/geocoding.batch",
       "path": "okf/capabilities/geocoding.batch.md",
-      "documentDigest": "sha256:a25376adb6c17a9d50123e50bdbb9c9564e9905a94fd4146479901f4c3246ca6",
+      "documentDigest": "sha256:3eeac23293b29cb887eda8bb5e201123fe9d18386968c19dac11fd48e3ac676c",
       "metadata": {
         "type": "capability",
         "title": "Batch Geocoding",
@@ -6184,7 +6165,7 @@
     {
       "id": "okf/capabilities/geocoding.forward",
       "path": "okf/capabilities/geocoding.forward.md",
-      "documentDigest": "sha256:1914f80cbeeaddcfecf9df605b6de84d6d956861b51641666889467bb6fe4329",
+      "documentDigest": "sha256:24da7b748793eb4364bb0dc0a6453e9aedf8c60550d8c36b4ff77591a6dea365",
       "metadata": {
         "type": "capability",
         "title": "Forward Geocoding",
@@ -6286,7 +6267,7 @@
     {
       "id": "okf/capabilities/identity.portal-sharing",
       "path": "okf/capabilities/identity.portal-sharing.md",
-      "documentDigest": "sha256:520b29c6febcb48bd300765e0dd1a3804f8eb3d72991a577ad46ba8e8064550b",
+      "documentDigest": "sha256:82700d10c055dbe84c320f0697d76b730bbf8714f08a08012113c384cf43f00d",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Sharing Read Surface",
@@ -6303,7 +6284,7 @@
     {
       "id": "okf/capabilities/identity.portal-token",
       "path": "okf/capabilities/identity.portal-token.md",
-      "documentDigest": "sha256:f3bcbd834267705471c95f98f853d7add438b3a2034f183df12ed502c5dcc3af",
+      "documentDigest": "sha256:30b3ebc302441fe2895798173aaa9d84d20414da942b1c27f0059aca742a2c8e",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Token Issuance",
@@ -6354,7 +6335,7 @@
     {
       "id": "okf/capabilities/import.file",
       "path": "okf/capabilities/import.file.md",
-      "documentDigest": "sha256:9ac72dceae822d7ebcefdf81ca9608e38b16f1a8a9a6cc56556bbd575a9bad94",
+      "documentDigest": "sha256:0361798ad486331cebdfbe97d03b892e119eb8d9c772a80e187ddb77c66153b8",
       "metadata": {
         "type": "capability",
         "title": "File Import",
@@ -6371,7 +6352,7 @@
     {
       "id": "okf/capabilities/import.geoserver",
       "path": "okf/capabilities/import.geoserver.md",
-      "documentDigest": "sha256:1079ccc4ea971681b1be9d05225a1335ec7a47f9406daafb03239491b3e99038",
+      "documentDigest": "sha256:428a30603432ce319f5523365653ef6699e183b4bf37456511709bb10c865030",
       "metadata": {
         "type": "capability",
         "title": "GeoServer Import",
@@ -6388,7 +6369,7 @@
     {
       "id": "okf/capabilities/import.geoservices",
       "path": "okf/capabilities/import.geoservices.md",
-      "documentDigest": "sha256:012d9f324d476091317fc5c37aac0e882b061534366d63d3c61907aba4f4ce8f",
+      "documentDigest": "sha256:14f366e5fa25d7d58720575f41c7d3e66807833f169bb65145e6299a5153499c",
       "metadata": {
         "type": "capability",
         "title": "GeoServices Import",
@@ -6439,7 +6420,7 @@
     {
       "id": "okf/capabilities/ops.health",
       "path": "okf/capabilities/ops.health.md",
-      "documentDigest": "sha256:55921393568d0979aba2f7ed4b63593b33c598a6b3706db3275fb5914a4dad9d",
+      "documentDigest": "sha256:3d35e445dd1a393a8e2ce283278b11947fbc3599e357f86efe2f8d8d3408948d",
       "metadata": {
         "type": "capability",
         "title": "Health Checks",
@@ -6524,7 +6505,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:b6f48f3de2105b6d80ce504ab35900743bfc32b86a263268ea5fa338e849c98c",
+      "documentDigest": "sha256:1bcdf15b34c78f0f8d401d355d07f24ebef4e6974969b04fe1aae0e80229fda7",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -6677,7 +6658,7 @@
     {
       "id": "okf/capabilities/raster.terrain-rgb",
       "path": "okf/capabilities/raster.terrain-rgb.md",
-      "documentDigest": "sha256:ad068f84ee4ddc61cfb2283d1e971f6ab189760c48a0d43526a52b813ae8c765",
+      "documentDigest": "sha256:27c0bdecd61de21d36ea39e055ae8e5fdbf84b0cc1c267b76a1f3ffe27045782",
       "metadata": {
         "type": "capability",
         "title": "Terrain-RGB Tiles",
@@ -6796,7 +6777,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:6d4908a645c92c9237d2cf162583a8c04f8114ff7632ef5f70a3da090e324c53",
+      "documentDigest": "sha256:34a5246a1ad50ca52c904422fbadb2a0b2bfc6da8ecdabe2b74d98441e912711",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -6847,7 +6828,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-imageserver",
       "path": "okf/capabilities/serve.geoservices-imageserver.md",
-      "documentDigest": "sha256:7bf22facdaae7a1c24937b02d3721ae30f41c24974383a8a64794ec835417914",
+      "documentDigest": "sha256:a7b0403dcff23a29c8ae9737dc6602c56218c239c134e8631adcd43dccb85d28",
       "metadata": {
         "type": "capability",
         "title": "ImageServer",
@@ -6864,7 +6845,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-mapserver",
       "path": "okf/capabilities/serve.geoservices-mapserver.md",
-      "documentDigest": "sha256:77e8e38a09abcf5e8346e9a89071094f9415aacc95ae0bfb84b470c2707ff7b8",
+      "documentDigest": "sha256:72184f76b496882e1d2b55a83638fbd5ae08fb4f4c192be2b4b2a73c89d535dd",
       "metadata": {
         "type": "capability",
         "title": "MapServer",
@@ -7136,7 +7117,7 @@
     {
       "id": "okf/capabilities/serve.wfs",
       "path": "okf/capabilities/serve.wfs.md",
-      "documentDigest": "sha256:b2b7c180f9aecf5aa0d8444323df7494b65b29f424d84e28e84479ab04cbe8f7",
+      "documentDigest": "sha256:76db96bf8b34a7f83586442cd4730a4a65159ce52d30b1b3f3d62375b4f2e480",
       "metadata": {
         "type": "capability",
         "title": "WFS 2.0",
@@ -7440,6 +7421,15 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/operator/geoprocessing-process-releases.md"
     },
     {
+      "id": "operator/gp-native-qualification-observer",
+      "path": "operator/gp-native-qualification-observer.md",
+      "documentDigest": "sha256:236b622a250358fdd4de3381ed5458a6a7bbe72da535d7a5876f1dee3c575210",
+      "metadata": {
+        "type": "reference"
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/operator/gp-native-qualification-observer.md"
+    },
+    {
       "id": "ops/aot-image-attestations",
       "path": "ops/aot-image-attestations.md",
       "documentDigest": "sha256:f26b7b3fdb941f660ec82bebd7aa6846505b3548b6fed4105d9366a8b924b53b",
@@ -7610,7 +7600,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:08951596ffa6147f389ffc022bed27be9a76bf40e2f50aa2294958c3fea95ca0",
+      "documentDigest": "sha256:1b060e5a6d20c29b64fb82fdac2986c7c5e8bb7fd86960652c42ecd24daf5cdf",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",
@@ -7721,7 +7711,7 @@
     {
       "id": "reference/configuration/data-sources/postgis",
       "path": "reference/configuration/data-sources/postgis.md",
-      "documentDigest": "sha256:cbda585a87f81eb1d6aea60721338959114cbedc199e2d1f719294528ebe9ff4",
+      "documentDigest": "sha256:258730e9a423db1e1c80a954e1411c412058d5da28b8bb46c2f26cc0c3f49174",
       "metadata": {
         "type": "reference",
         "title": "PostGIS provider",
@@ -7767,7 +7757,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:482432d3a34fe73988c83136190cf54ad3fba33adf804c485e5173b4ce784c04",
+      "documentDigest": "sha256:14ce04bfd8c12febb91d55638b23d613bb225190585ab377e9c402ee8672bcfe",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",
@@ -7841,7 +7831,7 @@
     {
       "id": "reference/geoprocessing-operations",
       "path": "reference/geoprocessing-operations.md",
-      "documentDigest": "sha256:040b38ebd0de6dfcf97ed4fbeb2c54b69c12578164db763870c61546164c0061",
+      "documentDigest": "sha256:338121e11c00989848820ba418a70aaa809749b60db4dfc866812d50ca34e2e3",
       "metadata": {
         "type": "reference",
         "title": "Geoprocessing operations",
@@ -8074,7 +8064,7 @@
     {
       "id": "reference/protocols/wms-wfs-wcs-wmts",
       "path": "reference/protocols/wms-wfs-wcs-wmts.md",
-      "documentDigest": "sha256:ec405bc26b05ef799d4f738d5cc4a1863c6377bcca93d72e07df7c7e3b8976f4",
+      "documentDigest": "sha256:89dfa408c1b9ead722625c738e0f0a00196a363ec6c98f3ab163410cfd726067",
       "metadata": {
         "type": "reference",
         "title": "WMS, WFS, WCS, WMTS (classic OGC)",
@@ -8117,7 +8107,7 @@
     {
       "id": "reference/versioning-and-support",
       "path": "reference/versioning-and-support.md",
-      "documentDigest": "sha256:aaf342f2c0a5f7cfeb71d57e2968b2d386228dfa8151ad2e09f2895d7e8adb07",
+      "documentDigest": "sha256:04e7fb4aac64d4001966169cc2ed8cd13ef8bde4abb2b3280fc9ce7fc5226abb",
       "metadata": {
         "type": "reference",
         "title": "Versioning and support",
@@ -8128,7 +8118,7 @@
     {
       "id": "sdks/README",
       "path": "sdks/README.md",
-      "documentDigest": "sha256:432172d745538f9e87c466ce2d0cfa25c4d8d29bf3fd734bcbe65ae09419f873",
+      "documentDigest": "sha256:ed4c4ffb2933023f4ab2976bbb7b173cd7a42d7ebcc3b3cb01dbdcd05a1a9345",
       "metadata": {
         "type": "index",
         "title": "SDKs",
@@ -8151,7 +8141,7 @@
     {
       "id": "sdks/dotnet/dotnet-getting-started",
       "path": "sdks/dotnet/dotnet-getting-started.md",
-      "documentDigest": "sha256:f8a1d566b604d82197039fa31cbd82808a562bdd3215055a54273a959a159723",
+      "documentDigest": "sha256:f579c4ca202b8edda6cf626bb4360a51b5fa0b027a12c53d81b1773b3969515f",
       "metadata": {
         "type": "reference",
         "title": "Get started with the .NET SDK",
@@ -8199,7 +8189,7 @@
     {
       "id": "sdks/python/python-getting-started",
       "path": "sdks/python/python-getting-started.md",
-      "documentDigest": "sha256:172f42b9a3ef2f5b07673ef0049fa9bff76958b4facb7cc529db674f79ce08a3",
+      "documentDigest": "sha256:074dd330584972b506963a083ed0d33e1d6ec585084ce4951263126b880ed813",
       "metadata": {
         "type": "reference",
         "title": "Get started with the Python SDK",
@@ -8268,7 +8258,7 @@
     {
       "id": "studio/mcp-tools",
       "path": "studio/mcp-tools.md",
-      "documentDigest": "sha256:16f3e4faa45a37b80e8d43b0ae331fe415f496c4b83137f79f99a4fd9fb9e74a",
+      "documentDigest": "sha256:364c4854ebd8906a36739d83a1fe1b0250c28b16c11c57ab7cc9fc58814251e3",
       "metadata": {
         "type": "guide",
         "title": "Studio MCP tools",
@@ -10685,11 +10675,6 @@
       "target": "guides/deploy/docker-compose"
     },
     {
-      "source": "get-started/linux-packages",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
-    },
-    {
       "source": "get-started/quickstart",
       "relation": "links_to",
       "target": "concepts/protocols"
@@ -10740,19 +10725,9 @@
       "target": "guides/deploy/troubleshooting"
     },
     {
-      "source": "get-started/quickstart",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
-    },
-    {
       "source": "get-started/registry-clients",
       "relation": "links_to",
       "target": "get-started/quickstart"
-    },
-    {
-      "source": "get-started/registry-clients",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/windows-packages",
@@ -10773,11 +10748,6 @@
       "source": "get-started/windows-packages",
       "relation": "links_to",
       "target": "guides/deploy/docker-compose"
-    },
-    {
-      "source": "get-started/windows-packages",
-      "relation": "links_to",
-      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/with-ai",
@@ -11718,6 +11688,11 @@
       "source": "guides/deploy/upgrade-and-rollback",
       "relation": "links_to",
       "target": "guides/deploy/docker-compose"
+    },
+    {
+      "source": "guides/deploy/upgrade-and-rollback",
+      "relation": "links_to",
+      "target": "guides/deploy/kubernetes"
     },
     {
       "source": "guides/deploy/upgrade-and-rollback",
@@ -15647,6 +15622,11 @@
     {
       "source": "reference/configuration/environment-variables",
       "relation": "links_to",
+      "target": "guides/deploy/upgrade-and-rollback"
+    },
+    {
+      "source": "reference/configuration/environment-variables",
+      "relation": "links_to",
       "target": "guides/secure/authentication"
     },
     {
@@ -16187,6 +16167,11 @@
     {
       "source": "reference/versioning-and-support",
       "relation": "links_to",
+      "target": "cite-status"
+    },
+    {
+      "source": "reference/versioning-and-support",
+      "relation": "links_to",
       "target": "concepts/protocols"
     },
     {
@@ -16198,6 +16183,11 @@
       "source": "reference/versioning-and-support",
       "relation": "links_to",
       "target": "reference/admin-api/overview"
+    },
+    {
+      "source": "reference/versioning-and-support",
+      "relation": "links_to",
+      "target": "reference/compatibility/clients"
     },
     {
       "source": "reference/versioning-and-support",
@@ -16809,24 +16799,6 @@
       "executionVerified": false
     },
     {
-      "workflow": "guides/workflows/compose-map",
-      "action": "preview",
-      "operation": "honua_studio_validate_draft",
-      "kind": "mcp",
-      "validation": "documentation_reference_only",
-      "runtimeDiscoveryRequired": true,
-      "executionVerified": false
-    },
-    {
-      "workflow": "guides/workflows/compose-map",
-      "action": "preview",
-      "operation": "honua_studio_preview_draft",
-      "kind": "mcp",
-      "validation": "documentation_reference_only",
-      "runtimeDiscoveryRequired": true,
-      "executionVerified": false
-    },
-    {
       "workflow": "guides/workflows/connect-publish-data",
       "action": "inspect",
       "operation": "honua_admin_connections_test",
@@ -16861,21 +16833,12 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:950fea6dd18bf7ad4307aa90d2af927ddc6af5425f102cf8aff30d772b8f1597"
+      "contractDigest": "sha256:b7857c2df07cf6b966599ba27838387da91dda48ae66a8f73f00ee0af94e39c4"
     },
     {
       "workflow": "guides/workflows/design-studio",
       "action": "edit",
       "operation": "honua_studio_update_draft",
-      "kind": "mcp",
-      "validation": "documentation_reference_only",
-      "runtimeDiscoveryRequired": true,
-      "executionVerified": false
-    },
-    {
-      "workflow": "guides/workflows/design-studio",
-      "action": "preview",
-      "operation": "honua_studio_preview_draft",
       "kind": "mcp",
       "validation": "documentation_reference_only",
       "runtimeDiscoveryRequired": true,
@@ -16934,7 +16897,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:950fea6dd18bf7ad4307aa90d2af927ddc6af5425f102cf8aff30d772b8f1597"
+      "contractDigest": "sha256:b7857c2df07cf6b966599ba27838387da91dda48ae66a8f73f00ee0af94e39c4"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16944,7 +16907,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:950fea6dd18bf7ad4307aa90d2af927ddc6af5425f102cf8aff30d772b8f1597"
+      "contractDigest": "sha256:b7857c2df07cf6b966599ba27838387da91dda48ae66a8f73f00ee0af94e39c4"
     },
     {
       "workflow": "guides/workflows/import-data",

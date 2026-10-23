@@ -152,6 +152,12 @@ public static class MigrationFidelityDifferenceCodes
     /// One or more source geometries could not be converted and were stored with a null geometry.
     /// </summary>
     public const string GeometryUnconverted = "fidelity.geometry.unconverted";
+
+    /// <summary>
+    /// A null or invalid source geometry was replaced by a well-formed target geometry. That is not
+    /// transfer loss and it is not a successful repair, so parity is not proven.
+    /// </summary>
+    public const string GeometrySourceNotRepaired = "fidelity.geometry.source-not-repaired";
 }
 
 /// <summary>

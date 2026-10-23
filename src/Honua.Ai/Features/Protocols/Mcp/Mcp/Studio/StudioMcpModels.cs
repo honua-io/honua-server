@@ -623,6 +623,16 @@ internal sealed class McpStudioProposePublicationOutput
     [JsonPropertyName("shareUrl")]
     public string? ShareUrl { get; init; }
 
+    /// <summary>Canonical deployment identity returned for a hosted map/app publication.</summary>
+    [JsonPropertyName("deploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentId { get; init; }
+
+    /// <summary>Exact resource URI for that deployment, when present.</summary>
+    [JsonPropertyName("deploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentResourceUri { get; init; }
+
     [JsonPropertyName("message")]
     public required string Message { get; init; }
 }

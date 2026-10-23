@@ -154,6 +154,7 @@ internal sealed partial class GeoservicesImportService
             var objectIdMap = new Dictionary<long, long>();
             var absentGeometryTargetIds = new HashSet<long>();
             var unconvertedGeometryTargetIds = new HashSet<long>();
+            var invalidSourceGeometryTargetIds = new HashSet<long>();
             var seenSourceObjectIds = new HashSet<long>();
             var sourceObjectIds = layerInfo.SupportsPagination == false
                 ? await _restClient.QueryObjectIdsAsync(
@@ -288,6 +289,11 @@ internal sealed partial class GeoservicesImportService
                 if (batchInsert.UnconvertedGeometryTargetIds is { Count: > 0 })
                 {
                     unconvertedGeometryTargetIds.UnionWith(batchInsert.UnconvertedGeometryTargetIds);
+                }
+
+                if (batchInsert.InvalidSourceGeometryTargetIds is { Count: > 0 })
+                {
+                    invalidSourceGeometryTargetIds.UnionWith(batchInsert.InvalidSourceGeometryTargetIds);
                 }
 
                 if (batchInsert.Failed > 0)
@@ -466,7 +472,8 @@ internal sealed partial class GeoservicesImportService
                     new SourceGeometryCensus
                     {
                         AbsentTargetFeatureIds = absentGeometryTargetIds,
-                        UnconvertedTargetFeatureIds = unconvertedGeometryTargetIds
+                        UnconvertedTargetFeatureIds = unconvertedGeometryTargetIds,
+                        InvalidTargetFeatureIds = invalidSourceGeometryTargetIds
                     },
                     queriedSourceExtent).ConfigureAwait(false);
             }

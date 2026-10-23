@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Db.Postgres.Features.SensorThings;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using NpgsqlTypes;
@@ -367,6 +370,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _rasterFootprintsTables,
     ];
 
+    private static readonly IReadOnlySet<string> _noReaderVerifiedMigrations = new HashSet<string>(StringComparer.Ordinal);
     private readonly string _schemaName;
     private readonly PostgresCoreSchemaMigrationManifest _migrations;
 
@@ -392,13 +396,21 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         await VerifyAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
+    public Task VerifyAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken = default)
+        => VerifyAsync(connection, _noReaderVerifiedMigrations, cancellationToken);
+
+    /// <inheritdoc />
     public async Task VerifyAsync(
         DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(readerVerifiedMigrations);
+        await VerifyReaderCompatibilityAsync(connection, readerVerifiedMigrations, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (state.RequiresRasterFloor)
         {
@@ -467,13 +479,21 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _governedLineageIndexes);
     }
 
+    public Task VerifyConsistencyAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken = default)
+        => VerifyConsistencyAsync(connection, _noReaderVerifiedMigrations, cancellationToken);
+
+    /// <inheritdoc />
     public async Task VerifyConsistencyAsync(
         DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(readerVerifiedMigrations);
+        await VerifyReaderCompatibilityAsync(connection, readerVerifiedMigrations, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (!state.JournalIsEmpty)
         {
@@ -519,6 +539,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         // journaled, a migration-owned table without its journal row is ordinary divergence.
         if (!state.JournalIsEmpty)
         {
+            state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
             VerifyConsistency(state);
             return;
         }
@@ -582,6 +603,109 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
     }
 
+    /// <inheritdoc />
+    public async Task<string?> TryAdoptMatchingRasterBaselineAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        // Skip-migrations serving cannot run the pending provider script. When the baseline tables
+        // already match that script's creation contract, record the journal receipt only. A missing
+        // or partial raster schema stays a floor failure (honua-server#6496).
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        if (!await TryAcquireRasterAdoptionLockAsync(connection, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        try
+        {
+            var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+            if (state.JournalIsEmpty
+                || state.IsApplied(RasterTablesMigration)
+                || state.MissingRasterBaselineTables().Count > 0)
+            {
+                return null;
+            }
+
+            if (!await RasterBaselineMatchesCreationContractAsync(connection, cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            await using var insert = connection.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO public.schema_versions (scriptname, applied)
+                SELECT @script, CURRENT_TIMESTAMP
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM public.schema_versions WHERE scriptname = @script)
+                """;
+            var script = insert.CreateParameter();
+            script.ParameterName = "script";
+            script.Value = RasterTablesMigration;
+            insert.Parameters.Add(script);
+            var wrote = await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return wrote > 0 ? RasterTablesMigration : null;
+        }
+        finally
+        {
+            await ReleaseRasterAdoptionLockAsync(connection).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> RasterBaselineMatchesCreationContractAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        // Same creation-time contract the seed adoption uses. Later columns and indexes may exist;
+        // every column, constraint, sequence, table property, and index the baseline script creates
+        // must already match, because this path does not execute the script to repair them.
+        var definitions = await PostgresSeedSchemaContract.ReadAsync(connection, _schemaName, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var table in _rasterBaselineTables)
+        {
+            if (!definitions.ContainsKey((table, "table")))
+            {
+                return false;
+            }
+
+            foreach (var entry in PostgresSeedSchemaContract.Definitions.Where(candidate => candidate.Key.Table == table))
+            {
+                if (!definitions.TryGetValue(entry.Key, out var actual) || actual != entry.Value)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static async Task<bool> TryAcquireRasterAdoptionLockAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock(@lock_key);", connection);
+        _ = command.Parameters.AddWithValue("lock_key", PostgresDatabaseMigrationRunner.MigrationLockKey);
+        return (bool?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false;
+    }
+
+    private static async Task ReleaseRasterAdoptionLockAsync(NpgsqlConnection connection)
+    {
+        try
+        {
+            await using var command = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_key);", connection);
+            _ = command.Parameters.AddWithValue("lock_key", PostgresDatabaseMigrationRunner.MigrationLockKey);
+            _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Debug.WriteLine(ex);
+        }
+    }
+
     private IEnumerable<(string Migration, string[] Tables)> AdoptableFamilies(
         SchemaState state)
     {
@@ -608,7 +732,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             .Select(family => (family.Migration, Present: family.Tables.Where(state.Tables.Contains).ToArray()))
             .Where(family => family.Present.Length > 0);
 
-    private async Task VerifyReaderCompatibilityAsync(DbConnection connection, CancellationToken cancellationToken)
+    private async Task VerifyReaderCompatibilityAsync(
+        DbConnection connection,
+        IReadOnlySet<string> readerVerifiedMigrations,
+        CancellationToken cancellationToken)
     {
         if (_migrations.KnownMigrationNames is not { } known)
         {
@@ -622,24 +749,40 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             return;
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT scriptname FROM public.schema_versions ORDER BY scriptname";
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var unknown = new List<string>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using (var command = connection.CreateCommand())
         {
-            var name = reader.GetString(0);
-            if (!known.Contains(name))
+            command.CommandText = "SELECT scriptname FROM public.schema_versions ORDER BY scriptname";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                unknown.Add(name);
+                var name = reader.GetString(0);
+                // The migration runner may hand over entries it has already qualified (#6477).
+                if (!known.Contains(name) && !readerVerifiedMigrations.Contains(name))
+                {
+                    unknown.Add(name);
+                }
             }
         }
 
-        if (unknown.Count > 0)
+        if (unknown.Count == 0)
         {
-            throw new DatabaseSchemaCompatibilityException(unknown);
+            return;
         }
+
+        // Read-only qualification through the recorded forward-compatibility declarations, the same
+        // check the migration runner applies (#6477). This is the HONUA_SKIP_MIGRATIONS=true and
+        // degraded-start path: it never applies or records anything. Without the declaration table
+        // every unknown entry is refused exactly as before.
+        await PostgresReaderCompatibilityJournal.QualifyAsync(connection, unknown, ReaderSchema(known), cancellationToken)
+            .ConfigureAwait(false);
     }
+
+    // The reader's own schema is its highest application migration; provider-root numbering is
+    // independent and never raises it.
+    private int ReaderSchema(IReadOnlySet<string> known)
+        => MigrationReaderCompatibility.ReaderSchemaOf(known.Where(name =>
+            name.StartsWith(_migrations.ApplicationMigrationAssemblyName + ".", StringComparison.Ordinal)));
 
     private void VerifyConsistency(SchemaState state)
     {
@@ -729,7 +872,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken,
+            resolveSensingAuthority: requirement == DatabaseSchemaRequirement.SensorThings).ConfigureAwait(false);
 
         var (migration, requiredTables, requiredColumns, requiredIndexes) = requirement switch
         {
@@ -1128,7 +1272,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             .ToArray();
     }
 
-    private async Task<SchemaState> ReadStateAsync(DbConnection connection, CancellationToken cancellationToken)
+    private async Task<SchemaState> ReadStateAsync(DbConnection connection, CancellationToken cancellationToken,
+        bool resolveSensingAuthority = false)
     {
         var appliedScripts = new HashSet<string>(StringComparer.Ordinal);
         await using (var journalCommand = connection.CreateCommand())
@@ -1151,6 +1296,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 // The consistency checks below distinguish that from unjournaled partial schema.
             }
         }
+
+        var sensingSchema = resolveSensingAuthority && _migrations.SensorThingsSensingMigration is { } sensingMigration
+            ? await PostgresSensorThingsSchema.ResolveAsync(connection, _schemaName, appliedScripts.Contains(sensingMigration), sensingMigration,
+                cancellationToken: cancellationToken).ConfigureAwait(false)
+            : _schemaName;
 
         var hasPostGisRaster = false;
         await using (var extensionCommand = connection.CreateCommand())
@@ -1180,9 +1330,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                  AND a.attnum > 0
                  AND NOT a.attisdropped
                 WHERE (
-                    (n.nspname = @schema AND (
+                    (n.nspname = @schema AND c.relname <> ALL(@sensing_objects) AND (
                         @schema = @canonical_schema OR
                         (c.relname <> ALL(@lineage_tables) AND c.relname <> ALL(@lineage_indexes))))
+                    OR
+                    (n.nspname = @sensing_schema AND c.relname = ANY(@sensing_objects))
                     OR
                     (n.nspname = @canonical_schema AND
                         (c.relname = ANY(@lineage_tables) OR c.relname = ANY(@lineage_indexes) OR
@@ -1195,6 +1347,12 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             schemaParameter.ParameterName = "schema";
             schemaParameter.Value = _schemaName;
             schemaCommand.Parameters.Add(schemaParameter);
+
+            schemaCommand.Parameters.Add(new NpgsqlParameter("sensing_schema", sensingSchema));
+            schemaCommand.Parameters.Add(new NpgsqlParameter("sensing_objects", NpgsqlDbType.Array | NpgsqlDbType.Text)
+            {
+                Value = PostgresSensorThingsSchema.SensingObjects
+            });
 
             var canonicalSchemaParameter = schemaCommand.CreateParameter();
             canonicalSchemaParameter.ParameterName = "canonical_schema";

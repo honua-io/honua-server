@@ -16,7 +16,7 @@ before starting the target release.
 ## Policy
 
 1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), set `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
-2. Application rollback is allowed only when the previous reader recognizes every applied migration. On startup an unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. This check also runs with `HONUA_SKIP_MIGRATIONS=true` and cannot be bypassed by degraded-start mode. Even an additive migration needs reader qualification; its presence alone is not proof an older image can serve it.
+2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
 3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt.
 
 ### In-flight geoprocessing jobs
@@ -76,6 +76,68 @@ Qualify the actual rollback image: it must itself contain the drain and schema-r
 protections described here. Installing a newer image cannot add those checks to an
 older image.
 
+### Rollback across additive migrations
+
+After each successful migration run, the server records a forward-compatibility
+declaration in `public.schema_version_reader_compatibility` for every journaled
+script it ships. Migration `135_RecordMigrationReaderCompatibility.sql`, an expand
+migration, creates that table. Each declaration holds the script's classification
+(`expand`, `contract` or `reader-incompatible`), its SHA-256, its LF-normalized
+text and the oldest reader schema it is declared safe for. Existing declarations
+are never rewritten.
+
+An image rolled back onto that database accepts a journal entry it does not ship
+only when all of these hold. That is true whether it starts with migrations
+enabled (the default) or with `HONUA_SKIP_MIGRATIONS=true` after an out-of-band
+[migrate-only](#run-migrations-out-of-band) upgrade, and also during degraded-start
+recovery:
+
+1. The entry has a declaration, and the declaration says `expand`.
+2. The declared minimum reader schema is at most the reader's own schema number
+   (its highest numbered migration).
+3. The recorded text matches the recorded hash, and the reader's own classifier,
+   run on that text, also reaches `expand` with the same minimum reader schema.
+   A newer image's claim is never trusted on its own.
+
+Any other unknown entry keeps the `schema_reader_incompatible` refusal. That
+covers contract-phase scripts, opted-out scripts and tampered declarations. It
+also covers journals with no declaration, such as journals written before 135.
+The refusal message names each refused declaration and the reason. Nothing is
+applied or reversed during a rollback, refused or not. With
+`HONUA_SKIP_MIGRATIONS=true` the check only reads: the serving image records no
+declarations of its own.
+
+**This only helps rollbacks to images that contain this reader logic** (schema 135
+and later). Older images (schema 134 and earlier) still refuse any migration
+they do not ship. To roll back to them, restore the
+matching backup. Some schema 135 images predate the skip-path check. They accept
+declarations only with migrations enabled, and with `HONUA_SKIP_MIGRATIONS=true`
+they still require every applied migration to be one they ship.
+
+**Rules for migration authors.** The shared classifier decides `expand` vs
+`contract`, but it only reads DDL. Some additive-looking scripts still break the
+previous reader: a new `NOT NULL` column whose default the old code violates,
+new enum values the old code cannot parse, a new constraint, or a trigger that
+changes the meaning of the old code's writes. Mark such a script with
+`-- honua:reader-incompatible reason=<what an older reader would violate>`, so
+that older readers refuse it and the operator restores instead. When a script
+is safe only for readers at or after a known schema, add
+`-- honua:reader-compatible-from schema=<N>`. The highest annotation applies. An
+annotation the reader cannot parse counts as reader-incompatible. Annotations
+are part of the hash-pinned script text, so add them before the migration first
+ships.
+
+**Every migration change is checked against the previous image.** The pull
+request check `PR Gate / N-1 reader compatibility` applies the change's full
+migration set to a fresh database, starts the server image of the latest
+published platform release on it (pulled by the digest the release recorded) with
+migrations enabled, and requires it to become ready and to read and write a
+seeded layer. A refusal passes only when every refused script is classified
+`contract` or carries `-- honua:reader-incompatible`; each such script must also
+carry `-- honua:compatibility-review` and be named, by its file name, in a
+rollback-boundary note in this guide that tells operators to restore instead of
+rolling back.
+
 ### Configuration binding correction
 
 Recent releases correct source-generated binding for options that previously used
@@ -120,7 +182,7 @@ trusted ingress or disposable test boundary.
 
 Proceed only when `readyForCoordinatedDeploy` is `true`, no unexpected migrations are pending, and backups are current.
 
-2. Roll out the new image. Migrations run automatically when the new version starts (skip with `HONUA_SKIP_MIGRATIONS=true` if you run them out-of-band — mandatory on serverless).
+2. Roll out the new image. Migrations run automatically when the new version starts. To run them out of band instead, apply them first with [migrate-only mode](#run-migrations-out-of-band) and serve with `HONUA_SKIP_MIGRATIONS=true` (mandatory on serverless).
 
 ```bash
 # Kubernetes / Helm
@@ -131,6 +193,70 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 Single-instance Docker is not zero-downtime: pull the new tag, stop the old container, start the new one with the same env and database, and wait for `/healthz/ready`.
 
 3. Verify the rollout: `/healthz/ready` returns `Ready` on every replica, `GET /api/v1/admin/deploy/preflight` reports no pending migrations, and a known layer queries back with the expected count.
+
+## Run migrations out of band
+
+Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records the forward-compatibility declarations, so rolling the serving replicas back to the previous image keeps the database when every newer migration is expand-only (see [Rollback across additive migrations](#rollback-across-additive-migrations)). The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
+
+### Upgrading a journal that stops at 091
+
+An August deployment whose `public.schema_versions` journal stops at migration 091 is not a pure expand upgrade to this build. Raster provider tables may already exist from before `Honua.Postgres.Migrations.001_CreateRasterTables.sql` joined the canonical journal.
+
+`MigrationSafetyClassifier` was re-run on this revision against the scripts that journal does not contain: the 49 server migrations from 092 through 136, and all 7 raster provider scripts (001 through 007). That is 56 scripts. 13 are `ContractAnnotated` and none are `ContractUnannotated`. The 13 are raster `001_CreateRasterTables`, server `094_CreateSavedMapCheckpointVersionRecovery`, `095_DeleteSavedMapOperationLogWithStudioDraft`, `102_WidenReplicaConflictTypeForDeleteDelete`, both `106_*` scripts, `108_FixLongImportIndexNames`, both `109_*` scripts, both `111_*` scripts, `115_AddDropImportStagingTable`, and `124_AttachFeatureChangeTriggerToHonuaFeatures`. Issue #6496 reported 15 `ContractAnnotated` scripts for revision `4709145`'s 52 pending scripts (092 through 133 plus raster 001 through 006) and listed these same names; that 15 was not reproduced on this revision. With the default `Database__MigrationSafety__ContractApplyPolicy=Gate`, these 13 need the one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce. Fresh installs are unaffected.
+
+Do this before serving replicas start:
+
+1. Run migrate-only, below. When contract scripts are pending it exits `5` and prints the nonce. Review those scripts, then re-run with `HONUA_APPROVE_CONTRACT_MIGRATIONS` set to that nonce. The raster root's script uses `CREATE TABLE IF NOT EXISTS`, so existing baseline tables are kept and then journaled as applied. Unset the nonce afterwards.
+2. Serve with `HONUA_SKIP_MIGRATIONS=true`.
+
+If a serving process with `HONUA_SKIP_MIGRATIONS=true` reaches the schema guard before that apply, and `raster_data`, `raster_statistics`, and `raster_tiles` already match the raster baseline's creation contract (columns, constraints, sequences, table properties, and the indexes that script creates), startup inserts `Honua.Postgres.Migrations.001_CreateRasterTables.sql` into `public.schema_versions` as an adoption. It does not execute the script, drop or recreate the tables, or report the script as a newly applied migration. A missing or partial raster schema is not adopted, and a baseline that does not match the creation contract is not adopted. Those stay floor failures: `MigrationNotApplied` when the baseline tables are absent (Lambda degraded start, readiness 503 `schema-floor`), and `SchemaExistsWithoutJournal` when migration-owned tables exist without a journal row. A schema-floor refusal other than `MigrationNotApplied` stops the process with exit code 1 and writes the refusal message. It does not abort the runtime. Adoption of the baseline does not apply the later contract scripts; those still need migrate-only and the nonce.
+
+```bash
+docker run --rm \
+  -e HONUA_MIGRATE_ONLY=true \
+  -e ConnectionStrings__DefaultConnection="$HONUA_DATABASE_CONNECTION" \
+  ghcr.io/honua-io/honua-server:<target-tag>
+```
+
+Migrate-only mode works the same way in the native-AOT and JIT images. It:
+
+- resolves `ConnectionStrings__DefaultConnection` exactly as serving startup does, including `aws:secretsmanager:`, `azure:keyvault:` and `env:` references and `HONUA_SETTINGS_DOCUMENT`;
+- runs the PostGIS preflight, then applies migrations through the same runner, with every `Database__MigrationSafety__*` gate in force: unannotated contract scripts are refused (`Enforce`), reviewed contract scripts on an existing database need their one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce (`ContractApplyPolicy=Gate`), and `BackupCommand` runs before them;
+- starts no HTTP listener, hosted or background service, worker, scheduler or alert dispatcher, and needs no Redis, licence, admin password or encryption key;
+- ignores `HONUA_SKIP_MIGRATIONS`, so it can share the serving replicas' environment;
+- refuses to run inside AWS Lambda, where a failed init is retried. Run it as a container task or Job.
+
+Standard output carries one JSON line; logs go to standard error. The summary (`format: honua.migrate-only/v1`) has these fields:
+
+| Field | Meaning |
+|---|---|
+| `outcome` | `completed`, `refused` (a safety gate or the configuration stopped the run) or `failed`. |
+| `code`, `exitCode` | The typed reason and the process exit code, as in the table below. |
+| `message` | The reason in words. Connection details are never included. |
+| `appliedScripts` | Scripts this run applied, in order. Empty when the journal was already current. |
+| `schemaNumber` | The highest migration number the journal now holds. Set only on success. |
+| `binarySchemaNumber` | The highest migration number this image ships. |
+| `schemaVerified` | `true` once the runner has reconciled the journal with the physical schema. |
+| `journalWasEmpty` | `true` for a fresh install. |
+| `pendingScripts` | The scripts that were pending before the run, each with its classification: `expand`, `contract-annotated` or `contract-unannotated`. |
+| `contractApproval` | On a gated refusal: the `setting` to set and the `nonce` for these exact scripts. |
+| `backupHooks` | Each backup-command run: `outcome`, `succeeded`, `exitCode`, `durationMilliseconds`. |
+
+| Exit code | `code` | What to do |
+|---:|---|---|
+| `0` | `completed` | The journal is current. Start or roll the serving replicas. |
+| `2` | `invalid-configuration` | Fix the named setting: missing connection string, a provider other than PostgreSQL, a malformed switch, Lambda, or an execution-worker launch. |
+| `3` | `database-unavailable` | The database refused, timed out or ran out of connection slots. Retry once it is reachable. |
+| `4` | `database-incompatible` | PostGIS is missing or unsupported. Install or upgrade the extension. |
+| `5` | `contract-approval-required` | Review the scripts in `pendingScripts`, then re-run with `HONUA_APPROVE_CONTRACT_MIGRATIONS=<contractApproval.nonce>`. Unset it afterwards. |
+| `6` | `unannotated-contract-migration` | A contract-phase script lacks its compatibility review. Do not override `Enforce` to get past it; use an image whose scripts are reviewed. |
+| `7` | `backup-failed` | The backup command failed, so nothing was applied. Fix the backup and re-run. |
+| `8` | `schema-newer-than-binary` | The journal holds migrations this image does not know. Use the newer image. |
+| `9` | `migration-lock-timeout` | Another migrator held the migration lock. Let it finish, then re-run. |
+| `10` | `migration-failed` | A script failed, or the journal and the schema disagree. See the log on standard error. |
+| `11` | `cancelled` | The run received SIGTERM or SIGINT. It stops before the next database step, never inside a script. |
+
+A contract-phase upgrade is therefore two runs. The first exits `5` and prints the nonce. After review, the second run with that nonce applies the scripts. Kubernetes and Compose recipes are in [Deploy on Kubernetes](kubernetes.md#run-migrations-as-a-pre-upgrade-job) and [Deploy with Docker Compose](docker-compose.md#upgrade--rollback).
 
 ## Coordinated rollouts via the deploy API
 
@@ -204,6 +330,7 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 - a named preset is not supported, even alongside explicit query overrides;
 - telemetry parameters are set without `telemetry.connection` (outside the `health-only` profile), or the connection is not configured under `ControlPlane__TelemetryConnections`;
 - error-rate or latency signals have no sample floor (`telemetry.sample_count.query` + `telemetry.sample_count.minimum`);
+- `telemetry.error_rate.query` and `telemetry.error_count.query` are both set, or `telemetry.error_count.query` is set on a connection whose provider is not CloudWatch or Azure Monitor;
 - `telemetry.max_staleness_seconds` is set on a CloudWatch or Azure Monitor connection. Only Prometheus checks each sample's observation time; the other providers query a fixed 300-second window, so the bound would be ignored;
 - the rollout splits traffic (a canary weight or ramp) but its metrics are aggregate. Set `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job`, a canary preset, or explicit candidate-scoped queries, so the stable revision's traffic cannot mask a failing candidate;
 - probe settings or golden-query expectations are set without their URL, or `telemetry.healthz.failure_threshold` exceeds `telemetry.healthz.samples`;
@@ -212,9 +339,22 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 
 At runtime, a reading only counts as evidence when it is present, finite, non-negative, from a single series or row, and fresh. Empty results, `NaN`/`±Inf`, negative values, multi-series or multi-row answers, samples below the sample floor, and samples whose timestamp is further from now than the freshness bound all hold the rollout. None of them ever satisfies the gate.
 
+There is one bounded exception, for error counts. AWS publishes ALB `HTTPCode_Target_5XX_Count` / `HTTPCode_ELB_5XX_Count` and Lambda `Errors` datapoints only for periods that had errors, so a healthy candidate has no error series at all. `FILL(…, 0)` does not help, because a `SEARCH` that matches no metric returns no series to fill. For that case, set `telemetry.error_count.query` instead of `telemetry.error_rate.query`. The gate then divides the count by the sample count read for the same 300-second window and compares the ratio against `telemetry.error_rate.threshold`. When the count query completes and matches no series (CloudWatch) or no rows (Azure Monitor) **and** the sample count meets the floor, the count is read as zero. The decision message records that substitution, for example `error-count series absent for a window with 240 samples (floor 20); read as 0 errors`. Everything else still holds:
+
+| Error-count read | Sample-count read | Decision |
+|---|---|---|
+| A value | Meets the floor | The rate is count ÷ samples, compared against the threshold. |
+| No series or rows, query complete | Meets the floor | 0 errors: the error signal passes. |
+| No series or rows, query complete | Empty, multi-series, non-finite or below the floor | Hold. Missing traffic evidence is never read as healthy. |
+| Partial or failed result (CloudWatch `PartialData`, `InternalError` or a paged answer; an Azure Monitor `PartialError`) | Any | Hold, as missing evidence. |
+| Any | Not configured | Rejected at plan time: an error count needs the sample floor. |
+
+The substitution never applies to `telemetry.error_rate.query`, because an empty ratio cannot tell no errors from no traffic, and no preset uses it. The Prometheus presets reach the same result inside PromQL with `or vector(0)`.
+
 | Parameter | Default | Purpose |
 |---|---|---|
 | `telemetry.max_staleness_seconds` | `300` | Freshness bound for Prometheus samples, in (0, 3600]. CloudWatch and Azure Monitor read only the last 300 seconds and reject this key at plan time. |
+| `telemetry.error_count.query` | — (none) | CloudWatch metric-math or Azure Monitor KQL query for the error *count* over the window, used in place of `telemetry.error_rate.query`. Divided by the sample count; an empty result with the sample floor met reads as 0 errors. Needs `telemetry.error_rate.threshold` and the sample floor. |
 | `telemetry.warmup_seconds` | preset (`120` for `honua-http`) | Bake time after the candidate first receives traffic, in (0, 21600]. |
 | `telemetry.evidence_grace_seconds` | `900` | How long missing or invalid evidence (provider outage, unconfigured connection, stale or ambiguous data, unreachable probe) is tolerated after warmup before the rollout is rolled back, in (0, 3600]. |
 | `telemetry.exposure_deadline_seconds` | `1800` | How long a submitted rollout may wait for the candidate to receive traffic. Past it, the rollout is rolled back without the candidate ever being activated. In (0, 7200]. |
@@ -292,6 +432,27 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 ```
 
 For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
+
+### Rollback target eligibility
+
+Before you roll back the image, check that the target image can protect itself
+against the schema it will find. Image rollback never reverses migrations.
+
+- **Roll back only to images that include the schema-reader guard.** Across
+  additive (expand-only) migrations, that means schema 135 or later: those
+  images verify the forward-compatibility declarations described in
+  [Rollback across additive migrations](#rollback-across-additive-migrations).
+- **Never roll back across a contract-phase migration without a restore.** This
+  applies to scripts marked `-- honua:reader-incompatible` too. Restore the
+  backup that matches the target revision instead
+  ([Back up and restore](backup-and-restore.md)).
+- **`honua-2026.1` is not a safe rollback target across any migration.** Its
+  server image (honua-server `f897700`, schema 106) predates the schema-reader
+  guard. On a newer database it starts and serves without refusing, even
+  across contract-phase migrations, so nothing stops an unsafe rollback. The
+  only safe path back to 2026.1 is to restore the backup you took before you
+  upgraded. Pin rollback targets by digest. The tag named in the 2026.1 release
+  notes has since moved to a rebuild (honua-io/honua-release#776).
 
 ### Rollback completion proof
 

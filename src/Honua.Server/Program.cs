@@ -123,12 +123,16 @@ var builder = WebApplication.CreateBuilder(args);
 // resolution steps so aws:secretsmanager: references inside the document resolve exactly as if
 // they had come from the environment. Precedence: appsettings < document < env vars < command line.
 await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
-// Run-to-completion database initialization uses the same provider migration services, but
-// branches before Redis, licensing, HTTP endpoints or background processors are composed.
-if (Honua.Server.Hosting.MigrationOnlyHost.IsRequested(builder.Configuration))
+
+// Migrate-only mode (honua-server#6470): HONUA_MIGRATE_ONLY=true applies the database migrations
+// through the same runner and MigrationSafety gates as serving startup, prints one JSON summary to
+// standard output and exits with a typed code. It composes its own minimal service graph and never
+// builds this web host, so no listener, hosted service, Redis, licence or admin credential is
+// involved. Unset (the default, including every Lambda init), the switch is a no-op.
+if (Honua.Server.Hosting.MigrateOnly.MigrateOnlyMode.Resolve(builder.Configuration) !=
+    Honua.Server.Hosting.MigrateOnly.MigrateOnlyRequest.NotRequested)
 {
-    StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
-    Environment.ExitCode = await Honua.Server.Hosting.MigrationOnlyHost.RunProcessAsync(builder.Configuration);
+    Environment.ExitCode = await Honua.Server.Hosting.MigrateOnly.MigrateOnlyCommand.RunFromEntryPointAsync(builder.Configuration);
     return;
 }
 
@@ -469,8 +473,30 @@ if (connectedRedis is not null &&
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
     // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
     // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
-    await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
-    var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+    System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
+    try
+    {
+        await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
+        keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+    }
+    catch (System.Security.Cryptography.CryptographicException ex)
+    {
+        // A malformed bundle or wrong export password. The exception text can describe the
+        // certificate, so only its type is reported.
+        Honua.Server.Hosting.StartupRefusal.Exit(
+            $"'{OperationSecretKeyRingProtection.CertificatePathKey}' or '{OperationSecretKeyRingProtection.CertificateMaterialKey}' "
+            + $"could not be loaded as a PKCS#12 certificate ({ex.GetType().Name}). Check the bundle and its export password.");
+        return;
+    }
+    catch (InvalidOperationException ex)
+    {
+        // A missing or unreadable certificate is an operator error. Left unhandled it aborts the
+        // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status
+        // (honua-server#6500). Report it and leave with a plain exit status.
+        Honua.Server.Hosting.StartupRefusal.Exit(ex.Message);
+        return;
+    }
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
@@ -870,6 +896,12 @@ if (builder.Configuration.GetValue<bool?>("HONUA_DB_DEGRADED_START") is { } envD
 // on there unless the operator set it explicitly (honua-server preflight 53300 crash loop).
 startupResilienceOptions = Honua.Infrastructure.Monitoring.StartupDatabasePreflight.ApplyServerlessDefault(
     startupResilienceOptions, builder.Configuration);
+startupResilienceOptions = Honua.Infrastructure.Monitoring.StartupDatabasePreflight.ApplyDevelopmentContainerDefault(
+    startupResilienceOptions, builder.Configuration, builder.Environment.IsDevelopment());
+// A recovery-enabled Development container must reject permanent startup failures too;
+// otherwise its permissive legacy path leaves a live host with a failed migration latch.
+var failOnDatabaseStartupFailure = Honua.Infrastructure.Monitoring.StartupDatabasePreflight.ShouldFailStartup(
+    startupResilienceOptions, builder.Configuration, builder.Environment.IsDevelopment());
 
 builder.Services.AddSingleton(startupResilienceOptions);
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
@@ -945,10 +977,33 @@ builder.Services.AddScoped(static sp => new Honua.Core.Features.FeatureStore.Ser
     sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProviderRegistry>()));
+// Redis is the shared registry when it is connected. Without it, a host that runs as several
+// instances (AWS Lambda, Deployment:Mode=MultiNode) keeps the keys in the shared database, so a key
+// minted on one instance authenticates on the others (honua-server#6487). A single instance keeps
+// the in-process registry.
+var adminKeysNeedSharedStore = Honua.Ai.Protocols.Mcp.McpSessionModeResolver.DescribeMultiInstanceHost(
+    builder.Configuration, Environment.GetEnvironmentVariable) is not null;
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
-    sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
-        ? new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>())
-        : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+{
+    if (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis)
+    {
+        return new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>());
+    }
+
+    if (adminKeysNeedSharedStore && sp.GetService<Npgsql.NpgsqlDataSource>() is { } dataSource)
+    {
+        return new Honua.Server.Features.Admin.Services.PostgresAdminApiKeyStore(
+            dataSource, sp.GetService<TimeProvider>(), builder.Configuration["Database:Schema"]);
+    }
+
+    if (adminKeysNeedSharedStore)
+    {
+        ProgramLog.AdminApiKeysPerInstance(
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Honua.AdminApiKeys"));
+    }
+
+    return new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>());
+});
 builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
@@ -1762,6 +1817,11 @@ app.UseHonuaTenantSchemaRouting();
 app.UseHonuaTenantStatusEnforcement();
 app.UseMiddleware<Honua.Server.Features.AgentWorkspace.AgentWorkspaceTurnMiddleware>();
 
+// The canonical service-policy path is synchronous. Hydrate a fresh, tenant-bound
+// PostgreSQL sharing audience once per authenticated request before any handler can
+// evaluate it; revocations take effect on the next request across replicas.
+Honua.Server.Features.Portal.Sharing.PortalAudienceHydrationExtensions.UsePortalAudienceHydration(app);
+
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.
 app.UsePortalTokenAuthenticationRejection();
@@ -1801,14 +1861,34 @@ Honua.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
 
 // Run PostGIS preflight compatibility check (before migrations — migration scripts
 // create GEOMETRY columns and GiST indexes that require PostGIS to be installed)
-await RunPostGisPreflightCheckAsync();
+try
+{
+    await RunPostGisPreflightCheckAsync();
+}
+catch (InvalidOperationException ex)
+    when (Honua.Server.Hosting.GatedBootShutdown.IsPreflightRefusal(ex)
+        && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+{
+    // An unhandled exception aborts the runtime, and on the AOT image native finalizers then run
+    // after their modules unload, so the container exits 139 instead of reporting the refusal
+    // (honua-server#6488, #6495). Leave through the host dispose path with a plain exit status.
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
+}
 
 // Run database migrations on startup. A migration safety gate refusal is terminal, but it
 // must leave through the host dispose path: an unhandled exception aborts the runtime and
-// native finalizers then run after their modules unload (honua-server#5507).
+// native finalizers then run after their modules unload (honua-server#5507). A schema-floor
+// refusal on the skip-migrations path is the same class of abort (honua-server#6496).
 try
 {
     await RunDatabaseMigrationsAsync();
+}
+catch (Exception ex) when (Honua.Server.Hosting.GatedBootShutdown.IsSchemaFloorRefusal(ex)
+    && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+{
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
 }
 catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdown.IsContractGateRefusal(ex))
 {
@@ -2153,7 +2233,7 @@ async Task RunDatabaseMigrationsAsync()
         if (string.IsNullOrEmpty(skippedMigrationConnectionString))
         {
             migrationState.MarkFailed("Migrations were skipped, but the schema guard could not run without a database connection string.");
-            if (!app.Environment.IsDevelopment())
+            if (failOnDatabaseStartupFailure)
             {
                 throw new InvalidOperationException(
                     "Database schema verification is required when HONUA_SKIP_MIGRATIONS=true, but no connection string is configured.");
@@ -2163,6 +2243,21 @@ async Task RunDatabaseMigrationsAsync()
 
         try
         {
+            // The pending provider script cannot run while migrations are skipped. A baseline that
+            // already matches is journaled as adopted; anything short of that match stays a floor
+            // failure and is not repaired here (honua-server#6496).
+            var adoptedBaseline = schemaGuard.TryAdoptMatchingRasterBaselineAsync(
+                skippedMigrationConnectionString,
+                app.Lifetime.ApplicationStopping);
+            if (adoptedBaseline is not null)
+            {
+                var adoptedScript = await adoptedBaseline;
+                if (!string.IsNullOrEmpty(adoptedScript))
+                {
+                    Honua.Infrastructure.Logging.Log.RasterProviderBaselineAdopted(app.Logger, adoptedScript);
+                }
+            }
+
             await schemaGuard.VerifyAsync(
                 skippedMigrationConnectionString,
                 app.Lifetime.ApplicationStopping);
@@ -2176,7 +2271,6 @@ async Task RunDatabaseMigrationsAsync()
             // A schema newer than this binary (DatabaseSchemaCompatibilityException) or one that
             // contradicts its journal still fails fast below.
             if (Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService.IsSchemaBehindBinary(ex, out var schemaFloorReason)
-                && !app.Environment.IsDevelopment()
                 && TryArmDegradedStart(
                     "schema guard",
                     schemaFloorReason,
@@ -2191,7 +2285,6 @@ async Task RunDatabaseMigrationsAsync()
             // The guard could not reach the database (no free slots, timeout): that is an outage,
             // not schema divergence. Degraded start defers the guard to the recovery loop.
             if (ex is not Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException
-                && !app.Environment.IsDevelopment()
                 && TryEnterDegradedStart("schema guard", ex, migrationsPending: false, schemaGuardPending: true))
             {
                 return;
@@ -2199,7 +2292,7 @@ async Task RunDatabaseMigrationsAsync()
 
             migrationState.MarkFailed("Database schema diverges from the migration journal.");
             Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
-            if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException || !app.Environment.IsDevelopment())
+            if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException || failOnDatabaseStartupFailure)
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
             }
@@ -2261,8 +2354,8 @@ async Task RunDatabaseMigrationsAsync()
             // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
             // start is enabled and the failure is transient connectivity (#1632).
             if (error is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
-                (!app.Environment.IsDevelopment()
-                && !TryEnterDegradedStart("migrations", error, migrationsPending: true)))
+                (!TryEnterDegradedStart("migrations", error, migrationsPending: true)
+                && failOnDatabaseStartupFailure))
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
                 return; // unreachable; satisfies the compiler
@@ -2298,8 +2391,8 @@ async Task RunDatabaseMigrationsAsync()
         // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
         // start is enabled and the failure is transient connectivity (#1632).
         if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
-            (!app.Environment.IsDevelopment()
-            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true)))
+            (!TryEnterDegradedStart("migrations", ex, migrationsPending: true)
+            && failOnDatabaseStartupFailure))
         {
             throw;
         }
@@ -2397,7 +2490,7 @@ async Task RunPostGisPreflightCheckAsync()
             static (delay, cancellationToken) => Task.Delay(delay, cancellationToken),
             app.Lifetime.ApplicationStopping);
     }
-    catch (Exception ex) when (!app.Environment.IsDevelopment())
+    catch (Exception ex) when (ex is not OutOfMemoryException)
     {
         // The preflight could not reach the database to check compatibility. If degraded start is
         // enabled and the failure is transient connectivity, arm degraded mode (migrations are run
@@ -2418,7 +2511,6 @@ async Task RunPostGisPreflightCheckAsync()
     // honua-server#5916: the readiness reason and the log line carry the cause class
     // (connection-borrow-timeout, connection-refused, auth, connection-unavailable).
     if (result.IsTransientFailure
-        && !app.Environment.IsDevelopment()
         && TryArmDegradedStart(
             "PostGIS preflight",
             Honua.Infrastructure.Monitoring.StartupDatabasePreflight.DescribeCause(result),
@@ -2437,7 +2529,7 @@ async Task RunPostGisPreflightCheckAsync()
 
     var errorMessage = result.ErrorMessage ?? "Database compatibility check failed.";
 
-    if (!app.Environment.IsDevelopment())
+    if (failOnDatabaseStartupFailure)
     {
         Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(
             app.Logger,

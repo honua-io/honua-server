@@ -30,7 +30,7 @@ internal sealed class DescribeLayerTool : IMcpTool
     private const string OutputSchemaJson = """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "name", "fields", "fieldCount"],
+          "required": ["serviceId", "layerId", "studioSourceId", "name", "fields", "fieldCount"],
           "properties": {
             "serviceId": { "type": "string" },
             "serviceName": { "type": "string" },
@@ -40,6 +40,11 @@ internal sealed class DescribeLayerTool : IMcpTool
               "description": "Verified storage-layer reference for process layer-id parameters. Distinct from layerId. Present only when the publication resolves to the same indexed binding used by the process runtime; execution separately checks current permissions and process capabilities."
             },
             "processLayerUnavailableReason": { "type": "string" },
+
+            "studioSourceId": {
+              "type": "string",
+              "description": "Existing Studio catalog identity for composition layer.sourceId. Distinct from a composition layer.id or a process layer-id. Discovery grants no query or publication authority."
+            },
             "name": { "type": "string" },
             "type": { "type": "string" },
             "geometryType": { "type": "string" },
@@ -118,6 +123,7 @@ internal sealed class DescribeLayerTool : IMcpTool
         Name = ToolName,
         Title = "Describe layer",
         Description = "Describe a published layer's field schema (name, type, nullability, alias), row count, geometry type, spatial reference, and extent. "
+            + "For a catalog-backed Studio draft copy studioSourceId into layer.sourceId; choose a separate composition layer.id. "
             + "Call this before honua_query_features to learn the exact field names/types to use in where and outFields. "
             + "For process layer-id parameters use processLayerId, never the service-local layerId. An absent processLayerId means this publication cannot be safely addressed by the current process layer reference.",
         InputSchema = InputSchema,

@@ -184,9 +184,73 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
             .Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ResolveBoundConnectionString_SecretReference_ResolvesThroughTheRequestSecretResolver()
+    {
+        // honua-server#6499: a connection whose credentials are an external secret reference
+        // (no encrypted bytes, no plaintext) used to fail every read with "no usable connection
+        // string" because the reader never consulted the secret-reference resolver.
+        const string secretConnectionString = "Host=demo-rds;Port=5432;Database=demo;Username=svc;Password=secret";
+        var connection = new DataConnection
+        {
+            Id = "demo-rds",
+            IsEncrypted = false,
+            SecretRef = "aws:secretsmanager:demo-rds",
+            SecretType = "AwsSecretsManager",
+        };
+        var secrets = Substitute.For<IRequestSecretReferenceResolver>();
+        secrets.ResolveAsync("aws:secretsmanager:demo-rds", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(secretConnectionString));
+
+        var validator = Substitute.For<IResolvedConnectionStringValidator>();
+
+        var resolved = await ResolveBoundConnectionStringAsync(connection, null, secrets, validator);
+
+        await validator.Received(1).ValidateConnectionStringAsync(connection, secretConnectionString, Arg.Any<CancellationToken>());
+
+        resolved.Should().Be(secretConnectionString);
+    }
+
+    [Fact]
+    public async Task ResolveBoundConnectionString_SecretReferenceRefused_FailsInsteadOfReadingTheDefaultDatabase()
+    {
+        var connection = new DataConnection
+        {
+            Id = "demo-rds",
+            IsEncrypted = false,
+            SecretRef = "aws:secretsmanager:not-allowed",
+        };
+        var secrets = Substitute.For<IRequestSecretReferenceResolver>();
+        secrets.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<string>>(_ => throw new RequestSecretReferenceException("refused"));
+
+        var act = () => ResolveBoundConnectionStringAsync(connection, null, secrets, Substitute.For<IResolvedConnectionStringValidator>());
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("demo-rds");
+    }
+
+    [Fact]
+    public async Task ResolveBoundConnectionString_SecretValueRejectedByPolicy_Propagates()
+    {
+        var connection = new DataConnection { Id = "demo-rds", SecretRef = "aws:secretsmanager:demo-rds" };
+        var secrets = Substitute.For<IRequestSecretReferenceResolver>();
+        secrets.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("Host=evil;SSL Mode=Disable"));
+        var validator = Substitute.For<IResolvedConnectionStringValidator>();
+        validator.ValidateConnectionStringAsync(Arg.Any<DataConnection>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("host not allowed"));
+
+        var act = () => ResolveBoundConnectionStringAsync(connection, null, secrets, validator);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("host not allowed");
+    }
+
     private static async Task<string?> ResolveBoundConnectionStringAsync(
         DataConnection connection,
-        IConnectionEncryptionService? connectionEncryptionService)
+        IConnectionEncryptionService? connectionEncryptionService,
+        IRequestSecretReferenceResolver? secretReferenceResolver = null,
+        IResolvedConnectionStringValidator? validator = null)
     {
         var reader = new PostgresStorageMappedFeatureReader(
             Substitute.For<IAdoNetDatabaseConnectionProvider>(),
@@ -194,7 +258,9 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
             new MetadataV2Resource(),
             new FeatureStorageMapping(TableName: "maui_features", PrimaryKeyColumn: "objectid"),
             connection,
-            connectionEncryptionService);
+            connectionEncryptionService,
+            secretReferenceResolver: secretReferenceResolver,
+            resolvedConnectionStringValidator: validator);
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
             "ResolveBoundConnectionStringAsync",
@@ -203,7 +269,7 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
 
         try
         {
-            var task = (Task<string?>)method!.Invoke(reader, Array.Empty<object>())!;
+            var task = (Task<string?>)method!.Invoke(reader, [CancellationToken.None])!;
             return await task;
         }
         catch (TargetInvocationException ex) when (ex.InnerException is not null)

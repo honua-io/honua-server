@@ -567,20 +567,24 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // non-finite/ambiguous/stale) must never fall through to "healthy" (#4617) — that is exactly
         // how a real degradation goes undetected when the sample floor is unconfigured. It is treated
         // as still-waiting evidence instead, which the caller bounds via the evidence grace window.
-        if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
+        if (policy.HasErrorSignal && policy.ErrorRateThreshold.HasValue)
         {
-            if (!readings.ErrorRate.HasValue)
+            var errorRate = ResolveErrorRate(policy, readings, out var errorRateEvidence);
+            if (!errorRate.HasValue)
             {
-                missingSignals.Add("no error-rate signal is available yet");
+                missingSignals.Add(errorRateEvidence ?? "no error-rate signal is available yet");
             }
-            else if (readings.ErrorRate.Value > policy.ErrorRateThreshold.Value)
+            else if (errorRate.Value > policy.ErrorRateThreshold.Value)
             {
                 breachMessages.Add(
-                    $"error rate {Format(readings.ErrorRate.Value)} exceeded threshold {Format(policy.ErrorRateThreshold.Value)}");
+                    $"error rate {Format(errorRate.Value)} exceeded threshold {Format(policy.ErrorRateThreshold.Value)}" +
+                    (errorRateEvidence is null ? string.Empty : $" ({errorRateEvidence})"));
             }
             else
             {
-                healthySignals.Add("error-rate signal is within threshold");
+                healthySignals.Add(errorRateEvidence is null
+                    ? "error-rate signal is within threshold"
+                    : $"error-rate signal is within threshold ({errorRateEvidence})");
             }
         }
 
@@ -628,6 +632,57 @@ internal sealed class DeployTelemetrySignalEvaluator(
     }
 
     /// <summary>
+    /// The error rate the gate compares against its threshold. With <c>telemetry.error_rate.query</c> it
+    /// is the provider's reading. With <c>telemetry.error_count.query</c> (honua-server#6474) it is the
+    /// error count divided by the sample count read for the same window, and exactly one substitution
+    /// is allowed: when the provider reports that the count query completed but matched no series
+    /// (AWS publishes no <c>HTTPCode_Target_5XX_Count</c> / <c>Errors</c> datapoint for an error-free
+    /// period) and the sample count meets the configured floor, the count is read as zero. Every other
+    /// absence (a failed, partial or ambiguous read, a missing or below-floor sample count) stays
+    /// missing evidence. <paramref name="evidence"/> names the derivation so the decision message
+    /// records the substitution.
+    /// </summary>
+    private static double? ResolveErrorRate(
+        DeployTelemetryPolicy policy,
+        DeployTelemetryReadings readings,
+        out string? evidence)
+    {
+        evidence = null;
+        if (string.IsNullOrWhiteSpace(policy.ErrorCountQuery))
+        {
+            return readings.ErrorRate;
+        }
+
+        // The caller has already held on a missing or below-floor sample count; re-check so the
+        // substitution can never run without a floor-meeting denominator from the same window.
+        if (!policy.MinimumSampleCount.HasValue ||
+            readings.SampleCount is not { } sampleCount ||
+            sampleCount <= 0 ||
+            sampleCount < policy.MinimumSampleCount.Value)
+        {
+            evidence = "no sample count meets the floor, so the error count cannot be converted to a rate";
+            return null;
+        }
+
+        if (readings.ErrorCount is { } errorCount)
+        {
+            var rate = errorCount / sampleCount;
+            evidence = $"{Format(errorCount)} errors over {Format(sampleCount)} samples";
+            return rate;
+        }
+
+        if (readings.ErrorCountSeriesAbsent)
+        {
+            evidence = $"error-count series absent for a window with {Format(sampleCount)} samples " +
+                $"(floor {Format(policy.MinimumSampleCount.Value)}); read as 0 errors";
+            return 0;
+        }
+
+        evidence = "no error-count signal is available yet";
+        return null;
+    }
+
+    /// <summary>
     /// Provider-neutral evidence validity guard (#4617): a non-finite (NaN/±Infinity) or negative
     /// sample count, error rate or latency is not a measurement — metric math over an undefined ratio
     /// or a counter reset produces them — so it is treated as absent. Absent evidence never satisfies
@@ -639,6 +694,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         {
             SampleCount = UsableReading(readings.SampleCount),
             ErrorRate = UsableReading(readings.ErrorRate),
+            ErrorCount = UsableReading(readings.ErrorCount),
             LatencyP95 = UsableReading(readings.LatencyP95)
         };
 

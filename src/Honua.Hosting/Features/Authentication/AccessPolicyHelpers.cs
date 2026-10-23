@@ -223,7 +223,7 @@ internal static class AccessPolicyHelpers
         if (scopedKeyDecision is { } decision)
         {
             if (decision.IsAllowed && AgentCredentialAuthority.IsDelegated(context.User))
-                decision = await EvaluateGrantCoreAsync(context.RequestServices, context.User, serviceName, null, operation, cancellationToken, context.Items).ConfigureAwait(false) == GrantOutcome.Allow
+                decision = (await EvaluateGrantCoreAsync(context.RequestServices, context.User, serviceName, null, operation, cancellationToken, context.Items).ConfigureAwait(false)).IsAllowed
                     ? AccessDecision.Allowed() : AccessDecision.Forbidden("Current canonical role grants do not authorize the delegated request.");
             return CreateAccessDeniedResult(context, decision);
         }
@@ -237,9 +237,16 @@ internal static class AccessPolicyHelpers
                 operation,
                 cancellationToken).ConfigureAwait(false);
 
-            if (grantDecision == GrantOutcome.Allow)
+            if (grantDecision.IsAllowed)
             {
-                return null;
+                if (!NarrowsWithRoleList(grantDecision.MatchedGrant))
+                {
+                    return null;
+                }
+
+                var granted = ApplyRoleListToGrant(
+                    context.RequestServices, context.User, resourcePolicy: null, service, operation);
+                return granted.IsAllowed ? null : CreateAccessDeniedResult(context, granted);
             }
         }
 
@@ -284,7 +291,8 @@ internal static class AccessPolicyHelpers
     /// <summary>
     /// The single, request-context-free implementation of the resource access decision:
     /// tenant scope, then the per-operation RBAC grant resolver, then the coarse
-    /// <see cref="AccessPolicy"/> fallback. Every HTTP helper above delegates here, and
+    /// <see cref="AccessPolicy"/> fallback. A matching grant still has to pass an explicit
+    /// role list (#6358). Every HTTP helper above delegates here, and
     /// so does the principal-based <see cref="LayerAccessAuthorizer"/> used by the
     /// geoprocessing submit pipeline (honua-server#3046) — so the asynchronous job
     /// surface and the synchronous query surfaces cannot drift apart.
@@ -348,7 +356,7 @@ internal static class AccessPolicyHelpers
         if (scopedKeyDecision is { } decision)
         {
             if (decision.IsAllowed && AgentCredentialAuthority.IsDelegated(principal) && !string.IsNullOrWhiteSpace(serviceName))
-                return await EvaluateGrantCoreAsync(services, principal, serviceName, resource.Metadata.Name, operation, cancellationToken, requestCache).ConfigureAwait(false) == GrantOutcome.Allow
+                return (await EvaluateGrantCoreAsync(services, principal, serviceName, resource.Metadata.Name, operation, cancellationToken, requestCache).ConfigureAwait(false)).IsAllowed
                     ? AccessDecision.Allowed() : AccessDecision.Forbidden("Current canonical role grants do not authorize the delegated request.");
             return decision;
         }
@@ -364,10 +372,13 @@ internal static class AccessPolicyHelpers
                 cancellationToken,
                 requestCache).ConfigureAwait(false);
 
-            // An explicit per-operation grant authorizes the request directly.
-            if (grantDecision == GrantOutcome.Allow)
+            // A built-in wildcard grant does not skip an explicit role list (#6358).
+            // A grant that names this service and layer is an explicit allow and stands.
+            if (grantDecision.IsAllowed)
             {
-                return AccessDecision.Allowed();
+                return NarrowsWithRoleList(grantDecision.MatchedGrant)
+                    ? ApplyRoleListToGrant(services, principal, resource.AccessPolicy, service, operation)
+                    : AccessDecision.Allowed();
             }
         }
 
@@ -447,7 +458,7 @@ internal static class AccessPolicyHelpers
     /// <c>(service, layer, operation)</c> tuple, mapping the request principal's
     /// claims to roles. Returns whether an explicit grant allows the request.
     /// </summary>
-    private static Task<GrantOutcome> EvaluateGrantAsync(
+    private static Task<GrantEvaluation> EvaluateGrantAsync(
         HttpContext context,
         string serviceName,
         string? layerName,
@@ -466,7 +477,7 @@ internal static class AccessPolicyHelpers
     /// Request-context-free grant evaluation shared by the HTTP helpers and the
     /// principal-based <see cref="LayerAccessAuthorizer"/> (honua-server#3046).
     /// </summary>
-    private static async Task<GrantOutcome> EvaluateGrantCoreAsync(
+    private static async Task<GrantEvaluation> EvaluateGrantCoreAsync(
         IServiceProvider services,
         ClaimsPrincipal principal,
         string serviceName,
@@ -478,7 +489,7 @@ internal static class AccessPolicyHelpers
         var resolver = services.GetService<IPermissionResolver>();
         if (resolver is null)
         {
-            return GrantOutcome.NoGrant;
+            return GrantEvaluation.None;
         }
 
         var options = services.GetRequiredService<IOptions<RbacOptions>>().Value;
@@ -488,7 +499,7 @@ internal static class AccessPolicyHelpers
         if (roles.Count == 0)
         {
             // No roles to resolve grants from — defer to the coarse policy.
-            return GrantOutcome.NoGrant;
+            return GrantEvaluation.None;
         }
 
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -536,16 +547,43 @@ internal static class AccessPolicyHelpers
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return decision.IsAllowed ? GrantOutcome.Allow : GrantOutcome.NoGrant;
+        return decision.IsAllowed
+            ? GrantEvaluation.Allowed(decision.MatchedGrant)
+            : GrantEvaluation.None;
     }
 
-    private enum GrantOutcome
+    private readonly record struct GrantEvaluation(bool IsAllowed, PermissionGrant? MatchedGrant)
     {
-        NoGrant = 0,
-        Allow = 1,
+        public static GrantEvaluation None => default;
+
+        public static GrantEvaluation Allowed(PermissionGrant? grant) => new(true, grant);
     }
+
+    /// <summary>
+    /// True when the grant is broad enough that a layer role list must still be
+    /// applied. Built-in viewer and editor grants are <c>*/*</c>. A grant that names
+    /// both the service and the layer is an explicit allow.
+    /// </summary>
+    private static bool NarrowsWithRoleList(PermissionGrant? grant)
+        => grant is null
+            || string.Equals(grant.Service, "*", StringComparison.Ordinal)
+            || string.Equals(grant.Layer, "*", StringComparison.Ordinal);
 
     public static IResult? RequireServiceAccess(
+        HttpContext context,
+        MetadataV2Service service,
+        AccessScope scope = AccessScope.Read)
+        => CreateAccessDeniedResult(context, EvaluateServiceAccess(context, service, scope));
+
+    /// <summary>
+    /// Evaluates a resolved service, including tenant and scoped-key targets, while
+    /// leaving protocol-specific serialization of a denial to the caller.
+    /// </summary>
+    /// <param name="context">The current request.</param>
+    /// <param name="service">The resolved target service.</param>
+    /// <param name="scope">The requested read or write scope.</param>
+    /// <returns>The tenant- and target-aware access decision.</returns>
+    public static AccessDecision EvaluateServiceAccess(
         HttpContext context,
         MetadataV2Service service,
         AccessScope scope = AccessScope.Read)
@@ -553,14 +591,11 @@ internal static class AccessPolicyHelpers
         ArgumentNullException.ThrowIfNull(service);
         if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
         {
-            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+            return AccessDecision.Forbidden(AccessForbiddenMessage);
         }
 
-        var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope));
-        return scopedKeyDecision is { } decision
-            ? CreateAccessDeniedResult(context, decision)
-            : CreateAccessDeniedResult(context, EvaluateServicePolicy(
-                context.RequestServices, context.User, null, service, scope));
+        return EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope))
+            ?? EvaluateServicePolicy(context.RequestServices, context.User, null, service, scope);
     }
 
     public static bool IsResourceAccessible(
@@ -629,12 +664,35 @@ internal static class AccessPolicyHelpers
             .Evaluate(principal, resourcePolicy, servicePolicy, scope);
     }
 
+    // Empty role lists and AllowAnonymous still allow, so the grant stands. A forbidden
+    // decision stands even when a replacement evaluator uses its own failure text.
+    // Authentication-required is not a role-list denial.
+    private static AccessDecision ApplyRoleListToGrant(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        AccessPolicy? resourcePolicy,
+        MetadataV2Service? service,
+        AuthorizationOperation operation)
+    {
+        var policyDecision = EvaluateServicePolicy(
+            services,
+            principal,
+            resourcePolicy,
+            service,
+            ScopeForOperation(operation),
+            operation);
+        return policyDecision is { IsAllowed: false, RequiresAuthentication: false }
+            ? policyDecision
+            : AccessDecision.Allowed();
+    }
+
     /// <summary>
     /// Resolver-aware accessibility predicate (#1376). Consults the canonical
     /// per-operation permission resolver for the supplied operation first; when no
     /// grant matches it falls back to the coarse <see cref="AccessPolicy"/>
     /// evaluation, so visibility filtering (e.g. WFS GetFeature published types)
-    /// honors per-operation grants while ungranted services behave as before.
+    /// honors per-operation grants that an explicit role list also admits, while ungranted
+    /// services behave as before.
     /// </summary>
     /// <param name="context">The request context.</param>
     /// <param name="resource">The resource (layer) being accessed.</param>

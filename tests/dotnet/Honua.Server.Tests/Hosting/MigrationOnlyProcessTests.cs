@@ -6,7 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Hosting;
+using Honua.Server.Hosting.MigrateOnly;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
@@ -37,15 +37,15 @@ public sealed class MigrationOnlyProcessTests
 
         var first = await RunProcessAsync(database.GetConnectionString(), port);
         first.ExitCode.Should().Be(0, "{0}", first.Output);
-        first.Receipt.Outcome.Should().Be("completed");
-        first.Receipt.SchemaVerified.Should().BeTrue();
-        first.Receipt.AppliedScriptCount.Should().BeGreaterThan(0);
+        first.Receipt.GetProperty("outcome").GetString().Should().Be("completed");
+        first.Receipt.GetProperty("schemaVerified").GetBoolean().Should().BeTrue();
+        first.Receipt.GetProperty("appliedScripts").GetArrayLength().Should().BeGreaterThan(0);
 
         var second = await RunProcessAsync(database.GetConnectionString(), port);
         second.ExitCode.Should().Be(0, "{0}", second.Output);
-        second.Receipt.AppliedScriptCount.Should().Be(0);
-        second.Receipt.TargetLocatorSha256.Should().Be(first.Receipt.TargetLocatorSha256);
-        second.Receipt.PackagedMigrationManifestSha256.Should().Be(first.Receipt.PackagedMigrationManifestSha256);
+        second.Receipt.GetProperty("appliedScripts").GetArrayLength().Should().Be(0);
+        second.Receipt.GetProperty("targetLocatorSha256").GetString().Should().Be(first.Receipt.GetProperty("targetLocatorSha256").GetString());
+        second.Receipt.GetProperty("packagedMigrationManifestSha256").GetString().Should().Be(first.Receipt.GetProperty("packagedMigrationManifestSha256").GetString());
 
         await using var connection = new NpgsqlConnection(database.GetConnectionString());
         await connection.OpenAsync();
@@ -54,13 +54,13 @@ public sealed class MigrationOnlyProcessTests
         await command.ExecuteNonQueryAsync();
 
         var drift = await RunProcessAsync(database.GetConnectionString(), port);
-        drift.ExitCode.Should().Be(1, "{0}", drift.Output);
-        drift.Receipt.Outcome.Should().Be("failed");
-        drift.Receipt.SchemaVerified.Should().BeFalse();
-        drift.Receipt.ErrorCode.Should().Be("migration-apply-failed");
+        drift.ExitCode.Should().Be(MigrateOnlyOutcome.MigrationFailed.ExitCode, "{0}", drift.Output);
+        drift.Receipt.GetProperty("outcome").GetString().Should().Be("failed");
+        drift.Receipt.GetProperty("schemaVerified").GetBoolean().Should().BeFalse();
+        drift.Receipt.GetProperty("code").GetString().Should().Be("migration-failed");
     }
 
-    private static async Task<(int ExitCode, MigrationRunReceipt Receipt, string Output)> RunProcessAsync(string connection, int occupiedPort)
+    private static async Task<(int ExitCode, JsonElement Receipt, string Output)> RunProcessAsync(string connection, int occupiedPort)
     {
         var assembly = Path.Join(AppContext.BaseDirectory, "Honua.Server.dll");
         File.Exists(Path.ChangeExtension(assembly, ".runtimeconfig.json")).Should().BeTrue();
@@ -111,12 +111,13 @@ public sealed class MigrationOnlyProcessTests
             }
             throw;
         }
-        var output = await stdout + await stderr;
+        var standardOutput = await stdout;
+        var output = standardOutput + await stderr;
         output.Should().NotContain("Now listening on:").And.NotContain("migration-profile-test-secret").And.NotContain("Unhandled exception");
-        var lines = output.Split('\n').Where(line => line.StartsWith(MigrationOnlyHost.ReceiptPrefix, StringComparison.Ordinal)).ToArray();
-        lines.Should().ContainSingle("a process reports one terminal receipt; output: {0}", output);
-        var receipt = JsonSerializer.Deserialize(lines[0][MigrationOnlyHost.ReceiptPrefix.Length..], MigrationRunJsonContext.Default.MigrationRunReceipt);
-        receipt.Should().NotBeNull();
-        return (process.ExitCode, receipt!, output);
+        var lines = standardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        lines.Should().ContainSingle("a process reports one terminal summary; output: {0}", output);
+        using var document = JsonDocument.Parse(lines[0]);
+        document.RootElement.GetProperty("format").GetString().Should().Be(MigrateOnlyCommand.SummaryFormat);
+        return (process.ExitCode, document.RootElement.Clone(), output);
     }
 }

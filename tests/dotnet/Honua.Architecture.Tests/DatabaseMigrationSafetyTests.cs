@@ -193,6 +193,68 @@ public sealed class DatabaseMigrationSafetyTests
         }
     }
 
+    private static readonly Regex ReaderCompatibilityAnnotation = new(
+        @"^[ \t]*--[ \t]*honua:reader-(?:incompatible|compatible-from)\b[^\n]*",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    private static readonly Regex WellFormedReaderCompatibilityAnnotation = new(
+        @"^[ \t]*--[ \t]*honua:(?:reader-incompatible\b.*\breason[ \t]*=[ \t]*\S.*|reader-compatible-from[ \t]+schema[ \t]*=[ \t]*\d{1,9}[ \t]*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    [ArchitectureTest]
+    public void MigrationScripts_ReaderCompatibilityAnnotations_AreWellFormed()
+    {
+        // #6477: an opt-out must say what an older reader would violate, and a raised floor must parse.
+        // A malformed annotation already fails safe at runtime (reader-incompatible); this keeps it
+        // from shipping by accident.
+        var violations = EnumerateMigrationFiles()
+            .SelectMany(file => ReaderCompatibilityAnnotation.Matches(File.ReadAllText(file).Replace("\r\n", "\n", StringComparison.Ordinal))
+                .Where(match => !WellFormedReaderCompatibilityAnnotation.IsMatch(match.Value))
+                .Select(match => $"{Path.GetFileName(file)}: '{match.Value.Trim()}'"))
+            .ToArray();
+
+        violations.Should().BeEmpty(
+            $"use '{MigrationReaderCompatibility.ReaderIncompatibleMarkerConvention}' or " +
+            $"'{MigrationReaderCompatibility.ReaderCompatibleFromMarkerConvention}'");
+    }
+
+    [ArchitectureTest]
+    public void ReaderCompatibilityJournal_IsAnExpandMigrationPinnedInTheLedger()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string path = "src/Honua.Server/Migrations/135_RecordMigrationReaderCompatibility.sql";
+        var sql = File.ReadAllText(Path.Join(root, path));
+        var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            File.ReadAllText(Path.Join(root, "certification", "schema-migration-hashes.json")))!;
+
+        hashes.Should().ContainKey(path).WhoseValue.Should().Be(MigrationHash(sql));
+        var declaration = MigrationReaderCompatibility.Declare("Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql", sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand,
+            "the journal change must itself be rollback-safe for the previous reader");
+        declaration.MinReaderSchema.Should().Be(0);
+    }
+
+    [ArchitectureTest]
+    public void IssueMigrations126To128_DeclareExpand_SoTheSameEdgeIsRollbackSafeOnceReadersVerify()
+    {
+        // The #6477 rollback (93cad86 against schema 128) refused 126-128. Each declares expand under the
+        // shared classifier, so a reader that implements verification would have accepted them.
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        foreach (var name in new[]
+        {
+            "126_AddStudioContentHashInput.sql",
+            "127_CompleteSensorThingsSensing.sql",
+            "128_AddNetworkTopologyPromotionRequestHash.sql",
+        })
+        {
+            var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
+            var declaration = MigrationReaderCompatibility.Declare("Honua.Server.Migrations." + name, sql);
+            declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand, name);
+            MigrationReaderCompatibility.Verify(declaration, "Honua.Server.Migrations." + name, 125).Accepted
+                .Should().BeTrue(name);
+        }
+    }
+
     private static readonly Regex ConcurrentIndexPattern = new(
         @"\bCREATE\s+INDEX\s+CONCURRENTLY\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);

@@ -22,7 +22,8 @@ class NativeToolsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in [native.DOCKERFILE, '.dockerignore', 'scripts/ci/native-tools-image.py', native.WORKFLOW]:
+        for name in [native.DOCKERFILE, 'docker/worker-gdal/native-entry.c', '.dockerignore',
+                     'scripts/ci/native-tools-image.py', native.WORKFLOW]:
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / name, target)
@@ -107,7 +108,8 @@ class NativeToolsTests(unittest.TestCase):
         for override in ['PDAL_VERSION=2.10.3', 'DOTNET_RUNTIME_VERSION=10.0.12']:
             self.assertNotEqual(original, native.identity(self.root, overrides=[override])['identity'])
         self.assertNotEqual(original, native.identity(self.root, platform='linux/arm64')['identity'])
-        for name in [native.DOCKERFILE, '.dockerignore', native.WORKFLOW, 'scripts/ci/native-tools-image.py']:
+        for name in [native.DOCKERFILE, 'docker/worker-gdal/native-entry.c', '.dockerignore',
+                     native.WORKFLOW, 'scripts/ci/native-tools-image.py']:
             file = self.root / name
             previous = file.read_bytes()
             file.write_bytes(previous + b'\n# changed\n')

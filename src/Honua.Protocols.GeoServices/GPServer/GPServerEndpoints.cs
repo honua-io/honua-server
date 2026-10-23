@@ -368,9 +368,9 @@ internal static partial class GPServerEndpoints
 
             // Recognized GP environment controls use the same parsing/threading as
             // synchronous execute. env:outSR, env:workspace, and
-            // env:overwriteOutput affect result handling; env:processSR is
-            // validated and preserved for future engine support but is not yet
-            // applied. Any other env:* control yields a clear 400. See #1228.
+            // env:overwriteOutput affect result handling. Processing spatial-reference
+            // overrides are rejected until the engine can honor them; other
+            // unsupported env:* controls also yield a clear 400.
             var envError = TryParseEnvControls(context, logger, parameters, out var envControls);
             if (envError != null)
             {
@@ -1400,8 +1400,8 @@ internal static partial class GPServerEndpoints
 
     /// <summary>
     /// Parsed GP environment controls. <c>env:outSR</c>, <c>env:workspace</c>,
-    /// and <c>env:overwriteOutput</c> are honored. <c>env:processSR</c> is
-    /// validated and preserved but not yet applied by the execution engine. Any
+    /// and <c>env:overwriteOutput</c> are honored. Nonempty <c>env:processSR</c>
+    /// overrides are rejected because the execution engine cannot apply them. Any
     /// other <c>env:*</c> control is unsupported and surfaced for a 400 response.
     /// <c>env:workspace</c> mirrors arcpy's <c>arcpy.env.workspace</c> (default
     /// output location for tool results) and <c>env:overwriteOutput</c> mirrors
@@ -1414,7 +1414,8 @@ internal static partial class GPServerEndpoints
     /// <summary>
     /// Parses GP environment controls. <c>env:outSR</c>, <c>env:processSR</c>,
     /// <c>env:workspace</c>, and <c>env:overwriteOutput</c> are recognised and
-    /// returned; any other <c>env:*</c> control yields a structured 400. SR
+    /// validated; a processing-SR override or any other unsupported <c>env:*</c>
+    /// control yields a structured 400 before submission. SR
     /// values may be a bare WKID or a spatial-reference JSON object
     /// (<c>{ "wkid": 3857 }</c>). Shared by both the synchronous <c>execute</c>
     /// route and the async <c>submitJob</c> route — both thread the same
@@ -1507,6 +1508,15 @@ internal static partial class GPServerEndpoints
         if (contextError != null)
         {
             return contextError;
+        }
+
+        if (processSr is not null)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context,
+                    "Processing spatial-reference overrides (env:processSR / context.processSR) are not supported. " +
+                    "The execution engine cannot apply the requested processing CRS."),
+                "Unsupported GP processing spatial reference");
         }
 
         controls = new EnvControls(outSr, processSr, workspace, overwriteOutput);

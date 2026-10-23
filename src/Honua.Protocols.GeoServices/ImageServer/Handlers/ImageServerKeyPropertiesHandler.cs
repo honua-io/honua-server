@@ -22,16 +22,19 @@ internal sealed class ImageServerKeyPropertiesHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly IImageServerMultidimensionalInfoBuilder? _multidimensionalInfoBuilder;
     private readonly ILogger<ImageServerKeyPropertiesHandler> _logger;
 
     public ImageServerKeyPropertiesHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
-        ILogger<ImageServerKeyPropertiesHandler> logger)
+        ILogger<ImageServerKeyPropertiesHandler> logger,
+        IImageServerMultidimensionalInfoBuilder? multidimensionalInfoBuilder = null)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _multidimensionalInfoBuilder = multidimensionalInfoBuilder;
     }
 
     /// <summary>
@@ -62,6 +65,17 @@ internal sealed class ImageServerKeyPropertiesHandler
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            if (_multidimensionalInfoBuilder is not null)
+            {
+                var coverageGrid = await _multidimensionalInfoBuilder
+                    .DescribeGridAsync(layerId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (coverageGrid is not null)
+                {
+                    raster = ImageServerCoverageRaster.Apply(raster, coverageGrid);
+                }
             }
 
             var response = BuildResponse(raster);

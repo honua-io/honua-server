@@ -26,6 +26,9 @@ public sealed record LayerPublishJobProgress : IOperationProgress
     /// <summary>Published layer id once the publication transaction commits.</summary>
     public int? LayerId { get; init; }
 
+    /// <summary>Exact graph revision committed by the completed publish.</summary>
+    public long? MetadataRevision { get; init; }
+
     /// <summary>Secure connection the source table was published from.</summary>
     public Guid ConnectionId { get; init; }
 

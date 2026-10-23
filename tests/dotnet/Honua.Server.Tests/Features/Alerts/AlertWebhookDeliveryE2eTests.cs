@@ -449,7 +449,7 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
 
         public async Task EvaluateOnlyAsync()
         {
-            (await pipeline.ProcessChangesAsync(0, 10, CancellationToken.None)).Should().Be(1);
+            (await pipeline.ProcessChangesAsync(0, 10, cancellationToken: CancellationToken.None)).Should().Be(1);
             await using var connection = await dataSource.OpenConnectionAsync();
             await using var command = new NpgsqlCommand("""
                 UPDATE honua.alert_dispatch SET max_attempts = @max_attempts;

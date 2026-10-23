@@ -548,14 +548,18 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
     )
     classes = MODULE.enumerate_test_classes()
     for name, owner in (
-        ("CrsTransformationCorrectnessTests", "Core Attachments and Records"),
+        ("CrsTransformationCorrectnessTests", "Core OGC Features and CRS"),
+        ("OgcFeaturesEndpointTests", "Core OGC Features and CRS"),
+        ("AttachmentEndpointTests", "Core Attachments"),
+        ("PostgresAttachmentStoreTests", "Core Attachments"),
+        ("QueryRelatedRecordsEndpointTests", "Core Related Records and Limits"),
+        ("LimitsEnforcementTests", "Core Related Records and Limits"),
         # #3204: AdvancedSpatialQueryTests moved off `Core Endpoints` again. #4450
         # put it there, which took Core Endpoints to 82% of its budget; it now
         # shares a shard with StreamingFeatureServerEndpointTests, leaving the
         # 24.6m FeatureServerEndpointTests alone on the parent.
         ("AdvancedSpatialQueryTests", "Core Spatial Query and Streaming"),
         ("StreamingFeatureServerEndpointTests", "Core Spatial Query and Streaming"),
-        ("FeatureServerEndpointTests", "Core Endpoints"),
         ("Comprehensive.ApiSurfaceComplianceTests", "STAC and API Governance"),
         ("Comprehensive.TestQualityValidationTests", "STAC and API Governance"),
         ("PatchConcurrencyTests", "Core Mutation Concurrency"),
@@ -683,5 +687,60 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
 test_method_partition_rejects_holes_duplicates_and_leaks()
 test_method_partition_rejects_unresolved_runnable_methods()
 test_gp_nas_partition_preserves_every_runnable_method_and_budget()
+
+
+
+def test_core_attachments_split_preserves_union_and_disjoint_substring_ownership() -> None:
+    """All 64 combinations, including a name matching multiple former terms."""
+    config = json.loads((REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8"))
+    names = {"Core Attachments", "Core Related Records and Limits", "Core OGC Features and CRS"}
+    children = [s for s in config["shards"] if s["name"] in names]
+    assert len(children) == 3
+    terms = ["AttachmentEndpointTests", "PostgresAttachmentStoreTests", "QueryRelatedRecordsEndpointTests",
+             "OgcFeaturesEndpointTests", "LimitsEnforcementTests", "Honua.Server.Tests.CrsTransformationCorrectnessTests"]
+    parent = MODULE._FilterParser("|".join("FullyQualifiedName~" + term for term in terms)).parse()
+    parsed = [(s["name"], MODULE._FilterParser(s["filter"]).parse()) for s in children]
+    for mask in range(1 << len(terms)):
+        fqn = ".".join(term for i, term in enumerate(terms) if mask & (1 << i)) or "NoMatchingClass"
+        owners = [name for name, expression in parsed if MODULE._eval(expression, fqn)]
+        assert len(owners) == int(MODULE._eval(parent, fqn)), (mask, fqn, owners)
+
+
+def test_core_endpoint_split_preserves_methods_triggers_and_budgets() -> None:
+    """Every original runnable method has one owner, including future methods."""
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    partition = next(p for p in config["shard_partitions"]
+                     if p["name"] == "Core and API Governance capacity rebalance")
+    assert partition["granularity"] == "method"
+    shards = {s["name"]: s for s in config["shards"]}
+    children = ["Core Endpoints", "Core Endpoint Queries", "Core Endpoint Mutations"]
+    assert all(name in partition["children"] for name in children)
+    parent = MODULE._FilterParser("FullyQualifiedName~FeatureServerEndpointTests&FullyQualifiedName!~StreamingFeatureServerEndpointTests").parse()
+    parsed = {name: MODULE._FilterParser(shards[name]["filter"]).parse() for name in children}
+    classes = MODULE.runnable_classes(MODULE.enumerate_classes())
+    selected = 0
+    for info in classes.values():
+        if info["csproj"] != KNOWN:
+            continue
+        assert MODULE.partition_claim_errors(partition["name"], parent, children,
+            parsed, info["fqn"], info["methods"], "method") == [], info["fqn"]
+        if MODULE._eval(parent, info["fqn"]):
+            selected += len(info["methods"])
+    assert selected > 100
+    fqn = "Honua.Server.Tests.FeatureServerEndpointTests"
+    for method, owner in (("QueryFeatures_WithFormatJson_ReturnsGeoServicesJsonFormat", "Core Endpoint Queries"),
+                          ("ApplyEdits_WithAddOperation_ReturnsNewObjectId", "Core Endpoint Mutations"),
+                          ("GetServiceMetadata_WithValidServiceId_ReturnsServiceInfo", "Core Endpoints"),
+                          ("FutureMethod_RemainsCovered", "Core Endpoints")):
+        assert [name for name in children if MODULE._eval(parsed[name], fqn + "." + method)] == [owner]
+    for name in children:
+        assert shards[name]["test_timeout_minutes"] == 41
+        assert shards[name]["timeout_minutes"] == 51
+        assert shards[name]["paths"] == shards["Core Endpoints"]["paths"]
+        assert shards[name]["max_cpu_count"] == shards["Core Endpoints"]["max_cpu_count"]
+
+
+test_core_attachments_split_preserves_union_and_disjoint_substring_ownership()
+test_core_endpoint_split_preserves_methods_triggers_and_budgets()
 
 print("shard-filter-dangling-guard=ok")

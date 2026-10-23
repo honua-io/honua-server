@@ -12,16 +12,10 @@ clients and two-feature journey as the [Windows install](windows-packages.md).
 No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
 
-For local evaluation, use the published preview image
-`ghcr.io/honua-io/honua-server:nightly-0e03bdd`, matching the
-[quickstart](quickstart.md). See the [preview artifact receipt](../reference/local-preview-artifact.md)
-for its identity and verification scope. A customer install manifest is not
-required for this preview.
-
-After release promotion, use `ghcr.io/honua-io/honua-server:2026.1-rc`
-(`ghcr.io/honua-io/honua-server:2026.1` at GA). The exact digest is in the
-release's `customer-install-manifest.json` (`server.image`). Those release
-artifacts must exist before selecting that path.
+Use the 2026.1 release channel `ghcr.io/honua-io/honua-server:2026.1-rc`
+(`ghcr.io/honua-io/honua-server:2026.1` at GA), matching the
+[quickstart](quickstart.md). Only release promotion moves that tag. The exact
+digest is `server.image` in the release's `customer-install-manifest.json`.
 
 ## Create an isolated installation
 
@@ -51,7 +45,7 @@ import secrets
 from pathlib import Path
 Path('.env').write_text(
     'COMPOSE_PROJECT_NAME=' + Path.cwd().name + '\n'
-    'HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd\n'
+    'HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc\n'
     'HONUA_HTTP_PORT=18080\n'
     'POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n'
     'HONUA_ADMIN_PASSWORD=Aa1!' + secrets.token_hex(32) + '\n'
@@ -159,7 +153,7 @@ block in the same terminal.
 ```bash
 python3 -m venv --without-pip .venv
 Python="$Install/.venv/bin/python"
-python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.12' 'honua-sdk==0.1.16' 'mcp==2.1.1'
+python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.12' 'honua-sdk==0.1.18' 'mcp==2.1.1'
 python3 -m pip --python "$Python" freeze > installed-packages.txt
 set -a
 source .env

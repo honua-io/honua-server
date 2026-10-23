@@ -279,12 +279,15 @@ to the agent at `AWS_CONTAINER_CREDENTIALS_FULL_URI`, and the S3, Batch, and
 other AWS SDK clients use the SDK's default credential chain. IRSA
 (`AWS_WEB_IDENTITY_TOKEN_FILE` plus `AWS_ROLE_ARN`) works for the AWS SDK
 clients but not for `aws:secretsmanager:` references: the built-in resolver
-has no web-identity provider, logs a warning, and falls back to the node role,
-which is normally denied. Use a Pod Identity association for the server's
+has no web-identity provider and refuses the request without querying the node
+role. Use a Pod Identity association for the server's
 service account instead. If the server log shows
 `AwsContainerCredentialsRequestRejected` or
 `AwsContainerAuthorizationTokenFileUnusable`, the pod-identity association or
-its projected token is missing.
+its projected token is missing or unusable. The selected provider does not fall
+back to EC2 credentials on token-file, endpoint or response failure. Fix that
+provider's configuration; changing provider type requires restarting the host.
+This applies to the API host and native GDAL worker's built-in secret resolver.
 
 ## Geoprocessing on Kubernetes Jobs
 
@@ -383,6 +386,58 @@ Then run the digest-pinned `helm upgrade --install ... --atomic --wait` command.
 `--atomic` restores Kubernetes resources after a failed upgrade; it does not
 undo a database migration or object-store write.
 
+### Run migrations as a pre-upgrade Job
+
+To keep migrations out of the serving pods, run the target image once as a Job
+with `HONUA_MIGRATE_ONLY=true`, then upgrade the release with
+`HONUA_SKIP_MIGRATIONS=true`. The Job starts no listener and needs only the
+connection string. Every migration safety gate still applies. It exits `0` when
+the journal is current and with a typed non-zero code when it refuses. See
+[Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band).
+
+```bash
+cat > honua-migrate-job.yaml <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: honua-migrate
+  namespace: honua
+spec:
+  backoffLimit: 0   # a refusal is not transient; re-run deliberately
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/honua-io/honua-server@${HONUA_IMAGE_DIGEST}
+          env:
+            - name: HONUA_MIGRATE_ONLY
+              value: "true"
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: honua-runtime
+                  key: ConnectionStrings__DefaultConnection
+EOF
+kubectl -n honua delete job honua-migrate --ignore-not-found
+kubectl -n honua apply -f honua-migrate-job.yaml
+kubectl -n honua wait --for=condition=complete --timeout=30m job/honua-migrate
+kubectl -n honua logs job/honua-migrate | grep '"format":"honua.migrate-only/v1"'
+```
+
+`kubectl logs` interleaves both streams, so the `grep` keeps only the summary
+line. If the Job fails, the pod's exit code and the summary's `code` name the
+reason. A pending contract migration exits `5`: review the scripts in
+`pendingScripts`, then re-create the Job with
+`HONUA_APPROVE_CONTRACT_MIGRATIONS` set to the summary's
+`contractApproval.nonce`. After the Job completes, upgrade with
+`--set-string config.env.HONUA_SKIP_MIGRATIONS=true` added to the digest-pinned
+command. The serving pods then verify the journal at startup instead of
+migrating. `RollingUpdate` still needs the reviewed forward and backward
+compatibility described above, because the old pods keep serving the migrated
+schema until they are replaced.
+
 Capture and verify each revision:
 
 ```bash
@@ -392,14 +447,33 @@ kubectl -n honua get configmap honua-honua-release-info -o yaml
 helm -n honua history honua
 ```
 
-Application rollback comes first when the previous image remains compatible
-with the migrated schema:
+Application rollback comes first only when the previous image can protect
+itself against the schema it will find. Roll back only to images that include
+the schema-reader guard: schema 135 or later for additive migrations, and never
+across a contract-phase migration without a restore. `honua-2026.1` is not a
+safe rollback target across any migration, and the only safe way back to 2026.1
+is restoring the backup taken before the upgrade. It predates the schema-reader
+guard and serves a newer schema with no refusal. There is no release-named
+immutable tag for that image yet
+([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
+See [Rollback target eligibility](upgrade-and-rollback.md#rollback-target-eligibility).
 
 ```bash
 helm -n honua rollback honua <known-good-revision> --wait --timeout 10m
 kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 helm -n honua test honua
 ```
+
+`helm rollback` restores that revision's saved values, including
+`HONUA_SKIP_MIGRATIONS=true` when the revision was installed that way after an
+out-of-band migration Job. With the skip switch the reader still checks the
+journal, but it does not accept forward-compatibility declarations: it must
+ship every applied migration. A newer expand-only entry is refused, and
+`--wait` times out instead of serving. To roll back across additive migrations,
+start the previous image with migrations enabled (leave
+`HONUA_SKIP_MIGRATIONS` unset) so it can verify those declarations. A saved
+skip-migrations revision is a safe rollback only when that image ships every
+applied migration.
 
 Helm cannot downgrade the database schema. If the previous image is not
 compatible, stop writes and restore the matching PostGIS backup and file-store

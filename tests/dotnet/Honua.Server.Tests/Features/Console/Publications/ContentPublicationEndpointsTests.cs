@@ -73,6 +73,101 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/console/publications")]
+    public async Task List_EmptyThenAfterPublish_ReturnsOkPageNotMethodNotAllowed()
+    {
+        var empty = await _client.GetAsync("/api/v1/console/publications");
+        empty.StatusCode.Should().Be(HttpStatusCode.OK);
+        empty.StatusCode.Should().NotBe(HttpStatusCode.MethodNotAllowed);
+        var emptyPage = await DeserializeAsync(empty, ContentPublicationJsonContext.Default.ContentPublicationListResponse);
+        emptyPage.Should().NotBeNull();
+        emptyPage!.Items.Should().BeEmpty();
+        emptyPage.Total.Should().Be(0);
+        emptyPage.NextCursor.Should().BeNull();
+
+        var detail = await PublishAsync("Quarterly Map", ContentPublicationKind.Map, payload: "content-v1");
+        var listed = await _client.GetAsync("/api/v1/console/publications");
+        listed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var page = await DeserializeAsync(listed, ContentPublicationJsonContext.Default.ContentPublicationListResponse);
+        page!.Total.Should().Be(1);
+        page.NextCursor.Should().BeNull();
+        var item = page.Items.Should().ContainSingle().Subject;
+        item.Route.PublicationId.Should().Be(detail.Route.PublicationId);
+        item.Route.Lifecycle.Should().Be(ContentPublicationLifecycle.Active);
+        item.Versions.Should().ContainSingle().Which.Title.Should().Be("Quarterly Map");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/publications")]
+    public async Task List_WithLimit_ReturnsPagedResults()
+    {
+        var first = await PublishAsync("Page One", ContentPublicationKind.Map);
+        var second = await PublishAsync("Page Two", ContentPublicationKind.Dashboard);
+        var third = await PublishAsync("Page Three", ContentPublicationKind.Report);
+
+        var seen = new List<string>();
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var url = cursor is null
+                ? "/api/v1/console/publications?limit=1"
+                : $"/api/v1/console/publications?limit=1&cursor={Uri.EscapeDataString(cursor)}";
+            var response = await _client.GetAsync(url);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var page = await DeserializeAsync(response, ContentPublicationJsonContext.Default.ContentPublicationListResponse);
+            page.Should().NotBeNull();
+            page!.Total.Should().Be(3);
+            page.Items.Should().ContainSingle();
+            seen.Add(page.Items[0].Route.PublicationId);
+            cursor = page.NextCursor;
+            pages++;
+        }
+        while (cursor is not null && pages < 5);
+
+        pages.Should().Be(3);
+        cursor.Should().BeNull();
+        seen.Should().BeEquivalentTo(
+            [first.Route.PublicationId, second.Route.PublicationId, third.Route.PublicationId]);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/publications")]
+    public async Task List_WithLifecycleFilter_RestrictsThePageAndRejectsUnknownState()
+    {
+        var detail = await PublishAsync("Active Only", ContentPublicationKind.Map);
+
+        var archived = await _client.GetAsync("/api/v1/console/publications?lifecycle=archived");
+        archived.StatusCode.Should().Be(HttpStatusCode.OK);
+        var archivedPage = await DeserializeAsync(archived, ContentPublicationJsonContext.Default.ContentPublicationListResponse);
+        archivedPage!.Items.Should().BeEmpty();
+        archivedPage.Total.Should().Be(0);
+
+        var active = await _client.GetAsync("/api/v1/console/publications?lifecycle=active");
+        active.StatusCode.Should().Be(HttpStatusCode.OK);
+        var activePage = await DeserializeAsync(active, ContentPublicationJsonContext.Default.ContentPublicationListResponse);
+        activePage!.Total.Should().Be(1);
+        activePage.Items.Should().ContainSingle().Which.Route.PublicationId.Should().Be(detail.Route.PublicationId);
+
+        var invalid = await _client.GetAsync("/api/v1/console/publications?lifecycle=nope");
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/publications")]
+    [Endpoint("GET /api/v1/console/publications/{publicationId}")]
+    public async Task List_WithoutAdmin_ReturnsSameStatusAsItemGet()
+    {
+        using var unauthenticated = _fixture.CreateClient();
+        var list = await unauthenticated.GetAsync("/api/v1/console/publications");
+        var item = await unauthenticated.GetAsync($"/api/v1/console/publications/{Guid.NewGuid():D}");
+
+        list.StatusCode.Should().Be(item.StatusCode);
+        list.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        list.StatusCode.Should().NotBe(HttpStatusCode.MethodNotAllowed);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/console/publications")]
     public async Task Publish_DuplicateSlug_ReturnsConflictWithoutLeakingInternals()
     {

@@ -114,6 +114,12 @@ internal sealed record MultidimensionalCoverageScanJobResponse
     public string? Error { get; init; }
 
     /// <summary>
+    /// Non-fatal scan warnings. A failed coordinate enrichment is reported here
+    /// instead of being dropped while the structural scan still succeeds.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>
     /// The refreshed coverage registration, populated once the scan has succeeded
     /// and its metadata has been materialized. Null while pending.
     /// </summary>

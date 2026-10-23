@@ -2,13 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
@@ -20,6 +23,7 @@ public sealed class WfsCredentialCacheTests
 {
     private const string ReadProtectedType = "test_layer";
     private const string WriteType = "related_test_layer_1";
+    private const string Referer = "https://wfs-credential-cache.example/";
 
     [IntegrationTheory]
     [InlineData("1.0.0")]
@@ -35,15 +39,17 @@ public sealed class WfsCredentialCacheTests
         await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder => builder
                 .UseSetting("HONUA_DEV_AUTH", "false")
+                .UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false")
                 .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword));
         await fixture.InitializeAsync();
         fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId,
             accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["query"] });
         using var anonymous = fixture.CreateClient();
         using var invalid = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", "invalid"));
-        using var authorized = fixture.CreateClient(client =>
+        using var adminWithoutQueryRole = fixture.CreateClient(client =>
             client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword));
-        foreach (var client in new[] { anonymous, invalid, authorized })
+        using var authorized = await CreateQueryClientAsync(fixture);
+        foreach (var client in new[] { anonymous, invalid, adminWithoutQueryRole, authorized })
         {
             foreach (var operation in new[] { "GetCapabilities", "DescribeFeatureType", "GetFeature" })
             {
@@ -93,8 +99,9 @@ public sealed class WfsCredentialCacheTests
             accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["query"] });
         using var anonymous = fixture.CreateClient();
         using var invalid = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", "invalid"));
-        using var authorized = fixture.CreateClient(client =>
+        using var adminWithoutQueryRole = fixture.CreateClient(client =>
             client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword));
+        using var authorized = await CreateQueryClientAsync(fixture);
 
         string FeatureUrl(string type) =>
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME={type}";
@@ -124,11 +131,38 @@ public sealed class WfsCredentialCacheTests
                 .Should().Be(4);
         }
 
+        using var excludedRead = await adminWithoutQueryRole.GetAsync(FeatureUrl(ReadProtectedType));
+        var excludedBody = await excludedRead.Content.ReadAsStringAsync();
+        excludedRead.StatusCode.Should().Be(HttpStatusCode.BadRequest, excludedBody);
+        excludedBody.Should().Contain("InvalidParameterValue").And.NotContain("Test Feature");
+        XDocument.Parse(excludedBody).Descendants()
+            .Where(element => element.Name.LocalName is "member" or "featureMember" or "Point")
+            .Should().BeEmpty("an admin key outside the query role must not expose protected features");
+
         using var protectedRead = await authorized.GetAsync(FeatureUrl(ReadProtectedType));
         var protectedBody = await protectedRead.Content.ReadAsStringAsync();
         protectedRead.StatusCode.Should().Be(HttpStatusCode.OK, protectedBody);
         XDocument.Parse(protectedBody).Descendants()
             .Count(element => element.Name.LocalName is "member" or "featureMember")
             .Should().Be(5);
+    }
+
+    private static async Task<HttpClient> CreateQueryClientAsync(WebAppFixture fixture)
+    {
+        var token = await fixture.GetService<IPortalTokenIssuer>().IssueAsync(
+            new PortalTokenIssueRequest(
+                "wfs-query-reader",
+                "wfs-query-reader",
+                TenantId: null,
+                Roles: ["query"],
+                PortalTokenClientType.Referer,
+                Referer,
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+        return fixture.CreateClient(client =>
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+            client.DefaultRequestHeaders.Referrer = new Uri(Referer);
+        });
     }
 }
