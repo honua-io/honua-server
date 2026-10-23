@@ -3,6 +3,7 @@
 
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit.Seeding;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -107,6 +108,10 @@ public sealed class PostgresFixture : IAsyncLifetime
                         await using var conn = await SharedState.SharedDataSource.OpenConnectionAsync().ConfigureAwait(false);
                         await using var cmd = conn.CreateCommand();
                         cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        // Test hosts skip application migrations. Install the same sampler
+                        // functions production migration 008 binds, so tile SQL does not inline them.
+                        cmd.CommandText = RasterSamplingSql.ReadBoundMigration();
                         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                         // Test hosts skip application migrations. Execute the owning
                         // production DDL once under the shared initialization lock

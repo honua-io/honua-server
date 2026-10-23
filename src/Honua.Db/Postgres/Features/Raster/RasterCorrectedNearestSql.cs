@@ -11,7 +11,9 @@ internal static class RasterCorrectedNearestSql
     internal const int RendererVersion = 3;
     /// <summary>
     /// Uses SQL COALESCE's lazy evaluation: a rejected native window reaches separable sampling,
-    /// and unsupported axes or CRS reach the canonical batched-coordinate fallback. The final
+    /// and unsupported axes or CRS reach the canonical batched-coordinate fallback.
+    /// Each sampler is a versioned SQL function with its own planning boundary, so an unused
+    /// fallback is not JIT-compiled into the common tile plan. The final
     /// fallback retains all source bands and the caller's complete grid; no fast-path cap silently
     /// removes an existing request. General fallback latency remains unqualified.
     /// A valid lowest-finite 64BF value bypasses the native window's temporary mask for a single
