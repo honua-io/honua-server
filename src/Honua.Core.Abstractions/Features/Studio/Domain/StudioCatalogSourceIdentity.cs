@@ -2,39 +2,26 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace Honua.Core.Features.Studio.Domain;
 
 /// <summary>Canonical Studio catalog identity; an identity grants no source access.</summary>
 public static class StudioCatalogSourceIdentity
 {
-    // Publishing accepts a 64-character service name. SanitizeMetadataId keeps Unicode letters,
-    // and the stored id is "svc-publish-" plus that name. A non-ASCII BMP letter is three UTF-8
-    // bytes, each percent-encoded as three characters. The layer index is a non-negative int.
-    private const int MaxPublishedServiceNameLength = 64;
-    private const int PublishedServiceIdPrefixLength = 12;
-    private const int MaxEscapedCharsPerServiceCharacter = 9;
-    private const int MaxLayerIndexLength = 10;
-
     /// <summary>
-    /// Longest identity <see cref="Create"/> returns. The Studio encodeURIComponent form of a
-    /// published service fits. A longer service id uses a digest that is not a truncation of
-    /// another service's identity.
+    /// Schema ceiling for a catalog key. <see cref="Create"/> always returns Studio's
+    /// <c>encodeURIComponent(serviceId)/layerId</c> form, including when the service id is
+    /// longer than a published name. The ceiling fits that encoding for a service id of
+    /// several hundred characters; it is not a second key format.
     /// </summary>
-    public const int MaxLength =
-        PublishedServiceIdPrefixLength
-        + (MaxPublishedServiceNameLength * MaxEscapedCharsPerServiceCharacter)
-        + 1
-        + MaxLayerIndexLength;
+    public const int MaxLength = 8192;
 
     /// <summary>Encodes the service identity and service-local layer index as Studio does.</summary>
     /// <param name="serviceId">Canonical service identity, not its display name or URL.</param>
     /// <param name="layerId">Service-local layer index.</param>
     /// <returns>
-    /// The ECMAScript encodeURIComponent-compatible catalog identity, or a digest form when that
-    /// encoding would exceed <see cref="MaxLength"/>.
+    /// The ECMAScript encodeURIComponent-compatible catalog identity Studio copies into
+    /// <c>layer.sourceId</c>.
     /// </returns>
     public static string Create(string serviceId, int layerId)
     {
@@ -42,14 +29,14 @@ public static class StudioCatalogSourceIdentity
         ArgumentOutOfRangeException.ThrowIfNegative(layerId);
         var layer = layerId.ToString(CultureInfo.InvariantCulture);
         var encoded = EncodeService(serviceId) + "/" + layer;
-        if (encoded.Length <= MaxLength)
+        if (encoded.Length > MaxLength)
         {
-            return encoded;
+            throw new ArgumentException(
+                $"The Studio catalog key for '{serviceId}' is {encoded.Length} characters and the schema allows {MaxLength}.",
+                nameof(serviceId));
         }
 
-        // '#' is percent-encoded by EncodeService, so this form cannot equal a Studio identity.
-        // The digest covers the exact service id and layer index, not a shared prefix.
-        return "#" + Digest(serviceId, layer) + "/" + layer;
+        return encoded;
     }
 
     private static string EncodeService(string serviceId)
@@ -59,15 +46,4 @@ public static class StudioCatalogSourceIdentity
             .Replace("%28", "(", StringComparison.Ordinal)
             .Replace("%29", ")", StringComparison.Ordinal)
             .Replace("%2A", "*", StringComparison.Ordinal);
-
-    private static string Digest(string serviceId, string layer)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData(Encoding.UTF8.GetBytes(serviceId.Length.ToString(CultureInfo.InvariantCulture)));
-        hash.AppendData("="u8);
-        hash.AppendData(Encoding.UTF8.GetBytes(serviceId));
-        hash.AppendData("\n"u8);
-        hash.AppendData(Encoding.UTF8.GetBytes(layer));
-        return Convert.ToHexString(hash.GetHashAndReset());
-    }
 }
