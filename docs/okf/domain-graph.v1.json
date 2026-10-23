@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:326877ee7f540e955a6c20d4e38b01ef09313912771c41a08a53bc02cc21c886",
+  "bundleDigest": "sha256:d5051917e62d6d26aaa0720f237281c7ba2ca3cbce283105415e8ad35df218be",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5372,7 +5372,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:5fcd0a48c6843d11725b6d4abb8a2af8c7850a24e64c5f706d6e77e8db49f28c",
+      "documentDigest": "sha256:7adaf0084b0c8eec30d632412657b323aa69bd3683f1b3eaae3b6d457af6c176",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
