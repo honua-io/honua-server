@@ -1592,6 +1592,30 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             "the adopted receipt is not a new DbUp apply");
     }
 
+    [SkippableFact]
+    public async Task Guard_WhenRasterUpdatedAtTriggerIsMissing_DoesNotAdoptTheBaseline()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the raster-baseline adoption lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var migrated = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        migrated.Successful.Should().BeTrue(migrated.ErrorMessage);
+        await ExecuteAsync(connectionString, $"""
+            DELETE FROM public.schema_versions
+            WHERE scriptname = '{PostgresCoreSchemaGuard.RasterTablesMigration}';
+            DELETE FROM public.schema_version_reader_compatibility
+            WHERE script_name = '{PostgresCoreSchemaGuard.RasterTablesMigration}';
+            DROP TRIGGER trg_raster_data_updated_at ON honua.raster_data;
+            """);
+
+        var adopted = await guard.TryAdoptMatchingRasterBaselineAsync(connectionString);
+        adopted.Should().BeNull("adoption must not journal a baseline whose updated_at trigger is missing");
+        (await CountScriptsAsync(connectionString, PostgresCoreSchemaGuard.RasterTablesMigration))
+            .Should().Be(0);
+    }
+
     [SkippableTheory]
     [InlineData("missing")]
     [InlineData("partial")]

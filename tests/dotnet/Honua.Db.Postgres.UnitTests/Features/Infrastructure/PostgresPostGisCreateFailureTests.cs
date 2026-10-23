@@ -55,4 +55,14 @@ public sealed class PostgresPostGisCreateFailureTests
         DatabasePreflightCauseClasses.IsDegradable(timeoutClass).Should().BeTrue();
         DatabasePreflightCauseClasses.IsDegradable(disconnectClass).Should().BeTrue();
     }
+
+    [Fact]
+    public void CreateFailure_WhenTheRequeryCannotRun_RethrowsTheOriginalFailure()
+    {
+        var timeout = new TimeoutException("Timeout during reading attempt");
+
+        var act = () => PostgresDatabaseCompatibilityChecker.ThrowPreservedCreateFailure(timeout);
+
+        act.Should().Throw<TimeoutException>().Which.Should().BeSameAs(timeout);
+    }
 }

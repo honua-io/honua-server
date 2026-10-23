@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Studio.Domain;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
@@ -127,6 +129,13 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add($"{entityKind} metadata id is required.");
                 continue;
+            }
+
+            if (entityKind == "service"
+                && !StudioCatalogSourceIdentity.TryCreate(id, int.MaxValue, out _))
+            {
+                errors.Add(
+                    $"service metadata id '{id}' exceeds the Studio catalog key limit of {StudioCatalogSourceIdentity.MaxLength} characters.");
             }
 
             if (!entityIds.Add(id))

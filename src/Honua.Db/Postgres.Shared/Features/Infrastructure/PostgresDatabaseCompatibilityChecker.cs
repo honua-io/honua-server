@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Runtime.ExceptionServices;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
@@ -164,8 +165,24 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         {
             // A concurrent startup can lose the CREATE race and still leave PostGIS installed.
             // Re-query before deciding. A disconnect or command timeout is not a missing
-            // extension: it has to reach PostgresPreflightFailureClassifier.
-            var installed = await PostGisIsInstalledAsync(connection, cancellationToken).ConfigureAwait(false);
+            // extension: it has to reach PostgresPreflightFailureClassifier. If the socket
+            // is already broken, the re-query throws a different exception; classify the
+            // original CREATE failure instead of that replacement.
+            bool installed;
+            try
+            {
+                installed = await PostGisIsInstalledAsync(connection, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception requery) when (requery is not OutOfMemoryException)
+            {
+                ThrowPreservedCreateFailure(ex);
+                throw;
+            }
+
             switch (DecidePostGisCreateFailure(ex, installed))
             {
                 case PostGisCreateFailureDisposition.CreatedByPeer:
@@ -191,6 +208,16 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
         /// <summary>The re-query found PostGIS, so a concurrent create won the race.</summary>
         CreatedByPeer = 2,
+    }
+
+    /// <summary>
+    /// Rethrows the CREATE failure when the follow-up <c>pg_extension</c> read cannot run.
+    /// </summary>
+    /// <param name="createFailure">The exception raised by <c>CREATE EXTENSION</c>.</param>
+    internal static void ThrowPreservedCreateFailure(Exception createFailure)
+    {
+        ArgumentNullException.ThrowIfNull(createFailure);
+        ExceptionDispatchInfo.Capture(createFailure).Throw();
     }
 
     /// <summary>

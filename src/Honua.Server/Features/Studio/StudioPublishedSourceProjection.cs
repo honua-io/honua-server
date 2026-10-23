@@ -56,7 +56,11 @@ internal static class StudioPublishedSourceProjection
                     continue;
                 }
 
-                var id = StudioCatalogSourceIdentity.Create(service.Metadata.Id, layerId);
+                if (!StudioCatalogSourceIdentity.TryCreate(service.Metadata.Id, layerId, out var id))
+                {
+                    continue;
+                }
+
                 if (!Matches(requested, service, layerId, id, unambiguousLegacyAlias))
                 {
                     continue;

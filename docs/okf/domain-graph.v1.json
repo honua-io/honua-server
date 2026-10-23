@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:a5af25564e095b37f7698261708a7f87a5710c21c933e673b8288c889f1d46ad",
+  "bundleDigest": "sha256:9d75482fab91799bd11d18c0dbd42d9f69ad986e57fda92acbad05f0a57a4fce",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:34b9cc92e12de7ff6330a14c1c2479112ef2dd32197c9a6e15a4b29dd206088e",
+      "documentDigest": "sha256:b2838aa552cd1e7236d70c81ba7bc9570249de67fc169bad8d1c3af56e6791e0",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -5383,7 +5383,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:5fcd0a48c6843d11725b6d4abb8a2af8c7850a24e64c5f706d6e77e8db49f28c",
+      "documentDigest": "sha256:7adaf0084b0c8eec30d632412657b323aa69bd3683f1b3eaae3b6d457af6c176",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
