@@ -8,14 +8,15 @@ internal static class RedisConnectionSelector
     internal static string? SelectInfrastructureConnectionString(
         string? redisConnectionString,
         bool redisCacheEntitled,
-        bool requiresDurableDistributedEvents)
+        bool requiresDurableDistributedEvents,
+        bool requiresDurableAgentWorkspace = false)
     {
         if (string.IsNullOrWhiteSpace(redisConnectionString))
         {
             return null;
         }
 
-        return redisCacheEntitled || requiresDurableDistributedEvents
+        return redisCacheEntitled || requiresDurableDistributedEvents || requiresDurableAgentWorkspace
             ? redisConnectionString
             : null;
     }

@@ -11,6 +11,18 @@ namespace Honua.Server.Tests.Infrastructure;
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class RedisConnectionSelectorTests
 {
+    [UnitTheory]
+    [InlineData("redis:6379", "redis:6379")]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [Operation(Operations.Infrastructure)]
+    public void ConfiguredWorkspace_SelectsItsStoreWithoutCacheEntitlement(string? configured, string? expected)
+    {
+        RedisConnectionSelector.SelectInfrastructureConnectionString(configured,
+            redisCacheEntitled: false, requiresDurableDistributedEvents: false,
+            requiresDurableAgentWorkspace: true).Should().Be(expected);
+    }
+
     [UnitTest]
     [Operation(Operations.Infrastructure)]
     public void SelectInfrastructureConnectionString_WithCacheEntitlement_ReturnsConfiguredConnection()

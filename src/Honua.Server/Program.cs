@@ -294,7 +294,10 @@ builder.Services.Configure<DurableJobSubstrateOptions>(options =>
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
     redisCacheEntitled,
-    requiresDurableDistributedEvents);
+    requiresDurableDistributedEvents,
+    // Shared human/agent context needs its durable store in every edition.
+    // Connecting it does not grant paid cache or job-substrate entitlements.
+    requiresDurableAgentWorkspace: AgentWorkspaceState.IsIdentifier(builder.Configuration["AgentWorkspace:DeploymentId"]));
 ConnectionMultiplexer? connectedRedis = null;
 
 if (useAspire)
