@@ -1,9 +1,15 @@
+---
+type: guide
+title: "Tenancy Preview trials"
+description: "Single-tenant GA posture and non-production multi-tenancy Preview/trial boundaries for 2026.1."
+capability: admin.multi-tenancy
+---
 # Tenancy support
 
-Honua 2026.1 is generally available for **single-tenant deployments**. A default
-deployment does not require tenant configuration: tenant resolution and schema
-routing are opt-in, and the configured default database schema remains in use when
-they are disabled.
+Honua 2026.1's GA posture is **single-tenant**. The single-tenant path does not
+require tenant lifecycle or schema-routing configuration. Schema routing is disabled
+by default; tenant context resolution uses its configured defaults and does not
+establish production multi-tenant qualification.
 
 **Multi-tenant operation is Preview/trial only and is not for production.** It may be
 enabled only for a non-production demo or trial evaluation. Do not connect it to

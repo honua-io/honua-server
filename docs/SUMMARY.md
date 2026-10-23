@@ -154,6 +154,7 @@
   - [Cloud deployments](guides/deploy/cloud-deployments.md)
   - [Local development](guides/deploy/local-development.md)
   - [Configuration](guides/deploy/configuration.md)
+  - [Tenancy Preview trials](guides/deploy/tenancy.md)
   - [Monitoring](guides/deploy/monitoring.md)
   - [Backup & restore](guides/deploy/backup-and-restore.md)
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)

@@ -90,10 +90,8 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
 # things a reader may use, and a generated page with a title, an edition and a
 # proving-test count reads as an available feature whatever its prose says.
 #
-# `internal` marks capabilities that support Honua's own hosted operation and are
-# not offered to licensees - the Elastic License 2.0 prohibits providing Honua to
-# third parties as a hosted or managed service, so a licensee can never be the
-# party operating them, and there is no GA path to document.
+# `internal` marks infrastructure excluded from customer documentation. Preview
+# is a separate evaluation classification and carries no GA commitment.
 #
 # Keyed on status rather than on a list of keys, so a future internal capability
 # is excluded by classification instead of by someone remembering to add it here.
