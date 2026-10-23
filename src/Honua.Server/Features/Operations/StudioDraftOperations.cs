@@ -455,10 +455,13 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             context.RequiredApprovalPolicyRef != AgentPublicationProposalAuthorization.ApprovalPolicyRef)
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         payload = payload with { AgentAuthority = new(credential, binding) };
-        return request with { Parameters = new Dictionary<string, string?>
+        return request with
         {
-            [StudioDraftOperations.PayloadParameter] = JsonSerializer.Serialize(payload, PayloadType),
-        } };
+            Parameters = new Dictionary<string, string?>
+            {
+                [StudioDraftOperations.PayloadParameter] = JsonSerializer.Serialize(payload, PayloadType),
+            }
+        };
     }
 
     public override async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,

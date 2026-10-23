@@ -43,9 +43,14 @@ public sealed class DelegatedAgentCredentialTests
         fixture.Profile.Permissions = ["agent:workspace", permission];
         var layer = grantKind switch { "exact" => item, "wildcard" => "*", "own" => "own", _ => Guid.NewGuid().ToString("D") };
         fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions =
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions =
             [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
-             new PermissionGrant { Service = "agent", Layer = layer, Operation = action }] });
+             new PermissionGrant { Service = "agent", Layer = layer, Operation = action }]
+            });
         var principal = Token();
         AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
         await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
@@ -54,8 +59,13 @@ public sealed class DelegatedAgentCredentialTests
         snapshot.Should().NotBeNull();
         (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().NotBeNull();
         fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions =
-            [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }] });
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions =
+            [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }]
+            });
         (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().BeNull();
     }
 

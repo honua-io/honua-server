@@ -43,11 +43,14 @@ internal static class ServicePublishAgentAuthority
         var turn = await AgentStudioAuthorization.BindAsync(http, http.User, cancellationToken).ConfigureAwait(false);
         var credential = await AgentCredentialAuthority.CaptureAsync(http.User, services, cancellationToken).ConfigureAwait(false);
         if (turn is null || credential is null || CanonicalSecurityActor.Resolve(http.User)?.ActorId != context.PrincipalId) Deny();
-        return request with { Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal)
+        return request with
         {
-            [Parameter] = JsonSerializer.Serialize(new WorkspaceAgentPublicationAuthority(credential!, turn!),
+            Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal)
+            {
+                [Parameter] = JsonSerializer.Serialize(new WorkspaceAgentPublicationAuthority(credential!, turn!),
                 ServicePublishApprovalJsonContext.Default.WorkspaceAgentPublicationAuthority),
-        } };
+            }
+        };
     }
 
     internal static async Task VerifyAsync(IServiceProvider services, OperationRequest request,

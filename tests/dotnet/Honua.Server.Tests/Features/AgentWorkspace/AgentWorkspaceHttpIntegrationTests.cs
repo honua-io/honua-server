@@ -117,7 +117,9 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             var editContext = await Read(await human.GetAsync(root + "?viewId=tab-a"), HttpStatusCode.OK);
             await Read(await human.PostAsJsonAsync(root + "/turns", new
             {
-                turnId = "turn-edit", viewId = "tab-a", contextRevision = editContext.GetProperty("revision").GetInt64(),
+                turnId = "turn-edit",
+                viewId = "tab-a",
+                contextRevision = editContext.GetProperty("revision").GetInt64(),
                 prompt = "Review this initial draft"
             }), HttpStatusCode.OK);
             agent.DefaultRequestHeaders.Add("X-Honua-Workspace", created.GetProperty("workspaceId").GetString());

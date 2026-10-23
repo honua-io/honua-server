@@ -55,19 +55,24 @@ public sealed partial class StudioDashboardMcpIntegrationTests
         var target = await ReadHttpAsync(await human.GetAsync("/api/v1/agent/target"), HttpStatusCode.OK);
         var workspace = await ReadHttpAsync(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new
         {
-            viewId = "studio-native", targetId = target.GetProperty("targetId").GetString(),
+            viewId = "studio-native",
+            targetId = target.GetProperty("targetId").GetString(),
         }), HttpStatusCode.OK);
         var workspaceId = workspace.GetProperty("workspaceId").GetString()!;
         await ReadHttpAsync(await human.PostAsJsonAsync($"/api/v1/agent/workspaces/{workspaceId}/turns", new
         {
-            turnId = "studio-turn", viewId = "studio-native", contextRevision = 0,
+            turnId = "studio-turn",
+            viewId = "studio-native",
+            contextRevision = 0,
             prompt = "Compose and propose only the controller allocated item.",
         }), HttpStatusCode.OK);
         agent.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
         agent.DefaultRequestHeaders.Add("X-Honua-Turn", "studio-turn");
         using var initialize = await agent.PostAsJsonAsync("/mcp", new
         {
-            jsonrpc = "2.0", id = 1, method = "initialize",
+            jsonrpc = "2.0",
+            id = 1,
+            method = "initialize",
             @params = new { protocolVersion = "2025-03-26", capabilities = new { }, clientInfo = new { name = "native-studio-agent", version = "1" } },
         });
         initialize.EnsureSuccessStatusCode();
@@ -81,7 +86,10 @@ public sealed partial class StudioDashboardMcpIntegrationTests
         {
             var catalog = await ReadHttpAsync(await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 2, method = "tools/list", @params = new { view },
+                jsonrpc = "2.0",
+                id = 2,
+                method = "tools/list",
+                @params = new { view },
             }), HttpStatusCode.OK);
             var descriptor = catalog.GetProperty("result").GetProperty("tools").EnumerateArray()
                 .Single(tool => tool.GetProperty("name").GetString() == toolName);
