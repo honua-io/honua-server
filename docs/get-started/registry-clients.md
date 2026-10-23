@@ -9,10 +9,10 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 **Every Honua client package is public and installs with no credentials**, and so
 does the server image. Nothing on this page needs a token.
 
-The local preview uses the image in the
-[preview artifact receipt](../reference/local-preview-artifact.md) and the pinned
-clients below. It does not require the currently unavailable customer install
-manifest. A promoted release must supply its own public install manifest.
+The quickstart uses the 2026.1 release channel
+`ghcr.io/honua-io/honua-server:2026.1-rc` and the pinned clients below.
+The exact server digest is `server.image` in that release's
+`customer-install-manifest.json`.
 
 | Registry | Manifest pin | Role | Package-read credentials |
 | --- | --- | --- | --- |
@@ -22,8 +22,8 @@ manifest. A promoted release must supply its own public install manifest.
 | npm | `@honua/sdk-js@0.2.6` | Alternative JS SDK and CLI | None |
 | npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
 | npm | `@honua/mcp-server@0.2.6` | Alternative MCP proxy | None |
-| NuGet | `Honua.Sdk` `1.11.1` | Alternative .NET SDK | None |
-| NuGet | `Honua.Sdk.Admin` `1.11.1` | Dedicated .NET control-plane SDK | None |
+| NuGet | `Honua.Sdk` `1.12.0` | Alternative .NET SDK | None |
+| NuGet | `Honua.Sdk.Admin` `1.12.0` | Dedicated .NET control-plane SDK | None |
 
 Pick the one for your language; you do not need the others. The npm and NuGet
 pins are alternative client selections, not a claim that the Python quickstart
@@ -37,7 +37,7 @@ anonymously:
 
 ```bash
 dotnet new console
-dotnet add package Honua.Sdk --version 1.11.1
+dotnet add package Honua.Sdk --version 1.12.0
 ```
 
 No feed to add, no token, no package-source mapping. The same builds are also

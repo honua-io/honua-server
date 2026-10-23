@@ -16,17 +16,44 @@ CLIENT_PAGES = tuple(f"docs/get-started/{name}.md" for name in (
     "first-dataset", "first-map", "registry-clients")) + (
     "docs/sdks/dotnet/dotnet-getting-started.md",)
 VERSION = r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?"
+IMAGE_REFERENCE = re.compile(r"ghcr\.io/honua-io/honua-server(?::[\w.-]+|@sha256:[0-9a-f]{64})")
 IMAGE_ASSIGNMENT = re.compile(r"(?:HONUA_IMAGE=|\$Image\s*=\s*['\"])([^\s'\"\\]+)")
+# The release channel tag is what the docs and the executable-docs gate certify.
+# It is not published until release promotion, so the anonymous install proof
+# pulls serverImageProof instead of failing the pull with "manifest unknown".
+RELEASE_CHANNEL_IMAGE = "ghcr.io/honua-io/honua-server:2026.1-rc"
+
+
+def _image_reference(image: str) -> bool:
+    return bool(re.fullmatch(IMAGE_REFERENCE, image))
+
+
+def image_to_pull(manifest: dict) -> str:
+    """Image the anonymous proof pulls.
+
+    Documented assignments stay on serverImage. A release-channel tag that is
+    not published yet pulls serverImageProof, which must already exist.
+    """
+    image = manifest["serverImage"]
+    proof = manifest.get("serverImageProof")
+    if image == RELEASE_CHANNEL_IMAGE and proof:
+        return proof
+    return image
+
+
 FENCES = re.compile(r"^```([^\n]*)\n(.*?)^```\s*$", re.M | re.S)
 
 
 def check(root: Path = ROOT) -> list[str]:
     manifest = json.loads((root / MANIFEST).read_text())
     image = manifest["serverImage"]
-    if not re.fullmatch(r"ghcr\.io/honua-io/honua-server(?::[\w.-]+|@sha256:[0-9a-f]{64})", image):
+    if not _image_reference(image):
         raise ValueError("serverImage must name a tagged or digest-pinned Honua public image")
     if image.endswith(":latest"):
         raise ValueError("serverImage must select an explicit version, not latest")
+    proof = manifest.get("serverImageProof")
+    if proof is not None and not _image_reference(proof):
+        raise ValueError("serverImageProof must name a tagged or digest-pinned Honua public image")
     problems = []
     pages = {path: (root / path).read_text() for path in INSTALL_PAGES + CLIENT_PAGES}
     for path in INSTALL_PAGES:

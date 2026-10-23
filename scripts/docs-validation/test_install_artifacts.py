@@ -29,6 +29,13 @@ class ArtifactTests(unittest.TestCase):
     def test_current_installation_examples_are_consistent(self):
         self.assertEqual([], artifacts.check(self.root))
 
+    def test_unpublished_release_channel_pulls_the_qualified_preview(self):
+        manifest = json.loads((artifacts.ROOT / artifacts.MANIFEST).read_text())
+        self.assertEqual("ghcr.io/honua-io/honua-server:2026.1-rc", manifest["serverImage"])
+        self.assertEqual("ghcr.io/honua-io/honua-server:nightly-0e03bdd", artifacts.image_to_pull(manifest))
+        manifest["serverImage"] = "ghcr.io/honua-io/honua-server:already-published"
+        self.assertEqual(manifest["serverImage"], artifacts.image_to_pull(manifest))
+
     def test_each_installation_page_retains_the_customer_manifest_pointer(self):
         for path in artifacts.INSTALL_PAGES:
             with self.subTest(path=path):
@@ -63,7 +70,12 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue(any("honua-sdk" in error for error in artifacts.check(self.root)))
 
     def test_release_prose_is_not_a_contract_assertion(self):
-        self.replace("docs/get-started/quickstart.md", "2026.1-rc", "future-release")
+        # The GA tag is prose. The executable pin is the rc channel assignment.
+        self.replace(
+            "docs/get-started/quickstart.md",
+            "(`ghcr.io/honua-io/honua-server:2026.1` at GA)",
+            "(a later generally available tag)",
+        )
         self.assertEqual([], artifacts.check(self.root))
 
     def test_public_recipe_extraction_and_missing_annotation(self):

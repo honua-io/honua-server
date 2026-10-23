@@ -16,7 +16,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from install_artifacts import ROOT, MANIFEST, check
+from install_artifacts import ROOT, MANIFEST, check, image_to_pull
 
 spec = importlib.util.spec_from_file_location(
     "fences", Path(__file__).with_name("extract-fenced-commands.py"))
@@ -71,13 +71,17 @@ def main() -> int:
     if problems:
         raise ValueError("\n".join(problems))
     blocks = public_blocks()
-    image = json.loads((ROOT / MANIFEST).read_text())["serverImage"]
+    manifest = json.loads((ROOT / MANIFEST).read_text())
+    documented = manifest["serverImage"]
+    image = image_to_pull(manifest)
     for command in ("docker", "python", "openssl", "bash"):
         if not shutil.which(command):
             raise RuntimeError(f"Missing quickstart prerequisite: {command}")
     artifacts = ROOT / "artifacts/docs-validation/public-install"
     artifacts.mkdir(parents=True, exist_ok=True)
-    receipt: dict = {"image": image, "passed": False}
+    receipt: dict = {"image": documented, "pulledImage": image, "passed": False}
+    if image != documented:
+        print(f"Documented channel {documented} is not the pulled image; proof pulls {image}", flush=True)
     project = "honua-docs-" + uuid.uuid4().hex[:12]
     receipt["project"] = project
     with tempfile.TemporaryDirectory(prefix="public-install-", dir=artifacts) as directory:
@@ -129,6 +133,11 @@ def main() -> int:
             (work / "compose.yaml").write_text(blocks["compose"])
             shell("secrets")
             env_file.update(line.split("=", 1) for line in (work / ".env").read_text().splitlines())
+            # The documented .env names the release channel. Compose pulls that
+            # tag, which is unpublished until promotion, so the proof substitutes
+            # the qualified preview after the documented secrets block has run.
+            if image != documented:
+                env_file["HONUA_IMAGE"] = image
             http, grpc = free_ports()
             env_file.update(COMPOSE_PROJECT_NAME=project, HONUA_HTTP_PORT=str(http), HONUA_GRPC_PORT=str(grpc))
             (work / ".env").write_text("".join(f"{key}={value}\n" for key, value in env_file.items()))
