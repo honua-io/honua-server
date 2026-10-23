@@ -263,6 +263,7 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         {
             jsonWriter.WriteStartObject();
             jsonWriter.WriteString("type", "Feature");
+            new FeatureArtifactSpatialReference("known", inputs.Srid).Write(jsonWriter);
 
             jsonWriter.WritePropertyName("geometry");
             using (var doc = JsonDocument.Parse(geometryJson))

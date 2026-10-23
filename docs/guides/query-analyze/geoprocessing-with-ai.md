@@ -141,11 +141,17 @@ MCP artifacts identify themselves with `artifactId` and carry their reference in
 its media type and encoding before inspecting the geometry.
 
 This sample's coordinates are metric. Before importing into a map that expects
-WGS 84 GeoJSON, reproject to EPSG:4326 using a described projection process;
-do not simply relabel the CRS. A GP artifact is also not automatically a hosted
-database layer. `honua_publish_result` requires a publishable, materialized
-result; an inline geometry must first follow the supported import/materialization
-workflow. See [Honua Studio](../../studio/README.md) for the map application path.
+WGS 84 GeoJSON, reproject to EPSG:4326; do not relabel the CRS. A completed
+built-in artifact that is inline GeoJSON has no table binding. Import it with
+`honua_ingest_job_artifact` (`kind` `server-job-artifact`, the job and artifact
+identities, and `targetSrid`). The server reads the artifact it stored. Do not
+paste the GeoJSON into the prompt, invent a browser or local-run source, or
+pass a server path. A known producer CRS is kept or transformed to `targetSrid`.
+`honua_ingest_dataset` is the separate inline CSV/GeoJSON path, capped at 4 MB.
+`honua_publish_result` still requires a materialized table (`connectionId`,
+`schema`, `table`) and refuses this inline artifact. Publish the imported table
+with `honua_publish_service`, then query that layer. See [Honua Studio](../../studio/README.md)
+for the map application path.
 
 For a Python-only agent, the [SDK quickstart](gp-local-dev-quickstart.md#2-submit-and-verify-a-buffer)
 is an alternative to MCP. Native functions use the same discovery and job

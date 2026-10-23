@@ -385,7 +385,11 @@ internal static class FeatureStreamArtifact
     /// downstream.
     /// </summary>
     public static IFeature? DeserializeLine(GeoJsonReader reader, string line)
+        => DeserializeLine(reader, line, out _);
+
+    internal static IFeature? DeserializeLine(GeoJsonReader reader, string line, out bool hasProducerSpatialReference)
     {
+        hasProducerSpatialReference = false;
         ArgumentNullException.ThrowIfNull(reader);
 
         var feature = reader.Read<Feature>(line);
@@ -410,6 +414,7 @@ internal static class FeatureStreamArtifact
                 out var srid))
         {
             feature.Geometry.SRID = srid;
+            hasProducerSpatialReference = srid > 0 && rawSrid is int or long;
         }
 
         var rebuilt = new AttributesTable();

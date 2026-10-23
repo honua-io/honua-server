@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:14bf7cdcdc74c0e49625faa439c11df18045d391ad13641f3bd11384986e3a92",
+  "bundleDigest": "sha256:590bbb8bab047f6bc93d156484e9484511fbcf4aa40d775eba680e3995fd520b",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:eb7fd249689557e29283098f25a3af63ce308f7f199ad5896097cc89b811a01a",
+      "documentDigest": "sha256:8b7f085ab71a7a0979abda1a9b911f5ebbe78282961fe994ace9e4c42470afea",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2545,7 +2545,7 @@
     {
       "id": "guides/query-analyze/geoprocessing-with-ai",
       "path": "guides/query-analyze/geoprocessing-with-ai.md",
-      "documentDigest": "sha256:dafc32787a5bff85e748bdf0c5111727f1ad04dd77454ff2bcd942313b18722e",
+      "documentDigest": "sha256:f7e7011901b5070611c510bf842b2f82484c831879e7460367d612e8dbaf1218",
       "metadata": {
         "type": "guide",
         "title": "Geoprocessing with AI",
@@ -2649,7 +2649,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:69100769cd9253b4997cc339c8ce3b1d41cadb62d481b3df646499baf318bce0",
+      "documentDigest": "sha256:0dc7c11c7862c0d41ddd4c91cce06094ad9c6543e32cc09d567e879957e3ea71",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",
@@ -8258,7 +8258,7 @@
     {
       "id": "studio/mcp-tools",
       "path": "studio/mcp-tools.md",
-      "documentDigest": "sha256:364c4854ebd8906a36739d83a1fe1b0250c28b16c11c57ab7cc9fc58814251e3",
+      "documentDigest": "sha256:f9d8b0918889d02b35d3cc60223537b18569b83dfd50556655cb0281a99b49fc",
       "metadata": {
         "type": "guide",
         "title": "Studio MCP tools",
@@ -16523,6 +16523,11 @@
       "source": "studio/drive-from-claude-desktop",
       "relation": "links_to",
       "target": "studio/mcp-tools"
+    },
+    {
+      "source": "studio/mcp-tools",
+      "relation": "links_to",
+      "target": "guides/secure/authentication"
     },
     {
       "source": "studio/run-standalone",

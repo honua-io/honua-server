@@ -68,12 +68,13 @@ public sealed class McpWorkflowViewTests
     [UnitTest]
     public async Task BuiltInWorkflowAuthoringAndApproval_AreDiscoverableInDistinctVersionedStages()
     {
-        var view = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
+        var view = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.AnalyzeViewName);
         view.Names.Should().Contain("honua_workflow_package").And.Contain("honua_workflow_package_propose");
-        StageOf(view, "compose").Should().Contain("honua_workflow_package").And.NotContain("honua_workflow_package_propose");
-        StageOf(view, "publication").Should().Contain("honua_workflow_package_propose");
-        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v4");
-        McpWorkflowViewCatalog.Configure.Revision.Should().Be("configure.v2");
+        StageOf(view, "author-workflow").Should().Contain("honua_workflow_package").And.NotContain("honua_workflow_package_propose");
+        StageOf(view, "publish-workflow").Should().Contain("honua_workflow_package_propose");
+        McpWorkflowViewCatalog.Analyze.Revision.Should().Be("analyze.v2");
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v6");
+        McpWorkflowViewCatalog.Configure.Revision.Should().Be("configure.v4");
     }
 
     [UnitTest]
@@ -169,6 +170,7 @@ public sealed class McpWorkflowViewTests
             "honua_list_capabilities",
             "honua_resolve_entity",
             "honua_ingest_dataset",
+            "honua_ingest_job_artifact",
             "honua_publish_service",
             "honua_publish_result",
             "honua_list_layers",
@@ -191,7 +193,6 @@ public sealed class McpWorkflowViewTests
             "honua_studio_preview_draft",
             "honua_studio_save_version",
             "honua_studio_get_version",
-            "honua_workflow_package",
             "honua_studio_reopen_version",
             "honua_studio_add_layer",
             "honua_studio_remove_layer",
@@ -205,10 +206,9 @@ public sealed class McpWorkflowViewTests
             "honua_studio_add_control",
             "honua_studio_remove_control",
             "honua_studio_propose_publication",
-            "honua_workflow_package_propose",
             "honua_supported_operation_kinds",
         ]);
-        view.Names.Should().HaveCount(39);
+        view.Names.Should().OnlyHaveUniqueItems();
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -298,12 +298,13 @@ public sealed class McpWorkflowViewTests
                 McpWorkflowViewCatalog.Setup.Stages.ToList().FindIndex(stage => stage.Id == "compose"));
         }
 
+        var analysis = await ListToolsAsync(surface, McpWorkflowViewCatalog.AnalyzeViewName);
         foreach (var name in new[] { "honua_workflow_package", "honua_workflow_package_propose" })
         {
             var descriptor = full.Tools.Single(t => t.GetProperty("name").GetString() == name);
             descriptor.GetProperty("_meta").GetProperty("honua.studio").GetProperty("family").GetString()
                 .Should().Be("honua.workspace.canonical", "native discovery must retain canonical workflow authoring and governance tools");
-            descriptor.GetRawText().Should().Be(view.Tools.Single(t => t.GetProperty("name").GetString() == name).GetRawText());
+            descriptor.GetRawText().Should().Be(analysis.Tools.Single(t => t.GetProperty("name").GetString() == name).GetRawText());
         }
 
         fullStudio.GetProperty("annotations").ValueKind.Should().Be(JsonValueKind.Object);
@@ -714,7 +715,8 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCount(39);
+        after.Names.Should().Equal(before.Names);
+        after.MembershipDigestOf().Should().Be(before.MembershipDigestOf());
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -747,7 +749,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCount(39);
+        projection.BudgetViolations.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -785,7 +787,8 @@ public sealed class McpWorkflowViewTests
 
         response!.Error.Should().BeNull();
         var tools = response.Result!.Value.GetProperty("tools");
-        tools.GetArrayLength().Should().Be(39);
+        var baseline = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
+        tools.EnumerateArray().Select(tool => tool.GetProperty("name").GetString()).Should().Equal(baseline.Names);
         tools.EnumerateArray().Select(t => t.GetProperty("name").GetString())
             .Should().NotContain(name => name!.StartsWith("honua_op_import_", StringComparison.Ordinal));
     }
@@ -882,7 +885,7 @@ public sealed class McpWorkflowViewTests
             .ToArray();
 
         views.Select(v => v.GetProperty("name").GetString()).Should().Equal(
-            "analyze", "configure", "default", "operate", "setup");
+            "analyze", "configure", "default", "operate", "processes", "setup", "workspace");
         views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= McpWorkflowViewBudget.MaxDescriptors);
     }
 
@@ -993,7 +996,22 @@ public sealed class McpWorkflowViewTests
             "honua_studio_propose_publication",
             "honua_publish_service",
             "honua_ingest_dataset",
+            "honua_ingest_job_artifact",
         ]);
+        var setup = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, catalog);
+        var advancedComposition = new[]
+        {
+            "honua_studio_add_widget", "honua_studio_remove_widget",
+            "honua_studio_bind_interaction", "honua_studio_remove_interaction",
+            "honua_studio_add_control", "honua_studio_remove_control",
+        };
+        configure.Members.Select(member => member.ToolName).Should().NotIntersectWith(advancedComposition);
+        setup.Members.Select(member => member.ToolName).Should().Contain(advancedComposition);
+        foreach (var definition in new[] { McpWorkflowViewCatalog.Configure, McpWorkflowViewCatalog.Setup })
+        {
+            definition.FindStageIndex("honua_workflow_package").Should().Be(-1);
+            definition.FindStageIndex("honua_workflow_package_propose").Should().Be(-1);
+        }
         var operate = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Operate, catalog);
         operate.Members.Select(member => member.ToolName).Should().Contain(["honua_ops_health", "honua_propose_finding"]);
         var analyze = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Analyze, catalog);

@@ -202,6 +202,10 @@ public sealed partial class McpTaxonomyAlignmentTests
             // Job diagnostics are Honua extensions over the admin job projection (#6219).
             "honua_diagnose_job",
             "honua_job_evidence",
+            // Completed job artifacts are imported by canonical reference (#6422).
+            // The geospatial-mcp standard has no job-artifact source kind; browser-file
+            // and local-process-artifact remain separate dataset-import variants.
+            "honua_ingest_job_artifact",
             // Studio draft lifecycle + composition tools (honua-server#3002) are
             // Honua extensions with vendored index.json entries (family "Studio
             // composition and lifecycle (Honua extension)") but no published

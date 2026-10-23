@@ -338,6 +338,14 @@
       "notes": "Publish Data ingest step of the reference implementation: inline CSV/GeoJSON to a catalog table whose {connectionId, schema, table} chains into publish_service. Closes the data-loading gap ahead of the standard's file/URL ingest contract."
     },
     {
+      "standardName": "ingest_job_artifact",
+      "referenceToolName": "honua_ingest_job_artifact",
+      "family": "Publishing",
+      "schema": "tools/ingest_job_artifact.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#6422): import a completed built-in job artifact by canonical reference. kind server-job-artifact only. browser-file and local-process-artifact stay separate dataset-import sources and are refused. Does not publish; honua_publish_result still requires a materialized table."
+    },
+    {
       "standardName": "publish_service",
       "referenceToolName": "honua_publish_service",
       "family": "Publishing",

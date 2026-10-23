@@ -23,16 +23,28 @@ public sealed class WorkspaceToolClassificationTests
         Assert.Equal("preserved", metadata.GetProperty("other").GetString());
     }
 
-    [UnitTest]
-    public void PrefixMimicAndStub_DoNotGainExecutableClassification()
+    [UnitTheory]
+    [InlineData("honua_studio_arbitrary_code")]
+    [InlineData("honua_unknown_arbitrary_code")]
+    public void ToolOutsideServerAuthoredViews_DoesNotGainClassification(string name)
     {
-        var unknown = McpWorkflowViewDescriptorClassifier.Describe(new Tool("honua_studio_arbitrary_code"));
+        var unknown = McpWorkflowViewDescriptorClassifier.Describe(new Tool(name));
         Assert.False(unknown.Meta!.Value.TryGetProperty("honua.studio", out _));
-        var stub = McpWorkflowViewDescriptorClassifier.Describe(new Stub());
-        Assert.False(stub.Meta!.Value.TryGetProperty("honua.studio", out _));
     }
 
-    private class Tool(string name) : IMcpTool
+    [UnitTheory]
+    [InlineData("honua_workspace_get_turn", "honua.workspace.canonical", "workspace")]
+    [InlineData("honua_workspace_local_process_run", "honua.workspace.local-process", "processes")]
+    public void WorkspaceFamily_UsesServerAuthoredPrefixRules(string name, string family, string view)
+    {
+        var descriptor = McpWorkflowViewDescriptorClassifier.Describe(new Tool(name));
+        var classification = descriptor.Meta!.Value.GetProperty("honua.studio");
+        Assert.Equal(family, classification.GetProperty("family").GetString());
+        Assert.Equal(view, classification.GetProperty("view").GetString());
+        Assert.Equal("preserved", descriptor.Meta.Value.GetProperty("other").GetString());
+    }
+
+    private sealed class Tool(string name) : IMcpTool
     {
         public string Name => name;
         public string WorkflowFamily => "lifecycle";
@@ -46,6 +58,4 @@ public sealed class WorkspaceToolClassificationTests
         public Task<McpToolsCallResult> InvokeAsync(HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
             => Task.FromResult(new McpToolsCallResult());
     }
-
-    private sealed class Stub() : Tool("honua_query_features"), IStubMcpTool;
 }

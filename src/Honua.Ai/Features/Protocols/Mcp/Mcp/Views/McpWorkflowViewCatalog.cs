@@ -42,6 +42,12 @@ internal static class McpWorkflowViewCatalog
     /// <summary>The 2026.1 analyze view: ground, plan, execute, and job control.</summary>
     public const string AnalyzeViewName = "analyze";
 
+    /// <summary>The shared Console context, import and publication view.</summary>
+    public const string WorkspaceViewName = "workspace";
+
+    /// <summary>The isolated local-process editing and debugging view.</summary>
+    public const string ProcessesViewName = "processes";
+
     /// <summary>
     /// The default meta/workflow surface. Long-tail operations are reached by
     /// resolving/searching, describing, planning/proposing, then executing.
@@ -101,8 +107,9 @@ internal static class McpWorkflowViewCatalog
             + "submitted publication: confirm readiness, connect and import a source, publish it as a service and "
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
-            + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v4",
+            + "only the descriptors that path needs. Select analyze on the same MCP connection to author or publish "
+            + "reusable workflow packages; the full paginated catalog is an explicit escape hatch.",
+        Revision = "setup.v6",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -126,6 +133,7 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
+                    McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -197,7 +205,6 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_preview_draft"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_save_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_get_version"),
-                    McpWorkflowViewMemberRule.Exact("honua_workflow_package"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_reopen_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_add_layer"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_layer"),
@@ -215,8 +222,7 @@ internal static class McpWorkflowViewCatalog
 
                 // Publication submit belongs to the publication stage below even
                 // though it shares the studio_ family prefix.
-                Exclusions = [McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
-                    McpWorkflowViewMemberRule.Exact("honua_workflow_package_propose")],
+                Exclusions = [McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication")],
             },
             new McpWorkflowViewStageDefinition
             {
@@ -228,7 +234,6 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
-                    McpWorkflowViewMemberRule.Exact("honua_workflow_package_propose"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
                 ],
             },
@@ -236,8 +241,8 @@ internal static class McpWorkflowViewCatalog
     };
 
     /// <summary>
-    /// The <c>configure</c> view. Prompts select this, not <c>setup</c>. Studio composition stays
-    /// here unless the descriptor budget forces a <c>compose</c> split.
+    /// The <c>configure</c> view includes basic map composition. Full dashboard composition
+    /// is discovered through <c>setup</c> on the same connection to keep discovery bounded.
     /// </summary>
     public static McpWorkflowViewDefinition Configure { get; } = new()
     {
@@ -245,8 +250,9 @@ internal static class McpWorkflowViewCatalog
         Title = "Configure and publish",
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
-            + "style and render a map, then compose, save, read, and propose a Studio map, app, or dashboard.",
-        Revision = "configure.v2",
+            + "style and render a map, then compose, save, read, and propose a Studio map. Select setup on the same "
+            + "MCP connection for widgets, controls, and interactions; select analyze for reusable workflow packages.",
+        Revision = "configure.v4",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -272,7 +278,7 @@ internal static class McpWorkflowViewCatalog
                 Id = "connect-import",
                 Title = "Connect and import",
                 Description = "Inline CSV or GeoJSON ingest, up to 4 MB.",
-                Rules = [McpWorkflowViewMemberRule.Exact("honua_ingest_dataset")],
+                Rules = [McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"), McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact")],
             },
             new McpWorkflowViewStageDefinition
             {
@@ -325,17 +331,15 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_preview_draft"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_save_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_get_version"),
-                    McpWorkflowViewMemberRule.Exact("honua_workflow_package"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_reopen_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
-                    McpWorkflowViewMemberRule.Exact("honua_workflow_package_propose"),
                 ],
             },
             new McpWorkflowViewStageDefinition
             {
                 Id = "composition",
                 Title = "Studio composition",
-                Description = "Layers, style, visibility, view, widgets, controls, and interactions.",
+                Description = "Layers, style, visibility, and view. Select setup for widgets, controls, and interactions.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_studio_add_layer"),
@@ -344,12 +348,6 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_set_map_style"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_set_layer_visibility"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_set_view"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_add_widget"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_widget"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_bind_interaction"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_interaction"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_add_control"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
                 ],
             },
         ],
@@ -399,8 +397,9 @@ internal static class McpWorkflowViewCatalog
         Title = "Analyze",
         Description =
             "Ground a question, hand-author a plan when honua_plan_analysis returns engine fixture, "
-            + "then validate, execute, and read the job.",
-        Revision = "analyze.v1",
+            + "then validate, execute, and read the job. Author and version reusable workflow packages separately "
+            + "from proposing their governed publication.",
+        Revision = "analyze.v2",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -432,6 +431,83 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_cancel_job"),
                 ],
             },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "author-workflow",
+                Title = "Author and version a workflow",
+                Description = "Read, create, patch, validate, and version a reusable GIS workflow package.",
+                Rules = [McpWorkflowViewMemberRule.Exact("honua_workflow_package")],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "publish-workflow",
+                Title = "Propose workflow publication",
+                Description = "Submit a governed publication proposal for a versioned workflow package.",
+                Rules = [McpWorkflowViewMemberRule.Exact("honua_workflow_package_propose")],
+            },
+        ],
+    };
+
+    /// <summary>Shared chat context and forms, including conditionally installed import capabilities.</summary>
+    public static McpWorkflowViewDefinition Workspace { get; } = new()
+    {
+        Name = WorkspaceViewName,
+        Title = "Console workspace workflow",
+        Description = "Work from the captured chat context, share forms with the human, import data, publish layers, "
+            + "and review shared styles. Only installed capabilities appear. Select processes on this same MCP connection "
+            + "to edit and debug isolated code, setup for Studio map/app composition, analyze for reusable workflow packages, "
+            + "or operate for health and findings. View selection never changes identity or grants authority.",
+        Revision = "workspace.v1",
+        Stages =
+        [
+            new()
+            {
+                Id = "discover", Title = "Discover workflows",
+                Description = "Inspect the installed capabilities and available workflow views.",
+                Rules = [McpWorkflowViewMemberRule.Exact("honua_list_capabilities"), McpWorkflowViewMemberRule.Exact("honua_resolve_entity")],
+            },
+            new()
+            {
+                Id = "context-and-tasks", Title = "Share context and complete tasks",
+                Description = "Read the captured turn, edit shared forms, and submit or reconcile the exact reviewed task.",
+                Rules = [McpWorkflowViewMemberRule.Prefix("honua_workspace_")],
+                Exclusions = [McpWorkflowViewMemberRule.Prefix("honua_workspace_local_process_")],
+            },
+            new()
+            {
+                Id = "verify-data", Title = "Inspect published data",
+                Description = "Resolve actual service and layer receipts and verify accessible features.",
+                Rules = [McpWorkflowViewMemberRule.Exact("honua_list_layers"), McpWorkflowViewMemberRule.Exact("honua_describe_layer"),
+                    McpWorkflowViewMemberRule.Exact("honua_query_features")],
+            },
+            new()
+            {
+                Id = "shared-style", Title = "Review shared styling",
+                Description = "Inspect canonical style impact and propose exact changes for human approval.",
+                Rules = [McpWorkflowViewMemberRule.Exact("honua_shared_style_get"), McpWorkflowViewMemberRule.Exact("honua_shared_style_propose")],
+            },
+        ],
+    };
+
+    /// <summary>Local-process source/snapshot/run tools with the same shared workspace context.</summary>
+    public static McpWorkflowViewDefinition Processes { get; } = new()
+    {
+        Name = ProcessesViewName,
+        Title = "Local process development workflow",
+        Description = "Inspect and edit local process source, capture immutable snapshots, run in the installed sandbox, "
+            + "inspect diagnostics, fix, rerun, or cancel. Use the workspace import task for verified output artifacts. "
+            + "Select setup on the same connection for map/app composition or analyze for reusable workflow publication. "
+            + "Local-process tools retain their separate execution family and host approval requirements.",
+        Revision = "processes.v1",
+        Stages =
+        [
+            .. Workspace.Stages,
+            new()
+            {
+                Id = "local-process", Title = "Edit, run and debug",
+                Description = "Work on exact source and input snapshots; reconcile uncertain outcomes before retrying.",
+                Rules = [McpWorkflowViewMemberRule.Prefix("honua_workspace_local_process_")],
+            },
         ],
     };
 
@@ -444,6 +520,8 @@ internal static class McpWorkflowViewCatalog
             [Configure.Name] = Configure,
             [Operate.Name] = Operate,
             [Analyze.Name] = Analyze,
+            [Workspace.Name] = Workspace,
+            [Processes.Name] = Processes,
         };
 
     /// <summary>The published view names, in stable ordinal order.</summary>

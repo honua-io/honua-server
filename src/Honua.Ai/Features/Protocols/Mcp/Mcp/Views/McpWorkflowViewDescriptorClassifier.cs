@@ -21,6 +21,7 @@ internal static class McpWorkflowViewDescriptorClassifier
     internal const string StudioMetadataKey = "honua.studio";
     internal const string StudioCompositionFamily = "honua.studio.composition";
     internal const string WorkspaceCanonicalFamily = "honua.workspace.canonical";
+    internal const string LocalProcessFamily = "honua.workspace.local-process";
 
     /// <summary>Describes a tool and attaches any server-authored classification.</summary>
     public static McpToolDescriptor Describe(IMcpTool tool)
@@ -28,8 +29,9 @@ internal static class McpWorkflowViewDescriptorClassifier
         ArgumentNullException.ThrowIfNull(tool);
 
         var descriptor = tool.Describe();
-        // Server-authored views are the positive classification signal. A name prefix alone
-        // cannot opt a tool into a native model's executable catalog.
+        // Classify descriptors from the canonical live catalog using the server's
+        // exact-name and family-prefix view rules. Classification does not register
+        // a tool or grant permission to invoke it.
         var view = tool is StudioDraftToolBase
             ? McpWorkflowViewCatalog.Setup
             : McpWorkflowViewCatalog.All.Values.FirstOrDefault(candidate => candidate.FindStageIndex(descriptor.Name) >= 0);
@@ -42,7 +44,9 @@ internal static class McpWorkflowViewDescriptorClassifier
         {
             Studio = new McpStudioToolClassification
             {
-                Family = tool is StudioDraftToolBase ? StudioCompositionFamily : WorkspaceCanonicalFamily,
+                Family = tool is StudioDraftToolBase ? StudioCompositionFamily
+                    : McpWorkflowViewCatalog.Processes.Stages.Single(stage => stage.Id == "local-process").Selects(descriptor.Name)
+                        ? LocalProcessFamily : WorkspaceCanonicalFamily,
                 View = view.Name,
                 Revision = view.Revision,
             },

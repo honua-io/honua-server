@@ -193,6 +193,8 @@ internal sealed partial class StreamingFileImportService
         NpgsqlConnection connection,
         string schemaName,
         string tableName,
+        int featureCount,
+        ImportCommitParticipant? commitParticipant,
         CancellationToken cancellationToken)
     {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -204,6 +206,9 @@ internal sealed partial class StreamingFileImportService
                 command.Parameters.AddWithValue("table_name", tableName);
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
+
+            await InvokeCommitParticipantAsync(
+                commitParticipant, transaction, schemaName, tableName, featureCount, cancellationToken);
 
             await transaction.CommitSafelyAsync(cancellationToken);
         }
@@ -223,6 +228,8 @@ internal sealed partial class StreamingFileImportService
         string schemaName,
         string liveTableName,
         string stagingTableName,
+        int featureCount,
+        ImportCommitParticipant? commitParticipant,
         CancellationToken cancellationToken)
     {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -243,6 +250,9 @@ internal sealed partial class StreamingFileImportService
                 await drop.ExecuteNonQueryAsync(cancellationToken);
             }
 
+            await InvokeCommitParticipantAsync(
+                commitParticipant, transaction, schemaName, liveTableName, featureCount, cancellationToken);
+
             await transaction.CommitSafelyAsync(cancellationToken);
         }
         catch
@@ -250,6 +260,30 @@ internal sealed partial class StreamingFileImportService
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    private static async Task InvokeCommitParticipantAsync(
+        ImportCommitParticipant? participant,
+        NpgsqlTransaction transaction,
+        string schemaName,
+        string physicalTable,
+        int featureCount,
+        CancellationToken cancellationToken)
+    {
+        if (participant is null)
+        {
+            return;
+        }
+
+        await participant(
+            new ImportCommitScope
+            {
+                Transaction = transaction,
+                Schema = schemaName,
+                PhysicalTable = physicalTable,
+                FeatureCount = featureCount,
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

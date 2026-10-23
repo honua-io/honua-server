@@ -73,6 +73,22 @@ public sealed partial class StudioDashboardMcpIntegrationTests
         initialize.EnsureSuccessStatusCode();
         agent.DefaultRequestHeaders.Add("Mcp-Session-Id", initialize.Headers.GetValues("Mcp-Session-Id").Single());
 
+        foreach (var (view, toolName, expectedFamily) in new[]
+                 {
+                     ("workspace", "honua_workspace_get_turn", "honua.workspace.canonical"),
+                     ("setup", "honua_studio_create_draft", "honua.studio.composition"),
+                 })
+        {
+            var catalog = await ReadHttpAsync(await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 2, method = "tools/list", @params = new { view },
+            }), HttpStatusCode.OK);
+            var descriptor = catalog.GetProperty("result").GetProperty("tools").EnumerateArray()
+                .Single(tool => tool.GetProperty("name").GetString() == toolName);
+            descriptor.GetProperty("_meta").GetProperty("honua.studio").GetProperty("family")
+                .GetString().Should().Be(expectedFamily);
+        }
+
         var denied = await RpcAsync("create_draft", $$$"""{"itemId":"{{{Guid.NewGuid()}}}","packageKey":"foreign-item","family":"{{{family}}}","schemaVersion":"1.0","body":{}}""", agent);
         denied.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
         denied = await RpcAsync("create_draft", $$$"""{"itemId":"{{{itemId}}}","ownerId":"someone-else","packageKey":"assigned-owner","family":"{{{family}}}","schemaVersion":"1.0","body":{}}""", agent);

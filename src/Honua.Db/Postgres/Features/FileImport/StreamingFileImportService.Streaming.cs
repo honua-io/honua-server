@@ -85,6 +85,11 @@ internal sealed partial class StreamingFileImportService
             var hadExistingTarget = false;
             if (JobSecurityScope.Current?.Submitter is { AgentCredential: not null } or { ExecutionLease: not null })
             {
+                // Native accepted-task commits have their own authority and durable result
+                // transaction. Do not acknowledge an unrelated artifact receipt without
+                // executing its participant in that same transaction.
+                if (request.CommitParticipant is not null)
+                    throw new NotSupportedException("An accepted task cannot combine a separate job-artifact receipt transaction.");
                 commitBinding = await RequireCurrentCommitBindingAsync(request, targetSchema, allowedTableName, cancellationToken);
                 // Existing-table agent writes need the canonical row/mask/constraint mutation
                 // path. Never fall back to the legacy direct batch writer while it is absent.
@@ -129,6 +134,14 @@ internal sealed partial class StreamingFileImportService
                             connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
                         break;
                 }
+
+            if (request.CommitParticipant is not null
+                && loadMode != ImportLoadMode.Replace
+                && !(loadMode == ImportLoadMode.Append && appendUsesStaging))
+            {
+                throw new InvalidDataException(
+                    "This import must commit its receipt with the rows. The target is not an importer-owned table.");
+            }
 
             // A Replace load streams into a <table>__staging sibling (loadTableName) rather than
             // the live table. Before this try, the only path that ever reclaimed that sibling on
@@ -390,7 +403,8 @@ internal sealed partial class StreamingFileImportService
                     }
                     else
                     {
-                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName,
+                            totalImported, request.CommitParticipant, CancellationToken.None);
                         dataCommitted = true;
                     }
                 }
@@ -407,6 +421,8 @@ internal sealed partial class StreamingFileImportService
                             targetSchema,
                             allowedTableName,
                             loadTableName,
+                            totalImported,
+                            request.CommitParticipant,
                             CancellationToken.None);
                         dataCommitted = true;
                     }

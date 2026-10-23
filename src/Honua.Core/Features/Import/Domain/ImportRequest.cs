@@ -31,6 +31,25 @@ public enum ImportLoadMode
     Upsert = 2,
 }
 
+/// <summary>Facts the import pipeline knows when it is about to commit imported rows.</summary>
+public sealed class ImportCommitScope
+{
+    /// <summary>Provider transaction that will commit the rows. PostgreSQL passes <c>NpgsqlTransaction</c>.</summary>
+    public required object Transaction { get; init; }
+
+    /// <summary>Schema that owns the live table.</summary>
+    public required string Schema { get; init; }
+
+    /// <summary>Physical table that receives the rows.</summary>
+    public required string PhysicalTable { get; init; }
+
+    /// <summary>Row count included in this commit.</summary>
+    public required int FeatureCount { get; init; }
+}
+
+/// <summary>Runs inside the transaction that commits imported rows, before that transaction commits.</summary>
+public delegate ValueTask ImportCommitParticipant(ImportCommitScope scope, CancellationToken cancellationToken);
+
 /// <summary>
 /// Request to import a geospatial file into a layer
 /// </summary>
@@ -169,6 +188,13 @@ public sealed record ImportRequest
     /// non-CSV formats. When omitted the CSV reader's header auto-detection applies.
     /// </summary>
     public CsvImportOptions? CsvOptions { get; init; }
+
+    /// <summary>
+    /// Runs inside the transaction that commits imported rows, before that transaction commits.
+    /// Job-artifact import stores its idempotency receipt there. When set, a direct append into
+    /// a table the importer does not own is refused because those batches commit on their own.
+    /// </summary>
+    public ImportCommitParticipant? CommitParticipant { get; init; }
 
     /// <summary>
     /// The resolved load mode, reconciling the legacy <see cref="OverwriteExisting"/> flag

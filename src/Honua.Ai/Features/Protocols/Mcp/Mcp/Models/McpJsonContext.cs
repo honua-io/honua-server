@@ -77,6 +77,8 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpOperationToolOutput))]
 [JsonSerializable(typeof(McpIngestDatasetArgument))]
 [JsonSerializable(typeof(McpIngestDatasetOutput))]
+[JsonSerializable(typeof(McpIngestJobArtifactArgument))]
+[JsonSerializable(typeof(McpIngestJobArtifactOutput))]
 [JsonSerializable(typeof(McpIngestRowError))]
 [JsonSerializable(typeof(McpCreateMapPackageArgument))]
 [JsonSerializable(typeof(McpCreateAppPackageArgument))]
