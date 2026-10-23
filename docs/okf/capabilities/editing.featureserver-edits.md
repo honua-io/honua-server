@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "FeatureServer Editing"
-description: "Create, update, and delete features through the Esri GeoServices FeatureServer write surface â€” applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."
+description: "Create, update, and delete features through the Esri GeoServices FeatureServer write surface — applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."
 resource: "honua://capability/editing.featureserver-edits"
 tags: [capability, editing, pro]
 ---
@@ -9,7 +9,7 @@ tags: [capability, editing, pro]
 
 # FeatureServer Editing
 
-Create, update, and delete features through the Esri GeoServices FeatureServer write surface â€” applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate.
+Create, update, and delete features through the Esri GeoServices FeatureServer write surface — applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate.
 
 | | |
 | --- | --- |

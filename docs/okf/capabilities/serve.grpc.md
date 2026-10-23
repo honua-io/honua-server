@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "gRPC (geospatial.v1)"
-description: "The geospatial.v1 gRPC surface â€” FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService â€” served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."
+description: "The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService — served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."
 resource: "honua://capability/serve.grpc"
 tags: [capability, serve, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, serve, community]
 
 # gRPC (geospatial.v1)
 
-The geospatial.v1 gRPC surface â€” FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService â€” served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability.
+The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService — served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability.
 
 | | |
 | --- | --- |
