@@ -11,10 +11,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NSubstitute;
 using Testcontainers.PostgreSql;
+using Xunit.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-public sealed class PostgresRasterDiscoveryTests
+public sealed class PostgresRasterDiscoveryTests(ITestOutputHelper output)
 {
     [IntegrationTest]
     public async Task GetPrimaryRasterInfoAsync_WithoutOptionalRasterExtension_ReturnsNull()
@@ -24,7 +25,17 @@ public sealed class PostgresRasterDiscoveryTests
         await using var dataSource = NpgsqlDataSource.Create(database.GetConnectionString());
         // Module readiness checks TCP inside the container. Observe real SQL
         // through the mapped client connection before testing raster discovery.
-        await WaitForMappedDatabaseAsync(dataSource);
+        try
+        {
+            await WaitForMappedDatabaseAsync(dataSource);
+        }
+        catch
+        {
+            await WriteStartupDiagnosticsAsync(database);
+            throw;
+        }
+
+        output.WriteLine($"Mapped SQL ready: container={database.Id}, host={database.Hostname}, port={database.GetMappedPublicPort(5432)}, state={database.State}");
         var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>())
             .Returns(async call => (DbConnection)await dataSource.OpenConnectionAsync(call.Arg<CancellationToken>()));
@@ -32,6 +43,28 @@ public sealed class PostgresRasterDiscoveryTests
             FixtureBypassDatabaseSchemaGuard.Instance, "honua");
 
         (await store.GetPrimaryRasterInfoAsync(2110)).Should().BeNull();
+    }
+
+    private async Task WriteStartupDiagnosticsAsync(PostgreSqlContainer database)
+    {
+        // Retain evidence before await-using removes the owned container. Diagnostic
+        // failures must not replace the original mapped SQL readiness failure.
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            output.WriteLine($"Mapped SQL unavailable: container={database.Id}, host={database.Hostname}, port={database.GetMappedPublicPort(5432)}, reportedState={database.State}");
+            var readiness = await database.ExecAsync(
+                ["pg_isready", "--host", "127.0.0.1", "--dbname", "postgres", "--username", "postgres"], deadline.Token);
+            output.WriteLine($"Container IPv4 readiness: exit={readiness.ExitCode}, stdout={readiness.Stdout}, stderr={readiness.Stderr}");
+            var (stdout, stderr) = await database.GetLogsAsync(timestampsEnabled: true, ct: deadline.Token);
+            const int maximumLogCharacters = 16384;
+            output.WriteLine($"Container stdout (tail): {stdout[^Math.Min(stdout.Length, maximumLogCharacters)..]}");
+            output.WriteLine($"Container stderr (tail): {stderr[^Math.Min(stderr.Length, maximumLogCharacters)..]}");
+        }
+        catch (Exception exception)
+        {
+            output.WriteLine($"Startup diagnostics unavailable: {exception.GetType().Name}: {exception.Message}");
+        }
     }
 
     private static async Task WaitForMappedDatabaseAsync(NpgsqlDataSource dataSource)
