@@ -211,6 +211,16 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     }
 
     /// <summary>
+    /// Rethrows the CREATE failure when the follow-up <c>pg_extension</c> read cannot run.
+    /// </summary>
+    /// <param name="createFailure">The exception raised by <c>CREATE EXTENSION</c>.</param>
+    internal static void ThrowPreservedCreateFailure(Exception createFailure)
+    {
+        ArgumentNullException.ThrowIfNull(createFailure);
+        ExceptionDispatchInfo.Capture(createFailure).Throw();
+    }
+
+    /// <summary>
     /// Classifies a create failure after <paramref name="installedAfterFailure"/> was read from
     /// <c>pg_extension</c>. Privilege and missing-package errors stay a missing extension.
     /// Everything else propagates.
@@ -218,15 +228,6 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     /// <param name="error">The exception raised by <c>CREATE EXTENSION</c>.</param>
     /// <param name="installedAfterFailure">True when PostGIS is installed after that exception.</param>
     /// <returns>How the preflight should treat the failure.</returns>
-    /// <summary>
-    /// Rethrows the CREATE failure when the follow-up <c>pg_extension</c> read cannot run.
-    /// </summary>
-    internal static void ThrowPreservedCreateFailure(Exception createFailure)
-    {
-        ArgumentNullException.ThrowIfNull(createFailure);
-        ExceptionDispatchInfo.Capture(createFailure).Throw();
-    }
-
     internal static PostGisCreateFailureDisposition DecidePostGisCreateFailure(
         Exception error, bool installedAfterFailure)
     {
