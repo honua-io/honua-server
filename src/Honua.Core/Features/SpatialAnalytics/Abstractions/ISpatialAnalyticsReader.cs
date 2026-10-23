@@ -61,9 +61,10 @@ public interface ISpatialAnalyticsReader
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Bins the filtered input set into a hex or square grid in Web Mercator
-    /// and returns one row per occupied cell with the cell boundary geometry
-    /// and a feature count or weighted sum.
+    /// Bins the filtered input set into a hex or square grid and returns one row
+    /// per occupied cell with the cell boundary geometry and a feature count or
+    /// weighted sum. Geographic layers use ground metres; projected layers use
+    /// Web Mercator metres.
     /// </summary>
     /// <param name="layerId">Target layer identifier.</param>
     /// <param name="query">Shared feature filter.</param>

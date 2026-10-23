@@ -65,7 +65,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         features.GetArrayLength().Should().Be(4);
 
         // Seeded objectIds 1, 2, and 5 are mutually density-reachable within
-        // 50 km in Web Mercator. ObjectId 4 is more than 50 km from every other
+        // 50 km on the ground. ObjectId 4 is more than 50 km from every other
         // point, so minPoints=2 must classify it as DBSCAN noise (null cluster).
         var assignments = features.EnumerateArray().ToDictionary(
             feature => feature.GetProperty("properties").GetProperty("objectId").GetInt64(),

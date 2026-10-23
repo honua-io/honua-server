@@ -77,9 +77,9 @@ internal static class SpatialAnalyticsEndpoints
             .WithName("QueryDensityPost")
             .WithSummary("Bin features into a hex or square grid")
             .WithDescription(
-                "Bins the filtered subset of a layer into a hex or square grid in Web Mercator "
-                + "and returns one row per occupied cell with the cell geometry and a count or "
-                + "weighted sum.")
+                "Bins the filtered subset of a layer into a hex or square grid. Geographic "
+                + "layers use ground metres; projected layers use Web Mercator. Returns one row "
+                + "per occupied cell with the cell geometry and a count or weighted sum.")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .AllowAnonymous();

@@ -71,8 +71,220 @@ public sealed class FeatureQueryBuilderAnalyticsTests
         // The decoded operand must appear in the CTE (not a raw `geometry` reference).
         result.Sql.Should().Contain("ST_SetSRID(ST_GeomFromEWKB(geometry), 4326)");
         result.Sql.Should().Contain("AS geom_m");
-        // The outer aggregation should reference the decoded column alias, not raw geometry.
-        result.Sql.Should().Contain("ST_Union(ST_Buffer(geom_m");
+        // The outer aggregation should reference the decoded metres alias, not raw geometry.
+        result.Sql.Should().Contain("ST_Buffer(geom_m");
+        result.Sql.Should().NotContain("ST_Buffer(geometry");
+        result.Sql.Should().Contain("+proj=aeqd");
+        result.Sql.Should().NotContain("3857");
+    }
+
+    [Fact]
+    public void BuildBufferAggregateQuery_GeographicLayer_BuffersOnAzimuthalPlane()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [0x01],
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.EnvelopeIntersects,
+                IsSimpleEnvelope = true,
+                EnvelopeMinX = -1,
+                EnvelopeMinY = 59.5,
+                EnvelopeMaxX = 1,
+                EnvelopeMaxY = 60.5
+            }
+        };
+        var bufferQuery = new BufferAggregateQuery
+        {
+            Distance = 1000d,
+            Unit = DistanceUnit.Meters,
+            Dissolve = false,
+            MaxInputFeatures = 10
+        };
+
+        var result = queryBuilder.BuildBufferAggregateQuery(layerId: 1, query, bufferQuery);
+
+        result.Sql.Should().Contain("+proj=aeqd");
+        result.Sql.Should().Contain("+lat_0=60");
+        result.Sql.Should().Contain("+ellps=WGS84");
+        result.Sql.Should().Contain("ST_TransformPipeline(ST_Buffer(geom_m");
+        result.Sql.Should().Contain("ST_SetSRID(");
+        result.Sql.Should().NotContain("3857");
+        result.Sql.Should().Contain("LIMIT $4)");
+    }
+
+    [Fact]
+    public void BuildBufferAggregateQuery_ProjectedFeetAndUtm_StayOnWebMercator()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var bufferQuery = new BufferAggregateQuery
+        {
+            Distance = 100d,
+            Unit = DistanceUnit.Meters,
+            Dissolve = true,
+            MaxInputFeatures = 10
+        };
+
+        foreach (var srid in new[] { 2227, 32610, 3857 })
+        {
+            var result = queryBuilder.BuildBufferAggregateQuery(
+                layerId: 1, new FeatureQuery { SpatialReferenceSrid = srid }, bufferQuery);
+
+            result.Sql.Should().NotContain("+proj=aeqd");
+            if (srid == 3857)
+            {
+                result.Sql.Should().NotContain("ST_Transform(geometry");
+                result.Sql.Should().Contain("ST_Transform(ST_Union(ST_Buffer(geom_m");
+            }
+            else
+            {
+                result.Sql.Should().Contain($"ST_Transform(geometry, 3857)");
+            }
+        }
+    }
+
+    [Fact]
+    public void BuildClusterQuery_NoEnvelope_UsesShortArcAndPlaneTiles()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var result = queryBuilder.BuildClusterQuery(layerId: 1, new FeatureQuery { SpatialReferenceSrid = 4326 },
+            new ClusterQuery
+            {
+                Algorithm = ClusterAlgorithm.DbScan,
+                Eps = 1500d,
+                MinPoints = 1,
+                DistanceUnit = DistanceUnit.Meters,
+                ReturnHullPerCluster = false,
+                MaxInputFeatures = 10
+            });
+
+        result.Sql.Should().Contain("+proj=aeqd");
+        result.Sql.Should().Contain("lead(lon) OVER (ORDER BY lon)");
+        result.Sql.Should().Contain("360.0 - f.gap");
+        result.Sql.Should().Contain("ST_X(ST_Centroid(e.ext))");
+        result.Sql.Should().Contain("PARTITION BY plane_id");
+        result.Sql.Should().Contain(AzimuthalGroundPlane.PlaneTileMetres.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        result.Sql.Should().Contain(AzimuthalGroundPlane.SinglePlaneMaxCornerMetres.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        result.Sql.Should().NotContain("3857");
+    }
+
+    [Fact]
+    public void BuildClusterQuery_DatelineEnvelope_KeepsShortArcCentre()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [0x01],
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.EnvelopeIntersects,
+                IsSimpleEnvelope = true,
+                EnvelopeMinX = -179,
+                EnvelopeMinY = -1,
+                EnvelopeMaxX = 179,
+                EnvelopeMaxY = 1
+            }
+        };
+
+        var result = queryBuilder.BuildClusterQuery(layerId: 1, query, new ClusterQuery
+        {
+            Algorithm = ClusterAlgorithm.DbScan,
+            Eps = 1500d,
+            MinPoints = 1,
+            DistanceUnit = DistanceUnit.Meters,
+            ReturnHullPerCluster = false,
+            MaxInputFeatures = 10
+        });
+
+        result.Sql.Should().Contain("+lon_0=180");
+        result.Sql.Should().Contain("+lat_0=0");
+        result.Sql.Should().NotContain("lead(lon)");
+        AzimuthalGroundPlane.EnvelopeFitsOnePlane(-179, 179, -1, 1).Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildClusterQuery_WideEnvelope_SplitsAzimuthalPlanes()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [0x01],
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.EnvelopeIntersects,
+                IsSimpleEnvelope = true,
+                EnvelopeMinX = -30,
+                EnvelopeMinY = 60,
+                EnvelopeMaxX = 30,
+                EnvelopeMaxY = 60
+            }
+        };
+
+        var result = queryBuilder.BuildClusterQuery(layerId: 1, query, new ClusterQuery
+        {
+            Algorithm = ClusterAlgorithm.DbScan,
+            Eps = 1000d,
+            MinPoints = 1,
+            DistanceUnit = DistanceUnit.Meters,
+            ReturnHullPerCluster = false,
+            MaxInputFeatures = 10
+        });
+
+        result.Sql.Should().Contain("PARTITION BY plane_id");
+        result.Sql.Should().Contain(AzimuthalGroundPlane.PlaneTileMetres.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        result.Sql.Should().Contain("+lat_0=' ||");
+        result.Sql.Should().NotContain("+lat_0=60");
+        AzimuthalGroundPlane.EnvelopeFitsOnePlane(-30, 30, 60, 60).Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildDensityQuery_WideExtent_BinsInsideAzimuthalTiles()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var result = queryBuilder.BuildDensityQuery(layerId: 1, new FeatureQuery { SpatialReferenceSrid = 4326 },
+            new DensityQuery
+            {
+                Mode = DensityBinningMode.SquareGrid,
+                CellSizeMeters = 1000d,
+                MaxInputFeatures = 10,
+                MaxCells = 10
+            });
+
+        result.Sql.Should().Contain("+proj=aeqd");
+        result.Sql.Should().Contain("ST_TransformPipeline(c.cell,");
+        result.Sql.Should().Contain("s.plane_id = c.plane_id");
+        result.Sql.Should().Contain(AzimuthalGroundPlane.PlaneTileMetres.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        result.Sql.Should().NotContain("ST_Transform(c.cell, 4326)");
+        result.Sql.Should().NotContain("3857");
+    }
+
+    [Fact]
+    public void AzimuthalScale_AtPlaneLimits_StaysWithinOnePercent()
+    {
+        // Reviewer rerun: tangential scale of azimuthal equidistant is rho/sin(rho)
+        // on the WGS 84 semi-major axis. Web Mercator at 60°N is sec(latitude) = 2,
+        // so a 1,000 m ground separation is 2,000 m in EPSG:3857 and a requested
+        // 1,000 m buffer only reaches about 500 m on the ground — below 600 m.
+        AzimuthalGroundPlane.TangentialScaleError(AzimuthalGroundPlane.SinglePlaneMaxCornerMetres)
+            .Should().BeLessThan(0.01);
+        var tileCorner = Math.Sqrt(2d) * AzimuthalGroundPlane.PlaneTileMetres / 2d;
+        AzimuthalGroundPlane.TangentialScaleError(tileCorner).Should().BeLessThan(0.001);
+        AzimuthalGroundPlane.TangentialScaleError(1_700_000d).Should().BeGreaterThan(0.01);
+
+        var mercatorScaleAt60N = 1d / Math.Cos(60d * Math.PI / 180d);
+        mercatorScaleAt60N.Should().BeApproximately(2d, 1e-9);
+        (1000d / mercatorScaleAt60N).Should().BeApproximately(500d, 1e-6);
+        (1000d / mercatorScaleAt60N).Should().BeLessThan(600d);
+
+        AzimuthalGroundPlane.EnvelopeFitsOnePlane(-0.01, 0.01, 59.99, 60.01).Should().BeTrue();
+        AzimuthalGroundPlane.EnvelopeFitsOnePlane(-10, 10, 59, 61).Should().BeTrue();
     }
 
     [Fact]
