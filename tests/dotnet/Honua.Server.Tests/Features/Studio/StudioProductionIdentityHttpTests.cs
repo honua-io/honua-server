@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
@@ -15,6 +16,7 @@ using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -36,31 +38,48 @@ public sealed class StudioProductionIdentityHttpTests
             {
                 // Exercise Program's infrastructure composition, migrations and auth.
                 // No ConfigureTestServices or manually composed authority ports.
+                var bridgeKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+                var settings = WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
+                    postgres.ConnectionString,
+                    new Dictionary<string, string?>
+                    {
+                        ["HONUA_SKIP_MIGRATIONS"] = "false",
+                        ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword,
+                        ["HONUA_DEV_AUTH"] = "false",
+                        ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = "false",
+                        ["ConnectionStrings:redis"] = redis.ConnectionString,
+                        ["Licensing:DevGrantEdition"] = "Pro",
+                        ["Studio:EndUserAuthorization:Enabled"] = "true",
+                        ["AgentWorkspace:DeploymentId"] = "identity-" + Guid.NewGuid().ToString("N"),
+                        ["AgentWorkspace:ReleaseId"] = "production-identity-test",
+                        ["Authentication:OperatorBearer:Enabled"] = "true",
+                        ["Authentication:OperatorBearer:SigningKey"] = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
+                        ["AgentWorkspace:LocalHumanBridge:Enabled"] = "true",
+                        ["AgentWorkspace:LocalHumanBridge:Key"] = bridgeKey,
+                        ["AgentWorkspace:LocalHumanBridge:TenantId"] = "public",
+                    });
                 await using var factory = ConfiguredWebApplicationFactory.Create(builder =>
                 {
-                    builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
-                    builder.ConfigureAppConfiguration((_, configuration) =>
-                        configuration.AddInMemoryCollection(WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
-                            postgres.ConnectionString,
-                            new Dictionary<string, string?>
-                            {
-                                ["HONUA_REGISTER_TEST_INFRASTRUCTURE"] = "true",
-                                ["HONUA_SKIP_MIGRATIONS"] = "false",
-                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword,
-                                ["HONUA_DEV_AUTH"] = "false",
-                                ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = "false",
-                                ["ConnectionStrings:redis"] = redis.ConnectionString,
-                                ["Licensing:DevGrantEdition"] = "Pro",
-                                ["Studio:EndUserAuthorization:Enabled"] = "true",
-                                ["AgentWorkspace:DeploymentId"] = "identity-" + Guid.NewGuid().ToString("N"),
-                                ["AgentWorkspace:ReleaseId"] = "production-identity-test",
-                            })));
-                });
+                    // Program makes eager provider/Redis decisions during startup.
+                    foreach (var setting in settings)
+                    {
+                        if (setting.Value is not null) builder.UseSetting(setting.Key, setting.Value);
+                    }
+                    builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
+                }, "Development");
                 factory.UseKestrel(0);
                 using var setup = factory.CreateClient();
                 setup.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
                 using var scope = factory.Services.CreateScope();
                 scope.ServiceProvider.GetRequiredService<IStudioPackageStore>().Should().BeOfType<PostgresStudioPackageStore>();
+                scope.ServiceProvider.GetService<IConnectionMultiplexer>().Should().NotBeNull();
+                scope.ServiceProvider.GetRequiredService<IAgentWorkspaceStore>().IsAvailable.Should().BeTrue();
+                using var human = factory.CreateClient();
+                human.DefaultRequestHeaders.Add("X-Honua-Local-Bridge", bridgeKey);
+                var session = await ReadAsync(await human.PostAsJsonAsync("/api/v1/admin/auth/local-console-session",
+                    new { subject = "production-studio-controller" }), HttpStatusCode.OK);
+                human.DefaultRequestHeaders.Remove("X-Honua-Local-Bridge");
+                human.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.GetProperty("accessToken").GetString());
 
                 var itemId = Guid.NewGuid();
                 var issued = await ReadAsync(await setup.PostAsJsonAsync("/api/v1/admin/api-keys", new
@@ -73,14 +92,14 @@ public sealed class StudioProductionIdentityHttpTests
                 factory.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = workspaceActor;
                 using var agent = factory.CreateClient();
                 agent.DefaultRequestHeaders.Add("X-API-Key", issued.GetProperty("data").GetProperty("key").GetString());
-                var target = await ReadAsync(await setup.GetAsync("/api/v1/agent/target"), HttpStatusCode.OK);
-                var workspace = await ReadAsync(await setup.PostAsJsonAsync("/api/v1/agent/workspaces", new
+                var target = await ReadAsync(await human.GetAsync("/api/v1/agent/target"), HttpStatusCode.OK);
+                var workspace = await ReadAsync(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new
                 {
                     viewId = "identity-view",
                     targetId = target.GetProperty("targetId").GetString(),
                 }), HttpStatusCode.OK);
                 var workspaceId = workspace.GetProperty("workspaceId").GetString()!;
-                await ReadAsync(await setup.PostAsJsonAsync($"/api/v1/agent/workspaces/{workspaceId}/turns", new
+                await ReadAsync(await human.PostAsJsonAsync($"/api/v1/agent/workspaces/{workspaceId}/turns", new
                 {
                     turnId = "identity-turn",
                     viewId = "identity-view",
