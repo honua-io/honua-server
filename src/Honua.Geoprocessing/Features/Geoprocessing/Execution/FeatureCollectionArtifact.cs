@@ -120,6 +120,8 @@ internal static class FeatureCollectionArtifact
 
         try
         {
+            using var document = System.Text.Json.JsonDocument.Parse(json);
+            var frame = FeatureArtifactSpatialReference.Read(document.RootElement);
             var reader = GeoJsonArtifactCodec.CreateReader();
             var parsed = reader.Read<FeatureCollection>(json);
             if (parsed is null)
@@ -128,13 +130,20 @@ internal static class FeatureCollectionArtifact
                 return false;
             }
 
+            if (frame is not null)
+            {
+                // Reader defaults are not producer evidence. Preserve an explicit
+                // known frame, and keep unknown/mixed input frames unverified.
+                foreach (var feature in parsed)
+                    if (feature.Geometry is { } geometry) geometry.SRID = frame.Srid ?? 0;
+            }
             features = parsed;
             return true;
         }
         catch (Exception ex) when (ex is System.Text.Json.JsonException
             or Newtonsoft.Json.JsonException
             or ArgumentException
-            or FormatException)
+            or FormatException or InvalidDataException)
         {
             error = $"GeoJSON document could not be parsed ({ex.GetType().Name})";
             return false;

@@ -78,6 +78,19 @@ internal sealed record FeatureArtifactSpatialReference(string State, int? Srid)
         var result = new FeatureArtifactSpatialReference(state.GetString()!, srid);
         return result.IsValid ? result : throw new InvalidDataException("The output coordinate frame is invalid.");
     }
+
+    internal static FeatureArtifactSpatialReference? ReadInline(string? reference, long maximumBytes)
+    {
+        if (reference is null || !reference.StartsWith(FeatureCollectionArtifact.DataUriPrefix, StringComparison.Ordinal)) return null;
+        var payload = reference.AsSpan(FeatureCollectionArtifact.DataUriPrefix.Length);
+        if (maximumBytes < 0 || (long)payload.Length * 3L / 4L - 2L > maximumBytes)
+            throw new InvalidDataException("The inline coordinate frame input exceeds its bounded artifact limit.");
+        var bytes = Convert.FromBase64String(payload.ToString());
+        if (bytes.LongLength > maximumBytes)
+            throw new InvalidDataException("The inline coordinate frame input exceeds its bounded artifact limit.");
+        using var document = JsonDocument.Parse(bytes);
+        return Read(document.RootElement);
+    }
 }
 
 /// <summary>Tracks one output frame without treating a GeoJSON reader's default as producer evidence.</summary>

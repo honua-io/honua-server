@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -195,6 +196,65 @@ public sealed class ManagedBufferAggregateExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         ReadFeatures(uri!).Should().HaveCount(1);
+        using var artifact = JsonDocument.Parse(Convert.FromBase64String(uri![DataUriPrefix.Length..]));
+        var frame = FeatureArtifactSpatialReference.Read(artifact.RootElement);
+        frame.Should().Be(new FeatureArtifactSpatialReference("known", 3857));
+        var geometry = ReadFeatures(uri!).Single().Geometry;
+        geometry.EnvelopeInternal.MinX.Should().BeApproximately(-1000, 0.001);
+        geometry.EnvelopeInternal.MaxX.Should().BeApproximately(1000, 0.001);
+    }
+
+    [UnitTest]
+    public async Task ProducerProjectedFrame_SurvivesInlineDecodeAndBufferWithoutRelabeling()
+    {
+        var point = Point(12000, 34000);
+        point.SRID = 3857;
+        var input = FeatureCollectionArtifact.BuildDataUri(
+            FeatureCollectionArtifact.WriteFeatureCollection([Feature(point)], "producer"));
+        FeatureCollectionArtifact.TryParseDataUri(input, out var decoded, out _).Should().BeTrue();
+        decoded.Single().Geometry.SRID.Should().Be(3857);
+
+        var (status, uri) = await RunAsync(new ManagedBufferAggregateExecutor(Options()),
+            ManagedBufferAggregateExecutor.HandledProcessId, ("input", input), ("distance", "500"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        using var artifact = JsonDocument.Parse(Convert.FromBase64String(uri![DataUriPrefix.Length..]));
+        FeatureArtifactSpatialReference.Read(artifact.RootElement).Should().Be(new FeatureArtifactSpatialReference("known", 3857));
+        var geometry = ReadFeatures(uri).Single().Geometry;
+        geometry.EnvelopeInternal.MinX.Should().BeApproximately(11500, 0.001);
+        geometry.EnvelopeInternal.MaxY.Should().BeApproximately(34500, 0.001);
+    }
+
+    [UnitTheory]
+    [InlineData("known", 4326)]
+    [InlineData("unknown", 0)]
+    [InlineData("mixed", 0)]
+    public async Task DeclaredSourceCrs_CannotReplaceConflictingOrUnverifiedProducerFrame(string state, int srid)
+    {
+        var frame = state == "known" ? $"\"srid\":{srid}," : "";
+        var json = "{\"type\":\"FeatureCollection\",\"honua:spatialReference\":{" + frame +
+            $"\"schemaVersion\":\"honua.feature-crs/v1\",\"state\":\"{state}\"" +
+            "},\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[12000,34000]},\"properties\":{}}]}";
+        var input = DataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+
+        var (status, uri) = await RunAsync(new ManagedBufferAggregateExecutor(Options()),
+            ManagedBufferAggregateExecutor.HandledProcessId, ("input", input), ("distance", "500"), ("sourceCrs", "EPSG:3857"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void InlineUnknownFrame_DoesNotAcquireTheGeoJsonReadersDefaultCrs()
+    {
+        const string json = """{"type":"FeatureCollection","honua:spatialReference":{"schemaVersion":"honua.feature-crs/v1","state":"unknown"},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2,3]},"properties":{"name":"original"}}]}""";
+
+        FeatureCollectionArtifact.TryParseJson(json, out var decoded, out _).Should().BeTrue();
+
+        var feature = decoded.Single();
+        feature.Geometry.SRID.Should().Be(0);
+        feature.Geometry.Coordinate.Z.Should().Be(3);
+        feature.Attributes["name"].Should().Be("original");
     }
 
     // -------------------------------------------------------------------------

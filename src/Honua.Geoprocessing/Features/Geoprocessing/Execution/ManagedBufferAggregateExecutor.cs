@@ -55,7 +55,7 @@ internal sealed class ManagedBufferAggregateExecutor(
         // buffering geographic degrees by a metre distance silently produces wrong geometry.
         // When the caller declares the input CRS via 'sourceCrs' and it is geographic, reject a
         // non-zero linear buffer up front instead of returning a meters-as-degrees result (#2808).
-        RejectLinearBufferOnGeographicCrs(inputs, distance);
+        var sourceSrid = ResolveSourceSrid(inputs, distance);
         var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
         var groupByFields = ReadGroupByFields(inputs);
 
@@ -69,6 +69,13 @@ internal sealed class ManagedBufferAggregateExecutor(
                 continue;
             }
 
+            // Explicit sourceCrs declares this input frame; it does not project
+            // coordinates. Use its factory for buffering and output CRS evidence.
+            if (sourceSrid is { } srid)
+            {
+                geometry = geometry.Copy();
+                geometry.SRID = srid;
+            }
             var bufferedGeometry = geometry.Buffer(effectiveDistance);
             if (bufferedGeometry is null || bufferedGeometry.IsEmpty)
             {
@@ -177,26 +184,34 @@ internal sealed class ManagedBufferAggregateExecutor(
     /// silent-wrong-answer; the caller must project to a metric CRS first. When <c>sourceCrs</c>
     /// is absent the behaviour is unchanged (coordinates are treated as CRS units).
     /// </summary>
-    private static void RejectLinearBufferOnGeographicCrs(StepInputReader inputs, double distance)
+    private int? ResolveSourceSrid(StepInputReader inputs, double distance)
     {
-        if (distance <= 0d || !inputs.TryGet("sourceCrs", out var rawCrs) || string.IsNullOrWhiteSpace(rawCrs))
+        var declared = inputs.TryGet("sourceCrs", out var rawCrs) && !string.IsNullOrWhiteSpace(rawCrs);
+        int? sourceSrid = null;
+        if (declared)
         {
-            return;
+            if (!TryResolveSrid(rawCrs!, out var srid) || srid <= 0)
+                throw new TransformInputException("'sourceCrs' is not a recognized positive SRID or EPSG identifier");
+            sourceSrid = srid;
         }
-
-        if (!TryResolveSrid(rawCrs!, out var srid))
+        if (inputs.TryGet("input", out var input))
+        {
+            var frame = FeatureArtifactSpatialReference.ReadInline(input, MaximumInputArtifactBytes);
+            if (frame is not null)
+            {
+                if (declared && (frame.State != "known" || frame.Srid != sourceSrid))
+                    throw new TransformInputException("'sourceCrs' conflicts with the input artifact coordinate frame.");
+                sourceSrid ??= frame.Srid ?? 0;
+            }
+        }
+        if (distance > 0 && sourceSrid is > 0 && Honua.Core.Features.Shared.Models.SpatialReference.Create(sourceSrid.Value).IsGeographic)
         {
             throw new TransformInputException(
-                $"'sourceCrs' value '{rawCrs}' is not a recognized SRID or EPSG identifier");
-        }
-
-        if (Honua.Core.Features.Shared.Models.SpatialReference.Create(srid).IsGeographic)
-        {
-            throw new TransformInputException(
-                $"'sourceCrs' EPSG:{srid} is geographic (degrees), but the buffer distance is linear (unit "
+                $"'sourceCrs' EPSG:{sourceSrid} is geographic (degrees), but the buffer distance is linear (unit "
                 + $"factor applied as CRS units); a meters-as-degrees buffer is meaningless. Reproject the input "
                 + "to a projected/metric CRS before buffering, or supply the distance in the layer's coordinate units.");
         }
+        return sourceSrid;
     }
 
     // Accepts a bare EPSG code ("4326"), an "EPSG:<code>" identifier, or the OGC CRS84 URIs;

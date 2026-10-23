@@ -66,6 +66,9 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
     /// </summary>
     protected abstract string ProcessId { get; }
 
+    /// <summary>Same bounded inline input limit used by the shared artifact reader.</summary>
+    protected long MaximumInputArtifactBytes => _options.CurrentValue.MaxArtifactBytes;
+
     /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds =>
         _processIds ??= new HashSet<string>(StringComparer.Ordinal) { ProcessId };
