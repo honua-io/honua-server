@@ -41,8 +41,10 @@ internal sealed partial class FeatureQueryBuilder
     /// long-way box. One plane is used only while the extent corner stays inside
     /// <see cref="AzimuthalGroundPlane.SinglePlaneMaxCornerMetres"/> (under 1%
     /// tangential scale). Wider extents are split into
-    /// <see cref="AzimuthalGroundPlane.PlaneTileMetres"/> planes and clustered
-    /// inside each plane. <c>ST_ClusterDBSCAN</c> cannot take a geography distance.
+    /// <see cref="AzimuthalGroundPlane.PlaneTileMetres"/> planes. DBSCAN overlaps
+    /// those planes by <c>eps</c> and merges labels that share a feature, so a
+    /// pair closer than <c>eps</c> is not cut by a tile edge. K-Means keeps one
+    /// global <c>k</c> on the short-arc centre. <c>ST_ClusterDBSCAN</c> cannot take a geography distance.
     /// Projected layers, including feet and UTM, keep the Web Mercator path
     /// through <c>ST_Transform</c> to EPSG:3857.
     /// </para>
@@ -74,20 +76,23 @@ internal sealed partial class FeatureQueryBuilder
                 : EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
             // Batch joins must not reorder the cluster's input. Both PostGIS
             // algorithms operate over the full partition, including later rows.
-            // Separate azimuthal planes are separate partitions so mixed metres
-            // are not compared.
-            var clusterWindow = adaptiveGround
+            // DBSCAN on a split extent clusters inside each overlapped tile, then
+            // merges labels. K-Means always sees one partition so k stays global.
+            var dbscanTiles = adaptiveGround && clusterQuery.Algorithm == ClusterAlgorithm.DbScan;
+            var clusterWindow = dbscanTiles
                 ? "OVER (PARTITION BY plane_id ORDER BY source_ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
                 : geographic
                     ? "OVER (ORDER BY source_ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
                     : "OVER ()";
 
+            string? dbscanEpsParam = null;
             string clusterExpression;
             if (clusterQuery.Algorithm == ClusterAlgorithm.DbScan)
             {
                 var epsValue = _geometryProcessor.ConvertDistanceToMeters(
                     clusterQuery.Eps ?? 0d, clusterQuery.DistanceUnit);
                 var epsParam = $"${paramIndex++}";
+                dbscanEpsParam = epsParam;
                 parameters.Add(epsValue);
 
                 var minPointsParam = $"${paramIndex++}";
@@ -121,20 +126,34 @@ internal sealed partial class FeatureQueryBuilder
             {
                 // No usable single-plane envelope: centre on the short arc of the
                 // filtered rows and tile when one plane would exceed the scale limit.
-                sql.Append("WITH filtered AS (SELECT ");
+                sql.Append(dbscanTiles ? "WITH RECURSIVE filtered AS (SELECT " : "WITH filtered AS (SELECT ");
                 AppendClusterSourceColumns(sql, attributesSource, geometryOperand, trailingComma: false);
                 AppendClusterSourceFrom(sql, query, geometryStorageType, ref paramIndex, parameters, maxInputParam);
                 sql.Append(',');
                 AppendGroundPlaneCtes(sql, "geom");
-                AppendGeographicPlaneProjectionCtes(sql);
-                var stride = AzimuthalGroundPlane.ClusterPlaneIdStride.ToString(CultureInfo.InvariantCulture);
-                sql.Append(", src AS (SELECT ");
-                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
-                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, geom, ");
-                sql.Append(CultureInfo.InvariantCulture, $"CASE WHEN cluster_local IS NULL THEN NULL ELSE plane_id::bigint * {stride} + cluster_local::bigint END AS cluster_id FROM (SELECT ");
-                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
-                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, geom, plane_id, ");
-                sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_local FROM projected) clustered)");
+                if (dbscanTiles)
+                {
+                    AppendDbscanTileMembership(sql, dbscanEpsParam ?? "$2");
+                    AppendGeographicPlaneProjectionCtes(sql, "tile_membership");
+                    AppendDbscanLabelMerge(sql, clusterExpression);
+                }
+                else
+                {
+                    sql.Append("""
+                        , kmeans_input AS (
+                            SELECT objectid, attributes, geom, false AS split,
+                                0::bigint AS plane_id,
+                                COALESCE(center_lon_single, 0) AS center_lon,
+                                LEAST(GREATEST(COALESCE(mid_lat, 0), -90.0), 90.0) AS center_lat
+                            FROM grounded
+                        )
+                        """);
+                    AppendGeographicPlaneProjectionCtes(sql, "kmeans_input");
+                    sql.Append(", src AS (SELECT ");
+                    sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+                    sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, geom, ");
+                    sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id FROM projected)");
+                }
             }
             else if (geographic)
             {

@@ -245,6 +245,71 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     }
 
     [Fact]
+    public void BuildClusterQuery_WideExtent_DbscanOverlapsNeighborTilesByEps()
+    {
+        // Equatorial longitudes -26.410738 and -26.402738 are about 891 m apart
+        // and fall in adjacent 400 km tiles when the extent runs from -30 to 30.
+        // eps 1000 must keep that pair connected instead of marking both as noise.
+        var metresPerDegreeLon = AzimuthalGroundPlane.MetresPerDegree(0d).MetresPerDegreeLon;
+        var west = PlaneIndex(-30d, -26.410738d, metresPerDegreeLon);
+        var east = PlaneIndex(-30d, -26.402738d, metresPerDegreeLon);
+        east.Should().Be(west + 1);
+        (0.008d * metresPerDegreeLon).Should().BeInRange(800d, 1000d);
+
+        var result = BuildWideCluster(ClusterAlgorithm.DbScan, eps: 1000d, k: null);
+
+        result.Sql.Should().Contain("tile_membership");
+        result.Sql.Should().Contain("generate_series");
+        result.Sql.Should().Contain("<= $2");
+        result.Sql.Should().Contain("m2.objectid = m1.objectid");
+        result.Sql.Should().Contain("cluster_walk");
+        result.Sql.Should().Contain("ST_ClusterDBSCAN(geom_m");
+        result.Sql.Should().Contain("PARTITION BY plane_id");
+        result.Sql.Should().NotContain("3857");
+    }
+
+    [Fact]
+    public void BuildClusterQuery_WideExtent_KMeansKeepsGlobalK()
+    {
+        var result = BuildWideCluster(ClusterAlgorithm.KMeans, eps: null, k: 1);
+
+        result.Sql.Should().Contain("ST_ClusterKMeans(geom_m, $2) OVER (ORDER BY source_ordinal");
+        result.Sql.Should().NotContain("ST_ClusterKMeans(geom_m, $2) OVER (PARTITION BY plane_id");
+        result.Sql.Should().Contain("center_lon_single");
+        result.Sql.Should().Contain("kmeans_input");
+        result.Sql.Should().NotContain("tile_membership");
+        result.Sql.Should().NotContain("3857");
+    }
+
+    [Fact]
+    public void ClippedTileCenterLatitude_PartialPolarTile_StaysInsideNinetyDegrees()
+    {
+        // Latitudes 0 and 89.99 on one meridian. The northern 400 km tile is
+        // plane_y 25 and its unclipped centre is about 91.783.
+        var (metresPerDegreeLat, _) = AzimuthalGroundPlane.MetresPerDegree(44.995d);
+        var northMetres = 89.99d * metresPerDegreeLat;
+        var planeY = (int)Math.Floor(northMetres / AzimuthalGroundPlane.PlaneTileMetres);
+        var maxPlaneY = Math.Max(
+            (int)Math.Ceiling(northMetres / AzimuthalGroundPlane.PlaneTileMetres) - 1,
+            0);
+        planeY = Math.Min(planeY, maxPlaneY);
+        planeY.Should().Be(25);
+
+        var south = planeY * AzimuthalGroundPlane.PlaneTileMetres / metresPerDegreeLat;
+        var north = (planeY + 1) * AzimuthalGroundPlane.PlaneTileMetres / metresPerDegreeLat;
+        var unclipped = (south + north) / 2d;
+        unclipped.Should().BeApproximately(91.783d, 0.01d);
+        var clipped = AzimuthalGroundPlane.ClippedTileCenterLatitude(south, north);
+        clipped.Should().BeInRange(-90d, 90d);
+        clipped.Should().BeLessThan(90d);
+
+        var sql = BuildWideCluster(ClusterAlgorithm.DbScan, eps: 1000d, k: null).Sql;
+        sql.Should().Contain("LEAST(GREATEST(");
+        sql.Should().Contain("-90.0");
+        sql.Should().Contain("90.0");
+    }
+
+    [Fact]
     public void BuildDensityQuery_WideExtent_BinsInsideAzimuthalTiles()
     {
         var queryBuilder = CreateQueryBuilder();
@@ -619,6 +684,44 @@ public sealed class FeatureQueryBuilderAnalyticsTests
         // Under Geometry storage the decoded operand is just the raw column, so the
         // GIST-friendly `j.geometry && ...` fast path is preserved.
         result.Sql.Should().Contain("t.geom && j.geometry AND ST_Intersects(t.geom, j.geometry)");
+    }
+
+    private static ParameterizedQuery BuildWideCluster(ClusterAlgorithm algorithm, double? eps, int? k)
+    {
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [0x01],
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.EnvelopeIntersects,
+                IsSimpleEnvelope = true,
+                EnvelopeMinX = -30,
+                EnvelopeMinY = 0,
+                EnvelopeMaxX = 30,
+                EnvelopeMaxY = 0
+            }
+        };
+        return CreateQueryBuilder().BuildClusterQuery(1, query, new ClusterQuery
+        {
+            Algorithm = algorithm,
+            Eps = eps,
+            K = k,
+            MinPoints = 2,
+            DistanceUnit = DistanceUnit.Meters,
+            ReturnHullPerCluster = false,
+            MaxInputFeatures = 10
+        });
+    }
+
+    private static int PlaneIndex(double originDegrees, double longitude, double metresPerDegree)
+    {
+        var metres = (longitude - originDegrees) * metresPerDegree;
+        var tileCount = (int)Math.Ceiling((30d - originDegrees) * metresPerDegree / AzimuthalGroundPlane.PlaneTileMetres);
+        var index = (int)Math.Floor(metres / AzimuthalGroundPlane.PlaneTileMetres);
+        var maxIndex = Math.Max(tileCount - 1, 0);
+        return Math.Min(Math.Max(index, 0), maxIndex);
     }
 
     private static FeatureQueryBuilder CreateQueryBuilder()

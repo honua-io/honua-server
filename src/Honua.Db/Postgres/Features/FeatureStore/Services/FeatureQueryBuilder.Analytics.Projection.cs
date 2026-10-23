@@ -45,17 +45,22 @@ internal sealed partial class FeatureQueryBuilder
     }
 
     /// <summary>
-    /// Projects <c>grounded</c> rows, whose <c>center_lat</c> and <c>center_lon</c>
-    /// already name the azimuthal plane, in batches that do not mix planes.
+    /// Projects rows whose <c>center_lat</c> and <c>center_lon</c> already name
+    /// the azimuthal plane, in batches that do not mix planes.
     /// </summary>
-    private static void AppendGeographicPlaneProjectionCtes(StringBuilder sql)
+    private static void AppendGeographicPlaneProjectionCtes(StringBuilder sql, string sourceRelation)
     {
+        if (sourceRelation is not ("tile_membership" or "kmeans_input"))
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceRelation));
+        }
+
         var forwardBatch = AeqdForwardFromColumns("min(center_lat)", "min(center_lon)");
         var forwardRow = AeqdForwardFromColumns("n.center_lat", "n.center_lon");
         sql.Append(CultureInfo.InvariantCulture, $$"""
             , numbered AS MATERIALIZED (
                 SELECT *, row_number() OVER (PARTITION BY plane_id ORDER BY objectid) AS source_ordinal
-                FROM grounded
+                FROM {{sourceRelation}}
             ), point_batches AS MATERIALIZED (
                 SELECT plane_id, (source_ordinal - 1) / 256 AS batch_id, ST_Zmflag(geom) AS dimensions,
                     min(center_lat) AS center_lat, min(center_lon) AS center_lon,
@@ -69,7 +74,7 @@ internal sealed partial class FeatureQueryBuilder
                 FROM point_batches b CROSS JOIN LATERAL
                     unnest(b.source_ordinals) WITH ORDINALITY ids(source_ordinal, position)
             ), projected AS MATERIALIZED (
-                SELECT n.objectid, n.attributes, n.geom, n.source_ordinal, n.plane_id,
+                SELECT n.objectid, n.attributes, n.geom, n.source_ordinal, n.plane_id, n.split,
                     CASE WHEN p.source_ordinal IS NOT NULL THEN p.geom_m
                         ELSE ST_TransformPipeline(n.geom, {{forwardRow}}) END AS geom_m
                 FROM numbered n

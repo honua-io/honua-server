@@ -23,9 +23,6 @@ internal static class AzimuthalGroundPlane
 
     internal const double Wgs84SemiMajorMetres = 6_378_137d;
 
-    /// <summary>Keeps per-plane DBSCAN ids from colliding. Zero stays the local id.</summary>
-    internal const long ClusterPlaneIdStride = 1L << 32;
-
     internal static double TangentialScaleError(double metresFromCentre)
     {
         if (metresFromCentre <= 0d)
@@ -62,6 +59,17 @@ internal static class AzimuthalGroundPlane
         var widthMetres = widthDegrees * Math.Max(metresPerDegreeLon, 0d);
         var heightMetres = heightDegrees * metresPerDegreeLat;
         return CornerRadiusMetres(widthMetres, heightMetres) <= SinglePlaneMaxCornerMetres;
+    }
+
+    /// <summary>
+    /// Centre of a tile after its latitude span is clipped to [-90, 90].
+    /// A partial polar tile must not report a centre outside that range.
+    /// </summary>
+    internal static double ClippedTileCenterLatitude(double southDegrees, double northDegrees)
+    {
+        var south = Math.Clamp(southDegrees, -90d, 90d);
+        var north = Math.Clamp(northDegrees, -90d, 90d);
+        return (south + north) / 2d;
     }
 }
 
@@ -222,8 +230,10 @@ internal sealed partial class FeatureQueryBuilder
                         ELSE {{NormalizeLongitudeSql("c.origin_lon + (c.plane_x + 0.5) * " + tile + " / GREATEST(c.metres_per_degree_lon, 1.0)")}}
                     END AS center_lon,
                     CASE
-                        WHEN c.ulon IS NULL OR c.split IS NOT TRUE THEN COALESCE(c.mid_lat, 0)
-                        ELSE c.min_y + (c.plane_y + 0.5) * {{tile}} / GREATEST(c.metres_per_degree_lat, 1.0)
+                        WHEN c.ulon IS NULL OR c.split IS NOT TRUE THEN LEAST(GREATEST(COALESCE(c.mid_lat, 0), -90.0), 90.0)
+                        ELSE {{ClippedTileCenterLatitudeSql(
+                            "c.min_y + c.plane_y * " + tile + " / GREATEST(c.metres_per_degree_lat, 1.0)",
+                            "c.min_y + (c.plane_y + 1) * " + tile + " / GREATEST(c.metres_per_degree_lat, 1.0)")}}
                     END AS center_lat
                 FROM plane_cells c
             )
@@ -236,5 +246,112 @@ internal sealed partial class FeatureQueryBuilder
         // Match C# remainder into [-180, 180], mapping the exact -180 boundary to 180
         // so an antimeridian centre is lon_0=180 rather than the long-way box centre.
         return $"(CASE WHEN ({value} - floor(({value} + 180.0) / 360.0) * 360.0) <= -180.0 THEN 180.0 ELSE ({value} - floor(({value} + 180.0) / 360.0) * 360.0) END)";
+    }
+
+    private static string ClippedTileCenterLatitudeSql(string southSql, string northSql)
+        => $"(LEAST(GREATEST(({southSql}), -90.0), 90.0) + LEAST(GREATEST(({northSql}), -90.0), 90.0)) / 2.0";
+
+    /// <summary>
+    /// One row per feature per azimuthal tile the feature can affect.
+    /// Tiles overlap by <paramref name="epsParam"/> so a pair closer than eps
+    /// is not split by a tile edge. The home row keeps the single-plane centre
+    /// when the extent is not split.
+    /// </summary>
+    private static void AppendDbscanTileMembership(StringBuilder sql, string epsParam)
+    {
+        if (epsParam is not ['$', ..] || !epsParam[1..].All(char.IsAsciiDigit))
+        {
+            throw new ArgumentOutOfRangeException(nameof(epsParam));
+        }
+
+        var tile = SqlDouble(AzimuthalGroundPlane.PlaneTileMetres);
+        var steps = $"ceil({epsParam} / {tile})::integer";
+        sql.Append(CultureInfo.InvariantCulture, $$"""
+            , tile_membership AS (
+                SELECT t.objectid, t.attributes, t.geom, t.split,
+                    (t.plane_x + v.dx)::bigint * 100000 + (t.plane_y + v.dy)::bigint AS plane_id,
+                    CASE
+                        WHEN t.split IS NOT TRUE THEN COALESCE(t.center_lon_single, 0)
+                        ELSE {{NormalizeLongitudeSql("t.origin_lon + (t.plane_x + v.dx + 0.5) * " + tile + " / GREATEST(t.metres_per_degree_lon, 1.0)")}}
+                    END AS center_lon,
+                    CASE
+                        WHEN t.split IS NOT TRUE THEN LEAST(GREATEST(COALESCE(t.mid_lat, 0), -90.0), 90.0)
+                        ELSE {{ClippedTileCenterLatitudeSql(
+                            "t.min_y + (t.plane_y + v.dy) * " + tile + " / GREATEST(t.metres_per_degree_lat, 1.0)",
+                            "t.min_y + (t.plane_y + v.dy + 1) * " + tile + " / GREATEST(t.metres_per_degree_lat, 1.0)")}}
+                    END AS center_lat
+                FROM (
+                    SELECT g.*,
+                        (g.ulon - g.origin_lon) * GREATEST(g.metres_per_degree_lon, 1.0) AS east_m,
+                        (g.plane_lat - g.min_y) * g.metres_per_degree_lat AS north_m
+                    FROM grounded g
+                ) t
+                CROSS JOIN LATERAL (
+                    SELECT dx, dy
+                    FROM generate_series((-1) * ({{steps}}), ({{steps}})) dx
+                    CROSS JOIN generate_series((-1) * ({{steps}}), ({{steps}})) dy
+                ) v
+                WHERE (v.dx = 0 AND v.dy = 0)
+                    OR (
+                        t.split IS TRUE
+                        AND NOT (v.dx = 0 AND v.dy = 0)
+                        AND t.east_m IS NOT NULL
+                        AND sqrt(
+                            power(CASE
+                                WHEN t.east_m < (t.plane_x + v.dx) * {{tile}} THEN (t.plane_x + v.dx) * {{tile}} - t.east_m
+                                WHEN t.east_m >= (t.plane_x + v.dx + 1) * {{tile}} THEN t.east_m - (t.plane_x + v.dx + 1) * {{tile}}
+                                ELSE 0 END, 2)
+                            + power(CASE
+                                WHEN t.north_m < (t.plane_y + v.dy) * {{tile}} THEN (t.plane_y + v.dy) * {{tile}} - t.north_m
+                                WHEN t.north_m >= (t.plane_y + v.dy + 1) * {{tile}} THEN t.north_m - (t.plane_y + v.dy + 1) * {{tile}}
+                                ELSE 0 END, 2)
+                        ) <= {{epsParam}}
+                    )
+            )
+            """);
+    }
+
+    /// <summary>
+    /// Merges per-tile DBSCAN labels that share a feature id, then emits one
+    /// row per feature. An unsplit extent keeps PostGIS's own cluster ids.
+    /// </summary>
+    private static void AppendDbscanLabelMerge(StringBuilder sql, string clusterExpression)
+    {
+        sql.Append(CultureInfo.InvariantCulture, $$"""
+            , local_cluster AS (
+                SELECT objectid, attributes, geom, plane_id, split, {{clusterExpression}} AS local_id
+                FROM projected
+            ), cluster_member AS (
+                SELECT objectid, plane_id, local_id
+                FROM local_cluster
+                WHERE local_id IS NOT NULL
+            ), cluster_seed AS (
+                SELECT plane_id, local_id, MIN(objectid) AS label
+                FROM cluster_member
+                GROUP BY plane_id, local_id
+            ), cluster_walk AS (
+                SELECT plane_id, local_id, label FROM cluster_seed
+                UNION
+                SELECT w.plane_id, w.local_id, s2.label
+                FROM cluster_walk w
+                JOIN cluster_member m1 ON m1.plane_id = w.plane_id AND m1.local_id = w.local_id
+                JOIN cluster_member m2 ON m2.objectid = m1.objectid
+                JOIN cluster_seed s2 ON s2.plane_id = m2.plane_id AND s2.local_id = m2.local_id
+                WHERE s2.label < w.label
+            ), cluster_label AS (
+                SELECT plane_id, local_id, MIN(label) AS label
+                FROM cluster_walk
+                GROUP BY plane_id, local_id
+            ), src AS (
+                SELECT DISTINCT ON (l.objectid) l.objectid, l.attributes, l.geom,
+                    CASE
+                        WHEN l.split IS NOT TRUE THEN l.local_id::bigint
+                        ELSE lab.label
+                    END AS cluster_id
+                FROM local_cluster l
+                LEFT JOIN cluster_label lab ON lab.plane_id = l.plane_id AND lab.local_id = l.local_id
+                ORDER BY l.objectid, lab.label NULLS LAST
+            )
+            """);
     }
 }

@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 [Collection("Database")]
 public sealed class FeatureQueryBuilderGroundDistanceIntegrationTests(PostgresFixture fixture, ITestOutputHelper output)
 {
-    private const string EmptyJson = "'{}'";
+    private const string EmptyJson = "{}";
     [Fact]
     public async Task Buffer_Points1000MetresApartAt60N_UsesGroundRadius()
     {
