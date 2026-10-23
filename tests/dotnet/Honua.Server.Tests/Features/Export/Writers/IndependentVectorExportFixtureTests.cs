@@ -8,7 +8,6 @@ using Honua.Io.Export.Writers;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.IO;
-using Honua.TestKit.Attributes;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
