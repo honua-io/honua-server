@@ -31,6 +31,11 @@ internal static class ServicePublishMcpAuthorization
             principal,
             SideEffectClass,
             cancellationToken).ConfigureAwait(false);
+        if (!authorization.IsAuthorized &&
+            await AgentPublicationProposalAuthorization.IsAuthorizedAsync(httpContext, principal, cancellationToken).ConfigureAwait(false))
+        {
+            return new Admission("authorized", AgentPublicationProposalAuthorization.ApprovalPolicyRef);
+        }
         if (!authorization.IsAuthorized)
         {
             throw new GeoprocessingAuthorizationException(

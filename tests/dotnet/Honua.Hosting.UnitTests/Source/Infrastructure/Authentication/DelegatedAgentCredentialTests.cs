@@ -28,6 +28,38 @@ namespace Honua.Hosting.UnitTests.Infrastructure.Authentication;
 public sealed class DelegatedAgentCredentialTests
 {
     [Theory]
+    [InlineData("studio-compose", "exact", true)]
+    [InlineData("studio-propose-publication", "exact", true)]
+    [InlineData("studio-compose", "wildcard", false)]
+    [InlineData("studio-propose-publication", "wildcard", false)]
+    [InlineData("studio-compose", "own", false)]
+    [InlineData("studio-propose-publication", "foreign", false)]
+    public async Task ExactStudioItemPermission_RequiresPersistedExactGrantAndRejectsRevokedReplay(
+        string action, string grantKind, bool expected)
+    {
+        using var fixture = new Fixture();
+        var item = Guid.NewGuid().ToString("D");
+        var permission = $"agent:{action}:{item}";
+        fixture.Profile.Permissions = ["agent:workspace", permission];
+        var layer = grantKind switch { "exact" => item, "wildcard" => "*", "own" => "own", _ => Guid.NewGuid().ToString("D") };
+        fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions =
+            [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
+             new PermissionGrant { Service = "agent", Layer = layer, Operation = action }] });
+        var principal = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        principal.HasClaim("permission", permission).Should().Be(expected);
+        var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
+        snapshot.Should().NotBeNull();
+        (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().NotBeNull();
+        fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions =
+            [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }] });
+        (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().BeNull();
+    }
+
+    [Theory]
     [InlineData("issuer")]
     [InlineData("audience")]
     [InlineData("subject")]

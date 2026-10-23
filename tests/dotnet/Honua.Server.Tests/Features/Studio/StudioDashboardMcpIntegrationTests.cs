@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
+public sealed partial class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private readonly RedisFixture _redis = new();
@@ -36,10 +36,18 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _redis.InitializeAsync();
-        _fixture.ConfigureWebHost(builder =>
+        _fixture.UseKestrel().ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
+            builder.UseSetting("AgentWorkspace:DeploymentId", $"native-studio-{Guid.NewGuid():N}");
+            builder.UseSetting("AgentWorkspace:ReleaseId", "native-studio-agent-test");
+            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+            builder.UseSetting("Authentication:OperatorBearer:SigningKey", "native-studio-test-signing-key-at-least-32-bytes");
         });
         _fixture.ConfigureServices(services =>
         {
@@ -164,7 +172,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             finalBody.GetProperty(collection).GetArrayLength().Should().Be(0);
         }
 
-        await Mutate("update_draft", $"\"packageKey\":\"{packageKey}\",\"schemaVersion\":\"1.0\"," + "\"body\":{\"layers\":[{\"id\":\"roads\"}],\"view\":{\"center\":[-158,22],\"zoom\":7}}");
+        await Mutate("update_draft", $"\"packageKey\":\"{packageKey}\",\"schemaVersion\":\"1.0\"," + "\"body\":{\"layers\":[{\"id\":\"roads\",\"visible\":true}],\"view\":{\"center\":[-158,22],\"zoom\":7}}");
         foreach (var invalidBody in new[]
         {
             """{"interactions":{"id":"invalid"}}""",
@@ -213,9 +221,10 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             StudioJsonContext.Default.StudioContentVersion)!;
         version.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
 
-        // Independent fixture expectation: PostgreSQL jsonb orders these body keys by length.
+        // Independent fixture expectation: composition normalizes widgets to an empty array,
+        // and PostgreSQL jsonb orders these body keys by length.
         // Hash the declared expected document, never a copy of the server's returned envelope.
-        using var expectedBody = JsonDocument.Parse("""{"view":{"zoom":7,"center":[-158,22]},"layers":[{"id":"roads"}]}""");
+        using var expectedBody = JsonDocument.Parse("""{"view":{"zoom":7,"center":[-158,22]},"layers":[{"id":"roads","visible":true}],"widgets":[]}""");
         var expectedEnvelope = new StudioPackageEnvelope
         {
             Family = StudioPackageFamily.Dashboard,
@@ -284,9 +293,9 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         }
     }
 
-    private async Task<JsonElement> CallAsync(string verb, string arguments)
+    private async Task<JsonElement> CallAsync(string verb, string arguments, HttpClient? client = null)
     {
-        var response = await RpcAsync(verb, arguments);
+        var response = await RpcAsync(verb, arguments, client);
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var result = response.GetProperty("result");
         if (result.TryGetProperty("isError", out var error))
@@ -296,12 +305,12 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         return result.GetProperty("structuredContent").Clone();
     }
 
-    private async Task<JsonElement> RpcAsync(string verb, string arguments)
+    private async Task<JsonElement> RpcAsync(string verb, string arguments, HttpClient? client = null)
     {
         using var content = new StringContent(
             $$$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_studio_{{{verb}}}","arguments":{{{arguments}}}}}""",
             Encoding.UTF8, "application/json");
-        using var response = await _client.PostAsync("/mcp", content);
+        using var response = await (client ?? _client).PostAsync("/mcp", content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.Clone();

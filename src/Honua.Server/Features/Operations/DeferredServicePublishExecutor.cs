@@ -24,17 +24,18 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
 {
     public string OperationId => ServicePublishOperation.OperationId;
 
-    public Task<OperationRequest> PrepareAsync(
+    public async Task<OperationRequest> PrepareAsync(
         OperationRequest request,
         OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
         if (!TryResolve(out var executor, out _))
         {
-            return Task.FromResult(request);
+            return request;
         }
 
-        return executor!.PrepareAsync(request, context, cancellationToken);
+        var prepared = await executor!.PrepareAsync(request, context, cancellationToken).ConfigureAwait(false);
+        return await ServicePublishAgentAuthority.PrepareAsync(services, prepared, context, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<OperationValidation> ValidateAsync(
@@ -56,6 +57,7 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
     {
         if (TryResolve(out var executor, out var unavailable))
         {
+            await ServicePublishAgentAuthority.VerifyAsync(services, request, context, cancellationToken).ConfigureAwait(false);
             return await executor!.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
         }
 

@@ -466,6 +466,13 @@ internal static class AgentCredentialAuthority
 
     private static bool Covered(string permission, IReadOnlyList<PermissionGrant> grants)
     {
+        if (permission.Split(':') is ["agent", var studioAction, var item]
+            && studioAction is AgentStudioAuthorization.Compose or AgentStudioAuthorization.ProposePublication)
+        {
+            // Neither wildcard nor own-sentinel grants mint an exact-item capability.
+            return Guid.TryParseExact(item, "D", out var id) && id != Guid.Empty && item == id.ToString("D")
+                && grants.Any(grant => grant.Service == "agent" && grant.Operation == studioAction && grant.Layer == item);
+        }
         if (LayerScopedWriteKey.IsMalformedResourceGrant(permission)) return false;
         if (permission.StartsWith("read:", StringComparison.Ordinal) || permission.StartsWith("write:", StringComparison.Ordinal))
         {

@@ -577,9 +577,10 @@ internal static class AgentWorkspaceEndpoints
             context.Request.Headers["X-Honua-Turn"] = turnId;
             context.Items[typeof(Honua.Core.Features.AgentWorkspace.Domain.AgentWorkspaceTurnAuthorization)] = binding;
         }
-        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false) ||
-            !await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User,
-                ServicePublishOperation.BuildDescriptor().Policy.SideEffectClass, context.RequestAborted).ConfigureAwait(false)) return null;
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false)) return null;
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User,
+                ServicePublishOperation.BuildDescriptor().Policy.SideEffectClass, context.RequestAborted).ConfigureAwait(false) &&
+            !await AgentPublicationProposalAuthorization.IsAuthorizedAsync(context, context.User, context.RequestAborted).ConfigureAwait(false)) return null;
         return context;
     }
 

@@ -344,6 +344,27 @@ Stored API keys retain their own identity and are rechecked against authenticati
 credential versions; rotating a key invalidates old principals and pending snapshots
 even when its stored ID and permission list remain unchanged.
 
+Workspace publication agents can use `admin:read`, `agent:workspace`, and
+`agent:propose-publication` to propose `service.publish` through HTTP or MCP. Add
+only the explicit `read:{service}/{layer}` grants required by the captured context.
+These credentials do not need an administrative write grant. Every call must carry
+`X-Honua-Workspace` and `X-Honua-Turn` for a persisted, currently authorized turn.
+Publication waits for a distinct authenticated human session; another machine API
+key cannot approve it. Replay revalidates the original credential and the captured
+workspace, tenant, target, release, and turn before execution.
+
+Studio composition uses `agent:studio-compose:<item-guid>` and publication proposals
+use `agent:studio-propose-publication:<item-guid>`, with a lowercase GUID in `D`
+format. The controller allocates the item ID before issuing the credential. Create
+the draft with that exact `itemId` and omit `ownerId`. These permissions require
+`Studio:EndUserAuthorization:Enabled=true` and the same live workspace/turn headers
+for both HTTP and MCP, including reads. A delegated OIDC profile additionally needs
+an exact persisted canonical grant whose service is `agent`, operation is
+`studio-compose` or `studio-propose-publication`, and layer is the item GUID;
+wildcard and `own` grants cannot mint these capabilities. OAuth scopes remain an
+independent ceiling. Proposals capture the current saved version and content hash,
+and approval cannot publish a different version or outlive revoked authority.
+
 Delegated credentials currently fail closed when a surface tries to create a generic
 durable job security snapshot. Scheduled workflow execution and deferred GP jobs
 remain unavailable for these credentials until their executors revalidate a canonical

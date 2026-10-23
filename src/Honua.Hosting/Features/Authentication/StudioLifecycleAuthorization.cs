@@ -61,6 +61,14 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         AuthorizationHandlerContext context,
         StudioLifecycleRequirement requirement)
     {
+        if (_options.CurrentValue.Enabled && AgentCredentialAuthority.IsAgent(context.User))
+        {
+            // Concrete item permission, OAuth ceiling, live credential and workspace turn
+            // are checked by both lifecycle adapters after tenant resolution.
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
         if (_options.CurrentValue.Enabled
             && context.Requirements.Any(static candidate => candidate is StudioAiProxyRequirement)
             && StudioAiProxyAuthorizationHandler.IsWorkspaceAgentEligible(context.User))

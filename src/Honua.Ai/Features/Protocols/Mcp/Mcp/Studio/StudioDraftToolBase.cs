@@ -14,6 +14,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
@@ -93,6 +94,14 @@ internal abstract class StudioDraftToolBase
         try
         {
             var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+            if (AgentCredentialAuthority.IsAgent(principal))
+            {
+                if (await AgentStudioAuthorization.BindAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is null)
+                    throw new GeoprocessingAuthorizationException(requiresAuthentication: false,
+                        message: "A live agent workspace turn is required for Studio composition.");
+                // Exact item authorization follows argument parsing and resource loading.
+                return principal;
+            }
             await JobService
                 .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.StudioDraft, operation, cancellationToken)
                 .ConfigureAwait(false);
@@ -254,7 +263,10 @@ internal abstract class StudioDraftToolBase
         CancellationToken cancellationToken)
     {
         var callerId = authorization.ResolveCallerId(principal);
-        var decision = await authorization.AuthorizeAsync(
+        var decision = AgentCredentialAuthority.IsAgent(principal)
+            ? await AgentStudioAuthorization.AuthorizeAsync(httpContext, principal, studioOperation,
+                resourceTenantId, resourceType, resourceId, cancellationToken).ConfigureAwait(false)
+            : await authorization.AuthorizeAsync(
             principal,
             callerId,
             studioOperation,
@@ -298,7 +310,7 @@ internal abstract class StudioDraftToolBase
         string? resourceId,
         OperatorOperation operatorOperation)
     {
-        if (requestedOwnerId is null || authorization.IsAdmin(principal))
+        if (requestedOwnerId is null || authorization.IsAdmin(principal) && !AgentCredentialAuthority.IsAgent(principal))
         {
             return;
         }

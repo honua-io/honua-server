@@ -14,6 +14,8 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using OperationGatewayRequest = Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest;
 
 namespace Honua.Server.Features.Operations;
@@ -146,6 +148,7 @@ internal sealed record StudioSaveVersionPayload
 
 internal sealed record StudioPublicationRequestPayload
 {
+    public WorkspaceAgentPublicationAuthority? AgentAuthority { get; init; }
     public Guid RequestId { get; init; }
     public required Guid ItemId { get; init; }
     public required Guid VersionId { get; init; }
@@ -209,7 +212,7 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
         });
     }
 
-    public async Task<OperationHandle> SubmitAsync(
+    public virtual async Task<OperationHandle> SubmitAsync(
         OperationRequest request,
         OperationPolicyContext context,
         CancellationToken cancellationToken = default)
@@ -417,12 +420,55 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
 internal sealed class StudioCreatePublicationRequestExecutor(
     IStudioPackageLifecycleService lifecycle,
     TimeProvider clock,
-    IStudioPackageValidator validator)
-    : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock)
+    IStudioPackageValidator validator,
+    IServiceProvider? services = null)
+    : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock), IOperationRequestPreparer
 {
     public override string OperationId => StudioDraftOperations.CreatePublicationRequest;
     protected override JsonTypeInfo<StudioPublicationRequestPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload;
     protected override JsonTypeInfo<StudioPublicationRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioPublicationRequest;
+
+    public async Task<OperationRequest> PrepareAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = ParsePayload(request);
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        {
+            if (payload.AgentAuthority is not null)
+                await StudioAgentPublicationReplay.VerifyAsync(services ?? throw new InvalidOperationException("Agent replay is unavailable."),
+                    request, context, payload, cancellationToken).ConfigureAwait(false);
+            return request;
+        }
+        var http = services?.GetService<IHttpContextAccessor>()?.HttpContext;
+        if (http is null || !AgentCredentialAuthority.IsAgent(http.User))
+        {
+            if (payload.AgentAuthority is not null) throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+            return request;
+        }
+        var pointers = await Lifecycle.GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false);
+        var decision = await AgentStudioAuthorization.AuthorizeAsync(http, http.User, StudioAuthorizationOperation.PublishRequest,
+            pointers?.TenantId, "studio-content-item", payload.ItemId.ToString("D"), cancellationToken).ConfigureAwait(false);
+        var binding = await AgentStudioAuthorization.BindAsync(http, http.User, cancellationToken).ConfigureAwait(false);
+        var credential = await AgentCredentialAuthority.CaptureAsync(http.User, http.RequestServices, cancellationToken).ConfigureAwait(false);
+        if (!decision.IsAllowed || binding is null || credential is null ||
+            payload.ActorId != context.PrincipalId || http.RequestServices.GetRequiredService<IStudioAuthorizationService>().ResolveCallerId(http.User) != context.PrincipalId ||
+            context.RequiredApprovalPolicyRef != AgentPublicationProposalAuthorization.ApprovalPolicyRef)
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        payload = payload with { AgentAuthority = new(credential, binding) };
+        return request with { Parameters = new Dictionary<string, string?>
+        {
+            [StudioDraftOperations.PayloadParameter] = JsonSerializer.Serialize(payload, PayloadType),
+        } };
+    }
+
+    public override async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (ParsePayload(request).AgentAuthority is not null)
+            await StudioAgentPublicationReplay.VerifyAsync(services ?? throw new InvalidOperationException("Agent replay is unavailable."),
+                request, context, ParsePayload(request), cancellationToken).ConfigureAwait(false);
+        return await base.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+    }
 
     public override async Task<OperationValidation> ValidateAsync(
         OperationRequest request,

@@ -16,6 +16,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using ICanonicalOperationInvoker = Honua.Core.Features.Operations.Abstractions.IOperationInvoker;
 using IOperationEnvelopeFactory = Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory;
@@ -279,6 +280,15 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             throw new InvalidOperationException(
                 "Separation of duties: the requester of a proposal cannot approve it.");
+        }
+
+        if (AgentPublicationReplay.RequiresHumanApproval(proposal))
+        {
+            using var humanScope = _scopeFactory.CreateScope();
+            var http = humanScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
+            if (http is null || !AgentPublicationProposalAuthorization.IsHumanApprover(http.User) ||
+                !await AgentCredentialAuthority.IsCurrentObserverAsync(http.User, http.RequestServices, cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException("An authenticated distinct human session must approve an agent publication proposal.");
         }
 
         if (proposal.Evidence is not null)

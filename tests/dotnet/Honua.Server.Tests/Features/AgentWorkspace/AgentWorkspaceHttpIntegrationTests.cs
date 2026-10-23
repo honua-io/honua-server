@@ -71,8 +71,8 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             sourceConnection.Should().NotBeNull("the actual publish validation needs a registered source connection");
             await fixture.Postgres.ExecuteDdlUnderLockAsync($"CREATE TABLE public.{sourceTable} (id SERIAL PRIMARY KEY, name TEXT NOT NULL, geom geometry(Point,4326) NOT NULL); INSERT INTO public.{sourceTable} (name, geom) VALUES ('Original source', ST_SetSRID(ST_Point(1,1),4326));");
             using var bootstrap = fixture.CreateAdminClient();
-            var agentKey = await IssueKey(bootstrap, "workspace-agent", ["admin:read", "admin:write", "read:*", "agent:workspace"]);
-            var foreignKey = await IssueKey(bootstrap, "foreign-agent", ["admin:read", "admin:write", "read:*", "agent:workspace"]);
+            var agentKey = await IssueKey(bootstrap, "workspace-agent", ["admin:read", "agent:propose-publication", "agent:workspace"]);
+            var foreignKey = await IssueKey(bootstrap, "foreign-agent", ["admin:read", "agent:propose-publication", "agent:workspace"]);
             // Trusted host configuration mirrors installer-issued identity binding, never a model argument.
             fixture.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = $"apikey:api-key:{agentKey.Id}";
             var bearer = fixture.Services.GetRequiredService<OperatorBearerTokenService>().Issue(
@@ -216,6 +216,7 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
                 prompt = "Publish this newly reviewed revision"
             }), HttpStatusCode.OK);
             agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
+            agent.DefaultRequestHeaders.Add("X-Honua-Workspace", created.GetProperty("workspaceId").GetString());
             agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-review");
             var first = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
             string instanceId = first.GetProperty("data").GetProperty("operationInstanceId").GetString()!;
@@ -358,7 +359,7 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             sourceConnection.Should().NotBeNull("the actual publish validation needs a registered source connection");
             await fixture.Postgres.ExecuteDdlUnderLockAsync($"CREATE TABLE public.{sourceTable} (id SERIAL PRIMARY KEY, name TEXT NOT NULL, geom geometry(Point,4326) NOT NULL); INSERT INTO public.{sourceTable} (name, geom) VALUES ('Original source', ST_SetSRID(ST_Point(1,1),4326));");
             using var bootstrap = fixture.CreateAdminClient();
-            var agentKey = await IssueKey(bootstrap, "journal-agent", ["admin:read", "admin:write", "read:*", "agent:workspace"]);
+            var agentKey = await IssueKey(bootstrap, "journal-agent", ["admin:read", "agent:propose-publication", "agent:workspace"]);
             var observerKey = await IssueKey(bootstrap, "journal-observer", ["admin:read", "agent:workspace"]);
             fixture.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = $"apikey:api-key:{agentKey.Id}";
             var bearer = fixture.Services.GetRequiredService<OperatorBearerTokenService>().Issue(

@@ -91,7 +91,19 @@ internal static class AgentWorkspaceResourceAuthorization
         var draft = await context.RequestServices.GetRequiredService<IStudioPackageLifecycleService>()
             .GetDraftAsync(Guid.Parse(task.Id), context.RequestAborted).ConfigureAwait(false);
         if (draft is null || draft.PackageKey != task.PackageKey ||
-            draft.Family is not (StudioPackageFamily.Map or StudioPackageFamily.App)) return false;
+            draft.Family is not (StudioPackageFamily.Map or StudioPackageFamily.App or StudioPackageFamily.Dashboard)) return false;
+        if (AgentCredentialAuthority.IsAgent(context.User))
+        {
+            // Invoked by the turn authorizer itself: check the item's capability without
+            // recursively authorizing that same turn. Membership and credential are checked
+            // by the outer authorizer; exact generation is checked before the turn is captured.
+            var tenant = context.RequestServices.GetRequiredService<ITenantContext>().TenantId;
+            if (draft.TenantId != tenant || !AgentStudioAuthorization.HasItemPermission(
+                context.User, draft.ItemId, AgentStudioAuthorization.Compose)) return false;
+            if (requireGeneration && draft.Generation != task.Revision)
+                throw new AgentWorkspaceConflictException("The Studio draft changed. Review its current generation before sending.");
+            return true;
+        }
         var decision = await context.RequestServices.GetRequiredService<StudioEndpointAuthorization>()
             .AuthorizeAsync(context, StudioAuthorizationOperation.ReadDraft, draft.OwnerId, draft.TenantId,
                 "studio-package-draft", draft.DraftId.ToString("D")).ConfigureAwait(false);

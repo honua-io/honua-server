@@ -48,6 +48,16 @@ Publication is not a canvas mutation. Save the draft as an immutable version, th
 back with `honua_studio_get_version` when a capture needs the top-level `versionId` and
 `contentHash`. Pass the saved version's `itemId`, `versionId`, and `contentHash` together
 with the requested `route` and `visibility` to `honua_studio_propose_publication`.
+
+A workspace agent needs an exact `agent:studio-compose:<item-guid>` permission to
+create, compose, save, and read that item, and
+`agent:studio-propose-publication:<item-guid>` to propose its publication. The
+controller allocates `itemId` before credential issuance; agents omit `ownerId`.
+Send the actual `X-Honua-Workspace` and `X-Honua-Turn` on every call. Publication
+requires a distinct authenticated human approval and rechecks the original agent's
+live credential, workspace binding, saved version, and hash. See
+[Workspace credentials](../guides/secure/authentication.md) for persisted delegation
+grants and OAuth ceilings.
 The configure prompts tell an admin to finish that call in the same session and to
 read the share URL from the result. A caller who is not an admin receives a proposal
 and does not get a share URL.

@@ -139,6 +139,7 @@ internal sealed record ServicePublishApprovalPayload
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ServicePublishApprovalPayload))]
+[JsonSerializable(typeof(WorkspaceAgentPublicationAuthority))]
 internal sealed partial class ServicePublishApprovalJsonContext : JsonSerializerContext
 {
 }

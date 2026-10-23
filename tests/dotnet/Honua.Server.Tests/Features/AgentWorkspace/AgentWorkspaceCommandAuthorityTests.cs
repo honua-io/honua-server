@@ -64,7 +64,7 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         pending.IsCompleted.Should().BeFalse();
         await keys.RevokeAsync(created.Record.Id, default);
         delayed.SetResult(Handle("operation-1", "tenant-1"));
-        ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(403);
+        (await pending).Should().BeOfType<Microsoft.AspNetCore.Http.HttpResults.ForbidHttpResult>();
         await operations.DidNotReceive().SetAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>());
     }
 

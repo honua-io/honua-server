@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -504,6 +505,18 @@ internal static partial class StudioPackageEndpoints
         try
         {
             StudioContentItemPointers? existingPointers = null;
+            if (AgentCredentialAuthority.IsAgent(context.User))
+            {
+                var agentDenied = await EnsureAuthorizedAsync(authorization, context,
+                    StudioAuthorizationOperation.CreateDraft, null, StudioEndpointAuthorization.ResolveRequestTenantId(context),
+                    "studio-content-item", request.ItemId?.ToString("D")).ConfigureAwait(false);
+                if (agentDenied is not null) return agentDenied;
+                if (request.OwnerId is not null)
+                    return await DenyAsync(authorization, context, StudioAuthorizationOperation.CreateDraft,
+                        "studio-content-item", request.ItemId?.ToString("D"),
+                        "Assigning a Studio draft owner requires a human administrator.",
+                        StudioAuthorizationService.OwnerAssignmentAdminRequiredCode).ConfigureAwait(false);
+            }
             // honua-server#3001: creating a draft under an existing content item must be
             // authorized against that item's recorded owner, not treated as a brand-new
             // (ownerless) resource.
@@ -634,6 +647,12 @@ internal static partial class StudioPackageEndpoints
                 },
                 context.RequestAborted).ConfigureAwait(false);
 
+            if (AgentCredentialAuthority.IsAgent(context.User))
+            {
+                var visible = result.Items.Where(item => AgentStudioAuthorization.HasItemPermission(
+                    context.User, item.ItemId, AgentStudioAuthorization.Compose)).ToArray();
+                result = result with { Items = visible, Total = visible.Length, NextCursor = null };
+            }
             StudioEndpointsLog.DraftsListed(logger, result.Items.Count, result.Total);
             return Results.Json(
                 ApiResponse<StudioPackageDraftListResponse>.CreateSuccess(new StudioPackageDraftListResponse
@@ -725,7 +744,7 @@ internal static partial class StudioPackageEndpoints
                 return authResult;
             }
 
-            var isAdmin = authorization.IsAdmin(context.User);
+            var isAdmin = authorization.IsAdmin(context.User) && !AgentCredentialAuthority.IsAgent(context.User);
 
             if (!isAdmin
                 && authorization.IsEndUserAuthorizationEnabled
@@ -1218,6 +1237,12 @@ internal static partial class StudioPackageEndpoints
                 },
                 context.RequestAborted).ConfigureAwait(false);
 
+            if (AgentCredentialAuthority.IsAgent(context.User))
+            {
+                var visible = result.Items.Where(item => AgentStudioAuthorization.HasItemPermission(
+                    context.User, item.ItemId, AgentStudioAuthorization.Compose)).ToArray();
+                result = result with { Items = visible, Total = visible.Length, NextCursor = null };
+            }
             var badges = await ResolvePublicationBadgesAsync(publicationStore, result.Items, context.RequestAborted).ConfigureAwait(false);
             var rows = result.Items
                 .Select(item => ToListRow(item, badges.TryGetValue(item.ItemId, out var badge) ? badge : null))
@@ -1344,6 +1369,12 @@ internal static partial class StudioPackageEndpoints
         HttpContext context,
         string resourceType)
     {
+        if (AgentCredentialAuthority.IsAgent(context.User) &&
+            (!context.RequestServices.GetRequiredService<IOperatorScopeAuthorizer>()
+                .Evaluate(context.User, OperatorResourceType.StudioDraft, OperatorOperation.Read).IsAllowed ||
+             await AgentStudioAuthorization.BindAsync(context, context.User, context.RequestAborted).ConfigureAwait(false) is null))
+            return await DenyAsync(authorization, context, StudioAuthorizationOperation.ListOwn, resourceType, null,
+                "A live workspace turn is required.", AgentStudioAuthorization.DeniedCode).ConfigureAwait(false);
         if (authorization.IsAdmin(context.User) || !authorization.IsEndUserAuthorizationEnabled)
         {
             return null;

@@ -24,7 +24,9 @@ public sealed class AgentWorkspaceTurnAuthorizerTests
     [UnitTest]
     public async Task NativeTurnRequiresCurrentMembershipTenantTargetAndLayerAccess()
     {
-        var principal = Principal();
+        var keys = new InMemoryAdminApiKeyStore();
+        var issued = await keys.CreateAsync("bound-turn-agent", ["admin:read", "agent:workspace"], null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(issued.Record);
         var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns("tenant-1");
@@ -35,7 +37,7 @@ public sealed class AgentWorkspaceTurnAuthorizerTests
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Success());
         using var services = new ServiceCollection().AddSingleton(tenant).AddSingleton(layers)
-            .AddSingleton(authorization).BuildServiceProvider();
+            .AddSingleton(authorization).AddSingleton<IAdminApiKeyStore>(keys).BuildServiceProvider();
         var http = new DefaultHttpContext { RequestServices = services, User = principal };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         { ["AgentWorkspace:ReleaseId"] = "release-1" }).Build();

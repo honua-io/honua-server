@@ -6,6 +6,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Security;
@@ -58,7 +59,10 @@ internal sealed class StudioEndpointAuthorization(
         bool isPubliclyReadable = false)
     {
         var callerId = ResolveCallerId(context.User);
-        var decision = await _authorizationService.AuthorizeAsync(
+        var decision = AgentCredentialAuthority.IsAgent(context.User)
+            ? await AgentStudioAuthorization.AuthorizeAsync(context, context.User, operation,
+                resourceTenantId, resourceType, resourceId, context.RequestAborted).ConfigureAwait(false)
+            : await _authorizationService.AuthorizeAsync(
             context.User,
             callerId,
             operation,

@@ -201,10 +201,15 @@ internal static class OperationsEndpoints
                 context.User,
                 descriptor.Policy.SideEffectClass,
                 cancellationToken).ConfigureAwait(false);
-        if (!authorization.IsAuthorized)
+        var agentPublicationProposal = !authorization.IsAuthorized && durableOperatorApproval &&
+            descriptor.OperationId == ServicePublishOperation.OperationId &&
+            await AgentPublicationProposalAuthorization.IsAuthorizedAsync(context, context.User, cancellationToken).ConfigureAwait(false);
+        if (!authorization.IsAuthorized && !agentPublicationProposal)
         {
             return Results.Forbid();
         }
+        if (agentPublicationProposal)
+            authorization = new OperationAdminAuthorization.Decision(true, "authorized");
 
         // Only descriptors that explicitly select the HTTP operator gate enter this
         // approval lane. All operations still pass through the dispatcher policy point;
@@ -226,8 +231,8 @@ internal static class OperationsEndpoints
             }
         }
 
-        string? requiredApprovalPolicyRef = null;
-        if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        string? requiredApprovalPolicyRef = agentPublicationProposal ? AgentPublicationProposalAuthorization.ApprovalPolicyRef : null;
+        if (requiredApprovalPolicyRef is null && descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
         {
             var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
             if (durableOperatorApproval && descriptor.OperationId == ServicePublishOperation.OperationId)
