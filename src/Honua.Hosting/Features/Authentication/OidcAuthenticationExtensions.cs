@@ -74,6 +74,29 @@ public static partial class OidcAuthenticationExtensions
     /// </summary>
     public const string OperatorBearerScheme = "OperatorBearer";
 
+    // ConfigurationBinder appends to initialized arrays. Explicit deployment values
+    // replace those defaults in every registration path; absent values retain them.
+    internal static void BindOptions(IConfiguration section, OidcAuthenticationOptions options)
+    {
+        section.Bind(options);
+        ReplaceConfiguredArrays(section, options);
+    }
+
+    internal static void ReplaceConfiguredArrays(IConfiguration section, OidcAuthenticationOptions options)
+    {
+        var roles = section.GetSection(nameof(OidcAuthenticationOptions.AdminRoles));
+        if (roles.Exists())
+        {
+            options.AdminRoles = roles.Get<string[]>() ?? [];
+        }
+
+        var scopes = section.GetSection("Generic:Scopes");
+        if (options.Generic is not null && scopes.Exists())
+        {
+            options.Generic.Scopes = scopes.Get<string[]>() ?? [];
+        }
+    }
+
     /// <summary>
     /// Adds OIDC authentication services with multi-provider support.
     /// </summary>
@@ -85,7 +108,7 @@ public static partial class OidcAuthenticationExtensions
         IConfiguration configuration)
     {
         var oidcOptions = new OidcAuthenticationOptions();
-        configuration.GetSection(OidcAuthenticationOptions.SectionName).Bind(oidcOptions);
+        BindOptions(configuration.GetSection(OidcAuthenticationOptions.SectionName), oidcOptions);
 
         // Operator bearers are independently signed and validated. Register their
         // concrete scheme even when external OIDC is disabled; MCP can select it
@@ -248,7 +271,7 @@ public static partial class OidcAuthenticationExtensions
         IConfiguration configuration)
     {
         var oidcOptions = new OidcAuthenticationOptions();
-        configuration.GetSection(OidcAuthenticationOptions.SectionName).Bind(oidcOptions);
+        BindOptions(configuration.GetSection(OidcAuthenticationOptions.SectionName), oidcOptions);
 
         if (!oidcOptions.Enabled)
         {

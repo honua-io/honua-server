@@ -75,6 +75,12 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Compliance__Encryption__FipsModeAttested` | `false` | Operator attestation of FIPS 140-2 host mode. |
 | `Compliance__DependencyOverrides__*` | unset | Attestations for sidecar-provided capabilities (audit log, SSO, RBAC, transport encryption, data residency). |
 
+`Oidc__AdminAuthCallbackUri` optionally pins the backend-assisted admin OIDC broker
+callback to an exact HTTPS `/admin/auth/callback` URI on a separate Console origin.
+It has no default override: when unset, the broker uses `Public:BaseUrl` as before.
+It does not change public API links or middleware callbacks. See the authentication
+guide for validation, routing and logout limitations.
+
 OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generic) and API-key management are covered in the [authentication guide](../../guides/secure/authentication.md).
 
 ### Operation policy

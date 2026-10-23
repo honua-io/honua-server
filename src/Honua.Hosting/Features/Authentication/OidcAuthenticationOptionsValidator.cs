@@ -35,6 +35,11 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
     /// </summary>
     private static void ValidateGeneralSettings(OidcAuthenticationOptions options, List<string> errors)
     {
+        if (!options.TryGetAdminAuthCallbackUri(out _))
+        {
+            errors.Add("AdminAuthCallbackUri must be an absolute HTTPS URI at /admin/auth/callback without user information, query or fragment");
+        }
+
         // When OIDC is enabled, at least one provider must be configured
         if (options.Enabled)
         {
