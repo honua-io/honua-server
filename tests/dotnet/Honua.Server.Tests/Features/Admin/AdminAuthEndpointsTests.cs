@@ -555,8 +555,15 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/logout"));
 
         var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua")
-                .UseSetting("Oidc:AdminAuthCallbackUri", callback));
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua");
+                // An unset callback must remain absent: host settings serialize null as empty.
+                if (callback is not null)
+                {
+                    builder.UseSetting("Oidc:AdminAuthCallbackUri", callback);
+                }
+            });
 
         try
         {
@@ -603,8 +610,15 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/logout"));
 
         var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua")
-                .UseSetting("Oidc:AdminAuthCallbackUri", callback));
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua");
+                // An unset callback must remain absent: host settings serialize null as empty.
+                if (callback is not null)
+                {
+                    builder.UseSetting("Oidc:AdminAuthCallbackUri", callback);
+                }
+            });
 
         try
         {
