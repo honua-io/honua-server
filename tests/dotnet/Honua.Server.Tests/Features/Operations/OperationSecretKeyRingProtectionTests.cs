@@ -199,6 +199,72 @@ public sealed class OperationSecretKeyRingProtectionTests
     }
 
     [UnitTest]
+    public void Resolve_WithMalformedPkcs12_RefusesWithoutTheFileBytesOrPassword()
+    {
+        var path = Path.Join(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");
+        var bytes = new byte[] { 1, 2, 3, 4, 5, 9, 9 };
+        const string password = "do-not-echo-this-password";
+        try
+        {
+            File.WriteAllBytes(path, bytes);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [OperationSecretKeyRingProtection.CertificatePathKey] = path,
+                    [OperationSecretKeyRingProtection.CertificatePasswordKey] = password,
+                })
+                .Build();
+
+            var action = () => OperationSecretKeyRingProtection.Resolve(configuration);
+
+            action.Should().Throw<InvalidOperationException>()
+                .WithMessage("*PKCS#12*")
+                .Where(exception =>
+                    exception.InnerException == null &&
+                    !exception.Message.Contains(password, StringComparison.Ordinal) &&
+                    !exception.Message.Contains(Convert.ToHexString(bytes), StringComparison.Ordinal) &&
+                    !exception.Message.Contains(Convert.ToBase64String(bytes), StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [UnitTest]
+    public void Resolve_WithWrongPkcs12Password_RefusesWithoutThePassword()
+    {
+        var path = Path.Join(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");
+        const string password = "do-not-echo-this-password";
+        const string wrongPassword = "still-do-not-echo";
+        try
+        {
+            using var source = CreateCertificate();
+            File.WriteAllBytes(path, source.Export(X509ContentType.Pkcs12, password));
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [OperationSecretKeyRingProtection.CertificatePathKey] = path,
+                    [OperationSecretKeyRingProtection.CertificatePasswordKey] = wrongPassword,
+                })
+                .Build();
+
+            var action = () => OperationSecretKeyRingProtection.Resolve(configuration);
+
+            action.Should().Throw<InvalidOperationException>()
+                .WithMessage("*PKCS#12*")
+                .Where(exception =>
+                    exception.InnerException == null &&
+                    !exception.Message.Contains(password, StringComparison.Ordinal) &&
+                    !exception.Message.Contains(wrongPassword, StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [UnitTest]
     public void Resolve_WithPkcs12Certificate_ReturnsPrivateKeyCertificate()
     {
         var path = Path.Join(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");
