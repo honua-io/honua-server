@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.ControlPlane;
@@ -28,7 +29,7 @@ internal static class ControlPlaneLambdaConnectionRelease
     /// (<c>batch-event</c> | <c>backstop</c> | <c>scheduled-tick</c>). honua-iac sets it on the
     /// three event-handler functions only, never on the API function.
     /// </summary>
-    internal const string HandlerSelectorKey = "HONUA_CONTROL_PLANE_LAMBDA_HANDLER";
+    internal const string HandlerSelectorKey = ControlPlaneEventHandlerHost.HandlerEnvironmentVariable;
 
     /// <summary>Resolves the effective setting from configuration.</summary>
     /// <param name="configuration">Application configuration (environment variables included).</param>
@@ -58,17 +59,22 @@ internal static class ControlPlaneLambdaConnectionRelease
     /// <summary>
     /// Whether this process is a control-plane event-handler Lambda (<see cref="HandlerSelectorKey"/>
     /// is set). Such a host serves one EventBridge invocation at a time and is frozen in between,
-    /// so it does not host the in-process control-plane database loops (backstop sweeps,
-    /// queue-depth collector, autonomy evaluator): EventBridge drives that work, and a loop still
-    /// holding a connection when the instance freezes would keep it open past the release.
+    /// so it does not host in-process database polling loops (backstop sweeps, import and outbox
+    /// pollers, audit and topology reconcilers, the job drainer). EventBridge drives that work,
+    /// and a loop still holding a connection when the instance freezes would keep it open past
+    /// the per-invocation pool release. The API Lambda keeps those loops.
     /// </summary>
     /// <param name="configuration">Application configuration (environment variables included).</param>
     /// <returns><see langword="true"/> for the reconcile, backstop and scheduled-tick functions.</returns>
     public static bool IsEventHandlerProfile(IConfiguration configuration)
-    {
-        ArgumentNullException.ThrowIfNull(configuration);
-        return !string.IsNullOrWhiteSpace(configuration[HandlerSelectorKey]);
-    }
+        => ControlPlaneEventHandlerHost.IsEventHandler(configuration);
+
+    /// <summary>
+    /// Whether this host should run in-process database polling loops. False only for the
+    /// control-plane event-handler Lambdas; the API Lambda and every long-lived host return true.
+    /// </summary>
+    public static bool HostsDatabasePollingLoops(IConfiguration configuration)
+        => !IsEventHandlerProfile(configuration);
 
     /// <summary>
     /// Adds <see cref="ControlPlaneLambdaConnectionReleaseMiddleware"/> when

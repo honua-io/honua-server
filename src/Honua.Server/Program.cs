@@ -904,7 +904,12 @@ var failOnDatabaseStartupFailure = Honua.Infrastructure.Monitoring.StartupDataba
 
 builder.Services.AddSingleton(startupResilienceOptions);
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
-builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
+// The recovery loop retries connects for the life of a degraded process. On an event-handler
+// Lambda that is a connect storm against RDS Proxy; EventBridge retries the invocation instead.
+if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
+}
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<IReadinessCheckService,

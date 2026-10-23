@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -159,9 +160,15 @@ internal static partial class FeatureEventsAndStreamingRegistration
         services.AddSingleton<OutboxDispatcherBackgroundService>();
         services.AddSingleton<IOutboxHealth>(sp =>
             sp.GetRequiredService<OutboxDispatcherBackgroundService>());
-        services.AddHostedService(sp =>
-            sp.GetRequiredService<OutboxDispatcherBackgroundService>());
-        services.AddHostedService<FeatureChangeRetryBackgroundService>();
+        // The dispatcher and retry loops open a database connection on each pass. On a
+        // control-plane event Lambda that exhausts the pool of 2 and pins the connection
+        // across freeze (honua-server#6515). The singleton stays so health can read it.
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService(sp =>
+                sp.GetRequiredService<OutboxDispatcherBackgroundService>());
+            services.AddHostedService<FeatureChangeRetryBackgroundService>();
+        }
         services.AddScoped<FeatureStreamDependencies>();
         services.AddHostedService<FeatureStreamHeartbeatService>();
 

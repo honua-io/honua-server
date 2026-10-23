@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Admin.Routing;
@@ -22,6 +24,16 @@ internal static class NetworkTopologyRebuildServiceCollectionExtensions
     /// <see cref="NetworkTopologyRebuildReconciler"/> self-healing background service.
     /// </summary>
     public static IServiceCollection AddNetworkTopologyRebuildJobs(this IServiceCollection services)
+        => services.AddNetworkTopologyRebuildJobs(configuration: null);
+
+    /// <summary>
+    /// Registers the rebuild worker. When <paramref name="configuration"/> is an event-handler
+    /// Lambda, the reconciler loop is not hosted; EventBridge invokes that work and the pool
+    /// is released at the end of the invocation.
+    /// </summary>
+    public static IServiceCollection AddNetworkTopologyRebuildJobs(
+        this IServiceCollection services,
+        IConfiguration? configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -49,7 +61,10 @@ internal static class NetworkTopologyRebuildServiceCollectionExtensions
             // once AddJobOrchestration has already provided that dependency — otherwise
             // ValidateOnBuild would fail every Redis-less startup for a service nothing calls.
             services.TryAddScoped<NetworkTopologyRebuildReconciler>();
-            services.AddHostedService<NetworkTopologyRebuildReconcilerBackgroundService>();
+            if (configuration is null || ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+            {
+                services.AddHostedService<NetworkTopologyRebuildReconcilerBackgroundService>();
+            }
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, NetworkTopologyRebuildJobTerminalCallback>());
         }
 
