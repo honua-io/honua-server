@@ -7,7 +7,9 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Io.Export;
 using Honua.Migration;
 using Honua.Routing.Features.Routing.Abstractions;
+using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Routing;
+using Honua.Server.Features.Orchestration;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -36,6 +38,8 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<GeoservicesImportBackgroundService>(services).Should().BeFalse();
         Hosts<GeoServerImportBackgroundService>(services).Should().BeFalse();
         Hosts<ExportBackgroundService>(services).Should().BeFalse();
+        Hosts<OpsHealthRollupSampler>(services).Should().BeFalse();
+        Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeFalse();
     }
 
     [UnitTest]
@@ -50,6 +54,8 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<GeoservicesImportBackgroundService>(services).Should().BeTrue();
         Hosts<GeoServerImportBackgroundService>(services).Should().BeTrue();
         Hosts<ExportBackgroundService>(services).Should().BeTrue();
+        Hosts<OpsHealthRollupSampler>(services).Should().BeTrue();
+        Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeTrue();
     }
 
     private static ServiceCollection Compose(bool eventHandler)
@@ -65,9 +71,12 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         services.AddSingleton<IJobQueue>(_ => throw new InvalidOperationException("not resolved"));
         services.AddSingleton<INetworkTopologyRebuildStore>(_ => throw new InvalidOperationException("not resolved"));
         services.AddSingleton<IExecutionJobStore>(_ => throw new InvalidOperationException("not resolved"));
+        services.AddSingleton<WorkflowOrchestrationEngine>(_ => throw new InvalidOperationException("not resolved"));
         services.AddJobWorker(configuration);
         services.AddNetworkTopologyRebuildJobs(configuration);
         services.AddHonuaImportExportAndTileOperations(configuration);
+        services.AddObservability(configuration);
+        services.AddOrchestrationBackgroundServices(configuration);
         return services;
     }
 

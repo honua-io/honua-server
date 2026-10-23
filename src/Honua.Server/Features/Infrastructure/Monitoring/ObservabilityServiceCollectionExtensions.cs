@@ -3,6 +3,7 @@
 
 using System.IO.Compression;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.ControlPlane;
 using Honua.Server.Features.Admin.Jobs;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
@@ -107,7 +108,13 @@ internal static class ObservabilityServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<OpsHealthFlushSignal>();
         services.AddScoped<IOpsHealthHistoryService, OpsHealthHistoryService>();
-        services.AddHostedService<OpsHealthRollupSampler>();
+        // The sampler reads and writes the Postgres rollup store on an interval. An event-handler
+        // Lambda is frozen between invocations and releases its pool when the request ends, so the
+        // loop must not resume on the next thaw and hold a connection past that release.
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService<OpsHealthRollupSampler>();
+        }
 
         // Aggregated operate-status surface (A12): composes the ops-health snapshot + findings into
         // one server-authoritative verdict, and binds the SLO/error-budget contract.

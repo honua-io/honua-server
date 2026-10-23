@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Migration.Watermark;
 using Honua.Core.Features.Orchestration.Abstractions;
@@ -104,10 +105,14 @@ internal static class OrchestrationServiceCollectionExtensions
             services.AddHostedService(sp => sp.GetRequiredService<WorkflowSchedulerBackgroundService>());
         }
 
-        // Event/CDC trigger reconciler (object-store + change-feed probes). Additive to the
-        // scheduler; hosted in both modes so configured event triggers fire regardless of the
-        // cron-timer hosting decision above.
-        services.AddHostedService<WorkflowEventTriggerBackgroundService>();
+        // Event/CDC trigger reconciler (object-store + change-feed probes). The change-feed
+        // probe reads Postgres. An event-handler Lambda must not keep that poller: it would
+        // resume on the next thaw and hold a connection after the invocation releases the pool.
+        // The scheduled-tick handler above still runs the cron tick when EventBridge asks.
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService<WorkflowEventTriggerBackgroundService>();
+        }
 
         return services;
     }
