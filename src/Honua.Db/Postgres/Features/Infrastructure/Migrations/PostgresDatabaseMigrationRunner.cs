@@ -16,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using Honua.Db.Postgres.Features.Attachments;
 using DbUp.ScriptProviders;
+using Honua.Db.Postgres.Features.Raster;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
@@ -595,6 +596,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             .WithVariable("HonuaSchema", metadataSchemaVariable)
             .WithTransaction()
             .LogToConsole();
+        foreach (var (name, body) in RasterSamplingSql.MigrationVariables())
+            builder = builder.WithVariable(name, body);
 
         // Production has two canonical numbered roots: provider schema and server schema.
         // Synthetic migration assemblies used by the safety-gate tests remain intentionally
