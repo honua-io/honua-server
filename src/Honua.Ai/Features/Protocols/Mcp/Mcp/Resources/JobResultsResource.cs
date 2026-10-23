@@ -93,7 +93,11 @@ internal sealed class JobResultsResource : IMcpResource
         return result;
     }
 
-    private static McpJobResultsResource ToResource(string jobId, AnalysisResultPackage package) => new()
+    /// <summary>
+    /// Projects a terminal result package into the published MCP envelope.
+    /// <c>honua_get_job_results</c> uses the same projection as this resource.
+    /// </summary>
+    internal static McpJobResultsResource ToResource(string jobId, AnalysisResultPackage package) => new()
     {
         JobId = jobId,
         ResultPackageId = package.ResultPackageId,

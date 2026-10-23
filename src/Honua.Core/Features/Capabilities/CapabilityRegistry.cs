@@ -105,6 +105,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_list_jobs", "list_jobs", "lifecycle"),
             ("honua_diagnose_job", "diagnose_job", "results"),
             ("honua_job_evidence", "job_evidence", "results"),
+            ("honua_get_job_results", "get_job_results", "results"),
             ("honua_ingest_dataset", "ingest_dataset", "lifecycle"),
             ("honua_ingest_job_artifact", "ingest_job_artifact", "lifecycle"),
             ("honua_publish_service", "publish_service", "lifecycle"),

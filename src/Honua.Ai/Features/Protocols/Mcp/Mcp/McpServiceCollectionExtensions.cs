@@ -157,6 +157,13 @@ internal static class McpServiceCollectionExtensions
         // IGeoprocessingJobService that is composed before AddMcpDataAccessSurface,
         // and the service enforces the job-read grant + per-job ownership itself.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListJobsTool>());
+        // honua_get_job_results: one job's terminal result package over
+        // IGeoprocessingJobService.GetJobResultsAsync. Additive to the
+        // honua://jobs/{jobId}/results resource and to honua_list_jobs, which
+        // remains the status listing. The service enforces the job-read grant
+        // and per-job ownership; an uncomposed job store throws the same
+        // GeoprocessingStoreUnavailableException submission tools surface.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetJobResultsTool>());
         // (honua_describe_layer is registered below in the Metadata v2 + feature
         // reader gated block, next to honua_query_features.)
         // ──────────────────────────────────────────────────────────────────────
