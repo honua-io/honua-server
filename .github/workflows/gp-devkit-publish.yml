@@ -1,0 +1,44 @@
+name: Publish GP Devkit
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish Honua.Geoprocessing.Cli to GitHub Packages
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gp-devkit-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'honua-io/honua-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.publish == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Pack the repository-version devkit
+        run: dotnet pack src/Honua.Geoprocessing.Cli/Honua.Geoprocessing.Cli.csproj -c Release -o artifacts/gp-devkit-publish
+      - name: Publish the packed tool and record its identity
+        env:
+          PUBLISH_DEVKIT: ${{ inputs.publish }}
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/gp_devkit_publication.py publish --nupkg artifacts/gp-devkit-publish --output artifacts/gp-devkit-publication.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gp-devkit-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gp-devkit-publication.json
+          if-no-files-found: error
+          retention-days: 90

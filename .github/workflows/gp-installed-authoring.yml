@@ -6,6 +6,7 @@ on:
       - 'src/Honua.Geoprocessing.Cli/**'
       - 'docker/worker-customcode-*/harness/**'
       - 'scripts/ci/verify-gp-installed-authoring.py'
+      - 'scripts/ci/gp_devkit_publication.py'
       - '.github/workflows/gp-installed-authoring.yml'
   workflow_dispatch:
 
@@ -28,7 +29,7 @@ jobs:
       - name: Pack candidate devkit and consumer script
         run: |
           dotnet pack src/Honua.Geoprocessing.Cli -c Release -o artifacts/installed-gp -p:VersionSuffix=installed.${{ github.run_id }}.${{ github.run_attempt }}
-          cp scripts/ci/verify-gp-installed-authoring.py artifacts/installed-gp/
+          cp scripts/ci/verify-gp-installed-authoring.py scripts/ci/gp_devkit_publication.py artifacts/installed-gp/
       - uses: actions/upload-artifact@v7
         with:
           name: installed-gp-candidate
@@ -61,7 +62,13 @@ jobs:
           python -m pip install pytest==9.1.1
           version="$(python candidate/verify-gp-installed-authoring.py --package-version candidate)"
           dotnet tool install Honua.Geoprocessing.Cli --add-source candidate --tool-path installed --version "$version"
-          python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}" --restored-locks restored-locks
+          python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}" --restored-locks restored-locks --host-debug-receipt host-debug.json --package-version-stamp "$version"
+      - name: Preserve host-debug receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: gp-devkit-host-debug-${{ matrix.os }}
+          path: host-debug.json
+          if-no-files-found: error
       - name: Preserve restored template dependency locks
         if: always()
         uses: actions/upload-artifact@v7
@@ -69,3 +76,30 @@ jobs:
           name: installed-gp-locks-${{ matrix.os }}
           path: restored-locks
           if-no-files-found: warn
+
+  handoff:
+    needs: installed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: gp-devkit-host-debug-ubuntu-latest
+          path: host-debug/ubuntu
+      - uses: actions/download-artifact@v8
+        with:
+          name: gp-devkit-host-debug-windows-latest
+          path: host-debug/windows
+      - uses: actions/download-artifact@v8
+        with:
+          name: gp-devkit-host-debug-macos-latest
+          path: host-debug/macos
+      - name: Hand supported-OS host-debug receipts to release qualification
+        run: python3 scripts/ci/gp_devkit_publication.py handoff --receipts host-debug --output artifacts/gp-devkit-host-debug-handoff.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gp-devkit-host-debug-handoff
+          path: artifacts/gp-devkit-host-debug-handoff.json
+          if-no-files-found: error
+          retention-days: 90
