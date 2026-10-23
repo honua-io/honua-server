@@ -157,9 +157,11 @@ internal static class FeatureCollectionArtifact
         ArgumentNullException.ThrowIfNull(processId);
 
         var collection = new FeatureCollection();
+        var crs = new FeatureArtifactSpatialReferenceAccumulator();
         foreach (var feature in features)
         {
             collection.Add(feature);
+            crs.Add(feature.Geometry);
         }
 
         var writer = GeoJsonArtifactCodec.CreateWriter();
@@ -174,6 +176,7 @@ internal static class FeatureCollectionArtifact
         {
             jsonWriter.WriteStartObject();
             jsonWriter.WriteString("type", "FeatureCollection");
+            crs.Value.Write(jsonWriter);
             jsonWriter.WriteString("processId", processId);
             jsonWriter.WriteNumber("featureCount", collection.Count);
 
@@ -181,6 +184,12 @@ internal static class FeatureCollectionArtifact
             {
                 foreach (var (name, value) in extraMembers)
                 {
+                    if (string.Equals(name, FeatureArtifactSpatialReference.MemberName, StringComparison.Ordinal))
+                    {
+                        throw new ArgumentException(
+                            "Extra members cannot replace the producer coordinate frame.", nameof(extraMembers));
+                    }
+
                     WriteJsonMember(jsonWriter, name, value);
                 }
             }

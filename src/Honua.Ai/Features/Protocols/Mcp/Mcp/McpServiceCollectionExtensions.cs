@@ -349,6 +349,7 @@ internal static class McpServiceCollectionExtensions
         if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FileImport.Abstractions.IFileImportService)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestDatasetTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestJobArtifactTool>());
         }
 
         if (services.Any(d => d.ServiceType == typeof(Honua.Routing.Features.Routing.Abstractions.IRoutingProvider)))

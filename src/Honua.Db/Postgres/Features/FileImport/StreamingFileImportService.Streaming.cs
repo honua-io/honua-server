@@ -111,6 +111,14 @@ internal sealed partial class StreamingFileImportService
                     break;
             }
 
+            if (request.CommitParticipant is not null
+                && loadMode != ImportLoadMode.Replace
+                && !(loadMode == ImportLoadMode.Append && appendUsesStaging))
+            {
+                throw new InvalidDataException(
+                    "This import must commit its receipt with the rows. The target is not an importer-owned table.");
+            }
+
             // A Replace load streams into a <table>__staging sibling (loadTableName) rather than
             // the live table. Before this try, the only path that ever reclaimed that sibling on
             // failure was the NEXT replace's CreateStagingTableAsync (DROP TABLE IF EXISTS ...
@@ -297,7 +305,13 @@ internal sealed partial class StreamingFileImportService
                     }
                     else
                     {
-                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                        await SwapStagingTableAsync(
+                            connection,
+                            targetSchema,
+                            allowedTableName,
+                            totalImported,
+                            request.CommitParticipant,
+                            CancellationToken.None);
                         dataCommitted = true;
                     }
                 }
@@ -314,6 +328,8 @@ internal sealed partial class StreamingFileImportService
                             targetSchema,
                             allowedTableName,
                             loadTableName,
+                            totalImported,
+                            request.CommitParticipant,
                             CancellationToken.None);
                         dataCommitted = true;
                     }

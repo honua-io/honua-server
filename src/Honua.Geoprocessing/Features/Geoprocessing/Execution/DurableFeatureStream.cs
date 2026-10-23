@@ -70,6 +70,24 @@ internal sealed record DurableFeatureStream
         IServiceScopeFactory? workspaceScopes = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        await foreach (var row in ReadRowsAsync(
+            reference, authorizedJob, jobs, store, options, maximumBytes, workspaceScopes, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            yield return row.Feature;
+        }
+    }
+
+    public static async IAsyncEnumerable<VerifiedFeatureRow> ReadRowsAsync(
+        string reference,
+        ExecutionJobRecord authorizedJob,
+        IExecutionJobStore jobs,
+        IGeoprocessingOutputObjectStore store,
+        GeoprocessingOutputStagingOptions options,
+        long maximumBytes = MaximumBytes,
+        IServiceScopeFactory? workspaceScopes = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
         if (!TryParse(reference, out var descriptor) || descriptor!.Bytes > maximumBytes
             || descriptor.Provider != store.Provider || descriptor.StoreReference != store.StoreReference
             || !options.Enabled || options.StoreReference != store.StoreReference
@@ -173,9 +191,9 @@ internal sealed record DurableFeatureStream
         var reader = GeoJsonArtifactCodec.CreateReader();
         while (await lines.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
         {
-            var feature = FeatureStreamArtifact.DeserializeLine(reader, line)
+            var feature = FeatureStreamArtifact.DeserializeLine(reader, line, out var hasProducerSpatialReference)
                 ?? throw new InvalidOperationException("The feature stream contains an invalid row.");
-            yield return feature;
+            yield return new VerifiedFeatureRow(feature, hasProducerSpatialReference);
         }
     }
 }

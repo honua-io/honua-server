@@ -102,7 +102,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v3",
+        Revision = "setup.v4",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -126,6 +126,7 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
+                    McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -266,7 +267,11 @@ internal static class McpWorkflowViewCatalog
                 Id = "connect-import",
                 Title = "Connect and import",
                 Description = "Inline CSV or GeoJSON ingest, up to 4 MB.",
-                Rules = [McpWorkflowViewMemberRule.Exact("honua_ingest_dataset")],
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
+                    McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
+                ],
             },
             new McpWorkflowViewStageDefinition
             {
