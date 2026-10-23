@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Agent Operations (Validation Layer)"
-description: "Agent-initiated changes run through a validation layer — planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."
+description: "Agent-initiated changes run through a validation layer â€” planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."
 resource: "honua://capability/ai.agent-operations"
 tags: [capability, ai, pro]
 ---
@@ -9,7 +9,7 @@ tags: [capability, ai, pro]
 
 # Agent Operations (Validation Layer)
 
-Agent-initiated changes run through a validation layer — planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools).
+Agent-initiated changes run through a validation layer â€” planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools).
 
 | | |
 | --- | --- |

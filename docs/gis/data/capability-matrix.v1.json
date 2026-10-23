@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 388,
-      "provingTestCount": 1430,
+      "provingTestCount": 1434,
       "maturity": {
         "implemented": 385,
         "preview": 2,
@@ -55,14 +55,14 @@
     },
     {
       "key": "admin.multi-tenancy",
-      "displayName": "Multi-Tenant Operation",
-      "category": "Internal",
+      "displayName": "Multi-Tenant Operation (Preview/trial)",
+      "category": "ControlPlane",
       "edition": "Enterprise",
-      "status": "internal",
+      "status": "preview",
       "entryCount": 7,
       "provingTestCount": 12,
       "maturity": {
-        "internal": 7
+        "preview": 7
       },
       "noSurface": null,
       "cite": [],

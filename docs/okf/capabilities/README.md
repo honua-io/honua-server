@@ -26,6 +26,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | Capability | Category | Edition | Status |
 | --- | --- | --- | --- |
 | [Admin Control Plane](admin.control-plane.md) | ControlPlane | Community | ga |
+| [Multi-Tenant Operation (Preview/trial)](admin.multi-tenancy.md) | ControlPlane | Enterprise | **preview** |
 | [Agent Operations (Validation Layer)](ai.agent-operations.md) | AI | Pro | ga |
 | [Agent Approval Workflows](ai.approval-workflows.md) | AI | Enterprise | ga |
 | [Spec Grounding Mutations](ai.grounding.md) | AI | Pro | ga |

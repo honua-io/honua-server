@@ -613,7 +613,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "internal",
+      "maturity": "preview",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4570,7 +4570,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "internal",
+      "maturity": "preview",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4584,7 +4584,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantUsage_ReturnsBillingUsageEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "internal",
+      "maturity": "preview",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4598,7 +4598,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "internal",
+      "maturity": "preview",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4894,11 +4894,11 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileReadersWithoutImportService_ReportMissingDependency",
-        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_InternalMultiTenancyWithoutOptIn_IsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancy_ReflectsRuntimeLicenseAndAuthentication",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_PreviewMultiTenancyWithoutOptIn_IsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RedisConfiguredButUnreachable_WithholdsControlPlaneWithoutDurabilityOutcome",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RegistryDerived_MatchesHandCuratedComposition",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackClaimsAreTargetScoped",
@@ -16040,6 +16040,8 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminScopedKey_RetainsFullAdminAuthority",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CannotPerformMutatingAdminOperations",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_CannotAuthenticate",
@@ -16062,6 +16064,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CannotPerformMutatingAdminOperations",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RevokeApiKey_PreventsFurtherAuthentication",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_CannotAuthenticate",
@@ -16083,6 +16086,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RotateAndRevoke_UnderConcurrentUse_TakeEffectWithoutDenyingValidRequests",
@@ -18685,7 +18689,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "internal",
+      "maturity": "preview",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -18699,7 +18703,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "internal",
+      "maturity": "preview",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -18713,7 +18717,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "internal",
+      "maturity": "preview",
       "capability": "admin.multi-tenancy"
     },
     {
