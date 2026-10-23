@@ -237,6 +237,14 @@
       "notes": "Honua extension (#2813): caller-scoped geoprocessing job enumeration (status filter + cursor paging) so an agent can find a job to cancel. The bare taxonomy models job lookup as a job-resource read; the reference implementation exposes a discrete listing tool. Pending formalization in the standard; schema marks x-honua-extension."
     },
     {
+      "standardName": "get_job_results",
+      "referenceToolName": "honua_get_job_results",
+      "family": "Results (Honua extension)",
+      "schema": "tools/get_job_results.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#3608): read one caller-readable geoprocessing job's terminal result package. Status polling stays on list_jobs and the job resource. Pending formalization in the standard; schema marks x-honua-extension."
+    },
+    {
       "standardName": "diagnose_job",
       "referenceToolName": "honua_diagnose_job",
       "family": "Results (Honua extension)",

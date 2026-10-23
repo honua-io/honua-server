@@ -90,7 +90,7 @@ server-authored setup view:
 ```
 
 Retain its revision, membership and descriptor digests, descriptor count,
-byte size and paging state. The source view is `setup.v4`; a discovered
+byte size and paging state. The source view is `setup.v5`; a discovered
 descriptor does not prove its downstream operation works. Record the
 candidate's actual profile/catalog counts instead of copying historical
 counts. Discover the explicit analysis and Esri GP profile surfaces when
@@ -164,7 +164,7 @@ evidence. Carry the verified artifact into the Studio composition.
 
 ## 6. Author, validate, save and reopen
 
-Confirm that the candidate advertises `setup.v4` and its canonical create,
+Confirm that the candidate advertises `setup.v5` and its canonical create,
 read, update, validate, preview, composition, save, get-version and reopen
 descriptors. Older candidates may expose only part of this sequence; record
 the missing tools and stop that qualification cell instead of inventing a

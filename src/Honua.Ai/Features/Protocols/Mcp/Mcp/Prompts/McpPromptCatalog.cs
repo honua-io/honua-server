@@ -60,7 +60,8 @@ internal static class McpPromptCatalog
                 + "3. When the plan buffers a published layer, use process analytics.buffer-aggregate and pass that layer's layerId. "
                 + "geometry.buffer accepts one WKB geometry and must not be used to buffer a published layer.\n"
                 + "4. Call honua_validate_plan and honua_dry_run_plan to confirm the plan is executable and to estimate cost.\n"
-                + "5. Call honua_execute_plan; poll the honua://jobs/{jobId} resource until the job completes, and track it with honua_list_jobs.\n"
+                + "5. Call honua_execute_plan; poll the honua://jobs/{jobId} resource until the job completes, and track it with honua_list_jobs. "
+                + "When that status is terminal, call honua_get_job_results for the result package. Status polling stays on honua_list_jobs and the job resource.\n"
                 + "Summarize the ranked candidate sites and cite the honua://jobs/{jobId}/results artifacts."),
 
         new McpPromptDefinition(

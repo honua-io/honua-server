@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/get_job_results.schema.json",
+  "title": "get_job_results inputSchema",
+  "description": "Argument shape for reading one caller-readable geoprocessing job's terminal result package. Status polling stays on list_jobs. Advertised name honua_get_job_results. x-honua-extension: this is a documented Honua extension over the bare taxonomy, pending formalization in the geospatial-mcp standard. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["jobId"],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of a geoprocessing job the caller can read (from a submission result or honua_list_jobs)."
+    }
+  }
+}

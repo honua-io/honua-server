@@ -87,6 +87,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool>.Instance),
             new ListJobsTool(jobService, NullLogger<ListJobsTool>.Instance),
+            new GetJobResultsTool(jobService, NullLogger<GetJobResultsTool>.Instance),
             new DiagnoseJobTool(NullLogger<DiagnoseJobTool>.Instance),
             new JobEvidenceTool(NullLogger<JobEvidenceTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(

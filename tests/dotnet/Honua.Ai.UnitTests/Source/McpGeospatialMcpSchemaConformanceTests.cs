@@ -197,6 +197,10 @@ public sealed partial class McpTaxonomyAlignmentTests
             // so coverage stays honest until the standard defines them.
             "honua_describe_layer",
             "honua_list_jobs",
+            // honua_get_job_results is a Honua extension (#3608). The vendored
+            // geospatial-mcp index has no finalized results verb; status polling
+            // stays on honua_list_jobs.
+            "honua_get_job_results",
             // Job diagnostics are Honua extensions over the admin job projection (#6219).
             "honua_diagnose_job",
             "honua_job_evidence",

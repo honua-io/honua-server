@@ -102,7 +102,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v4",
+        Revision = "setup.v5",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -170,7 +170,7 @@ internal static class McpWorkflowViewCatalog
                 Id = "geoprocessing",
                 Title = "Bounded geoprocessing",
                 Description =
-                    "Plan, validate, dry-run and execute a bounded analysis, then track the resulting job.",
+                    "Plan, validate, dry-run and execute a bounded analysis, then track the job and read its results.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_plan_analysis"),
@@ -178,6 +178,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_dry_run_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_execute_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
+                    McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -394,7 +395,7 @@ internal static class McpWorkflowViewCatalog
         Description =
             "Ground a question, hand-author a plan when honua_plan_analysis returns engine fixture, "
             + "then validate, execute, and read the job.",
-        Revision = "analyze.v1",
+        Revision = "analyze.v2",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -415,7 +416,7 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "plan",
                 Title = "Plan and execute",
-                Description = "Validate and run a plan. A published-layer buffer is analytics.buffer-aggregate.",
+                Description = "Validate and run a plan, then read its results. A published-layer buffer is analytics.buffer-aggregate.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_plan_analysis"),
@@ -423,6 +424,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_dry_run_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_execute_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
+                    McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
                     McpWorkflowViewMemberRule.Exact("honua_cancel_job"),
                 ],
             },
