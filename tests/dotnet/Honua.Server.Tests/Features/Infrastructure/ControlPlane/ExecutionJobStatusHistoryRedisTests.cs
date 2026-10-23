@@ -253,13 +253,20 @@ public sealed class ExecutionJobStatusHistoryRedisTests(RedisFixture redis) : IA
         _ownedJobs.Add(id);
         return new()
         {
-            OperationId = id, Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
+            OperationId = id,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
             Spec = new() { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local", WorkloadName = "history-control" }
         };
     }
 
     private static ExecutionJobStatusTransition Forged() => new()
     {
-        JobId = "forged", Version = 9000, AttemptCount = 100, OccurredAtUnixMilliseconds = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds(), ToStatus = ExecutionJobStatus.Succeeded
+        JobId = "forged",
+        Version = 9000,
+        AttemptCount = 100,
+        OccurredAtUnixMilliseconds = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds(),
+        ToStatus = ExecutionJobStatus.Succeeded
     };
 }
