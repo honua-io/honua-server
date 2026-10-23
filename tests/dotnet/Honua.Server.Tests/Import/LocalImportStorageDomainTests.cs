@@ -25,6 +25,107 @@ namespace Honua.Server.Tests.Import;
 public sealed class LocalImportStorageDomainTests(RedisFixture redis)
 {
     [IntegrationTest]
+    public async Task ChangedConfiguredRootCannotRetireOriginalObjectsEvenWithCopiedMarker()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var disk = new Disk(connection);
+        var original = disk.Domain();
+        await original.InitializeAsync();
+        var storage = disk.Storage(original);
+        var chunk = await StageAsync(storage, original, Session());
+        var ledger = await disk.LedgerAsync();
+        var originalRoot = disk.Roots[ImportStorageRootKind.ProviderObjects];
+        var replacement = originalRoot + "-replacement";
+        Directory.CreateDirectory(replacement);
+        File.Copy(Path.Join(originalRoot, LocalImportStorageRoots.MarkerName),
+            Path.Join(replacement, LocalImportStorageRoots.MarkerName));
+        disk.Roots[ImportStorageRootKind.ProviderObjects] = replacement;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => disk.Domain().InitializeAsync());
+
+        Assert.Equal(ledger.Epoch, await ledger.ReadStoredEpochAsync());
+        Assert.Equal(16, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+        Assert.Equal(16, new FileInfo(Path.Join(originalRoot, chunk.FileId)).Length);
+        _ = await StageAsync(storage, original, Session());
+        Assert.Equal(32, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+    }
+
+    [IntegrationTest]
+    public async Task EmptyReplacementAtOriginalPathBlocksLiveWritersAndRecoveryUntilOriginalRootReturns()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var disk = new Disk(connection);
+        var original = disk.Domain();
+        await original.InitializeAsync();
+        var storage = disk.Storage(original);
+        var chunk = await StageAsync(storage, original, Session());
+        var ledger = await disk.LedgerAsync();
+        var root = disk.Roots[ImportStorageRootKind.ProviderObjects];
+        var retained = root + "-retained";
+        Directory.Move(root, retained);
+        Directory.CreateDirectory(root);
+
+        await Assert.ThrowsAsync<IOException>(() => original.EnterMutationAsync().AsTask());
+        await Assert.ThrowsAsync<IOException>(() => disk.Domain().InitializeAsync());
+        Assert.Equal(ledger.Epoch, await ledger.ReadStoredEpochAsync());
+        Assert.Equal(16, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+        Assert.False(File.Exists(Path.Join(root, LocalImportStorageRoots.MarkerName)));
+
+        Directory.Delete(root);
+        Directory.Move(retained, root);
+        await disk.Domain().InitializeAsync();
+        Assert.Equal(16, new FileInfo(Path.Join(root, chunk.FileId)).Length);
+        _ = await StageAsync(storage, original, Session());
+        Assert.Equal(32, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+    }
+
+    [IntegrationTest]
+    public async Task DifferentPhysicalRootCannotReplaceAnExistingDomainLedger()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domainId = Guid.NewGuid().ToString("N");
+        await using var originalDisk = new Disk(connection, domainId);
+        await using var otherDisk = new Disk(connection, domainId);
+        var original = originalDisk.Domain();
+        await original.InitializeAsync();
+        var storage = originalDisk.Storage(original);
+        var chunk = await StageAsync(storage, original, Session());
+        var ledger = await originalDisk.LedgerAsync();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => otherDisk.Domain().InitializeAsync());
+
+        Assert.Equal(ledger.Epoch, await ledger.ReadStoredEpochAsync());
+        Assert.Equal(16, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+        Assert.Equal(16, new FileInfo(Path.Join(originalDisk.Roots[ImportStorageRootKind.ProviderObjects], chunk.FileId)).Length);
+        _ = await StageAsync(storage, original, Session());
+        Assert.Equal(32, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+    }
+
+    [IntegrationTest]
+    public async Task LostPhysicalJournalCannotEraseRetainedAdmissionEvenWhenDataRootsAreEmpty()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var disk = new Disk(connection);
+        var original = disk.Domain();
+        await original.InitializeAsync();
+        var session = Session();
+        var reservation = RedisImportStorageBudget.ForObject(session, $"imports/resumable/{session.Id}/{Guid.NewGuid():N}.part", 16);
+        Assert.True(await original.TryReserveAsync(reservation));
+        var ledger = await disk.LedgerAsync();
+        File.Delete(Path.Join(disk.JournalPath, "reservations.bin"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => disk.Domain().InitializeAsync());
+
+        Assert.Equal(ledger.Epoch, await ledger.ReadStoredEpochAsync());
+        Assert.Equal(16, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+        Assert.Equal(1, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "count"));
+    }
+
+    [IntegrationTest]
     public async Task DistinctObjectsCanNestEvenWhenTheirHashesCollideInALockStripe()
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -159,7 +260,7 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         await using var disk = new Disk(connection);
         var armed = false;
-        var interrupted = RelayWithLostReply(connection, values => armed && values?.Length == 11);
+        var interrupted = RelayWithLostReply(connection, values => armed && values?.Length == 12);
         var domain = disk.Domain(interrupted);
         await domain.InitializeAsync();
         var session = Session();
@@ -181,7 +282,7 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         await using var disk = new Disk(connection);
         var armed = false;
-        var interrupted = RelayWithLostReply(connection, values => armed && values?.Length == 6);
+        var interrupted = RelayWithLostReply(connection, values => armed && values?.Length == 7);
         var domain = disk.Domain(interrupted);
         await domain.InitializeAsync();
         var storage = disk.Storage(domain);
@@ -267,13 +368,14 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
     {
         private readonly IConnectionMultiplexer _connection;
         private readonly string _directory = Path.Join(Path.GetTempPath(), "honua-domain-" + Guid.NewGuid().ToString("N"));
-        private readonly string _domainId = Guid.NewGuid().ToString("N");
+        private readonly string _domainId;
         private readonly ImportStorageBudgetLimits _limits = new(4 * 1024 * 1024, 4 * 1024 * 1024, 4 * 1024 * 1024, 16);
         internal Dictionary<ImportStorageRootKind, string> Roots { get; } = [];
-        private string JournalPath => Path.Join(_directory, "journal");
-        internal Disk(IConnectionMultiplexer connection)
+        internal string JournalPath => Path.Join(_directory, "journal");
+        internal Disk(IConnectionMultiplexer connection, string? domainId = null)
         {
             _connection = connection;
+            _domainId = domainId ?? Guid.NewGuid().ToString("N");
             Directory.CreateDirectory(_directory);
             foreach (var kind in Enum.GetValues<ImportStorageRootKind>())
             {
@@ -285,7 +387,11 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
         internal LocalImportStorageDomain Domain(IConnectionMultiplexer? connection = null, ImportStorageBudgetLimits? limits = null) => new(connection ?? _connection,
             _domainId, limits ?? _limits, JournalPath, Roots, _limits.MaximumObjects);
         internal LocalImportStorageJournal Journal() => new(JournalPath, _domainId, _limits.MaximumObjects);
-        internal async Task<RedisImportStorageBudget> LedgerAsync() => new(_connection, _domainId, _limits, await Journal().ReadEpochAsync());
+        internal async Task<RedisImportStorageBudget> LedgerAsync()
+        {
+            var (epoch, journalId) = await Journal().ReadIdentityAsync();
+            return new(_connection, _domainId, _limits, epoch, journalId);
+        }
         internal LocalFileStorage Storage(LocalImportStorageDomain domain) => new(Options.Create(new LocalStorageOptions
         { BasePath = Roots[ImportStorageRootKind.ProviderObjects], CreateDirectoryIfNotExists = true }),
             NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>(), domain);

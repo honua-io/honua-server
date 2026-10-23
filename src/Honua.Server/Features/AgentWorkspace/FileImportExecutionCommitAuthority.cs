@@ -14,7 +14,7 @@ using Honua.Infrastructure.Authentication;
 namespace Honua.Server.Features.AgentWorkspace;
 
 // Only the actual accepted new-table worker scope can cross this commit boundary.
-// Registration remains gated on integrated qualification; receipt recovery is separate.
+// The explicit local execution composition registers this boundary; receipt recovery is separate.
 internal sealed class FileImportExecutionCommitAuthority(IExecutionJobStore jobs,
     IJobExecutionLeaseAuthority leases) : IImportExecutionCommitAuthority
 {

@@ -11,12 +11,13 @@ internal sealed partial class RedisImportStorageBudget
     private const string ReadEpochScript = """
         if redis.call('EXISTS', KEYS[1]) == 0 then return '' end
         if redis.call('TYPE', KEYS[1]).ok ~= 'hash' or redis.call('PTTL', KEYS[1]) >= 0 then return 'invalid' end
+        if (redis.call('HGET', KEYS[1], 'journal') or '') ~= ARGV[1] then return 'invalid' end
         return redis.call('HGET', KEYS[1], 'epoch') or 'invalid'
         """;
 
     private const string BeginRecoveryScript = """
         if redis.call('EXISTS', KEYS[1]) ~= 0 then return -2 end
-        redis.call('HSET', KEYS[1], 'epoch', ARGV[1], 'limits', ARGV[2], 'bytes', '0', 'count', '0', 'building', '1')
+        redis.call('HSET', KEYS[1], 'epoch', ARGV[1], 'limits', ARGV[2], 'journal', ARGV[3], 'bytes', '0', 'count', '0', 'building', '1')
         redis.call('PEXPIRE', KEYS[1], 3600000)
         return 1
         """;
@@ -49,12 +50,14 @@ internal sealed partial class RedisImportStorageBudget
            or redis.call('HGET', KEYS[2], 'limits') ~= ARGV[3]
            or redis.call('HGET', KEYS[2], 'bytes') ~= ARGV[4]
            or redis.call('HGET', KEYS[2], 'count') ~= ARGV[5]
+           or redis.call('HGET', KEYS[2], 'journal') ~= ARGV[6]
            or redis.call('HGET', KEYS[2], 'building') ~= '1' then return -2 end
         local kind = redis.call('TYPE', KEYS[1]).ok
         if kind == 'none' then
           if ARGV[1] ~= '' then return -4 end
         else
           if kind ~= 'hash' or redis.call('PTTL', KEYS[1]) >= 0 then return -2 end
+          if (redis.call('HGET', KEYS[1], 'journal') or '') ~= ARGV[6] then return -5 end
           if ARGV[1] == '' or redis.call('HGET', KEYS[1], 'epoch') ~= ARGV[1] then return -4 end
         end
         redis.call('HDEL', KEYS[2], 'building')
@@ -70,7 +73,7 @@ internal sealed partial class RedisImportStorageBudget
     internal async Task<string?> ReadStoredEpochAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var epoch = (string?)await _database.ScriptEvaluateAsync(ReadEpochScript, [Key]).ConfigureAwait(false);
+        var epoch = (string?)await _database.ScriptEvaluateAsync(ReadEpochScript, [Key], [_journalId]).ConfigureAwait(false);
         if (epoch == string.Empty) return null;
         if (epoch is not { Length: 32 } || !Guid.TryParseExact(epoch, "N", out var parsed) || parsed.ToString("N") != epoch)
             throw new InvalidDataException("The storage ledger has no valid durable recovery epoch.");
@@ -96,7 +99,7 @@ internal sealed partial class RedisImportStorageBudget
         RedisKey staging = $"{Key}:recovery:{Guid.NewGuid():N}";
         try
         {
-            _ = Interpret((long)await _database.ScriptEvaluateAsync(BeginRecoveryScript, [staging], [Epoch, Policy]).ConfigureAwait(false));
+            _ = Interpret((long)await _database.ScriptEvaluateAsync(BeginRecoveryScript, [staging], [Epoch, Policy, _journalId]).ConfigureAwait(false));
             var batch = new List<RedisValue>(1 + (5 * RecoveryBatchSize)) { Epoch };
             long bytes = 0;
             var count = 0;
@@ -121,7 +124,7 @@ internal sealed partial class RedisImportStorageBudget
                 _ = Interpret((long)await _database.ScriptEvaluateAsync(AppendRecoveryScript, [staging], batch.ToArray()).ConfigureAwait(false));
             cancellationToken.ThrowIfCancellationRequested();
             _ = Interpret((long)await _database.ScriptEvaluateAsync(PublishRecoveryScript, [Key, staging],
-                [expectedPreviousEpoch ?? string.Empty, Epoch, Policy, bytes, count]).ConfigureAwait(false));
+                [expectedPreviousEpoch ?? string.Empty, Epoch, Policy, bytes, count, _journalId]).ConfigureAwait(false));
         }
         finally
         {

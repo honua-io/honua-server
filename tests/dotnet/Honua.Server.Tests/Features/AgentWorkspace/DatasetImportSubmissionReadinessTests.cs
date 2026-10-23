@@ -36,7 +36,7 @@ public sealed class DatasetImportSubmissionReadinessTests
         foreach (var type in new[]
         {
             typeof(DatasetImportSubmissionService), typeof(IImportJobService), typeof(BackgroundImportRunnerDecision),
-            typeof(ImportUploadCoordinator), typeof(IDatasetImportAdmissionProvider), typeof(IDatasetImportAuthorityDescriptorReader),
+            typeof(ImportUploadCoordinator), typeof(ImportStagedSourceStorage), typeof(IDatasetImportAdmissionProvider), typeof(IDatasetImportAuthorityDescriptorReader),
             typeof(IExecutionJobStore), typeof(IJobExecutionLeaseAuthority), typeof(IJobExecutionLeasePolicy),
             typeof(IJobExecutionLeaseObservationPolicy), typeof(IJobExecutionLeaseScopeProvider)
         })

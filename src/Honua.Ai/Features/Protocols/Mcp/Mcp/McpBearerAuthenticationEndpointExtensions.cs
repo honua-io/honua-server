@@ -265,11 +265,14 @@ internal static class McpBearerAuthenticationEndpointExtensions
             return null;
         }
 
+        // OIDC transformation already sealed current delegated authority in this
+        // process. Preserve those stamps when adapting the concrete bearer, while
+        // stripping every issuer-supplied copy of the reserved namespace. A prefix
+        // or issuer string alone never establishes framework provenance.
         var identity = new ClaimsIdentity(
             principal.Claims.Where(static claim =>
                 !claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
-                || (claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType
-                    && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim))),
+                || CanonicalSecurityActor.IsFrameworkOwnedClaim(claim)),
             scheme,
             sourceIdentity?.NameClaimType ?? ClaimTypes.Name,
             sourceIdentity?.RoleClaimType ?? ClaimTypes.Role);

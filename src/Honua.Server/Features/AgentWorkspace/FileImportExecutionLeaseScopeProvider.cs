@@ -15,13 +15,14 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Import.FileImport.Durable;
 using Honua.Infrastructure.Authentication;
+using Honua.Import.FileImport.Resumable;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.AgentWorkspace;
 
 // Initial new-table, verified resumable-source adapter. It grants no existing-table
-// mutation or arbitrary object URI authority. Not registered before integrated qualification.
+// mutation or arbitrary object URI authority. Registered by the explicit local execution composition.
 internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore workspaces,
     IHttpContextAccessor accessor, IConfiguration configuration, IDatabaseSessionFactory sessions,
     IServiceProvider services, TimeProvider clock) : IJobExecutionLeaseScopeProvider, IJobExecutionLeaseObservationScopeProvider
@@ -54,10 +55,11 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
         if (job.Audit.SubmitterSecurityContext?.ExecutionLease is null)
         {
             if (kind is not null || job.Status != ExecutionJobStatus.Queued || bound.Task.UploadAdmissionDeadline <= clock.GetUtcNow()) throw Denied();
-            var fresh = await AgentJobSecurityBridge.CaptureAsync(principal,
-                services.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions(), services,
-                services.GetService<ITenantContext>(), cancellationToken).ConfigureAwait(false);
-            if (!MatchesPreparedContext(fresh, bound.Prepared.ExecutorPolicyContext)) throw Denied();
+            // Issuance already captured the actual request in PrepareAsync. The
+            // bridge revalidates credential authority while preserving those original
+            // policy claims; a reconstructed delegated identity is not a new token.
+            if (!ReferenceEquals(context.CurrentAgentPrincipal, principal)
+                || !MatchesPreparedContext(context, bound.Prepared.ExecutorPolicyContext)) throw Denied();
         }
         else
         {
@@ -120,7 +122,7 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
             || !await DatasetImportTaskProvider.SourceAuthorizedAsync(services, principal, bound.Task.TenantId,
                 bound.Document, bound.Task.Source, cancellationToken).ConfigureAwait(false)) throw Denied();
         if (bound.Source.ExpiresAt is { } expiry && expiry <= clock.GetUtcNow()) throw Denied();
-        var storage = services.GetRequiredService<ICloudFileStorage>();
+        var storage = services.GetRequiredService<ImportStagedSourceStorage>().Storage;
         try
         {
             StagedImportSourceMaterializer.RequireGeneration(
@@ -213,7 +215,10 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
     {
         Kind = ExecutionJobKind.FileImport,
         Resources = [],
-        Operations = [new SemanticImportAuthorizationResource(bound.Task.TargetId, true).OperatorRequest],
+        Operations = [new SemanticImportAuthorizationResource(bound.Task.TargetId, true,
+            Destination: bound.Prepared.ExecutorAuthority.Permissions.Contains(
+                AgentDatasetImportAuthorization.Permission(bound.Task.TargetId, bound.Task.Destination), StringComparer.Ordinal)
+                ? bound.Task.Destination : null).OperatorRequest],
         ProviderBinding = SerializeBinding(bound.Binding)
     };
 

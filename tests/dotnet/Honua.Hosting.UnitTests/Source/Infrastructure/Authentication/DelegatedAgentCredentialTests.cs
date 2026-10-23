@@ -70,6 +70,44 @@ public sealed class DelegatedAgentCredentialTests
     }
 
     [Theory]
+    [InlineData("target-one/public/roads", true)]
+    [InlineData("*", false)]
+    [InlineData("own", false)]
+    [InlineData("target-two/public/roads", false)]
+    [InlineData("target-one/public/other", false)]
+    public async Task ExactImportPermission_IntersectsLiveCanonicalGrant(string grantedLayer, bool expected)
+    {
+        using var fixture = new Fixture();
+        const string permission = "agent:dataset-import:target-one/public/roads";
+        fixture.Profile.Permissions = ["agent:workspace", permission];
+        fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions =
+                [
+                    new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
+                    new PermissionGrant { Service = "agent", Layer = grantedLayer, Operation = "dataset-import" }
+                ]
+            });
+        var principal = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        principal.HasClaim("permission", permission).Should().Be(expected);
+        var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
+        snapshot.Should().NotBeNull();
+        fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions = [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }]
+            });
+        (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().BeNull();
+    }
+
+    [Theory]
     [InlineData("issuer")]
     [InlineData("audience")]
     [InlineData("subject")]

@@ -47,6 +47,8 @@ public sealed class DatasetImportAuthorityRenewalTests
         using var services = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(tenant)
             .AddSingleton(tasks).AddSingleton(turns).AddSingleton(capture).AddSingleton<TimeProvider>(TimeProvider.System).BuildServiceProvider();
         var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        context.Request.Headers["X-Honua-Workspace"] = "workspace-1";
+        context.Request.Headers["X-Honua-Turn"] = "turn-1";
         var originalAuthority = (await AgentCredentialAuthority.CaptureAsync(principal, services, default))!
             with
         { TokenExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1) };

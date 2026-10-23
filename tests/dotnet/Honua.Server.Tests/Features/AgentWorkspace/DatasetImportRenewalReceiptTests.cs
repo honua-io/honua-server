@@ -38,6 +38,8 @@ public sealed class DatasetImportRenewalReceiptTests
         var tasks = Substitute.For<IDatasetImportTaskProvider>();
         using var services = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(tenant).AddSingleton(tasks).BuildServiceProvider();
         var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        context.Request.Headers["X-Honua-Workspace"] = "workspace-1";
+        context.Request.Headers["X-Honua-Turn"] = "turn-1";
         var task = new DatasetImportTask("import-task-1", 1, new string('a', 64), actor, "tenant-1", "target-1", "workspace-1",
             new("public", "new_table"), new("browser-file", "file.geojson", 123, new string('b', 64)), new(), DateTimeOffset.UtcNow.AddHours(24));
         var allowed = true;
@@ -56,6 +58,11 @@ public sealed class DatasetImportRenewalReceiptTests
             AgentActorId = actor,
             TenantId = "tenant-1",
             Members = [actor, "human-1"],
+            Turns = new()
+            {
+                ["turn-1"] = new("turn-1", "human-1", "Import the original file",
+                    new("workspace-1", "target-1", "view-1", 0, [], null, "tenant-1"), null)
+            },
             DatasetImportTasks = new() { [task.TaskId] = [task] },
             DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
             DatasetImportAuthorityRenewals = new()

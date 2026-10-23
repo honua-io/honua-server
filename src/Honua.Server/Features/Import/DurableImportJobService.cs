@@ -268,7 +268,15 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
 
     private static void RequireSameAcceptance(ExecutionJobRecord existing, ImportRequest request, long fileSize)
     {
-        var expected = FileImportJobParameters.Build(request, fileSize);
+        // A retry keeps the original submission trace lineage rather than replacing it
+        // with the retry request's Activity baggage. Explicit request lineage must
+        // still match the accepted record.
+        var expected = FileImportJobParameters.Build(request with
+        {
+            CorrelationId = string.IsNullOrWhiteSpace(request.CorrelationId)
+                ? existing.Spec.Parameters.GetValueOrDefault(FileImportJobParameters.CorrelationId)
+                : request.CorrelationId
+        }, fileSize);
         // Runtime/backend resolution can append non-import parameters. Compare
         // every immutable import input, including owner, tenant, source and audit
         // lineage, and reject any additional import inputs on the original record.
@@ -452,6 +460,16 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         BackgroundImportRunnerDecision decision,
         DateTimeOffset now)
     {
+        var audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo
+        {
+            OperationInstanceId = request.OperationInstanceId,
+            CorrelationId = request.CorrelationId,
+            AuditId = request.AuditId,
+            ProposalId = request.ProposalId,
+        }, System.Diagnostics.Activity.Current);
+        // Persist the same immutable lineage in both carriers. Lease validation
+        // reconstructs the exact import parameters from the retained audit record.
+        request = request with { CorrelationId = audit.CorrelationId };
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
         ExecutionJobSpec spec;
         if (decision.Mode == BackgroundImportRunnerMode.DurableRemote)
@@ -507,13 +525,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
             CurrentPhase = "Queued",
             // Carries the accepting request's lineage and trace context across the queue boundary
             // so the worker's execution span links back to the upload (#5474).
-            Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo
-            {
-                OperationInstanceId = request.OperationInstanceId,
-                CorrelationId = request.CorrelationId,
-                AuditId = request.AuditId,
-                ProposalId = request.ProposalId,
-            }, System.Diagnostics.Activity.Current),
+            Audit = audit,
             // A large import can outlast the one-hour default; the batch backend's own timeout
             // and the heartbeat reaper still bound a stuck attempt.
             TimeoutPolicy = JobTimeoutPolicy.LongRunning,

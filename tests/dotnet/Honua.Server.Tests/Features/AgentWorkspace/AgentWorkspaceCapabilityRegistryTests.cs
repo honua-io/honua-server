@@ -14,7 +14,16 @@ public sealed class AgentWorkspaceCapabilityRegistryTests
     public void EveryActualWorkspaceTool_HasOneMatchingDynamicRegistryDescriptor()
     {
         var registry = new CapabilityRegistry();
-        foreach (var tool in AgentWorkspaceTool.All)
+        var tools = AgentWorkspaceTool.All
+            .Concat(AgentWorkspaceTool.DatasetImportTools)
+            .Concat(AgentWorkspaceTool.DatasetImportAuthorityReadTools)
+            .Concat(AgentWorkspaceTool.DatasetImportAuthorityRenewTools)
+            .Concat(AgentWorkspaceTool.DatasetImportSubmissionTools)
+            .Concat(LocalProcessWorkspaceTool.All).ToArray();
+        tools.Select(tool => tool.Name).Should().OnlyHaveUniqueItems();
+        registry.All.Where(descriptor => descriptor.McpToolName?.StartsWith("honua_workspace_", StringComparison.Ordinal) == true)
+            .Select(descriptor => descriptor.McpToolName).Should().BeEquivalentTo(tools.Select(tool => tool.Name));
+        foreach (var tool in tools)
         {
             var descriptor = registry.All.Should().ContainSingle(value => value.McpToolName == tool.Name).Subject;
             descriptor.Category.Should().Be(tool.WorkflowFamily);

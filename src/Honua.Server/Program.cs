@@ -1108,6 +1108,9 @@ if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolve
 // Register shared validation services
 builder.Services.AddValidationServices();
 
+// Baseline local imports use the canonical durable worker in every edition.
+builder.Services.AddDatasetImportLocalJobSubstrate(builder.Configuration);
+
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(
     builder.Configuration,
@@ -1121,6 +1124,7 @@ Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRe
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAgentWorkspace();
+builder.Services.AddDatasetImportLocalStorage(builder.Configuration);
 builder.Services.AddAdminAccessOperations();
 // #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
 // first-class MCP tools. The audited Admin projection publishes by default (#3363;

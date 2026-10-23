@@ -11,6 +11,7 @@ namespace Honua.Infrastructure.MultiTenancy;
 /// </summary>
 internal sealed class RequestTenantContext : ITenantContext
 {
+    internal bool IsInitialized { get; private set; }
     /// <inheritdoc />
     public string? TenantId { get; private set; }
 
@@ -28,6 +29,7 @@ internal sealed class RequestTenantContext : ITenantContext
     {
         TenantId = string.IsNullOrWhiteSpace(tenantId) ? null : tenantId;
         Source = source;
+        IsInitialized = true;
     }
 
     /// <inheritdoc />

@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.ServiceDefaults;
 
 namespace Honua.ControlPlane;
 
@@ -56,6 +57,7 @@ internal sealed partial class JobExecutionService(
     /// </summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        Volatile.Write(ref _readinessStopped, true);
         await _draining.CancelAsync().ConfigureAwait(false);
         if (RequeueOnShutdown)
         {
@@ -94,6 +96,7 @@ internal sealed partial class JobExecutionService(
 
     public override void Dispose()
     {
+        Volatile.Write(ref _readinessStopped, true);
         base.Dispose();
         _draining.Dispose();
     }
@@ -221,6 +224,7 @@ internal sealed partial class JobExecutionService(
             {
                 claimedId = await jobQueue.TryClaimAsync(
                     workerId, _acceptedKinds, _acceptedRuntimeProfiles, claimToken).ConfigureAwait(false);
+                Volatile.Write(ref _hasSuccessfulClaimPoll, true);
 
                 if (claimedId != null)
                 {
@@ -265,6 +269,7 @@ internal sealed partial class JobExecutionService(
             {
                 // Deliberately broad: one failed claim attempt (store/queue outage) must
                 // not crash the worker's claim loop; log and retry after the poll delay.
+                Volatile.Write(ref _hasSuccessfulClaimPoll, false);
                 Log.ClaimLoopError(logger, ex);
             }
 
@@ -794,6 +799,7 @@ internal sealed partial class JobExecutionService(
         }
         catch (Exception ex) when (commitDecisionUncertain && ex is not OutOfMemoryException)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobExecutionFailed(logger, operationId, ex);
             // The pending CAS may have committed even when Redis lost its reply.
@@ -888,6 +894,7 @@ internal sealed partial class JobExecutionService(
             // Deliberately broad: any unhandled executor exception must be caught here so
             // one job's failure routes through the retry/abandon policy instead of
             // crashing the worker's claim loop.
+            HonuaTelemetry.RecordException(activity, ex);
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             Log.JobExecutionFailed(logger, operationId, ex);

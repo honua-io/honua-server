@@ -27,6 +27,30 @@ namespace Honua.Server.Tests.Import;
 public sealed class BoundImportAcceptanceTests(RedisFixture redis)
 {
     [IntegrationTest]
+    public async Task RetryWithNewTrace_RetainsOriginalCorrelationAndRejectsExplicitLineageChange()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = Store(connection);
+        using var harness = new Harness(store);
+        var request = Request();
+        string id;
+        using (var originalTrace = new System.Diagnostics.Activity("original")
+            .AddBaggage("correlation.id", "original-correlation").Start())
+            id = await harness.Service.QueueImportAsync(request, 100);
+        using var retryTrace = new System.Diagnostics.Activity("retry")
+            .AddBaggage("correlation.id", "retry-correlation").Start();
+
+        (await harness.Service.QueueImportAsync(request, 100)).Should().Be(id);
+        var accepted = (await store.GetAsync(id))!;
+        accepted.Audit.CorrelationId.Should().Be("original-correlation");
+        accepted.Spec.Parameters[FileImportJobParameters.CorrelationId].Should().Be("original-correlation");
+        await FluentActions.Invoking(() => harness.Service.QueueImportAsync(
+            request with { CorrelationId = "changed-explicit-lineage" }, 100))
+            .Should().ThrowAsync<ImportAcceptanceConflictException>();
+        await harness.Queue.Received(1).EnqueueAsync(id, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
     public async Task ConcurrentCompletion_CreatesOneDurableJobAndDispatchesOnlyTheWinner()
     {
         await using var a = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -69,7 +93,7 @@ public sealed class BoundImportAcceptanceTests(RedisFixture redis)
         uncertain.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(call => real.ListActiveAsync(call.ArgAt<ExecutionJobKind?>(0), call.ArgAt<int?>(1), call.ArgAt<CancellationToken>(2)));
         uncertain.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
+            .Returns<Task<bool>>(async call =>
             {
                 (await real.TryCreateAsync(call.ArgAt<ExecutionJobRecord>(0), call.ArgAt<TimeSpan?>(1), call.ArgAt<CancellationToken>(2)))
                     .Should().BeTrue();

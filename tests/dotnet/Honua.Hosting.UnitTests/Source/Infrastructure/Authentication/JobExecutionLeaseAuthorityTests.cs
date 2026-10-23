@@ -178,7 +178,7 @@ public sealed class JobExecutionLeaseAuthorityTests
                 TaskContentHash = new string('a', 64),
                 AuthorityRevision = 1,
                 AuthorityFingerprint = new string('b', 64),
-                PolicyContextFingerprint = new string('c', 64),
+                PolicyContextFingerprint = JobSecurityContextFingerprint.Compute(fixture.Request.PreparedJob.Audit.SubmitterSecurityContext!),
                 InitiatingHumanActorId = humanActor,
                 OriginatingTurnId = "turn",
                 OriginalTurnHash = new string('d', 64)

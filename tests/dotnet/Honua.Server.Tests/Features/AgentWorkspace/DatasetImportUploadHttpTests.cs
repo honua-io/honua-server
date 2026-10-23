@@ -161,11 +161,12 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
     }
 
     [IntegrationTheory]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    public async Task MissingRegistrationOrMismatchedScratchCannotAdvertiseTransfer(bool install, bool mismatched)
+    [InlineData(false, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    public async Task MissingRegistrationOrMismatchedStorageCannotAdvertiseTransfer(bool install, bool mismatched, bool mismatchedStorage)
     {
-        await using var fixture = await Fixture.Create(redis.ConnectionString, install, mismatched);
+        await using var fixture = await Fixture.Create(redis.ConnectionString, install, mismatched, mismatchedStorage: mismatchedStorage);
         using var client = fixture.App.CreateAdminClient();
         var task = await fixture.CreateTask(client, "{}"u8.ToArray());
         var response = await client.GetAsync(UploadPath(task) + "/capabilities?contentHash=" + task.GetProperty("contentHash").GetString());
@@ -272,7 +273,7 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         internal DestinationPolicy Policy { get; } = new();
         internal ConnectionMultiplexer Connection { get; private set; } = null!;
         internal LocalFileStorage Storage { get; private set; } = null!;
-        internal static async Task<Fixture> Create(string redisConnection, bool install = true, bool mismatch = false, bool handoff = false)
+        internal static async Task<Fixture> Create(string redisConnection, bool install = true, bool mismatch = false, bool handoff = false, bool mismatchedStorage = false)
         {
             var fixture = new Fixture();
             fixture.Connection = await ConnectionMultiplexer.ConnectAsync(redisConnection);
@@ -295,17 +296,20 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
                     builder.UseSetting("Authentication:OperatorBearer:SigningKey", "upload-http-human-handoff-test-key-at-least-32-bytes");
                 }
                 builder.UseSetting("AgentWorkspace:DeploymentId", "upload-http-" + Guid.NewGuid().ToString("N"));
+                builder.UseSetting("AgentWorkspace:ReleaseId", "upload-http-test");
                 builder.ConfigureServices(services =>
                 {
                     services.AddSingleton<IDatasetImportDestinationAuthorizer>(fixture.Policy);
                     if (!install) return;
+                    services.AddSingleton(new ImportStagedSourceStorage(fixture.Storage));
                     services.AddSingleton<IImportStorageBudget>(budget);
                     if (handoff) services.AddScoped<IDatasetImportContributorAuthorizer, DatasetImportContributorAuthorizer>();
                     services.AddSingleton(scratch);
                     services.AddSingleton(new DatasetImportUploadTransportOptions(Path.Join(fixture.Root, mismatch ? "wrong-scratch" : "scratch"),
                         32L * 1024 * 1024, 48L * 1024 * 1024));
                     services.AddScoped(sp => new ImportUploadCoordinator(new ImportUploadTaskAuthority(sp.GetRequiredService<IDatasetImportTaskProvider>(),
-                        sp.GetService<IDatasetImportContributorAuthorizer>()), new RedisImportUploadStore(fixture.Connection), fixture.Storage, budget, scratch));
+                        sp.GetService<IDatasetImportContributorAuthorizer>()), new RedisImportUploadStore(fixture.Connection),
+                        mismatchedStorage ? new ImportStagedSourceStorage(Substitute.For<ICloudFileStorage>()) : sp.GetRequiredService<ImportStagedSourceStorage>(), budget, scratch));
                 });
             });
             await fixture.App.InitializeAsync();

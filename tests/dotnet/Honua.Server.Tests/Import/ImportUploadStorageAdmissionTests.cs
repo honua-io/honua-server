@@ -44,7 +44,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var observed = Substitute.For<ICloudFileStorage>();
         observed.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
+            .Returns<Task<UploadResult>>(async call =>
             {
                 // The reservation must already exist when the provider receives its first write.
                 ((long)await connection.GetDatabase().HashGetAsync(budget.Key, "bytes")).Should().Be(Bytes.Length);
@@ -76,7 +76,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         using var disk = new Disk();
         var database = Substitute.For<IDatabase>();
         database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
-            .Returns(async call =>
+            .Returns<Task<RedisResult>>(async call =>
             {
                 await connection.GetDatabase().ScriptEvaluateAsync(call.ArgAt<string>(0),
                     call.ArgAt<RedisKey[]>(1), call.ArgAt<RedisValue[]>(2));
@@ -125,7 +125,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         {
             var interrupted = Substitute.For<ICloudFileStorage>();
             interrupted.DeleteIfMatchAsync(candidate.FileId, candidate.ETag, Arg.Any<CancellationToken>())
-                .Returns(async call =>
+                .Returns<Task<bool>>(async call =>
                 {
                     (await disk.Storage.DeleteIfMatchAsync(candidate.FileId, candidate.ETag, call.ArgAt<CancellationToken>(2)))
                         .Should().BeTrue();
@@ -174,7 +174,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         observed.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call => disk.Storage.DownloadAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
         observed.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
+            .Returns<Task<UploadResult>>(async call =>
             {
                 ((long)await connection.GetDatabase().HashGetAsync(budget.Key, "bytes")).Should().Be(2 * Bytes.Length);
                 ((long)await connection.GetDatabase().HashGetAsync(scratchBudget.Key, "bytes")).Should().Be(Bytes.Length);

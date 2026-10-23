@@ -13,6 +13,8 @@ namespace Honua.Server.Features.AgentWorkspace;
 /// authority and committed-result reader, and execution/historical observation
 /// policy and kind providers. It must return false while any required dependency
 /// is unavailable. A request or client capability must never configure this port.
+/// The upload coordinator, execution scope checks and worker must share the
+/// explicit staged-source storage binding; the general file store is insufficient.
 /// </remarks>
 internal interface IDatasetImportSubmissionReadiness
 {

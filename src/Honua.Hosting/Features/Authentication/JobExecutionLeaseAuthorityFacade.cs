@@ -11,7 +11,7 @@ namespace Honua.Infrastructure.Authentication;
 /// <summary>
 /// Singleton Core port for background services. Each call owns its complete scoped
 /// authority graph; returned transient principals open independent scopes on later use.
-/// This adapter is not registered before integrated lease qualification.
+/// Hosts register this adapter together with their explicit execution composition.
 /// </summary>
 internal sealed class JobExecutionLeaseAuthorityFacade(IServiceScopeFactory scopes) : IJobExecutionLeaseAuthority
 {

@@ -64,6 +64,7 @@ internal record ConsoleJobSummary
 
 internal sealed record ConsoleJobDetail : ConsoleJobSummary
 {
+    public string? RequestFingerprint { get; init; }
     public string? ProviderOperationId { get; init; }
     public string? ClaimedBy { get; init; }
     public DateTimeOffset? ClaimedAt { get; init; }

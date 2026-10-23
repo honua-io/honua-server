@@ -4,10 +4,12 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -101,6 +103,13 @@ public sealed class StudioProductionIdentityHttpTests
                 var humanPrincipal = target.GetProperty("principal");
                 humanPrincipal.GetProperty("isHumanSession").GetBoolean().Should().BeTrue();
                 humanPrincipal.GetProperty("authenticationKind").GetString().Should().Be("operator-bearer");
+                var validatedHuman = await factory.Services.GetRequiredService<OperatorBearerTokenService>()
+                    .TryValidateAsync(session.GetProperty("accessToken").GetString());
+                var humanSubject = validatedHuman!.Single(claim => claim.Type == ClaimTypes.NameIdentifier).Value;
+                humanPrincipal.GetProperty("subjectId").GetString().Should().Be(humanSubject);
+                humanPrincipal.GetProperty("studioOwnerId").GetString().Should().Be(
+                    "subject:" + Uri.EscapeDataString(factory.Services.GetRequiredService<OperatorBearerTokenService>().ValidatedIssuer) +
+                    ":" + Uri.EscapeDataString(humanSubject) + "@tenant:public");
                 var agentTarget = await ReadAsync(await agent.GetAsync("/api/v1/agent/target"), HttpStatusCode.OK);
                 var agentPrincipal = agentTarget.GetProperty("principal");
                 agentTarget.GetProperty("targetId").GetString().Should().Be(target.GetProperty("targetId").GetString());

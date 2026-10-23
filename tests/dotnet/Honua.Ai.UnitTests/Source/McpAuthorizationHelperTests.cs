@@ -297,7 +297,7 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
-    public void CreateTrustedBearerPrincipal_StripsFrameworkOwnedClaims()
+    public void CreateTrustedBearerPrincipal_StripsIssuerSuppliedFrameworkClaims()
     {
         var forged = new ClaimsPrincipal(new ClaimsIdentity(
         [
@@ -308,6 +308,8 @@ public sealed class McpAuthorizationHelperTests
             new Claim(CanonicalSecurityActor.ScopeCeilingClaim, "forged-scope"),
             new Claim("honua:auth_scheme", "ApiKey"),
             new Claim("honua:issuer", "forged-issuer"),
+            new Claim("honua:delegated_agent_validation", "validated"),
+            new Claim("honua:delegated_agent_profile", "forged-profile", ClaimValueTypes.String, "LOCAL AUTHORITY"),
             new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, "forged-marker"),
         ], "issuer-controlled"));
         var trustedMarker = new Claim(
@@ -331,6 +333,36 @@ public sealed class McpAuthorizationHelperTests
                 && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim));
         promoted.FindFirst("sub")?.Value.Should().Be("subject-1");
         promoted.FindFirst("iss")?.Value.Should().Be("https://issuer.example");
+    }
+
+    [UnitTest]
+    public void CreateTrustedBearerPrincipal_PreservesOnlyProcessStampedDelegatedAuthority()
+    {
+        var validation = CanonicalSecurityActor.CreateStampedClaim("honua:delegated_agent_validation", "validated");
+        validation.Properties["validated-issuer"] = "https://issuer.example";
+        var profile = CanonicalSecurityActor.CreateStampedClaim("honua:delegated_agent_profile", "current-profile");
+        profile.Properties["generation"] = "7";
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "subject-1"),
+            new Claim("iss", "https://issuer.example"),
+            new Claim("honua:delegated_agent_validation", "forged"),
+            new Claim("honua:delegated_agent_profile", "forged-profile"),
+            validation,
+            profile,
+        ], OidcAuthenticationExtensions.JwtBearerScheme));
+        var result = AuthenticateResult.Success(new AuthenticationTicket(
+            principal, OidcAuthenticationExtensions.JwtBearerScheme));
+
+        var promoted = McpBearerAuthenticationEndpointExtensions.CreateTrustedBearerPrincipal(result);
+
+        promoted.Should().NotBeNull();
+        promoted!.FindAll("honua:delegated_agent_validation").Should().ContainSingle(claim =>
+            claim.Value == "validated" && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim)
+            && claim.Properties["validated-issuer"] == "https://issuer.example");
+        promoted.FindAll("honua:delegated_agent_profile").Should().ContainSingle(claim =>
+            claim.Value == "current-profile" && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim)
+            && claim.Properties["generation"] == "7");
     }
 
     [UnitTest]

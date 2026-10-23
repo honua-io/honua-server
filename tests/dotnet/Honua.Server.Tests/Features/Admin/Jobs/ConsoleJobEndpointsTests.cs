@@ -420,8 +420,11 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         const string AdminPassword = "console-jobs-admin-bootstrap-key";
         var jobStore = new InMemoryJobStore();
         var now = DateTimeOffset.UtcNow;
-        jobStore.Set(CreateJob("job-scoped-read", ExecutionJobStatus.Succeeded, now.AddMinutes(-5), "corr-scoped-read") with
+        var requestFingerprint = new string('b', 64);
+        var accepted = CreateJob("job-scoped-read", ExecutionJobStatus.Succeeded, now.AddMinutes(-5), "corr-scoped-read");
+        jobStore.Set(accepted with
         {
+            Audit = accepted.Audit with { RequestFingerprint = requestFingerprint },
             CompletedAt = now.AddMinutes(-3),
             CurrentPhase = "Completed"
         });
@@ -456,7 +459,11 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 client => client.DefaultRequestHeaders.Add("X-API-Key", nonAdminKey.Key));
 
             (await readClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
-            (await readClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode.Should().Be(HttpStatusCode.OK);
+            using var detail = await readClient.GetAsync("/api/v1/admin/jobs/job-scoped-read");
+            detail.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var detailBody = await ReadJsonAsync(detail);
+            detailBody.RootElement.GetProperty("requestFingerprint").GetString().Should().Be(requestFingerprint);
+            detailBody.RootElement.GetProperty("requestedBy").GetString().Should().Be("alice");
 
             (await readApproveClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
             (await readApproveClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode

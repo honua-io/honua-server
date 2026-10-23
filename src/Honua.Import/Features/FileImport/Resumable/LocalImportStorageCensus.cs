@@ -14,9 +14,10 @@ internal sealed class LocalImportStorageCensus
     private readonly LocalImportStorageJournal _journal;
     private readonly Dictionary<ImportStorageRootKind, string> _roots;
     private readonly int _maximumObjects;
+    private readonly LocalImportStorageRoots? _rootBindings;
 
     internal LocalImportStorageCensus(LocalImportStorageJournal journal,
-        IReadOnlyDictionary<ImportStorageRootKind, string> roots, int maximumObjects)
+        IReadOnlyDictionary<ImportStorageRootKind, string> roots, int maximumObjects, LocalImportStorageRoots? rootBindings = null)
     {
         ArgumentNullException.ThrowIfNull(journal);
         ArgumentNullException.ThrowIfNull(roots);
@@ -25,6 +26,7 @@ internal sealed class LocalImportStorageCensus
             throw new ArgumentException("A local census requires bounded host roots and object capacity.");
         _journal = journal;
         _maximumObjects = maximumObjects;
+        _rootBindings = rootBindings;
         _roots = [];
         foreach (var (kind, path) in roots)
         {
@@ -56,6 +58,7 @@ internal sealed class LocalImportStorageCensus
                 foreach (var path in Directory.EnumerateFileSystemEntries(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (IsRootMarker(kind, root, path)) continue;
                     var attributes = File.GetAttributes(path);
                     if (++entries > checked(16 * _maximumObjects + 8) ||
                         (attributes & FileAttributes.Directory) == 0 || (attributes & FileAttributes.ReparsePoint) != 0)
@@ -104,6 +107,7 @@ internal sealed class LocalImportStorageCensus
                 foreach (var path in Directory.EnumerateFileSystemEntries(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (IsRootMarker(kind, root, path)) continue;
                     if (++entries > checked(16 * _maximumObjects + 8))
                         throw new InvalidDataException("The physical domain exceeds its bounded directory census.");
                     var relative = Path.GetRelativePath(root, path);
@@ -158,6 +162,13 @@ internal sealed class LocalImportStorageCensus
         // Even malformed temporary names with this object's exact hash prefix
         // prevent release. Unknown publication outcomes keep their charge.
         return !Directory.EnumerateFileSystemEntries(parent, Path.GetFileName(metadata) + ".*").Any();
+    }
+
+    private bool IsRootMarker(ImportStorageRootKind kind, string root, string path)
+    {
+        if (_rootBindings is null || path != Path.Join(root, LocalImportStorageRoots.MarkerName)) return false;
+        _ = _rootBindings.ReadMarker(kind);
+        return true;
     }
 
     internal void RequireBinding(ImportStorageReservation reservation)
@@ -228,7 +239,7 @@ internal sealed class LocalImportStorageCensus
         left.StartsWith(right + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
         right.StartsWith(left + Path.DirectorySeparatorChar, StringComparison.Ordinal);
 
-    private static void RequireDirectory(string directory)
+    internal static void RequireDirectory(string directory)
     {
         for (var current = directory; current is not null; current = Path.GetDirectoryName(current))
         {

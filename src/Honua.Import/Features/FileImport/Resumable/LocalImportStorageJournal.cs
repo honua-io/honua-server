@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -27,6 +28,7 @@ internal sealed partial class LocalImportStorageJournal
     private const ulong Magic = 0x314C4E4A41554E48;
     private const byte HeaderKind = 1;
     private const byte EntryKind = 2;
+    private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdef");
     private readonly string _directory;
     private readonly string _path;
     private readonly string _domainId;
@@ -75,9 +77,10 @@ internal sealed partial class LocalImportStorageJournal
 
     // Only fresh-domain bootstrap may call this, under the exclusive domain fence
     // after a raw physical census proves the configured data roots empty.
-    internal async Task CreateEmptyAsync(string epoch, CancellationToken cancellationToken = default)
+    internal async Task CreateEmptyAsync(string epoch, string? rootsSha256 = null, CancellationToken cancellationToken = default)
     {
         ValidateEpoch(epoch);
+        if (!IsRootFingerprint(rootsSha256)) throw new ArgumentException("Invalid root binding fingerprint.", nameof(rootsSha256));
         await using var held = await _journalLock.EnterAsync(exclusive: true, cancellationToken).ConfigureAwait(false);
         await using var file = new FileStream(_path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite,
             4096, FileOptions.Asynchronous | FileOptions.RandomAccess);
@@ -85,16 +88,26 @@ internal sealed partial class LocalImportStorageJournal
         if (error != 0) throw new IOException($"The import journal headroom could not be reserved (errno {error}).");
         file.SetLength(AllocatedBytes);
         await WritePageAsync(file, 0, null, HeaderKind,
-            JsonSerializer.SerializeToUtf8Bytes(new Header(_domainId, _capacity, epoch), JournalJsonContext.Default.Header),
+            JsonSerializer.SerializeToUtf8Bytes(new Header(_domainId, _capacity, epoch, Guid.NewGuid().ToString("N"), rootsSha256), JournalJsonContext.Default.Header),
             cancellationToken).ConfigureAwait(false);
         LocalStorageDurability.FlushDirectoryTree(_directory, _directory);
     }
 
     internal async Task<string> ReadEpochAsync(CancellationToken cancellationToken = default)
+        => (await ReadIdentityAsync(cancellationToken).ConfigureAwait(false)).Epoch;
+
+    internal async Task<(string Epoch, string JournalId)> ReadIdentityAsync(CancellationToken cancellationToken = default)
+    {
+        var header = await ReadBindingAsync(cancellationToken).ConfigureAwait(false);
+        return (header.Epoch, header.JournalId);
+    }
+
+    internal async Task<Header> ReadBindingAsync(CancellationToken cancellationToken = default)
     {
         await using var held = await _journalLock.EnterAsync(exclusive: false, cancellationToken).ConfigureAwait(false);
         await using var file = Open();
-        return (await ReadHeaderAsync(file, cancellationToken).ConfigureAwait(false)).Header.Epoch;
+        var header = (await ReadHeaderAsync(file, cancellationToken).ConfigureAwait(false)).Header;
+        return header;
     }
 
     // The coordinator persists the next epoch before rebuilding Redis. Every
@@ -241,7 +254,8 @@ internal sealed partial class LocalImportStorageJournal
         var page = await ReadPairAsync(file, 0, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidDataException("The import journal is not initialized.");
         var header = page.Kind == HeaderKind ? JsonSerializer.Deserialize(page.Payload, JournalJsonContext.Default.Header) : null;
-        if (header is null || header.DomainId != _domainId || header.Capacity != _capacity || !IsEpoch(header.Epoch))
+        if (header is null || header.DomainId != _domainId || header.Capacity != _capacity || !IsEpoch(header.Epoch) ||
+            !IsEpoch(header.JournalId) || !IsRootFingerprint(header.RootsSha256))
             throw new InvalidDataException("The import journal does not match the configured storage domain.");
         return (header, page);
     }
@@ -328,7 +342,10 @@ internal sealed partial class LocalImportStorageJournal
     private static partial int Allocate(SafeFileHandle file, long offset, long length);
 
     private sealed record Page(ulong Sequence, byte Kind, byte[] Payload, int Side);
-    internal sealed record Header(string DomainId, int Capacity, string Epoch);
+    private static bool IsRootFingerprint(string? value) => value is null ||
+        value.Length == 64 && !value.AsSpan().ContainsAnyExcept(HexDigits);
+
+    internal sealed record Header(string DomainId, int Capacity, string Epoch, string JournalId, string? RootsSha256);
     internal sealed record Entry(ImportStorageReservation Reservation, LocalImportStorageState State);
 }
 

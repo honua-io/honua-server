@@ -16,6 +16,7 @@ internal static class DatasetImportUploadEndpoints
     {
         var services = ((IEndpointRouteBuilder)agent).ServiceProvider.GetService<IServiceProviderIsService>();
         if (services is null || !services.IsService(typeof(ImportUploadCoordinator)) ||
+            !services.IsService(typeof(ImportStagedSourceStorage)) ||
             !services.IsService(typeof(IImportStorageBudget)) || !services.IsService(typeof(ImportScratchStorage)) ||
             !services.IsService(typeof(DatasetImportUploadTransportOptions))) return;
 
@@ -50,6 +51,7 @@ internal static class DatasetImportUploadEndpoints
         var scratch = context.RequestServices.GetRequiredService<ImportScratchStorage>();
         var limits = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value;
         return options.IsConfigured && scratch.IsBoundToDirectory(options.ScratchDirectory) &&
+            Coordinator(context).IsBoundToStorage(context.RequestServices.GetRequiredService<ImportStagedSourceStorage>()) &&
             limits is not null && limits.Edits.MaxPayloadSize >= DatasetImportUploadTransportOptions.MaximumChunkBytes;
     }
 

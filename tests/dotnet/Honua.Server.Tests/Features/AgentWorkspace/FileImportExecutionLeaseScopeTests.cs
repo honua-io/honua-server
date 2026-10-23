@@ -15,6 +15,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Import.FileImport.Durable;
+using Honua.Import.FileImport.Resumable;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.AgentWorkspace;
@@ -32,6 +33,26 @@ namespace Honua.Server.Tests.Features.AgentWorkspace;
 // metadata/session ports are controlled. No database mutation or byte-transfer claim.
 public sealed class FileImportExecutionLeaseScopeTests
 {
+    [UnitTheory]
+    [InlineData("copied-principal")]
+    [InlineData("changed-policy")]
+    public async Task IssuanceRequiresTheExactRevalidatedPrincipalAndOriginalPolicyContext(string change)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        using var authorityScope = fixture.Services.CreateScope();
+        var provider = authorityScope.ServiceProvider.GetRequiredService<IJobExecutionLeaseScopeProvider>();
+        var scope = await provider.PrepareAsync(fixture.Job, fixture.Executor);
+        var current = await AgentJobSecurityBridge.RevalidateAsync(fixture.Job.Audit.SubmitterSecurityContext!, authorityScope.ServiceProvider, default);
+        var principal = change == "copied-principal"
+            ? new ClaimsPrincipal(current.CurrentAgentPrincipal!.Identities.Select(identity => identity.Clone()))
+            : current.CurrentAgentPrincipal!;
+        if (change == "changed-policy")
+            current = current with { Claims = current.Claims.Append(new JobSecurityClaim("changed-policy", "untrusted")).ToArray() };
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => provider.RequireCurrentAsync(
+            fixture.Job, scope, current, principal, null));
+    }
+
     [UnitTheory]
     [InlineData("unchanged")]
     [InlineData("workspace")]
@@ -322,7 +343,7 @@ public sealed class FileImportExecutionLeaseScopeTests
             });
             var config = new ConfigurationBuilder().Build();
             var collection = new ServiceCollection().AddLogging().AddSingleton<IConfiguration>(config)
-                .AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(gateway).AddSingleton(workspaces).AddSingleton(jobs).AddSingleton(storage).AddSingleton(sessions)
+                .AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(gateway).AddSingleton(workspaces).AddSingleton(jobs).AddSingleton(Substitute.For<ICloudFileStorage>()).AddSingleton(new ImportStagedSourceStorage(storage)).AddSingleton(sessions)
                 .AddSingleton<TimeProvider>(clock).AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider())
                 .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()))
                 .AddSingleton<IOptions<OperatorApprovalOptions>>(Options.Create(new OperatorApprovalOptions()))

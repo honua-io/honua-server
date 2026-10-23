@@ -16,7 +16,7 @@ using Honua.Import.FileImport.Durable;
 namespace Honua.Server.Features.Operations;
 
 // The existing proposal inbox remains the only approval store. This adapter is
-// intentionally not registered until the job-kind and submission adapters are wired.
+// registered together with the host's job-kind and submission adapters.
 internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
     IOperatorScopeAuthorizer scopes, IOperatorAuthorizationEvaluator authorization,
     IOperatorApprovalEvaluator approvals, TimeProvider clock) : IJobExecutionLeasePolicy, IJobExecutionLeaseObservationPolicy

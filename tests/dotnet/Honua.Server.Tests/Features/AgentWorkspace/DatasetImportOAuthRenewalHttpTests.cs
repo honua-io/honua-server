@@ -165,6 +165,8 @@ public sealed class DatasetImportOAuthRenewalHttpTests(RedisFixture redis)
             (await store.GetAsync(workspaceId))!.DatasetImportExecutionBindings[taskId].ExecutorAuthority.TokenExpiresAt.Should().Be(secondExpiry);
             var descriptor = await Read(await client.GetAsync(authorityPath + "?contentHash=" + originalTask.ContentHash));
             descriptor.GetProperty("authorityRevision").GetInt64().Should().Be(2);
+            var originalTurn = await Read(await client.GetAsync(root + "/turns/oauth-origin"));
+            originalTurn.GetProperty("turnId").GetString().Should().Be("oauth-origin");
             var initialized = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",

@@ -40,6 +40,24 @@ public sealed class DatasetImportSubmissionAdapterTests
         JsonSerializer.Serialize(receipt, AgentWorkspaceJsonContext.Default.DatasetImportSubmissionReceipt).Should().NotContain("sealed-private-authority");
     }
 
+    [UnitTest]
+    public async Task AcceptedReceiptSurvivesVersionOnlyHeartbeatWithoutChangingIntent()
+    {
+        using var fixture = new Fixture();
+        fixture.DuringObservation = () => fixture.CurrentJob = fixture.Job with
+        {
+            Version = fixture.Job.Version + 1,
+            UpdatedAt = fixture.Job.UpdatedAt.AddSeconds(1)
+        };
+
+        var receipt = await fixture.Service.ReadAsync(fixture.Context, fixture.Reference);
+
+        receipt!.State.Should().Be("accepted");
+        receipt.Job!.JobId.Should().Be(fixture.Job.OperationId);
+        receipt.Job.UpdatedAt.Should().Be(fixture.CurrentJob.UpdatedAt);
+        receipt.Job.Output.Should().Be(fixture.Job.FileImportOutput);
+    }
+
     [UnitTheory]
     [InlineData(ExecutionJobStatus.Queued)]
     [InlineData(ExecutionJobStatus.Provisioning)]
@@ -80,7 +98,6 @@ public sealed class DatasetImportSubmissionAdapterTests
     [InlineData("prepared-deadline")]
     [InlineData("turn-selection")]
     [InlineData("job-deleted")]
-    [InlineData("job-version")]
     public async Task DelayedObservationCannotExposeReceiptAfterOriginalScopeChanges(string change)
     {
         using var fixture = new Fixture();
@@ -89,7 +106,6 @@ public sealed class DatasetImportSubmissionAdapterTests
             switch (change)
             {
                 case "job-deleted": fixture.JobPresent = false; break;
-                case "job-version": fixture.CurrentJob = fixture.Job with { Version = fixture.Job.Version + 1 }; break;
                 case "membership": fixture.Document = fixture.Document with { Members = ["executor"], OwnerId = "other-human" }; break;
                 case "target": fixture.Target = "other-target"; break;
                 case "task-deleted": fixture.Document = fixture.Document with { DatasetImportTasks = [] }; break;

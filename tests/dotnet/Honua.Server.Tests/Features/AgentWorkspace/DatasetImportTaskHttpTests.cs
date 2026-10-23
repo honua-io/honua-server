@@ -126,7 +126,7 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
     [Endpoint("POST /mcp tools/call honua_workspace_create_dataset_import_task")]
     [Endpoint("POST /mcp tools/call honua_workspace_get_dataset_import_authority")]
     [Endpoint("POST /mcp tools/call honua_workspace_renew_dataset_import_authority")]
-    public async Task OnlyRetainedLinkedAgentGetsHumanTaskExplanationAndCannotReadOwnerTransferResource()
+    public async Task LinkedAgentAndInitiatingHumanReadTheirOriginalTaskWithoutTransferringOwnership()
     {
         var policy = new DestinationPolicy();
         var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
@@ -370,7 +370,9 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
                 prompt = "Explain the agent's prepared import target"
             }));
             humanObservation.GetProperty("datasetImportContext").GetProperty("taskId").GetString().Should().Be(executionTaskId);
-            (await human.GetAsync(executionRoot + $"/dataset-import-tasks/{executionTaskId}/versions/1")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var humanTask = await Json(await human.GetAsync(executionRoot + $"/dataset-import-tasks/{executionTaskId}/versions/1"));
+            humanTask.GetProperty("taskId").GetString().Should().Be(executionTaskId);
+            humanTask.GetProperty("ownerActorId").GetString().Should().Be(linkedActor);
             agent.DefaultRequestHeaders.Remove("X-Honua-Workspace");
             agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
             policy.AllowRead = false;

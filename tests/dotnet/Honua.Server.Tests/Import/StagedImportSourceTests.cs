@@ -32,6 +32,7 @@ public sealed class StagedImportSourceTests
     [InlineData("unchanged")]
     [InlineData("no-lease")]
     [InlineData("no-authority")]
+    [InlineData("no-staged-store")]
     [InlineData("revoked-during-source")]
     [InlineData("committed-revoked")]
     [InlineData("committed-expired")]
@@ -151,8 +152,11 @@ public sealed class StagedImportSourceTests
                 if (scenario == "failed-commit-response") return ImportResult.CreateFailure("roads", SupportedFileFormat.GeoJson, "Lost response.");
                 return SuccessfulResult();
             });
-        var collection = new ServiceCollection().AddSingleton<ICloudFileStorage>(storage).AddSingleton(importer)
+        var defaultStorage = scenario == "no-staged-store" ? storage : Substitute.For<ICloudFileStorage>();
+        var collection = new ServiceCollection().AddSingleton(defaultStorage).AddSingleton(importer)
             .AddSingleton(fixture.Scratch).AddSingleton<TimeProvider>(clock).AddSingleton(jobs).AddSingleton(receipts);
+        if (scenario != "no-staged-store" && !scenario.StartsWith("recovery-only-", StringComparison.Ordinal))
+            collection.AddSingleton(new ImportStagedSourceStorage(storage));
         if (scenario != "no-authority") collection.AddSingleton(authority);
         using var services = collection.BuildServiceProvider();
         var executor = new FileImportJobExecutor(services.GetRequiredService<IServiceScopeFactory>(),
@@ -192,7 +196,7 @@ public sealed class StagedImportSourceTests
             rejectEffect = false;
         }
         if (scenario is "receipt-read-failed" or "receipt-read-failed-after-commit" or "job-changed-before-read"
-            or "job-changed-during-read" or "lease-changed-during-read" or "missing-receipt" or "effect-record-refused" or "no-authority" or "revoked-during-source")
+            or "job-changed-during-read" or "lease-changed-during-read" or "missing-receipt" or "effect-record-refused" or "no-authority" or "no-staged-store" or "revoked-during-source")
         {
             await FluentActions.Invoking(() => executor.ExecuteAsync(job, context, CancellationToken.None))
                 .Should().ThrowAsync<Exception>();
@@ -293,7 +297,8 @@ public sealed class StagedImportSourceTests
                     Format = SupportedFileFormat.GeoJson
                 };
             });
-        using var services = new ServiceCollection().AddSingleton<ICloudFileStorage>(fixture.Storage)
+        using var services = new ServiceCollection().AddSingleton<ICloudFileStorage>(Substitute.For<ICloudFileStorage>())
+            .AddSingleton(new ImportStagedSourceStorage(fixture.Storage))
             .AddSingleton(importer).AddSingleton(fixture.Scratch).BuildServiceProvider();
         var executor = new FileImportJobExecutor(services.GetRequiredService<IServiceScopeFactory>(),
             Substitute.For<IUniversalProgressStore>(), NullLogger<FileImportJobExecutor>.Instance);

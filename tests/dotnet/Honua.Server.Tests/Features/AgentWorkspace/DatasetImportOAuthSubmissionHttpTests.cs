@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using Honua.ServiceDefaults;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -62,6 +65,17 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
     [Endpoint("POST /mcp tools/call honua_workspace_renew_dataset_import_authority")]
     public async Task RefreshedSignedExecutorAcceptsHumanPreparedOriginalUploadThroughCanonicalDurableQueue()
     {
+        var activities = new ConcurrentQueue<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName is "agent.dataset-import.submit" or "agent.dataset-import.observe") activities.Enqueue(activity);
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
         var bytes = Encoding.UTF8.GetBytes("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-157.8,21.3]},"properties":{"name":"Oahu"}}]}""");
         var digest = Convert.ToHexStringLower(SHA256.HashData(bytes));
         var storageRoot = Path.Join(Path.GetTempPath(), "honua-oauth-submission-" + Guid.NewGuid().ToString("N"));
@@ -115,12 +129,13 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             services.RemoveAll<IRoleStore>();
             services.AddSingleton(roles);
             services.AddScoped<IDatasetImportDestinationAuthorizer, DatasetImportDestinationAuthorizer>();
-            services.AddSingleton<ICloudFileStorage>(storage);
+            services.AddSingleton<ICloudFileStorage>(Substitute.For<ICloudFileStorage>());
+            services.AddSingleton(new ImportStagedSourceStorage(storage));
             services.AddSingleton<IImportStorageBudget>(budget);
             services.AddSingleton(scratch);
             services.AddSingleton(new DatasetImportUploadTransportOptions(Path.Join(storageRoot, "scratch"), 16L * 1024 * 1024, 24L * 1024 * 1024));
             services.AddScoped(sp => new ImportUploadCoordinator(new ImportUploadTaskAuthority(sp.GetRequiredService<IDatasetImportTaskProvider>(),
-                sp.GetRequiredService<IDatasetImportContributorAuthorizer>()), new RedisImportUploadStore(connection), storage, budget, scratch));
+                sp.GetRequiredService<IDatasetImportContributorAuthorizer>()), new RedisImportUploadStore(connection), sp.GetRequiredService<ImportStagedSourceStorage>(), budget, scratch));
             services.AddScoped<IDatasetImportAdmissionProvider, DatasetImportAdmissionProvider>();
             services.AddScoped<DatasetImportSubmissionService>();
             services.AddSingleton<IDatasetImportSubmissionReadiness, AcceptanceOnlyTestReadiness>();
@@ -213,6 +228,8 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             (await store.GetAsync(workspaceId))!.DatasetImportExecutionBindings[taskId].ExecutorAuthority.TokenExpiresAt.Should().Be(secondExpiry);
             var descriptor = await Read(await client.GetAsync(authorityPath + "?contentHash=" + originalTask.ContentHash));
             descriptor.GetProperty("authorityRevision").GetInt64().Should().Be(2);
+            var originalTurn = await Read(await client.GetAsync(root + "/turns/oauth-origin"));
+            originalTurn.GetProperty("turnId").GetString().Should().Be("oauth-origin");
             var initialized = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
@@ -251,7 +268,14 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             var operationId = prepared.GetProperty("operationId").GetString()!;
             (await fixture.Services.GetRequiredService<IExecutionJobStore>().GetAsync(operationId)).Should().BeNull();
             // Actual refreshed RSA-authenticated executor, not a principal reconstructed from the human.
-            var accepted = await Read(await client.PostAsJsonAsync(submissionPath, submit));
+            HonuaTelemetry.ConfigureExceptionRecording(exportDetails: true, includeStackTraces: true, maxDetailLength: 16384);
+            var acceptedResponse = await client.PostAsJsonAsync(submissionPath, submit);
+            var diagnostics = string.Join(Environment.NewLine, activities.Select(activity =>
+                activity.OperationName + ": " + string.Join(", ", activity.TagObjects.Select(tag => tag.Key + "=" + tag.Value)) + Environment.NewLine +
+                string.Join(Environment.NewLine, activity.Events.SelectMany(item => item.Tags).Select(tag => tag.Key + "=" + tag.Value))));
+            var retained = await fixture.Services.GetRequiredService<IExecutionJobStore>().GetAsync(operationId);
+            acceptedResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"retained job status={retained?.Status}; {diagnostics}");
+            var accepted = await Read(acceptedResponse);
             accepted.GetProperty("state").GetString().Should().Be("accepted");
             accepted.GetProperty("job").GetProperty("jobId").GetString().Should().Be(operationId);
             var storedJob = (await fixture.Services.GetRequiredService<IExecutionJobStore>().GetAsync(operationId))!;
@@ -264,8 +288,9 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             await delivery.Received(1).EnqueueAsync(operationId, Arg.Any<Honua.Core.Features.ControlPlane.Domain.OperationPriority>(), Arg.Any<CancellationToken>());
             var acceptedDocumentVersion = (await store.GetAsync(workspaceId))!.Version;
             Authenticate(WholeSecond(now.AddMinutes(50)), "south");
+            // Acceptance seals authority before any renewal, including a changed policy token.
             (await client.PostAsJsonAsync(renewalPath, new RenewDatasetImportAuthority("changed-policy", 3, originalTask.ContentHash)))
-                .StatusCode.Should().Be(HttpStatusCode.NotFound);
+                .StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await store.GetAsync(workspaceId))!.Version.Should().Be(acceptedDocumentVersion);
             membership.ResolveMembershipAsync("uploader", issuer, Arg.Any<CancellationToken>()).Returns(new PrincipalMembership(false, []));
             (await client.GetAsync(authorityPath + "?contentHash=" + originalTask.ContentHash)).StatusCode
@@ -311,6 +336,7 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
         }
         finally
         {
+            HonuaTelemetry.ConfigureExceptionRecording(exportDetails: false, includeStackTraces: false);
             await fixture.DisposeAsync();
             if (Directory.Exists(storageRoot)) Directory.Delete(storageRoot, recursive: true);
         }

@@ -473,6 +473,11 @@ internal static class AgentCredentialAuthority
             return Guid.TryParseExact(item, "D", out var id) && id != Guid.Empty && item == id.ToString("D")
                 && grants.Any(grant => grant.Service == "agent" && grant.Operation == studioAction && grant.Layer == item);
         }
+        if (AgentDatasetImportAuthorization.TryPermissionScope(permission, out var importScope))
+        {
+            return grants.Any(grant => grant.Service == "agent" &&
+                grant.Operation == AgentDatasetImportAuthorization.Operation && grant.Layer == importScope);
+        }
         if (LayerScopedWriteKey.IsMalformedResourceGrant(permission)) return false;
         if (permission.StartsWith("read:", StringComparison.Ordinal) || permission.StartsWith("write:", StringComparison.Ordinal))
         {

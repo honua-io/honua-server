@@ -100,6 +100,7 @@ internal sealed partial class ConsoleJobService(
             Status = summary.Status,
             Priority = summary.Priority,
             RequestedBy = summary.RequestedBy,
+            RequestFingerprint = job.Audit.RequestFingerprint,
             CreatedAt = summary.CreatedAt,
             UpdatedAt = summary.UpdatedAt,
             CompletedAt = summary.CompletedAt,

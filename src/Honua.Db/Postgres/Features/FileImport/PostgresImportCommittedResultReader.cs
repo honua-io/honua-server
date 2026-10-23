@@ -7,7 +7,6 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
-using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
@@ -18,10 +17,8 @@ internal sealed class PostgresImportCommittedResultReader(
     public async Task<ImportResult?> TryReadAsync(string operationId, string intentFingerprint,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await connections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        if (connection is not NpgsqlConnection postgres)
-            throw new InvalidOperationException("Import result recovery requires the destination PostgreSQL provider.");
-        var bytes = await PostgresImportCommitReceipt.TryReadAsync(postgres, schemas.MetadataSchema,
+        await using var connection = await connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var bytes = await PostgresImportCommitReceipt.TryReadAsync(connection, schemas.MetadataSchema,
             operationId, intentFingerprint, cancellationToken).ConfigureAwait(false);
         return bytes is null ? null : ImportCommittedResultCodec.Decode(bytes);
     }

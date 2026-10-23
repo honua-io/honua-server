@@ -9,6 +9,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.AgentWorkspace;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Import;
@@ -165,9 +166,19 @@ internal sealed class BackgroundImportRunnerDecision : IBackgroundImportRunnerIn
         ArgumentNullException.ThrowIfNull(services);
 
         var substrate = services.GetService<IOptions<DurableJobSubstrateOptions>>()?.Value ?? new DurableJobSubstrateOptions();
-        var durable = substrate.Classify(
-            services.GetService<IExecutionJobStore>() is not null,
-            services.GetService<IJobQueue>() is not null) == DurableJobSubstrateCause.Available;
+        var hasStore = services.GetService<IExecutionJobStore>() is not null;
+        var hasQueue = services.GetService<IJobQueue>() is not null;
+        var durable = substrate.Classify(hasStore, hasQueue) == DurableJobSubstrateCause.Available;
+
+        // The explicitly composed local workspace import path is available in
+        // Community. Its queue is execution infrastructure, not the paid response
+        // cache. Keep this exception local to imports: it grants neither the
+        // general jobs.runner capability nor a remote batch backend entitlement.
+        // Submission still requires the live storage/worker/receipt readiness
+        // probe and canonical task/credential/lease authorization.
+        var localWorkspaceImport = hasStore && hasQueue && substrate.RedisConfigured &&
+            substrate.RedisDurabilityFailure != DurableJobSubstrateCause.RedisUnreachable &&
+            services.GetService<IServiceProviderIsService>()?.IsService(typeof(DatasetImportLocalStorage)) == true;
 
         var controlPlane = services.GetService<IOptionsMonitor<ControlPlaneOptions>>()?.CurrentValue;
         var remoteWorkload = durable && controlPlane is not null
@@ -180,6 +191,6 @@ internal sealed class BackgroundImportRunnerDecision : IBackgroundImportRunnerIn
         var frozen = configuration is not null && IsFrozenBetweenRequestsHost(configuration);
         var fileStorage = services.GetService<ICloudFileStorage>();
         var sharedFileStorage = fileStorage is not null && fileStorage.Provider != CloudStorageProvider.Local;
-        return Decide(durable, remoteWorkload, frozen, sharedFileStorage);
+        return Decide(durable || localWorkspaceImport, remoteWorkload, frozen, sharedFileStorage);
     }
 }

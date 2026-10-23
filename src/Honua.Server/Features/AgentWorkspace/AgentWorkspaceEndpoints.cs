@@ -253,7 +253,7 @@ internal static class AgentWorkspaceEndpoints
         if (!await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();
         return Results.Json(new AgentTargetResponse(targetId,
-            new(actor.ActorId, studioOwner, Tenant(context), kind, human)), AgentWorkspaceJsonContext.Default.AgentTargetResponse);
+            new(actor.ActorId, studioOwner, Tenant(context), kind, human, actor.SubjectId)), AgentWorkspaceJsonContext.Default.AgentTargetResponse);
     }
 
     private static string Actor(HttpContext context)

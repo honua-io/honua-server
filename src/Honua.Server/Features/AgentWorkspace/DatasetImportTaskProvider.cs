@@ -137,7 +137,7 @@ internal sealed class DatasetImportDestinationAuthorizer(IHttpContextAccessor ac
             options.LoadMode is not (ImportLoadMode.Append or ImportLoadMode.Replace) ||
             targetId != await services.GetRequiredService<IAgentWorkspaceStore>().GetTargetIdAsync().ConfigureAwait(false)) return false;
         if (!await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, targetId, requireWrite,
-            cancellationToken, sealedOperation).ConfigureAwait(false)) return false;
+            cancellationToken, sealedOperation, destination).ConfigureAwait(false)) return false;
         if (!requireWrite) return true;
         await using var session = await sessions.OpenAsync(cancellationToken).ConfigureAwait(false);
         var occupied = await session.QuerySingleOrDefaultAsync<bool>("""

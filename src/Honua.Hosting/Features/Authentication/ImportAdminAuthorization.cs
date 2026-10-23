@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -50,9 +51,9 @@ public static class ImportAdminAuthorization
     // It supplies the same Admin policy a typed semantic resource, not HttpContext.
     internal static async Task<bool> IsAuthorizedAsync(IServiceProvider services, ClaimsPrincipal principal,
         string targetId, bool requireWrite, CancellationToken cancellationToken,
-        OperatorAuthorizationRequest? sealedOperation = null)
+        OperatorAuthorizationRequest? sealedOperation = null, DatasetImportDestination? destination = null)
     {
-        var resource = new SemanticImportAuthorizationResource(targetId, requireWrite, sealedOperation);
+        var resource = new SemanticImportAuthorizationResource(targetId, requireWrite, sealedOperation, destination);
         if (!resource.IsValid || !await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, cancellationToken).ConfigureAwait(false)) return false;
         var operation = resource.OperatorRequest;
         var source = principal;
@@ -65,6 +66,8 @@ public static class ImportAdminAuthorization
         }
         if (!(services.GetService<IOperatorScopeAuthorizer>()?.Evaluate(source,
             operation.ResourceType, operation.Operation).IsAllowed ?? false)) return false;
+        if (AgentDatasetImportAuthorization.AllowsOperator(source, operation))
+            return await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, cancellationToken).ConfigureAwait(false);
         var authorization = services.GetService<IAuthorizationService>();
         if (authorization is null) return false;
         var result = await authorization.AuthorizeAsync(source, resource, AuthenticationExtensions.AdminPolicy).ConfigureAwait(false);

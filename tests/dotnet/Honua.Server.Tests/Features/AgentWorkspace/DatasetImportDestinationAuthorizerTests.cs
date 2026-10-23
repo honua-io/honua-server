@@ -34,7 +34,7 @@ public sealed class DatasetImportDestinationAuthorizerTests
         var sessions = Substitute.For<IDatabaseSessionFactory>();
         sessions.OpenAsync(Arg.Any<CancellationToken>()).Returns(session);
         session.QuerySingleOrDefaultAsync<bool>(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<CancellationToken>()).Returns(true);
-        var configuration = new ConfigurationBuilder().Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var authorizer = new DatasetImportDestinationAuthorizer(accessor, configuration, sessions);
         var target = new DatasetImportDestination("public", "roads");
         foreach (var mode in new[] { ImportLoadMode.Append, ImportLoadMode.Replace })

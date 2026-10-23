@@ -43,6 +43,7 @@ internal sealed class JobExecutionLeaseAuthority(
         {
             throw Denied();
         }
+        JobExecutionLeaseTenantContext.BindRequestTenant(_services, request.Executor);
         var captured = await AgentJobSecurityBridge.CaptureAsync(request.Executor,
             _services.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions(), _services,
             _services.GetService<ITenantContext>(), cancellationToken).ConfigureAwait(false);
@@ -94,10 +95,12 @@ internal sealed class JobExecutionLeaseAuthority(
     public async Task<JobExecutionLeaseObservation> ResolveForObservationAsync(string jobId, ClaimsPrincipal observer,
         JobExecutionLeaseObservationKind kind, CancellationToken cancellationToken = default)
     {
-        if (!Enum.IsDefined(kind) || !await AgentCredentialAuthority.IsCurrentObserverAsync(observer, _services, cancellationToken).ConfigureAwait(false))
-        {
+        if (!Enum.IsDefined(kind)) throw Denied();
+        // Current delegated checks consume the selected tenant, so preserve the
+        // validated request binding before checking that original credential.
+        JobExecutionLeaseTenantContext.BindRequestTenant(_services, observer);
+        if (!await AgentCredentialAuthority.IsCurrentObserverAsync(observer, _services, cancellationToken).ConfigureAwait(false))
             throw Denied();
-        }
         var candidate = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
         if (JobExecutionLeaseObservationEligibility.AllowsRetainedFact(candidate, kind))
         {
@@ -105,18 +108,22 @@ internal sealed class JobExecutionLeaseAuthority(
         }
         var live = await ValidateBaseAsync(jobId, null, execution: false, cancellationToken).ConfigureAwait(false);
         var original = live.Job.Audit.SubmitterSecurityContext!;
-        if (JobSecurityContextCapture.ResolveTenantId(observer, _services.GetService<ITenantContext>()) != original.TenantId)
+        var selectedTenant = _services.GetService<ITenantContext>();
+        if (JobSecurityContextCapture.ResolveTenantId(observer, selectedTenant) != original.TenantId)
         {
-            throw Denied();
+            throw new UnauthorizedAccessException("The observer tenant does not match the accepted job tenant. " +
+                $"Selected scope: {(selectedTenant?.TenantId is null ? "unscoped" : "scoped")}; original scope: {(original.TenantId is null ? "unscoped" : "scoped")}; " +
+                $"selected source: {selectedTenant?.Source}.");
         }
         var request = new OperatorAuthorizationRequest { ResourceType = OperatorResourceType.Job, ResourceId = jobId, Operation = OperatorOperation.Read };
         var scopes = _services.GetRequiredService<IOperatorScopeAuthorizer>();
         var evaluator = _services.GetRequiredService<IOperatorAuthorizationEvaluator>();
-        if (!scopes.Evaluate(observer, request.ResourceType, request.Operation).IsAllowed
-            || !(await evaluator.EvaluateAsync(observer, request, cancellationToken).ConfigureAwait(false)).IsAllowed)
-        {
-            throw Denied();
-        }
+        var observerScope = scopes.Evaluate(observer, request.ResourceType, request.Operation);
+        if (!observerScope.IsAllowed)
+            throw new UnauthorizedAccessException("The current observer OAuth scope does not permit job metadata: " + observerScope.Reason);
+        var observerGrant = await evaluator.EvaluateAsync(observer, request, cancellationToken).ConfigureAwait(false);
+        if (!observerGrant.IsAllowed)
+            throw new UnauthorizedAccessException("The current observer grant does not permit job metadata: " + observerGrant.FailureReason);
         var context = BindTransient(live, execution: false);
         using (JobSecurityScope.BeginExecution(live.Job, context))
         {
@@ -179,6 +186,7 @@ internal sealed class JobExecutionLeaseAuthority(
             throw Denied();
         }
         var original = job.Audit.SubmitterSecurityContext!;
+        JobExecutionLeaseTenantContext.BindRequestTenant(_services, observer);
         if (JobSecurityContextCapture.ResolveTenantId(observer, _services.GetService<ITenantContext>()) != original.TenantId)
         {
             throw Denied();

@@ -96,12 +96,16 @@ public sealed class LocalImportStorageJournalTests
         var journal = disk.Open();
         var original = Guid.NewGuid().ToString("N");
         var next = Guid.NewGuid().ToString("N");
-        await journal.CreateEmptyAsync(original);
+        var rootsSha256 = new string('a', 64);
+        await journal.CreateEmptyAsync(original, rootsSha256);
+        var journalId = (await journal.ReadIdentityAsync()).JournalId;
         var reservation = Reservation();
         Assert.True(await journal.TryRecordIntentAsync(reservation));
         Assert.True(await journal.AdvanceEpochAsync(original, next));
         Assert.False(await journal.AdvanceEpochAsync(original, Guid.NewGuid().ToString("N")));
         Assert.Equal(next, await disk.Open().ReadEpochAsync());
+        Assert.Equal(journalId, (await disk.Open().ReadIdentityAsync()).JournalId);
+        Assert.Equal(rootsSha256, (await disk.Open().ReadBindingAsync()).RootsSha256);
         Assert.Equal(reservation, Assert.Single(await ReadAll(journal)).Reservation);
         await Assert.ThrowsAsync<InvalidDataException>(() => new LocalImportStorageJournal(disk.Root, "different-domain", 4).ReadEpochAsync());
     }

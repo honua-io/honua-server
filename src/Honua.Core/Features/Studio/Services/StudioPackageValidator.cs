@@ -344,6 +344,16 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
             return;
         }
 
+        // Map validation names malformed source bindings precisely. The composition
+        // projection also reads this array; do not turn the same shape error into
+        // a second, less useful diagnostic against the entire body.
+        if (envelope.Family == StudioPackageFamily.Map &&
+            body.TryGetProperty("sourceBindings", out var sourceBindings) &&
+            sourceBindings.ValueKind is not (JsonValueKind.Array or JsonValueKind.Null))
+        {
+            return;
+        }
+
         StudioCompositionBody composition;
         try
         {

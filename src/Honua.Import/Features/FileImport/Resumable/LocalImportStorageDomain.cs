@@ -17,6 +17,7 @@ internal sealed class LocalImportStorageDomain : IImportStorageBudget, IStorageD
     private readonly ImportStorageBudgetLimits _limits;
     private readonly LocalImportStorageJournal _journal;
     private readonly LocalImportStorageCensus _census;
+    private readonly LocalImportStorageRoots _roots;
     private readonly LocalStorageDomainLock _domainLock;
     private volatile bool _initialized;
 
@@ -36,7 +37,8 @@ internal sealed class LocalImportStorageDomain : IImportStorageBudget, IStorageD
         // Physical journal capacity is stable across quota reductions. Existing
         // objects remain accounted even while their usage exceeds a new policy.
         _journal = new(journalDirectory, domainId, capacity);
-        _census = new(_journal, roots, capacity);
+        _roots = new(roots, _journal.DirectoryPath, domainId);
+        _census = new(_journal, roots, capacity, _roots);
         _domainLock = new(journalDirectory);
     }
 
@@ -49,16 +51,20 @@ internal sealed class LocalImportStorageDomain : IImportStorageBudget, IStorageD
         catch (FileNotFoundException)
         {
             _census.VerifyEmpty(cancellationToken);
+            _roots.Provision();
             previousJournalEpoch = Guid.NewGuid().ToString("N");
-            await _journal.CreateEmptyAsync(previousJournalEpoch, cancellationToken).ConfigureAwait(false);
+            await _journal.CreateEmptyAsync(previousJournalEpoch, _roots.Fingerprint(), cancellationToken).ConfigureAwait(false);
         }
 
         var nextEpoch = Guid.NewGuid().ToString("N");
+        var binding = await _journal.ReadBindingAsync(cancellationToken).ConfigureAwait(false);
+        _roots.RequireFingerprint(binding.RootsSha256);
+        var journalId = binding.JournalId;
         if (!await _journal.AdvanceEpochAsync(previousJournalEpoch, nextEpoch, cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("The physical journal changed outside its exclusive domain fence.");
         // Poison the old epoch before census. If census fails, other replicas
         // must not resume writes against an old, apparently healthy Redis ledger.
-        var replacement = Bind(nextEpoch);
+        var replacement = Bind(nextEpoch, journalId);
         var previousRedisEpoch = await replacement.ReadStoredEpochAsync(cancellationToken).ConfigureAwait(false);
         await _census.VerifyAsync(cancellationToken).ConfigureAwait(false);
         await _journal.RetireAbsentAsync(_census.VerifyDeleted, cancellationToken).ConfigureAwait(false);
@@ -153,8 +159,10 @@ internal sealed class LocalImportStorageDomain : IImportStorageBudget, IStorageD
         try
         {
             if (!_initialized) throw new InvalidOperationException("The local storage domain has not completed physical recovery.");
-            var epoch = await _journal.ReadEpochAsync(cancellationToken).ConfigureAwait(false);
-            var budget = Bind(epoch);
+            var binding = await _journal.ReadBindingAsync(cancellationToken).ConfigureAwait(false);
+            _roots.RequireFingerprint(binding.RootsSha256);
+            var (epoch, journalId) = (binding.Epoch, binding.JournalId);
+            var budget = Bind(epoch, journalId);
             if (await budget.ReadStoredEpochAsync(cancellationToken).ConfigureAwait(false) != epoch)
                 throw new InvalidDataException("Storage accounting requires exclusive physical recovery.");
             return (held, budget);
@@ -166,7 +174,7 @@ internal sealed class LocalImportStorageDomain : IImportStorageBudget, IStorageD
         }
     }
 
-    private RedisImportStorageBudget Bind(string epoch) => new(_redis, _domainId, _limits, epoch);
+    private RedisImportStorageBudget Bind(string epoch, string journalId) => new(_redis, _domainId, _limits, epoch, journalId);
 
     // One lock per bounded journal slot, not a hash stripe shared by unrelated
     // live objects. Source scratch can remain open while another object is

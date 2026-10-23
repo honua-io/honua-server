@@ -62,6 +62,22 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     };
 
     [UnitTest]
+    public void BuildJobRecord_RequestTraceCorrelation_RoundTripsInAuditAndImportParameters()
+    {
+        using var activity = new System.Diagnostics.Activity("import-submission")
+            .AddBaggage("correlation.id", "request-correlation").Start();
+        var request = StagedRequest() with { CorrelationId = null };
+        var decision = BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false);
+
+        var job = DurableImportJobService.BuildJobRecord("trace-import", request, 2048, decision, DateTimeOffset.UtcNow);
+
+        job.Audit.CorrelationId.Should().Be("request-correlation");
+        FileImportJobParameters.TryParse(job.Spec.Parameters, out var retained, out var bytes, out _).Should().BeTrue();
+        retained!.CorrelationId.Should().Be(job.Audit.CorrelationId);
+        bytes.Should().Be(2048);
+    }
+
+    [UnitTest]
     public void Decide_DurableRuntimeWithRemoteWorkload_RoutesToBatchEvenOnLambda()
     {
         var decision = BackgroundImportRunnerDecision.Decide(true, GpBatchWorkload(), frozenBetweenRequests: true);

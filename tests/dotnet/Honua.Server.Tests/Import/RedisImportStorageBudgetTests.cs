@@ -16,6 +16,33 @@ namespace Honua.Server.Tests.Import;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
 {
+    [IntegrationTest]
+    public async Task PhysicalJournalBindingRejectsForeignMutationAndRecoveryEvenWithTheCurrentEpoch()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domain = Guid.NewGuid().ToString("N");
+        var epoch = Guid.NewGuid().ToString("N");
+        var journalId = Guid.NewGuid().ToString("N");
+        var original = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2), epoch, journalId);
+        var reservation = Reservation(60);
+        try
+        {
+            await original.RebuildFromCensusAsync(null, Census(reservation));
+            var foreign = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2), epoch, Guid.NewGuid().ToString("N"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => foreign.TryReserveAsync(reservation));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => foreign.ReleaseDeletedAsync(reservation));
+            await Assert.ThrowsAsync<InvalidDataException>(() => foreign.ReadStoredEpochAsync());
+            var replacement = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2),
+                Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => replacement.RebuildFromCensusAsync(epoch, Census()));
+            Assert.Equal(epoch, await original.ReadStoredEpochAsync());
+            Assert.Equal(journalId, (string?)await connection.GetDatabase().HashGetAsync(original.Key, "journal"));
+            Assert.Equal(60, (long)await connection.GetDatabase().HashGetAsync(original.Key, "bytes"));
+            Assert.True(await original.TryReserveAsync(reservation));
+        }
+        finally { await connection.GetDatabase().KeyDeleteAsync(original.Key); }
+    }
+
     [IntegrationTheory]
     [InlineData("global")]
     [InlineData("tenant")]

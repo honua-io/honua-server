@@ -72,7 +72,7 @@ internal sealed record AgentTargetResponse(string TargetId, AgentPrincipalProjec
 // Read-only identity observed from the current authenticated request. Membership
 // and every operation remain independently authorized against their real resource.
 internal sealed record AgentPrincipalProjection(string ActorId, string? StudioOwnerId, string? TenantId,
-    string AuthenticationKind, bool IsHumanSession);
+    string AuthenticationKind, bool IsHumanSession, string? SubjectId = null);
 internal sealed record AgentDevOpsAuthorizationRequest(
     string TargetId, string DeployTargetId, string Environment, string? CanonicalTool,
     Dictionary<string, System.Text.Json.JsonElement>? Arguments = null);

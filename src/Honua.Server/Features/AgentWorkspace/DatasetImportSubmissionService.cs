@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -16,6 +17,7 @@ using Honua.Import.FileImport.Resumable;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Import;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.AgentWorkspace;
 
@@ -30,7 +32,7 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
         return registrations is not null && new[]
         {
             typeof(DatasetImportSubmissionService), typeof(IDatasetImportSubmissionReadiness),
-            typeof(IImportJobService), typeof(BackgroundImportRunnerDecision), typeof(ImportUploadCoordinator),
+            typeof(IImportJobService), typeof(BackgroundImportRunnerDecision), typeof(ImportUploadCoordinator), typeof(ImportStagedSourceStorage),
             typeof(IDatasetImportAdmissionProvider), typeof(IDatasetImportAuthorityDescriptorReader),
             typeof(IExecutionJobStore), typeof(IJobExecutionLeaseAuthority), typeof(IJobExecutionLeasePolicy),
             typeof(IJobExecutionLeaseObservationPolicy), typeof(IJobExecutionLeaseScopeProvider)
@@ -43,32 +45,72 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
 
     internal async Task<DatasetImportSubmissionReceipt?> ReadAsync(HttpContext context, ReadDatasetImportAuthority request)
     {
+        using var activity = HonuaTelemetry.StartActivity("agent.dataset-import.observe");
+        try
+        {
+            var result = await ReadCoreAsync(context, request, activity).ConfigureAwait(false);
+            activity?.SetTag("dataset_import.outcome", result?.State ?? "authority-unavailable");
+            return result;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            HonuaTelemetry.RecordException(activity, exception);
+            throw;
+        }
+    }
+
+    private async Task<DatasetImportSubmissionReceipt?> ReadCoreAsync(HttpContext context, ReadDatasetImportAuthority request, Activity? activity)
+    {
         Validate(request);
         var original = await LoadAsync(context, request).ConfigureAwait(false);
         if (original is null) return null;
         var prepared = original.Prepared;
         if (prepared is not null)
         {
-            var job = await context.RequestServices.GetRequiredService<IExecutionJobStore>()
-                .GetAsync(prepared.OperationId, context.RequestAborted).ConfigureAwait(false);
-            if (job is not null)
+            var jobs = context.RequestServices.GetRequiredService<IExecutionJobStore>();
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                // The resolver loads the actual accepted job and independently authorizes
-                // this observer. Terminal human observation does not restore old execution
-                // authority or require the expired/deleted source to exist again.
-                var observed = await context.RequestServices.GetRequiredService<IJobExecutionLeaseAuthority>()
-                    .ResolveForObservationAsync(job.OperationId, context.User, JobExecutionLeaseObservationKind.Status,
-                        context.RequestAborted).ConfigureAwait(false);
+                var job = await jobs.GetAsync(prepared.OperationId, context.RequestAborted).ConfigureAwait(false);
+                if (job is null) break;
+                // Every retry reads and independently authorizes a real current snapshot.
+                // Version-only claim/heartbeat writes do not erase an accepted receipt.
+                activity?.SetTag("dataset_import.stage", "resolve-observer");
+                activity?.SetTag("dataset_import.job_status", job.Status.ToString());
+                JobExecutionLeaseObservation observed;
+                try
+                {
+                    observed = await context.RequestServices.GetRequiredService<IJobExecutionLeaseAuthority>()
+                        .ResolveForObservationAsync(job.OperationId, context.User, JobExecutionLeaseObservationKind.Status,
+                            context.RequestAborted).ConfigureAwait(false);
+                }
+                catch (UnauthorizedAccessException) when (attempt < 2)
+                {
+                    var latest = await jobs.GetAsync(job.OperationId, context.RequestAborted).ConfigureAwait(false);
+                    if (latest is null || latest.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease
+                        || JobExecutionLeaseIntentFingerprint.Compute(latest) != JobExecutionLeaseIntentFingerprint.Compute(job)
+                        || JobExecutionLeaseTerminalOutcome.Compute(latest) == JobExecutionLeaseTerminalOutcome.Compute(job)) throw;
+                    // Historical validation pins the actual outcome across awaits.
+                    // Retry only a proven concurrent outcome change, with fresh auth.
+                    activity?.SetTag("dataset_import.stage", "outcome-changed");
+                    continue;
+                }
+                activity?.SetTag("dataset_import.stage", "verify-accepted");
                 RequireAccepted(original, job, observed);
-                var confirmed = await context.RequestServices.GetRequiredService<IExecutionJobStore>()
-                    .GetAsync(job.OperationId, context.RequestAborted).ConfigureAwait(false);
-                if (confirmed is null || confirmed.Version != job.Version) return null;
-                if (confirmed.Status != job.Status || confirmed.FileImportOutput != job.FileImportOutput ||
-                    confirmed.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease ||
+                var confirmed = await jobs.GetAsync(job.OperationId, context.RequestAborted).ConfigureAwait(false);
+                if (confirmed is null) return null;
+                if (confirmed.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease ||
                     JobExecutionLeaseIntentFingerprint.Compute(confirmed) != observed.IntentFingerprint)
-                    throw new UnauthorizedAccessException("The authoritative accepted receipt changed during observation.");
+                    throw new UnauthorizedAccessException("The authoritative accepted intent changed during observation.");
+                if (confirmed.Status != job.Status || confirmed.FileImportOutput != job.FileImportOutput)
+                {
+                    activity?.SetTag("dataset_import.stage", "receipt-changed");
+                    if (attempt == 2)
+                        throw new AgentWorkspaceConflictException("The accepted receipt changed during observation. Read its current status again.");
+                    continue;
+                }
+                activity?.SetTag("dataset_import.stage", "verify-original-context");
                 if (!await CurrentAsync(context, request, original).ConfigureAwait(false)) return null;
-                return Receipt(original, ProjectJob(job, observed));
+                return Receipt(original, ProjectJob(confirmed, observed));
             }
         }
 
@@ -81,10 +123,28 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
 
     internal async Task<DatasetImportSubmissionReceipt?> SubmitAsync(HttpContext context, SubmitDatasetImportCall? call)
     {
+        using var activity = HonuaTelemetry.StartActivity("agent.dataset-import.submit");
+        try
+        {
+            var result = await SubmitCoreAsync(context, call, activity).ConfigureAwait(false);
+            activity?.SetTag("dataset_import.outcome", result?.State ?? "authority-unavailable");
+            return result;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            HonuaTelemetry.RecordException(activity, exception);
+            throw;
+        }
+    }
+
+    private async Task<DatasetImportSubmissionReceipt?> SubmitCoreAsync(HttpContext context, SubmitDatasetImportCall? call,
+        Activity? activity)
+    {
         if (call?.Request is not { } input || !DatasetImportTaskState.ValidAuthorityScope(call.WorkspaceId, call.TaskId, call.Revision, input.TaskContentHash) ||
             input.AuthorityRevision <= 0 || !DatasetImportTaskState.Hash(input.AuthorityFingerprint) || !DatasetImportTaskState.Hash(input.PolicyContextFingerprint))
             throw new ArgumentException("A valid original task and reviewed authority binding are required.");
         var reference = new ReadDatasetImportAuthority(call.WorkspaceId, call.TaskId, call.Revision, input.TaskContentHash);
+        activity?.SetTag("dataset_import.stage", "read-original");
         var original = await ReadAsync(context, reference).ConfigureAwait(false);
         if (original is null) return null;
         if (original.State == "accepted")
@@ -124,13 +184,16 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
         if (!AgentCredentialAuthority.IsAgent(executor) || CanonicalSecurityActor.Resolve(executor)?.ActorId != prepared.ExecutorActorId)
             throw new UnauthorizedAccessException("The actual original agent must submit the prepared import.");
         var intent = DatasetImportSubmissionIntent.Create(authorized.Task, prepared, source);
+        activity?.SetTag("dataset_import.stage", "check-original-caller");
         await intent.RequireCurrentCallerAsync(services, context.User, context.RequestAborted).ConfigureAwait(false);
         var queue = services.GetRequiredService<IImportJobService>() as DurableImportJobService
             ?? throw new AgentWorkspaceUnavailableException();
+        activity?.SetTag("dataset_import.stage", "queue");
         var jobId = await queue.QueueDatasetImportAsync(authorized.Task, prepared, source, context.User, executor, context.RequestAborted).ConfigureAwait(false);
         if (jobId != prepared.OperationId) throw new InvalidOperationException("The accepted job changed the original prepared operation.");
         // Even a successful queue return is not fabricated into a client receipt.
         // Read the actual authoritative job and independently authorize its observation.
+        activity?.SetTag("dataset_import.stage", "read-accepted");
         return await ReadAsync(context, reference).ConfigureAwait(false);
     }
 

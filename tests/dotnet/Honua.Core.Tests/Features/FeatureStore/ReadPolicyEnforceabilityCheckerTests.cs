@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Moq;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
@@ -82,7 +83,18 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         target.Should().Be(new UnenforceableReadPolicyTarget("parcels", DataProviderNames.DuckDb));
     }
 
-    private static ReadPolicyEnforceabilityChecker CreateChecker()
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task FindUnenforceableTargetAsync_ConnectionIsMissing_ReadsAreAlreadyRefused()
+    {
+        var checker = CreateChecker(registerConnection: false);
+
+        var target = await checker.FindUnenforceableTargetAsync("Maps", "roads");
+
+        target.Should().BeNull();
+    }
+
+    private static ReadPolicyEnforceabilityChecker CreateChecker(bool registerConnection = true)
     {
         var registry = new FeatureDataProviderRegistry(
         [
@@ -90,9 +102,14 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
             CreateProvider(DataProviderNames.DuckDb, FeatureProviderCapabilities.ReadOnlyAnalytical)
         ]);
 
-        // The secure connection registry has no materialized connection, so the router falls
-        // back to the provider declared on the metadata connection (as it does for reads).
+        // Provider selection requires a registered connection. Metadata alone cannot
+        // make a bound source readable after its connection has been removed.
         var connections = new Mock<ISecureConnectionRegistry>();
+        if (registerConnection)
+        {
+            connections.Setup(registry => registry.GetConnectionAsync(WarehouseConnectionId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new DataConnection { Id = WarehouseConnectionId, Provider = DataProviderNames.DuckDb });
+        }
         var router = new FeatureProviderQueryRouter(connections.Object, registry);
 
         return new ReadPolicyEnforceabilityChecker(new StubGraphProvider(CreateSnapshot()), router, registry);

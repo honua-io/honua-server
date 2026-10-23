@@ -5,7 +5,6 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Import.FileImport.Resumable;
 
@@ -15,11 +14,13 @@ namespace Honua.Import.FileImport.Resumable;
 /// finalization and HTTP/SDK registration are separate prerequisites before advertising it.
 /// </summary>
 internal sealed class ImportUploadCoordinator(
-    ImportUploadTaskAuthority authority, RedisImportUploadStore store, ICloudFileStorage files, IImportStorageBudget budget,
+    ImportUploadTaskAuthority authority, RedisImportUploadStore store, ImportStagedSourceStorage sourceStorage, IImportStorageBudget budget,
     ImportScratchStorage? scratchStorage = null)
 {
-    private readonly ImportUploadChunkStorage _storage = new(files, budget);
-    private readonly ImportUploadSourceStorage _sources = new(store, files, budget, scratchStorage);
+    private readonly ImportUploadChunkStorage _storage = new(sourceStorage.Storage, budget);
+    private readonly ImportUploadSourceStorage _sources = new(store, sourceStorage.Storage, budget, scratchStorage);
+
+    internal bool IsBoundToStorage(ImportStagedSourceStorage storage) => ReferenceEquals(sourceStorage, storage);
 
     public async Task<ImportUploadSession?> GetAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         CancellationToken cancellationToken = default)

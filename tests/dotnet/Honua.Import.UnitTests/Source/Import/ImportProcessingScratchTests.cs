@@ -98,7 +98,7 @@ public sealed class ImportProcessingScratchTests
         await File.WriteAllTextAsync(fixture.Root, "not a directory");
         try
         {
-            await Assert.ThrowsAsync<IOException>(() => fixture.CreateAsync());
+            await Assert.ThrowsAnyAsync<IOException>(() => fixture.CreateAsync());
             Assert.Equal(1, fixture.Fence.Acquired);
             Assert.Equal(0, fixture.Fence.Active);
         }
