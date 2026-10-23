@@ -18,6 +18,16 @@ spec.loader.exec_module(managed)
 
 
 class ManagedBuildTests(unittest.TestCase):
+    def test_pr_gate_plans_both_fidelity_projects_without_execution(self):
+        with patch.object(managed.subprocess, 'run') as execute, \
+                patch.object(managed.subprocess, 'check_output') as capture:
+            projects = managed.gate_projects(managed.ROOT)
+        execute.assert_not_called()
+        capture.assert_not_called()
+        self.assertIn('tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj', projects)
+        self.assertIn('tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj', projects)
+        self.assertEqual(projects, managed.validate_projects(managed.ROOT, projects))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

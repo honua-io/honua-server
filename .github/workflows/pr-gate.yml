@@ -847,7 +847,7 @@ jobs:
         run: |
           python3 tests/python/unit/test_import_export_fidelity_proof.py
           python3 tests/python/unit/test_diff_baselines.py
-          python3 scripts/ci/run-import-export-fidelity-proof.py
+          python3 scripts/ci/run-import-export-fidelity-proof.py --no-build
 
       - name: Upload import and independent vector export fidelity evidence
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'

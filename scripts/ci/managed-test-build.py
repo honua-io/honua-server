@@ -12,6 +12,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+POSTGRES_IMPORT = 'tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj'
 ARCHITECTURE = 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj'
 SOURCE = 'tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj'
 PROPERTIES = ['-p:TreatWarningsAsErrors=true', '-p:RunAnalyzers=true', '-p:UseSharedCompilation=false']
@@ -33,7 +34,7 @@ def gate_projects(root):
     spec.loader.exec_module(module)
     catalog = json.loads((root / '.github/test-projects.json').read_text())
     units = module.gate_fast_projects(catalog)
-    return sorted(set(units + [SERVER, ARCHITECTURE, SOURCE,
+    return sorted(set(units + [SERVER, POSTGRES_IMPORT, ARCHITECTURE, SOURCE,
         'tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj',
         'tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj']))
 

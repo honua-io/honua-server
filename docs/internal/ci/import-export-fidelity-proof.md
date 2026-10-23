@@ -16,6 +16,13 @@ the corresponding incomplete/unverified verdicts cannot become FullFidelity.
 These are separate production paths; published SDK and broader source/target
 receipts remain owned by server#4600, release#316, release#317 and sdk-dotnet#340.
 
+Both test projects are explicit roots in the PR managed build plan. The consumer
+restores verified outputs or builds missing outputs through the existing scoped
+fallback before invoking the fidelity runner with `--no-build`. This keeps the
+new provider proof in the producer inventory and avoids compiling the graph again
+inside the runtime consumer. The writer fixture uses `UnitTheory` so all three
+cases also execute under the required `Tier=Fast` filter; the tier ratchet is unchanged.
+
 Three writer fixtures call the production CSV, shapefile and GeoPackage writers.
 A digest-pinned upstream GDAL container independently opens those files. Python
 CSV and SQLite readers also check quoting, missing cells and GeoPackage metadata.
