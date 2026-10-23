@@ -8,7 +8,7 @@ would leave that upgrade failing with no guidance.
 
 ## Correction
 
-This section applies only to Honua's internal demo infrastructure at demo.honua.io, the sole multi-tenant deployment. Multi-tenancy is not offered for customer deployment and carries no availability, performance, or support claim. The isolation correction retains full security severity. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere.
 
 Schema routing remains opt-in (`MultiTenancy:SchemaRouting:Enabled`, default
 `false`). When enabled, tenant IDs are now matched exactly. Default derivation

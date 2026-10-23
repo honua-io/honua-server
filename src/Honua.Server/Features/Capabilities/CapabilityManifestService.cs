@@ -477,7 +477,7 @@ internal sealed class CapabilityManifestService(
                 policyCapability: "features.edit",
                 requiresWorkspace: true),
             Capability("admin.multi-tenancy", "control-plane", context,
-                maturity: CapabilityMaturity.Internal,
+                maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")
                     && options.TenantSchemaRoutingEnabled,
                 entitlementKey: FeatureCatalog.MultiTenancyKey,

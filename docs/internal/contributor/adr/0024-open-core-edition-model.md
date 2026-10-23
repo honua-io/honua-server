@@ -3,7 +3,7 @@
 ## Status
 Accepted
 
-> **Commercial amendment (2026-10-03):** The [current commercial boundaries](../../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261) supersede older tier descriptions below. Core branch versioning is Pro; organisational approval/policy is Enterprise; existing Community 3D serving/discovery/elevation/feature-layer generation stays Community; specialised ingest and I3S stay Enterprise. Multi-tenancy is internal, used only on Honua's demo infrastructure at demo.honua.io, and is not offered for customer deployment. Essential secure operation and recoverability are baseline in all editions.
+> **Commercial amendment (2026-10-03):** The [current commercial boundaries](../../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261) supersede older tier descriptions below. Core branch versioning is Pro; organisational approval/policy is Enterprise; existing Community 3D serving/discovery/elevation/feature-layer generation stays Community; specialised ingest and I3S stay Enterprise. Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere. Essential secure operation and recoverability are baseline in all editions.
 
 ## Context
 
@@ -115,7 +115,7 @@ Everything in Pro, plus:
 | **Private Operator Copilot** | AI DevOps/operator tooling, rollout planning, delegated operations, and implementation workflows delivered through private enterprise tooling on top of the public control-plane API | Change Management / Support |
 | **Compliance** | SOC 2 / FedRAMP evidence collection; data residency controls; encryption-at-rest key rotation | Product Assurance |
 | **Federated Queries** | Cross-instance queries (Honua-to-Honua); external source proxy (Esri REST, OGC WFS) | Integrations |
-| **Multi-Tenancy (internal)** | Used only on Honua's demo infrastructure at demo.honua.io, its sole deployment. It is not offered for customer deployment and carries no availability, performance, or support claim. Cross-tenant disclosure remains a full-severity security defect on that stack. | Deployment Options |
+| **Multi-Tenancy (Preview/trial only)** | Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere. | Deployment Options |
 | **Usage Analytics** | Dashboard — queries/sec, popular layers, slow queries, storage growth, user activity | Reporting |
 | **Plugin SDK** | Custom endpoints, pre/post-edit hooks, validators, computed fields (.NET source-gen, AOT-safe) | Integrations |
 | **Batch Geocoding** | Multi-address geocoding execution in a single request (`geocoding.batch`) over both the GeoServices `geocodeAddresses` HTTP operation and the MCP `honua_geocode_addresses` tool — the volume/enterprise geocoding workload, distinct from the Community single-address forward/reverse path (#2981) | Product Assurance |
@@ -180,7 +180,7 @@ License checks must be:
 
 - **Community** = complete feature server, single process, deploy anywhere
 - **Pro** = distributed coordination, streaming, analytics
-- **Enterprise** = organisational governance, compliance automation, extensibility, and private operator tooling. Customer deployments are single-tenant. Multi-tenancy is internal and used only on Honua's demo infrastructure at demo.honua.io.
+- **Enterprise** = organisational governance, compliance automation, extensibility, and private operator tooling. Customer deployments are single-tenant. Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere.
 
 ### EnterpriseReady Pillar Mapping
 

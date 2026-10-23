@@ -7,6 +7,10 @@ description: "Honua's source is available under the Elastic License 2.0 — free
 
 Honua's source is available under the [Elastic License 2.0](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify.
 
+## Tenancy in 2026.1
+
+Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere. The Elastic License 2.0 prohibits a third party from providing Honua to others as a managed service.
+
 ## 2026.1: licensing disabled
 
 The first release uses the supported `Licensing__Mode=Disabled` setting, including in

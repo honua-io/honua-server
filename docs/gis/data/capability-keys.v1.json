@@ -13,18 +13,18 @@
     },
     {
       "key": "admin.multi-tenancy",
-      "displayName": "Multi-Tenant Operation",
-      "category": "Internal",
+      "displayName": "Multi-Tenant Operation (Preview/trial)",
+      "category": "ControlPlane",
       "edition": "Enterprise",
-      "description": "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.",
-      "status": "internal"
+      "description": "Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere.",
+      "status": "preview"
     },
     {
       "key": "ai.agent-operations",
       "displayName": "Agent Operations (Validation Layer)",
       "category": "AI",
       "edition": "Pro",
-      "description": "Agent-initiated changes run through a validation layer — planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."
+      "description": "Agent-initiated changes run through a validation layer â€” planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."
     },
     {
       "key": "ai.approval-workflows",
@@ -301,7 +301,7 @@
       "displayName": "FeatureServer Editing",
       "category": "Editing",
       "edition": "Pro",
-      "description": "Create, update, and delete features through the Esri GeoServices FeatureServer write surface — applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."
+      "description": "Create, update, and delete features through the Esri GeoServices FeatureServer write surface â€” applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."
     },
     {
       "key": "enrichment.datasets",
@@ -657,7 +657,7 @@
       "displayName": "gRPC (geospatial.v1)",
       "category": "Serve",
       "edition": "Community",
-      "description": "The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService — served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."
+      "description": "The geospatial.v1 gRPC surface â€” FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService â€” served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."
     },
     {
       "key": "serve.i3s-scene",

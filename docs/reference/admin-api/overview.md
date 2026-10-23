@@ -45,7 +45,7 @@ Each capability record reports:
 | `supported` | The server build registers the backing implementation. |
 | `available` | Usable for this request after configuration, environment, authentication, license, and policy checks. |
 | `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
-| `lifecycle` | Product lifecycle classification. Customer alerting (`alerts.geofence`), realtime feature streams, and SensorThings report `preview` for 2026.1; alerting qualification evidence does not promote it to GA. |
+| `lifecycle` | `admin.multi-tenancy` is Preview/trial only for non-production evaluation; no customer production data or GA, availability, performance, durability, SLA, SLO, or scale commitment. Product lifecycle classification. Customer alerting (`alerts.geofence`), realtime feature streams, and SensorThings report `preview` for 2026.1; alerting qualification evidence does not promote it to GA. |
 | `optInRequired` | Whether the capability must be explicitly enabled. Preview realtime capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.

@@ -53,7 +53,7 @@ public static class CapabilityKeyCatalog
     public const string PreviewStatus = "preview";
 
     /// <summary>
-    /// Release-posture value for capabilities that support Honua's own hosted operation and are
+    /// Release-posture value for capabilities reserved for internal infrastructure and
     /// not offered to licensees. Distinct from <see cref="PreviewStatus"/>, which promises a GA
     /// path: this one promises the opposite. A licensee cannot operate these at all, because the
     /// Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed
@@ -74,8 +74,8 @@ public static class CapabilityKeyCatalog
     /// <summary>Routed capabilities that ship as explicit opt-in Preview.</summary>
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedPreviewKeys { get; } =
     [
-        new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.Internal,
-            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.", Status: InternalStatus),
+        new("admin.multi-tenancy", "Multi-Tenant Operation (Preview/trial)", Categories.ControlPlane,
+            HonuaEdition.Enterprise, "Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere.", Status: PreviewStatus),
 
         // Operator ruling (2026-09-03, honua-release#266 / #264) supersedes the earlier
         // sync.offline GA promotion for release 2026.1: offline sync is Preview in 2026.1.
@@ -100,7 +100,7 @@ public static class CapabilityKeyCatalog
         public const string ControlPlane = "ControlPlane";
 
         /// <summary>
-        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
+        /// Capabilities reserved for internal infrastructure, outside the published
         /// licensee. Not part of the customer-deployable product surface and with no path to
         /// general availability as a customer feature: the Elastic License 2.0 prohibits
         /// providing Honua to third parties as a hosted or managed service, so a licensee can

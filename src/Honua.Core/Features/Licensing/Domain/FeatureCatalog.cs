@@ -92,7 +92,7 @@ public static class FeatureCatalog
         public const string ControlPlane = "ControlPlane";
 
         /// <summary>
-        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
+        /// Capabilities reserved for internal infrastructure, outside the published
         /// licensee. These are not part of the customer-deployable product surface and have no
         /// path to general availability as a customer feature: the Elastic License 2.0 prohibits
         /// providing Honua to third parties as a hosted or managed service, so a licensee can
@@ -584,8 +584,8 @@ public static class FeatureCatalog
         new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
             HonuaEdition.Enterprise, "Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Documented recovery expectations and verified restores remain baseline obligations in every edition."),
 
-        // Internal — Honua's own hosted operation; not offered to licensees
-        new(MultiTenancyKey, "Multi-Tenant Operation", Categories.Internal,
-            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless."),
+        // Multi-tenancy is Preview/trial only, without a GA commitment.
+        new(MultiTenancyKey, "Multi-Tenant Operation (Preview/trial)", Categories.ControlPlane,
+            HonuaEdition.Enterprise, "Preview/trial only for non-production demo or evaluation areas; do not use customer production data. Honua 2026.1 GA is single-tenant. No GA commitment or availability, performance, durability, SLA, SLO, quota, or scale claim applies to multi-tenancy. Honua offers no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect everywhere."),
     ];
 }

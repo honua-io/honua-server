@@ -305,10 +305,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("scene.bim-ingest", "scene", FeatureCatalog.SceneBimIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("scene.pointcloud-ingest", "scene", FeatureCatalog.ScenePointCloudIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
-            // Multi-tenant operation is internal and used only by Honua-operated demo
-            // infrastructure. It is not a customer deployment claim. This classification
-            // does not weaken the full-severity security floor for cross-tenant disclosure.
-            ("admin.multi-tenancy", "control-plane", FeatureCatalog.MultiTenancyKey, CapabilityKind.Feature, null, CapabilityMaturity.Internal),
+            // Preview/trial only for non-production evaluation; no GA commitment.
+            // Cross-tenant disclosure remains a full-severity security defect.
+            ("admin.multi-tenancy", "control-plane", FeatureCatalog.MultiTenancyKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
             // Realtime remains opt-in Preview until the per-transport qualification
             // denominator passes against the exact release candidate (#3810).
             ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Preview),

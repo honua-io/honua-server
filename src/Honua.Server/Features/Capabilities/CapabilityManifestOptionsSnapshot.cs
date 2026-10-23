@@ -148,10 +148,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public bool TenantSchemaRoutingEnabled { get; }
 
     /// <summary>
-    /// Whether tenant context resolution is enabled. Multi-tenant operation is internal to
-    /// Honua's own hosted operation and is not offered to licensees, so this is off in every
-    /// deployment a licensee may run - and the manifest omits tenant scope entirely when it
-    /// is, rather than reporting fields that are always null.
+    /// Whether tenant context resolution is enabled for non-production Preview/trial evaluation.
+    /// Tenant scope is omitted when resolution is disabled, including default single-tenant deployments.
     /// </summary>
     public bool TenantContextEnabled { get; }
 

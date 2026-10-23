@@ -256,7 +256,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             using var document = await ReadDocumentAsync(response);
             foreach (var (id, lifecycle) in new[]
                      {
-                         ("admin.multi-tenancy", "internal"),
+                         ("admin.multi-tenancy", "preview"),
                          ("realtime.feature-streams", "preview"),
                          ("serve.sensorthings", "preview"),
                      })
@@ -319,7 +319,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/capabilities/manifest");
                 using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
                 var anonymousCapability = GetCapability(anonymousDocument.RootElement, "admin.multi-tenancy");
-                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("internal");
+                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("preview");
                 anonymousCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 anonymousCapability.GetProperty("available").GetBoolean().Should().BeFalse();
                 anonymousCapability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
@@ -331,8 +331,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var adminDocument = await ReadDocumentAsync(adminResponse);
                 var adminCapability = GetCapability(adminDocument.RootElement, "admin.multi-tenancy");
                 adminCapability.GetProperty("available").GetBoolean().Should().BeTrue();
-                adminCapability.GetProperty("lifecycle").GetString().Should().Be("internal",
-                    "opting in must never promote internal tenancy to a product lifecycle");
+                adminCapability.GetProperty("lifecycle").GetString().Should().Be("preview",
+                    "opting in must never promote Preview/trial tenancy to GA");
                 adminCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
             }
             finally
@@ -346,7 +346,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
     [InlineData(false, "disabled-by-configuration")]
     [InlineData(true, "experimental-disabled")]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_InternalMultiTenancyWithoutOptIn_IsUnavailable(bool fromRegistry, string reasonCode)
+    public async Task GetManifest_PreviewMultiTenancyWithoutOptIn_IsUnavailable(bool fromRegistry, string reasonCode)
     {
         var fixture = CreateManifestFixture(
             edition: HonuaEdition.Enterprise,
@@ -361,10 +361,10 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             using var response = await client.GetAsync("/api/v1/capabilities/manifest");
             using var document = await ReadDocumentAsync(response);
             var capability = GetCapability(document.RootElement, "admin.multi-tenancy");
-            capability.GetProperty("lifecycle").GetString().Should().Be("internal");
+            capability.GetProperty("lifecycle").GetString().Should().Be("preview");
             capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
             capability.GetProperty("available").GetBoolean().Should().BeFalse(
-                "an Internal capability stays default-off even in Enterprise with schema routing");
+                "a Preview capability stays default-off even in Enterprise with schema routing");
             capability.GetProperty("reasonCode").GetString().Should().Be(reasonCode);
         }
         finally
@@ -466,11 +466,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_WithTenantContextDisabled_OmitsTenantScopeEntirely()
     {
-        // Multi-tenant operation is internal to Honua's own hosted operation and is not
-        // offered to licensees, so tenant context is off in every deployment a licensee
-        // may run. The manifest omits the fields rather than reporting them as null: a
-        // key that is always null on every deployment a customer can legally operate
-        // invites the question of how to populate it.
+        // Default single-tenant deployments omit tenant scope when context resolution is disabled.
         await using var fixture = CreateManifestFixture(tenantContextEnabled: false);
         await fixture.InitializeAsync();
         using var client = fixture.CreateClient();

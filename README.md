@@ -1,5 +1,7 @@
 # Honua Server
 
+Honua 2026.1 GA deployments are single-tenant. [Multi-tenancy](docs/guides/deploy/tenancy.md) is **Preview/trial only** for non-production evaluation, with no customer production data or GA, availability, performance, durability, SLA, SLO, or scale commitment. Honua offers no SaaS or managed hosting.
+
 [![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml)
 [![Security Nightly](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml)
