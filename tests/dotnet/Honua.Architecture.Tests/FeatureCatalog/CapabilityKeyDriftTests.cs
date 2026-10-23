@@ -241,6 +241,11 @@ public sealed class CapabilityKeyDriftTests
         vocabulary.Status.Should().Be("preview");
         vocabulary.Description.Should().Contain("Preview/trial").And.Contain("non-production")
             .And.Contain("do not use customer production data").And.Contain("full-severity");
+        vocabulary.Description.Should().NotContain("own hosted").And.NotContain("operator-only");
+
+        var descriptor = new Honua.Core.Features.Capabilities.CapabilityRegistry().Find("admin.multi-tenancy")!;
+        descriptor.Maturity.Should().Be(Honua.Core.Features.Capabilities.CapabilityMaturity.Preview);
+        descriptor.RequiresOptIn.Should().BeTrue("enabling a trial must never imply GA qualification");
 
         var tenantEntries = LoadCommittedCatalog().Entries
             .Where(entry => entry.Route.StartsWith("/api/v1/admin/tenants", StringComparison.Ordinal))

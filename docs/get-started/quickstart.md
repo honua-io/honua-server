@@ -6,6 +6,11 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Quickstart: install, publish, and query
 
+This guide follows the GA single-tenant path. [Multi-tenancy](../guides/deploy/tenancy.md)
+is **Preview/trial only** for non-production evaluation; do not use customer production
+data. No GA, availability, performance, durability, SLA, SLO, or scale commitment
+applies to multi-tenancy. Honua offers no SaaS or managed hosting.
+
 Honua runs as one container beside PostGIS and Redis. This page starts it with
 Docker Compose, publishes a small dataset, and queries it back.
 

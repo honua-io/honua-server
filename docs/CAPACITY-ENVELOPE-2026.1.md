@@ -18,8 +18,10 @@ measurement definitions, failure handling and verification.
 The release promise is a post-freeze, full-envelope, single-tenant local-Docker
 soak with all eight GA dimensions exercised and all eight SLOs recomputed from
 attested raw observations. Alerting and offline sync retain their Preview posture.
-Multi-tenancy is internal and deployed only on Honua's demo infrastructure at
-demo.honua.io; it is outside this customer capacity claim. Historical aggregate-only
+Multi-tenancy is Preview/trial only for non-production demo or evaluation areas;
+do not use customer production data. It has no GA, availability, performance,
+durability, SLA, SLO, or scale commitment and is outside this single-tenant capacity claim.
+Historical aggregate-only
 receipts cannot satisfy that promise.
 
 ## Acceptance status — verified 2026-10-02

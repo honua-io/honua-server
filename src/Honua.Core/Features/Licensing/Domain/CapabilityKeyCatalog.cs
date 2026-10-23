@@ -53,11 +53,8 @@ public static class CapabilityKeyCatalog
     public const string PreviewStatus = "preview";
 
     /// <summary>
-    /// Release-posture value for capabilities reserved for internal infrastructure and
-    /// not offered to licensees. Distinct from <see cref="PreviewStatus"/>, which promises a GA
-    /// path: this one promises the opposite. A licensee cannot operate these at all, because the
-    /// Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed
-    /// service. Capabilities with this status are never published as customer documentation.
+    /// Release-posture value for internal infrastructure excluded from customer documentation.
+    /// Preview/trial classification carries no promise of general availability.
     /// </summary>
     public const string InternalStatus = "internal";
 
@@ -100,11 +97,7 @@ public static class CapabilityKeyCatalog
         public const string ControlPlane = "ControlPlane";
 
         /// <summary>
-        /// Capabilities reserved for internal infrastructure, outside the published
-        /// licensee. Not part of the customer-deployable product surface and with no path to
-        /// general availability as a customer feature: the Elastic License 2.0 prohibits
-        /// providing Honua to third parties as a hosted or managed service, so a licensee can
-        /// never be the party operating them. Never published as customer documentation.
+        /// Internal infrastructure excluded from the published capability surface.
         /// </summary>
         public const string Internal = "Internal";
 

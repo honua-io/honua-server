@@ -168,17 +168,17 @@ public sealed class CapabilityRegistryConformanceTests
     }
 
     [UnitTest]
-    public void InternalMultiTenancy_RetainsOptInAndEditionGates()
+    public void PreviewMultiTenancy_RetainsOptInAndEditionGates()
     {
         const string capabilityId = "admin.multi-tenancy";
         var descriptor = Registry.Find(capabilityId)!;
-        descriptor.Maturity.Should().Be(CapabilityMaturity.Internal);
+        descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
         descriptor.RequiresOptIn.Should().BeTrue();
         descriptor.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
 
         var context = new CapabilityGateContext { Edition = HonuaEdition.Enterprise };
         var disabled = Registry.Resolve(capabilityId, context);
-        disabled.Enabled.Should().BeFalse("the Internal relabel preserves default-off behavior even in Enterprise");
+        disabled.Enabled.Should().BeFalse("Preview/trial remains default-off even in Enterprise");
         disabled.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
 
         var flags = new CapabilityFlagOptions();
@@ -196,7 +196,7 @@ public sealed class CapabilityRegistryConformanceTests
             ExperimentalFlags = flags,
             Edition = HonuaEdition.Enterprise,
         });
-        enabled.Enabled.Should().BeTrue("the internal deployment retains its canonical opt-in");
+        enabled.Enabled.Should().BeTrue("a Preview/trial evaluation retains its canonical opt-in");
         enabled.ReasonCode.Should().BeNull();
     }
 

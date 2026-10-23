@@ -92,12 +92,7 @@ public static class FeatureCatalog
         public const string ControlPlane = "ControlPlane";
 
         /// <summary>
-        /// Capabilities reserved for internal infrastructure, outside the published
-        /// licensee. These are not part of the customer-deployable product surface and have no
-        /// path to general availability as a customer feature: the Elastic License 2.0 prohibits
-        /// providing Honua to third parties as a hosted or managed service, so a licensee can
-        /// never be the party operating them. Not Preview - Preview implies a GA path, and there
-        /// is none. Never published as customer documentation.
+        /// Internal infrastructure excluded from the published capability surface.
         /// </summary>
         public const string Internal = "Internal";
     }
