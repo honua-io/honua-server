@@ -116,6 +116,11 @@ internal sealed class ListLayersTool : IMcpTool
                     continue;
                 }
 
+                if (!StudioCatalogSourceIdentity.TryCreate(service.Metadata.Id, layerIndex, out _))
+                {
+                    continue;
+                }
+
                 var summary = ToSummary(service, publication, resource!, layerIndex);
                 var identity = (service.Metadata.Id, layerIndex);
                 var bindingId = snapshot.ResolveStorageBinding(publication)?.Metadata.Id;

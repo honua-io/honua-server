@@ -683,7 +683,40 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             }
         }
 
-        return true;
+        // The baseline script also creates honua.update_updated_at() and
+        // trg_raster_data_updated_at. Those are not in the table inventory. Adopting
+        // without them journals the script, so DbUp never repairs a stale updated_at.
+        return await RasterBaselineMaintainsUpdatedAtAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<bool> RasterBaselineMaintainsUpdatedAtAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_proc AS procedure
+                JOIN pg_namespace AS ns ON ns.oid = procedure.pronamespace
+                WHERE ns.nspname = @schema AND procedure.proname = 'update_updated_at')
+            AND EXISTS (
+                SELECT 1
+                FROM pg_trigger AS trigger
+                JOIN pg_class AS relation ON relation.oid = trigger.tgrelid
+                JOIN pg_namespace AS ns ON ns.oid = relation.relnamespace
+                WHERE ns.nspname = @schema
+                  AND relation.relname = 'raster_data'
+                  AND trigger.tgname = 'trg_raster_data_updated_at'
+                  AND NOT trigger.tgisinternal)
+            """;
+        var schema = command.CreateParameter();
+        schema.ParameterName = "schema";
+        schema.Value = _schemaName;
+        command.Parameters.Add(schema);
+        var found = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return found is true;
     }
 
     private static async Task<bool> TryAcquireRasterAdoptionLockAsync(

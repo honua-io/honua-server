@@ -116,10 +116,16 @@ public sealed class McpMapToolTests
         firstLayer.Length.Should().BeLessOrEqualTo(limit);
         secondLayer.Length.Should().BeLessOrEqualTo(limit);
         otherLayer.Length.Should().BeLessOrEqualTo(limit);
+        firstLayer.Should().Be(Uri.EscapeDataString(first) + "/1");
+        secondLayer.Should().Be(Uri.EscapeDataString(second) + "/1");
+        otherLayer.Should().Be(Uri.EscapeDataString(first) + "/2");
         firstLayer.Should().NotBe(secondLayer);
         firstLayer.Should().NotBe(otherLayer);
-        secondLayer.Should().NotBe(otherLayer);
-        firstLayer.Should().NotStartWith(Uri.EscapeDataString(first)[..32]);
+
+        var oversized = new string('\u4e00', (CoreCatalogSourceIdentity.MaxLength / 9) + 2);
+        CoreCatalogSourceIdentity.TryCreate(oversized, 0, out _).Should().BeFalse();
+        var create = () => CoreCatalogSourceIdentity.Create(oversized, 0);
+        create.Should().Throw<ArgumentException>();
     }
 
     [Theory]
