@@ -231,7 +231,9 @@ internal static class ServiceCollectionExtensions
         services.AddPostgresRasterStore(configuration["Database:Schema"]);
 
         // Register alert persistence services
-        services.AddScoped<IAlertChangeReader, PostgresAlertChangeReader>();
+        services.AddScoped<IAlertChangeReader>(static serviceProvider => new PostgresAlertChangeReader(
+            serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+            new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider))));
         services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
         services.AddScoped<IAlertStateStore, PostgresAlertStateStore>();
         services.AddScoped<IAlertEventStore, PostgresAlertEventStore>();

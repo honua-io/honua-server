@@ -25,6 +25,15 @@ internal interface IImageServerMultidimensionalInfoBuilder
     Task<ImageServerMultidimensionalInfo?> BuildAsync(
         int layerId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the coverage grid a service should describe when the layer has scanned
+    /// multidimensional metadata with a spatial extent. Null when the layer has no
+    /// such coverage (the base raster remains the service description).
+    /// </summary>
+    Task<ImageServerCoverageGrid?> DescribeGridAsync(
+        int layerId,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -35,6 +44,8 @@ internal interface IImageServerMultidimensionalInfoBuilder
 internal sealed class ImageServerMultidimensionalInfoBuilder(
     IMultidimensionalCoverageStore? coverageStore = null) : IImageServerMultidimensionalInfoBuilder
 {
+    private int _loadedLayer = int.MinValue;
+    private MultidimensionalCoverageRegistration[]? _loaded;
     // Esri standard dimension axis names.
     private const string StdTimeDimension = "StdTime";
     private const string StdZDimension = "StdZ";
@@ -55,12 +66,7 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
         int layerId,
         CancellationToken cancellationToken)
     {
-        if (coverageStore is null)
-        {
-            return null;
-        }
-
-        var registrations = await coverageStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var registrations = await LoadAsync(layerId, cancellationToken).ConfigureAwait(false);
         var scanned = registrations
             .Where(static r => r.Metadata is not null && r.Metadata.Variables.Count > 0)
             .ToArray();
@@ -78,12 +84,49 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
         return new ImageServerMultidimensionalInfo { Variables = variables };
     }
 
+    /// <inheritdoc />
+    public async Task<ImageServerCoverageGrid?> DescribeGridAsync(
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var registrations = await LoadAsync(layerId, cancellationToken).ConfigureAwait(false);
+        foreach (var registration in registrations)
+        {
+            if (registration.Metadata is { } metadata &&
+                ImageServerCoverageRaster.TryDescribe(metadata) is { } grid)
+            {
+                return grid;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<MultidimensionalCoverageRegistration[]> LoadAsync(
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        if (_loaded is not null && _loadedLayer == layerId)
+        {
+            return _loaded;
+        }
+
+        var loaded = coverageStore is null
+            ? []
+            : await coverageStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        _loadedLayer = layerId;
+        _loaded = loaded;
+        return loaded;
+    }
+
     private static ImageServerMultidimensionalVariable MapVariable(
         MultidimensionalCoverageMetadata metadata,
         MultidimensionalCoverageVariable variable)
     {
         var dimensions = variable.Dimensions
             .Select(dimension => MapDimension(metadata, dimension))
+            .Where(static dimension => dimension is not null)
+            .Select(static dimension => dimension!)
             .ToArray();
 
         return new ImageServerMultidimensionalVariable
@@ -95,11 +138,20 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
         };
     }
 
-    private static ImageServerMultidimensionalDimension MapDimension(
+    private static ImageServerMultidimensionalDimension? MapDimension(
         MultidimensionalCoverageMetadata metadata,
         MultidimensionalCoverageDimension dimension)
     {
-        if (TimeDimensionNames.Contains(dimension.Name) && metadata.Temporal is { } temporal)
+        // Horizontal axes are the raster grid, not slice dimensions. ArcGIS Server
+        // advertises only StdTime, StdZ, and other non-spatial axes.
+        if (dimension.Axis is MultidimensionalAxisKind.HorizontalX or MultidimensionalAxisKind.HorizontalY)
+        {
+            return null;
+        }
+
+        var isTime = dimension.Axis == MultidimensionalAxisKind.Temporal ||
+                     TimeDimensionNames.Contains(dimension.Name);
+        if (isTime && metadata.Temporal is { } temporal)
         {
             var min = (double)temporal.Start.ToUnixTimeMilliseconds();
             var max = (double)temporal.End.ToUnixTimeMilliseconds();
@@ -119,7 +171,9 @@ internal sealed class ImageServerMultidimensionalInfoBuilder(
             };
         }
 
-        if (VerticalDimensionNames.Contains(dimension.Name) && metadata.Vertical is { } vertical)
+        var isVertical = dimension.Axis == MultidimensionalAxisKind.Vertical ||
+                         VerticalDimensionNames.Contains(dimension.Name);
+        if (isVertical && metadata.Vertical is { } vertical)
         {
             var size = vertical.StepCount > 0 ? vertical.StepCount : dimension.Size;
             var values = EnumerateRegularValues(vertical.Min, vertical.Max, size);

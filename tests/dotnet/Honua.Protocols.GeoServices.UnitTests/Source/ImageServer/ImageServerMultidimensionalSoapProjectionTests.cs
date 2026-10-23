@@ -4,10 +4,16 @@
 using System.Globalization;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Multidimensional.Abstractions;
+using Honua.Core.Features.Raster.Multidimensional.Domain;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using NSubstitute;
 using static Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapAssertions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
@@ -108,6 +114,64 @@ public sealed class ImageServerMultidimensionalSoapProjectionTests
         Child(coordinates, "PropertyArray").Elements().Select(property => Child(property, "Key").Value)
             .Should().Equal("StdZ");
         Child(Property(sets[2], "salinity"), "PropertyArray").Elements().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task LatLonTimeCoverage_OmitsHorizontalAxesFromSoapDimensions()
+    {
+        var store = Substitute.For<IMultidimensionalCoverageStore>();
+        store.ListByLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new MultidimensionalCoverageRegistration
+                {
+                    Id = 7,
+                    LayerId = 1,
+                    Name = "sst",
+                    Format = MultidimensionalCoverageFormat.NetCdf4,
+                    Provider = CloudStorageProvider.AwsS3,
+                    Bucket = "bucket",
+                    ObjectKey = "sea-surface-temperature.nc",
+                    Variables = [],
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    Metadata = new MultidimensionalCoverageMetadata
+                    {
+                        Format = MultidimensionalCoverageFormat.NetCdf4,
+                        Srid = 4326,
+                        Temporal = new TemporalExtent(
+                            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                            new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero),
+                            StepCount: 2),
+                        Variables =
+                        [
+                            new MultidimensionalCoverageVariable(
+                                "sea_surface_temperature",
+                                "Float32",
+                                [
+                                    new MultidimensionalCoverageDimension("time", 2) { Axis = MultidimensionalAxisKind.Temporal },
+                                    new MultidimensionalCoverageDimension("latitude", 4) { Axis = MultidimensionalAxisKind.HorizontalY },
+                                    new MultidimensionalCoverageDimension("longitude", 4) { Axis = MultidimensionalAxisKind.HorizontalX },
+                                ],
+                                null,
+                                "degC",
+                                "Sea Surface Temperature",
+                                "sea_surface_temperature",
+                                -9999)
+                        ]
+                    }
+                }
+            ]);
+
+        var info = await new ImageServerMultidimensionalInfoBuilder(store).BuildAsync(1, CancellationToken.None);
+        var sets = AssertShape(ImageServerSoapEndpoints.BuildMultidimensionalResult(info));
+        var attributes = Property(sets[1], "sea_surface_temperature");
+        Child(attributes, "PropertyArray").Elements().Select(property => Child(property, "Key").Value)
+            .Should().Equal("StdTime");
+        foreach (var bounds in Property(Property(sets[2], "sea_surface_temperature"), "StdTime").Elements())
+        {
+            bounds.Elements().Select(Number).Should().Equal(45292d, 45293d);
+        }
     }
 
 }

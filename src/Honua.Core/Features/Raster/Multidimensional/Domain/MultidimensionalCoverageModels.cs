@@ -211,6 +211,12 @@ public sealed record MultidimensionalCoverageMetadata
     /// names did not match any data variable in the source.
     /// </summary>
     public required IReadOnlyList<MultidimensionalCoverageVariable> Variables { get; init; }
+
+    /// <summary>
+    /// Sample statistics of the primary variable when the enrichment pass computed them.
+    /// Null when the source did not report minimum and maximum.
+    /// </summary>
+    public CoverageSampleStatistics? Statistics { get; init; }
 }
 
 /// <summary>
@@ -227,9 +233,48 @@ public sealed record MultidimensionalCoverageVariable(
     double? NoData);
 
 /// <summary>
+/// CF/GDAL axis classification captured from <c>gdalmdiminfo</c>.
+/// Horizontal axes describe the grid; they are not slice dimensions.
+/// </summary>
+public enum MultidimensionalAxisKind
+{
+    /// <summary>The scan did not classify the axis.</summary>
+    Unknown = 0,
+
+    /// <summary>GDAL <c>HORIZONTAL_X</c>, or a CF X / longitude axis.</summary>
+    HorizontalX = 1,
+
+    /// <summary>GDAL <c>HORIZONTAL_Y</c>, or a CF Y / latitude axis.</summary>
+    HorizontalY = 2,
+
+    /// <summary>GDAL <c>TEMPORAL</c>, or a CF time axis.</summary>
+    Temporal = 3,
+
+    /// <summary>GDAL <c>VERTICAL</c>, or a CF Z axis.</summary>
+    Vertical = 4,
+}
+
+/// <summary>
 /// One named dimension of a coverage variable.
 /// </summary>
-public sealed record MultidimensionalCoverageDimension(string Name, long Size);
+public sealed record MultidimensionalCoverageDimension(string Name, long Size)
+{
+    /// <summary>
+    /// Axis classification persisted from the scan. <see cref="MultidimensionalAxisKind.Unknown"/>
+    /// when gdalmdiminfo did not classify the dimension.
+    /// </summary>
+    public MultidimensionalAxisKind Axis { get; init; }
+}
+
+/// <summary>
+/// Sample statistics of a coverage variable. Mean and standard deviation are omitted
+/// when GDAL did not report a single value for them.
+/// </summary>
+public sealed record CoverageSampleStatistics(
+    double Minimum,
+    double Maximum,
+    double? Mean,
+    double? StandardDeviation);
 
 /// <summary>
 /// Chunk layout for a variable. Required for range-efficient reads.

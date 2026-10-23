@@ -69,20 +69,38 @@ internal static partial class ImageServerSoapEndpoints
         // Use the same reference raster and canonical mosaic policy as GetServiceInfo.
         // RasterInfo is the native key-property carrier for statistics and histograms.
         var referenceRaster = SelectReferenceRaster(rasters);
+        var coverageGrid = await ReadCoverageGridAsync(
+            request.HttpContext, revalidation.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        if (coverageGrid is not null)
+        {
+            referenceRaster = ImageServerCoverageRaster.Apply(referenceRaster, coverageGrid);
+            extent = coverageGrid.Extent;
+        }
+
         if (!TryReadKeyPropertiesBands(operation, referenceRaster.BandCount, out var selectedBands,
                 out var renderingError, out var renderingStatus))
         {
             return CreateSoapFault(renderingError!, renderingStatus, request.SoapNamespace);
         }
 
-        var statistics = await ReadServiceStatisticsAsync(
-            request.HttpContext, revalidation.Resolution.LayerId, rasters,
-            revalidation.Resolution.MergeStrategy, cancellationToken,
-            selectedBands?.Distinct().Order().ToArray()).ConfigureAwait(false);
-        var histograms = await ReadServiceHistogramsAsync(
-            request.HttpContext, revalidation.Resolution.LayerId, rasters,
-            revalidation.Resolution.MergeStrategy, request.SoapNamespace, cancellationToken,
-            selectedBands?.Distinct().Order().ToArray()).ConfigureAwait(false);
+        RasterStatistics[] statistics;
+        (BandHistogram[]? Histograms, IResult? Error) histograms;
+        if (coverageGrid is not null)
+        {
+            statistics = ImageServerCoverageRaster.Statistics(coverageGrid);
+            histograms = ([], null);
+        }
+        else
+        {
+            statistics = await ReadServiceStatisticsAsync(
+                request.HttpContext, revalidation.Resolution.LayerId, rasters,
+                revalidation.Resolution.MergeStrategy, cancellationToken,
+                selectedBands?.Distinct().Order().ToArray()).ConfigureAwait(false);
+            histograms = await ReadServiceHistogramsAsync(
+                request.HttpContext, revalidation.Resolution.LayerId, rasters,
+                revalidation.Resolution.MergeStrategy, request.SoapNamespace, cancellationToken,
+                selectedBands?.Distinct().Order().ToArray()).ConfigureAwait(false);
+        }
         if (histograms.Error is not null)
         {
             return histograms.Error;
@@ -95,6 +113,17 @@ internal static partial class ImageServerSoapEndpoints
             BuildKeyPropertiesResult(
                 BuildSelectedKeyProperties(referenceRaster, selectedBands),
                 BuildKeyPropertiesRasterInfo(referenceRaster, extent.Value, statistics, histograms.Histograms!, selectedBands)));
+    }
+
+    private static async Task<ImageServerCoverageGrid?> ReadCoverageGridAsync(
+        HttpContext httpContext,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var builder = httpContext.RequestServices.GetService<IImageServerMultidimensionalInfoBuilder>();
+        return builder is null
+            ? null
+            : await builder.DescribeGridAsync(layerId, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IResult> HandleGetRasterKeyPropertiesAsync(

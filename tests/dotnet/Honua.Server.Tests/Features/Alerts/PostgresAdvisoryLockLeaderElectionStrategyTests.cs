@@ -89,6 +89,46 @@ public sealed class PostgresAdvisoryLockLeaderElectionStrategyTests(DatabaseFixt
         }
     }
 
+    [IntegrationTest(Timeout = 60000)]
+    public async Task TryAcquire_AfterLeaderConnectionSevered_FollowerTakesTheLock()
+    {
+        var connection = new NpgsqlConnectionStringBuilder(database.ConnectionString)
+        {
+            PersistSecurityInfo = true,
+            Multiplexing = true,
+        };
+        await using var shared = NpgsqlDataSource.Create(connection.ConnectionString);
+        await using var leader = new PostgresAdvisoryLockLeaderElectionStrategy(
+            shared,
+            NullLogger<PostgresAdvisoryLockLeaderElectionStrategy>.Instance);
+        await using var follower = new PostgresAdvisoryLockLeaderElectionStrategy(
+            shared,
+            NullLogger<PostgresAdvisoryLockLeaderElectionStrategy>.Instance);
+
+        Assert.True(await leader.TryAcquireAsync());
+        Assert.False(await follower.TryAcquireAsync());
+        Assert.True(leader.IsLeader);
+        Assert.False(follower.IsLeader);
+
+        var leaderPid = await ReadLockPidAsync(shared);
+        await using (var admin = await shared.OpenConnectionAsync())
+        await using (var terminate = new NpgsqlCommand("SELECT pg_terminate_backend(@pid)", admin))
+        {
+            terminate.Parameters.AddWithValue("pid", leaderPid);
+            Assert.True((bool?)await terminate.ExecuteScalarAsync() ?? false);
+        }
+
+        Assert.True(await follower.TryAcquireAsync());
+        Assert.True(follower.IsLeader);
+        var followerPid = await ReadLockPidAsync(shared);
+        Assert.NotEqual(leaderPid, followerPid);
+        Assert.True(followerPid > 0);
+
+        Assert.False(await leader.TryAcquireAsync());
+        Assert.False(leader.IsLeader);
+        Assert.Equal(followerPid, await ReadLockPidAsync(shared));
+    }
+
     private static async Task<int> ReadLockPidAsync(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
