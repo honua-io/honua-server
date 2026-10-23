@@ -162,10 +162,79 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Insufficient privilege or the packages are absent: report the missing extension.
-            LogPostGisCreateFailed(_logger, ex.GetType().Name, ex.Message);
-            return false;
+            // A concurrent startup can lose the CREATE race and still leave PostGIS installed.
+            // Re-query before deciding. A disconnect or command timeout is not a missing
+            // extension: it has to reach PostgresPreflightFailureClassifier.
+            var installed = await PostGisIsInstalledAsync(connection, cancellationToken).ConfigureAwait(false);
+            switch (DecidePostGisCreateFailure(ex, installed))
+            {
+                case PostGisCreateFailureDisposition.CreatedByPeer:
+                    LogPostGisCreatedConcurrently(_logger);
+                    return true;
+                case PostGisCreateFailureDisposition.MissingExtension:
+                    LogPostGisCreateFailed(_logger, ex.GetType().Name, ex.Message);
+                    return false;
+                default:
+                    throw;
+            }
         }
+    }
+
+    /// <summary>What a failed <c>CREATE EXTENSION postgis</c> means after a re-query.</summary>
+    internal enum PostGisCreateFailureDisposition
+    {
+        /// <summary>The role cannot create the extension, or the packages are not installed.</summary>
+        MissingExtension = 0,
+
+        /// <summary>The failure is not a missing extension and must reach the preflight classifier.</summary>
+        Propagate = 1,
+
+        /// <summary>The re-query found PostGIS, so a concurrent create won the race.</summary>
+        CreatedByPeer = 2,
+    }
+
+    /// <summary>
+    /// Classifies a create failure after <paramref name="installedAfterFailure"/> was read from
+    /// <c>pg_extension</c>. Privilege and missing-package errors stay a missing extension.
+    /// Everything else propagates.
+    /// </summary>
+    /// <param name="error">The exception raised by <c>CREATE EXTENSION</c>.</param>
+    /// <param name="installedAfterFailure">True when PostGIS is installed after that exception.</param>
+    /// <returns>How the preflight should treat the failure.</returns>
+    internal static PostGisCreateFailureDisposition DecidePostGisCreateFailure(
+        Exception error, bool installedAfterFailure)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        if (installedAfterFailure)
+        {
+            return PostGisCreateFailureDisposition.CreatedByPeer;
+        }
+
+        return IsPostGisExtensionUnavailable(error)
+            ? PostGisCreateFailureDisposition.MissingExtension
+            : PostGisCreateFailureDisposition.Propagate;
+    }
+
+    private static bool IsPostGisExtensionUnavailable(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException postgres)
+            {
+                // 42501 insufficient_privilege, 58P01 undefined_file (no control file),
+                // 42704 undefined_object, 0A000 feature_not_supported.
+                return postgres.SqlState is "42501" or "0A000" or "58P01" or "42704";
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> PostGisIsInstalledAsync(
+        NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        var extensions = await GetInstalledExtensionsAsync(connection, cancellationToken).ConfigureAwait(false);
+        return extensions.Exists(extension => string.Equals(extension.Name, "postgis", StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<string> GetEngineVersionAsync(
@@ -223,6 +292,12 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         Level = LogLevel.Warning,
         Message = "Could not create the PostGIS extension ({ExceptionType}): {Reason}. Run CREATE EXTENSION postgis as a privileged role.")]
     private static partial void LogPostGisCreateFailed(ILogger logger, string exceptionType, string reason);
+
+    [LoggerMessage(
+        EventId = 7921,
+        Level = LogLevel.Information,
+        Message = "PostGIS extension was created by a concurrent startup; the preflight will use it.")]
+    private static partial void LogPostGisCreatedConcurrently(ILogger logger);
 
     [LoggerMessage(
         EventId = 7913,

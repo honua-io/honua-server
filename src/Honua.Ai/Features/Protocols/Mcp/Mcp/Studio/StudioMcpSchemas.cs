@@ -71,14 +71,14 @@ internal static class StudioMcpSchemas
         }
         """;
 
-    private const string LayerInputSchemaJson = """
+    private static readonly string LayerInputSchemaJson = $$"""
         {
           "type": "object",
           "required": ["id"],
           "additionalProperties": false,
           "properties": {
             "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Stable layer id, unique within the composition." },
-            "sourceId": { "type": "string", "maxLength": 200, "description": "For catalog-backed layers copy studioSourceId from honua_list_layers or honua_describe_layer. Distinct from this composition layer.id. Supported portable bindings and metadata.honua.source overrides remain separate explicit source mechanisms." },
+            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "For catalog-backed layers copy studioSourceId from honua_list_layers or honua_describe_layer. Distinct from this composition layer.id. Supported portable bindings and metadata.honua.source overrides remain separate explicit source mechanisms." },
             "type": { "type": "string", "maxLength": 100, "description": "Layer type (e.g. fill, circle, line, raster)." },
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "visible": { "type": "boolean", "default": true, "description": "Layer visibility." },

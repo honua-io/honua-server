@@ -7,11 +7,13 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Authorization.Abstractions;
+using CoreCatalogSourceIdentity = Honua.Core.Features.Studio.Domain.StudioCatalogSourceIdentity;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -69,6 +71,55 @@ public sealed class McpMapToolTests
     public void CatalogIdentity_MatchesExistingStudioUriComponentContract(string serviceId, int layerId, string expected)
     {
         StudioCatalogSourceIdentity.Create(serviceId, layerId).Should().Be(expected);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public void CatalogIdentity_PublishedUnicodeServiceName_FitsTheLayerSourceSchema()
+    {
+        var serviceId = "svc-publish-" + new string('\u4e00', 64);
+        var sourceId = StudioCatalogSourceIdentity.Create(serviceId, int.MaxValue);
+        var schemaMax = StudioMcpSchemas.AddLayerArgumentSchema
+            .GetProperty("properties")
+            .GetProperty("layer")
+            .GetProperty("properties")
+            .GetProperty("sourceId")
+            .GetProperty("maxLength")
+            .GetInt32();
+
+        schemaMax.Should().Be(CoreCatalogSourceIdentity.MaxLength);
+        sourceId.Should().StartWith("svc-publish-");
+        sourceId.Should().EndWith("/" + int.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        sourceId.Length.Should().BeLessOrEqualTo(schemaMax);
+        sourceId.Should().Be(CoreCatalogSourceIdentity.Create(serviceId, int.MaxValue));
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public void CatalogIdentity_LongerUnicodeServices_StayInsideTheSchemaWithoutColliding()
+    {
+        var first = new string('\u4e00', 80);
+        var second = new string('\u4e8c', 80);
+        var firstLayer = StudioCatalogSourceIdentity.Create(first, 1);
+        var secondLayer = StudioCatalogSourceIdentity.Create(second, 1);
+        var otherLayer = StudioCatalogSourceIdentity.Create(first, 2);
+        var limit = CoreCatalogSourceIdentity.MaxLength;
+
+        firstLayer.Length.Should().BeLessOrEqualTo(limit);
+        secondLayer.Length.Should().BeLessOrEqualTo(limit);
+        otherLayer.Length.Should().BeLessOrEqualTo(limit);
+        firstLayer.Should().NotBe(secondLayer);
+        firstLayer.Should().NotBe(otherLayer);
+        secondLayer.Should().NotBe(otherLayer);
+        firstLayer.Should().NotStartWith(Uri.EscapeDataString(first)[..32]);
     }
 
     [Theory]

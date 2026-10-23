@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
@@ -201,12 +202,35 @@ internal static class OperationSecretKeyRingProtection
         }
 
         var password = configuration[CertificatePasswordKey];
+        try
+        {
+            // A mode 000 mount makes the PKCS#12 loader throw CryptographicException.
+            // Probe the file first so that case stays the ownership refusal.
+            using var probe = File.OpenRead(path);
+        }
+        catch (Exception exception) when (IsCertificateUnreadable(exception))
+        {
+            throw UnreadableMount(path, exception);
+        }
+
         X509Certificate2 certificate;
         try
         {
             certificate = string.IsNullOrEmpty(password)
                 ? X509CertificateLoader.LoadPkcs12FromFile(path, password: null)
                 : X509CertificateLoader.LoadPkcs12FromFile(path, password);
+        }
+        catch (CryptographicException exception) when (IsCertificateUnreadable(exception))
+        {
+            throw UnreadableMount(path, exception);
+        }
+        catch (CryptographicException exception)
+        {
+            // A bad file or export password throws CryptographicException, not
+            // InvalidOperationException. The exception text can describe the certificate,
+            // so the refusal names only the exception type.
+            throw new InvalidOperationException(
+                $"'{CertificatePathKey}' could not be loaded as a PKCS#12 certificate ({exception.GetType().Name}). Check the file and its export password.");
         }
         catch (Exception exception) when (IsCertificateUnreadable(exception))
         {
@@ -227,8 +251,17 @@ internal static class OperationSecretKeyRingProtection
     }
 
     private static bool IsCertificateUnreadable(Exception exception)
-        => exception is UnauthorizedAccessException or IOException
-           || exception.InnerException is UnauthorizedAccessException or IOException;
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is UnauthorizedAccessException or IOException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static InvalidOperationException UnreadableMount(string path, Exception exception)
     {
