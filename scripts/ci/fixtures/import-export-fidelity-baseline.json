@@ -1,0 +1,22 @@
+{
+  "imports": [
+    "ImportFileAsync_ExistingTarget_WithOverwriteTrue_ReplacesLiveRows",
+    "ImportFileAsync_GeoPackageWithLocalSrsId_ResolvesEpsgAndTransformsGeometry",
+    "ImportFileAsync_WithoutOverwrite_CreatesStagingTableAndSucceeds",
+    "ImportLayerAsync_WhenCatalogCheckCannotRun_CompletesAsUnverifiedNotFullFidelity",
+    "ImportLayerAsync_WhenCatalogReconciliationFails_RoutesToNeedsReviewDespiteGreenDataReconciliation",
+    "ImportLayerAsync_WhenEveryCheckRanAndPassed_ReportsFullFidelity",
+    "ImportLayerAsync_WhenPublicationTimesOut_RetainsRowsAndRequiresReview"
+  ],
+  "exports": [
+    {"format": "csv", "fixture": "point", "measured_count": 2, "measured_delta": 0},
+    {"format": "shp", "fixture": "point", "measured_count": 2, "measured_delta": 0},
+    {"format": "gpkg", "fixture": "point", "measured_count": 2, "measured_delta": 0},
+    {"format": "csv", "fixture": "line", "measured_count": 2, "measured_delta": 0},
+    {"format": "shp", "fixture": "line", "measured_count": 2, "measured_delta": 0},
+    {"format": "gpkg", "fixture": "line", "measured_count": 2, "measured_delta": 0},
+    {"format": "csv", "fixture": "polygon", "measured_count": 2, "measured_delta": 0},
+    {"format": "shp", "fixture": "polygon", "measured_count": 2, "measured_delta": 0},
+    {"format": "gpkg", "fixture": "polygon", "measured_count": 2, "measured_delta": 0}
+  ]
+}

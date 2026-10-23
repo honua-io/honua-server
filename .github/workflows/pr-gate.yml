@@ -841,6 +841,22 @@ jobs:
             --no-build --no-restore --configuration Release --filter 'Category=PdalExecutionProof' \
             --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
 
+      - name: Execute import and independent vector export fidelity proofs
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
+        timeout-minutes: 25
+        run: |
+          python3 tests/python/unit/test_import_export_fidelity_proof.py
+          python3 tests/python/unit/test_diff_baselines.py
+          python3 scripts/ci/run-import-export-fidelity-proof.py
+
+      - name: Upload import and independent vector export fidelity evidence
+        if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: import-export-fidelity-proof
+          path: tests/TestResults/import-export-fidelity/
+          if-no-files-found: error
+
       - name: Upload point-cloud execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
