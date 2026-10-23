@@ -838,6 +838,14 @@ internal sealed class CapabilityManifestService(
             available = false;
             reasonCode = CapabilityReasonCodes.Unsupported;
         }
+        // A configured profile 404s every route it does not enable. Fold that into availability
+        // for every capability that maps to one of those routes. An enabled key stays on the
+        // gates below, and a capability with no mapped route is left unchanged.
+        else if (IsRemovedByDeploymentProfile(id))
+        {
+            available = false;
+            reasonCode = CapabilityReasonCodes.DeploymentProfileExcluded;
+        }
         else if (!configured)
         {
             available = false;
@@ -914,6 +922,18 @@ internal sealed class CapabilityManifestService(
                 ? $"capabilities.{id}.available"
                 : $"capabilities.{id}.{reasonCode}"
         };
+    }
+
+    private bool IsRemovedByDeploymentProfile(string manifestId)
+    {
+        var profile = options.DeploymentProfile;
+        if (!profile.Configured)
+        {
+            return false;
+        }
+
+        return runtimeInventory.RoutedCapabilities.TryGetRoutedCapability(manifestId, out var capability)
+            && Array.IndexOf(profile.EnabledCapabilities, capability) < 0;
     }
 
     private static CapabilityManifestCapability[] ApplyCompiledProtocolProfile(
@@ -1659,6 +1679,13 @@ internal static class CapabilityReasonCodes
 {
     public const string Unsupported = "unsupported";
     public const string DisabledByConfiguration = "disabled-by-configuration";
+
+    /// <summary>
+    /// The capability maps to a route the configured deployment profile does not enable,
+    /// so that route returns 404. Distinct from <see cref="DisabledByConfiguration"/>, which
+    /// is a host switch other than the deployment-profile allowlist.
+    /// </summary>
+    public const string DeploymentProfileExcluded = "deployment-profile-excluded";
     public const string LicenseRequired = "license-required";
     public const string EntitlementInactive = "entitlement-inactive";
     public const string InsufficientPolicy = "insufficient-policy";

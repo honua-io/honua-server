@@ -43,8 +43,8 @@ Each capability record reports:
 | Field | Meaning |
 |---|---|
 | `supported` | The server build registers the backing implementation. |
-| `available` | Usable for this request after configuration, environment, authentication, license, and policy checks. |
-| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
+| `available` | Usable for this request after the deployment profile, configuration, environment, authentication, license, and policy checks. A configured profile makes a capability that maps to a route unavailable when that route's key is not enabled. A capability with no mapped route is unchanged. |
+| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `deployment-profile-excluded`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
 | `lifecycle` | Product lifecycle classification. Customer alerting (`alerts.geofence`), realtime feature streams, and SensorThings report `preview` for 2026.1; alerting qualification evidence does not promote it to GA. |
 | `optInRequired` | Whether the capability must be explicitly enabled. Preview realtime capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
 

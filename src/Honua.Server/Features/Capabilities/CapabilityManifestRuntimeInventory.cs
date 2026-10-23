@@ -26,8 +26,15 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IEnumerable<IFeatureLockAuthorizer> featureLockAuthorizers,
     IWebHostEnvironment hostEnvironment,
     IServiceProviderIsService serviceInventory,
-    IFeatureOutputFormatRegistry outputFormats)
+    IFeatureOutputFormatRegistry outputFormats,
+    ManifestRoutedCapabilityIndex routedCapabilities)
 {
+    /// <summary>
+    /// Manifest id to deployment-profile route key. Held here so the manifest service
+    /// does not take another collaborator for profile availability.
+    /// </summary>
+    public ManifestRoutedCapabilityIndex RoutedCapabilities { get; } = routedCapabilities;
+
     public IReadOnlyList<IBatchComputeBackend> BatchBackends { get; } = batchBackends.ToArray();
 
     public IReadOnlyList<IDeployBackend> DeployBackends { get; } = deployBackends.ToArray();
