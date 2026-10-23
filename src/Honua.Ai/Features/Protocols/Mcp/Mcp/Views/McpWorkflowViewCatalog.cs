@@ -107,9 +107,9 @@ internal static class McpWorkflowViewCatalog
             + "submitted publication: confirm readiness, connect and import a source, publish it as a service and "
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
-            + "only the descriptors that path needs. Select analyze on the same MCP connection to author or publish "
+            + "only the descriptors that path needs. Select configure on the same MCP connection for reusable shared styles, or analyze to author or publish "
             + "reusable workflow packages; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v6",
+        Revision = "setup.v7",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -168,8 +168,6 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_get_style"),
-                    McpWorkflowViewMemberRule.Exact("honua_shared_style_get"),
-                    McpWorkflowViewMemberRule.Exact("honua_shared_style_propose"),
                     McpWorkflowViewMemberRule.Exact("honua_apply_style_preset"),
                     McpWorkflowViewMemberRule.Exact("honua_render_map"),
                 ],

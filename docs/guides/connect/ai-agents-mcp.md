@@ -283,7 +283,7 @@ The curated prompts select `configure` or `analyze`, not `setup`. Each view is b
 | `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
 | `analyze` | Grounding, geocoding, layer reads, plan / validate / execute / job tools, and separate workflow authoring and publication stages. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
-| `setup` | The bounded terminal path (`setup.v6`): readiness, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Select `analyze` for reusable workflow packages. |
+| `setup` | The bounded terminal path (`setup.v7`): readiness, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Select `analyze` for reusable workflow packages. |
 | `workspace` | Captured shared turns, forms, task-bound imports, publication and shared-style review. Only installed native capabilities appear. |
 | `processes` | The workspace context plus isolated local-process source editing, snapshots, execution, diagnostics, cancellation and recovery. These tools retain their separate execution family and authorization. |
 | `default` | The 12-tool discovery surface. It does not contain the admin roster. |
@@ -464,3 +464,5 @@ Layer discovery, layer descriptions, feature pages, and counts use the shared RE
 - [Operating Honua](../operate/README.md)
 - [Run geoprocessing](../query-analyze/run-geoprocessing.md)
 - [Authentication](../secure/authentication.md)
+
+Reusable shared-style authoring is available in the `configure` and `workspace` workflow views. The `setup` view keeps canonical style reads, presets, and rendering alongside import, analysis, and Studio composition; switch views on the same MCP connection when editing a reusable shared style.

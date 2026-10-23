@@ -57,6 +57,8 @@ public sealed class McpWorkflowViewTests
             [new Honua.Ai.Protocols.Mcp.MapTools.SharedStyleGetTool(), new Honua.Ai.Protocols.Mcp.MapTools.SharedStyleProposeTool()],
             [], NullLogger<McpDataAccessSurface>.Instance);
         var listed = await ListToolsAsync(surface, McpWorkflowViewCatalog.ConfigureViewName);
+        var setup = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
+        setup.Names.Should().BeEmpty("reusable shared styles are discovered through configure or workspace");
         foreach (var name in new[] { "honua_shared_style_get", "honua_shared_style_propose" })
         {
             var descriptor = listed.Tools.Single(tool => tool.GetProperty("name").GetString() == name);
@@ -73,7 +75,7 @@ public sealed class McpWorkflowViewTests
         StageOf(view, "author-workflow").Should().Contain("honua_workflow_package").And.NotContain("honua_workflow_package_propose");
         StageOf(view, "publish-workflow").Should().Contain("honua_workflow_package_propose");
         McpWorkflowViewCatalog.Analyze.Revision.Should().Be("analyze.v2");
-        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v6");
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v7");
         McpWorkflowViewCatalog.Configure.Revision.Should().Be("configure.v4");
     }
 
@@ -178,8 +180,6 @@ public sealed class McpWorkflowViewTests
             "honua_query_features",
             "honua_get_style",
             "honua_apply_style_preset",
-            "honua_shared_style_get",
-            "honua_shared_style_propose",
             "honua_render_map",
             "honua_plan_analysis",
             "honua_validate_plan",
