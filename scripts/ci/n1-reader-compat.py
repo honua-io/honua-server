@@ -48,7 +48,8 @@ Outcomes and exit status:
                                    rollback safety
   1  anything else: reader-incompatible-regression, expected-refusal-missing,
      expected-refusal-undocumented, refusal-untyped, serve-check-failed,
-     candidate-migration-failed, prior-unresolved, infrastructure-error
+     prior-changed-journal, candidate-migration-failed, prior-unresolved,
+     infrastructure-error
 
 Usage:
     scripts/ci/n1-reader-compat.py --output <dir> [--candidate-dll <path>] \
@@ -172,6 +173,7 @@ class Evidence:
     script_text: dict[str, str] = field(default_factory=dict)
     rollback_doc: str = ""
     prior_has_reader_guard: bool = True
+    journal_changed: bool = False
 
 
 def documented(script: str, evidence: Evidence) -> list[str]:
@@ -188,6 +190,12 @@ def documented(script: str, evidence: Evidence) -> list[str]:
 
 def classify(evidence: Evidence) -> tuple[str, str]:
     """Map the observed evidence to (outcome, explanation)."""
+    if evidence.journal_changed:
+        # The prior applied migrations of its own. A serve check against that
+        # mutated journal is not N-1 evidence, including when the prior is unguarded.
+        return ("prior-changed-journal",
+                "the prior image changed the migration journal (journal_after != journal), "
+                "so this receipt does not prove N-1 compatibility")
     breaking = {
         script for script in evidence.journal_delta
         if evidence.classifications.get(script) in ("contract", "reader-incompatible")
@@ -659,13 +667,15 @@ def execute(args: argparse.Namespace, receipt: dict, output: Path) -> Evidence:
         refusal = parse_refusal(logs)
         receipt["refusal"] = refusal
         journal_after = [line for line in psql(pg, "SELECT scriptname FROM public.schema_versions ORDER BY schemaversionsid;").splitlines() if line]
-        receipt["journal_unchanged_by_prior"] = journal_after == journal
+        journal_changed = journal_after != journal
+        receipt["journal_unchanged_by_prior"] = not journal_changed
         doc_path = REPO_ROOT / ROLLBACK_DOC
         return Evidence(journal_delta=delta, classifications=classifications, pr_added=pr_added,
                         prior_has_reader_declarations=prior["has_reader_declarations"],
                         prior_has_reader_guard=prior["has_reader_guard"], refusal=refusal,
                         ready=ready, serve_ok=serve_ok, script_text=script_text,
-                        rollback_doc=doc_path.read_text(encoding="utf-8") if doc_path.exists() else "")
+                        rollback_doc=doc_path.read_text(encoding="utf-8") if doc_path.exists() else "",
+                        journal_changed=journal_changed)
     finally:
         if receipt.get("prior_started"):
             (output / "prior.log").write_text(container_logs(server), encoding="utf-8")

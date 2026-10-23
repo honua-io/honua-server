@@ -25,6 +25,33 @@ public sealed class OidcAuthenticationOptions
     public OidcDelegatedAgentAudience[] DelegatedAgentAudiences { get; set; } = [];
 
     /// <summary>
+    /// Optional deployment-pinned callback for the backend-assisted admin OIDC broker.
+    /// Must be an absolute HTTPS URI at /admin/auth/callback without user information,
+    /// query or fragment. When absent, the broker retains its Public:BaseUrl callback.
+    /// This does not change the server's public API origin or middleware callback paths.
+    /// </summary>
+    public string? AdminAuthCallbackUri { get; set; }
+
+    internal bool TryGetAdminAuthCallbackUri(out Uri? callback)
+    {
+        callback = null;
+        if (AdminAuthCallbackUri is null)
+        {
+            return true;
+        }
+
+        return string.Equals(AdminAuthCallbackUri, AdminAuthCallbackUri.Trim(), StringComparison.Ordinal)
+            && Uri.TryCreate(AdminAuthCallbackUri, UriKind.Absolute, out callback)
+            && callback.IsWellFormedOriginalString()
+            && callback.Scheme == Uri.UriSchemeHttps
+            && !string.IsNullOrEmpty(callback.Host)
+            && string.IsNullOrEmpty(callback.UserInfo)
+            && callback.AbsolutePath == "/admin/auth/callback"
+            && !AdminAuthCallbackUri.Contains('?')
+            && !AdminAuthCallbackUri.Contains('#');
+    }
+
+    /// <summary>
     /// Gets or sets the Azure AD provider configuration.
     /// </summary>
     public AzureAdProviderOptions? AzureAd { get; set; }

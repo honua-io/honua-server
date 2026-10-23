@@ -575,9 +575,13 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IPreparedStatementCacheStatisticsProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<PreparedStatementCache>());
 
-        // PERFORMANCE OPTIMIZATION: Register high-frequency query preparation service
-        // Pre-prepares known frequently-used queries for optimal initial performance
-        services.AddHostedService<HighFrequencyQueryPreparationService>();
+        // Pre-prepares known frequently-used queries. A control-plane event Lambda has a
+        // pool of 2 and is frozen between EventBridge invocations; this warmup opens a
+        // connection on every thaw and was timing out behind RDS Proxy (honua-server#6515).
+        if (!Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsEventHandler(configuration))
+        {
+            services.AddHostedService<HighFrequencyQueryPreparationService>();
+        }
 
         // Register enhanced database connection provider with prepared statement caching
         // Keep construction behind a factory so DB-less hosts can remove the public
@@ -637,8 +641,13 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<PostgresCrsWarmupService>>(),
                 serviceProvider.GetRequiredService<IDistributedLeaderElection>()));
 
-        services.AddHostedService(serviceProvider =>
-            serviceProvider.GetRequiredService<PostgresCrsWarmupService>());
+        // The warmup loop holds a connection for the leader interval. The event-handler
+        // Lambdas must not: their pool is released at the end of the invocation.
+        if (!Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsEventHandler(configuration))
+        {
+            services.AddHostedService(serviceProvider =>
+                serviceProvider.GetRequiredService<PostgresCrsWarmupService>());
+        }
 
         // Register import limits configuration
         services.AddSingleton(serviceProvider =>

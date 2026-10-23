@@ -117,8 +117,13 @@ internal static class JobOrchestrationServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>());
 
         // JobExecutionService is the always-on queue drainer, not a periodic tick; it stays hosted
-        // in both trigger modes.
-        services.AddHostedService<JobExecutionService>();
+        // in both trigger modes on the API and on long-lived hosts. An event-handler Lambda
+        // already runs one reconcile or tick per invocation and then releases its pool; a second
+        // drainer on a pool of 2 pins connections across freeze (honua-server#6515).
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService<JobExecutionService>();
+        }
 
         // JobReconciliationService is the PERIODIC heartbeat/timeout reaping sweep (bucket-b). Its
         // sweep body is idempotent (per-candidate re-read + optimistic CAS), so the scheduled-tick

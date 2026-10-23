@@ -15,6 +15,14 @@ internal static class RasterGeneralNearestSql
     /// the entire source. Mosaic inputs retain a temporary coverage mask; single outputs retain native metadata.
     /// </summary>
     internal static string Sample(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
+        => RasterSamplingSql.FunctionCall(
+            RasterSamplerKind.GeneralNearest, rasterExpression, gridExpression, preserveCoverageMask);
+
+    /// <summary>
+    /// Body of <c>honua_raster.general_nearest_v1</c>. Callers use <see cref="Sample"/> so the
+    /// general fallback is planned only when native and separable sampling both return null.
+    /// </summary>
+    internal static string Definition(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
         var pixelType = preserveCoverageMask ? "'64BF'" : "m.pixeltype";
         var noData = preserveCoverageMask ? "-1.7976931348623157e308" : "m.nodatavalue";

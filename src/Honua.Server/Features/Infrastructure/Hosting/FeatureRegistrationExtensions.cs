@@ -233,7 +233,7 @@ internal static class FeatureRegistrationExtensions
         // Durable isolated shadow-topology rebuild worker + self-healing reconciler
         // (#2718/#2720). Self-gates on the routing rebuild store (Postgres-only) and the
         // execution-job store (Redis-gated) both being registered above.
-        Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildServiceCollectionExtensions.AddNetworkTopologyRebuildJobs(services);
+        Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildServiceCollectionExtensions.AddNetworkTopologyRebuildJobs(services, configuration);
         services.AddAnalysisContent(configuration);
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);

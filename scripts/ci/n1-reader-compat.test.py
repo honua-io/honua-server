@@ -107,6 +107,25 @@ class Classify(unittest.TestCase):
         outcome, _ = n1.classify(evidence(classifications={"140_AddThing.sql": "reader-incompatible"}))
         self.assertEqual(outcome, "expected-refusal-missing")
 
+    def test_prior_that_changes_the_journal_is_not_compatible(self) -> None:
+        outcome, why = n1.classify(evidence(journal_changed=True))
+        self.assertEqual(outcome, "prior-changed-journal")
+        self.assertNotIn(outcome, n1.PASSING)
+        self.assertEqual(n1.exit_code_for(outcome), 1)
+        self.assertIn("journal_after != journal", why)
+
+    def test_journal_change_does_not_turn_unguarded_prior_into_a_pass(self) -> None:
+        outcome, _ = n1.classify(evidence(
+            journal_delta=["115_AddDropImportStagingTable.sql", "135_RecordMigrationReaderCompatibility.sql"],
+            classifications={"115_AddDropImportStagingTable.sql": "contract",
+                             "135_RecordMigrationReaderCompatibility.sql": "expand"},
+            prior_has_reader_declarations=False, prior_has_reader_guard=False,
+            journal_changed=True, serve_ok=True))
+        self.assertNotIn(outcome, n1.PASSING)
+        self.assertNotEqual(outcome, "compatible")
+        self.assertNotEqual(outcome, "prior-unguarded")
+        self.assertEqual(n1.exit_code_for(outcome), 1)
+
     def test_unguarded_prior_that_serves_is_known_blocked_not_pass(self) -> None:
         # What the honua-2026.1 release image (schema 106, before #5333) does on schema 135.
         outcome, why = n1.classify(evidence(

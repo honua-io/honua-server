@@ -16,6 +16,14 @@ internal static class RasterNativeWindowSql
     /// and their original NoData metadata, including opaque zero outside undeclared-NoData bands.
     /// </summary>
     internal static string TryWarp(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
+        => RasterSamplingSql.FunctionCall(
+            RasterSamplerKind.NativeWindow, rasterExpression, gridExpression, preserveCoverageMask);
+
+    /// <summary>
+    /// Body of <c>honua_raster.native_window_v1</c>. Callers use <see cref="TryWarp"/> so the
+    /// outer query plans a function call instead of this expression.
+    /// </summary>
+    internal static string Definition(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
         var padded = RasterGridFrameSql.FrameAlignedRaster("w.rast", "w.grid");
         // A single output can preserve every 64BF value without reserving a coverage marker:

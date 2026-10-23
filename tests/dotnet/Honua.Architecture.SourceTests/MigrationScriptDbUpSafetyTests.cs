@@ -54,7 +54,16 @@ public sealed class MigrationScriptDbUpSafetyTests
         TimeSpan.FromSeconds(2));
 
     private static readonly HashSet<string> _definedMigrationVariables =
-        ["$HonuaSchema$"];
+    [
+        "$HonuaSchema$",
+        // Bound in PostgresDatabaseMigrationRunner from RasterSamplingSql.MigrationVariables.
+        "$HonuaRasterNativeWindowV1$",
+        "$HonuaRasterNativeWindowCoverageV1$",
+        "$HonuaRasterSeparableNearestV1$",
+        "$HonuaRasterSeparableNearestCoverageV1$",
+        "$HonuaRasterGeneralNearestV1$",
+        "$HonuaRasterGeneralNearestCoverageV1$",
+    ];
 
     [ArchitectureTest]
     public void MigrationScripts_ShouldNotUseUndefinedVariableOrNamedDollarQuoteTags()

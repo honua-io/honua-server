@@ -6,6 +6,7 @@ using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Db.Postgres.Features.Raster;
 using Honua.Db.Postgres.Features.SensorThings;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -430,6 +431,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 [("raster_tiles", "renderer_version"), ("raster_tiles", "renderer_payload_sha256")],
                 []);
             await VerifyRasterTileProvenanceColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
+            VerifyRequiredMigration(state, RasterSamplingSql.MigrationResourceName, [], [], []);
+            await RasterSamplingSql.VerifyFunctionsAsync(connection, cancellationToken).ConfigureAwait(false);
             VerifyRequiredMigration(
                 state,
                 _migrations.RasterOverviewsMigration,

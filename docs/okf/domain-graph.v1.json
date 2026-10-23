@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:f49922bc3857f9609d02a1db6ce6a926083652472f3d205caf72a7939d68cb71",
+  "bundleDigest": "sha256:14bf7cdcdc74c0e49625faa439c11df18045d391ad13641f3bd11384986e3a92",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2167,7 +2167,7 @@
     {
       "id": "guides/deploy/database-initialization",
       "path": "guides/deploy/database-initialization.md",
-      "documentDigest": "sha256:62745434906539d268142041146130057bdcbdafb35d9f730877551ac99cab86",
+      "documentDigest": "sha256:b78c0f5722516892446221bb1a46dd7150b1ae38a98546a9b1376cefb1c2a2d0",
       "metadata": {
         "type": "guide",
         "title": "Initialize the database without starting Honua",
@@ -2649,7 +2649,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:81a9dc98e520cba7586ce37c0b7098178d0c86963c3bd26212520dfba37fef4f",
+      "documentDigest": "sha256:69100769cd9253b4997cc339c8ce3b1d41cadb62d481b3df646499baf318bce0",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",
@@ -7757,7 +7757,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:14ce04bfd8c12febb91d55638b23d613bb225190585ab377e9c402ee8672bcfe",
+      "documentDigest": "sha256:f0733a9690bb066235708e6168e42ca91e9011c32ef863a5fc0c249cbdc00cd1",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",

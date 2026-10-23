@@ -60,6 +60,20 @@ public sealed class PostgresRasterStoreStretchTests
     }
 
     [UnitTest]
+    public void Sample_StopsAtSamplerFunctionCalls()
+    {
+        var sql = RasterCorrectedNearestSql.Sample("source.rast", "target.rast", preserveCoverageMask: true);
+
+        sql.Should().Be(
+            "COALESCE(honua_raster.native_window_coverage_v1(source.rast, target.rast), " +
+            "honua_raster.separable_nearest_coverage_v1(source.rast, target.rast), " +
+            "honua_raster.general_nearest_coverage_v1(source.rast, target.rast))");
+        sql.Should().NotContain("window_input");
+        sql.Should().NotContain("sample_input");
+        sql.Should().NotContain("nearest_input");
+    }
+
+    [UnitTest]
     public void BuildStretchedRasterExpression_CompleteSamplerOccursOnceForMultipleBands()
     {
         var sampler = RasterCorrectedNearestSql.Sample("source.rast", "target.rast");

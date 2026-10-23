@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
@@ -106,8 +107,13 @@ internal static class OperationsServiceCollectionExtensions
                     descriptor.ImplementationInstance is not Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore))
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
-                services.AddHostedService<PlannedProposalReconciler>();
-                services.AddHostedService<QueuedOperationReconciler>();
+                // Janitor sweeps open Redis and the database on an interval. The event-handler
+                // Lambdas are invoked to run one tick, then release their pool (honua-server#6515).
+                if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+                {
+                    services.AddHostedService<PlannedProposalReconciler>();
+                    services.AddHostedService<QueuedOperationReconciler>();
+                }
             }
         }
         services.TryAddSingleton<IOperationEnvelopeFactory>(sp =>

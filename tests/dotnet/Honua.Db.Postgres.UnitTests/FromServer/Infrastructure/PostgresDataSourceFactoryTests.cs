@@ -65,6 +65,66 @@ public sealed class PostgresDataSourceFactoryTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_LambdaHost_DoesNotPinThePoolAtTheCap()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AWS_LAMBDA_FUNCTION_NAME"] = "honua",
+                ["Limits:Connections:MaxConnectionPoolSize"] = "8",
+            })
+            .Build();
+
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        limits.MaxConnectionPoolSize.Should().Be(8);
+        limits.MinConnectionPoolSize.Should().Be(0,
+            "a frozen Lambda does not prune, so the long-lived floor of 20 must not clamp up to the cap");
+        limits.ConnectionIdleLifetimeSeconds.Should().Be(PostgresDataSourceFactory.LambdaIdleConnectionLifetimeSeconds);
+
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+        PostgresDataSourceFactory.Configure(builder, schemaHeadersEnabled: false, limits);
+        builder.ConnectionStringBuilder.MinPoolSize.Should().Be(0);
+        builder.ConnectionStringBuilder.MaxPoolSize.Should().Be(8);
+        builder.ConnectionStringBuilder.ConnectionIdleLifetime.Should().Be(60);
+        builder.ConnectionStringBuilder.Pooling.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_EventHandlerLambda_ExplicitPoolFloorWins()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HONUA_CONTROL_PLANE_LAMBDA_HANDLER"] = "scheduled-tick",
+                ["Limits:Connections:MaxConnectionPoolSize"] = "2",
+                ["Limits:Connections:MinConnectionPoolSize"] = "1",
+                ["Limits:Connections:ConnectionIdleLifetimeSeconds"] = "30",
+            })
+            .Build();
+
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        limits.MinConnectionPoolSize.Should().Be(1);
+        limits.ConnectionIdleLifetimeSeconds.Should().Be(30);
+        limits.MaxConnectionPoolSize.Should().Be(2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_NonLambda_KeepsTheLongLivedFloor()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
+
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        limits.MinConnectionPoolSize.Should().Be(20);
+        limits.ConnectionIdleLifetimeSeconds.Should().Be(600);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void Configure_DefaultNonMultiplexingPath_DoesNotUseOptionsStartupParameter()
     {
         var builder = new NpgsqlDataSourceBuilder(TestConnectionString);

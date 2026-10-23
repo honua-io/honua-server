@@ -21,6 +21,14 @@ internal static class RasterSeparableNearestSql
     /// scan, avoiding repeated materialization of large tuples for individual pixel lookups.
     /// </summary>
     internal static string TrySample(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
+        => RasterSamplingSql.FunctionCall(
+            RasterSamplerKind.SeparableNearest, rasterExpression, gridExpression, preserveCoverageMask);
+
+    /// <summary>
+    /// Body of <c>honua_raster.separable_nearest_v1</c>. Callers use <see cref="TrySample"/> so
+    /// an unused separable fallback is not compiled into the native-window plan.
+    /// </summary>
+    internal static string Definition(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
         var pixelType = preserveCoverageMask ? "'64BF'" : "m.pixeltype";
         var noData = preserveCoverageMask ? "-1.7976931348623157e308" : "m.nodatavalue";

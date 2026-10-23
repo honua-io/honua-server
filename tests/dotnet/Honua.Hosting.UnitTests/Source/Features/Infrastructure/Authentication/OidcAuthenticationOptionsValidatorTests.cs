@@ -17,6 +17,115 @@ public class OidcAuthenticationOptionsValidatorTests
     private readonly OidcAuthenticationOptionsValidator _validator = new();
 
     [UnitTest]
+    public void BindOptions_ConfiguredArraysReplaceDefaults_AfterConfigurationOverlay()
+    {
+        using var defaults = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("""
+            {"Oidc":{"AdminRoles":["admin","administrator"],
+              "Generic":{"Scopes":["openid","profile","email"]}}}
+            """));
+        var configuration = new ConfigurationBuilder()
+            .AddJsonStream(defaults)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Oidc:AdminRoles:0"] = "pilot-approver",
+                ["Oidc:AdminRoles:1"] = "pilot-approver",
+                ["Oidc:Generic:Scopes:0"] = "openid",
+                ["Oidc:Generic:Scopes:1"] = "profile",
+                ["Oidc:Generic:Scopes:2"] = "email"
+            })
+            .Build();
+        var options = new OidcAuthenticationOptions();
+
+        OidcAuthenticationExtensions.BindOptions(configuration.GetSection("Oidc"), options);
+
+        Assert.Equal(["pilot-approver", "pilot-approver"], options.AdminRoles);
+        Assert.DoesNotContain("admin", options.AdminRoles);
+        Assert.DoesNotContain("administrator", options.AdminRoles);
+        Assert.Equal(["openid", "profile", "email"], options.Generic!.Scopes);
+    }
+
+    [UnitTest]
+    public void ConfiguredArrays_OptionsMonitorReloadsConfigurationAndReplacesDefaults()
+    {
+        using var configuration = (ConfigurationRoot)new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Oidc:AdminRoles:0"] = "first-approver",
+                ["Oidc:Generic:Scopes:0"] = "openid",
+                ["Oidc:AdminAuthCallbackUri"] = "https://first.example.com/admin/auth/callback"
+            })
+            .Build();
+        var section = configuration.GetSection(OidcAuthenticationOptions.SectionName);
+        var services = new ServiceCollection();
+        services.Configure<OidcAuthenticationOptions>(section);
+        services.PostConfigure<OidcAuthenticationOptions>(options =>
+            OidcAuthenticationExtensions.ReplaceConfiguredArrays(section, options));
+        using var provider = services.BuildServiceProvider();
+        var monitor = provider.GetRequiredService<IOptionsMonitor<OidcAuthenticationOptions>>();
+        Assert.Equal(["first-approver"], monitor.CurrentValue.AdminRoles);
+        Assert.Equal(["openid"], monitor.CurrentValue.Generic!.Scopes);
+        var changes = 0;
+        using var listener = monitor.OnChange(_ => changes++);
+
+        configuration["Oidc:AdminRoles:0"] = "second-approver";
+        configuration["Oidc:Generic:Scopes:0"] = "profile";
+        configuration["Oidc:AdminAuthCallbackUri"] = "https://second.example.com/admin/auth/callback";
+        configuration.Reload();
+
+        Assert.Equal(1, changes);
+        Assert.Equal(["second-approver"], monitor.CurrentValue.AdminRoles);
+        Assert.Equal(["profile"], monitor.CurrentValue.Generic!.Scopes);
+        Assert.Equal("https://second.example.com/admin/auth/callback", monitor.CurrentValue.AdminAuthCallbackUri);
+    }
+
+    [UnitTest]
+    public void BindOptions_UnconfiguredArraysRetainDefaults()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Oidc:Generic:Enabled"] = "false"
+            })
+            .Build();
+        var options = new OidcAuthenticationOptions();
+
+        OidcAuthenticationExtensions.BindOptions(configuration.GetSection("Oidc"), options);
+
+        Assert.Equal(["admin", "administrator"], options.AdminRoles);
+        Assert.Equal(["openid", "profile", "email"], options.Generic!.Scopes);
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("https://console.example.com/admin/auth/callback")]
+    [InlineData("https://console.example.com:8443/admin/auth/callback")]
+    public void Validate_AdminAuthCallbackUri_ExactHttpsOrUnset_ReturnsSuccess(string? callback)
+    {
+        var result = _validator.Validate(null, new OidcAuthenticationOptions { AdminAuthCallbackUri = callback });
+        Assert.True(result.Succeeded);
+    }
+
+    [UnitTheory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("/admin/auth/callback")]
+    [InlineData("http://console.example.com/admin/auth/callback")]
+    [InlineData("https://user:secret@console.example.com/admin/auth/callback")]
+    [InlineData("https://console.example.com/admin/auth/callback?next=other")]
+    [InlineData("https://console.example.com/admin/auth/callback?")]
+    [InlineData("https://console.example.com/admin/auth/callback#fragment")]
+    [InlineData("https://console.example.com/admin/auth/callback#")]
+    [InlineData("https://console.example.com/another/callback")]
+    [InlineData("https://console.example.com/admin/auth/callback/")]
+    [InlineData(" https://console.example.com/admin/auth/callback")]
+    public void Validate_AdminAuthCallbackUri_Invalid_ReturnsFailure(string callback)
+    {
+        var result = _validator.Validate(null, new OidcAuthenticationOptions { AdminAuthCallbackUri = callback });
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures!, failure => failure.Contains("AdminAuthCallbackUri", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
     public void Validate_ValidAzureAdConfiguration_ReturnsSuccess()
     {
         // Arrange
