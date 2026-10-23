@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:742c4b6481977d63cb594152ea100083f957d6c8f42cc8168eb17185fe6cebf1",
+  "bundleDigest": "sha256:326877ee7f540e955a6c20d4e38b01ef09313912771c41a08a53bc02cc21c886",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:02a32cc5152a967c317bdefa51d8ef3641c4133702c9b582faed81d38d640a64",
+      "documentDigest": "sha256:ece5ca0f4a5bd26ddb333be7523b21c4993d9de6afe3296a9e574e948d96bc52",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2534,7 +2534,7 @@
     {
       "id": "guides/query-analyze/geoprocessing-with-ai",
       "path": "guides/query-analyze/geoprocessing-with-ai.md",
-      "documentDigest": "sha256:dafc32787a5bff85e748bdf0c5111727f1ad04dd77454ff2bcd942313b18722e",
+      "documentDigest": "sha256:f7e7011901b5070611c510bf842b2f82484c831879e7460367d612e8dbaf1218",
       "metadata": {
         "type": "guide",
         "title": "Geoprocessing with AI",
@@ -8247,7 +8247,7 @@
     {
       "id": "studio/mcp-tools",
       "path": "studio/mcp-tools.md",
-      "documentDigest": "sha256:a2d1a388a896501e07779460452ce76405e838d045a354421538e88c04c99f3b",
+      "documentDigest": "sha256:30941570f7e3f898b3b40ea95ed53d7fc777dd9a9d9b32211fd0346dbf585167",
       "metadata": {
         "type": "guide",
         "title": "Studio MCP tools",

@@ -605,6 +605,32 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>Schema for <see cref="Models.McpIngestJobArtifactOutput"/>.</summary>
+    public static readonly JsonElement IngestJobArtifactOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["success", "intentId", "datasetName", "rowCount"],
+          "properties": {
+            "success": { "type": "boolean" },
+            "intentId": { "type": "string" },
+            "datasetName": { "type": "string" },
+            "rowCount": { "type": "integer" },
+            "connectionId": { "type": ["string", "null"] },
+            "schema": { "type": ["string", "null"] },
+            "table": { "type": ["string", "null"] },
+            "srid": { "type": ["integer", "null"], "description": "SRID stored on the imported table." },
+            "sourceSrid": { "type": ["integer", "null"], "description": "Producer or explicitly chosen source SRID. Not a feature property." },
+            "crsState": { "type": ["string", "null"], "description": "known when the producer recorded one CRS; unknown when the caller had to choose sourceSrid." },
+            "contentSha256": { "type": ["string", "null"] },
+            "geometryColumn": { "type": ["string", "null"] },
+            "primaryKey": { "type": ["string", "null"] },
+            "warnings": { "type": "array", "items": { "type": "string" } },
+            "errorMessage": { "type": ["string", "null"] }
+          }
+        }
+        """);
+
     /// <summary>
     /// Schema for <see cref="Models.McpIngestDatasetOutput"/>. A successful
     /// ingest carries the connectionId/schema/table triple (plus geometry column

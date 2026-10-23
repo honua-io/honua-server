@@ -430,6 +430,45 @@ internal static class McpToolSchemas
     /// </summary>
     public static readonly JsonElement IngestDatasetArgumentSchema = Parse(IngestDatasetArgumentSchemaJson);
 
+    private const string IngestJobArtifactArgumentSchemaJson = """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["intentId", "kind", "targetId", "jobId", "resultPackageId", "artifactId", "referenceSha256", "schema", "table", "targetSrid"],
+          "properties": {
+            "intentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Persist this before the call. Reuse the same value to recover the original import after a lost response."
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["browser-file", "local-process-artifact", "server-job-artifact"],
+              "description": "Dataset-import source kind. Only server-job-artifact is admitted. browser-file and local-process-artifact are recognized and refused; they are not a substitute for a job artifact."
+            },
+            "targetId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Deployment target the job reference is bound to." },
+            "jobId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Completed built-in job id. Not a URL or filesystem path." },
+            "resultPackageId": { "type": "string", "minLength": 1, "description": "Result package id from the job results resource, shaped {jobId}:v{version}." },
+            "artifactId": { "type": "string", "minLength": 1, "description": "Artifact id from the job results resource, shaped {jobId}:artifact:{ordinal}." },
+            "referenceSha256": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "Lowercase SHA-256 of the server-stored artifact reference string. Not a digest of caller-supplied bytes."
+            },
+            "schema": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Destination schema in the catalog database." },
+            "table": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Destination table name." },
+            "targetSrid": { "type": "integer", "minimum": 1, "description": "SRID stored on the imported table. A known producer CRS is transformed when this differs." },
+            "sourceSrid": { "type": "integer", "minimum": 1, "description": "Required only when the producer did not record a CRS. A conflicting value cannot relabel a known producer CRS." }
+          }
+        }
+        """;
+
+    /// <summary>Schema for <see cref="Models.McpIngestJobArtifactArgument"/>.</summary>
+    public static readonly JsonElement IngestJobArtifactArgumentSchema = Parse(IngestJobArtifactArgumentSchemaJson);
+
     /// <summary>
     /// Schema for <see cref="Models.McpPublishResultArgument"/>. Mirrors the
     /// geospatial-mcp <c>publish_result</c> schema (only <c>sourceId</c> required,

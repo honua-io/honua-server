@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/ingest_job_artifact.schema.json",
+  "title": "ingest_job_artifact inputSchema",
+  "description": "Argument shape for honua_ingest_job_artifact. Imports a completed built-in job artifact by canonical reference. x-honua-extension.",
+  "x-honua-extension": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intentId", "kind", "targetId", "jobId", "resultPackageId", "artifactId", "referenceSha256", "schema", "table", "targetSrid"],
+  "properties": {
+    "intentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "kind": { "type": "string", "enum": ["browser-file", "local-process-artifact", "server-job-artifact"] },
+    "targetId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "jobId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "resultPackageId": { "type": "string", "minLength": 1 },
+    "artifactId": { "type": "string", "minLength": 1 },
+    "referenceSha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+    "schema": { "type": "string", "minLength": 1, "maxLength": 63 },
+    "table": { "type": "string", "minLength": 1, "maxLength": 63 },
+    "targetSrid": { "type": "integer", "minimum": 1 },
+    "sourceSrid": { "type": "integer", "minimum": 1 }
+  }
+}

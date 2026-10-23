@@ -753,6 +753,106 @@ internal sealed class McpIngestDatasetArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_ingest_job_artifact</c>. Identity only: the server reads the artifact it already stored.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed class McpIngestJobArtifactArgument
+{
+    /// <summary>Caller-persisted command id. Reuse it to recover the original import.</summary>
+    [JsonPropertyName("intentId")]
+    public string? IntentId { get; set; }
+
+    /// <summary>browser-file, local-process-artifact, or server-job-artifact. Only the last is admitted.</summary>
+    [JsonPropertyName("kind")]
+    public string? Kind { get; set; }
+
+    /// <summary>Deployment target the reference is bound to.</summary>
+    [JsonPropertyName("targetId")]
+    public string? TargetId { get; set; }
+
+    /// <summary>Completed built-in job.</summary>
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    /// <summary>Immutable result package id (<c>{jobId}:v{version}</c>).</summary>
+    [JsonPropertyName("resultPackageId")]
+    public string? ResultPackageId { get; set; }
+
+    /// <summary>Artifact id (<c>{jobId}:artifact:{ordinal}</c>).</summary>
+    [JsonPropertyName("artifactId")]
+    public string? ArtifactId { get; set; }
+
+    /// <summary>Lowercase SHA-256 of the server-stored artifact reference.</summary>
+    [JsonPropertyName("referenceSha256")]
+    public string? ReferenceSha256 { get; set; }
+
+    /// <summary>Destination schema.</summary>
+    [JsonPropertyName("schema")]
+    public string? Schema { get; set; }
+
+    /// <summary>Destination table.</summary>
+    [JsonPropertyName("table")]
+    public string? Table { get; set; }
+
+    /// <summary>CRS stored on the imported table. Known producer coordinates are transformed when this differs.</summary>
+    [JsonPropertyName("targetSrid")]
+    public int? TargetSrid { get; set; }
+
+    /// <summary>Required only when the producer CRS is unknown. Ignored as an override of a known producer CRS.</summary>
+    [JsonPropertyName("sourceSrid")]
+    public int? SourceSrid { get; set; }
+}
+
+/// <summary>Output for <c>honua_ingest_job_artifact</c>. Publication remains a separate <c>honua_publish_service</c> call.</summary>
+internal sealed class McpIngestJobArtifactOutput
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("intentId")]
+    public string IntentId { get; set; } = string.Empty;
+
+    [JsonPropertyName("datasetName")]
+    public string DatasetName { get; set; } = string.Empty;
+
+    [JsonPropertyName("rowCount")]
+    public int RowCount { get; set; }
+
+    [JsonPropertyName("connectionId")]
+    public string? ConnectionId { get; set; }
+
+    [JsonPropertyName("schema")]
+    public string? Schema { get; set; }
+
+    [JsonPropertyName("table")]
+    public string? Table { get; set; }
+
+    [JsonPropertyName("srid")]
+    public int? Srid { get; set; }
+
+    [JsonPropertyName("sourceSrid")]
+    public int? SourceSrid { get; set; }
+
+    [JsonPropertyName("crsState")]
+    public string? CrsState { get; set; }
+
+    [JsonPropertyName("contentSha256")]
+    public string? ContentSha256 { get; set; }
+
+    [JsonPropertyName("geometryColumn")]
+    public string? GeometryColumn { get; set; }
+
+    [JsonPropertyName("primaryKey")]
+    public string? PrimaryKey { get; set; }
+
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<string> Warnings { get; set; } = [];
+
+    [JsonPropertyName("errorMessage")]
+    public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
 /// A per-row issue surfaced by <c>honua_ingest_dataset</c> (for example a CSV
 /// address that failed to geocode, imported without geometry).
 /// </summary>
