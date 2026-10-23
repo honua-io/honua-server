@@ -11,9 +11,9 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $body$
+AS $$
 SELECT $HonuaRasterNativeWindowV1$;
-$body$;
+$$;
 
 CREATE OR REPLACE FUNCTION honua_raster.native_window_coverage_v1(p_raster raster, p_grid raster)
 RETURNS raster
@@ -21,9 +21,9 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $body$
+AS $$
 SELECT $HonuaRasterNativeWindowCoverageV1$;
-$body$;
+$$;
 
 CREATE OR REPLACE FUNCTION honua_raster.separable_nearest_v1(p_raster raster, p_grid raster)
 RETURNS raster
@@ -31,9 +31,9 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $body$
+AS $$
 SELECT $HonuaRasterSeparableNearestV1$;
-$body$;
+$$;
 
 CREATE OR REPLACE FUNCTION honua_raster.separable_nearest_coverage_v1(p_raster raster, p_grid raster)
 RETURNS raster
@@ -41,9 +41,9 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $body$
+AS $$
 SELECT $HonuaRasterSeparableNearestCoverageV1$;
-$body$;
+$$;
 
 CREATE OR REPLACE FUNCTION honua_raster.general_nearest_v1(p_raster raster, p_grid raster)
 RETURNS raster
@@ -51,9 +51,9 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $body$
+AS $$
 SELECT $HonuaRasterGeneralNearestV1$;
-$body$;
+$$;
 
 CREATE OR REPLACE FUNCTION honua_raster.general_nearest_coverage_v1(p_raster raster, p_grid raster)
 RETURNS raster
@@ -61,9 +61,9 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $body$
+AS $$
 SELECT $HonuaRasterGeneralNearestCoverageV1$;
-$body$;
+$$;
 
 -- Callers already authorized to read the raster arguments. These functions read no tables.
 GRANT EXECUTE ON FUNCTION honua_raster.native_window_v1(raster, raster) TO PUBLIC;
