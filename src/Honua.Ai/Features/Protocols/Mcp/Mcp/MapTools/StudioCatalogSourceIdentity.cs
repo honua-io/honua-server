@@ -8,4 +8,8 @@ internal static class StudioCatalogSourceIdentity
 {
     internal static string Create(string serviceId, int layerId)
         => Honua.Core.Features.Studio.Domain.StudioCatalogSourceIdentity.Create(serviceId, layerId);
+
+    internal static bool TryCreate(string serviceId, int layerId, out string catalogId)
+        => Honua.Core.Features.Studio.Domain.StudioCatalogSourceIdentity.TryCreate(
+            serviceId, layerId, out catalogId);
 }

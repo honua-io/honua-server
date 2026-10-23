@@ -25,18 +25,36 @@ public static class StudioCatalogSourceIdentity
     /// </returns>
     public static string Create(string serviceId, int layerId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(serviceId);
-        ArgumentOutOfRangeException.ThrowIfNegative(layerId);
-        var layer = layerId.ToString(CultureInfo.InvariantCulture);
-        var encoded = EncodeService(serviceId) + "/" + layer;
-        if (encoded.Length > MaxLength)
+        if (!TryCreate(serviceId, layerId, out var catalogId))
         {
             throw new ArgumentException(
-                $"The Studio catalog key for '{serviceId}' is {encoded.Length} characters and the schema allows {MaxLength}.",
+                $"The Studio catalog key for '{serviceId}' exceeds {MaxLength} characters.",
                 nameof(serviceId));
         }
 
-        return encoded;
+        return catalogId;
+    }
+
+    /// <summary>
+    /// Builds the Studio catalog key, or returns false when it would exceed <see cref="MaxLength"/>.
+    /// Callers that walk every service must skip a false result instead of failing the walk.
+    /// </summary>
+    public static bool TryCreate(string serviceId, int layerId, out string catalogId)
+    {
+        catalogId = string.Empty;
+        if (string.IsNullOrWhiteSpace(serviceId) || layerId < 0)
+        {
+            return false;
+        }
+
+        var encoded = EncodeService(serviceId) + "/" + layerId.ToString(CultureInfo.InvariantCulture);
+        if (encoded.Length > MaxLength)
+        {
+            return false;
+        }
+
+        catalogId = encoded;
+        return true;
     }
 
     private static string EncodeService(string serviceId)

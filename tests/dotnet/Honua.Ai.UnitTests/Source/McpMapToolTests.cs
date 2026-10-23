@@ -121,6 +121,11 @@ public sealed class McpMapToolTests
         otherLayer.Should().Be(Uri.EscapeDataString(first) + "/2");
         firstLayer.Should().NotBe(secondLayer);
         firstLayer.Should().NotBe(otherLayer);
+
+        var oversized = new string('\u4e00', (CoreCatalogSourceIdentity.MaxLength / 9) + 2);
+        CoreCatalogSourceIdentity.TryCreate(oversized, 0, out _).Should().BeFalse();
+        var create = () => CoreCatalogSourceIdentity.Create(oversized, 0);
+        create.Should().Throw<ArgumentException>();
     }
 
     [Theory]
