@@ -170,7 +170,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
         var database = Substitute.For<IDatabase>();
         database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
-            .Returns(async call =>
+            .Returns<Task<RedisResult>>(async call =>
             {
                 // Execute the actual production Lua against Redis, then lose only the reply.
                 await harness.Database.ScriptEvaluateAsync(

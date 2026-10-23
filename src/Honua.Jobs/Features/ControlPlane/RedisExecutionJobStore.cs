@@ -26,7 +26,32 @@ internal sealed partial class RedisExecutionJobStore(
     // Acceptance and recovery discovery are one Redis operation. A process loss after
     // this commit can leave delivery pending, but cannot hide the job from the sweep.
     // Check key types before writing: Lua runtime errors do not roll back earlier writes.
-    private const string CreateWithIndexesScript = """
+    // Replace only the store-owned pending timestamp token. Never decode/re-encode
+    // the full job JSON: that would round unrelated numeric intent fields in Lua.
+    private const string StampStatusTimeScript = """
+        local function stamp_status_time(payload, current)
+            if not string.find(payload, '"occurredAtUnixMilliseconds":-1', 1, true) then return payload end
+            local now = redis.call('TIME')
+            local millis = tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000)
+            if current then
+                local original = cjson.decode(current)
+                local history = original.statusTransitions
+                if history and history ~= cjson.null and #history > 0 then
+                    local previous = tonumber(history[#history].occurredAtUnixMilliseconds)
+                    if not previous or millis < previous then error('Status history storage clock regressed') end
+                end
+            end
+            local count = 0
+            local stamped = string.gsub(payload, '("occurredAtUnixMilliseconds":)%-1([,}])', function(prefix, suffix)
+                count = count + 1
+                return prefix .. string.format('%.0f', millis) .. suffix
+            end)
+            if count ~= 1 then error('Ambiguous pending status timestamp') end
+            return stamped
+        end
+        """;
+
+    private const string CreateWithIndexesScript = StampStatusTimeScript + "\n" + """
         if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
         if ARGV[7] ~= '' then
             local deadline = tonumber(ARGV[7])
@@ -48,8 +73,9 @@ internal sealed partial class RedisExecutionJobStore(
                 return redis.error_reply('WRONGTYPE execution job query index is not a sorted set')
             end
         end
-        if tonumber(ARGV[2]) < 0 then redis.call('SET', KEYS[1], ARGV[1])
-        else redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2]) end
+        local payload = stamp_status_time(ARGV[1], nil)
+        if tonumber(ARGV[2]) < 0 then redis.call('SET', KEYS[1], payload)
+        else redis.call('SET', KEYS[1], payload, 'PX', ARGV[2]) end
         if ARGV[4] == '1' then
             redis.call('SADD', KEYS[2], ARGV[3])
             redis.call('SADD', KEYS[3], ARGV[3])
@@ -61,35 +87,39 @@ internal sealed partial class RedisExecutionJobStore(
         return 1
         """;
 
-    private const string GuardedSetScript = """
+    private const string GuardedSetScript = StampStatusTimeScript + "\n" + """
         local current = redis.call('GET', KEYS[1])
-        if current then
-            local decoded = cjson.decode(current)
-            if decoded.commitRecovery and decoded.commitRecovery ~= cjson.null then return 0 end
-        end
-        if tonumber(ARGV[2]) < 0 then redis.call('SET', KEYS[1], ARGV[1])
-        else redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2]) end
+        if current == false then return 0 end
+        local decoded = cjson.decode(current)
+        if decoded.commitRecovery and decoded.commitRecovery ~= cjson.null then return -1 end
+        local v = tonumber(string.match(current, '"version":(%d+)')) or 0
+        if v ~= tonumber(ARGV[1]) then return 0 end
+        local payload = stamp_status_time(ARGV[2], current)
+        if tonumber(ARGV[3]) < 0 then redis.call('SET', KEYS[1], payload)
+        else redis.call('SET', KEYS[1], payload, 'PX', ARGV[3]) end
         return 1
         """;
 
-    private const string CasSetScript = """
+    private const string CasSetScript = StampStatusTimeScript + "\n" + """
         local current = redis.call('GET', KEYS[1])
         if current == false then return 0 end
         local v = tonumber(string.match(current, '"version":(%d+)')) or 0
         if v ~= tonumber(ARGV[1]) then return 0 end
-        if tonumber(ARGV[3]) < 0 then redis.call('SET', KEYS[1], ARGV[2])
-        else redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3])) end
+        local payload = stamp_status_time(ARGV[2], current)
+        if tonumber(ARGV[3]) < 0 then redis.call('SET', KEYS[1], payload)
+        else redis.call('SET', KEYS[1], payload, 'PX', tonumber(ARGV[3])) end
         return 1
         """;
 
-    private const string LeaseOwnedCasSetScript = """
+    private const string LeaseOwnedCasSetScript = StampStatusTimeScript + "\n" + """
         if redis.call('GET', KEYS[2]) ~= ARGV[4] then return 0 end
         local current = redis.call('GET', KEYS[1])
         if current == false then return 0 end
         local v = tonumber(string.match(current, '"version":(%d+)')) or 0
         if v ~= tonumber(ARGV[1]) then return 0 end
-        if tonumber(ARGV[3]) < 0 then redis.call('SET', KEYS[1], ARGV[2])
-        else redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3])) end
+        local payload = stamp_status_time(ARGV[2], current)
+        if tonumber(ARGV[3]) < 0 then redis.call('SET', KEYS[1], payload)
+        else redis.call('SET', KEYS[1], payload, 'PX', tonumber(ARGV[3])) end
         return 1
         """;
 
@@ -133,7 +163,7 @@ internal sealed partial class RedisExecutionJobStore(
         if (job.CommitRecovery is not null && IsTerminal(job.Status)) return false;
         cancellationToken.ThrowIfCancellationRequested();
 
-        var versioned = job with { Version = 1 };
+        var versioned = ExecutionJobStatusHistory.PrepareWrite(null, job, 1);
         var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
         // Keep the original task deadline in the receipt. First creation must also
         // precede the separately sealed execution/source authority deadline; check
@@ -182,7 +212,22 @@ internal sealed partial class RedisExecutionJobStore(
             return null;
         }
 
-        return JsonSerializer.Deserialize(payload.ToString(), ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        var job = JsonSerializer.Deserialize(payload.ToString(), ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        if (job is not null)
+        {
+            if (job.OperationId != operationId) throw new InvalidOperationException("The stored job identity does not match its key.");
+            if (job.StatusTransitions is null)
+            {
+                // Source-generated required-member construction assigns null for
+                // an absent optional collection. Normalize only true legacy JSON;
+                // explicit null or malformed present evidence remains invalid.
+                using var original = JsonDocument.Parse(payload.ToString());
+                if (!original.RootElement.TryGetProperty("statusTransitions", out _))
+                    job = job with { StatusTransitions = [] };
+            }
+            _ = ExecutionJobStatusHistory.RequireValid(job);
+        }
+        return job;
     }
 
     public async Task SetAsync(
@@ -195,20 +240,33 @@ internal sealed partial class RedisExecutionJobStore(
             throw new InvalidOperationException("An unresolved import commit cannot be terminalized.");
         cancellationToken.ThrowIfCancellationRequested();
 
-        var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-        var versioned = job with { Version = job.Version + 1 };
-        var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
-        // Unconditional writers cannot erase or alter unresolved commit state.
-        // Its transitions require the explicit versioned CAS path.
-        var written = await _database.ScriptEvaluateAsync(GuardedSetScript,
-            keys: [(RedisKey)GetJobKey(job.OperationId)],
-            values: [(RedisValue)payload, (RedisValue)(job.CommitRecovery is not null ? -1L : (long)(ttl ?? DefaultRetention).TotalMilliseconds)])
-            .ConfigureAwait(false);
-        if ((long)written != 1)
-            throw new InvalidOperationException("An unresolved import commit requires a versioned state transition.");
-
-        await UpdateIndexesAsync(previous, versioned).ConfigureAwait(false);
-        Log.ExecutionJobUpdated(logger, job.OperationId, versioned.Status.ToString());
+        // Upserts still retain their original semantics, but each replacement is
+        // fenced against the exact row used to derive its store-owned history.
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            if (previous is null)
+            {
+                if (await TryCreateAsync(job, ttl, cancellationToken).ConfigureAwait(false)) return;
+                continue;
+            }
+            if (previous.CommitRecovery is not null)
+                throw new InvalidOperationException("An unresolved import commit requires a versioned state transition.");
+            var versioned = ExecutionJobStatusHistory.PrepareWrite(previous, job, previous.Version + 1);
+            var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
+            var written = (long)await _database.ScriptEvaluateAsync(GuardedSetScript,
+                keys: [(RedisKey)GetJobKey(job.OperationId)],
+                values: [(RedisValue)previous.Version, (RedisValue)payload,
+                    (RedisValue)(job.CommitRecovery is not null ? -1L : (long)(ttl ?? DefaultRetention).TotalMilliseconds)])
+                .ConfigureAwait(false);
+            if (written < 0)
+                throw new InvalidOperationException("An unresolved import commit requires a versioned state transition.");
+            if (written != 1) continue;
+            await UpdateIndexesAsync(previous, versioned).ConfigureAwait(false);
+            Log.ExecutionJobUpdated(logger, job.OperationId, versioned.Status.ToString());
+            return;
+        }
+        throw new InvalidOperationException("The job changed on every guarded replacement attempt.");
     }
 
     /// <inheritdoc />
@@ -222,7 +280,8 @@ internal sealed partial class RedisExecutionJobStore(
         cancellationToken.ThrowIfCancellationRequested();
 
         var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-        var versioned = job with { Version = job.Version + 1 };
+        if (previous is null || previous.Version != job.Version) return false;
+        var versioned = ExecutionJobStatusHistory.PrepareWrite(previous, job, job.Version + 1);
         var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
         var retention = ttl ?? DefaultRetention;
 
@@ -258,7 +317,8 @@ internal sealed partial class RedisExecutionJobStore(
         cancellationToken.ThrowIfCancellationRequested();
 
         var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-        var versioned = job with { Version = job.Version + 1 };
+        if (previous is null || previous.Version != job.Version) return false;
+        var versioned = ExecutionJobStatusHistory.PrepareWrite(previous, job, job.Version + 1);
         var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
         var retention = ttl ?? DefaultRetention;
 

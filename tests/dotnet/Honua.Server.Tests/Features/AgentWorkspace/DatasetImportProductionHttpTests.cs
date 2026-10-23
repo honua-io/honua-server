@@ -25,13 +25,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.AgentWorkspace;
 
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Import)]
-public sealed class DatasetImportProductionHttpTests(RedisFixture redis)
+public sealed class DatasetImportProductionHttpTests(RedisFixture redis, ITestOutputHelper testOutput)
 {
     [IntegrationTheory]
     [InlineData(false)]
@@ -282,6 +283,30 @@ public sealed class DatasetImportProductionHttpTests(RedisFixture redis)
                     string.Join(Environment.NewLine, activity.Events.SelectMany(item => item.Tags).Select(tag => tag.Key + "=" + tag.Value))));
             receipt.GetProperty("job").GetProperty("status").GetString().Should().Be("succeeded",
                 $"{receipt.GetRawText()}; actual job error={finalJob?.ErrorMessage}; {workerDiagnostics}");
+            // Independent authenticated native detail read; no state is synthesized
+            // from MCP's accepted response or from process log strings.
+            var detail = await Read(await agent.GetAsync("/api/v1/admin/jobs/" + finalJob!.OperationId), HttpStatusCode.OK);
+            testOutput.WriteLine("Actual authenticated GET /api/v1/admin/jobs/{jobId}: " + detail.GetRawText());
+            var transitions = detail.GetProperty("statusTransitions").EnumerateArray().ToArray();
+            detail.GetProperty("statusTransitionsTruncated").GetBoolean().Should().BeFalse();
+            transitions.Select(entry => entry.GetProperty("toStatus").GetString()).Should().Equal("Queued", "Provisioning", "Running", "Succeeded");
+            transitions[0].GetProperty("fromStatus").ValueKind.Should().Be(JsonValueKind.Null);
+            var previousVersion = 0L;
+            var previousTime = DateTimeOffset.FromUnixTimeMilliseconds(detail.GetProperty("createdAt").GetDateTimeOffset().ToUnixTimeMilliseconds());
+            for (var index = 0; index < transitions.Length; index++)
+            {
+                var entry = transitions[index];
+                entry.GetProperty("jobId").GetString().Should().Be(finalJob.OperationId);
+                var version = entry.GetProperty("version").GetInt64();
+                version.Should().BeGreaterThan(previousVersion).And.BeLessThanOrEqualTo(detail.GetProperty("version").GetInt64());
+                var occurredAt = entry.GetProperty("occurredAt").GetDateTimeOffset();
+                occurredAt.Should().BeOnOrAfter(previousTime);
+                if (index > 0)
+                    entry.GetProperty("fromStatus").GetString().Should().Be(transitions[index - 1].GetProperty("toStatus").GetString());
+                previousVersion = version;
+                previousTime = occurredAt;
+            }
+            transitions.Select(entry => entry.GetProperty("attemptCount").GetInt32()).Should().Equal(0, 1, 1, 1);
             var output = receipt.GetProperty("job").GetProperty("output");
             output.GetProperty("featureCount").GetInt64().Should().Be(2);
             output.GetProperty("schema").GetString().Should().Be("public");

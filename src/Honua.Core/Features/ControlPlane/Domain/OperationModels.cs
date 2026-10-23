@@ -1262,6 +1262,18 @@ public sealed record ExecutionJobRecord
     public long Version { get; init; }
 
     /// <summary>
+    /// Store-owned acknowledged status changes, retained atomically with this job.
+    /// Legacy records have no history; current status never synthesizes missing entries.
+    /// </summary>
+    public IReadOnlyList<ExecutionJobStatusTransition> StatusTransitions { get; init; } = Array.Empty<ExecutionJobStatusTransition>();
+
+    /// <summary>
+    /// True when older acknowledged transitions exceeded the bounded retained history.
+    /// A retained suffix cannot establish a complete lifecycle from initial creation.
+    /// </summary>
+    public bool StatusTransitionsTruncated { get; init; }
+
+    /// <summary>
     /// Relative operator priority.
     /// </summary>
     public OperationPriority Priority { get; init; } = OperationPriority.Normal;

@@ -101,6 +101,17 @@ internal sealed partial class ConsoleJobService(
             Priority = summary.Priority,
             RequestedBy = summary.RequestedBy,
             RequestFingerprint = job.Audit.RequestFingerprint,
+            Version = job.Version,
+            StatusTransitionsTruncated = job.StatusTransitionsTruncated,
+            StatusTransitions = ExecutionJobStatusHistory.RequireValid(job).Select(entry => new ConsoleJobStatusTransition
+            {
+                JobId = entry.JobId,
+                Version = entry.Version,
+                AttemptCount = entry.AttemptCount,
+                OccurredAt = entry.OccurredAt,
+                FromStatus = entry.FromStatus?.ToString(),
+                ToStatus = entry.ToStatus.ToString()
+            }).ToArray(),
             CreatedAt = summary.CreatedAt,
             UpdatedAt = summary.UpdatedAt,
             CompletedAt = summary.CompletedAt,

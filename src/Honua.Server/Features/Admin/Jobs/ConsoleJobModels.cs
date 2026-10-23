@@ -64,6 +64,9 @@ internal record ConsoleJobSummary
 
 internal sealed record ConsoleJobDetail : ConsoleJobSummary
 {
+    public long Version { get; init; }
+    public ConsoleJobStatusTransition[] StatusTransitions { get; init; } = Array.Empty<ConsoleJobStatusTransition>();
+    public bool StatusTransitionsTruncated { get; init; }
     public string? RequestFingerprint { get; init; }
     public string? ProviderOperationId { get; init; }
     public string? ClaimedBy { get; init; }
@@ -87,6 +90,17 @@ internal sealed record ConsoleJobLatestEvent
     public required string Status { get; init; }
     public string? Phase { get; init; }
     public string? Message { get; init; }
+}
+
+internal sealed record ConsoleJobStatusTransition
+{
+    public required string JobId { get; init; }
+    public required long Version { get; init; }
+    public required int AttemptCount { get; init; }
+    public required DateTimeOffset OccurredAt { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.Never)]
+    public string? FromStatus { get; init; }
+    public required string ToStatus { get; init; }
 }
 
 internal sealed record ConsoleJobLinks
