@@ -13,7 +13,7 @@
 # (/Dockerfile) and Honua.Server.csproj stay GDAL-free; this Dockerfile does not
 # build or modify them.
 
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
 # GDAL base ships gdalwarp / ogr2ogr / gdal_translate / gdalmdiminfo etc.
 # NOTE: must be the `ubuntu-full` variant, not `ubuntu-small` — the small image
 # omits the NetCDF/HDF5 drivers required by the multidimensional coverage
@@ -28,7 +28,7 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
 ARG GDAL_VERSION=3.13.1
 ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
-ARG DOTNET_RUNTIME_VERSION=10.0.11
+ARG DOTNET_RUNTIME_VERSION=10.0.13
 # PDAL is built from its upstream release archive against the SAME GDAL/Ubuntu
 # toolchain as the runtime. Ubuntu 26.04 does not publish PDAL, and cross-release
 # UbuntuGIS packages are intentionally forbidden. Pin both release and upstream
@@ -133,6 +133,11 @@ RUN apt-get update \
  && test -x /opt/pdal/bin/pdal \
  && rm -rf /tmp/pdal.tar.gz /tmp/pdal-source /tmp/pdal-build /var/lib/apt/lists/*
 
+# Compile the opt-in native-entry constructor against the identical runtime libc.
+COPY docker/worker-gdal/native-entry.c /tmp/honua-native-entry.c
+RUN mkdir -p /opt/honua \
+ && cc -std=c11 -Wall -Wextra -Werror -fPIC -shared /tmp/honua-native-entry.c -o /opt/honua/libhonua_gp_entry.so
+
 # ---------------------------------------------------------------------------
 # Runtime stage: GDAL base + .NET runtime + published worker.
 # ---------------------------------------------------------------------------
@@ -141,7 +146,11 @@ FROM ${GDAL_BASE_IMAGE} AS native-tools
 ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
-ARG HONUA_GIT_SHA=
+# HONUA_GIT_SHA is deliberately NOT declared here: a declared ARG is part of
+# the cache key of every later RUN in the stage, so a per-commit SHA would
+# rebuild these apt layers on every build and defeat the shared registry cache
+# (the PDAL proof steps in ci.yml and pr-gate.yml read it). It is declared in
+# the runtime stage, after every expensive layer, as in ./Dockerfile.
 
 # Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
 # script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
@@ -206,6 +215,11 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo && comm
  # surface.contour / surface.viewshed / conversion.rasterize.
  && command -v gdal_calc.py \
  && command -v gdal_proximity.py \
+ # gdal_merge.py -separate stacks the prediction and kriging-standard-error bands
+ # produced by raster.interpolate-kriging's bundled OrdinaryKriging solver (#3932)
+ # into one multi-band GeoTIFF; ships in the same GDAL Python utilities as
+ # gdal_calc.py / gdal_proximity.py above.
+ && command -v gdal_merge.py \
  # The Euclidean allocation custom step (proximity.euclidean-allocation, #2255)
  # imports the GDAL Python bindings + NumPy + SciPy at runtime; fail the build
  # early if any are missing from the image.
@@ -240,6 +254,7 @@ FROM native-tools AS runtime
 ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
+ARG HONUA_GIT_SHA=
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \
@@ -249,10 +264,16 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+# Qualification-only read-only OS/store observer. It refuses execution without
+# an explicit mounted policy; it is invoked by governed ECS Exec, never the job.
+COPY --chown=0:0 --chmod=0444 scripts/qualification/gp_native_observer.py /app/gp_native_observer.py
+COPY --from=pdal-build --chown=0:0 --chmod=0444 /opt/honua/libhonua_gp_entry.so /app/libhonua_gp_entry.so
 
 # Guard: the custom worker steps (e.g. the Euclidean allocation step, #2255) must
 # be published alongside the worker assemblies so the executors can invoke them.
-RUN test -f /app/Scripts/gdal_euclidean_allocation.py
+RUN test -f /app/Scripts/gdal_euclidean_allocation.py \
+ && chown 0:0 /app \
+ && chmod 0555 /app
 
 ENV DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \

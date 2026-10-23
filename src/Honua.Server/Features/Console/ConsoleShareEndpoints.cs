@@ -7,6 +7,7 @@ using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -140,6 +141,13 @@ internal static class ConsoleShareEndpoints
             var currentState = await shareStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
             var oldTier = ConsoleShareMapper.ResolveEffectiveTier(currentState, item);
             var targetTier = request.AccessTier;
+            var auditDetails = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["oldTier"] = FormatAccessTier(oldTier),
+                ["targetTier"] = FormatAccessTier(targetTier),
+                ["dependencyClosureBypassed"] = "false",
+            };
+            context.Items[HttpAuditEventFactory.ExtraDetailsItemKey] = auditDetails;
 
             if (RequiresClosureCheck(targetTier))
             {
@@ -154,6 +162,7 @@ internal static class ConsoleShareEndpoints
                             BuildClosure(id, targetTier, conflicts)));
                     }
 
+                    auditDetails["dependencyClosureBypassed"] = "true";
                     ConsoleShareEndpointsLog.DependencyClosureBypassed(logger, id, targetTier, principalId, conflicts.Count);
                 }
             }
@@ -533,6 +542,15 @@ internal static class ConsoleShareEndpoints
 
     private static bool RequiresClosureCheck(ConsoleShareAccessTier tier)
         => tier is ConsoleShareAccessTier.PublicLink or ConsoleShareAccessTier.PublicIndexed;
+
+    private static string FormatAccessTier(ConsoleShareAccessTier tier) => tier switch
+    {
+        ConsoleShareAccessTier.Private => "private",
+        ConsoleShareAccessTier.Organization => "organization",
+        ConsoleShareAccessTier.PublicLink => "public-link",
+        ConsoleShareAccessTier.PublicIndexed => "public-indexed",
+        _ => "unknown",
+    };
 
     private static string EmbedAudienceName(ConsoleEmbedAudience? audience) => audience switch
     {

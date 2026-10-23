@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -27,7 +29,15 @@ internal sealed partial class JobExecutionService(
     ILicenseOperationPolicy? licensePolicy = null) : BackgroundService
 {
     private const string SafeExecutionFailureMessage = "Job execution failed.";
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private const string DrainDeadlineFailureMessage = "Worker drain deadline expired.";
+    private const int PreDispatchRecoveryAttempts = 2;
+    private const int FinalizeCasAttempts = 3;
+
+    /// <summary>
+    /// Delay before the claim loop polls the queue again after finding it empty. A submitted job
+    /// can wait up to one interval before a worker claims it; there is no wake-up signal.
+    /// </summary>
+    internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan DefaultPartitionLeaseDuration = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan DefaultPartitionLeaseRenewInterval = TimeSpan.FromSeconds(20);
@@ -35,6 +45,63 @@ internal sealed partial class JobExecutionService(
     private readonly TimeSpan _partitionLeaseDuration = DefaultPartitionLeaseDuration;
     private readonly TimeSpan _partitionLeaseRenewInterval = DefaultPartitionLeaseRenewInterval;
     private readonly TimeSpan _partitionLeaseContentionDelay = DefaultPartitionLeaseContentionDelay;
+    private readonly CancellationTokenSource _draining = new();
+    private int _drainDeadlineExpired;
+
+    /// <summary>
+    /// Stop taking work before cancelling execution. A rolling deployment must let the owned
+    /// job finish while its heartbeat is still live. Expiring the host's shutdown deadline
+    /// fails the owned attempt without retrying it on the replacement serving revision.
+    /// </summary>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _draining.CancelAsync().ConfigureAwait(false);
+        if (RequeueOnShutdown)
+        {
+            // A run-to-completion execution worker has no replacement revision to drain into: the
+            // provider is terminating it (Spot interruption, eviction, a Kubernetes Job delete). Cancel
+            // execution now so the shutdown path hands the attempt back as Queued for the serving
+            // host's reconciler to resubmit, instead of waiting out the host deadline and failing it.
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            if (ExecuteTask is { } execution)
+            {
+                await execution.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Set this before Base.StopAsync cancels execution so the worker can distinguish
+            // an expired planned drain from unexpected loss of its infrastructure.
+            Volatile.Write(ref _drainDeadlineExpired, 1);
+        }
+        finally
+        {
+            // Base.StopAsync cancels execution before awaiting it. Once the host deadline
+            // has fired, retain the store/queue for a separate bounded terminal-cleanup
+            // budget instead of returning immediately with the already-cancelled token.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await base.StopAsync(Volatile.Read(ref _drainDeadlineExpired) != 0
+                ? cleanup.Token
+                : cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        _draining.Dispose();
+    }
+
+    /// <summary>
+    /// When <see langword="true"/> (the execution worker profile), host shutdown cancels the running
+    /// job immediately and hands the attempt back for a provider retry rather than draining it.
+    /// </summary>
+    internal bool RequeueOnShutdown { get; set; }
 
     internal JobExecutionService(
         IJobQueue jobQueue,
@@ -122,6 +189,8 @@ internal sealed partial class JobExecutionService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        using var claimCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _draining.Token);
+        var claimToken = claimCancellation.Token;
         var workerId = GenerateWorkerId();
 
         if (_acceptedKinds.Count == 0)
@@ -129,9 +198,9 @@ internal sealed partial class JobExecutionService(
             Log.NoExecutorsRegistered(logger, workerId);
             try
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(Timeout.InfiniteTimeSpan, claimToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 // Expected: host shutdown cancelled the infinite delay for this
                 // executor-less worker. Nothing to clean up — fall through to stop logging.
@@ -143,14 +212,14 @@ internal sealed partial class JobExecutionService(
 
         Log.WorkerStarted(logger, workerId);
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!claimToken.IsCancellationRequested)
         {
             string? claimedId = null;
 
             try
             {
                 claimedId = await jobQueue.TryClaimAsync(
-                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, stoppingToken).ConfigureAwait(false);
+                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, claimToken).ConfigureAwait(false);
 
                 if (claimedId != null)
                 {
@@ -158,7 +227,7 @@ internal sealed partial class JobExecutionService(
                     continue;
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 // If shutdown arrived during the pre-execution phase of
                 // ProcessJobAsync, the job is still claimed but was never
@@ -200,9 +269,9 @@ internal sealed partial class JobExecutionService(
 
             try
             {
-                await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(PollInterval, claimToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 break;
             }
@@ -212,6 +281,75 @@ internal sealed partial class JobExecutionService(
     }
 
     private async Task ProcessJobAsync(string operationId, string workerId, CancellationToken stoppingToken)
+    {
+        var dispatch = new DispatchProgress();
+        try
+        {
+            await ProcessClaimedJobAsync(operationId, workerId, dispatch, stoppingToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!dispatch.ExecutorStarted
+            && ex is not OutOfMemoryException
+            && !(ex is OperationCanceledException && stoppingToken.IsCancellationRequested))
+        {
+            // Deliberately broad: any fault between the claim and executor dispatch (the re-read,
+            // the Running transition, the partition-lease acquire, or a cleanup write on an early
+            // exit) would otherwise leave the claim with no executor and no heartbeat until
+            // heartbeat-expiry reconciliation. Shutdown keeps its own force-requeue in ExecuteAsync.
+            Log.PreDispatchFault(logger, operationId, ex);
+            await ReleaseFaultedClaimAsync(operationId, workerId).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Hands a claim whose pre-dispatch sequence faulted back to the queue: re-reads the record and,
+    /// while this worker still owns it, abandons the attempt through the retry policy with no backoff
+    /// (the attempt counts, as a heartbeat-expiry requeue would count it, so a persistent fault ends
+    /// in a terminal failure rather than an endless requeue). Safe to repeat: a record that is
+    /// already terminal, requeued or reclaimed is left alone. If the store is still failing, the
+    /// fault is logged and reconciliation recovers the job. The per-job token registration is
+    /// always dropped.
+    /// </summary>
+    private async Task ReleaseFaultedClaimAsync(string operationId, string workerId)
+    {
+        try
+        {
+            // A concurrent write (an operator cancellation, say) can make the abandon's own CAS lose,
+            // which leaves the record claimed. Re-read and resolve the new state once before giving
+            // the job to reconciliation; the second pass honours a durable cancellation signal.
+            for (var attempt = 0; attempt < PreDispatchRecoveryAttempts; attempt++)
+            {
+                var job = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
+                if (job == null || IsTerminalOrNotOwnedBy(job, workerId))
+                {
+                    break;
+                }
+
+                await AbandonJobAsync(
+                        job,
+                        workerId,
+                        "Job store fault before execution started.",
+                        CancellationToken.None,
+                        requeueDelayOverride: TimeSpan.Zero)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Deliberately broad: best-effort recovery for one claimed job must not escape into the
+            // claim loop; the stale-claim reconciler recovers the job if this cleanup fails.
+            Log.PreDispatchRequeueFailed(logger, operationId, ex);
+        }
+        finally
+        {
+            cancellationTokens.Remove(operationId, workerId);
+        }
+    }
+
+    private async Task ProcessClaimedJobAsync(
+        string operationId,
+        string workerId,
+        DispatchProgress dispatch,
+        CancellationToken stoppingToken)
     {
         var job = await jobStore.GetAsync(operationId, stoppingToken).ConfigureAwait(false);
         if (job == null)
@@ -321,8 +459,13 @@ internal sealed partial class JobExecutionService(
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                // A faulted acquire is a store fault, not contention: it takes the same pre-dispatch
+                // recovery as the re-read and the Running transition. The acquire may have landed
+                // before the reply was lost, so release it (owner-fenced) first.
                 Log.PartitionLeaseAcquisitionFailed(logger, operationId, partitionKey!, ex);
-                partitionLeaseAcquired = false;
+                await ReleasePartitionLeaseAsync(operationId, partitionKey!, partitionLeaseId, partitionLeaseOwner!)
+                    .ConfigureAwait(false);
+                throw;
             }
         }
 
@@ -341,6 +484,9 @@ internal sealed partial class JobExecutionService(
             cancellationTokens.Remove(operationId, workerId);
             return;
         }
+
+        // From here on the execution phase owns cleanup (its try/finally below).
+        dispatch.ExecutorStarted = true;
 
         using var partitionLeaseLostCts = new CancellationTokenSource();
         using var partitionLeaseRenewalCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -374,6 +520,7 @@ internal sealed partial class JobExecutionService(
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
         var heartbeatTask = context.RunHeartbeatPumpAsync(heartbeatCts.Token);
         using var qualificationScope = ExecutionQualificationBarrier.Begin(operationId, workerId);
+        using var securityScope = JobSecurityScope.Begin(running.Audit.SubmitterSecurityContext);
 
         // Stops the heartbeat pump and waits for it to finish so that no
         // in-flight heartbeat write can clobber the terminal-state update.
@@ -425,6 +572,16 @@ internal sealed partial class JobExecutionService(
             }
 
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            if (context.LeaseLost)
+            {
+                // The heartbeat pump or a progress fence observed that this attempt no longer
+                // owns the record. Skip terminal writes so a stale executor cannot cancel or
+                // fail the attempt a new worker already claimed (#6154).
+                activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
+                Log.ExecutionLeaseLost(logger, operationId);
+                return;
+            }
+
             licenseCancellation.ThrowIfCancellationRequested();
 
             // Executors are expected to observe cancellation, but a late cancellation can race a
@@ -442,9 +599,18 @@ internal sealed partial class JobExecutionService(
 
             if (stoppingToken.IsCancellationRequested)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, "Worker shutdown.");
-                await AbandonJobAsync(running, workerId, "Worker shutdown.",
-                    CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+                if (Volatile.Read(ref _drainDeadlineExpired) != 0)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, DrainDeadlineFailureMessage);
+                    await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                        DrainDeadlineFailureMessage, CancellationToken.None).ConfigureAwait(false);
+                }
+                else
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, "Worker shutdown.");
+                    await AbandonJobAsync(running, workerId, "Worker shutdown.",
+                        CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+                }
                 return;
             }
 
@@ -517,14 +683,30 @@ internal sealed partial class JobExecutionService(
                     : result.ErrorMessage!;
 
                 await AbandonJobAsync(running, workerId, failureReason,
-                    CancellationToken.None, result.Warnings).ConfigureAwait(false);
+                    CancellationToken.None, result.Warnings, allowRetry: result.IsRetryable).ConfigureAwait(false);
             }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && context.LeaseLost)
+        {
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
+            Log.ExecutionLeaseLost(logger, operationId);
         }
         catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
                 "license expired", CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (stoppingToken.IsCancellationRequested &&
+            Volatile.Read(ref _drainDeadlineExpired) != 0 && !timeoutCts.IsCancellationRequested && ex is not OutOfMemoryException)
+        {
+            // A planned drain must not turn either cancellation or a late executor failure
+            // into another dispatch on the replacement revision.
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, DrainDeadlineFailureMessage);
+            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                DrainDeadlineFailureMessage, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -608,23 +790,33 @@ internal sealed partial class JobExecutionService(
 
             if (partitionLeaseId is not null)
             {
-                try
-                {
-                    await jobStore.ReleaseLeaseAsync(
-                            partitionLeaseId,
-                            partitionLeaseOwner!,
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    // The lease is bounded by _partitionLeaseDuration, so a failed best-effort
-                    // release cannot strand the partition indefinitely.
-                    Log.PartitionLeaseReleaseFailed(logger, operationId, partitionKey!, ex);
-                }
+                await ReleasePartitionLeaseAsync(operationId, partitionKey!, partitionLeaseId, partitionLeaseOwner!)
+                    .ConfigureAwait(false);
             }
 
             cancellationTokens.Remove(operationId, workerId);
+        }
+    }
+
+    private async Task ReleasePartitionLeaseAsync(
+        string operationId,
+        string partitionKey,
+        string partitionLeaseId,
+        string partitionLeaseOwner)
+    {
+        try
+        {
+            await jobStore.ReleaseLeaseAsync(
+                    partitionLeaseId,
+                    partitionLeaseOwner,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The lease is bounded by _partitionLeaseDuration, so a failed best-effort
+            // release cannot strand the partition indefinitely.
+            Log.PartitionLeaseReleaseFailed(logger, operationId, partitionKey, ex);
         }
     }
 
@@ -724,67 +916,51 @@ internal sealed partial class JobExecutionService(
         string? partitionLeaseOwner,
         CancellationToken cancellationToken)
     {
-        var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        if (job == null)
+        ExecutionJobRecord job;
+        ExecutionJobRecord final;
+        ExecutionJobStatus effectiveStatus;
+        for (var casAttempt = 1; ; casAttempt++)
         {
-            return true;
-        }
-
-        if (IsTerminalOrNotOwnedBy(job, workerId))
-        {
-            Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
-            return true;
-        }
-
-        // Durable cancellation wins over a racing success (#3089): the artifact
-        // publication fence already refuses to publish once CancellationRequestedAt
-        // is stamped, so finalizing this record as Succeeded would durably expose a
-        // success with silently missing outputs and no repair path. Honour the stamp
-        // and finalize as Cancelled instead — consistent with every other path that
-        // observes the durable signal.
-        var effectiveStatus = result.Status;
-        if (result.Status == ExecutionJobStatus.Succeeded && job.CancellationRequestedAt.HasValue)
-        {
-            Log.FinalizeHonouredDurableCancellation(logger, operationId);
-            effectiveStatus = ExecutionJobStatus.Cancelled;
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        var final = job with
-        {
-            Status = effectiveStatus,
-            UpdatedAt = now,
-            CompletedAt = now,
-            ErrorMessage = effectiveStatus switch
+            var current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (current == null)
             {
-                ExecutionJobStatus.Failed => SafeExecutionFailureMessage,
-                ExecutionJobStatus.Cancelled => "Cancelled by operator (durable signal honoured at finalization).",
-                _ => null
-            },
-            Warnings = result.Warnings,
-            PercentComplete = effectiveStatus == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
-            CurrentPhase = effectiveStatus switch
-            {
-                ExecutionJobStatus.Succeeded => "Completed",
-                ExecutionJobStatus.Cancelled => "Cancelled",
-                _ => "Failed"
+                return true;
             }
-        };
 
-        cancellationToken.ThrowIfCancellationRequested();
-        var finalized = partitionLeaseId is null
-            ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
-            : await jobStore.TrySetIfLeaseOwnedAsync(
-                    final,
-                    partitionLeaseId,
-                    partitionLeaseOwner!,
-                    cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-        if (!finalized)
-        {
-            Log.TerminalStateSkipped(logger, operationId, "CAS conflict or partition lease lost on finalize");
-            return false;
+            if (IsTerminalOrNotOwnedBy(current, workerId))
+            {
+                Log.TerminalStateSkipped(logger, operationId, current.Status.ToString());
+                return true;
+            }
+
+            job = current;
+            (final, effectiveStatus) = BuildFinalRecord(operationId, job, result);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var finalized = partitionLeaseId is null
+                ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
+                : await jobStore.TrySetIfLeaseOwnedAsync(
+                        final,
+                        partitionLeaseId,
+                        partitionLeaseOwner!,
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            if (finalized)
+            {
+                break;
+            }
+
+            // Without a partition lease a failed CAS only means a concurrent nonterminal write moved the
+            // version: a provider observation from the serving host's reconciler while a batch-launched
+            // execution worker owns the attempt, or a progress stamp. The next read re-checks ownership,
+            // so rebuild the terminal record from fresh state instead of handing an executed attempt back
+            // for another run. A partition-lease rejection may be a lost lease and keeps its fail path.
+            if (partitionLeaseId is not null || casAttempt >= FinalizeCasAttempts)
+            {
+                Log.TerminalStateSkipped(logger, operationId, "CAS conflict or partition lease lost on finalize");
+                return false;
+            }
         }
 
         // Expiry may race a store that commits before observing its cancellation token.
@@ -825,6 +1001,55 @@ internal sealed partial class JobExecutionService(
         return true;
     }
 
+    private (ExecutionJobRecord Final, ExecutionJobStatus EffectiveStatus) BuildFinalRecord(
+        string operationId,
+        ExecutionJobRecord job,
+        JobExecutionResult result)
+    {
+        // Ordinary output remains fenced by durable cancellation. A completed sink
+        // with an already committed receipt instead reports its actual successful effect;
+        // the cancellation stamp and warning explain why cancellation could not undo it.
+        var effectiveStatus = result.Status;
+        var hasCommittedCancellation = job.CancellationRequestedAt.HasValue && job.CommittedEffectReferences.Count > 0;
+        var committedAfterCancellation = result.CompletedWithCommittedEffects && hasCommittedCancellation;
+        if (result.Status == ExecutionJobStatus.Succeeded && job.CancellationRequestedAt.HasValue && !committedAfterCancellation)
+        {
+            Log.FinalizeHonouredDurableCancellation(logger, operationId);
+            effectiveStatus = ExecutionJobStatus.Cancelled;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var final = job with
+        {
+            Status = effectiveStatus,
+            UpdatedAt = now,
+            CompletedAt = now,
+            ErrorMessage = effectiveStatus switch
+            {
+                ExecutionJobStatus.Failed => SafeExecutionFailureMessage,
+                ExecutionJobStatus.Cancelled when hasCommittedCancellation => CommittedCancellationWarning,
+                ExecutionJobStatus.Cancelled => "Cancelled by operator (durable signal honoured at finalization).",
+                _ => null
+            },
+            Warnings = hasCommittedCancellation
+                ? [.. result.Warnings, CommittedCancellationWarning]
+                : result.Warnings,
+            PercentComplete = effectiveStatus == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
+            CurrentPhase = effectiveStatus switch
+            {
+                ExecutionJobStatus.Succeeded when committedAfterCancellation => "Completed with committed effects (cancellation requested)",
+                ExecutionJobStatus.Succeeded => "Completed",
+                ExecutionJobStatus.Cancelled when hasCommittedCancellation => "Cancelled after committed effects",
+                ExecutionJobStatus.Cancelled => "Cancelled",
+                _ => "Failed"
+            }
+        };
+
+        return (final, effectiveStatus);
+    }
+
+    internal const string CommittedCancellationWarning = "Cancellation requested after sink data committed; committed-effect receipts are retained.";
+
     private async Task TerminateJobAsync(
         string operationId,
         string workerId,
@@ -852,10 +1077,21 @@ internal sealed partial class JobExecutionService(
             Status = terminalStatus,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = reason,
-            ArtifactReferences = reason == "license expired" ? [] : job.ArtifactReferences,
-            PercentComplete = reason == "license expired" ? null : job.PercentComplete,
-            CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled ? "Cancelled" : "Failed"
+            ErrorMessage = terminalStatus == ExecutionJobStatus.Cancelled && job.CommittedEffectReferences.Count > 0
+                ? CommittedCancellationWarning : reason,
+            Warnings = terminalStatus == ExecutionJobStatus.Cancelled && job.CommittedEffectReferences.Count > 0
+                ? [.. job.Warnings, CommittedCancellationWarning] : job.Warnings,
+            ArtifactReferences = reason switch
+            {
+                "license expired" => [],
+                DrainDeadlineFailureMessage => job.CommittedEffectReferences,
+                _ => job.ArtifactReferences
+            },
+            CommittedEffectReferences = reason == "license expired" ? [] : job.CommittedEffectReferences,
+            PercentComplete = reason is "license expired" or DrainDeadlineFailureMessage ? null : job.PercentComplete,
+            CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled
+                ? job.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"
+                : "Failed"
         };
 
         if (!await jobStore.TrySetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -904,7 +1140,8 @@ internal sealed partial class JobExecutionService(
         IReadOnlyList<string>? warnings = null,
         bool forceRequeue = false,
         TimeSpan? requeueDelayOverride = null,
-        bool restoreClaimAttempt = false)
+        bool restoreClaimAttempt = false,
+        bool allowRetry = true)
     {
         // Re-read to capture progress and artifact updates made during execution.
         var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? job;
@@ -925,8 +1162,11 @@ internal sealed partial class JobExecutionService(
                 Status = ExecutionJobStatus.Cancelled,
                 UpdatedAt = cancelNow,
                 CompletedAt = cancelNow,
-                ErrorMessage = "Cancelled by operator (durable signal honoured during abandon).",
-                CurrentPhase = "Cancelled"
+                ErrorMessage = current.CommittedEffectReferences.Count > 0
+                    ? CommittedCancellationWarning : "Cancelled by operator (durable signal honoured during abandon).",
+                Warnings = current.CommittedEffectReferences.Count > 0
+                    ? [.. current.Warnings, CommittedCancellationWarning] : current.Warnings,
+                CurrentPhase = current.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"
             };
             if (!await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
@@ -967,7 +1207,7 @@ internal sealed partial class JobExecutionService(
 
         var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
-        if (forceRequeue || retryPolicy.ShouldRetry(current.AttemptCount))
+        if (allowRetry && (forceRequeue || retryPolicy.ShouldRetry(current.AttemptCount)))
         {
             Log.JobAbandoned(logger, current.OperationId, reason);
 
@@ -1028,8 +1268,9 @@ internal sealed partial class JobExecutionService(
                 ErrorMessage = null,
                 ProviderOperationId = null,
                 CompletedAt = null,
-                ArtifactReferences = Array.Empty<string>(),
-                Warnings = Array.Empty<string>(),
+                ArtifactReferences = latestBeforeRequeue.CommittedEffectReferences,
+                Warnings = latestBeforeRequeue.CommittedEffectReferences.Count > 0
+                    ? latestBeforeRequeue.Warnings : Array.Empty<string>(),
                 AttemptCount = restoreClaimAttempt
                     ? Math.Max(0, latestBeforeRequeue.AttemptCount - 1)
                     : latestBeforeRequeue.AttemptCount,
@@ -1084,7 +1325,7 @@ internal sealed partial class JobExecutionService(
                 // unexpected thrown exceptions. Never a raw exception string.
                 ErrorMessage = reason,
                 Warnings = warnings ?? latestBeforeFail.Warnings,
-                CurrentPhase = "Failed (abandoned)"
+                CurrentPhase = allowRetry ? "Failed (abandoned)" : "Failed"
             };
             if (!await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
@@ -1180,6 +1421,12 @@ internal sealed partial class JobExecutionService(
         return $"{prefix}-{guid}";
     }
 
+    /// <summary>Marks the point after which the execution phase owns cleanup for a claimed job.</summary>
+    private sealed class DispatchProgress
+    {
+        public bool ExecutorStarted { get; set; }
+    }
+
     private static partial class Log
     {
         [LoggerMessage(9050, LogLevel.Information, "Job execution worker started: {WorkerId}")]
@@ -1230,6 +1477,12 @@ internal sealed partial class JobExecutionService(
         [LoggerMessage(9066, LogLevel.Error, "Failed to requeue job {OperationId} during pre-execution shutdown; stale-claim reconciliation will recover")]
         public static partial void PreExecShutdownCleanupFailed(ILogger logger, string operationId, Exception exception);
 
+        [LoggerMessage(9097, LogLevel.Warning, "Job store fault before executor dispatch for job {OperationId}; returning the claim to the queue")]
+        public static partial void PreDispatchFault(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9098, LogLevel.Error, "Failed to return job {OperationId} to the queue after a pre-dispatch store fault; stale-claim reconciliation will recover")]
+        public static partial void PreDispatchRequeueFailed(ILogger logger, string operationId, Exception exception);
+
         [LoggerMessage(9068, LogLevel.Information, "Abandon honoured durable cancellation signal for job {OperationId}")]
         public static partial void AbandonHonouredDurableCancellation(ILogger logger, string operationId);
 
@@ -1274,6 +1527,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9077, LogLevel.Information, "Finalize honoured durable cancellation signal for job {OperationId}: success result finalized as Cancelled")]
         public static partial void FinalizeHonouredDurableCancellation(ILogger logger, string operationId);
+
+        [LoggerMessage(9088, LogLevel.Warning, "Execution lease lost for job {OperationId}; stale attempt will not write a terminal state")]
+        public static partial void ExecutionLeaseLost(ILogger logger, string operationId);
     }
 }
 
@@ -1301,8 +1557,15 @@ internal sealed partial class JobExecutionContext(
     CancellationToken licenseCancellation = default) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private int _leaseLost;
 
     public string OperationId => operationId;
+
+    /// <summary>
+    /// True after this attempt observed that the durable record is no longer owned by
+    /// this worker and attempt. The execution service uses it to skip terminal writes.
+    /// </summary>
+    internal bool LeaseLost => Volatile.Read(ref _leaseLost) != 0;
 
     public async Task ReportProgressAsync(
         double? percentComplete,
@@ -1313,7 +1576,7 @@ internal sealed partial class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null || !IsOwnedBy(job))
+            if (!TryObserveLease(job))
             {
                 return;
             }
@@ -1346,7 +1609,7 @@ internal sealed partial class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null || !IsOwnedBy(job))
+            if (!TryObserveLease(job))
             {
                 return;
             }
@@ -1373,6 +1636,27 @@ internal sealed partial class JobExecutionContext(
         string artifactReference,
         CancellationToken cancellationToken = default)
     {
+        await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public Task<bool> TryPublishArtifactAsync(
+        string artifactReference,
+        CancellationToken cancellationToken = default)
+        => TryPublishReferenceAsync(artifactReference, committedEffect: false, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
+    {
+        if (!await TryPublishReferenceAsync(artifactReference, committedEffect: true, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"The execution fence rejected a committed-effect receipt for job '{operationId}'.");
+        }
+    }
+
+    private async Task<bool> TryPublishReferenceAsync(
+        string artifactReference, bool committedEffect, CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(artifactReference);
         const int maxCasRetries = 10;
 
@@ -1385,41 +1669,45 @@ internal sealed partial class JobExecutionContext(
             {
                 licenseCancellation.ThrowIfCancellationRequested();
                 var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                if (job == null || !IsOwnedBy(job))
+                if (!TryObserveLease(job))
                 {
-                    return;
+                    return false;
                 }
 
-                if (claimedAttempt > 0 && job.AttemptCount != claimedAttempt)
-                {
-                    // A stale attempt must never publish into a newer attempt's record.
-                    Log.ArtifactPublishFencedStaleAttempt(logger, operationId, claimedAttempt, job.AttemptCount);
-                    return;
-                }
-
-                if (job.CancellationRequestedAt.HasValue)
+                if (!committedEffect && job.CancellationRequestedAt.HasValue)
                 {
                     // Durable cancellation wins: an attempt racing its own cancellation
                     // cannot expose new output through the job record.
                     Log.ArtifactPublishFencedCancellation(logger, operationId);
-                    return;
+                    return false;
                 }
 
-                if (!TryAppendArtifactReference(job.ArtifactReferences, artifactReference, out var refs))
+                var effects = job.CommittedEffectReferences;
+                if (committedEffect && effects.Contains(artifactReference, StringComparer.Ordinal))
+                {
+                    return true;
+                }
+                var appended = TryAppendArtifactReference(job.ArtifactReferences, artifactReference, out var refs);
+                if (!appended)
+                {
+                    refs = [.. job.ArtifactReferences];
+                }
+                if (!appended && !committedEffect)
                 {
                     // Identical publication already durable — retried publish is a no-op.
-                    return;
+                    return true;
                 }
 
                 var updated = job with
                 {
                     ArtifactReferences = refs,
+                    CommittedEffectReferences = committedEffect ? [.. effects, artifactReference] : effects,
                     UpdatedAt = DateTimeOffset.UtcNow,
                     LastHeartbeatAt = DateTimeOffset.UtcNow
                 };
                 if (await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
-                    return;
+                    return true;
                 }
 
                 // Version conflict (heartbeat/reconciler write raced this publish):
@@ -1446,9 +1734,7 @@ internal sealed partial class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null || !IsOwnedBy(job)
-                || (claimedAttempt > 0 && job.AttemptCount != claimedAttempt)
-                || job.CancellationRequestedAt.HasValue)
+            if (!TryObserveLease(job) || job!.CancellationRequestedAt.HasValue)
             {
                 throw new InvalidOperationException(
                     $"Execution lease for job '{operationId}' is no longer owned by worker '{workerId}'.");
@@ -1540,9 +1826,10 @@ internal sealed partial class JobExecutionContext(
                         break;
                     }
 
-                    // Stop pumping if the reconciler already marked this job terminal
-                    // or ownership has moved to another worker.
-                    if (!IsOwnedBy(job))
+                    // Ownership or attempt moved (reconciler requeued, or another worker
+                    // claimed). Cancel the executor before breaking so the stale attempt
+                    // stops instead of running beside the new one (#6154).
+                    if (!TryObserveLease(job))
                     {
                         break;
                     }
@@ -1590,13 +1877,67 @@ internal sealed partial class JobExecutionContext(
         => job.Status is ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
            && job.ClaimedBy == workerId;
 
+    /// <summary>
+    /// Returns <see langword="false"/> when <paramref name="job"/> is missing or no longer
+    /// this worker's attempt. A present, unowned record cancels the job token so the
+    /// executor stops; a missing record does not, because a transient read miss is not
+    /// proof the lease moved.
+    /// </summary>
+    private bool TryObserveLease([NotNullWhen(true)] ExecutionJobRecord? job)
+    {
+        if (job == null)
+        {
+            return false;
+        }
+
+        if (IsOwnedBy(job) && (claimedAttempt <= 0 || job.AttemptCount == claimedAttempt))
+        {
+            return true;
+        }
+
+        SignalLeaseLost();
+        return false;
+    }
+
+    private void SignalLeaseLost()
+    {
+        if (Interlocked.Exchange(ref _leaseLost, 1) != 0)
+        {
+            return;
+        }
+
+        Log.ExecutionLeaseLost(logger, operationId, workerId);
+        var cts = durableCancellationCts;
+        if (cts == null)
+        {
+            return;
+        }
+
+        // The pump calls this while holding the write lock. Cancel runs callbacks
+        // inline, and those can resume the executor on this stack, which then waits
+        // for the pump to leave the lock. Queue the cancel so the lock is released first.
+        ThreadPool.UnsafeQueueUserWorkItem(static state => CancelLease((CancellationTokenSource)state!), cts);
+    }
+
+    private static void CancelLease(CancellationTokenSource cts)
+    {
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The execution task completed and disposed the CTS. The attempt is already done.
+        }
+    }
+
     private static partial class Log
     {
         [LoggerMessage(9064, LogLevel.Warning, "Heartbeat write failed for job {OperationId}; pump will retry on next interval")]
         public static partial void HeartbeatWriteFailed(ILogger logger, string operationId, Exception exception);
 
-        [LoggerMessage(9075, LogLevel.Warning, "Artifact publish fenced for job {OperationId}: claimed attempt {ClaimedAttempt} is stale (record attempt {RecordAttempt})")]
-        public static partial void ArtifactPublishFencedStaleAttempt(ILogger logger, string operationId, int claimedAttempt, int recordAttempt);
+        [LoggerMessage(9085, LogLevel.Warning, "Execution lease lost for job {OperationId} on worker {WorkerId}; cancelling the stale attempt")]
+        public static partial void ExecutionLeaseLost(ILogger logger, string operationId, string workerId);
 
         [LoggerMessage(9076, LogLevel.Information, "Artifact publish fenced for job {OperationId}: durable cancellation requested")]
         public static partial void ArtifactPublishFencedCancellation(ILogger logger, string operationId);

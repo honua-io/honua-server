@@ -97,7 +97,7 @@ public sealed class CsvAttributeRoundtripTests
             var field = new MetadataV2Field { Name = "note", Type = MetadataV2FieldType.String, Nullable = true };
             var note = (string)escape.Invoke(null, [convert.Invoke(null, [source.Attributes["note"], field])])!;
             var missing = (string)escape.Invoke(null, [convert.Invoke(null, [null, field])])!;
-            csv = $"note,missing\n{note},{missing}\n";
+            csv = $"note,missing{Environment.NewLine}{note},{missing}{Environment.NewLine}";
         }
         else
         {

@@ -14,6 +14,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Tests.Features.Orchestration;
 using Honua.TestKit;
@@ -225,7 +226,8 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         // definition actually reached the durable store — that record is what the cron scheduler
         // enumerates, and it is what a Redis-less install used to skip while still returning 200
         // (#3585). Assert the durable receipt, not just the response.
-        var persistedDefinition = await _definitionStore.GetAsync($"workflow-package:{packageId}:v{version.Version}");
+        var persistedDefinition = await _definitionStore.GetAsync(
+            $"workflow-package:{packageId}:v{version.Version}:pub-schedule-1185");
         persistedDefinition.Should().NotBeNull(
             "a Schedule publication must persist its compiled workflow definition before reporting success");
         persistedDefinition!.Trigger!.Kind.Should().Be(WorkflowTriggerKind.Cron);
@@ -377,7 +379,9 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                     // Attempt to spoof reserved provenance; the server must ignore these.
                     ["workflow.packageId"] = "spoofed-package",
                     ["workflow.packageHash"] = "spoofed-hash",
-                    ["analysis.region"] = "pacific"
+                    ["analysis.region"] = "pacific",
+                    // A run parameter named like a workload-owned key is only a run annotation.
+                    ["env.SAMPLE_SETTING"] = "request-value"
                 }
             },
             JsonOptions);
@@ -391,13 +395,17 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         var provenance = runData.GetProperty("provenance");
         provenance.GetProperty("workflow.packageId").GetString().Should().Be(packageId);
         provenance.GetProperty("workflow.packageHash").GetString().Should().Be(version.PackageHash);
-        provenance.GetProperty("analysis.region").GetString().Should().Be("pacific");
+        provenance.GetProperty("workflow.parameter.analysis.region").GetString().Should().Be("pacific");
+        provenance.TryGetProperty("analysis.region", out _).Should().BeFalse();
 
         var job = await _jobStore.GetAsync(jobId!);
         job.Should().NotBeNull();
         job!.Spec.Parameters.Should().Contain("workflow.packageId", packageId);
         job.Spec.Parameters.Should().Contain("workflow.packageHash", version.PackageHash);
-        job.Spec.Parameters.Should().Contain("analysis.region", "pacific");
+        job.Spec.Parameters.Should().Contain("workflow.parameter.analysis.region", "pacific");
+        job.Spec.Parameters.Should().Contain("workflow.parameter.env.SAMPLE_SETTING", "request-value");
+        job.Spec.Parameters.Should().NotContainKey("analysis.region");
+        job.Spec.Parameters.Should().NotContainKey("env.SAMPLE_SETTING");
     }
 
     [IntegrationTest]
@@ -449,6 +457,71 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         });
     }
 
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/console/workflow-publications/{publicationId}")]
+    [Endpoint("POST /api/v1/console/workflow-publications/{publicationId}/status")]
+    public async Task DeletingOrDisablingSchedulePublication_RemovesOrDisablesOwningWorkflowDefinition()
+    {
+        await using (var scope = _fixture.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<IWorkflowPackageStore>()
+                .GetType().Name.Should().Be("PostgresWorkflowPackageStore");
+        }
+
+        var disablePackageId = await CreatePackageAsync("orphan-disable", CreateAreaGraph());
+        var disableVersion = await CreateVersionAsync(disablePackageId);
+        var disablePublicationId = "pub-orphan-disable-" + Guid.NewGuid().ToString("N");
+        await PublishAsync(disablePackageId, disableVersion.Version, new
+        {
+            publicationId = disablePublicationId,
+            target = "Schedule",
+            schedule = new { cronExpression = "0 0 * * *", timeZone = "UTC", enabled = true },
+            enabled = true
+        });
+        var disableDefinitionId = $"workflow-package:{disablePackageId}:v{disableVersion.Version}:{disablePublicationId}";
+        (await _definitionStore.GetAsync(disableDefinitionId)).Should().NotBeNull();
+
+        await using (var peer = _fixture.Services.CreateAsyncScope())
+        {
+            var store = peer.ServiceProvider.GetRequiredService<IWorkflowPackageStore>();
+            (await store.GetPublicationAsync(disablePublicationId)).Should().NotBeNull(
+                "a peer scope must read the publication from PostGIS, not from process-local memory");
+        }
+
+        var disableResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/console/workflow-publications/{disablePublicationId}/status",
+            new { status = "Disabled" },
+            JsonOptions);
+        disableResponse.StatusCode.Should().Be(HttpStatusCode.OK, await disableResponse.Content.ReadAsStringAsync());
+        (await _definitionStore.GetAsync(disableDefinitionId))!.Trigger!.Enabled.Should().BeFalse();
+        (await _definitionStore.ListScheduledAsync()).Should().NotContain(definition => definition.WorkflowId == disableDefinitionId);
+
+        var deletePackageId = await CreatePackageAsync("orphan-delete", CreateAreaGraph());
+        var deleteVersion = await CreateVersionAsync(deletePackageId);
+        var deletePublicationId = "pub-orphan-delete-" + Guid.NewGuid().ToString("N");
+        await PublishAsync(deletePackageId, deleteVersion.Version, new
+        {
+            publicationId = deletePublicationId,
+            target = "Schedule",
+            schedule = new { cronExpression = "15 1 * * *", timeZone = "UTC", enabled = true },
+            enabled = true
+        });
+        var deleteDefinitionId = $"workflow-package:{deletePackageId}:v{deleteVersion.Version}:{deletePublicationId}";
+        (await _definitionStore.GetAsync(deleteDefinitionId)).Should().NotBeNull();
+
+        var deleteResponse = await _client.DeleteAsync($"/api/v1/console/workflow-publications/{deletePublicationId}");
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK, await deleteResponse.Content.ReadAsStringAsync());
+        (await _definitionStore.GetAsync(deleteDefinitionId)).Should().BeNull();
+
+        var listed = await _client.GetAsync("/api/v1/console/workflow-publications");
+        listed.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var listedDoc = await ReadJsonAsync(listed);
+        listedDoc.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("publicationId").GetString())
+            .Should().NotContain(deletePublicationId)
+            .And.Contain(disablePublicationId);
+    }
+
     private async Task<string> CreatePackageAsync(string name, object graph)
     {
         var response = await _client.PostAsJsonAsync(
@@ -463,7 +536,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
     private async Task<(int Version, string PackageHash)> CreateVersionAsync(string packageId)
     {
         var response = await _client.PostAsync($"/api/v1/console/workflow-packages/{packageId}/versions", null);
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
         using var doc = await ReadJsonAsync(response);
         var data = doc.RootElement.GetProperty("data");
         return (data.GetProperty("version").GetInt32(), data.GetProperty("packageHash").GetString()!);

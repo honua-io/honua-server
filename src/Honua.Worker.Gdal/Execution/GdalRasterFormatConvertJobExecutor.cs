@@ -175,7 +175,7 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
             GdalCommandResult result;
             try
             {
-                result = await runner.RunAsync("gdal_translate", args, workspace, linked.Token).ConfigureAwait(false);
+                result = await GdalRasterDriverAllowlist.RunAsync(runner, "gdal_translate", args, opts, workspace, linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {

@@ -1,166 +1,141 @@
+---
+type: guide
+title: "Local geoprocessing dev quickstart"
+description: "Run the local GP stack, verify a metric buffer through the Python SDK, and connect native workers and AI clients."
+---
 # Local geoprocessing dev quickstart
 
-Stand up a local Honua server that runs geoprocessing (GP) jobs **in-process**,
-submit a real GP job, fetch results, and iterate on your own GP processes — with
-**no AWS / Azure Batch, no cloud credentials, and no manual license step**.
+Run a GP job through a local server, inspect its result, and repeat after editing
+your process. This stack needs no cloud account. For direct function development
+without a server or Redis, start with [the authoring guide](gp-devkit-authoring.md).
 
-This is the dev-environment and iterate-loop companion to the
-[Run geoprocessing](run-geoprocessing.md) task guide (which covers the request
-shapes in depth) and the
-[Geoprocessing operations reference](../../reference/geoprocessing-operations.md)
-(the full operation catalog). This page is about the local setup and the
-edit → rebuild → re-run loop.
-
-## How local GP runs (so the setup makes sense)
-
-There is no per-job container and no Batch service locally. The lean serving
-image runs the whole job lifecycle itself:
-
-- The serving host registers **both** the durable job-orchestration substrate
-  and the **in-process worker loop** (`AddJobOrchestration` + `AddJobWorker` in
-  `src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs`).
-- Managed processes — the `geometry.*` family, the `*-managed` analytics
-  counterparts, and the GeoETL transforms — execute **in-process** inside the
-  server via `GeoprocessingDispatchJobExecutor`. The
-  `LocalBatchComputeBackend` (`Backend: "local"`,
-  `src/Honua.Jobs/Features/ControlPlane/LocalBatchComputeBackend.cs`) bridges
-  their progress back to the canonical reconciler. GP jobs default to this
-  backend when no remote workload is configured.
-- The job queue, execution-job store, log store, and result-package store are
-  all **Redis-backed**, and the worker loop self-gates on a Redis connection.
-  **So Redis is required** — without it, a submitted job stays in `accepted`
-  and never drains.
-- Redis wiring (`IConnectionMultiplexer`) is only enabled when the Pro
-  `caching.redis` entitlement is present at bootstrap. In a non-Production
-  environment the bootstrap snapshot honors `Licensing:DevGrantEdition`, so
-  `Licensing__DevGrantEdition=Pro` unlocks it **without a signed license**. The
-  compose file sets this for you.
-
-The heavyweight **GDAL/PDAL worker** (`docker/worker-gdal/Dockerfile`, ADR-0038)
-is a separate, optional container only needed for the native-profile `gdal.*`
-raster/surface family. The `geometry.buffer` sample below does not need it.
+For Python or .NET custom-code breakpoints, start with the
+[filesystem sample](../../../samples/gp-custom-local/README.md), then return here
+to verify server authorization, queues, worker dispatch, and result retrieval.
+A local function run does not exercise those integration boundaries.
 
 ## Prerequisites
 
-- Docker with Compose v2 (`docker compose`).
-- That's all — no cloud account, no license file.
-
-## 1. Bring up the stack
+Run from the repository root with Docker Compose v2 and Python 3.11 or newer.
+Use a virtual environment for the published Python SDK:
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml up
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install honua-sdk
 ```
 
-This builds the server image and starts three containers: `postgres` (required
-at boot for migrations), `redis` (the GP job substrate), and `honua` (the
-server, running the in-process GP worker loop). Wait for readiness:
+The .NET 10 SDK is also needed when running the devkit from source.
 
-Open `http://localhost:8080/healthz/ready` in a browser and wait for `Ready`.
-
-To also run the optional GDAL worker for `gdal.*` jobs:
+## 1. Start the server
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up
+docker compose -f docker-compose.gp-dev.yml up --build -d
+docker compose -f docker-compose.gp-dev.yml ps
 ```
 
-## 2. Submit a GP job, watch it, get results
+Open `http://localhost:8080/healthz/ready` and wait for `Ready`. The stack starts
+PostGIS, Redis, and the serving host. Managed GP runs in the serving host;
+Redis holds durable jobs and results. Compose enables a Development Pro grant
+so local Redis wiring works without a signed license file.
 
-A ready-to-run sample lives in [`samples/gp-local-dev/`](../../../samples/gp-local-dev/):
+## 2. Submit and verify a buffer
 
 ```bash
-./samples/gp-local-dev/submit-buffer.sh
+python samples/gp-local-dev/submit-buffer.py
 ```
 
-It buffers `POINT(-122.4194 37.7749)` by 500 m using the `geometry.buffer`
-process over OGC API Processes, then polls and fetches results. There is also a
-`gp-local-dev.http` file for the VS Code / JetBrains HTTP clients.
+The sample discovers `geometry.buffer`, submits it through the installed SDK,
+waits up to 120 seconds, and checks the result's bounds and area. It buffers
+`POINT(0 0)` in EPSG:3857 by 500 metres. Expect status `successful`, bounds
+`[-500, -500, 500, 500]`, and area within 1% of `π × 500²` square metres.
+The sample prints the job ID and complete result for inspection.
 
-Doing it by hand (the same flow the script runs):
+To target a different local port or identity, set `BASE` and `KEY`. The defaults
+are `http://localhost:8080` and Compose's `quickstart-admin-password`.
+The shell wrapper `./samples/gp-local-dev/submit-buffer.sh` runs the same sample
+and accepts a `PYTHON` interpreter override.
 
-Authorize the [API explorer](../../reference/openapi-and-explorer.md) with `quickstart-admin-password`, then run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
+The SDK lifecycle is:
 
-```json
-{
-  "inputs": {
-    "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-    "srid": 4326,
-    "distance": 500
-  }
-}
+```python
+from honua_sdk import HonuaClient
+
+with HonuaClient("http://localhost:8080", api_key="quickstart-admin-password") as client:
+    gp = client.geoprocessing()
+    job = gp.submit_inputs("geometry.buffer", {
+        "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "srid": 3857,
+        "distance": 500,
+        "geodesic": False,
+    })
+    terminal = gp.wait(job, timeout=120)
+    if not terminal.succeeded:
+        raise RuntimeError(terminal.message)
+    print(gp.results(job.job_id))
 ```
 
-Use the `jobID` or `Location` value in `GET /ogc/processes/jobs/{jobId}` until the status is `successful`. Then run the sibling `/results` operation and `DELETE /ogc/processes/jobs/{jobId}`.
+Planar distances use the input CRS units. EPSG:4326 would interpret `500` as
+degrees. Keep the metric CRS with this result; reproject before WGS 84 map import.
 
-The same catalog is exposed Esri-style at
-`/rest/services/{serviceId}/GPServer` for ArcGIS clients, and the deterministic
-single-geometry tasks also accept a synchronous `execute` route — see
-[Run geoprocessing](run-geoprocessing.md) for those shapes.
-
-## 3. Prototype your own GP process (the dev loop)
-
-GP processes are catalog entries backed by job executors. To add or change one:
-
-1. **Declare the process in the catalog.** Add a `ProcessDefinition` (id,
-   title, parameters, and a `RuntimeProfile` — `managed` for in-process NTS,
-   `native` for the GDAL worker) in
-   `src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs`.
-
-2. **Implement and register an executor.** Add an `IJobExecutor`-style executor
-   next to the existing ones under
-   `src/Honua.Geoprocessing/Features/Geoprocessing/Execution/` (managed) or
-   `src/Honua.Worker.Gdal/Execution/` (native), and register it in the matching
-   `*ServiceCollectionExtensions`. Managed executors are composed behind
-   `GeoprocessingDispatchJobExecutor` and run in-process on the local backend;
-   native executors are dispatched by `GdalDispatchJobExecutor` in the GDAL
-   worker.
-
-3. **Rebuild and re-run.**
-   - **Managed (`geometry.*` / analytics / GeoETL):** the executor lives in the
-     server image, so rebuild and restart `honua`:
-     ```bash
-     docker compose -f docker-compose.gp-dev.yml up --build honua
-     ```
-   - **Native (`gdal.*`):** rebuild the worker image and restart it:
-     ```bash
-     docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build gdal-worker
-     ```
-
-4. **Submit against your new process id** (swap `geometry.buffer` for your id in
-   the API explorer operation above). The local backend picks it up automatically: managed
-   ids drain through the in-process loop; native ids are claimed by the GDAL
-   worker because they declare `RuntimeProfile: native`.
-
-For a tight inner loop without rebuilding the image, run the server directly
-against the compose Redis/Postgres instead:
+## 3. Add native execution
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml up -d postgres redis
-ASPNETCORE_ENVIRONMENT=Development \
-  Licensing__DevGrantEdition=Pro \
-  ConnectionStrings__redis=localhost:6379 \
-  ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_dev;Username=honua_user;Password=honua_password" \
-  HONUA_ADMIN_PASSWORD=quickstart-admin-password \
-  dotnet run --project src/Honua.Server
+docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build -d
 ```
 
-## Troubleshoot
+This adds the GDAL/PDAL heavy worker. It claims native-profile jobs from the same
+Redis substrate; managed jobs remain in the serving host. Native functions
+include vector conversion, raster/surface processing, and point-cloud operations.
+The heavy worker uses JIT and supports reflection; it needs no AOT build.
 
-- **Job stuck in `accepted`** — Redis is down or not wired. Confirm the `redis`
-  container is healthy and `ConnectionStrings__redis` resolves; the GP worker
-  loop only starts when the Redis connection is registered.
-- **401 on submit** — discovery is anonymous but execution is not; send
-  `X-API-Key: quickstart-admin-password`.
-- **Server won't start / GP never runs even with Redis up** — make sure
-  `ASPNETCORE_ENVIRONMENT=Development` and `Licensing__DevGrantEdition=Pro` are
-  set so the bootstrap snapshot grants `caching.redis` and wires
-  `IConnectionMultiplexer`.
-- **404 for a process id in the full catalog** — only first-slice vector
-  processes project individually through OGC API Processes; others run via the
-  canonical `honua-geoprocessing` plan process. See the
-  [reference](../../reference/geoprocessing-operations.md).
+Compose names the image `honua-worker-etl:gp-local` by default. Set
+`HONUA_GP_WORKER_IMAGE` to select another local tag. You can use the same image
+with the devkit's `--real-worker` option; the [native Docker example](gp-devkit-authoring.md#run-native-functions-in-docker)
+converts the checked-in CSV and verifies what to expect in its GeoJSON output.
 
-## Next steps
+## 4. Edit, rebuild, and submit again
 
-- [Run geoprocessing](run-geoprocessing.md) — full request/response shapes.
-- [Geoprocessing operations reference](../../reference/geoprocessing-operations.md).
-- [Automate workflows](automate-workflows.md).
+Use `new`, `run`, and `test` in the [authoring guide](gp-devkit-authoring.md)
+to implement a process and its fixture. Then rebuild the integration stack:
+
+```bash
+# Managed executor or catalog changes.
+docker compose -f docker-compose.gp-dev.yml up --build -d honua
+
+# Native executor changes; rebuild the server too when its catalog changes.
+docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build -d honua gdal-worker
+```
+
+Describe the deployed process before submitting it. Local devkit registration
+and exposure as an individual OGC process are separate: some catalog entries
+execute through the canonical `honua-geoprocessing` plan process. See
+[run geoprocessing](run-geoprocessing.md) and the [operation reference](../../reference/geoprocessing-operations.md).
+
+For AI clients, connect to this server's `/mcp` endpoint and follow
+[geoprocessing with AI](geoprocessing-with-ai.md). For ArcGIS clients, the
+[GPServer adapter](run-geoprocessing.md) exposes service-scoped tasks over the
+same runtime. The [sample README](../../../samples/gp-local-dev/README.md)
+links the SDK, native, and MCP examples.
+
+## Stop or diagnose the stack
+
+```bash
+docker compose -f docker-compose.gp-dev.yml --profile gdal-worker logs --tail=100 honua gdal-worker redis
+docker compose -f docker-compose.gp-dev.yml --profile gdal-worker down
+```
+
+`down` preserves the local data volumes. Add `--volumes` only when you intend to
+reset this stack's database and jobs.
+
+| Symptom | Check |
+| --- | --- |
+| `401` on submission | The SDK's API key matches `HONUA_ADMIN_PASSWORD`. |
+| `403` | The identity has `Process.Execute` and any additional grants required by the selected process. |
+| Async submission refused or job stays queued | Redis is healthy and the matching managed/native worker is running. |
+| Native command unavailable | The heavy image was built and the chosen tag exists locally. |
+| Unknown process | Describe it on the running server; rebuild the catalog or use the plan process where required. |
+| A submitted job failed or stalled | Read `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](gp-job-diagnostics.md). |
+
+After local verification, promote images through the release process described
+in [From local to environments](gp-devkit-authoring.md#from-local-to-environments).

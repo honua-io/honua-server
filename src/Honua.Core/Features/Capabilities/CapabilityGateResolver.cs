@@ -16,6 +16,10 @@ namespace Honua.Core.Features.Capabilities;
 ///     <see cref="CapabilityReasonCodes.NotRegistered"/> (B1 behaviour, preserved).
 ///   </description></item>
 ///   <item><description>
+///     A declared implementation gap is always disabled with
+///     <see cref="CapabilityReasonCodes.NotImplemented"/>, regardless of opt-in or edition.
+///   </description></item>
+///   <item><description>
 ///     <see cref="CapabilityMaturity.Experimental"/> maturity → enabled only when the
 ///     per-capability or global experimental flag is on; otherwise disabled with
 ///     <see cref="CapabilityReasonCodes.ExperimentalDisabled"/> (default-off).
@@ -52,14 +56,19 @@ public static class CapabilityGateResolver
             return new CapabilityResolution(false, CapabilityReasonCodes.NotRegistered);
         }
 
-        if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
+        if (descriptor.ImplementationStatus == CapabilityImplementationStatus.KnownGap)
+        {
+            return new CapabilityResolution(false, CapabilityReasonCodes.NotImplemented);
+        }
+
+        if (descriptor.Maturity is CapabilityMaturity.Internal or CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
         {
             if (descriptor.RequiresOptIn && !context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))
             {
                 return new CapabilityResolution(false, CapabilityReasonCodes.ExperimentalDisabled);
             }
 
-            // Preview or Experimental capability: entitlement/edition still applies on top,
+            // Non-public or pre-release capability: entitlement/edition still applies on top,
             // so an unlicensed edition fails on edition rather than being masked by the flag.
             if (descriptor.MinimumEdition is { } minimumEdition && context.Edition < minimumEdition)
             {

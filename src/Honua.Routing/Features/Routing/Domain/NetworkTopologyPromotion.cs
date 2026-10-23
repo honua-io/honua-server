@@ -30,6 +30,7 @@ public enum NetworkTopologyPromotionKind
 /// <param name="IdempotencyKey">Client-supplied at-most-once key for this promotion request.</param>
 /// <param name="EvidenceDigest">Integrity-evidence digest of the generation that became active.</param>
 /// <param name="PromotedAt">When this promotion committed.</param>
+/// <param name="RequestHash">SHA-256 hex of the request binding, or null for rows written before the binding was stored.</param>
 public sealed record NetworkTopologyPromotionRecord(
     string PromotionId,
     string DatasetId,
@@ -40,7 +41,8 @@ public sealed record NetworkTopologyPromotionRecord(
     string? Reason,
     string IdempotencyKey,
     string? EvidenceDigest,
-    DateTimeOffset PromotedAt);
+    DateTimeOffset PromotedAt,
+    string? RequestHash = null);
 
 /// <summary>
 /// Stable, sanitized rejection reasons for a promotion or rollback request (#2719).
@@ -74,6 +76,12 @@ public enum NetworkTopologyPromotionRejection
 
     /// <summary>The rollback target's physical artifacts are missing (retention-expired).</summary>
     RollbackArtifactsMissing,
+
+    /// <summary>
+    /// The idempotency key was already stored for a different promotion request
+    /// (kind, target generation, expected active generation, or active row version).
+    /// </summary>
+    IdempotencyKeyReused,
 }
 
 /// <summary>

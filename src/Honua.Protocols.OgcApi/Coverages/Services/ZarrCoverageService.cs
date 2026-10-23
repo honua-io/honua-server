@@ -39,7 +39,7 @@ internal sealed class ZarrCoverageService
     private const long MaxCoverageOutputBytes = 16L * 1024L * 1024L;
 
     private static readonly ImmutableHashSet<string> SupportedQueryParameters =
-        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "subset", "properties", "datetime");
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "subset", "properties", "datetime", "token");
 
     private static readonly string[] AcceptableMediaTypes = [CoverageJsonContentType, MediaTypes.Json];
 

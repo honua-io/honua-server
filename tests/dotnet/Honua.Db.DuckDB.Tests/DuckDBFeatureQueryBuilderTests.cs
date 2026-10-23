@@ -134,6 +134,26 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
+    {
+        var defaults = _builder.BuildSelectQuery(TestLayerId, new FeatureQuery());
+        Assert.Contains("\"name\"", defaults.Sql);
+        Assert.Contains("\"area\"", defaults.Sql);
+        Assert.Contains("\"type\"", defaults.Sql);
+
+        var unset = _builder.BuildSelectQuery(TestLayerId, new FeatureQuery { OutFields = default(ImmutableArray<string>) });
+        Assert.Contains("\"name\"", unset.Sql);
+        Assert.Contains("\"area\"", unset.Sql);
+        Assert.Contains("\"type\"", unset.Sql);
+
+        var result = _builder.BuildSelectQuery(TestLayerId, new FeatureQuery { OutFields = ImmutableArray<string>.Empty });
+
+        Assert.DoesNotContain("\"name\"", result.Sql);
+        Assert.DoesNotContain("\"area\"", result.Sql);
+        Assert.DoesNotContain("\"type\"", result.Sql);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WithPagination_GeneratesLimitOffset()
     {
         var query = new FeatureQuery { Limit = 10, Offset = 20 };
@@ -605,6 +625,29 @@ public class DuckDBFeatureQueryBuilderTests
         var query = new FeatureQuery
         {
             SpatialFilter = SpatialFilter.CreateDistanceFilter(wkb, 1000.0, DistanceUnit.Meters)
+        };
+
+        Assert.Throws<NotSupportedException>(() => builder.BuildSelectQuery(1, query));
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithinDistance_Nad27_Throws()
+    {
+        // NAD27 degrees are not WGS 84. A direct spheroid distance skips the datum shift.
+        var geographicMapping = new DuckDBLayerMapping
+        {
+            LayerId = 1,
+            TableName = "parcels_nad27",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = 4267,
+            AttributeColumns = ["name"]
+        };
+        var registry = new DuckDBLayerRegistry([geographicMapping]);
+        var builder = new DuckDBFeatureQueryBuilder(registry);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter([1, 2, 3, 4], 1000.0, DistanceUnit.Meters)
         };
 
         Assert.Throws<NotSupportedException>(() => builder.BuildSelectQuery(1, query));

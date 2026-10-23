@@ -94,10 +94,21 @@ internal static partial class OgcWfsImportEndpoints
             return;
         }
 
+        pageSize = OgcWfsImportRequest.ClampPageSize(pageSize);
+
         var timeoutSeconds = request.RequestTimeoutSeconds ?? 120;
         if (timeoutSeconds <= 0)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "requestTimeoutSeconds must be greater than zero.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!ImportValidationHelpers.IsPermittedTargetSchema(request.TargetSchema, context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
+                StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -158,7 +169,9 @@ internal static partial class OgcWfsImportEndpoints
         if (!result.Success)
         {
             await Results.Json(result, OgcWfsImportJsonContext.Default.OgcWfsImportResult,
-                    statusCode: StatusCodes.Status502BadGateway)
+                    statusCode: result.ErrorCode == ImportTableOwnershipException.Code
+                        ? StatusCodes.Status409Conflict
+                        : StatusCodes.Status502BadGateway)
                 .ExecuteAsync(context).ConfigureAwait(false);
             return;
         }

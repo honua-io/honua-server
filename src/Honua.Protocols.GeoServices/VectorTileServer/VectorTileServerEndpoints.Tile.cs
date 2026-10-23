@@ -17,6 +17,7 @@
 
 using System.Diagnostics;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -120,7 +121,8 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var primary = ResolvePrimaryVectorTilePublication(snapshot, service, context);
+            var primary = await ResolvePrimaryVectorTilePublicationAsync(
+                snapshot, service, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(context,

@@ -79,7 +79,23 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             });
         }
 
+        // #4600 (AC1): account for every construct discovered on the source against the selection before
+        // any child is queued. A caller that requires full fidelity gets a refusal instead of a batch that
+        // is already known not to be one.
+        var accounting = MigrationServiceConstructAccountant.Account(
+            request.SourceKind,
+            request.ManifestBody,
+            ToSelection(ordered));
+        if (request.RequireFullFidelity && (!accounting.Executed || accounting.IsBlocking))
+        {
+            Log.BatchRefusedByConstructAccounting(_logger, request.SourceKind, accounting.Differences.Length);
+            throw new MigrationConstructAccountingRefusedException(accounting);
+        }
+
         var applyRelationships = request.ApplyRelationships && !string.IsNullOrWhiteSpace(request.ManifestBody);
+        // The manifest is kept whenever it was accounted, so the terminal verdict replays the same
+        // accounting; an unreadable manifest is kept only for relationship apply to report as unparseable.
+        var persistManifest = applyRelationships || accounting.Executed;
         var record = new MigrationBatchRunRecord
         {
             BatchId = batchId,
@@ -96,7 +112,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         var catalog = scope.ServiceProvider.GetRequiredService<IMigrationBatchRunCatalog>();
         var created = await catalog.CreateAsync(
             record,
-            applyRelationships ? request.ManifestBody : null,
+            persistManifest ? request.ManifestBody : null,
             children,
             cancellationToken).ConfigureAwait(false);
 
@@ -134,7 +150,8 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
 
         if (batch.Status is MigrationBatchRunStatus.Succeeded
             or MigrationBatchRunStatus.Failed
-            or MigrationBatchRunStatus.Cancelled)
+            or MigrationBatchRunStatus.Cancelled
+            or MigrationBatchRunStatus.NeedsReview)
         {
             return batch;
         }
@@ -159,6 +176,9 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                 continue; // still in flight
             }
 
+            // #4600: the child's per-layer fidelity verdict is copied onto the durable child row here,
+            // while the job's progress record (24 h TTL) still holds it, so the service-level fold
+            // below never depends on expiring job state.
             var updated = await catalog.UpdateChildAsync(
                 batchId,
                 child.Ordinal,
@@ -167,6 +187,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                 progress?.PublishedLayerId,
                 progress?.ErrorMessage,
                 DateTimeOffset.UtcNow,
+                progress?.FidelityVerdict,
                 cancellationToken).ConfigureAwait(false);
             if (updated is not null)
             {
@@ -175,8 +196,12 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         }
 
         // 2. Queue the next ready children (dependencies satisfied, no blocking failure).
-        var succeededIds = children
-            .Where(static c => c.Status == MigrationBatchChildStatus.Succeeded)
+        // #4600: a dependency is satisfied once its layer has published, which a review-routed
+        // (NeedsReview) layer has. Counting only Succeeded stranded every dependent of a review-routed
+        // origin layer as pending forever, so the batch never reached a terminal status and never
+        // reported a verdict. The review-routed layer still blocks the service-level verdict.
+        var publishedIds = children
+            .Where(static c => c.Status is MigrationBatchChildStatus.Succeeded or MigrationBatchChildStatus.NeedsReview)
             .Select(static c => c.SourceResourceId)
             .ToHashSet(StringComparer.Ordinal);
         var hasBlockingFailure = children.Any(static c =>
@@ -196,12 +221,12 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                     continue;
                 }
 
-                if (!child.DependsOn.All(succeededIds.Contains))
+                if (!child.DependsOn.All(publishedIds.Contains))
                 {
                     continue;
                 }
 
-                var jobId = await QueueChildAsync(jobManager, child, cancellationToken).ConfigureAwait(false);
+                var jobId = await QueueChildAsync(jobManager, child, batch.ApplyRelationships, cancellationToken).ConfigureAwait(false);
                 var queued = await catalog.UpdateChildAsync(
                     batchId,
                     child.Ordinal,
@@ -210,7 +235,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                     null,
                     null,
                     DateTimeOffset.UtcNow,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
                 if (queued is not null)
                 {
                     children[i] = queued;
@@ -235,7 +260,6 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         var succeeded = children.Count(static c => c.Status == MigrationBatchChildStatus.Succeeded);
         var failed = children.Count(static c => c.Status == MigrationBatchChildStatus.Failed);
         var cancelled = children.Count(static c => c.Status == MigrationBatchChildStatus.Cancelled);
-        var needsReview = children.Count(static c => c.Status == MigrationBatchChildStatus.NeedsReview);
         var running = children.Count(static c => c.Status == MigrationBatchChildStatus.Running);
         var pending = children.Count(static c => c.Status == MigrationBatchChildStatus.Pending);
         var hasBlockingFailure = failed > 0 || cancelled > 0;
@@ -251,9 +275,51 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         DateTimeOffset? completedAt = null;
         var relationshipsApplied = batch.RelationshipsApplied;
         string? note = batch.StatusNote;
+        MigrationFidelityEvaluation? fidelity = null;
 
         if (isTerminal)
         {
+            var relationshipApplyRequested = batch.ApplyRelationships && !batch.RelationshipsApplied;
+            var relationshipApply = RelationshipApplyResult.NotExecuted(null);
+            var manifestBody = await catalog.GetManifestBodyAsync(batch.BatchId, cancellationToken).ConfigureAwait(false);
+
+            // Apply relationships only when no child hard-failed and the batch asked
+            // for it (issue #1256). NeedsReview children still published data, so
+            // relationship-apply is eligible; hard failures are not.
+            //
+            // Note: `pending == 0` is not checked here separately because it is already
+            // implied — we are inside `isTerminal`, and `isTerminal` is only true without
+            // a blocking failure when `running == 0 && pending == 0` (see isTerminal above).
+            if (relationshipApplyRequested && hasBlockingFailure)
+            {
+                relationshipApply = RelationshipApplyResult.NotExecuted(
+                    "a layer import failed or was cancelled, so the batch stopped before relationship apply.");
+            }
+            else if (relationshipApplyRequested)
+            {
+                relationshipApply = await ApplyRelationshipsAsync(services, batch, manifestBody, children, cancellationToken).ConfigureAwait(false);
+                note = relationshipApply.Note ?? note;
+                relationshipsApplied = true;
+            }
+
+            // #4600: one service-level verdict. Every layer must have completed at full fidelity and
+            // every requested relationship must have reached the target; a deferred relationship or
+            // an apply that never ran is a blocking omission, not a footnote in the status note.
+            fidelity = MigrationBatchFidelityEvaluator.Evaluate(new MigrationBatchFidelityInput
+            {
+                Children = children,
+                RelationshipApplyRequested = relationshipApplyRequested,
+                RelationshipApplyExecuted = relationshipApply.Executed,
+                RelationshipApplyNotExecutedReason = relationshipApply.NotExecutedReason,
+                Relationships = relationshipApply.Outcomes,
+                // #4600 (AC1): replayed from the persisted manifest and child rows, so the verdict holds the
+                // same accounting the batch was started with.
+                ConstructAccounting = MigrationServiceConstructAccountant.Account(
+                    batch.SourceKind,
+                    manifestBody,
+                    ToConstructSelection(children))
+            });
+
             if (failed > 0)
             {
                 status = MigrationBatchRunStatus.Failed;
@@ -262,32 +328,20 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             {
                 status = MigrationBatchRunStatus.Cancelled;
             }
-            else if (needsReview > 0)
+            else if (fidelity.IsBlocking)
             {
                 status = MigrationBatchRunStatus.NeedsReview;
+                note = string.IsNullOrWhiteSpace(note)
+                    ? fidelity.BlockingReason
+                    : $"{note} {fidelity.BlockingReason}";
             }
             else
             {
                 status = MigrationBatchRunStatus.Succeeded;
             }
 
-            // Apply relationships only when every child published cleanly and the
-            // batch asked for it (issue #1256). NeedsReview children still published
-            // data, so relationship-apply is eligible; hard failures are not.
-            //
-            // Note: `pending == 0` is not checked here separately because it is already
-            // implied — we are inside `isTerminal`, and `isTerminal` is only true without
-            // a blocking failure when `running == 0 && pending == 0` (see isTerminal above).
-            // Since `!hasBlockingFailure` holds in this branch, `pending == 0` is guaranteed.
-            if (batch.ApplyRelationships
-                && !relationshipsApplied
-                && !hasBlockingFailure)
-            {
-                note = await ApplyRelationshipsAsync(services, batch, children, cancellationToken).ConfigureAwait(false);
-                relationshipsApplied = true;
-            }
-
             completedAt = DateTimeOffset.UtcNow;
+            Log.BatchFidelityVerdict(_logger, batch.BatchId, status, fidelity.Verdict, fidelity.Differences.Length);
         }
 
         return await catalog.UpdateBatchAsync(
@@ -299,20 +353,23 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             completedAt,
             relationshipsApplied != batch.RelationshipsApplied ? relationshipsApplied : null,
             note,
+            fidelity?.Verdict,
+            fidelity?.Differences,
             cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<string?> ApplyRelationshipsAsync(
+    private async Task<RelationshipApplyResult> ApplyRelationshipsAsync(
         IServiceProvider services,
         MigrationBatchRunRecord batch,
+        string? manifestBody,
         IReadOnlyList<MigrationBatchChildRecord> children,
         CancellationToken cancellationToken)
     {
-        var catalog = services.GetRequiredService<IMigrationBatchRunCatalog>();
-        var manifestBody = await catalog.GetManifestBodyAsync(batch.BatchId, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(manifestBody))
         {
-            return batch.StatusNote;
+            return RelationshipApplyResult.NotExecuted(
+                "the batch manifest body was not found.",
+                "Relationship-apply skipped: batch manifest body was not found.");
         }
 
         MigrationManifestArtifact? manifest;
@@ -323,12 +380,16 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         catch (JsonException ex)
         {
             Log.RelationshipManifestInvalid(_logger, batch.BatchId, ex);
-            return "Relationship-apply skipped: batch manifest could not be parsed.";
+            return RelationshipApplyResult.NotExecuted(
+                "the batch manifest could not be parsed.",
+                "Relationship-apply skipped: batch manifest could not be parsed.");
         }
 
         if (manifest is null)
         {
-            return "Relationship-apply skipped: batch manifest was empty.";
+            return RelationshipApplyResult.NotExecuted(
+                "the batch manifest was empty.",
+                "Relationship-apply skipped: batch manifest was empty.");
         }
 
         var publishedLayerMap = children
@@ -350,18 +411,37 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
 
         var applied = outcomes.Count(static o => o.Outcome == MigrationCatalogWriteOutcome.Created);
         Log.RelationshipsApplied(_logger, batch.BatchId, outcomes.Length, applied);
-        return $"Relationship-apply complete: {applied} created, {outcomes.Length - applied} skipped/existing across {outcomes.Length} relationship(s).";
+        return new RelationshipApplyResult(
+            Executed: true,
+            Note: $"Relationship-apply complete: {applied} created, {outcomes.Length - applied} skipped/existing across {outcomes.Length} relationship(s).",
+            Outcomes: outcomes,
+            NotExecutedReason: null);
     }
 
     private static async Task<string> QueueChildAsync(
         IDistributedImportJobManager jobManager,
         MigrationBatchChildRecord child,
+        bool applyRelationships,
         CancellationToken cancellationToken)
     {
-        var jobId = Guid.NewGuid().ToString("N")[..12];
+        // #4600: the job identity derives from the batch child instead of being minted per call.
+        // Advancing is re-entrant (StartAsync and the background tick both advance) and a crash can
+        // land between queueing the job and recording its id on the child row, so a fresh id queued a
+        // second import of the same layer into the same table. A derived id lets a repeat call
+        // recognise the job it already queued: once a worker has picked it up it is left alone; while
+        // it is still queued it is queued again, which cannot strand the child on a lost enqueue and is
+        // harmless otherwise because the single-leader worker skips a job that is already terminal.
+        var jobId = BuildChildJobId(child.BatchId, child.Ordinal);
+        var existing = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && existing.Status != GeoservicesImportStatus.Queued)
+        {
+            return jobId;
+        }
+
         var importRequest = new GeoservicesImportRequest
         {
             JobId = jobId,
+            DeferRelationshipApplyToBatch = applyRelationships,
             ServiceUrl = child.ServiceUrl,
             LayerId = child.SourceLayerId,
             TableName = child.TableName,
@@ -383,6 +463,42 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         await jobManager.ProgressStore.SetProgressAsync(jobId, progress, ChildJobTtl, cancellationToken).ConfigureAwait(false);
         await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken).ConfigureAwait(false);
         return jobId;
+    }
+
+    /// <summary>
+    /// The construct-accounting selection a batch's child rows describe: each child's source resource and
+    /// the target table it imports into.
+    /// </summary>
+    /// <param name="children">Batch child rows.</param>
+    /// <returns>The selection, in child order.</returns>
+    public static MigrationConstructSelection[] ToConstructSelection(IEnumerable<MigrationBatchChildRecord> children)
+    {
+        ArgumentNullException.ThrowIfNull(children);
+        return children
+            .Select(static child => ConstructSelection(child.SourceResourceId, child.TargetSchema, child.TableName))
+            .ToArray();
+    }
+
+    private static MigrationConstructSelection[] ToSelection(IEnumerable<MigrationBatchLayerSpec> layers)
+        => layers
+            .Select(static layer => ConstructSelection(layer.SourceResourceId, layer.TargetSchema, layer.TableName))
+            .ToArray();
+
+    private static MigrationConstructSelection ConstructSelection(string sourceResourceId, string? targetSchema, string tableName)
+        => new()
+        {
+            SourceResourceId = sourceResourceId,
+            TargetTable = string.IsNullOrWhiteSpace(targetSchema) ? tableName : $"{targetSchema}.{tableName}"
+        };
+
+    /// <summary>
+    /// Import job id for a batch child: stable for the child, distinct across batches and ordinals.
+    /// </summary>
+    internal static string BuildChildJobId(string batchId, int ordinal)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{batchId}:{ordinal}")));
+        return Convert.ToHexStringLower(hash.AsSpan(0, 6));
     }
 
     private static MigrationBatchChildStatus? MapChildStatus(GeoservicesImportStatus? status) => status switch
@@ -456,6 +572,21 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         }
     }
 
+    /// <summary>
+    /// Outcome of the relationship-apply step. <see cref="Executed"/> is false when apply was
+    /// requested but never reached the catalog writer (manifest missing or unparseable, or the batch
+    /// stopped on a failed layer), which the service-level verdict treats as a blocking omission.
+    /// </summary>
+    private readonly record struct RelationshipApplyResult(
+        bool Executed,
+        string? Note,
+        MigrationRelationshipApplyOutcome[] Outcomes,
+        string? NotExecutedReason)
+    {
+        public static RelationshipApplyResult NotExecuted(string? reason, string? note = null)
+            => new(Executed: false, Note: note, Outcomes: [], NotExecutedReason: reason);
+    }
+
     private static partial class Log
     {
         [LoggerMessage(7980, LogLevel.Information,
@@ -473,5 +604,14 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         [LoggerMessage(7983, LogLevel.Warning,
             "Migration batch {BatchId} manifest could not be parsed for relationship-apply")]
         public static partial void RelationshipManifestInvalid(ILogger logger, string batchId, Exception exception);
+
+        [LoggerMessage(7979, LogLevel.Information,
+            "Migration batch {BatchId} finished {Status} with fidelity verdict {FidelityVerdict} ({DifferenceCount} difference(s))")]
+        public static partial void BatchFidelityVerdict(
+            ILogger logger, string batchId, MigrationBatchRunStatus status, string fidelityVerdict, int differenceCount);
+
+        [LoggerMessage(7958, LogLevel.Information,
+            "Migration batch refused before apply: construct accounting for source {SourceKind} reported {DifferenceCount} difference(s) and full fidelity was required")]
+        public static partial void BatchRefusedByConstructAccounting(ILogger logger, string sourceKind, int differenceCount);
     }
 }

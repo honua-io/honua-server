@@ -4,7 +4,7 @@ name: Real-Client Interop Matrix (Nightly)
 # nightly passes are observed across all lanes (#806 design).
 #
 # Exercises Honua against the actual GIS clients customers use (QGIS, GDAL,
-# OpenLayers, Cesium, ArcGIS Pro stub) and the canonical analyst clients
+# OpenLayers, Cesium, arcgis-stub) and the canonical analyst clients
 # (GeoPandas, OWSLib, DuckDB Spatial, R sf/ows4R, pystac-client — #3392)
 # via Docker harnesses under
 # docker/client-compat/. CITE conformance suites prove spec compliance; this
@@ -118,7 +118,7 @@ jobs:
         lane: ${{ fromJSON(needs.prepare.outputs.lanes) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Configure docker BuildKit
         run: |
@@ -146,6 +146,7 @@ jobs:
           DOCKER_BUILDKIT=1 docker build \
             --secret id=github_actor,env=GITHUB_ACTOR \
             --secret id=github_token,env=GITHUB_TOKEN \
+            --build-arg HONUA_GIT_SHA="${{ github.sha }}" \
             -t honua-server:client-compat \
             .
           build_exit=$?
@@ -222,7 +223,7 @@ jobs:
             } > docker/client-compat/output/${{ matrix.lane }}/lane-exit-code.txt
             docker compose -f docker/client-compat/compose.yml \
               --profile ${{ matrix.lane }} \
-              logs --no-color --tail=200 \
+              logs --no-color \
               postgres seed honua ${{ matrix.lane }} \
               > docker/client-compat/output/${{ matrix.lane }}/compose.log 2>&1 || true
           fi
@@ -241,10 +242,11 @@ jobs:
           path: docker/client-compat/output/${{ matrix.lane }}
           tier: nightly
 
-      - name: Annotate failed lane
+      - name: Fail failed lane after preserving evidence
         if: steps.run.outputs.exit_code != '0'
         run: |
-          echo "::warning::Lane ${{ matrix.lane }} exited with code ${{ steps.run.outputs.exit_code }}"
+          echo "::error::Lane ${{ matrix.lane }} exited with code ${{ steps.run.outputs.exit_code }}"
+          exit 1
 
   baseline-diff:
     name: Baseline diff and gap report
@@ -254,12 +256,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
+
+      - name: Verify artifact staging controls
+        run: python3 -m unittest discover -s tests/python/unit -p test_client_interop_artifact_staging.py -v
 
       - name: Download all lane artifacts
         uses: actions/download-artifact@v8
@@ -277,7 +282,11 @@ jobs:
 
       - name: Stage current-run envelopes
         shell: bash
-        run: scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+        env:
+          EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), ',') }}
+        run: |
+          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output "$EXPECTED_LANES"
+          python3 scripts/client-compat/validate-envelope-source.py docker/client-compat/output "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report
         id: diff

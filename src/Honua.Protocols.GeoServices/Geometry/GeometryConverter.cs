@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Infrastructure.Geometries;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Services;
@@ -20,6 +22,13 @@ internal sealed class GeometryConverter : IGeometryConverter
     // every conversion call (PA-101).
     private readonly WKBReader _wkbReader = new();
     private readonly GeoJsonWriter _geoJsonWriter = new();
+    private readonly int _maxCurveVertices;
+
+    public GeometryConverter(IOptions<LimitsOptions>? limitsOptions = null)
+    {
+        _maxCurveVertices = GeoServicesGeometryConverter.ResolveCurveVertexBudget(
+            limitsOptions?.Value.Geometry.MaxVerticesPerGeometry);
+    }
 
     /// <summary>
     /// Converts GeoServices JSON geometry to Well-Known Binary (WKB) format
@@ -36,7 +45,9 @@ internal sealed class GeometryConverter : IGeometryConverter
                 FeatureServerJsonContext.Default.GeoServicesGeometry)
                 ?? throw new ArgumentException("Invalid GeoServices JSON geometry format.");
 
-            return GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry);
+            return GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+                geometry,
+                maxCurveVertices: _maxCurveVertices);
         }
         catch (JsonException)
         {

@@ -103,6 +103,41 @@ internal static partial class McpLog
     /// multi-instance deployments without sticky routing). Only a short prefix
     /// of the id is logged because a session id names a live session elsewhere.
     /// </summary>
-    [LoggerMessage(8174, LogLevel.Debug, "MCP unknown session served statelessly: SessionIdPrefix={SessionIdPrefix}")]
+    [LoggerMessage(8174, LogLevel.Information, "MCP unknown session served statelessly (Mcp:StatelessSessionFallback): SessionIdPrefix={SessionIdPrefix}")]
     public static partial void SessionServedStateless(ILogger logger, string sessionIdPrefix);
+
+    /// <summary>
+    /// The MCP session mode chosen for this host at startup (honua-server#5629).
+    /// </summary>
+    [LoggerMessage(8225, LogLevel.Information, "MCP session mode selected: Mode={Mode}, Reason={Reason}")]
+    public static partial void SessionModeSelected(ILogger logger, string mode, string reason);
+
+    /// <summary>
+    /// The host runs as several instances with no shared session store and no
+    /// signing secret, so sessions stay in memory and another instance answers a
+    /// session id with HTTP 404 (honua-server#5629).
+    /// </summary>
+    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or connect Redis. Reason={Reason}")]
+    public static partial void SessionModeDegraded(ILogger logger, string reason);
+
+    /// <summary>
+    /// The shared MCP session store (Redis) failed an operation. A session held
+    /// locally keeps being served; an id this instance does not hold answers 404.
+    /// </summary>
+    [LoggerMessage(8192, LogLevel.Warning, "MCP shared session store unavailable: Operation={Operation}")]
+    public static partial void SessionStoreUnavailable(ILogger logger, string operation, Exception exception);
+
+    /// <summary>
+    /// A <c>POST /mcp</c> body exceeded <see cref="McpOptions.MaxRequestBodyBytes"/>
+    /// and was refused with HTTP 413 before parsing (SEC-18).
+    /// </summary>
+    [LoggerMessage(8190, LogLevel.Information, "MCP request body refused: MaxBytes={MaxBytes}")]
+    public static partial void RequestBodyTooLarge(ILogger logger, long maxBytes);
+
+    /// <summary>
+    /// A JSON-RPC batch exceeded <see cref="McpOptions.MaxBatchSize"/> and was
+    /// refused whole before any element was dispatched (SEC-18).
+    /// </summary>
+    [LoggerMessage(8191, LogLevel.Information, "MCP batch refused: Length={Length}, MaxBatchSize={MaxBatchSize}")]
+    public static partial void BatchTooLarge(ILogger logger, int length, int maxBatchSize);
 }

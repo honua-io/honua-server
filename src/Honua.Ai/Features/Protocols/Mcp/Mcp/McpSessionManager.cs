@@ -3,7 +3,9 @@
 
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Threading.Channels;
+using StackExchange.Redis;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -28,6 +30,28 @@ internal enum McpSessionValidation
 }
 
 /// <summary>
+/// Outcome of <see cref="McpSessionManager.TerminateAsync"/>.
+/// </summary>
+internal enum McpSessionTermination
+{
+    /// <summary>The session was terminated on every instance.</summary>
+    Terminated,
+
+    /// <summary>The session was not held by this instance.</summary>
+    NotFound,
+
+    /// <summary>
+    /// The session is stateless (<see cref="McpSessionMode.Stateless"/>): its
+    /// node-local work here was ended, but the id stays valid on every instance
+    /// until its lifetime ends, so the server does not claim to have terminated it.
+    /// </summary>
+    NotRevocable,
+
+    /// <summary>The shared record could not be removed; the session may still be live elsewhere.</summary>
+    StoreUnavailable
+}
+
+/// <summary>
 /// Tracks MCP Streamable-HTTP sessions for the operator surface. The
 /// Streamable-HTTP transport (MCP 2025-03-26) lets a server assign a session id
 /// during <c>initialize</c> and return it on the <c>Mcp-Session-Id</c> response
@@ -38,18 +62,28 @@ internal enum McpSessionValidation
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is an in-process registry: session state lives in the host's memory and
-/// is not shared across replicas. That matches the current single-process MCP
-/// usage and the session-affinity expectation in the spec ("the server MAY make
-/// the session sticky"). The 2026 MCP RC is moving toward a stateless core, so
-/// this type deliberately keeps its surface small and externalizable: a
-/// Redis-backed <c>IMcpSessionStore</c> could replace the in-memory dictionaries
-/// (session record, idle-TTL sweep, LRU cap, principal binding, and the
-/// job→session index) behind the same methods when multi-node MCP fan-out lands
-/// (honua-server#1954 follow-up). Nothing here holds a reference the store could
-/// not serialize except the per-session notification <see cref="Channel"/> and
-/// its lifetime token, which are inherently node-local (they back the SSE stream
-/// held open on this node) and would stay node-local under a Redis design.
+/// Session records are kept in this host's memory and, when a shared
+/// <see cref="IMcpSessionStore"/> is composed (Redis connected; the governed
+/// control plane requires it), also in that store. With a store the in-memory
+/// table is a read-through cache: a request bearing an id this instance does
+/// not hold is resolved from the store, so a session negotiated on any
+/// instance, including its workflow view, is honoured by every instance or
+/// refused with HTTP 404, never silently downgraded. The store is
+/// authoritative for existence: every accepted request slides the record's
+/// expiry, and a record that is gone (deleted or expired elsewhere) evicts the
+/// local copy. Without a store this is a single-instance registry, as before.
+/// The per-session notification <see cref="Channel"/>, its lifetime token, and
+/// the job-to-session index are inherently node-local (they back the SSE
+/// stream held open on this node) and are never shared.
+/// </para>
+/// <para>
+/// Without a store on a host that runs as several instances, sessions are
+/// stateless (<see cref="McpSessionMode.Stateless"/>): the id minted at
+/// <c>initialize</c> is a signed token (<see cref="McpStatelessSessionTokens"/>)
+/// carrying the negotiated view, elicitation flag, and principal binding, so any
+/// instance validates it and rebuilds the session with no shared memory. The
+/// in-memory table is then only a cache of node-local state; an id that fails
+/// the signature, lifetime, or principal check is refused exactly as before.
 /// </para>
 /// <para>
 /// Each session owns a bounded notification channel (honua-server#1954). The
@@ -76,7 +110,7 @@ internal enum McpSessionValidation
 /// random value rendered as lowercase hex satisfies all three.
 /// </para>
 /// </remarks>
-internal sealed class McpSessionManager
+internal sealed partial class McpSessionManager
 {
     /// <summary>
     /// HTTP header carrying the MCP session id on initialize responses and on
@@ -107,31 +141,102 @@ internal sealed class McpSessionManager
     // Serializes capacity enforcement (prune + evict + admit) so the cap is never
     // transiently exceeded under a burst of concurrent initializes. Reads
     // (validation, enqueue, reader lookup) stay lock-free on the concurrent map.
+    // Also serializes removal tombstones with Adopt: a broadcast can arrive before
+    // the cache-miss read installs the record, and Terminate then finds nothing.
     private readonly object _capacityGate = new();
+    private readonly Dictionary<string, DateTimeOffset> _removedSessions = new(StringComparer.Ordinal);
 
     private readonly int _maxSessions;
+    private readonly int _maxAnonymousSessions;
+    private readonly int _maxSessionsPerPrincipal;
     private readonly TimeSpan _idleTimeout;
     private readonly McpSessionEvictionPolicy _evictionPolicy;
     private readonly TimeProvider _timeProvider;
+    private readonly IMcpSessionStore? _store;
+    private readonly McpStatelessSessionTokens? _statelessTokens;
+    private readonly ILogger? _logger;
+
+    // Held for the manager's (process) lifetime; the multiplexer owns teardown.
+    private readonly IDisposable? _removalSubscription;
 
     /// <summary>
     /// Creates a session manager with the supplied lifecycle bounds. The
     /// parameterless defaults match <see cref="McpOptions"/> so unit tests and
     /// isolated compositions get a sane, memory-bounded registry without wiring
-    /// configuration.
+    /// configuration. <paramref name="maxAnonymousSessions"/> bounds the anonymous
+    /// pool inside <paramref name="maxSessions"/> (SEC-18) and is clamped to it.
+    /// <paramref name="maxSessionsPerPrincipal"/> bounds one authenticated binding
+    /// key (honua-server#5629) and is clamped so it cannot occupy every slot.
     /// </summary>
     public McpSessionManager(
         int maxSessions = 10_000,
         TimeSpan? idleTimeout = null,
         McpSessionEvictionPolicy evictionPolicy = McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        int maxAnonymousSessions = 1_000,
+        IMcpSessionStore? store = null,
+        ILogger? logger = null,
+        McpStatelessSessionTokens? statelessTokens = null,
+        int maxSessionsPerPrincipal = McpOptions.DefaultMaxSessionsPerPrincipal)
     {
         _maxSessions = maxSessions > 0 ? maxSessions : 1;
+        _maxAnonymousSessions = Math.Clamp(maxAnonymousSessions, 1, _maxSessions);
+        var perPrincipal = maxSessionsPerPrincipal > 0
+            ? maxSessionsPerPrincipal
+            : McpOptions.DefaultMaxSessionsPerPrincipal;
+        _maxSessionsPerPrincipal = perPrincipal >= _maxSessions
+            ? Math.Max(1, _maxSessions - 1)
+            : perPrincipal;
         var idle = idleTimeout ?? TimeSpan.FromMinutes(30);
         _idleTimeout = idle > TimeSpan.Zero ? idle : TimeSpan.FromMinutes(30);
         _evictionPolicy = evictionPolicy;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _store = store;
+
+        // A shared store is authoritative and supports revocation; stateless ids are
+        // only for hosts without one.
+        _statelessTokens = store is null ? statelessTokens : null;
+        _logger = logger;
+
+        // A DELETE served by another replica must end this replica's node-local
+        // session work (SSE channel, progress bridges) immediately, not on the next
+        // request that happens to land here.
+        if (_store is not null)
+        {
+            try
+            {
+                _removalSubscription = _store.SubscribeToRemovals(id =>
+                {
+                    // Record the removal even when this replica has not adopted the
+                    // session yet. A read already in flight can otherwise install it
+                    // after Terminate finds no local entry.
+                    RememberRemoval(id);
+                    Terminate(id);
+                });
+            }
+            catch (Exception ex) when (IsStoreFailure(ex))
+            {
+                LogStoreFailure(ex, "subscribe");
+            }
+        }
     }
+
+    /// <summary>
+    /// <c>true</c> when sessions are shared across instances through an
+    /// <see cref="IMcpSessionStore"/>.
+    /// </summary>
+    public bool HasSharedStore => _store is not null;
+
+    /// <summary>How this instance keeps sessions.</summary>
+    public McpSessionMode Mode =>
+        _store is not null ? McpSessionMode.Shared
+        : _statelessTokens is not null ? McpSessionMode.Stateless
+        : McpSessionMode.InMemory;
+
+    /// <summary>
+    /// <c>true</c> when this instance receives other instances' session removals.
+    /// </summary>
+    public bool ReceivesSharedRemovals => _removalSubscription is not null;
 
     /// <summary>
     /// Creates and registers a new session bound to the anonymous principal,
@@ -151,10 +256,17 @@ internal sealed class McpSessionManager
     /// (use <see cref="AnonymousPrincipalKey"/> for an anonymous caller). Enforces
     /// the idle TTL and the maximum-session cap: expired sessions are swept first,
     /// then — if still at capacity — the configured
-    /// <see cref="McpSessionEvictionPolicy"/> is applied. Returns <c>false</c> with
-    /// an empty <paramref name="sessionId"/> only when the cap is reached and the
-    /// policy is <see cref="McpSessionEvictionPolicy.RejectNew"/>. Invoked when the
-    /// server accepts an <c>initialize</c> request in stateful mode.
+    /// <see cref="McpSessionEvictionPolicy"/> is applied. Anonymous sessions form a
+    /// separate pool bounded by the anonymous cap (SEC-18): an anonymous session
+    /// only ever evicts another anonymous session. An authenticated session evicts
+    /// that principal's own least-recently-used session when the principal is at
+    /// its quota, and otherwise evicts anonymous sessions only — never another
+    /// principal's session (honua-server#5629). Returns
+    /// <c>false</c> with an empty <paramref name="sessionId"/> when the cap is
+    /// reached and the policy is <see cref="McpSessionEvictionPolicy.RejectNew"/>,
+    /// when the principal is at quota under that policy, or when admitting the
+    /// session would have to evict a different principal.
+    /// Invoked when the server accepts an <c>initialize</c> request in stateful mode.
     /// </summary>
     public bool TryCreateSession(string? principalKey, out string sessionId) =>
         TryCreateSession(principalKey, elicitationSupported: false, out sessionId);
@@ -182,6 +294,57 @@ internal sealed class McpSessionManager
         string? principalKey,
         bool elicitationSupported,
         string? workflowView,
+        out string sessionId) =>
+        TryCreateSessionCore(principalKey, elicitationSupported, workflowView, out sessionId);
+
+    /// <summary>
+    /// Creates and registers a new session exactly as
+    /// <see cref="TryCreateSession(string?, bool, string?, out string)"/> does and,
+    /// when a shared <see cref="IMcpSessionStore"/> is composed, persists its record
+    /// before returning so any instance can serve the very next request. With a
+    /// store, capacity eviction only drops entries from this instance's cache: the
+    /// local least-recently-used order reflects only this replica's traffic, so it
+    /// must not end a session that may be active on another replica. A store
+    /// failure is logged and leaves a session only this instance holds; other
+    /// instances then answer it with HTTP 404 and the client re-initializes.
+    /// Returns <c>null</c> when the capacity policy refused the session.
+    /// </summary>
+    public async Task<string?> TryCreateSessionAsync(
+        string? principalKey,
+        bool elicitationSupported,
+        string? workflowView,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCreateSessionCore(principalKey, elicitationSupported, workflowView, out var sessionId))
+        {
+            return null;
+        }
+
+        if (_store is not null)
+        {
+            var record = new McpSessionRecord(
+                sessionId,
+                principalKey ?? AnonymousPrincipalKey,
+                elicitationSupported,
+                workflowView,
+                _timeProvider.GetUtcNow());
+            try
+            {
+                await _store.SaveAsync(record, _idleTimeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsStoreFailure(ex))
+            {
+                LogStoreFailure(ex, "save");
+            }
+        }
+
+        return sessionId;
+    }
+
+    private bool TryCreateSessionCore(
+        string? principalKey,
+        bool elicitationSupported,
+        string? workflowView,
         out string sessionId)
     {
         var now = _timeProvider.GetUtcNow();
@@ -189,25 +352,235 @@ internal sealed class McpSessionManager
         {
             SweepExpired(now);
 
-            if (_sessions.Count >= _maxSessions)
+            var key = principalKey ?? AnonymousPrincipalKey;
+            if (!TryAdmit(key))
             {
-                if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
-                {
-                    sessionId = string.Empty;
-                    return false;
-                }
-
-                EvictLeastRecentlyUsed(_sessions.Count - _maxSessions + 1);
+                sessionId = string.Empty;
+                return false;
             }
 
-            var id = GenerateSessionId();
+            var id = _statelessTokens?.Mint(key, elicitationSupported, workflowView) ?? GenerateSessionId();
             _sessions[id] = new McpSession(
-                principalKey ?? AnonymousPrincipalKey,
+                key,
                 now,
                 elicitationSupported,
                 workflowView);
             sessionId = id;
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Validates a presented session id like <see cref="ValidateAccess"/>, consulting
+    /// the shared <see cref="IMcpSessionStore"/> when one is composed. With a store,
+    /// the store is authoritative for existence and for the idle window:
+    /// <list type="bullet">
+    /// <item>A session this instance does not hold is read through from the store and
+    /// cached, so its negotiated state (workflow view, elicitation capability,
+    /// principal binding) is honoured here exactly as on the instance that minted it.</item>
+    /// <item>A cached session is confirmed against the store before anything else, so
+    /// a session kept alive on another replica is never torn down here because this
+    /// replica's copy looks idle, and one terminated or expired elsewhere is dropped
+    /// (<see cref="McpSessionValidation.Unknown"/>), including for a caller whose
+    /// principal does not match.</item>
+    /// <item>A principal mismatch never slides the shared expiry.</item>
+    /// </list>
+    /// If the store is unreachable a cached, locally unexpired session keeps being
+    /// served and an unknown one validates as unknown (HTTP 404), never as a
+    /// session-less request.
+    /// </summary>
+    public async Task<McpSessionValidation> ValidateAccessAsync(
+        string sessionId,
+        string? principalKey,
+        CancellationToken cancellationToken)
+    {
+        if (_store is null)
+        {
+            return ValidateAccess(sessionId, principalKey);
+        }
+
+        if (string.IsNullOrEmpty(sessionId) || !McpEndpointExtensions.IsWellFormedSessionId(sessionId))
+        {
+            return McpSessionValidation.Unknown;
+        }
+
+        var callerKey = principalKey ?? AnonymousPrincipalKey;
+        if (_sessions.TryGetValue(sessionId, out var cached))
+        {
+            if (!string.Equals(cached.PrincipalKey, callerKey, StringComparison.Ordinal))
+            {
+                // Existence check only: another identity must not keep the session alive.
+                try
+                {
+                    if (!await _store.ExistsAsync(sessionId, cancellationToken).ConfigureAwait(false))
+                    {
+                        Terminate(sessionId);
+                        return McpSessionValidation.Unknown;
+                    }
+                }
+                catch (Exception ex) when (IsStoreFailure(ex))
+                {
+                    LogStoreFailure(ex, "exists");
+                }
+
+                return McpSessionValidation.PrincipalMismatch;
+            }
+
+            bool alive;
+            try
+            {
+                alive = await _store.TouchAsync(sessionId, _idleTimeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsStoreFailure(ex))
+            {
+                LogStoreFailure(ex, "touch");
+                alive = !IsExpired(cached, _timeProvider.GetUtcNow());
+            }
+
+            if (!alive)
+            {
+                Terminate(sessionId);
+                return McpSessionValidation.Unknown;
+            }
+
+            cached.Touch(_timeProvider.GetUtcNow());
+            return McpSessionValidation.Valid;
+        }
+
+        McpSessionRecord? record;
+        try
+        {
+            // Read without sliding. A mismatched principal must not keep the session alive.
+            record = await _store.GetAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsStoreFailure(ex))
+        {
+            LogStoreFailure(ex, "read");
+            return McpSessionValidation.Unknown;
+        }
+
+        if (record is null)
+        {
+            return McpSessionValidation.Unknown;
+        }
+
+        if (!string.Equals(record.PrincipalKey, callerKey, StringComparison.Ordinal))
+        {
+            return McpSessionValidation.PrincipalMismatch;
+        }
+
+        bool sharedAlive;
+        try
+        {
+            sharedAlive = await _store.TouchAsync(sessionId, _idleTimeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsStoreFailure(ex))
+        {
+            // The read can be stale by the time the touch fails. Do not adopt it.
+            LogStoreFailure(ex, "touch");
+            return McpSessionValidation.Unknown;
+        }
+
+        if (!sharedAlive)
+        {
+            return McpSessionValidation.Unknown;
+        }
+
+        // Admission has to install the local entry. A removal tombstone or a full
+        // anonymous pool both refuse, and a Valid result with no cache entry would
+        // drop the negotiated view on the next call.
+        if (!Adopt(record))
+        {
+            return McpSessionValidation.Unknown;
+        }
+
+        return McpSessionValidation.Valid;
+    }
+
+    /// <summary>
+    /// Terminates a session on this instance and, when a shared store is composed,
+    /// on every instance: the record is removed from the store and the removal is
+    /// broadcast so replicas holding the session end its node-local work at once.
+    /// Used by <c>DELETE /mcp</c>. Returns
+    /// <see cref="McpSessionTermination.StoreUnavailable"/> when the shared record
+    /// could not be removed, so the caller never acknowledges a termination other
+    /// replicas would not honour.
+    /// </summary>
+    public async Task<McpSessionTermination> TerminateAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        // Local first: the store's removal broadcast also reaches this instance and
+        // must not race the result reported here.
+        var found = Terminate(sessionId);
+        if (_statelessTokens is not null)
+        {
+            // Nothing outside this process remembers the session, so it cannot be
+            // revoked on other instances: report that instead of a termination.
+            return McpSessionTermination.NotRevocable;
+        }
+
+        if (_store is not null && !string.IsNullOrEmpty(sessionId))
+        {
+            try
+            {
+                await _store.RemoveAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsStoreFailure(ex))
+            {
+                LogStoreFailure(ex, "remove");
+                return McpSessionTermination.StoreUnavailable;
+            }
+        }
+
+        return found ? McpSessionTermination.Terminated : McpSessionTermination.NotFound;
+    }
+
+    /// <summary>
+    /// Caches a session record read from the shared store. Returns <c>false</c> when
+    /// the record was removed, or when admitting it would exceed the anonymous pool,
+    /// the per-principal quota, or the session cap without a victim this admission
+    /// is allowed to displace. Capacity pressure evicts least-recently-used entries
+    /// from this instance's cache only; the store keeps them. The local idle clock
+    /// is not consulted: another replica may be refreshing the authoritative expiry.
+    /// An anonymous record never displaces an authenticated session, and an
+    /// authenticated record never displaces a different principal.
+    /// </summary>
+    private bool Adopt(McpSessionRecord record)
+    {
+        var now = _timeProvider.GetUtcNow();
+        lock (_capacityGate)
+        {
+            if (WasRemoved(record.SessionId, now))
+            {
+                return false;
+            }
+
+            if (_sessions.ContainsKey(record.SessionId))
+            {
+                return true;
+            }
+
+            if (!TryAdmit(record.PrincipalKey))
+            {
+                return false;
+            }
+
+            _sessions[record.SessionId] = new McpSession(
+                record.PrincipalKey,
+                now,
+                record.ElicitationSupported,
+                record.WorkflowView);
+            return true;
+        }
+    }
+
+    private static bool IsStoreFailure(Exception ex) =>
+        ex is RedisException or TimeoutException or JsonException or ObjectDisposedException;
+
+    private void LogStoreFailure(Exception ex, string operation)
+    {
+        if (_logger is not null)
+        {
+            McpLog.SessionStoreUnavailable(_logger, operation, ex);
         }
     }
 
@@ -276,6 +649,11 @@ internal sealed class McpSessionManager
     /// </summary>
     public McpSessionValidation ValidateAccess(string sessionId, string? principalKey)
     {
+        if (_statelessTokens is not null)
+        {
+            return ValidateStatelessAccess(sessionId, principalKey ?? AnonymousPrincipalKey);
+        }
+
         if (string.IsNullOrEmpty(sessionId) || !_sessions.TryGetValue(sessionId, out var session))
         {
             return McpSessionValidation.Unknown;
@@ -299,6 +677,42 @@ internal sealed class McpSessionManager
     }
 
     /// <summary>
+    /// Validates a stateless session id. The token is authoritative: its signature,
+    /// lifetime, and principal binding decide, and the local table only caches the
+    /// node-local state (notification channel, lifetime token, job index) of a
+    /// session this instance has served. A valid token this instance has never seen
+    /// is adopted with the view and elicitation flag it carries.
+    /// </summary>
+    private McpSessionValidation ValidateStatelessAccess(string sessionId, string callerKey)
+    {
+        if (!_statelessTokens!.TryRead(sessionId, out var claims, out var binding))
+        {
+            Terminate(sessionId);
+            return McpSessionValidation.Unknown;
+        }
+
+        if (!_statelessTokens.IsBoundTo(binding, callerKey))
+        {
+            return McpSessionValidation.PrincipalMismatch;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        if (_sessions.TryGetValue(sessionId, out var cached))
+        {
+            cached.Touch(now);
+            return McpSessionValidation.Valid;
+        }
+
+        var record = new McpSessionRecord(
+            sessionId,
+            callerKey,
+            claims.ElicitationSupported,
+            claims.WorkflowView,
+            claims.CreatedUtc);
+        return Adopt(record) ? McpSessionValidation.Valid : McpSessionValidation.Unknown;
+    }
+
+    /// <summary>
     /// Terminates a session so subsequent requests bearing its id are rejected
     /// with HTTP 404. Completes the session's notification channel (so any open
     /// SSE reader unblocks and the stream closes) and cancels its lifetime token
@@ -313,9 +727,76 @@ internal sealed class McpSessionManager
             return false;
         }
 
+        foreach (var jobId in session.Jobs.Keys)
+        {
+            _jobSessions.TryRemove(new KeyValuePair<string, string>(jobId, sessionId));
+        }
+
         session.Channel.Writer.TryComplete();
-        session.Lifetime.Cancel();
-        session.Lifetime.Dispose();
+        try
+        {
+            session.Lifetime.Cancel();
+        }
+        finally
+        {
+            // Linked provider callbacks can throw. Preserve that failure while
+            // still disposing the session-owned cancellation resources.
+            session.Lifetime.Dispose();
+        }
+
+        return true;
+    }
+
+    private void RememberRemoval(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            return;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        lock (_capacityGate)
+        {
+            _removedSessions[sessionId] = now;
+            if (_removedSessions.Count <= _maxSessions)
+            {
+                return;
+            }
+
+            var cutoff = now - _idleTimeout;
+            List<string>? stale = null;
+            foreach (var pair in _removedSessions)
+            {
+                if (pair.Value < cutoff)
+                {
+                    (stale ??= []).Add(pair.Key);
+                }
+            }
+
+            if (stale is not null)
+            {
+                foreach (var id in stale)
+                {
+                    _removedSessions.Remove(id);
+                }
+            }
+        }
+    }
+
+    // Caller holds _capacityGate.
+    private bool WasRemoved(string sessionId, DateTimeOffset now)
+    {
+        if (!_removedSessions.TryGetValue(sessionId, out var removedAt))
+        {
+            return false;
+        }
+
+        if (removedAt < now - _idleTimeout)
+        {
+            _removedSessions.Remove(sessionId);
+            return false;
+        }
+
         return true;
     }
 
@@ -385,11 +866,22 @@ internal sealed class McpSessionManager
             return;
         }
 
-        if (_sessions.TryGetValue(sessionId, out var session))
+        if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            session.Jobs[jobId] = 0;
-            _jobSessions[jobId] = sessionId;
+            return;
         }
+
+        session.Jobs[jobId] = 0;
+        _jobSessions[jobId] = sessionId;
+        if (_sessions.ContainsKey(sessionId))
+        {
+            return;
+        }
+
+        // Terminate won the race after the index insert. Drop the association so
+        // the job map does not retain a session that has already ended.
+        session.Jobs.TryRemove(jobId, out _);
+        _jobSessions.TryRemove(new KeyValuePair<string, string>(jobId, sessionId));
     }
 
     /// <summary>
@@ -400,8 +892,13 @@ internal sealed class McpSessionManager
     {
         if (!string.IsNullOrEmpty(jobId) && _jobSessions.TryGetValue(jobId, out var resolved))
         {
-            sessionId = resolved;
-            return true;
+            if (_sessions.ContainsKey(resolved))
+            {
+                sessionId = resolved;
+                return true;
+            }
+
+            _jobSessions.TryRemove(new KeyValuePair<string, string>(jobId, resolved));
         }
 
         sessionId = string.Empty;
@@ -430,20 +927,102 @@ internal sealed class McpSessionManager
         }
     }
 
+    private static bool IsAnonymous(string principalKey) =>
+        string.Equals(principalKey, AnonymousPrincipalKey, StringComparison.Ordinal);
+
     /// <summary>
-    /// Evicts the <paramref name="count"/> least-recently-used sessions. Called
-    /// under <see cref="_capacityGate"/> after an expiry sweep left the table at
-    /// capacity, so an <c>initialize</c> can still be admitted.
+    /// Makes room for one new session bound to <paramref name="principalKey"/>.
+    /// Caller holds <see cref="_capacityGate"/>. Anonymous admissions evict only
+    /// anonymous sessions. Authenticated admissions evict that principal's own
+    /// sessions when the principal quota is exceeded, then anonymous sessions
+    /// when the global cap is exceeded, and never another principal's session.
+    /// <see cref="McpSessionEvictionPolicy.RejectNew"/> refuses instead of evicting.
     /// </summary>
-    private void EvictLeastRecentlyUsed(int count)
+    private bool TryAdmit(string principalKey)
+    {
+        if (IsAnonymous(principalKey))
+        {
+            var excess = Math.Max(
+                _sessions.Count - _maxSessions + 1,
+                Count(static session => session.IsAnonymous) - _maxAnonymousSessions + 1);
+            if (excess <= 0)
+            {
+                return true;
+            }
+
+            if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
+            {
+                return false;
+            }
+
+            EvictLeastRecentlyUsed(excess, anonymousOnly: true);
+            return _sessions.Count < _maxSessions;
+        }
+
+        var owned = Count(session => string.Equals(session.PrincipalKey, principalKey, StringComparison.Ordinal));
+        var principalExcess = owned - _maxSessionsPerPrincipal + 1;
+        if (principalExcess > 0)
+        {
+            if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
+            {
+                return false;
+            }
+
+            EvictLeastRecentlyUsed(principalExcess, anonymousOnly: false, onlyPrincipal: principalKey);
+            if (Count(session => string.Equals(session.PrincipalKey, principalKey, StringComparison.Ordinal))
+                >= _maxSessionsPerPrincipal)
+            {
+                return false;
+            }
+        }
+
+        var globalExcess = _sessions.Count - _maxSessions + 1;
+        if (globalExcess <= 0)
+        {
+            return true;
+        }
+
+        if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
+        {
+            return false;
+        }
+
+        EvictLeastRecentlyUsed(globalExcess, anonymousOnly: true);
+        return _sessions.Count < _maxSessions;
+    }
+
+    private int Count(Func<McpSession, bool> predicate)
+    {
+        var count = 0;
+        foreach (var session in _sessions.Values.Where(predicate))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Evicts the <paramref name="count"/> least-recently-used sessions. Anonymous
+    /// sessions are taken before authenticated ones. <paramref name="anonymousOnly"/>
+    /// restricts victims to the anonymous pool. <paramref name="onlyPrincipal"/>
+    /// restricts victims to that principal key. Called under
+    /// <see cref="_capacityGate"/>.
+    /// </summary>
+    private string[] EvictLeastRecentlyUsed(int count, bool anonymousOnly, string? onlyPrincipal = null)
     {
         if (count <= 0)
         {
-            return;
+            return [];
         }
 
         var victims = _sessions
-            .OrderBy(pair => pair.Value.LastAccessUtc)
+            .Where(pair =>
+                (onlyPrincipal is null
+                    || string.Equals(pair.Value.PrincipalKey, onlyPrincipal, StringComparison.Ordinal))
+                && (!anonymousOnly || pair.Value.IsAnonymous))
+            .OrderByDescending(pair => pair.Value.IsAnonymous)
+            .ThenBy(pair => pair.Value.LastAccessUtc)
             .Take(count)
             .Select(pair => pair.Key)
             .ToArray();
@@ -452,6 +1031,8 @@ internal sealed class McpSessionManager
         {
             Terminate(id);
         }
+
+        return victims;
     }
 
     private static string GenerateSessionId()
@@ -480,6 +1061,9 @@ internal sealed class McpSessionManager
         /// (<see cref="AnonymousPrincipalKey"/> for an anonymous session).
         /// </summary>
         public string PrincipalKey { get; }
+
+        /// <summary>Whether the session belongs to the anonymous pool (SEC-18).</summary>
+        public bool IsAnonymous => McpSessionManager.IsAnonymous(PrincipalKey);
 
         /// <summary>
         /// Whether the client advertised the MCP elicitation capability at

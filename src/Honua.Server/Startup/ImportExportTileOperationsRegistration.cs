@@ -11,6 +11,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.TileOperations;
@@ -45,7 +46,8 @@ internal static class ImportExportTileOperationsRegistration
             new UniversalProgressStore(
                 sp.GetService<IDistributedCache>(),
                 sp.GetRequiredService<ILogger<UniversalProgressStore>>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>(),
+                sp.GetService<Microsoft.Extensions.Options.IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>()));
 
         services.Configure<FileUploadOptions>(
             configuration.GetSection(FileUploadOptions.SectionName));
@@ -62,14 +64,23 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILogger<RedisImportJobManager>>(),
                 sp.GetRequiredService<IHostEnvironment>(),
                 sp.GetService<IConnectionMultiplexer>()));
-        services.AddHostedService<GeoservicesImportBackgroundService>();
+        // Event-handler Lambdas (pool cap 2, frozen between invocations) do not poll.
+        // The API Lambda still does. honua-server#6515.
+        var hostPollingLoops = ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration);
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<GeoservicesImportBackgroundService>();
+        }
 
         // Footprint-driven batch import orchestration (#1253). The orchestrator
         // composes the per-layer Geoservices import pipeline into an ordered,
         // resumable batch run; the background service advances active batches
         // under the shared import leader election.
         services.AddScoped<IMigrationBatchOrchestrator, MigrationBatchOrchestrator>();
-        services.AddHostedService<MigrationBatchBackgroundService>();
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<MigrationBatchBackgroundService>();
+        }
         services.AddSingleton<GeoServerImportJobManager>(sp =>
             new GeoServerImportJobManager(
                 sp.GetRequiredService<IUniversalProgressStore>(),
@@ -77,7 +88,10 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
                 sp.GetRequiredService<IHostEnvironment>(),
                 sp.GetService<IConnectionMultiplexer>()));
-        services.AddHostedService<GeoServerImportBackgroundService>();
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<GeoServerImportBackgroundService>();
+        }
 
         // Migration performance evidence store (#1033 slice 5).
         // Surface the source-generated JsonTypeInfo so the Postgres store can round-trip the artifact
@@ -114,7 +128,12 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILogger<ExportJobService>>(),
                 sp.GetService<IConnectionMultiplexer>(),
                 licensePolicy: sp.GetRequiredService<ILicenseOperationPolicy>()));
-        services.AddHostedService<ExportBackgroundService>();
+        services.AddSingleton<IJobCancellationNotifier>(sp =>
+            (ExportJobService)sp.GetRequiredService<IExportJobService>());
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<ExportBackgroundService>();
+        }
 
         // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
         // cross-request resume state must not live only on a serving pod's memory. The in-memory
@@ -149,8 +168,11 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILicenseOperationPolicy>()));
         services.Configure<TileCacheWarmingOptions>(
             configuration.GetSection(TileCacheWarmingOptions.SectionName));
-        services.AddHostedService<TileCacheWarmingHostedService>();
-        services.AddHostedService<TileOperationBackgroundService>();
+        if (hostPollingLoops)
+        {
+            services.AddHostedService<TileCacheWarmingHostedService>();
+            services.AddHostedService<TileOperationBackgroundService>();
+        }
 
         // Scheduled tile-cache expiry/invalidation (#1837): the time-based complement to the
         // per-tileset Cache-Control TTL (#1794). Disabled unless TileCacheExpiry:Enabled is set.
@@ -216,8 +238,10 @@ internal static class ImportExportTileOperationsRegistration
                 Honua.Core.Features.ControlPlane.Abstractions.IJobExecutor,
                 TileCacheJobExecutor>());
 
-        // The submission service depends on the durable execution-job store/queue,
-        // which are only present when Redis durability has been attested (mirrors AddGeoprocessing).
+        // The submission service depends on the durable execution-job store/queue, which are
+        // present when the durable job substrate is entitled and Redis is connected — NOT when
+        // durability was attested (honua-server#4502; attestation decides what is advertised,
+        // not what is composed). Mirrors AddGeoprocessing by keying on the store itself.
         // Gating registration on the store keeps GetService<ITileCacheJobService>() from
         // throwing on a missing dependency in stores-less dev/test profiles; in those
         // profiles the admin endpoint simply uses the in-process channel path.
@@ -226,6 +250,8 @@ internal static class ImportExportTileOperationsRegistration
             services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
         }
 
+        Honua.Server.Features.Import.DurableImportServiceCollectionExtensions.AddDurableBackgroundImports(services);
+        Honua.Server.Features.Admin.LayerPublishServiceCollectionExtensions.AddLayerPublishJobs(services);
         return services;
     }
 }

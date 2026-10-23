@@ -1,20 +1,28 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 
 namespace Honua.Server.Features.Admin;
@@ -101,6 +109,7 @@ internal static class ProposalEndpoints
                 missingDependency: null,
                 CapabilityUnavailableCodes.EntitlementRemediation,
                 CapabilityUnavailableCodes.EntitlementRemediationRef,
+                CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
                 errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
                 missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
             : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
@@ -108,7 +117,8 @@ internal static class ProposalEndpoints
                 CapabilityUnavailableCodes.DurableControlPlaneDetail,
                 CapabilityUnavailableCodes.RedisDependency,
                 CapabilityUnavailableCodes.RedisRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef);
+                CapabilityUnavailableCodes.RedisRemediationRef,
+                CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
     }
 
     private static async Task<IResult> HandleListProposals(
@@ -116,9 +126,10 @@ internal static class ProposalEndpoints
         [FromQuery] string? kind,
         [FromQuery] string? requestedBy,
         HttpContext context,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
-        if (proposalStore is null)
+        if (!UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }
@@ -132,7 +143,9 @@ internal static class ProposalEndpoints
         var proposals = await proposalStore.ListActiveAsync(kindFilter, context.RequestAborted).ConfigureAwait(false);
         var filtered = proposals.Where(proposal =>
         {
-            if (!OperationTenantAuthorization.CanAccess(context, proposal.TenantId))
+            if (!OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
+                || (proposal.Evidence is not null
+                    && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal)))
             {
                 return false;
             }
@@ -163,15 +176,18 @@ internal static class ProposalEndpoints
     private static async Task<IResult> HandleGetProposal(
         string id,
         HttpContext context,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
-        if (proposalStore is null)
+        if (!UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
         return proposal == null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
+            || (proposal.Evidence is not null
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal))
             ? Results.NotFound()
             : Results.Json(ToDetail(proposal), ProposalJsonContext.Default.ProposalDetailResponse);
     }
@@ -182,15 +198,18 @@ internal static class ProposalEndpoints
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null,
         [FromServices] IOperationProposalStore? proposalStore = null,
-        [FromServices] IEnumerable<CanonicalOperationExecutor>? operationExecutors = null)
+        [FromServices] IEnumerable<CanonicalOperationExecutor>? operationExecutors = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
-        if (gateway is null || proposalStore is null)
+        if (gateway is null || !UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }
 
         var actor = ConsolePrincipal.ResolveActorId(context.User);
-        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context).ConfigureAwait(false);
+        var approverIdentities = ResolveApproverIdentities(context, actor);
+        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, approverIdentities, context)
+            .ConfigureAwait(false);
         if (denied != null)
         {
             return denied;
@@ -218,7 +237,28 @@ internal static class ProposalEndpoints
 
         try
         {
-            var resolved = await gateway.ApplyApprovedProposalAsync(id, actor!, context.RequestAborted)
+            if (proposal?.Evidence is not null && string.IsNullOrWhiteSpace(tenantContext?.TenantId))
+            {
+                return Results.Problem(
+                    detail: "A resolved tenant is required to approve this proposal.",
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            // Preserve the established actor identity for legacy proposals. Evidence-bound
+            // proposals use the same scheme-qualified actor stamped at the MCP boundary so
+            // separation-of-duties and credential revocation revalidation compare like-for-like.
+            var approvalActor = proposal?.Evidence is null
+                ? actor!
+                : AuditContextResolver.ResolveActor(context, out _);
+            var resolved = await gateway.ApplyApprovedProposalAsync(
+                id,
+                new OperationProposalApprovalContext
+                {
+                    ApprovedBy = approvalActor,
+                    TenantId = tenantContext?.TenantId ?? string.Empty,
+                    ApproverIdentities = approverIdentities,
+                },
+                context.RequestAborted)
                 .ConfigureAwait(false);
             return resolved == null
                 ? Results.NotFound()
@@ -236,9 +276,10 @@ internal static class ProposalEndpoints
         [FromServices] IPermissionResolver permissionResolver,
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
-        if (gateway is null || proposalStore is null)
+        if (gateway is null || !UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }
@@ -256,9 +297,17 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
-        if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId))
+        if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
+            || (proposal.Evidence is not null
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal)))
         {
             return Results.NotFound();
+        }
+
+        var scopeDenied = EnsureProposalScope(context, proposal);
+        if (scopeDenied != null)
+        {
+            return scopeDenied;
         }
 
         try
@@ -280,6 +329,7 @@ internal static class ProposalEndpoints
         IOperationProposalStore proposalStore,
         string proposalId,
         string? actor,
+        IReadOnlyCollection<string> approverIdentities,
         HttpContext context)
     {
         var denied = await EnsureApprovePermissionAsync(permissionResolver, actor, context).ConfigureAwait(false);
@@ -294,10 +344,16 @@ internal static class ProposalEndpoints
             return Results.NotFound();
         }
 
-        // Separation of duties: the proposer cannot approve their own proposal.
-        if (proposal != null &&
-            !string.IsNullOrWhiteSpace(actor) &&
-            string.Equals(proposal.RequestedBy, actor, StringComparison.OrdinalIgnoreCase))
+        var scopeDenied = EnsureProposalScope(context, proposal);
+        if (scopeDenied != null)
+        {
+            return scopeDenied;
+        }
+
+        // Separation of duties: the proposer cannot approve their own proposal, whichever
+        // identity encoding the proposal's writer recorded (#4901).
+        if (!string.IsNullOrWhiteSpace(proposal.RequestedBy) &&
+            approverIdentities.Contains(proposal.RequestedBy, StringComparer.OrdinalIgnoreCase))
         {
             return Results.Problem(
                 detail: "Separation of duties: the requester of a proposal cannot approve it.",
@@ -305,6 +361,72 @@ internal static class ProposalEndpoints
         }
 
         return null;
+    }
+
+    private static IResult? EnsureProposalScope(HttpContext context, OperationProposal proposal)
+    {
+        if (!OperatorScopeCatalog.IsScopeGoverned(context.User))
+        {
+            return null;
+        }
+
+        // A decision may release the proposer's authority into an actuator. Require
+        // the deciding bearer to possess the same canonical operation-family scope;
+        // read-only approval must not bypass the original submission's scope ceiling.
+        var legacyId = proposal.Kind is OperationClass.Deploy or OperationClass.Seed
+            or OperationClass.AdminConfigChange or OperationClass.MetadataRelease
+            or OperationClass.Geoprocess or OperationClass.ServicePublish
+            ? LegacyOperationIds.For(proposal.Kind)
+            : null;
+        var operationId = proposal.OperationId ?? legacyId ?? string.Empty;
+        var request = new OperationRequest
+        {
+            OperationId = operationId,
+            GatewayRequest = legacyId is not null && string.Equals(operationId, legacyId, StringComparison.Ordinal)
+                ? new OperationGatewayRequest
+                {
+                    Kind = proposal.Kind,
+                    ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
+                }
+                : null,
+        };
+        return OperationScopeMapping.TryResolve(request, out var operation) &&
+            OperatorScopeCatalog.PermitsOperation(OperatorScopeCatalog.CollectRecognizedScopes(context.User), operation)
+            ? null
+            : Results.Problem(
+                detail: "The bearer scope does not authorize a decision on this operation proposal.",
+                statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    /// <summary>
+    /// Every framework-derived identifier that names the approving principal. Proposal writers
+    /// record the requester in different encodings: the raw subject or API-key id (admin
+    /// surfaces), the scheme-qualified canonical actor (MCP evidence-bound proposals), and the
+    /// Studio owner key <c>subject:{iss}:{sub}@tenant:{tenant}</c> (Studio publication and
+    /// rollback requests). Comparing only the raw subject let a Studio proposer approve their
+    /// own publication, so the separation-of-duties check refuses a match against any of them.
+    /// </summary>
+    private static HashSet<string> ResolveApproverIdentities(HttpContext context, string? actor)
+    {
+        var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Add(actor);
+        Add(CanonicalSecurityActor.Resolve(context.User)?.ActorId);
+        var auditActor = AuditContextResolver.ResolveActor(context, out var actorType);
+        if (actorType != AuditActorType.Anonymous)
+        {
+            Add(auditActor);
+        }
+
+        Add(context.RequestServices.GetService<IStudioAuthorizationService>()?.ResolveCallerId(context.User));
+        return identities;
+
+        void Add(string? identity)
+        {
+            if (!string.IsNullOrWhiteSpace(identity))
+            {
+                identities.Add(identity);
+            }
+        }
     }
 
     private static async Task<IResult?> EnsureApprovePermissionAsync(

@@ -59,7 +59,6 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
     // Hard wall-clock budget for the shift→PromotionRecommended poll. A same-revision deploy converges
     // fast; this ceiling keeps a misconfigured substrate from burning the workflow's 30-minute timeout.
     private static readonly TimeSpan ConvergenceBudget = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan RollbackSettleBudget = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
     private readonly RealAwsCertificationFixture _cert;
@@ -185,12 +184,14 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
             afterRollback.Canary.Should().Be(0, "rollback must move the canary weight to 0");
             afterRollback.Stable.Should().Be(100, "rollback must restore the stable weight to 100");
 
-            // Drive the backend's terminal rollback settlement (Observe requires RollbackRequested).
+            // Weight convergence is not restored data-plane proof. This lane has no stable-service
+            // identity, target-health sample, or functional query, so the operation must stay
+            // non-terminal instead of reporting RolledBack (honua-server#3892).
             var rollingBack = operation with { Status = WorkflowOperationStatus.RollbackRequested };
-            var settled = await PollForRolledBackAsync(backend, rollingBack);
-            settled.Should().Be(
-                WorkflowOperationStatus.RolledBack,
-                "the ECS/ALB rollout must settle to RolledBack once stable serves 100% and the canary is idle");
+            var settled = await backend.ObserveAsync(rollingBack);
+            settled.Status.Should().Be(
+                WorkflowOperationStatus.RollbackRequested,
+                "stable=100 with no proven restored target health must not terminate as RolledBack");
         }
         finally
         {
@@ -237,27 +238,6 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         }
 
         return false;
-    }
-
-    private static async Task<WorkflowOperationStatus> PollForRolledBackAsync(
-        AwsEcsAlbDeployBackend backend,
-        WorkflowOperationRecord rollingBack)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        var latest = WorkflowOperationStatus.RollbackRequested;
-        while (stopwatch.Elapsed < RollbackSettleBudget)
-        {
-            var observation = await backend.ObserveAsync(rollingBack);
-            latest = observation.Status;
-            if (latest == WorkflowOperationStatus.RolledBack)
-            {
-                return latest;
-            }
-
-            await Task.Delay(PollInterval);
-        }
-
-        return latest;
     }
 
     private async Task BestEffortRestoreAsync(

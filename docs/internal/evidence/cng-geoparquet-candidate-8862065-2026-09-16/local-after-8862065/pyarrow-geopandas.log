@@ -1,0 +1,63 @@
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+PASS  pyarrow/row-count: 6 rows (expected 6)
+PASS  metadata/geo-present: `geo` key in the Parquet schema metadata
+PASS  metadata/geo-exact: matches the expected document
+PASS  metadata/geometry-types-non-empty: geometry_types=['Point'] (must be the concrete non-empty branch #4747 could not serialize)
+PASS  metadata/geo-is-valid-json: the `geo` value round-trips as UTF-8 JSON (escaping preserved)
+PASS  pyarrow/names: decoded names ['Baytown', 'Dateline Post', 'Equator Station', 'Harbor City', 'Meridian Marker', 'Polar Outpost']
+PASS  row[Harbor City]/ordinates: WKB point (-122.4194, 37.7749) vs seeded (-122.4194, 37.7749)
+PASS  row[Harbor City]/category: 'city' vs 'city'
+PASS  row[Harbor City]/population: 1000000 vs 1000000
+PASS  row[Harbor City]/ratio: 0.91 vs 0.91
+PASS  row[Harbor City]/active: True vs True
+PASS  row[Harbor City]/observed_at: datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc)
+PASS  row[Harbor City]/covering-bbox: {'xmin': -122.4194, 'ymin': 37.7749, 'xmax': -122.4194, 'ymax': 37.7749} vs point (-122.4194, 37.7749)
+PASS  row[Baytown]/ordinates: WKB point (-122.2711, 37.8044) vs seeded (-122.2711, 37.8044)
+PASS  row[Baytown]/category: 'city' vs 'city'
+PASS  row[Baytown]/population: 430000 vs 430000
+PASS  row[Baytown]/ratio: 0.42 vs 0.42
+PASS  row[Baytown]/active: True vs True
+PASS  row[Baytown]/observed_at: datetime.datetime(2026, 2, 11, 12, 0, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 2, 11, 12, 0, tzinfo=datetime.timezone.utc)
+PASS  row[Baytown]/covering-bbox: {'xmin': -122.2711, 'ymin': 37.8044, 'xmax': -122.2711, 'ymax': 37.8044} vs point (-122.2711, 37.8044)
+PASS  row[Meridian Marker]/ordinates: WKB point (0.0, 51.4779) vs seeded (0.0, 51.4779)
+PASS  row[Meridian Marker]/category: 'reference' vs 'reference'
+PASS  row[Meridian Marker]/population: 0 vs 0
+PASS  row[Meridian Marker]/ratio: 0.0 vs 0.0
+PASS  row[Meridian Marker]/active: False vs False
+PASS  row[Meridian Marker]/observed_at: datetime.datetime(2026, 3, 21, 0, 0, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 3, 21, 0, 0, tzinfo=datetime.timezone.utc)
+PASS  row[Meridian Marker]/covering-bbox: {'xmin': 0.0, 'ymin': 51.4779, 'xmax': 0.0, 'ymax': 51.4779} vs point (0.0, 51.4779)
+PASS  row[Equator Station]/ordinates: WKB point (-75.0, 0.0) vs seeded (-75.0, 0.0)
+PASS  row[Equator Station]/category: 'reference' vs 'reference'
+PASS  row[Equator Station]/population: 0 vs 0
+PASS  row[Equator Station]/ratio: 0.5 vs 0.5
+PASS  row[Equator Station]/active: True vs True
+PASS  row[Equator Station]/observed_at: datetime.datetime(2026, 4, 1, 6, 30, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 4, 1, 6, 30, tzinfo=datetime.timezone.utc)
+PASS  row[Equator Station]/covering-bbox: {'xmin': -75.0, 'ymin': 0.0, 'xmax': -75.0, 'ymax': 0.0} vs point (-75.0, 0.0)
+PASS  row[Dateline Post]/ordinates: WKB point (179.5, 0.5) vs seeded (179.5, 0.5)
+PASS  row[Dateline Post]/category: 'reference' vs 'reference'
+PASS  row[Dateline Post]/population: 0 vs 0
+PASS  row[Dateline Post]/ratio: 0.75 vs 0.75
+PASS  row[Dateline Post]/active: False vs False
+PASS  row[Dateline Post]/observed_at: datetime.datetime(2026, 5, 9, 18, 45, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 5, 9, 18, 45, tzinfo=datetime.timezone.utc)
+PASS  row[Dateline Post]/covering-bbox: {'xmin': 179.5, 'ymin': 0.5, 'xmax': 179.5, 'ymax': 0.5} vs point (179.5, 0.5)
+PASS  row[Polar Outpost]/ordinates: WKB point (0.0, 86.0) vs seeded (0.0, 86.0)
+PASS  row[Polar Outpost]/category: 'reference' vs 'reference'
+PASS  row[Polar Outpost]/population: 0 vs 0
+PASS  row[Polar Outpost]/ratio: 0.1 vs 0.1
+PASS  row[Polar Outpost]/active: True vs True
+PASS  row[Polar Outpost]/observed_at: datetime.datetime(2026, 6, 15, 9, 15, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 6, 15, 9, 15, tzinfo=datetime.timezone.utc)
+PASS  row[Polar Outpost]/covering-bbox: {'xmin': 0.0, 'ymin': 86.0, 'xmax': 0.0, 'ymax': 86.0} vs point (0.0, 86.0)
+PASS  geopandas/row-count: 6 rows
+PASS  geopandas[Harbor City]: <POINT (-122.419 37.775)> vs seeded (-122.4194, 37.7749)
+PASS  geopandas[Baytown]: <POINT (-122.271 37.804)> vs seeded (-122.2711, 37.8044)
+PASS  geopandas[Meridian Marker]: <POINT (0 51.478)> vs seeded (0.0, 51.4779)
+PASS  geopandas[Equator Station]: <POINT (-75 0)> vs seeded (-75.0, 0.0)
+PASS  geopandas[Dateline Post]: <POINT (179.5 0.5)> vs seeded (179.5, 0.5)
+PASS  geopandas[Polar Outpost]: <POINT (0 86)> vs seeded (0.0, 86.0)
+PASS  geopandas/total-bounds: [np.float64(-122.4194), np.float64(0.0), np.float64(179.5), np.float64(86.0)] vs [-122.4194, 0.0, 179.5, 86.0]
+PASS  geopandas/crs: crs=OGC:CRS84 (GeoParquet default for an omitted `crs`)
+
+57/57 checks passed

@@ -69,8 +69,30 @@ else
 }
 
 var observed = await backend.ObserveAsync(operation);
-var expected = rollback ? WorkflowOperationStatus.RolledBack : WorkflowOperationStatus.Succeeded;
-if (observed.Status != expected || observed.ObservedRevision != (rollback ? args[3] : args[4]))
+if (rollback)
+{
+    // Alias convergence is not a certified rollback. This driver does not attach a data-plane
+    // probe, so a backend that reports RolledBack from the alias alone is refused. When the
+    // alias is back on the previous version, hand that version to the caller. The certification
+    // script then smokes it; that query is the readiness proof.
+    if (observed.Status == WorkflowOperationStatus.RolledBack)
+    {
+        throw new InvalidOperationException(
+            "Refusing to certify Lambda rollback: alias convergence alone reported RolledBack without restored readiness and a functional query.");
+    }
+
+    if (observed.Status != WorkflowOperationStatus.Failed
+        && string.Equals(observed.ObservedRevision, args[3], StringComparison.Ordinal))
+    {
+        Console.WriteLine(JsonSerializer.Serialize(new { version = observed.ObservedRevision, status = "AliasRestored" }));
+        return;
+    }
+
+    throw new InvalidOperationException(
+        $"Lambda rollback is not certified (honua-server#3892). Alias observation status is '{observed.Status}', version '{observed.ObservedRevision ?? "<none>"}'. A live receipt still has to prove readiness and a functional query.");
+}
+
+if (observed.Status != WorkflowOperationStatus.Succeeded || observed.ObservedRevision != args[4])
 {
     throw new InvalidOperationException("Deploy backend did not converge to the requested version.");
 }

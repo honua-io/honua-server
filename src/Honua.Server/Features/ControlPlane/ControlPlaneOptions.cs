@@ -279,6 +279,23 @@ internal sealed class KubernetesExecutionOptions
     public List<string> DefaultImagePullSecrets { get; set; } = [];
 
     /// <summary>
+    /// Secrets imported whole (container <c>envFrom[].secretRef</c>) into EVERY Job this backend
+    /// launches, ahead of any per-workload <c>k8s.envFrom.secret.&lt;n&gt;</c>. Lets a chart wire one
+    /// chart-managed runtime Secret (database, Redis, master key) once, for example
+    /// <c>ControlPlane__Kubernetes__DefaultEnvFromSecrets__0=honua-runtime</c>. Each entry is
+    /// <c>&lt;secretName&gt;</c> or <c>&lt;secretName&gt;:&lt;prefix&gt;</c>. Only the name reaches the
+    /// server; the kubelet resolves the contents at pod start.
+    /// </summary>
+    public List<string> DefaultEnvFromSecrets { get; set; } = [];
+
+    /// <summary>
+    /// ConfigMaps imported whole (container <c>envFrom[].configMapRef</c>) into every Job, after
+    /// <see cref="DefaultEnvFromSecrets"/> and ahead of per-workload <c>k8s.envFrom.*</c> entries.
+    /// Each entry is <c>&lt;configMapName&gt;</c> or <c>&lt;configMapName&gt;:&lt;prefix&gt;</c>.
+    /// </summary>
+    public List<string> DefaultEnvFromConfigMaps { get; set; } = [];
+
+    /// <summary>
     /// Fallback pod active deadline in seconds. Overridden by the spec when present
     /// or by the job's <see cref="Honua.Core.Features.ControlPlane.Domain.JobTimeoutPolicy"/>.
     /// </summary>
@@ -454,6 +471,7 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
         ValidateCustomCodeWorkloadsAreBatchOnly(options.ExecutionWorkloads, failures);
 
         ValidateKubernetes(options.Kubernetes, failures);
+        ValidateKubernetesWorkloadParameters(options.ExecutionWorkloads, failures);
 
         PlatformReleaseValidation.Validate(
             options.PlatformRelease.ToDefinition(),
@@ -598,6 +616,39 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
         if (!string.IsNullOrWhiteSpace(options.BearerTokenPath) && !File.Exists(options.BearerTokenPath))
         {
             failures.Add($"{prefix}:BearerTokenPath '{options.BearerTokenPath}' does not exist or is unreadable.");
+        }
+
+        foreach (var failure in KubernetesJobEnvironmentBuilder.ValidateDefaults(options))
+        {
+            failures.Add(failure.Message);
+        }
+    }
+
+    // Refuse malformed Secret/ConfigMap references on Kubernetes Job workloads at startup instead of
+    // failing every job submitted to them at runtime. Messages name keys only, never values.
+    private static void ValidateKubernetesWorkloadParameters(
+        List<ExecutionWorkloadOptions> workloads,
+        List<string> failures)
+    {
+        for (var i = 0; i < workloads.Count; i++)
+        {
+            var workload = workloads[i];
+            if (!string.Equals(
+                    workload.Backend?.Trim(),
+                    KubernetesJobBatchComputeBackend.BackendId,
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var parameters = ConfigurationOperationCatalogHelpers.BuildParameters(
+                workload.Parameters,
+                workload.ParameterEntries);
+            foreach (var failure in KubernetesJobEnvironmentBuilder.ValidateParameters(parameters))
+            {
+                failures.Add(
+                    $"ControlPlane:ExecutionWorkloads:{i} (WorkloadId '{workload.WorkloadId}'): {failure.Message}");
+            }
         }
     }
 

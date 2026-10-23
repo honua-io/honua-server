@@ -279,7 +279,7 @@ internal sealed class RedisOAuthClientStore(IConnectionMultiplexer redis, TimePr
         var clientId = GenerateOpaque("client_", 18);
         var secret = registration.ClientType == OAuthClientType.Confidential ? GenerateOpaque("secret_", 32) : null;
         var record = new OAuthClientRecord(Guid.NewGuid(), clientId, registration.ClientType, registration.Name, secret?[..Math.Min(14, secret.Length)], secret is null ? null : SHA256.HashData(Encoding.UTF8.GetBytes(secret)), Normalize(registration.AllowedGrantTypes), Normalize(registration.RedirectUris), Normalize(registration.AllowedScopes), now, now, registration.ExpiresAt, null, null, registration.CreatedBy);
-        await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record), ResolveTtl(record.ExpiresAt), When.NotExists).ConfigureAwait(false);
+        await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, OAuthClientStoreJsonContext.Default.OAuthClientRecord), ResolveTtl(record.ExpiresAt), When.NotExists).ConfigureAwait(false);
         await _database.SetAddAsync(IdsKey, record.Id.ToString("D")).ConfigureAwait(false);
         return new(record, secret);
     }
@@ -306,7 +306,7 @@ internal sealed class RedisOAuthClientStore(IConnectionMultiplexer redis, TimePr
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(clientSecret));
             if (!CryptographicOperations.FixedTimeEquals(hash, client.SecretHash!)) return null;
             var updated = client with { LastUsedAt = _timeProvider.GetUtcNow(), UpdatedAt = _timeProvider.GetUtcNow() };
-            await _database.StringSetAsync(BuildKey(client.Id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
+            await _database.StringSetAsync(BuildKey(client.Id), JsonSerializer.Serialize(updated, OAuthClientStoreJsonContext.Default.OAuthClientRecord), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
             return updated;
         }
         return null;
@@ -318,7 +318,7 @@ internal sealed class RedisOAuthClientStore(IConnectionMultiplexer redis, TimePr
         return Read(await _database.StringGetAsync(BuildKey(id)).ConfigureAwait(false));
     }
 
-    private static OAuthClientRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize<OAuthClientRecord>((string)value!) : null;
+    private static OAuthClientRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize((string)value!, OAuthClientStoreJsonContext.Default.OAuthClientRecord) : null;
     private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
     private static string GenerateOpaque(string prefix, int bytes) => prefix + Convert.ToBase64String(RandomNumberGenerator.GetBytes(bytes)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
     private static string[] Normalize(IReadOnlyList<string>? values) => values?.Select(value => value?.Trim() ?? string.Empty).Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? [];

@@ -1,20 +1,44 @@
-# Operate scenario: evidence before action
+---
+type: guide
+title: "Operate scenario: a protected update"
+description: "Review and approve a bounded update, follow server-owned progress, and verify success or recovery across terminal, MCP and optional Console."
+---
+# Operate scenario: a protected update
 
 Follow one deployment/readiness failure through the bounded loop:
 
-`observe → deterministic finding → diagnose → sealed proposal → separate approval → typed actuator → verify`
+`observe → diagnose → sealed proposal → separate approval → stage → validate → activate → observe → complete or restore and verify`
 
 The server owns evidence and governed operations. The terminal DevOps client
 owns the model session. Console is an optional independent inspector/approver.
 The infrastructure control plane provisions the placement; the server control
 plane configures resources and governs registered operations.
 
-> **Pre-cut runbook, not a certification receipt.** The September 5 source
-> review establishes route/tool contracts. Exact 2026.1 candidate replay is
-> still required. The platform manifest calls itself a working snapshot, and
-> [release #231](https://github.com/honua-io/honua-release/issues/231) owns the
-> signed artifact lock. A local source build is not that lock. See the
-> [evidence disposition](../../internal/contributor/operate-docs-precut-evidence.md).
+Review the proposed service change and its protection limits, then obtain a
+separate approval. Follow progress in the terminal or Console. Ordinary users
+do not need to manage Git branches, PRs or telemetry queries. The numbered
+sections below provide the advanced API/MCP procedure for operators and replay.
+
+## Progress and protection
+
+These are the required client descriptions of server truth, not additional API
+enum values. Inspect the durable operation and its verification evidence; never
+advance a label using a client timer or a model's prose.
+
+| User sees | Required server truth and meaning |
+|---|---|
+| **Checking update** | Preflight checks the supported change, authorization, schema compatibility, target, prior revision and required fresh evidence. Show whether protection is available and its limits before approval. |
+| **Updating** | The separately approved operation is staging, validating or activating the change through its registered actuator. Preparation must leave the current service revision available. |
+| **Confirming service health** | Activation has occurred but the observation window remains open (`protection.phase=observing`), or recovery is still being verified. Show the observation/recovery deadline; one ready probe is insufficient. |
+| **Update complete** | The operation succeeded after its required observation window and verification checks. An expired window without success is not completion; once retained recovery capacity is retired, explain that protection has ended. |
+| **Previous version restored** | The rollback settled, the expected prior revision/configuration is observed, and functional recovery checks passed. A provider acknowledgement, routing change or bare `RolledBack` string without those checks is insufficient. |
+| **Needs attention** | A check blocks the change, protection is unavailable, recovery fails or its deadline expires. State the reason and required operator action. Never convert an unknown or failed result into success. |
+
+Protection is bounded to the approved target/change and recorded policy. The
+supported-change matrix covers backward-compatible application updates and
+reversible service configuration; additive schema changes need explicit
+qualification. Destructive migrations and irreversible data transformations
+are rejected before mutation. Database restore is a separate recovery procedure.
 
 ## 1. Establish the placement and identities
 
@@ -79,11 +103,16 @@ Then send these calls one at a time:
 ```
 
 Start the candidate-pinned DevOps stdio client with `honua-devops --mcp` in
-the terminal client configuration. Its bounded workflow reads this same
+the terminal client configuration. That client comes from
+[`honua-devops`](https://github.com/honua-io/honua-devops), which is public source
+under a proprietary licence and is built from source or run as a container rather
+than installed from a package registry; the rest of this scenario works without it. Its bounded workflow reads this same
 server evidence and explains the stable finding ID and bounded evidence
 references. It must not reconstruct the hidden executable action payload.
 An empty `supportedKinds` result means no registered typed actuator is
-available for this session; stop at diagnosis.
+available for this session; stop at diagnosis. A nonempty result identifies
+operation kinds only. It does not prove a backend is configured for your target
+or that its protected-update path has passed qualification.
 
 ## 3. Apply the evidence gate before proposing
 
@@ -95,17 +124,17 @@ components and replicas without truncation. Never replace absent observation
 or last-success timestamps with response `generatedAt`.
 
 Stale, partial, unavailable, not-configured or backend-unverified evidence
-permits bounded diagnosis but **zero proposals and zero actuator calls**.
+permits bounded diagnosis but **zero new proposals and zero new-change actuator calls**.
 The server re-evaluates the finding before routing;
 `evidencePostureNotActionable` is a blocked outcome, not an invitation to try
-another mutation tool. Recovery requires a fresh complete observation.
+another mutation tool. A new change requires a fresh complete observation.
 
-In an isolated replay, interrupt only the telemetry backend identified by the
-fixture, retain its unavailable observation, attempt the finding proposal,
-and assert the blocked reason plus unchanged proposal/actuator counts.
-Restore that backend and wait for complete fresh evidence before retrying.
-The [live outage harness contract](evidence-posture.md#live-outagerecovery-proof)
-defines the controls; they are test-harness endpoints, not product routes.
+This gate does not cancel deterministic recovery already authorized by a bound
+protection policy. After exposure, missing telemetry may itself trigger that
+recovery when the policy's grace period expires. Keep the same operation,
+approval, target, prior revision and policy digest; do not let the model create
+a new proposal to bypass missing evidence. Restoration still requires verified
+functional recovery, or the outcome is **Needs attention**.
 
 ## 4. Propose, poll, and approve separately
 
@@ -116,6 +145,14 @@ deployment target identifier, not the platform release ID or image digest;
 the server checks it matches the hidden Deploy action. A missing target is a
 stop condition. The deterministic REST
 equivalent is `POST /api/v1/admin/observability/findings/{findingId}/propose`.
+That operator route follows gateway policy and can execute an auto-safe action;
+it is not the model's proposal-only boundary. Use `honua_propose_finding` for
+the model workflow here. Replace both placeholders with the observed IDs:
+
+```json
+{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"honua_propose_finding","arguments":{"findingId":"<finding-id>","candidateId":"<subject.targetId>"}}}
+```
+
 Generic model-facing control tools seal proposals; they do not execute even
 when a separate server-owned policy allows direct execution. Do not use the
 removed opaque `honua_propose_operation` contract.
@@ -128,8 +165,49 @@ the returned ID:
 honua admin operate getOperationProposal --path "id=$proposalId" --profile proposer
 ```
 
-The separate human reviews the sealed target, diff, risk, policy, scope and
-evidence before running:
+### Check protection before approval
+
+The proposal detail alone does **not** expose backend capabilities or the full
+protection policy. Before approving, an authorized operator uses the installed
+Admin CLI's planning route with the target and desired revision from the
+server-authored finding/release handoff. Obtain the current revision from an
+observed deployment/provider receipt; do not infer it from the desired image.
+If there is no verified prior revision, stop the protected-update flow.
+
+Replace the three placeholders with those independently observed identities.
+The planning profile needs authority for `POST /api/v1/admin/deploy/plan`;
+do not broaden the separate approver's grants merely to perform this lookup.
+
+```powershell
+$planRequest = @{
+  targetId = "<target-id>"
+  desiredRevision = "<desired-revision>"
+  currentRevision = "<observed-current-revision>"
+} | ConvertTo-Json -Compress
+honua admin release planDeployOperation --body $planRequest --profile planner --yes --json
+```
+
+This calls the plan endpoint, which does not create, submit or approve a deploy;
+`--yes` confirms the CLI's POST operation. Inspect `target.targetId`, `target.backend`,
+`target.currentRevision`, `target.desiredRevision`, `target.parameters`,
+`backendRegistered`, `capabilities.supportsRollback`, `blockingReasons` and
+`warnings`. The current revision in the plan reflects the supplied value, so
+the plan is not independent proof that the provider is serving it. An absent
+backend/capability, `supportsRollback=false`, missing prior revision or blocking
+reason means protection is unavailable; stop and report **Needs attention**.
+`readyToSubmit` alone is insufficient and may be false pending required approval.
+
+Retain the plan and the installed profile's observation/recovery limits and
+policy identity. Match them to the sealed proposal's target, prior/desired
+revisions and effective parameters immediately before approval. Do not decode
+or reconstruct a hidden executable payload. If the client cannot establish
+that match, or cannot expose the exact limits/policy for review, leave the
+proposal unapproved: this candidate has not established the protected path.
+Show that limitation plainly to the user. A plan response cannot repair a
+missing prior identity in a sealed finding proposal.
+
+Only after those checks, the separate human reviews the sealed target, diff,
+risk, policy, scope and evidence before running:
 
 ```powershell
 honua admin operate approveOperationProposal --path "id=$proposalId" --profile approver --yes
@@ -141,21 +219,18 @@ The proposer then polls the same proposal. Approval alone is not actuator
 success. A conflict or changed authority requires inspection and a newly
 reviewed proposal, not blind replay with broader credentials.
 
-On the isolated candidate fixture, also attempt self-approval, an unauthorized
-or cross-tenant actor's proposal read, wrong-tenant/wrong-owner targets, and narrowed OAuth
-scope replay. Assert denial and zero unauthorized actuation. The
-[source proof map](../../internal/contributor/operate-docs-precut-evidence.md#authorization-and-freshness-proof-map)
-names existing #3474 and related negative coverage; it does not claim those
-tests were rerun against the candidate. A same-tenant reviewer with the
-required read authority must be able to inspect the proposal; a different
-actor is not automatically an unauthorized actor.
+A same-tenant reviewer with the required read authority must be able to inspect
+the proposal; a different actor is not automatically an unauthorized actor.
 
-## 5. Verify fix-forward convergence
+## 5. Verify the update or recovery
 
 For a declared-release divergence, the fix-forward goal is the declared
 serving artifact on the selected target, followed by readiness recovery.
 Use the finding's registered action; do not invent a shell command or
-deployment revision. An unsupported target requires manual intervention.
+deployment revision. Keep the operation pending through its protection window.
+If an approved recovery trigger fires, restore the bound prior revision and
+verify it before reporting **Previous version restored**. An unsupported target
+or failed recovery requires **Needs attention** and an explicit operator action.
 
 Retain one canonical operation instance and one typed actuator receipt,
 including backend/target, requested and observed revision, timestamps, result
@@ -170,6 +245,13 @@ health throughout that interval, assert the intended revision is serving,
 and verify that the original finding clears while evidence remains complete
 and fresh. A single successful readiness response cannot prove convergence.
 
+Exercise functional reads, writes, authorization and committed-data preservation
+against independently seeded expected values; include schema compatibility and
+render/query correctness where the changed service uses them. The recovery arm
+must observe the prior revision/configuration and the preserved data, not just
+the load balancer's routing state. Retain detection/recovery durations and
+failed checks.
+
 ## 6. Inspect or approve visually (optional)
 
 Point Console `/operate` at the same verified endpoint. Compare finding,
@@ -178,20 +260,32 @@ Console principal can approve in its focused inbox instead of the terminal
 approver. Console does not host the model or create another control plane.
 The terminal remains sufficient when Console is absent.
 
+The DevOps agent and Console must apply the [same progress rules](#progress-and-protection).
+Keep technical provenance expandable. Show the affected service, protection
+availability, deadlines, progress, outcome and required action without asking
+the user to assemble rollback commands or edit telemetry settings.
+
 ## Rollback capability truth
 
 | Placement / backend | Wiring and required outcome |
 |---|---|
-| Local Docker | Retain the exact prior image and database compatibility/backup plan. Compose replacement is operator-managed unless the registered backend advertises a real rollback actuator. Otherwise fix forward or report manual intervention. |
+| Local Docker | Retain the exact prior image and database compatibility/backup plan. Compose replacement is operator-managed. A `SelfHostedRolling` target on the `honua-yarp-rolling` backend is a real rollback actuator: the server launches the replicas, keeps the prior one through the observation window and swaps its proxy back. It needs the host container runtime and the [rollback completion proof](../deploy/upgrade-and-rollback.md#rollback-completion-proof) parameters; without them, recovery ends in **Needs attention**. Otherwise fix forward or report manual intervention. |
 | AWS ECS-small | Terraform in `honua-iac` declares infrastructure; inspect the runtime backend and prior task revision. A GitOps handoff with `SupportsRollback=false` cannot revert workload traffic. A direct ECS adapter must supply its provider receipt before rollback is claimed. |
 | Helm / Kubernetes GitOps handoff | Pin chart values and image digest; the GitOps owner changes the revision. Unsupported handoff adapters return manual intervention. Helm wiring alone proves neither server rollback nor EKS certification. |
 | Registered real rollback adapter | Require advertised support, a prior revision, an approved operation and an observed provider revert, followed by the same verification window. Missing any one prevents a rollback claim. |
 
+Helm/Terraform wiring provisions the protection profile and its dependencies;
+it is advanced installation work. Retain exact chart/module and configuration
+identities with the target's runtime receipt. A chart rollback or Terraform
+apply result alone proves neither service recovery nor a protected platform
+update. Start from the [Helm installation](https://github.com/honua-io/honua-helm/blob/trunk/README.md)
+or [Terraform infrastructure](https://github.com/honua-io/honua-iac/blob/trunk/README.md)
+handoff, then verify the registered backend through the server control plane.
+
 Application rollback and database restore are different operations. Consult
 [Upgrade and rollback](../deploy/upgrade-and-rollback.md) before reverting an
-image across schema changes. Local Docker and AWS ECS-small are the bounded
-placement targets; exact-candidate certification is still required for both.
-EKS, Azure, hosted models, broad autonomous remediation and #3300 performance
-depth are outside this scenario. Whole-catalog GP and four cloud-native
-formats retain their separate 2026.1 GA qualification requirements; customer
-alerting, multi-tenancy and offline sync remain Preview.
+image across schema changes. Local Docker and AWS ECS-small are the placements
+this procedure covers. EKS, Azure, hosted-model operation, warehouse, raster
+and 3D performance, and broad autonomous remediation are outside it. Customer
+alerting and offline sync remain Preview and are not required to follow these
+deployment and readiness steps.

@@ -148,10 +148,10 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
                 $"""
                 INSERT INTO honua.network_topology_rebuild_attempts
                     (dataset_id, generation, attempt, state, operation_id, expected_row_version, expected_source_revision,
-                     fencing_token, created_at, updated_at)
+                     fencing_token, lease_expires_at, created_at, updated_at)
                 VALUES
                     (@dataset_id, @generation, @attempt, 'building', @operation_id, @expected_row_version, @expected_source_revision,
-                     0, now(), now())
+                     0, now() + interval '2 minutes', now(), now())
                 RETURNING {AttemptColumns};
                 """,
                 MapAttempt,
@@ -221,7 +221,11 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
         await foreach (var attempt in session.QueryAsync(
                 $"""
                 SELECT {AttemptColumns} FROM honua.network_topology_rebuild_attempts
-                WHERE state = 'building' AND lease_expires_at IS NOT NULL AND lease_expires_at < @as_of;
+                WHERE state = 'building'
+                  AND (
+                    (lease_expires_at IS NOT NULL AND lease_expires_at < @as_of)
+                    OR (owner_id IS NULL AND lease_expires_at IS NULL AND created_at < @as_of - interval '2 minutes')
+                  );
                 """,
                 MapAttempt,
                 new Dictionary<string, object?> { ["as_of"] = asOf },
@@ -479,6 +483,60 @@ internal sealed class PostgresNetworkTopologyRebuildStore : INetworkTopologyRebu
 
         if (!await TryTransitionGenerationAsync(
                 transaction, datasetId, generation, NetworkTopologyGenerationState.Failed, cancellationToken, failureCode)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryAbandonUnclaimedAttemptAsync(
+        string datasetId,
+        long generation,
+        long attempt,
+        string failureCode,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(datasetId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureCode);
+
+        await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await session.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        var attemptAffected = await transaction.ExecuteAsync(
+                """
+                UPDATE honua.network_topology_rebuild_attempts
+                SET state = 'failed', failure_code = @failure_code, updated_at = now(), completed_at = now()
+                WHERE dataset_id = @dataset_id AND generation = @generation AND attempt = @attempt
+                  AND state = 'building' AND owner_id IS NULL AND fencing_token = 0;
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["dataset_id"] = datasetId,
+                    ["generation"] = generation,
+                    ["attempt"] = attempt,
+                    ["failure_code"] = failureCode,
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (attemptAffected == 0)
+        {
+            return false;
+        }
+
+        if (!await TryTransitionGenerationAsync(
+                transaction, datasetId, generation, NetworkTopologyGenerationState.Failed, cancellationToken, failureCode)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        if (!await TryTransitionGenerationAsync(
+                transaction, datasetId, generation, NetworkTopologyGenerationState.Dirty, cancellationToken, failureCode: null)
                 .ConfigureAwait(false))
         {
             return false;

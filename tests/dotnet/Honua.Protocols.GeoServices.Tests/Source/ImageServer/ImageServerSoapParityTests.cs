@@ -1,0 +1,1346 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
+using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Multidimensional.Abstractions;
+using Honua.Core.Features.Raster.Multidimensional.Domain;
+using Honua.Core.Features.Raster.Services;
+using Honua.Protocols.GeoServices.ImageServer;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
+
+/// <summary>
+/// SOAP responses for one ImageServer fixture must carry the same catalog, multidimensional,
+/// key-property, histogram, and tile-cache facts the REST binding returns.
+/// </summary>
+[Collection("Database.GeoServicesRaster")]
+[Protocol(TestProtocols.ImageServer)]
+public sealed class ImageServerSoapParityTests : IAsyncLifetime
+{
+    private const string ArcGisNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
+    private const string NameFilter = "( Name = 'Test Raster RGB' )";
+    private const double ServiceLowCellSize = 0.0021875;
+    private const double ServiceHighCellSize = 0.00234375;
+    private static readonly long[] HistogramCountsBand1 = [200, 3776, 120];
+    private static readonly long[] HistogramCountsBand2 = [120, 3916, 60];
+    private static readonly long[] HistogramCountsBand3 = [60, 3976, 60];
+
+    private WebAppFixture _fixture = null!;
+
+    public async Task InitializeAsync()
+    {
+        _fixture = await CreateFixtureAsync(enableTileCache: false);
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData("<VID />")]
+    [InlineData("")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetView_DefaultViewUsesResolvedRasterMetadata(string viewIdElement)
+    {
+        var rasters = await _fixture.GetService<IRasterStore>()
+            .ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
+        var reference = rasters.First(raster => raster.Extent.HasValue);
+        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}">{viewIdElement}</GetView>""");
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        var result = Element(response.Document, "Result");
+        result.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:ImageView");
+        result.Elements().Select(element => element.Name.LocalName).Should().Equal(
+            "VID", "Description", "Extent", "PixelSizeX", "PixelSizeY", "BandCount", "PixelType");
+        Child(result, "VID").Value.Should().BeEmpty();
+        var extent = Child(result, "Extent");
+        double.Parse(Child(extent, "XMin").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Min(raster => raster.Extent!.Value.XMin));
+        double.Parse(Child(extent, "YMin").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Min(raster => raster.Extent!.Value.YMin));
+        double.Parse(Child(extent, "XMax").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Max(raster => raster.Extent!.Value.XMax));
+        double.Parse(Child(extent, "YMax").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Max(raster => raster.Extent!.Value.YMax));
+        Child(result, "BandCount").Value.Should().Be(reference.BandCount.ToString(CultureInfo.InvariantCulture));
+        Child(result, "PixelType").Value.Should().Be("U8");
+        double.Parse(Child(result, "PixelSizeX").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(ServiceLowCellSize, 1e-9);
+        double.Parse(Child(result, "PixelSizeY").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(ServiceHighCellSize, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetView_UnknownNamedViewIsNotTheDefaultView()
+    {
+        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}"><VID>foreign-view</VID></GetView>""");
+        response.Status.Should().Be(HttpStatusCode.NotFound, response.Body);
+        response.Body.Should().Contain("Image view was not found");
+        response.Document.Descendants().Should().NotContain(element => element.Name.LocalName == "Result");
+    }
+
+    [IntegrationTheory]
+    [InlineData(4326, "GeographicCoordinateSystem")]
+    [InlineData(3857, "ProjectedCoordinateSystem")]
+    [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetFields_GeometryReferenceMatchesServiceExtent(int srid, string coordinateSystem)
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        var rasters = await store.ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
+        var projected = rasters.Select(raster => raster with
+        {
+            Srid = srid,
+            Extent = raster.Extent!.Value with { Srid = srid },
+        }).ToArray();
+        store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(projected);
+
+        var fields = await PostSoapAsync($"""<GetFields xmlns="{ArcGisNamespace}" />""");
+        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        fields.Status.Should().Be(HttpStatusCode.OK, fields.Body);
+        info.Status.Should().Be(HttpStatusCode.OK, info.Body);
+        var geometry = Element(fields.Document, "GeometryDef");
+        geometry.Elements().Select(element => element.Name.LocalName).Should().Equal(
+            "AvgNumPoints", "GeometryType", "HasM", "HasZ", "SpatialReference");
+        var reference = Child(geometry, "SpatialReference");
+        XElement.DeepEquals(reference, Child(Element(info.Document, "Extent"), "SpatialReference"))
+            .Should().BeTrue("GetFields describes the same resolved service CRS as GetServiceInfo");
+        reference.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:" + coordinateSystem);
+        Child(reference, "WKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
+        Child(reference, "LatestWKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
+        fields.Document.Descendants().Where(element => element.Name.LocalName == "Field")
+            .Select(field => Child(field, "Name").Value).Should().Equal(ImageServerSoapEndpoints.SoapCatalogFieldNames());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemCount")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemIDs")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItems")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task CatalogSoapOperations_MatchRestQuery()
+    {
+        var service = ServicePath();
+        using var restCount = await _fixture.Client.GetAsync($"{service}/query?where=1%3D1&returnCountOnly=true&f=json");
+        using var restIds = await _fixture.Client.GetAsync($"{service}/query?where=1%3D1&returnIdsOnly=true&f=json");
+        using var restNamedCount = await _fixture.Client.GetAsync(
+            $"{service}/query?where={Uri.EscapeDataString(NameFilter)}&returnCountOnly=true&f=json");
+        using var restNamedIds = await _fixture.Client.GetAsync(
+            $"{service}/query?where={Uri.EscapeDataString(NameFilter)}&returnIdsOnly=true&f=json");
+        using var restItems = await _fixture.Client.GetAsync(
+            $"{service}/query?where={Uri.EscapeDataString(NameFilter)}&outFields=OBJECTID,Name&returnGeometry=true&outSR=4326&f=json");
+
+        var countJson = await ReadJsonAsync(restCount);
+        var idsJson = await ReadJsonAsync(restIds);
+        var namedCountJson = await ReadJsonAsync(restNamedCount);
+        var namedIdsJson = await ReadJsonAsync(restNamedIds);
+        var itemsJson = await ReadJsonAsync(restItems);
+
+        var count = await PostSoapAsync(CatalogRequest("GetCatalogItemCount", where: null));
+        count.Status.Should().Be(HttpStatusCode.OK, count.Body);
+        count.Body.Should().NotContain("Unsupported ImageServer operation");
+        IntValue(count.Document, "Result").Should().Be(countJson.GetProperty("count").GetInt32());
+        IntValue(count.Document, "Result").Should().Be(2);
+
+        var namedCount = await PostSoapAsync(CatalogRequest("GetCatalogItemCount", NameFilter));
+        namedCount.Status.Should().Be(HttpStatusCode.OK, namedCount.Body);
+        IntValue(namedCount.Document, "Result").Should().Be(namedCountJson.GetProperty("count").GetInt32());
+        IntValue(namedCount.Document, "Result").Should().Be(1);
+
+        var ids = await PostSoapAsync(CatalogRequest("GetCatalogItemIDs", where: null));
+        ids.Status.Should().Be(HttpStatusCode.OK, ids.Body);
+        FidSet(ids.Document).Should().Equal(ObjectIds(idsJson));
+        FidSet(ids.Document).Should().Equal(1, 3);
+
+        var namedIds = await PostSoapAsync(CatalogRequest("GetCatalogItemIDs", NameFilter));
+        namedIds.Status.Should().Be(HttpStatusCode.OK, namedIds.Body);
+        FidSet(namedIds.Document).Should().Equal(ObjectIds(namedIdsJson));
+        FidSet(namedIds.Document).Should().Equal(1);
+
+        var items = await PostSoapAsync(CatalogItemsRequest());
+        items.Status.Should().Be(HttpStatusCode.OK, items.Body);
+        var record = items.Document.Descendants().Single(element => element.Name.LocalName == "Record");
+        var values = record.Descendants().Where(element => element.Name.LocalName == "Value").ToArray();
+        values.Should().HaveCountGreaterThanOrEqualTo(3);
+        values[0].Value.Should().Be("1");
+        values[1].Value.Should().Be("Test Raster RGB");
+        var polygon = values.Single(element => element.Attribute(XName.Get("type", XsiNamespace))?.Value.Contains("PolygonN", StringComparison.Ordinal) == true);
+        var soapPoints = polygon.Descendants()
+            .Where(element => element.Name.LocalName == "Point")
+            .Select(point => (
+                X: double.Parse(point.Elements().Single(element => element.Name.LocalName == "X").Value, CultureInfo.InvariantCulture),
+                Y: double.Parse(point.Elements().Single(element => element.Name.LocalName == "Y").Value, CultureInfo.InvariantCulture)))
+            .ToArray();
+        var ring = itemsJson.GetProperty("features")[0].GetProperty("geometry").GetProperty("rings")[0];
+        soapPoints.Should().HaveCount(ring.GetArrayLength());
+        for (var index = 0; index < soapPoints.Length; index++)
+        {
+            soapPoints[index].X.Should().BeApproximately(ring[index][0].GetDouble(), 1e-9);
+            soapPoints[index].Y.Should().BeApproximately(ring[index][1].GetDouble(), 1e-9);
+        }
+
+        items.Document.Descendants().Single(element => element.Name.LocalName == "GeometryDef")
+            .Descendants().Single(element => element.Name.LocalName == "WKID")
+            .Value.Should().Be(itemsJson.GetProperty("features")[0]
+                .GetProperty("geometry").GetProperty("spatialReference").GetProperty("wkid").GetInt32().ToString(CultureInfo.InvariantCulture));
+
+        var rejected = await PostSoapAsync(CatalogRequest("GetCatalogItemCount", where: null, catalogName: "Mosaic"));
+        rejected.Status.Should().Be(HttpStatusCode.BadRequest);
+
+        var unknownField = await PostSoapAsync(
+            $"""
+            <GetCatalogItems xmlns="{ArcGisNamespace}">
+              <QueryFilter><SubFields>NotAField</SubFields></QueryFilter>
+            </GetCatalogItems>
+            """);
+        unknownField.Status.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemCount")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemIDs")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItems")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task CatalogSpatialFilter_MatchesRestQuery()
+    {
+        var service = ServicePath();
+        var envelope = """{"xmin":1,"ymin":1,"xmax":1.64,"ymax":2.28,"spatialReference":{"wkid":4326}}""";
+        var polygon = """{"rings":[[[0,0],[0.14,0],[0.14,0.15],[0,0.15],[0,0]]],"spatialReference":{"wkid":4326}}""";
+        using var restIds = await _fixture.Client.GetAsync(
+            $"{service}/query?geometry={Uri.EscapeDataString(envelope)}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelEnvelopeIntersects&returnIdsOnly=true&f=json");
+        using var restCount = await _fixture.Client.GetAsync(
+            $"{service}/query?geometry={Uri.EscapeDataString(envelope)}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelEnvelopeIntersects&returnCountOnly=true&f=json");
+        using var restPolygon = await _fixture.Client.GetAsync(
+            $"{service}/query?geometry={Uri.EscapeDataString(polygon)}&geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&returnIdsOnly=true&f=json");
+        var idsJson = await ReadJsonAsync(restIds);
+        var countJson = await ReadJsonAsync(restCount);
+        var polygonJson = await ReadJsonAsync(restPolygon);
+
+        var ids = await PostSoapAsync(SpatialCatalogRequest("GetCatalogItemIDs", EnvelopeFilter()));
+        ids.Status.Should().Be(HttpStatusCode.OK, ids.Body);
+        ids.Body.Should().NotContain("Unsupported ImageServer operation");
+        FidSet(ids.Document).Should().Equal(ObjectIds(idsJson));
+        FidSet(ids.Document).Should().Equal(3);
+
+        var count = await PostSoapAsync(SpatialCatalogRequest("GetCatalogItemCount", EnvelopeFilter()));
+        count.Status.Should().Be(HttpStatusCode.OK, count.Body);
+        IntValue(count.Document, "Result").Should().Be(countJson.GetProperty("count").GetInt32());
+        IntValue(count.Document, "Result").Should().Be(1);
+
+        var polygonIds = await PostSoapAsync(SpatialCatalogRequest("GetCatalogItemIDs", PolygonFilter()));
+        polygonIds.Status.Should().Be(HttpStatusCode.OK, polygonIds.Body);
+        FidSet(polygonIds.Document).Should().Equal(ObjectIds(polygonJson));
+        FidSet(polygonIds.Document).Should().Equal(1);
+
+        var items = await PostSoapAsync(
+            SpatialCatalogRequest(
+                "GetCatalogItems",
+                $"""
+                <SubFields>OBJECTID,Name</SubFields>
+                {EnvelopeFilter()}
+                """));
+        items.Status.Should().Be(HttpStatusCode.OK, items.Body);
+        var values = items.Document.Descendants()
+            .Where(element => element.Name.LocalName == "Value")
+            .Select(element => element.Value)
+            .ToArray();
+        values.Should().ContainInOrder("3", "Other Raster");
+
+        var unsupportedRel = await PostSoapAsync(
+            SpatialCatalogRequest(
+                "GetCatalogItemIDs",
+                EnvelopeFilter().Replace("esriSpatialRelEnvelopeIntersects", "esriSpatialRelCrosses", StringComparison.Ordinal)));
+        unsupportedRel.Status.Should().Be(HttpStatusCode.BadRequest, unsupportedRel.Body);
+        unsupportedRel.Body.Should().NotContain("Unsupported ImageServer operation");
+
+        var unsupportedGeometry = await PostSoapAsync(
+            SpatialCatalogRequest(
+                "GetCatalogItemIDs",
+                """
+                <FilterGeometry xsi:type="tns:CircularArc"><X>1</X><Y>1</Y></FilterGeometry>
+                <SpatialRel>esriSpatialRelIntersects</SpatialRel>
+                """));
+        unsupportedGeometry.Status.Should().Be(HttpStatusCode.BadRequest, unsupportedGeometry.Body);
+        unsupportedGeometry.Body.Should().NotContain("Unsupported ImageServer operation");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetRasterKeyProperties")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesSoap_MatchesRestKeyProperties()
+    {
+        var service = ServicePath();
+        using var rest = await _fixture.Client.GetAsync($"{service}/keyProperties?f=json");
+        using var restItem = await _fixture.Client.GetAsync($"{service}/3/info/keyProperties?f=json");
+        var serviceJson = await ReadJsonAsync(rest);
+        var itemJson = await ReadJsonAsync(restItem);
+
+        var properties = await PostSoapAsync($"""<GetKeyProperties xmlns="{ArcGisNamespace}" />""");
+        properties.Status.Should().Be(HttpStatusCode.OK, properties.Body);
+        AssertKeyProperties(properties.Document, serviceJson);
+        Property(properties.Document, "LowCellSize").Should().Be(ServiceLowCellSize);
+        Property(properties.Document, "HighCellSize").Should().Be(ServiceHighCellSize);
+        PropertyText(properties.Document, "BandDefinitionKeyword").Should().BeEmpty();
+        PropertyText(properties.Document, "BandDefinitionKeyword").Should().NotBe("NONE");
+
+        var extended = await PostSoapAsync(
+            $"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <RenderingRule xsi:nil="true" />
+            </GetKeyPropertiesX>
+            """);
+        extended.Status.Should().Be(HttpStatusCode.OK, extended.Body);
+        AssertKeyProperties(extended.Document, serviceJson);
+
+        var item = await PostSoapAsync(
+            $"""
+            <GetRasterKeyProperties xmlns="{ArcGisNamespace}">
+              <RID>3</RID>
+            </GetRasterKeyProperties>
+            """);
+        item.Status.Should().Be(HttpStatusCode.OK, item.Body);
+        item.Body.Should().NotContain("Unsupported ImageServer operation");
+        AssertKeyProperties(item.Document, itemJson);
+        Property(item.Document, "LowCellSize").Should().Be(0.01);
+        Property(item.Document, "HighCellSize").Should().Be(0.02);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyProperties")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRasterInfo_UsesServiceMosaicStatisticsAndOrderedHistograms()
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        RasterStatistics[] statistics = [
+            new() { Band = 3, MinValue = 31, MaxValue = 39, MeanValue = 35, StandardDeviation = 3 },
+            new() { Band = 1, MinValue = 11, MaxValue = 19, MeanValue = 15, StandardDeviation = 1 },
+            new() { Band = 2, MinValue = 21, MaxValue = 29, MeanValue = 25, StandardDeviation = 2 }
+        ];
+        store.GetStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([new RasterStatistics { Band = 1, MinValue = 777, MaxValue = 777 }]);
+        store.GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>()).Returns(statistics);
+        store.GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterHistogram { Band = 3, BinCount = 1, Min = 30, Max = 39, Counts = [300] },
+                new RasterHistogram { Band = 1, BinCount = 1, Min = 10, Max = 19, Counts = [100] },
+                new RasterHistogram { Band = 2, BinCount = 1, Min = 20, Max = 29, Counts = [200] }
+            ]);
+
+        using var restHistograms = await _fixture.Client.GetAsync($"{ServicePath()}/histograms?f=json");
+        var histogramJson = await ReadJsonAsync(restHistograms);
+        histogramJson.GetProperty("histograms")[0].TryGetProperty("SourceBand", out _).Should().BeFalse();
+        histogramJson.GetProperty("histograms")[0].TryGetProperty("sourceBand", out _).Should().BeFalse();
+        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        serviceInfo.Status.Should().Be(HttpStatusCode.OK, serviceInfo.Body);
+        foreach (var operation in new[] { "GetKeyProperties", "GetKeyPropertiesX" })
+        {
+            var response = await PostSoapAsync($"""<{operation} xmlns="{ArcGisNamespace}" />""");
+            response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+            var rasterInfo = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
+            rasterInfo.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:RasterInfo");
+            Child(rasterInfo, "BandCount").Value.Should().Be(Element(serviceInfo.Document, "BandCount").Value);
+            Child(rasterInfo, "PixelType").Value.Should().Be(Element(serviceInfo.Document, "PixelType").Value);
+            Child(rasterInfo, "PixelSizeX").Value.Should().Be(Element(serviceInfo.Document, "PixelSizeX").Value);
+            Child(rasterInfo, "NoData").Descendants().Single(element => element.Name.LocalName == "AnyType").Value.Should().Be("0");
+            for (var band = 0; band < 3; band++)
+            {
+                var statistic = Child(rasterInfo, $"RasterStatistics_{band}");
+                statistic.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:RasterStatistics");
+                Child(statistic, "Min").Value.Should().Be((11 + band * 10).ToString(CultureInfo.InvariantCulture));
+                Child(statistic, "Mean").Value.Should().Be((15 + band * 10).ToString(CultureInfo.InvariantCulture));
+                Child(statistic, "StandardDeviation").Value.Should().Be((1 + band).ToString(CultureInfo.InvariantCulture));
+                var histogram = Child(rasterInfo, $"RasterHistogram_{band}");
+                histogram.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:RasterHistogram");
+                Child(histogram, "Counts").Elements().Single().Value.Should().Be(((band + 1) * 100).ToString(CultureInfo.InvariantCulture));
+                statistic.Elements().Select(element => element.Name.LocalName).Should().NotContain(["Count", "Sum", "Median", "Mode"]);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_ExtractBandReordersCanonicalServiceMetadata()
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        store.GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterStatistics { Band = 3, MinValue = 31, MaxValue = 39, MeanValue = 35 },
+                new RasterStatistics { Band = 1, MinValue = 11, MaxValue = 19, MeanValue = 15 },
+                new RasterStatistics { Band = 2, MinValue = 21, MaxValue = 29, MeanValue = 25 }
+            ]);
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
+                <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt"><Int>2</Int><Int>0</Int></Value></PropertySetProperty>
+              </Arguments></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        Property(response.Document, "BandCount").Should().Be(2);
+        var info = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
+        Child(info, "BandCount").Value.Should().Be("2");
+        Child(info, "RasterStatistics_0").Element("Min")!.Value.Should().Be("31");
+        Child(info, "RasterStatistics_1").Element("Min")!.Value.Should().Be("11");
+        Child(info, "RasterHistogram_0").Element("Counts")!.Elements().Select(item => long.Parse(item.Value, CultureInfo.InvariantCulture))
+            .Should().Equal(HistogramCountsBand3);
+        Child(info, "RasterHistogram_1").Element("Counts")!.Elements().Select(item => long.Parse(item.Value, CultureInfo.InvariantCulture))
+            .Should().Equal(HistogramCountsBand1);
+        info.Elements().Select(item => item.Name.LocalName).Should().NotContain(["RasterStatistics_2", "RasterHistogram_2"]);
+    }
+
+    [IntegrationTheory]
+    [InlineData(257)]
+    [InlineData(87000)]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_RejectsExcessiveDuplicatesBeforeStatisticsOrHistogramWork(int count)
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        store.ClearReceivedCalls();
+        var values = string.Concat(Enumerable.Repeat("<Int>0</Int>", count));
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
+                <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt">{values}</Value></PropertySetProperty>
+              </Arguments></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.BadRequest, response.Body);
+        response.Body.Should().Contain("256 output bands");
+        response.Document.Descendants().Select(item => item.Name.LocalName).Should().NotContain("RasterInfo");
+        store.ReceivedCalls().Select(call => call.GetMethodInfo().Name).Should().NotContain([
+            nameof(IRasterStore.GetStatisticsAsync), nameof(IRasterStore.GetMosaicStatisticsAsync),
+            nameof(IRasterStore.GetHistogramsAsync), nameof(IRasterStore.GetMosaicHistogramsAsync)
+        ]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_NestedSelectionReadsOnlyUniqueRequestedSourceBands()
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        store.ClearReceivedCalls();
+        store.GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterStatistics { Band = 3, MinValue = 31, MaxValue = 39, MeanValue = 35 },
+                new RasterStatistics { Band = 1, MinValue = 11, MaxValue = 19, MeanValue = 15 }
+            ]);
+        store.GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })), Arg.Any<int>(),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterHistogram { Band = 1, BinCount = 1, Min = 10, Max = 19, Counts = [100] },
+                new RasterHistogram { Band = 2, BinCount = 2, Min = 20, Max = 29, Counts = [200] },
+                new RasterHistogram { Band = 3, BinCount = 1, Min = 30, Max = 39, Counts = [300] }
+            ]);
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <RenderingRule><FunctionName>Identity</FunctionName><Arguments>
+                <PropertySetProperty><Key>Raster</Key><Value xsi:type="tns:RasterFunction">
+                  <FunctionName>ExtractBand</FunctionName><Arguments>
+                    <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt"><Int>2</Int><Int>0</Int><Int>2</Int></Value></PropertySetProperty>
+                  </Arguments>
+                </Value></PropertySetProperty>
+              </Arguments></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        var info = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
+        Child(info, "BandCount").Value.Should().Be("3");
+        Child(info, "RasterStatistics_0").Element("Min")!.Value.Should().Be("31");
+        Child(info, "RasterStatistics_1").Element("Min")!.Value.Should().Be("11");
+        Child(info, "RasterStatistics_2").Element("Min")!.Value.Should().Be("31");
+        Child(info, "RasterHistogram_0").Element("Counts")!.Element("Double")!.Value.Should().Be("300");
+        Child(info, "RasterHistogram_1").Element("Counts")!.Element("Double")!.Value.Should().Be("100");
+        Child(info, "RasterHistogram_2").Element("Counts")!.Element("Double")!.Value.Should().Be("300");
+        await store.Received(1).GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+        await store.Received(1).GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })), Arg.Any<int>(),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_PixelTransformReturnsExplicitUnsupportedFault()
+    {
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}">
+              <RenderingRule><FunctionName>Slope</FunctionName></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.NotImplemented, response.Body);
+        response.Document.Descendants().Select(item => item.Name.LocalName).Should().NotContain("RasterInfo");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesHistograms_KeepRevalidatedPolicyWhenGraphChangesDuringStatisticsRead()
+    {
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        MetadataV2Graph WithPolicy(string strategy, long revision) => graph with
+        {
+            Revision = revision,
+            Resources = graph.Resources.Select(resource => resource with
+            {
+                Extensions = new Dictionary<string, JsonElement>(resource.Extensions)
+                {
+                    ["rasterMosaic"] = JsonSerializer.SerializeToElement(new { mergeStrategy = strategy })
+                }
+            }).ToArray()
+        };
+        provider.SetGraph(WithPolicy("min", graph.Revision + 1), schema: _fixture.CurrentSchema);
+        var store = _fixture.GetService<IRasterStore>();
+        var graphActivated = false;
+        store.GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), RasterMergeStrategy.Min,
+            Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                provider.SetGraph(WithPolicy("max", graph.Revision + 2), schema: _fixture.CurrentSchema);
+                graphActivated = true;
+                return new[] { new RasterStatistics { Band = 1, MinValue = 11, MaxValue = 19, MeanValue = 15 } };
+            });
+        store.GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), RasterMergeStrategy.Min,
+            Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([new RasterHistogram { Band = 1, BinCount = 1, Min = 10, Max = 19, Counts = [100] }]);
+        store.GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), RasterMergeStrategy.Max,
+            Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([new RasterHistogram { Band = 1, BinCount = 1, Min = 900, Max = 999, Counts = [999] }]);
+
+        var response = await PostSoapAsync($"""<GetKeyPropertiesX xmlns="{ArcGisNamespace}" />""");
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        graphActivated.Should().BeTrue("the graph activation must occur after SOAP publication revalidation");
+        var info = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
+        Child(info, "RasterStatistics_0").Element("Min")!.Value.Should().Be("11");
+        Child(info, "RasterHistogram_0").Element("Counts")!.Elements().Single().Value.Should().Be("100");
+        await store.DidNotReceive().GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), RasterMergeStrategy.Max,
+            Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task MultidimensionalInfoAndSupportsTime_MatchRest()
+    {
+        var service = ServicePath();
+        using var restInfo = await _fixture.Client.GetAsync($"{service}?f=json");
+        using var restMultidim = await _fixture.Client.GetAsync($"{service}/multidimensionalInfo?f=json");
+        var info = await ReadJsonAsync(restInfo);
+        var multidim = await ReadJsonAsync(restMultidim);
+
+        info.GetProperty("hasMultidimensions").GetBoolean().Should().BeTrue();
+        var restVariable = multidim.GetProperty("multidimensionalInfo").GetProperty("variables")[0];
+        restVariable.GetProperty("name").GetString().Should().Be("sea_surface_temperature");
+
+        var soapInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        soapInfo.Status.Should().Be(HttpStatusCode.OK, soapInfo.Body);
+        Element(soapInfo.Document, "SupportsTime").Value.Should().Be("true");
+        // Attribute time is advertised only through catalog fields; the fixture's
+        // vector temporal hints (timestamp/event_date) are not catalog fields.
+        var catalogFields = info.GetProperty("fields").EnumerateArray()
+            .Select(static field => field.GetProperty("name").GetString()).ToArray();
+        var soapStart = soapInfo.Document.Descendants().SingleOrDefault(static element => element.Name.LocalName == "StartTimeFieldName");
+        var soapEnd = soapInfo.Document.Descendants().SingleOrDefault(static element => element.Name.LocalName == "EndTimeFieldName");
+        if (info.TryGetProperty("timeInfo", out var timeInfo) && timeInfo.ValueKind == JsonValueKind.Object)
+        {
+            soapStart?.Value.Should().Be(timeInfo.GetProperty("startTimeField").GetString());
+            soapStart?.Value.Should().BeOneOf(catalogFields);
+            var extent = Element(soapInfo.Document, "TimeExtent");
+            UnixMilliseconds(extent, "Start").Should().Be(timeInfo.GetProperty("timeExtent")[0].GetInt64());
+            UnixMilliseconds(extent, "End").Should().Be(timeInfo.GetProperty("timeExtent")[1].GetInt64());
+        }
+        else
+        {
+            soapStart.Should().BeNull("REST advertises no attribute time");
+        }
+
+        soapEnd?.Value.Should().BeOneOf(catalogFields);
+
+        var soapMultidim = await PostSoapAsync($"""<GetMultidimensionalInfo xmlns="{ArcGisNamespace}" />""");
+        soapMultidim.Status.Should().Be(HttpStatusCode.OK, soapMultidim.Body);
+        var result = soapMultidim.Document.Descendants().Single(element => element.Name.LocalName == "Result");
+        result.Attribute(XName.Get("nil", XsiNamespace)).Should().BeNull();
+        Child(result, "Names").Elements().Select(static element => element.Value)
+            .Should().Equal("Variables", "DimensionAttributes", "DimensionValues");
+        var sets = Child(result, "Values").Elements().ToArray();
+        sets.Should().HaveCount(3);
+        var variable = MultidimensionalPropertyValue(sets[0], "sea_surface_temperature");
+        MultidimensionalPropertyValue(variable, "Unit").Value.Should().Be(restVariable.GetProperty("unit").GetString());
+        MultidimensionalPropertyValue(variable, "Description").Value.Should().Be(restVariable.GetProperty("description").GetString());
+        var attributes = MultidimensionalPropertyValue(sets[1], "sea_surface_temperature");
+        var coordinates = MultidimensionalPropertyValue(sets[2], "sea_surface_temperature");
+        foreach (var restDimension in restVariable.GetProperty("dimensions").EnumerateArray())
+        {
+            var name = restDimension.GetProperty("name").GetString()!;
+            var soapDimension = MultidimensionalPropertyValue(attributes, name);
+            MultidimensionalPropertyValue(soapDimension, "Count").Value.Should().Be(
+                restDimension.GetProperty("dimensionSize").GetInt64().ToString(CultureInfo.InvariantCulture));
+            if (restDimension.TryGetProperty("values", out var values))
+            {
+                var bounds = MultidimensionalPropertyValue(coordinates, name).Elements().ToArray();
+                bounds.Should().HaveCount(2);
+                foreach (var bound in bounds)
+                {
+                    var soapValues = bound.Elements().Select(element => double.Parse(element.Value, CultureInfo.InvariantCulture));
+                    soapValues.Should().Equal(values.EnumerateArray().Select(value => name == "StdTime"
+                        ? DateTime.UnixEpoch.AddMilliseconds(value.GetDouble()).ToOADate() : value.GetDouble()));
+                }
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ComputeHistograms")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task HistogramsSoap_MatchRestHistograms()
+    {
+        using var rest = await _fixture.Client.GetAsync($"{ServicePath()}/histograms?f=json");
+        var json = await ReadJsonAsync(rest);
+        var expected = json.GetProperty("histograms").EnumerateArray().ToArray();
+        expected.Should().HaveCount(3);
+        expected[0].GetProperty("counts")[0].GetInt64().Should().Be(200);
+        expected.Sum(histogram => histogram.GetProperty("counts").EnumerateArray().Sum(count => count.GetInt64()))
+            .Should().Be(4096 * 3);
+
+        var computed = await PostSoapAsync(
+            $"""
+            <ComputeHistograms xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <Geometry xsi:nil="true" />
+              <MosaicRule xsi:nil="true" />
+              <PixelSize xsi:nil="true" />
+              <RenderingRule xsi:nil="true" />
+            </ComputeHistograms>
+            """);
+        computed.Status.Should().Be(HttpStatusCode.OK, computed.Body);
+        computed.Body.Should().NotContain("Unsupported ImageServer operation");
+        AssertHistograms(computed.Document.Descendants().Single(element => element.Name.LocalName == "Result"), expected);
+
+        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        serviceInfo.Status.Should().Be(HttpStatusCode.OK, serviceInfo.Body);
+        AssertHistograms(Element(serviceInfo.Document, "Histograms"), expected);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ComputeHistograms")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task ComputeHistogramsAoi_MatchesRestComputeHistograms()
+    {
+        var service = ServicePath();
+        const string geometry = """{"xmin":0,"ymin":0,"xmax":0.14,"ymax":0.15,"spatialReference":{"wkid":4326}}""";
+        const string mosaicRule = """{"mosaicMethod":"esriMosaicNorthwest"}""";
+        const string renderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""";
+        const string pixelSize = """{"x":0.0021875,"y":0.00234375}""";
+        var geometryQuery = $"geometry={Uri.EscapeDataString(geometry)}&geometryType=esriGeometryEnvelope&f=json";
+
+        using var restClipped = await _fixture.Client.GetAsync($"{service}/computeHistograms?{geometryQuery}");
+        using var restRendered = await _fixture.Client.GetAsync(
+            $"{service}/computeHistograms?{geometryQuery}&mosaicRule={Uri.EscapeDataString(mosaicRule)}&renderingRule={Uri.EscapeDataString(renderingRule)}&pixelSize={Uri.EscapeDataString(pixelSize)}");
+        var clipped = (await ReadJsonAsync(restClipped)).GetProperty("histograms").EnumerateArray().ToArray();
+        var rendered = (await ReadJsonAsync(restRendered)).GetProperty("histograms").EnumerateArray().ToArray();
+        clipped.Should().ContainSingle();
+        clipped[0].GetProperty("counts").EnumerateArray().Select(count => count.GetInt64()).Should().Equal(9, 8, 7);
+        rendered[0].GetProperty("counts").EnumerateArray().Select(count => count.GetInt64()).Should().Equal(4, 5, 6);
+
+        var soapClipped = await PostSoapAsync(ComputeHistogramsRequest(includeRendering: false));
+        soapClipped.Status.Should().Be(HttpStatusCode.OK, soapClipped.Body);
+        soapClipped.Body.Should().NotContain("Unsupported ImageServer operation");
+        AssertHistograms(Element(soapClipped.Document, "Result"), clipped);
+
+        var soapRendered = await PostSoapAsync(ComputeHistogramsRequest(includeRendering: true));
+        soapRendered.Status.Should().Be(HttpStatusCode.OK, soapRendered.Body);
+        AssertHistograms(Element(soapRendered.Document, "Result"), rendered);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCacheDescriptionInfo")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetTileCacheInfo")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetTileImageInfo")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task TileCacheSoap_StaysUncachedWhenMetadataIsDisabled()
+    {
+        using var rest = await _fixture.Client.GetAsync($"{ServicePath()}?f=json");
+        var info = await ReadJsonAsync(rest);
+        info.GetProperty("singleFusedMapCache").GetBoolean().Should().BeFalse();
+
+        var fixedScale = await PostSoapAsync($"""<IsFixedScaleImage xmlns="{ArcGisNamespace}" />""");
+        fixedScale.Status.Should().Be(HttpStatusCode.OK, fixedScale.Body);
+        Element(fixedScale.Document, "Result").Value.Should().Be("false");
+
+        var description = await PostSoapAsync($"""<GetCacheDescriptionInfo xmlns="{ArcGisNamespace}" />""");
+        description.Status.Should().Be(HttpStatusCode.OK, description.Body);
+        description.Body.Should().NotContain("Unsupported ImageServer operation");
+        Element(description.Document, "TileCacheInfo")
+            .Attribute(XName.Get("nil", XsiNamespace))!.Value.Should().Be("true");
+
+        var tileInfo = await PostSoapAsync($"""<GetTileCacheInfo xmlns="{ArcGisNamespace}" />""");
+        tileInfo.Status.Should().Be(HttpStatusCode.BadRequest, tileInfo.Body);
+        tileInfo.Body.Should().NotContain("Unsupported ImageServer operation");
+
+        var imageTile = await PostSoapAsync(ImageTileRequest());
+        imageTile.Status.Should().Be(HttpStatusCode.BadRequest, imageTile.Body);
+        imageTile.Body.Should().NotContain("Unsupported ImageServer operation");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetImageTile")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task TileCacheSoap_MatchesRestWhenMetadataIsEnabled()
+    {
+        var fixture = await CreateFixtureAsync(enableTileCache: true);
+        try
+        {
+            using var restInfo = await fixture.Client.GetAsync($"{ServicePath()}?f=json");
+            using var restTile = await fixture.Client.GetAsync($"{ServicePath()}/tile/0/0/0");
+            var info = await ReadJsonAsync(restInfo);
+            var tileBytes = await restTile.Content.ReadAsByteArrayAsync();
+            restTile.StatusCode.Should().Be(HttpStatusCode.OK);
+            info.GetProperty("singleFusedMapCache").GetBoolean().Should().BeTrue();
+            var tileInfo = info.GetProperty("tileInfo");
+
+            var fixedScale = await PostSoapAsync(fixture, $"""<IsFixedScaleImage xmlns="{ArcGisNamespace}" />""");
+            fixedScale.Status.Should().Be(HttpStatusCode.OK, fixedScale.Body);
+            Element(fixedScale.Document, "Result").Value.Should().Be("true");
+
+            var description = await PostSoapAsync(fixture, $"""<GetCacheDescriptionInfo xmlns="{ArcGisNamespace}" />""");
+            description.Status.Should().Be(HttpStatusCode.OK, description.Body);
+            description.Body.Should().NotContain("Unsupported ImageServer operation");
+            AssertTileCache(Element(description.Document, "TileCacheInfo"), tileInfo);
+            Element(description.Document, "ServiceType").Value.Should().Be("esriSingleFusedMapCache");
+            var layerCaches = Element(description.Document, "LayerCacheInfos").Elements().ToArray();
+            layerCaches.Should().ContainSingle();
+            layerCaches[0].Name.LocalName.Should().Be("LayerCacheInfo");
+            layerCaches[0].Elements().Select(element => element.Name.LocalName)
+                .Should().Equal("LayerID", "HasCache");
+            Child(layerCaches[0], "LayerID").Value.Should().Be("0");
+            Child(layerCaches[0], "HasCache").Value.Should().Be("false",
+                "the fused service cache does not advertise an individual-layer cache");
+            var imageInfo = Element(description.Document, "TileImageInfo");
+            Child(imageInfo, "CacheTileFormat").Value.Should().Be(tileInfo.GetProperty("format").GetString());
+            Child(imageInfo, "CompressionQuality").Value.Should().Be("0");
+            // ImageServer JSON omits nulls, so an unset compression quality is absent rather than null.
+            tileInfo.TryGetProperty("compressionQuality", out _).Should().BeFalse();
+
+            var cacheInfo = await PostSoapAsync(fixture, $"""<GetTileCacheInfo xmlns="{ArcGisNamespace}" />""");
+            cacheInfo.Status.Should().Be(HttpStatusCode.OK, cacheInfo.Body);
+            AssertTileCache(Element(cacheInfo.Document, "Result"), tileInfo);
+
+            var tileImage = await PostSoapAsync(fixture, $"""<GetTileImageInfo xmlns="{ArcGisNamespace}" />""");
+            tileImage.Status.Should().Be(HttpStatusCode.OK, tileImage.Body);
+            Child(Element(tileImage.Document, "Result"), "CacheTileFormat").Value.Should().Be("PNG");
+
+            var imageTile = await PostSoapAsync(fixture, ImageTileRequest());
+            imageTile.Status.Should().Be(HttpStatusCode.OK, imageTile.Body);
+            Convert.FromBase64String(Element(imageTile.Document, "Result").Value).Should().Equal(tileBytes);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static void AssertTileCache(XElement cache, JsonElement tileInfo)
+    {
+        Child(cache, "TileCols").Value.Should().Be(tileInfo.GetProperty("cols").GetInt32().ToString(CultureInfo.InvariantCulture));
+        Child(cache, "TileRows").Value.Should().Be(tileInfo.GetProperty("rows").GetInt32().ToString(CultureInfo.InvariantCulture));
+        Child(cache, "DPI").Value.Should().Be(tileInfo.GetProperty("dpi").GetInt32().ToString(CultureInfo.InvariantCulture));
+        var origin = Child(cache, "TileOrigin");
+        double.Parse(Child(origin, "X").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(tileInfo.GetProperty("origin").GetProperty("x").GetDouble(), 1e-6);
+        double.Parse(Child(origin, "Y").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(tileInfo.GetProperty("origin").GetProperty("y").GetDouble(), 1e-6);
+        Child(cache, "SpatialReference").Descendants().Single(element => element.Name.LocalName == "WKID")
+            .Value.Should().Be(tileInfo.GetProperty("spatialReference").GetProperty("wkid").GetInt32().ToString(CultureInfo.InvariantCulture));
+        Child(cache, "SpatialReference").Descendants().Single(element => element.Name.LocalName == "LatestWKID")
+            .Value.Should().Be(tileInfo.GetProperty("spatialReference").GetProperty("latestWkid").GetInt32().ToString(CultureInfo.InvariantCulture));
+
+        var soapLods = cache.Descendants().Where(element => element.Name.LocalName == "LODInfo").ToArray();
+        var restLods = tileInfo.GetProperty("lods").EnumerateArray().ToArray();
+        soapLods.Should().HaveCount(restLods.Length);
+        for (var index = 0; index < restLods.Length; index++)
+        {
+            soapLods[index].Elements().Select(element => element.Name.LocalName)
+                .Should().Equal("LevelID", "Scale", "Resolution");
+            Child(soapLods[index], "LevelID").Value.Should().Be(
+                restLods[index].GetProperty("level").GetInt32().ToString(CultureInfo.InvariantCulture));
+            double.Parse(Child(soapLods[index], "Resolution").Value, CultureInfo.InvariantCulture)
+                .Should().BeApproximately(restLods[index].GetProperty("resolution").GetDouble(), 1e-6);
+            double.Parse(Child(soapLods[index], "Scale").Value, CultureInfo.InvariantCulture)
+                .Should().BeApproximately(restLods[index].GetProperty("scale").GetDouble(), 1e-4);
+        }
+    }
+
+    private static void AssertHistograms(XElement parent, JsonElement[] expected)
+    {
+        var histograms = parent.Elements().Where(element => element.Name.LocalName == "RasterHistogram").ToArray();
+        histograms.Should().HaveCount(expected.Length);
+        for (var index = 0; index < expected.Length; index++)
+        {
+            Child(histograms[index], "Size").Value.Should().Be(
+                expected[index].GetProperty("size").GetInt32().ToString(CultureInfo.InvariantCulture));
+            double.Parse(Child(histograms[index], "Min").Value, CultureInfo.InvariantCulture)
+                .Should().BeApproximately(expected[index].GetProperty("min").GetDouble(), 1e-9);
+            double.Parse(Child(histograms[index], "Max").Value, CultureInfo.InvariantCulture)
+                .Should().BeApproximately(expected[index].GetProperty("max").GetDouble(), 1e-9);
+            var counts = Child(histograms[index], "Counts").Elements()
+                .Select(element => long.Parse(element.Value, CultureInfo.InvariantCulture))
+                .ToArray();
+            counts.Should().Equal(expected[index].GetProperty("counts").EnumerateArray().Select(count => count.GetInt64()));
+        }
+    }
+
+    private static void AssertKeyProperties(XDocument document, JsonElement json)
+    {
+        Property(document, "LowCellSize").Should().Be(json.GetProperty("LowCellSize").GetDouble());
+        Property(document, "HighCellSize").Should().Be(json.GetProperty("HighCellSize").GetDouble());
+        Property(document, "MaxCellSize").Should().Be(json.GetProperty("MaxCellSize").GetDouble());
+        PropertyText(document, "BandDefinitionKeyword").Should().Be(json.GetProperty("BandDefinitionKeyword").GetString());
+        PropertyText(document, "ConfigKeyword").Should().Be(json.GetProperty("ConfigKeyword").GetString());
+        PropertyText(document, "DataType").Should().Be(json.GetProperty("DataType").GetString());
+        int.Parse(PropertyText(document, "BandCount"), CultureInfo.InvariantCulture)
+            .Should().Be(json.GetProperty("BandCount").GetInt32());
+        var bands = json.GetProperty("BandProperties").EnumerateArray().ToArray();
+        var bandProperty = document.Descendants().Single(element =>
+            element.Name.LocalName == "PropertySetProperty"
+            && element.Elements().Any(child => child.Name.LocalName == "Key" && child.Value == "BandProperties"));
+        var bandValues = Child(bandProperty, "Value");
+        // ArcGIS SOAP serializes IArray values as ArrayOfArgument, including
+        // GetKeyPropertiesX in the 10.8 namespace used by stock ArcGIS Pro.
+        bandValues.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:ArrayOfArgument");
+        bandValues.Elements().Should().HaveCount(bands.Length);
+        foreach (var argument in bandValues.Elements())
+        {
+            argument.Name.LocalName.Should().Be("Argument");
+            argument.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:PropertySet");
+            Child(argument, "PropertyArray").Attribute(XName.Get("type", XsiNamespace))!.Value
+                .Should().Be("tns:ArrayOfPropertySetProperty");
+        }
+
+        var soapBands = document.Descendants()
+            .Where(element => element.Name.LocalName == "Key" && element.Value == "BandName")
+            .Select(element => element.Parent!)
+            .ToArray();
+        soapBands.Should().HaveCount(bands.Length);
+        for (var index = 0; index < bands.Length; index++)
+        {
+            Child(soapBands[index], "Value").Value.Should().Be(bands[index].GetProperty("BandName").GetString());
+            var pixelType = soapBands[index].Parent!.Elements()
+                .Single(element => element.Elements().Any(child => child.Name.LocalName == "Key" && child.Value == "PixelType"));
+            Child(pixelType, "Value").Value.Should().Be(bands[index].GetProperty("PixelType").GetString());
+        }
+    }
+
+    private static double Property(XDocument document, string key)
+        => double.Parse(PropertyText(document, key), CultureInfo.InvariantCulture);
+
+    private static string PropertyText(XDocument document, string key)
+    {
+        var property = document.Descendants().Single(element =>
+            element.Name.LocalName == "PropertySetProperty"
+            && element.Elements().Any(child => child.Name.LocalName == "Key" && child.Value == key)
+            && element.Parent?.Elements().Any(child => child.Name.LocalName == "Key" && child.Value == "BandProperties") != true);
+        return property.Elements().Single(element => element.Name.LocalName == "Value").Value;
+    }
+
+    private static int IntValue(XDocument document, string name)
+        => int.Parse(Element(document, name).Value, CultureInfo.InvariantCulture);
+
+    private static int[] FidSet(XDocument document)
+        => Element(document, "FIDArray").Elements()
+            .Select(element => int.Parse(element.Value, CultureInfo.InvariantCulture))
+            .ToArray();
+
+    private static int[] ObjectIds(JsonElement json)
+        => json.GetProperty("objectIds").EnumerateArray().Select(value => value.GetInt32()).ToArray();
+
+    private static long UnixMilliseconds(XElement parent, string name)
+        => new DateTimeOffset(DateTime.Parse(
+            Child(parent, name).Value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal)).ToUnixTimeMilliseconds();
+
+    private static XElement Element(XDocument document, string name)
+        => document.Descendants().Single(element => element.Name.LocalName == name);
+
+    private static XElement Child(XElement parent, string name)
+        => parent.Elements().Single(element => element.Name.LocalName == name);
+
+    private static string ServicePath()
+        => $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer";
+
+    private Task<SoapExchange> PostSoapAsync(string operation)
+        => PostSoapAsync(_fixture, operation);
+
+    private static async Task<SoapExchange> PostSoapAsync(WebAppFixture fixture, string operation)
+    {
+        var request = $"""
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="{XsiNamespace}">
+              <soap:Body>{operation}</soap:Body>
+            </soap:Envelope>
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+        using var response = await fixture.Client.PostAsync(
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            content);
+        var body = await response.Content.ReadAsStringAsync();
+        var document = response.StatusCode == HttpStatusCode.OK ? XDocument.Parse(body) : new XDocument();
+        return new SoapExchange(response.StatusCode, body, document);
+    }
+
+    private static string CatalogRequest(string operation, string? where, string catalogName = "Catalog")
+        => $"""
+            <{operation} xmlns="{ArcGisNamespace}">
+              <Name>{catalogName}</Name>
+              <QueryFilter>
+                <WhereClause>{where}</WhereClause>
+              </QueryFilter>
+            </{operation}>
+            """;
+
+    private static string CatalogItemsRequest()
+        => $"""
+            <GetCatalogItems xmlns="{ArcGisNamespace}">
+              <Name>Catalog</Name>
+              <QueryFilter>
+                <SubFields>OBJECTID,Name,Shape</SubFields>
+                <WhereClause>{NameFilter}</WhereClause>
+                <OutputSpatialReference>
+                  <WKID>4326</WKID>
+                  <LatestWKID>4326</LatestWKID>
+                </OutputSpatialReference>
+              </QueryFilter>
+            </GetCatalogItems>
+            """;
+
+    private static string SpatialCatalogRequest(string operation, string filter)
+        => $"""
+            <{operation} xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <Name>Catalog</Name>
+              <QueryFilter xsi:type="tns:SpatialFilter">
+                {filter}
+              </QueryFilter>
+            </{operation}>
+            """;
+
+    private static string EnvelopeFilter()
+        => """
+            <FilterGeometry xsi:type="tns:EnvelopeN">
+              <XMin>1</XMin>
+              <YMin>1</YMin>
+              <XMax>1.64</XMax>
+              <YMax>2.28</YMax>
+              <SpatialReference><WKID>4326</WKID></SpatialReference>
+            </FilterGeometry>
+            <GeometryFieldName>Shape</GeometryFieldName>
+            <SpatialRel>esriSpatialRelEnvelopeIntersects</SpatialRel>
+            """;
+
+    private static string PolygonFilter()
+        => """
+            <FilterGeometry xsi:type="tns:PolygonN">
+              <RingArray>
+                <Ring>
+                  <PointArray>
+                    <Point><X>0</X><Y>0</Y></Point>
+                    <Point><X>0.14</X><Y>0</Y></Point>
+                    <Point><X>0.14</X><Y>0.15</Y></Point>
+                    <Point><X>0</X><Y>0.15</Y></Point>
+                    <Point><X>0</X><Y>0</Y></Point>
+                  </PointArray>
+                </Ring>
+              </RingArray>
+              <SpatialReference><WKID>4326</WKID></SpatialReference>
+            </FilterGeometry>
+            <SpatialRel>esriSpatialRelIntersects</SpatialRel>
+            """;
+
+    private static string ComputeHistogramsRequest(bool includeRendering)
+    {
+        var tail = includeRendering
+            ? """
+              <MosaicRule><MosaicMethod>NorthWest</MosaicMethod></MosaicRule>
+              <PixelSize xsi:type="tns:PointN"><X>0.0021875</X><Y>0.00234375</Y></PixelSize>
+              <RenderingRule>
+                <Function>
+                  <FunctionName>Stretch</FunctionName>
+                  <Arguments><StretchType>5</StretchType></Arguments>
+                </Function>
+              </RenderingRule>
+              """
+            : """
+              <MosaicRule xsi:nil="true" />
+              <PixelSize xsi:nil="true" />
+              <RenderingRule xsi:nil="true" />
+              """;
+        return $"""
+            <ComputeHistograms xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <Geometry xsi:type="tns:EnvelopeN">
+                <XMin>0</XMin>
+                <YMin>0</YMin>
+                <XMax>0.14</XMax>
+                <YMax>0.15</YMax>
+                <SpatialReference><WKID>4326</WKID></SpatialReference>
+              </Geometry>
+              {tail}
+            </ComputeHistograms>
+            """;
+    }
+
+    private static string ImageTileRequest()
+        => $"""
+            <GetImageTile xmlns="{ArcGisNamespace}">
+              <Level>0</Level>
+              <Row>0</Row>
+              <Column>0</Column>
+            </GetImageTile>
+            """;
+
+    private static async Task<JsonElement> ReadJsonAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.Clone();
+    }
+
+    private static XElement MultidimensionalPropertyValue(XElement set, string key)
+        => Child(Child(set, "PropertyArray").Elements().Single(property => Child(property, "Key").Value == key), "Value");
+
+    private static async Task<WebAppFixture> CreateFixtureAsync(bool enableTileCache)
+    {
+        var rasterStore = CreateRasterStore();
+        var coverageStore = CreateCoverageStore();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IRasterStore>();
+            services.AddSingleton(rasterStore);
+            services.RemoveAll<IMultidimensionalCoverageStore>();
+            services.AddSingleton(coverageStore);
+            if (enableTileCache)
+            {
+                services.PostConfigure<ImageServerTileMetadataOptions>(options =>
+                {
+                    options.Enabled = true;
+                    options.MaxLevel = 2;
+                });
+            }
+        });
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
+    private static IRasterStore CreateRasterStore()
+    {
+        var acquired = DateTimeOffset.FromUnixTimeMilliseconds(1_704_067_200_000);
+        var nextDay = DateTimeOffset.FromUnixTimeMilliseconds(1_704_153_600_000);
+        var created = DateTimeOffset.FromUnixTimeMilliseconds(1_704_240_000_000);
+        var service = new RasterInfo
+        {
+            Id = 1,
+            LayerId = WebAppFixture.TestLayerId,
+            Name = "Test Raster RGB",
+            Width = 64,
+            Height = 64,
+            BandCount = 3,
+            PixelType = "8BUI",
+            Srid = 4326,
+            NoDataValue = 0,
+            GeoTransform = [0, ServiceLowCellSize, 0, 0.15, 0, -ServiceHighCellSize],
+            Extent = new RasterExtent { XMin = 0, YMin = 0, XMax = 0.14, YMax = 0.15, Srid = 4326 },
+            AcquisitionDate = acquired,
+            CreatedAt = created,
+        };
+        var other = new RasterInfo
+        {
+            Id = 3,
+            LayerId = WebAppFixture.TestLayerId,
+            Name = "Other Raster",
+            Width = 64,
+            Height = 64,
+            BandCount = 1,
+            PixelType = "8BUI",
+            Srid = 4326,
+            GeoTransform = [0, 0.01, 0, 1.28, 0, -0.02],
+            Extent = new RasterExtent { XMin = 1, YMin = 1, XMax = 1.64, YMax = 2.28, Srid = 4326 },
+            AcquisitionDate = nextDay,
+            CreatedAt = created,
+        };
+        RasterInfo[] rasters = [service, other];
+        var histograms = new[]
+        {
+            new RasterHistogram { Band = 1, BinCount = 3, Min = 0, Max = 255, Counts = HistogramCountsBand1 },
+            new RasterHistogram { Band = 2, BinCount = 3, Min = 0, Max = 255, Counts = HistogramCountsBand2 },
+            new RasterHistogram { Band = 3, BinCount = 3, Min = 10, Max = 240, Counts = HistogramCountsBand3 },
+        };
+        var statistics = Enumerable.Range(1, 3).Select(band => new RasterStatistics
+        {
+            Band = band,
+            MinValue = 0,
+            MaxValue = 255,
+            MeanValue = 40,
+            StandardDeviation = 12,
+            ValidPixelCount = 4096,
+            NoDataPixelCount = 0,
+        }).ToArray();
+        var tile = new RasterResult
+        {
+            Data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x54, 0x49, 0x4C, 0x45],
+            ContentType = "image/png",
+            Width = 256,
+            Height = 256,
+            Srid = 3857,
+        };
+
+        var store = Substitute.For<IRasterStore>();
+        store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rasters);
+        store.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(service);
+        store.GetRasterInfoAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var id = call.ArgAt<long>(1);
+                foreach (var raster in rasters)
+                {
+                    if (raster.Id == id)
+                    {
+                        return raster;
+                    }
+                }
+
+                return (RasterInfo?)null;
+            });
+        store.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+            .Returns([service]);
+        store.QueryCatalogAsync(Arg.Any<int>(), Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call => RasterCatalogQueryEvaluator.EvaluateAsync(
+                rasters,
+                call.ArgAt<RasterCatalogQuery>(1),
+                transformService: null,
+                call.ArgAt<CancellationToken>(2)));
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>());
+        store.GetStatisticsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(statistics);
+        store.GetMosaicStatisticsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(statistics);
+        store.GetHistogramsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(histograms);
+        store.GetMosaicHistogramsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(histograms);
+        var clippedHistogram = new RasterHistogram
+        {
+            Band = 1,
+            BinCount = 3,
+            Min = 0,
+            Max = 255,
+            Counts = [9, 8, 7],
+        };
+        var renderedHistogram = new RasterHistogram
+        {
+            Band = 1,
+            BinCount = 3,
+            Min = 1,
+            Max = 9,
+            Counts = [4, 5, 6],
+        };
+        var clippedStatistics = new RasterStatistics
+        {
+            Band = 1,
+            MinValue = 1,
+            MaxValue = 9,
+            MeanValue = 4,
+            StandardDeviation = 1,
+            ValidPixelCount = 15,
+            NoDataPixelCount = 0,
+        };
+        store.GetClippedStatisticsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([clippedStatistics]);
+        store.GetClippedHistogramsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<RasterIdentifyRendering?>(6) is { HasRendering: true }
+                ? new[] { renderedHistogram }
+                : new[] { clippedHistogram });
+        store.GetClippedMosaicStatisticsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([clippedStatistics]);
+        store.GetClippedMosaicHistogramsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<RasterIdentifyRendering?>(7) is { HasRendering: true }
+                ? new[] { renderedHistogram }
+                : new[] { clippedHistogram });
+        store.GetImageTileAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterFormat>(),
+                Arg.Any<CancellationToken>())
+            .Returns(tile);
+        store.GetMosaicImageTileAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterFormat>(),
+                Arg.Any<CancellationToken>())
+            .Returns(tile);
+        return store;
+    }
+
+    private static IMultidimensionalCoverageStore CreateCoverageStore()
+    {
+        var metadata = new MultidimensionalCoverageMetadata
+        {
+            Format = MultidimensionalCoverageFormat.NetCdf4,
+            Srid = 4326,
+            Extent = new RasterExtent { XMin = 0, YMin = 0, XMax = 0.14, YMax = 0.15, Srid = 4326 },
+            Resolution = (ServiceLowCellSize, ServiceHighCellSize),
+            Temporal = new TemporalExtent(
+                DateTimeOffset.FromUnixTimeMilliseconds(1_704_067_200_000),
+                DateTimeOffset.FromUnixTimeMilliseconds(1_704_153_600_000),
+                StepCount: 2),
+            Variables =
+            [
+                new MultidimensionalCoverageVariable(
+                    Name: "sea_surface_temperature",
+                    DataType: "float32",
+                    Dimensions:
+                    [
+                        new MultidimensionalCoverageDimension("time", 2),
+                        new MultidimensionalCoverageDimension("x", 64),
+                        new MultidimensionalCoverageDimension("y", 64),
+                    ],
+                    ChunkLayout: null,
+                    Units: "degC",
+                    LongName: "Sea Surface Temperature",
+                    StandardName: "sea_surface_temperature",
+                    NoData: null),
+            ],
+        };
+        var registration = new MultidimensionalCoverageRegistration
+        {
+            Id = 11,
+            LayerId = WebAppFixture.TestLayerId,
+            Name = "sst",
+            Format = MultidimensionalCoverageFormat.NetCdf4,
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket",
+            ObjectKey = "sst.nc",
+            Variables = ["sea_surface_temperature"],
+            Metadata = metadata,
+            MetadataScannedAt = DateTimeOffset.FromUnixTimeMilliseconds(1_704_067_200_000),
+            CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(1_704_067_200_000),
+        };
+        var store = Substitute.For<IMultidimensionalCoverageStore>();
+        store.ListByLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<int>(0) == WebAppFixture.TestLayerId
+                ? new[] { registration }
+                : Array.Empty<MultidimensionalCoverageRegistration>());
+        return store;
+    }
+
+    private readonly record struct SoapExchange(HttpStatusCode Status, string Body, XDocument Document);
+}

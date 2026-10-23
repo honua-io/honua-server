@@ -1,7 +1,12 @@
+---
+type: guide
+title: "Capability deployment profiles"
+description: "Generate a Compose or Helm configuration that enables exactly the capability keys you select, and read what the selection implies for edition and pricing band."
+---
 # Capability deployment profiles
 
-Generate configuration from the same capability keys used by the evidence catalog and the
-`?caps=` website view:
+Generate configuration from the same capability keys the capability catalog uses. From a
+checkout of honua-server:
 
 ```bash
 python scripts/deployment/generate-capability-profile.py \
@@ -34,11 +39,13 @@ python scripts/deployment/generate-capability-profile.py \
   --caps serve.wfs,serve.wms \
   --format helm \
   --output honua-profile.values.json
-helm upgrade --install honua oci://ghcr.io/honua-io/charts/honua \
+helm upgrade --install honua ./honua-helm/charts/honua \
   -f honua-profile.values.json
 ```
 
-The Helm output uses the chart's existing `config.env` contract. Generated configuration is
+The chart is not published to a registry yet, so install it from a checkout of
+[honua-helm](https://github.com/honua-io/honua-helm). The Helm output uses the chart's
+existing `config.env` contract. Generated configuration is
 non-secret and contains only the schema version and selected key list.
 
 When both generated variables are present, the server treats the selected keys as a fail-closed

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Cryptography;
+using Honua.Core.Features.Authorization.Domain;
 using System.Text;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -112,6 +113,36 @@ internal static class TileExportArtifactIdentity
 
         return Convert.ToHexStringLower(SHA256.HashData(canonical.GetBuffer().AsSpan(0, checked((int)canonical.Length))));
     }
+
+    internal static string Compute(TileExportJobPlan plan, JobSecurityContext submitter)
+        => BindSecurityIdentity(Compute(plan), submitter);
+
+    internal static string BindSecurityIdentity(string contentIdentity, JobSecurityContext submitter)
+    {
+        ArgumentNullException.ThrowIfNull(submitter);
+        using var canonical = new MemoryStream();
+        using (var writer = new BinaryWriter(canonical, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(1);
+            WriteString(writer, contentIdentity);
+            WriteString(writer, submitter.PrincipalId ?? string.Empty);
+            WriteString(writer, submitter.TenantId ?? string.Empty);
+            WriteString(writer, submitter.RoleClaimType ?? string.Empty);
+            var claims = submitter.Claims.Distinct()
+                .OrderBy(static claim => claim.Type, StringComparer.Ordinal)
+                .ThenBy(static claim => claim.Value, StringComparer.Ordinal).ToArray();
+            writer.Write(claims.Length);
+            foreach (var claim in claims)
+            {
+                WriteString(writer, claim.Type);
+                WriteString(writer, claim.Value);
+            }
+        }
+        return Convert.ToHexStringLower(SHA256.HashData(canonical.ToArray()));
+    }
+
+    internal static string BuildObjectKey(TileExportJobPlan plan, JobSecurityContext submitter)
+        => $"tile-exports/{Compute(plan, submitter)}.{GetExtension(plan.PackageFormat)}";
 
     internal static string BuildObjectKey(TileExportJobPlan plan)
         => $"tile-exports/{Compute(plan)}.{GetExtension(plan.PackageFormat)}";

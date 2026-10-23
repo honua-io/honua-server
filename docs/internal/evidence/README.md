@@ -12,10 +12,15 @@ Evidence lives in four trees:
 
 This file does not store evidence itself. It points at the doc that does.
 
+## Bounded external clients
+
+- [2026.1 roster on nightly-1cd2ef5](client-certification-1cd2ef5/README.md): 41 pass, 11 fail, zero skipped/missing cells; not certified.
+
 ## Standards conformance (OGC, OData, STAC)
 
 What we run, what passes, what the formal certification posture is.
 
+- **STAC 3384 live acceptance (2026-09-20, updated 2026-09-26)** — [acceptance record](stac-3384-live-acceptance-2026-09-20.md). Items/search are HTTP 200; the serving image still predates the colon-key projection fix, so `eo:cloud_cover`, `proj:epsg`, and `view:sun_azimuth` are absent. Governed receipt and Python staging remain open.
 - **CITE runbook** — [`contributor/cite-runbook.md`](../contributor/cite-runbook.md). How to run every automated CITE suite locally and in CI (Features, Tiles, Maps, WMS 1.3, WMTS 1.0, WFS 2.0, WCS 2.0.1, KML 2.2, GML 3.2, GeoPackage 1.2). Per-suite scope, scripts, workflow files, and open issues.
 - **OGC CITE conformance evidence** — [`contributor/ogc-cite-conformance-evidence.md`](../contributor/ogc-cite-conformance-evidence.md). Stable, website-linkable summary of which suites are currently passing on trunk. Refreshed when a suite's state changes.
 - **OGC certification path** — [`contributor/ogc-certification-path.md`](../contributor/ogc-certification-path.md). Decision record: formal OGC certification is currently deferred. Includes the evidence baseline matrix and the criteria for reopening a submission.
@@ -34,7 +39,7 @@ How Honua's GeoServices REST surface compares to Esri's.
 - **GeoServices REST parity overview** — [`gis/geoservices-rest-parity.md`](../../reference/compatibility/geoservices-parity.md). Canonical landing page.
 - **Per-service matrices** — [FeatureServer](../../reference/compatibility/geoservices-parity.md), [MapServer / WMS / WMTS](../../reference/compatibility/geoservices-parity.md), [ImageServer](../../reference/compatibility/geoservices-parity.md), [Geometry Service](../../reference/compatibility/geoservices-parity.md).
 - **I3S scene compatibility** — [`gis/i3s-compatibility-matrix.md`](../spikes/i3s-compatibility-matrix.md).
-- **ArcGIS Pro licensed evidence** — [`gis/ARCGIS_PRO_LICENSED_EVIDENCE.md`](ARCGIS_PRO_LICENSED_EVIDENCE.md).
+- **ArcGIS Pro licensed evidence** — [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](ARCGIS_PRO_LICENSED_EVIDENCE.md). Evidence identifier `desktop-arcgis`. Procedure stays in honua-esri-compat.
 
 ## Client interop (real-world clients against Honua)
 
@@ -46,6 +51,7 @@ What gets verified against actual desktop apps, browser clients, GDAL, BI tools,
 - **Client template runbook** — [`gis/CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md). How to run a manual client smoke-cert.
 - **Nightly gap report** — [`gis/gap-report.md`](../../gis/gap-report.md). Auto-refreshed by the `client-interop-nightly` workflow; do not hand-edit.
 - **Historical certification snapshot** — [`gis/certification-evidence/`](../../gis/certification-evidence). Timestamped snapshots retained for release evidence.
+- **Bounded 2026.1 roster on `nightly-2cc2213`** — [`client-certification-2cc2213/`](client-certification-2cc2213/README.md). Candidate-bound receipts for the 59 governed QGIS/GDAL/MapLibre/OWSLib/PySTAC cells (honua-server#3434), produced by `certification/bounded-roster/`; 43 pass, 15 fail, 1 blocked.
 
 ## Cross-server interop
 

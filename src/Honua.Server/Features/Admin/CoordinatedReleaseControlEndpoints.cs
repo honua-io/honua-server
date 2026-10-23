@@ -7,6 +7,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
+using Microsoft.Extensions.Options;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
@@ -68,6 +70,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] CoordinatedReleaseControlService controlService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (string.IsNullOrWhiteSpace(request.PackageId) ||
             string.IsNullOrWhiteSpace(request.TargetEnvironment) ||
             string.IsNullOrWhiteSpace(request.ContainerTargetId) ||
@@ -100,6 +107,7 @@ internal static class CoordinatedReleaseControlEndpoints
             ResourceSemanticId = request.ResourceSemanticId!,
             NewFieldName = request.NewFieldName!,
             DataPopulateWorkloadId = request.DataPopulateWorkloadId,
+            DataPopulateFields = request.DataPopulateFields ?? Array.Empty<string>(),
             Script = new MetadataReleaseScript
             {
                 ScriptId = scriptId,
@@ -128,7 +136,9 @@ internal static class CoordinatedReleaseControlEndpoints
                     request.Reason,
                     request.IdempotencyKey,
                     request.CorrelationId,
-                    context.RequestAborted)
+                    requester: context.User,
+                    tenantOptions: context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value,
+                    cancellationToken: context.RequestAborted)
                 .ConfigureAwait(false);
 
             return Results.Json(
@@ -158,6 +168,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] ICoordinatedReleaseReconciler reconciler,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (string.IsNullOrWhiteSpace(packageId))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -205,6 +220,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] CoordinatedReleaseControlService controlService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (!TryParseGate(gate, out var gateStep))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -250,6 +270,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] IOperationInvoker operationInvoker,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var requestedBy = ResolveRequestedBy(context);
         var handle = await operationInvoker.SubmitAsync(
                 new OperationRequest

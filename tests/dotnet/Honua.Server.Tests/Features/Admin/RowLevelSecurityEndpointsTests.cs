@@ -201,6 +201,7 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
     public async Task RlsPolicyEndpoints_RejectAnonymousCallers()
     {
         var anonymous = _fixture.CreateClient();
+        var adminClient = CreateAdminClient();
         var request = new CreateRlsPolicyRequest
         {
             Role = "*",
@@ -215,7 +216,28 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             "/api/v1/admin/rls-policies",
             content3);
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The admin policy names the ApiKey scheme, so an unauthenticated caller is challenged:
+        // exactly 401, never 403 (which would mean authenticated-but-unprivileged).
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // Nothing is disclosed: no policy id comes back.
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("policyId");
+
+        // Nothing is changed: no RLS policy was created. Read back through the admin
+        // principal, which proves the same surface works for an authorised caller.
+        var listed = await ListPoliciesAsync(adminClient);
+        listed.Should().NotContain(
+            p => p.Attribute == "category" && p.ClaimType == "category",
+            "an unauthenticated POST must not create an RLS policy");
+
+        // A GET is refused the same way, so the denial is not write-only.
+        var anonymousList = await anonymous.GetAsync("/api/v1/admin/rls-policies");
+        anonymousList.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // The unfiltered query still returns every seeded row, proving no policy took effect.
+        var rows = await QueryObjectIdsByCategoryAsync(claimCategory: null);
+        rows.Should().HaveCount(TestFeatureCount);
     }
 
     private async Task<Guid> CreatePolicyAsync(HttpClient adminClient)

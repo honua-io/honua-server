@@ -23,7 +23,7 @@
       "tests/baselines/client-compat/**/*.cert.json"
     ],
     "prosePair": "docs/gis/CLIENT_CERTIFICATION_ROSTER.md",
-    "driftTests": "tests/dotnet/Honua.Architecture.Tests/ClientCertificationRosterTests.cs"
+    "driftTests": "tests/dotnet/Honua.Architecture.SourceTests/ClientCertificationRosterTests.cs"
   },
   "reconciliationNotes": [
     {
@@ -67,7 +67,7 @@
       "affectedEntryIds": [
         "js-esri-leaflet"
       ],
-      "note": "CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/esri-leaflet implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat."
+      "note": "CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/leaflet-client implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat."
     }
   ],
   "vocabulary": {
@@ -360,7 +360,7 @@
       "activationState": "awaiting-runtime",
       "rosterOrigin": "artifact",
       "sourceStatus": "Built, unrun",
-      "clientVersionPolicy": "Licensed ArcGIS Pro build recorded per run from the self-hosted Windows runner; evidence is entitlement-bound and content-addressed.",
+      "clientVersionPolicy": "ArcGIS Pro build is the build named on the desktop-arcgis evidence identifier in honua-esri-compat. Evidence is content-addressed.",
       "protocolSurfaces": [
         "featureserver",
         "mapserver",
@@ -402,7 +402,7 @@
       "licensing": {
         "model": "entitlement-bound",
         "requiresSeat": true,
-        "notes": "Licensed evidence must be entitlement-bound and content-addressed at release."
+        "notes": "Desktop entitlement detail stays in honua-esri-compat. This roster does not configure it."
       },
       "runtime": "windows-license",
       "fixtureProjection": {
@@ -422,7 +422,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Lane code exists and records honest skips because no Windows ArcGIS Pro runner is provisioned. The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane, so activation targets 2026.2 via workstream A of #3389."
+      "notes": "The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo."
     },
     {
       "id": "js",
@@ -509,7 +509,7 @@
       "activationState": "activated",
       "rosterOrigin": "artifact",
       "sourceStatus": "Live nightly",
-      "clientVersionPolicy": "npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 5.22.0).",
+      "clientVersionPolicy": "npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 6.9.0).",
       "protocolSurfaces": [
         "mvt",
         "ogc-maps",
@@ -2366,7 +2366,7 @@
         ],
         "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
       },
-      "evidenceProducer": "tests/js-browser/esri-leaflet (evidence emitted per run to tests/js-browser/evidence/, not committed under tests/baselines)",
+      "evidenceProducer": "tests/js-browser/leaflet-client (evidence emitted per run to tests/js-browser/evidence/, not committed under tests/baselines)",
       "laneBinding": {
         "matrixLaneId": "js",
         "role": "sub-lane"
@@ -2375,7 +2375,7 @@
       "needsOwningIssue": true,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/esri-leaflet, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`."
+      "notes": "Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/leaflet-client, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`."
     },
     {
       "id": "arcgis-field-maps",

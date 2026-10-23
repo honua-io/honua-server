@@ -47,6 +47,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/jobs/{jobId}/artifacts"),
         new("GET", "/api/v1/admin/jobs/{jobId}/actions"),
         new("GET", "/api/v1/admin/jobs/{jobId}/steps"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/diagnostics"),
         new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
 
@@ -103,6 +104,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/field-workflows/exports"),
         new("GET", "/api/v1/admin/field-workflows/exports"),
 
+        new("POST", "/api/v1/admin/raster-artifacts/cog"),
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
         new("GET", "/api/v1/admin/tile-operations/jobs"),

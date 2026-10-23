@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Core.Features.ControlPlane;
 
@@ -15,6 +16,12 @@ public static class ExecutionQualificationBarrier
 {
     /// <summary>Environment variable naming the shared barrier directory.</summary>
     public const string RootEnvironmentVariable = "HONUA_GP_QUALIFICATION_BARRIER_ROOT";
+
+    /// <summary>
+    /// Optional exact barrier name to pause at; when unset, all barriers retain
+    /// their existing behavior. This selects qualification staging only.
+    /// </summary>
+    public const string PauseAtEnvironmentVariable = "HONUA_GP_QUALIFICATION_PAUSE_AT";
 
     /// <summary>Environment variable enabling the deliberate cancellation-ignoring mode.</summary>
     public const string ExecutorModeEnvironmentVariable = "HONUA_GP_QUALIFICATION_EXECUTOR_MODE";
@@ -69,6 +76,12 @@ public static class ExecutionQualificationBarrier
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(barrier);
+        var pauseAt = Environment.GetEnvironmentVariable(PauseAtEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(pauseAt) && !string.Equals(pauseAt, barrier, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         var root = Environment.GetEnvironmentVariable(RootEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(root))
         {
@@ -83,63 +96,58 @@ public static class ExecutionQualificationBarrier
 
         WriteJsonAtomically(
             readyPath,
-            new
-            {
-                operationId = scope.OperationId,
-                workerId = scope.WorkerId,
+            ExecutionQualificationReceiptJsonContext.Default.QualificationReadyReceipt,
+            new QualificationReadyReceipt(
+                scope.OperationId,
+                scope.WorkerId,
                 barrier,
-                readyAt = DateTimeOffset.UtcNow,
-                workerProcessId = Environment.ProcessId,
+                DateTimeOffset.UtcNow,
+                Environment.ProcessId,
                 childProcessId,
-                executorIgnoresCancellation = ignoreCancellation,
-            });
+                ignoreCancellation));
 
         if (ignoreCancellation)
         {
             cancellationToken = CancellationToken.None;
         }
 
-        using var registration = cancellationToken.Register(
-            static state =>
-            {
-                var signal = (SignalObservation)state!;
-                WriteJsonAtomically(
-                    signal.Path,
-                    new
-                    {
-                        operationId = signal.OperationId,
-                        workerId = signal.WorkerId,
-                        barrier = signal.Barrier,
-                        observedAt = DateTimeOffset.UtcNow,
-                        workerProcessId = Environment.ProcessId,
-                        childProcessId = signal.ChildProcessId,
-                        tokenCancelled = true,
-                    });
-            },
-            new SignalObservation(
-                observedPath,
-                scope.OperationId,
-                scope.WorkerId,
-                barrier,
-                childProcessId));
-
-        while (!File.Exists(releasePath))
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken).ConfigureAwait(false);
+            while (!File.Exists(releasePath))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The delay's cancellation callback may complete this method before an
+            // earlier token callback runs. Record the observation in this method's
+            // cancellation path so a canceled wait cannot outrun its receipt.
+            WriteJsonAtomically(
+                observedPath,
+                ExecutionQualificationReceiptJsonContext.Default.QualificationSignalObservedReceipt,
+                new QualificationSignalObservedReceipt(
+                    scope.OperationId,
+                    scope.WorkerId,
+                    barrier,
+                    DateTimeOffset.UtcNow,
+                    Environment.ProcessId,
+                    childProcessId,
+                    TokenCancelled: true));
+            throw;
         }
 
         WriteJsonAtomically(
             Path.Join(operationDirectory, $"{Safe(barrier)}.released.json"),
-            new
-            {
-                operationId = scope.OperationId,
-                workerId = scope.WorkerId,
+            ExecutionQualificationReceiptJsonContext.Default.QualificationReleasedReceipt,
+            new QualificationReleasedReceipt(
+                scope.OperationId,
+                scope.WorkerId,
                 barrier,
-                releasedAt = DateTimeOffset.UtcNow,
-                workerProcessId = Environment.ProcessId,
-                childProcessId,
-            });
+                DateTimeOffset.UtcNow,
+                Environment.ProcessId,
+                childProcessId));
     }
 
     private static string Safe(string value)
@@ -147,12 +155,12 @@ public static class ExecutionQualificationBarrier
             .Replace("\\", "_", StringComparison.Ordinal)
             .Replace("..", "_", StringComparison.Ordinal);
 
-    private static void WriteJsonAtomically(string path, object value)
+    private static void WriteJsonAtomically<T>(string path, JsonTypeInfo<T> typeInfo, T value)
     {
         try
         {
             var temporary = path + $".{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(value));
+            File.WriteAllText(temporary, JsonSerializer.Serialize(value, typeInfo));
             File.Move(temporary, path, overwrite: true);
         }
         catch (IOException)
@@ -172,11 +180,4 @@ public static class ExecutionQualificationBarrier
     {
         public void Dispose() => Current.Value = previous;
     }
-
-    private sealed record SignalObservation(
-        string Path,
-        string OperationId,
-        string WorkerId,
-        string Barrier,
-        int? ChildProcessId);
 }

@@ -10,11 +10,13 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -72,12 +74,18 @@ internal static partial class AttachmentEndpoints
             // GET queryAttachments stays consistent with addAttachment.
             .CacheOutput(policy => policy.NoCache());
 
-        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments", HandleAttachmentInfos)
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments", HandleAttachmentInfos)
             .WithDisplayName("Get Feature Attachment Infos")
             .WithName("AttachmentInfos")
             .WithSummary("Get attachment infos for a specific feature")
             .WithDescription("Returns the canonical attachment infos resource for a feature")
             .WithTags("FeatureServer", "Attachments")
+            // GET and POST both, like queryAttachments above. The Esri REST contract is that a
+            // resource answers either verb, and ArcGIS Pro lists a feature's attachments with
+            // POST: a GET-only mapping answered that POST with a 405 envelope, which Pro read as
+            // a successful response carrying no attachmentInfos and reported "Attachments (0)"
+            // even straight after its own successful addAttachment.
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             // Per-feature attachment lists are mutable: an addAttachment/updateAttachment/
             // deleteAttachments must be visible to the very next get_list for the same OID.
             // The anonymous-only output-cache base policy would otherwise cache the empty
@@ -118,7 +126,7 @@ internal static partial class AttachmentEndpoints
             .WithSummary("Download attachment content")
             .WithDescription("Download the binary content of a specific attachment")
             .WithTags("FeatureServer", "Attachments")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             // Attachment content is mutable (updateAttachment replaces bytes) and addressed by
             // a freshly minted attachmentId; the anonymous-only output-cache base policy would
             // otherwise cache a download (or a 404 produced before the row existed) under the
@@ -245,42 +253,101 @@ internal static partial class AttachmentEndpoints
                     "definitionExpression is not a valid WHERE clause for this layer.");
                 return;
             }
-
-            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-            ImmutableArray<long> matchingIds;
-            try
-            {
-                matchingIds = await featureReader.QueryObjectIdsAsync(
-                    layerId,
-                    new FeatureQuery { SqlFilter = translationResult.SqlFilter, ExcludeAttributes = true },
-                    cancellationToken);
-            }
-            catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
-            {
-                await RouteValidationHelpers.WriteValidationErrorAsync(
-                    context,
-                    "definitionExpression is not a valid WHERE clause for this layer.");
-                return;
-            }
-
-            var allowed = matchingIds.ToHashSet();
-            featureIds = Array.FindAll(featureIds, allowed.Contains);
         }
+
+        // Apply published-source visibility even when no definitionExpression was
+        // supplied. Attachment metadata must not reveal a deleted or hidden parent
+        // merely because a stale row remains in the default feature-store snapshot.
+        // Custom object-id layers publish a different id than the storage row, so
+        // visibility and the attachment store both use the resolved storage id.
+        var objectIdFilterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        IReadOnlyDictionary<long, long> storageIdsByPublic;
+        try
+        {
+            storageIdsByPublic = await GeoServicesFeatureObjectIdResolver.ResolveStorageIdsAsync(
+                resource.Value.Reader,
+                objectIdFilterService,
+                resource.Value.Resource,
+                layerId,
+                featureIds,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, ex.Message);
+            return;
+        }
+
+        var visibleStorageIds = await FilterVisibleAttachmentParentsAsync(
+            resource.Value.Reader,
+            layerId,
+            storageIdsByPublic.Values.Distinct().ToArray(),
+            definitionExpression,
+            cancellationToken).ConfigureAwait(false);
+        var visibleByPublic = VisibleAttachmentStorageIds(featureIds, storageIdsByPublic, visibleStorageIds);
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await AttachmentHandler.QueryAttachmentsAsync(
             layerId,
-            featureIds,
+            visibleByPublic.Keys.ToArray(),
             returnUrl,
             filter,
             attachmentStore,
             logger,
             context,
-            cancellationToken);
+            cancellationToken,
+            visibleByPublic,
+            resource.Value.PublicLayerId);
 
         await result.ExecuteAsync(context);
+    }
+
+    internal static async Task<long[]> FilterVisibleAttachmentParentsAsync(
+        IFeatureReader reader,
+        int layerId,
+        long[] featureIds,
+        string? validatedDefinitionExpression,
+        CancellationToken cancellationToken)
+    {
+        // Stay below Oracle's 1000-item IN limit, SQL Server's 2100 total parameters,
+        // and the federated ArcGIS reader's 2000-ID limit, with room for filter values.
+        const int parentBatchSize = 500;
+        var allowed = new HashSet<long>();
+        var queries = featureIds.Chunk(parentBatchSize).Select(batch => new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.CreateRange(batch),
+            // Each provider translates the already validated canonical WHERE itself.
+            Where = string.IsNullOrWhiteSpace(validatedDefinitionExpression) ? null : validatedDefinitionExpression,
+            ExcludeAttributes = true
+        });
+        foreach (var query in queries)
+        {
+            var matches = await reader.QueryObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            allowed.UnionWith(matches);
+        }
+
+        return Array.FindAll(featureIds, allowed.Contains);
+    }
+
+    internal static Dictionary<long, long> VisibleAttachmentStorageIds(
+        IReadOnlyList<long> publicObjectIds,
+        IReadOnlyDictionary<long, long> storageIdByPublicObjectId,
+        IReadOnlyCollection<long> visibleStorageIds)
+    {
+        var visible = visibleStorageIds as ISet<long> ?? visibleStorageIds.ToHashSet();
+        var result = new Dictionary<long, long>(publicObjectIds.Count);
+        foreach (var publicObjectId in publicObjectIds)
+        {
+            if (storageIdByPublicObjectId.TryGetValue(publicObjectId, out var storageId) &&
+                visible.Contains(storageId))
+            {
+                result[publicObjectId] = storageId;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -294,6 +361,10 @@ internal static partial class AttachmentEndpoints
 
         var layerId = resource.Value.StorageLayerId;
         var form = await TryReadAttachmentFormAsync(context);
+        // codeql[cs/user-controlled-bypass]: a missing form fails closed (the reader
+        // already wrote the media-type error). Layer write authorization is
+        // TryValidateLayerAccessAsync above, which returns before this check. Supplying
+        // a form cannot skip that decision or the owner-edit check below.
         if (form == null)
         {
             return;
@@ -335,7 +406,15 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
         {
             return;
         }
@@ -349,16 +428,9 @@ internal static partial class AttachmentEndpoints
         var file = form.Files[0];
         var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted);
-        if (feature == null)
-        {
-            await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
-            return;
-        }
-
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
+                resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
@@ -383,7 +455,8 @@ internal static partial class AttachmentEndpoints
             limitsOptions.Value.Attachments,
             securityOptions.Value,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -399,6 +472,10 @@ internal static partial class AttachmentEndpoints
 
         var layerId = resource.Value.StorageLayerId;
         var form = await TryReadAttachmentFormAsync(context);
+        // codeql[cs/user-controlled-bypass]: a missing form fails closed (the reader
+        // already wrote the media-type error). Layer write authorization is
+        // TryValidateLayerAccessAsync above, which returns before this check. Supplying
+        // a form cannot skip that decision or the owner-edit check below.
         if (form == null)
         {
             return;
@@ -436,12 +513,27 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
+        {
+            return;
+        }
+
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
+                resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
-                AttributeRuleEditEvent.Update).ConfigureAwait(false))
+                AttributeRuleEditEvent.Update,
+                feature).ConfigureAwait(false))
         {
             return;
         }
@@ -477,7 +569,8 @@ internal static partial class AttachmentEndpoints
             limitsOptions.Value.Attachments,
             securityOptions.Value,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -500,6 +593,10 @@ internal static partial class AttachmentEndpoints
         }
 
         var form = await TryReadAttachmentFormAsync(context);
+        // codeql[cs/user-controlled-bypass]: a missing form fails closed (the reader
+        // already wrote the media-type error). Layer write authorization is
+        // TryValidateLayerAccessAsync above, which returns before this check. Supplying
+        // a form cannot skip that decision or the owner-edit check below.
         if (form == null)
         {
             return;
@@ -530,12 +627,27 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
+        {
+            return;
+        }
+
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
+                resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
-                AttributeRuleEditEvent.Delete).ConfigureAwait(false))
+                AttributeRuleEditEvent.Delete,
+                feature).ConfigureAwait(false))
         {
             return;
         }
@@ -584,7 +696,8 @@ internal static partial class AttachmentEndpoints
             attachmentIds.ToArray(),
             attachmentStore,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -598,6 +711,8 @@ internal static partial class AttachmentEndpoints
         var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
             ? formatValue.ToString()
             : null;
+        requestedFormat = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", requestedFormat, context.RequestAborted).ConfigureAwait(false);
         if (!FeatureServerEndpoints.TryValidateOutputFormat(
                 requestedFormat,
                 FeatureServerEndpoints.JsonOnlyFormats,
@@ -619,11 +734,16 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var feature = await featureReader.GetAsync(resource.Value.StorageLayerId, featureId, context.RequestAborted);
-        if (feature == null)
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            resource.Value.StorageLayerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
         {
-            await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
             return;
         }
 
@@ -636,7 +756,8 @@ internal static partial class AttachmentEndpoints
             featureId,
             attachmentStore,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -666,7 +787,15 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
         {
             return;
         }
@@ -681,17 +810,69 @@ internal static partial class AttachmentEndpoints
             attachmentId,
             attachmentStore,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
 
+    internal static async Task<Feature?> RequireAttachmentFeatureAsync(
+        HttpContext context,
+        IFeatureReader featureReader,
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Resource resource,
+        int storageLayerId,
+        long publicObjectId,
+        CancellationToken cancellationToken)
+    {
+        Feature? feature;
+        try
+        {
+            feature = await GeoServicesFeatureObjectIdResolver.ResolveAsync(
+                featureReader,
+                filterExpressionService,
+                resource,
+                storageLayerId,
+                publicObjectId,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, ex.Message).ConfigureAwait(false);
+            return null;
+        }
+
+        // Resolving a custom object id reads through the row query, which can still see a
+        // stale default-store row. Apply the same published-source visibility check as
+        // queryAttachments so a parent removed from the bound table stays hidden.
+        if (feature is not null &&
+            (await FilterVisibleAttachmentParentsAsync(
+                featureReader,
+                storageLayerId,
+                [feature.Value.Id],
+                validatedDefinitionExpression: null,
+                cancellationToken).ConfigureAwait(false)).Length == 0)
+        {
+            feature = null;
+        }
+
+        if (feature is null)
+        {
+            await StandardErrorHelpers.CreateNotFound(context, $"Feature {publicObjectId} not found")
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return null;
+        }
+
+        return feature;
+    }
+
     private static async Task<bool> EnsureFeatureVisibleAsync(
         HttpContext context,
+        IFeatureReader featureReader,
         int layerId,
         long featureId)
     {
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted).ConfigureAwait(false);
         if (feature is not null)
         {
@@ -724,24 +905,26 @@ internal static partial class AttachmentEndpoints
 
     /// <summary>
     /// Resolved V2 attachment-access context: the canonical resource, the publishing service,
-    /// and the integer storage-layer handle the attachment store expects.
+    /// the integer storage-layer handle the attachment store expects, and the public route
+    /// layer id clients use in URLs.
     /// </summary>
     internal readonly record struct AttachmentAccessContext(
         MetadataV2Service Service,
         MetadataV2Resource Resource,
-        int StorageLayerId);
+        int StorageLayerId,
+        IFeatureReader Reader,
+        int PublicLayerId);
 
     private static async Task<bool> AuthorizeAttachmentOwnerEditAsync(
         HttpContext context,
+        IFeatureReader featureReader,
         MetadataV2Resource resource,
         int layerId,
         long featureId,
         AttributeRuleEditEvent editEvent,
         Feature? existingFeature = null)
     {
-        var feature = existingFeature ?? await context.RequestServices
-            .GetRequiredService<IFeatureReader>()
-            .GetAsync(layerId, featureId, context.RequestAborted)
+        var feature = existingFeature ?? await featureReader.GetAsync(layerId, featureId, context.RequestAborted)
             .ConfigureAwait(false);
 
         if (feature is not { } existing)
@@ -761,14 +944,20 @@ internal static partial class AttachmentEndpoints
 
         var principal = context.User?.Identity?.IsAuthenticated == true
             ? new EditPrincipal(
-                context.User.Identity.Name,
+                EditOwnerSubject.Resolve(context.User),
                 IsAuthenticated: true,
                 IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
             : EditPrincipal.Anonymous;
-        var existingOwner = existing.Attributes.TryGetValue(ownerPolicy.OwnerField, out var ownerValue)
-            ? ownerValue
-            : null;
-        var decision = OwnerEditPolicyEvaluator.Evaluate(ownerPolicy, editEvent, existingOwner, principal);
+        // The feature above is the masked read used for existence. The owner check uses a
+        // separate policy query and does not copy that value onto the feature (#5426).
+        var decision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
+            featureReader,
+            layerId,
+            existing.Id,
+            ownerPolicy,
+            editEvent,
+            principal,
+            context.RequestAborted).ConfigureAwait(false);
         if (decision.IsAllowed)
         {
             return true;
@@ -780,6 +969,44 @@ internal static partial class AttachmentEndpoints
             .ExecuteAsync(context)
             .ConfigureAwait(false);
         return false;
+    }
+
+    /// <summary>
+    /// Returns a client-safe refusal when the layer does not support attachments, or when a
+    /// write asks for an edit capability the publication does not declare. A read of an
+    /// attachment-capable layer is allowed. Null means the request may proceed.
+    /// </summary>
+    internal static string? DescribeDeniedAttachmentAccess(
+        MetadataV2Service service,
+        MetadataV2Publication? publication,
+        MetadataV2Resource resource,
+        AccessScope scope,
+        AuthorizationOperation? writeOperation)
+    {
+        if (!FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource))
+        {
+            return "Attachments are not supported for this layer.";
+        }
+
+        if (scope != AccessScope.Write)
+        {
+            return null;
+        }
+
+        var operation = writeOperation switch
+        {
+            AuthorizationOperation.Insert => "Create",
+            AuthorizationOperation.Update => "Update",
+            AuthorizationOperation.Delete => "Delete",
+            _ => null
+        };
+        if (operation is not null &&
+            !FeatureServerEndpoints.ServiceSupportsOperationV2(service, operation, publication))
+        {
+            return $"{operation} edits are not enabled for this service";
+        }
+
+        return null;
     }
 
     private static async Task<AttachmentAccessContext?> TryValidateLayerAccessAsync(
@@ -865,6 +1092,17 @@ internal static partial class AttachmentEndpoints
             }
         }
 
+        // After RBAC, so an unauthenticated caller still receives 401/403. Declared edit
+        // capabilities use the same resolver as applyEdits: silence is Query-only.
+        var attachmentDenial = DescribeDeniedAttachmentAccess(service, publication, resource, scope, writeOperation);
+        if (attachmentDenial is not null)
+        {
+            await StandardErrorHelpers.CreateBadRequest(context, attachmentDenial)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return null;
+        }
+
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
@@ -876,7 +1114,13 @@ internal static partial class AttachmentEndpoints
             return null;
         }
 
-        return new AttachmentAccessContext(service, resource, storageLayerId.Value);
+        var reader = string.IsNullOrEmpty(publication.StorageBindingId)
+            ? context.RequestServices.GetRequiredService<IFeatureReader>()
+            : await context.RequestServices.GetRequiredService<FeatureProviderQueryRouter>()
+                .ResolveReaderAsync(snapshot, service, resource, publication, storageLayerId.Value,
+                    FeatureProviderReadOperation.Query, context.RequestAborted).ConfigureAwait(false);
+
+        return new AttachmentAccessContext(service, resource, storageLayerId.Value, reader, layerId);
     }
 
     private static bool TryParseObjectIds(

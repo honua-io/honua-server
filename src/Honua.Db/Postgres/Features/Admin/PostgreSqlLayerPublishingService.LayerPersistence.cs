@@ -76,12 +76,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string schema,
         string table,
         string primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         string geometryType,
         int srid,
         int storageSrid,
         LayerExtentInsert? extent,
         bool enabled,
+        string storageOptionsJson,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -127,8 +128,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
         command.Parameters.AddWithValue("@primaryKeyColumn", primaryKeyColumn);
-        command.Parameters.AddWithValue("@geometryColumn", geometryColumn);
-        command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = SourceBackedStorageOptionsJson;
+        command.Parameters.Add("@geometryColumn", NpgsqlDbType.Text).Value = (object?)geometryColumn ?? DBNull.Value;
+        command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = storageOptionsJson;
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
         command.Parameters.AddWithValue("@storageSrid", storageSrid);
@@ -180,27 +181,188 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<int> MaterializeLayerFeaturesAsync(
+    /// <inheritdoc />
+    public async Task<long> CountSourceRowsAsync(
+        string connectionString,
+        string schema,
+        string table,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+
+        var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        try
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = new NpgsqlCommand(BuildSourceCountSql(sourceTable), connection)
+            {
+                CommandTimeout = 30
+            };
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return result is long count ? count : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.NotFound,
+                $"Source table '{schema}.{table}' was not found.");
+        }
+    }
+
+    private async Task<int> MaterializeLayerFeaturesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
         string schema,
         string table,
-        string geometryColumn,
+        string? geometryColumn,
         int srid,
         IReadOnlyList<ColumnInfo> attributeColumns,
+        string? featuresSchema,
         CancellationToken cancellationToken)
     {
-        // TODO(honua-server#974): replace this one-time snapshot with the settled
+        // TODO(honua-server#974): replace this snapshot copy with the settled
         // publish refresh/CDC path once source-of-truth policy is finalized.
+        // The copy stays inside the publication transaction. Tables, partitioned
+        // tables, and materialized views page by (tableoid, ctid) so a gateway
+        // timeout is not what bounds the statement (honua-server#5948). Views have
+        // no ctid and keep the single INSERT...SELECT.
         var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
-        var sourceGeometry = $"src.{QuoteIdentifier(geometryColumn)}";
-        var canonicalGeometry = BuildCanonicalGeometryExpression(sourceGeometry);
+        var canonicalGeometry = string.IsNullOrWhiteSpace(geometryColumn)
+            ? "NULL::geometry"
+            : BuildCanonicalGeometryExpression($"src.{QuoteIdentifier(geometryColumn)}");
         var attributesExpression = BuildAttributesExpression(attributeColumns);
-        var featuresTable = await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
-            .ConfigureAwait(false);
 
-        var sql = $"""
+        // A managed-store publish names the exact features table its binding reads; the
+        // source snapshot keeps resolving the table through the connection search path.
+        var featuresTable = featuresSchema is null
+            ? await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
+                .ConfigureAwait(false)
+            : $"{QuoteIdentifier(featuresSchema)}.{QuoteIdentifier(ManagedFeaturesTableName)}";
+
+        if (!await SourceSupportsKeysetAsync(connection, transaction, schema, table, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            var unbounded = BuildUnboundedSnapshotSql(
+                featuresTable, sourceTable, canonicalGeometry, attributesExpression);
+            await using var command = new NpgsqlCommand(unbounded, connection, transaction);
+            command.Parameters.AddWithValue("layerId", layerId);
+            command.Parameters.AddWithValue("srid", srid);
+            var result = await ExecuteSnapshotCommandAsync(command, cancellationToken).ConfigureAwait(false);
+            var inserted = result is int count
+                ? count
+                : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+            await ReportSnapshotProgressAsync(inserted, inserted, layerId, cancellationToken).ConfigureAwait(false);
+            return inserted;
+        }
+
+        var pageSql = BuildSnapshotPageSql(
+            featuresTable, sourceTable, canonicalGeometry, attributesExpression);
+        return await ExecuteUnderSnapshotBudgetAsync(
+            connection,
+            transaction,
+            async (budgetToken, commandTimeout) =>
+            {
+                var total = await ExecuteSourceCountAsync(
+                    connection, transaction, sourceTable, commandTimeout, budgetToken).ConfigureAwait(false);
+                var materialized = await CopySnapshotPagesAsync(
+                    _materializationBatchSize,
+                    (hasCursor, tableOid, ctid, pageToken) => ExecuteSnapshotPageAsync(
+                        connection,
+                        transaction,
+                        pageSql,
+                        layerId,
+                        srid,
+                        hasCursor,
+                        tableOid,
+                        ctid,
+                        commandTimeout,
+                        pageToken),
+                    (done, rowsTotal, reportToken) => ReportSnapshotProgressAsync(done, rowsTotal, layerId, reportToken),
+                    total,
+                    budgetToken).ConfigureAwait(false);
+                if (materialized > int.MaxValue)
+                {
+                    throw new LayerPublishingException(
+                        LayerPublishingErrorKind.Unknown,
+                        "Layer snapshot exceeds the supported feature count.");
+                }
+
+                return (int)materialized;
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>One keyset page of a canonical snapshot copy.</summary>
+    internal readonly record struct SnapshotPage(int Inserted, uint? TableOid, string? Ctid);
+
+    /// <summary>
+    /// Copies snapshot pages until a short or empty page. A full page without a cursor fails
+    /// rather than looping. <paramref name="report"/> runs after every page, including the last.
+    /// </summary>
+    internal static async Task<long> CopySnapshotPagesAsync(
+        int batchSize,
+        Func<bool, uint, string?, CancellationToken, Task<SnapshotPage>> copyPage,
+        Func<long, long, CancellationToken, Task>? report,
+        long rowsTotal,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(copyPage);
+        ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
+
+        long materialized = 0;
+        var hasCursor = false;
+        uint tableOid = 0;
+        string? ctid = null;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var page = await copyPage(hasCursor, tableOid, ctid, cancellationToken).ConfigureAwait(false);
+            if (page.Inserted < 0)
+            {
+                throw new InvalidOperationException("Snapshot page returned a negative row count.");
+            }
+
+            materialized += page.Inserted;
+            if (report is not null)
+            {
+                await report(materialized, rowsTotal, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (page.Inserted == 0 || page.Inserted < batchSize)
+            {
+                return materialized;
+            }
+
+            if (page.TableOid is null || string.IsNullOrWhiteSpace(page.Ctid))
+            {
+                throw new InvalidOperationException(
+                    "Snapshot page returned a full batch without a (tableoid, ctid) cursor.");
+            }
+
+            if (hasCursor
+                && page.TableOid.Value == tableOid
+                && string.Equals(page.Ctid, ctid, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Snapshot page cursor did not advance.");
+            }
+
+            hasCursor = true;
+            tableOid = page.TableOid.Value;
+            ctid = page.Ctid;
+        }
+    }
+
+    /// <summary>Single-statement snapshot copy used for views and unknown relkinds.</summary>
+    internal static string BuildUnboundedSnapshotSql(
+        string featuresTable,
+        string sourceTable,
+        string canonicalGeometry,
+        string attributesExpression)
+        => $"""
             WITH inserted AS (
                 INSERT INTO {featuresTable} (layer_id, geometry, attributes)
                 SELECT
@@ -214,14 +376,237 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FROM inserted;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("@layerId", layerId);
-        command.Parameters.AddWithValue("@srid", srid);
+    /// <summary>
+    /// One keyset page. <c>page</c> is materialized once so the insert and the cursor read
+    /// the same rows. Cursor ordering stays qualified so the text result alias cannot shadow
+    /// the native <c>tid</c> column. <c>@ctid</c> is null on the first page; a null tid cast does not fail.
+    /// </summary>
+    internal static string BuildSnapshotPageSql(
+        string featuresTable,
+        string sourceTable,
+        string canonicalGeometry,
+        string attributesExpression)
+        => $"""
+            WITH page AS MATERIALIZED (
+                SELECT
+                    src.tableoid AS source_oid,
+                    src.ctid AS source_tid,
+                    {canonicalGeometry} AS geometry,
+                    {attributesExpression} AS attributes
+                FROM {sourceTable} AS src
+                WHERE @hasCursor = FALSE
+                    OR (src.tableoid, src.ctid) > (@tableOid, @ctid::tid)
+                ORDER BY src.tableoid, src.ctid
+                LIMIT @batchSize
+            ),
+            inserted AS (
+                INSERT INTO {featuresTable} (layer_id, geometry, attributes)
+                SELECT @layerId, page.geometry, page.attributes
+                FROM page
+                RETURNING 1
+            )
+            SELECT
+                (SELECT COUNT(*)::int FROM inserted),
+                (SELECT page.source_oid::bigint FROM page ORDER BY page.source_oid DESC, page.source_tid DESC LIMIT 1),
+                (SELECT page.source_tid::text FROM page ORDER BY page.source_oid DESC, page.source_tid DESC LIMIT 1);
+            """;
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is int count
-            ? count
-            : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    internal static string BuildSourceCountSql(string sourceTable)
+        => $"SELECT COUNT(*)::bigint FROM {sourceTable} AS src;";
+
+    private async Task ReportSnapshotProgressAsync(
+        long rowsMaterialized,
+        long rowsTotal,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        Log.SnapshotBatchMaterialized(_logger, rowsMaterialized, rowsTotal, layerId);
+        var progress = LayerSnapshotProgressScope.Current;
+        if (progress is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await progress.ReportAsync(rowsMaterialized, rowsTotal, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        {
+            Log.SnapshotProgressFailed(_logger, layerId, exception);
+        }
+    }
+
+    private static async Task<bool> SourceSupportsKeysetAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT c.relkind::text
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = @schema AND c.relname = @table
+            LIMIT 1;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = 30
+        };
+        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue("table", table);
+        var relkind = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+        return relkind is "r" or "p" or "m";
+    }
+
+    private static async Task<long> ExecuteSourceCountAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sourceTable,
+        int commandTimeout,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(BuildSourceCountSql(sourceTable), connection, transaction)
+        {
+            CommandTimeout = commandTimeout
+        };
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is long count ? count : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<SnapshotPage> ExecuteSnapshotPageAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sql,
+        int layerId,
+        int srid,
+        bool hasCursor,
+        uint tableOid,
+        string? ctid,
+        int commandTimeout,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = commandTimeout
+        };
+        command.Parameters.AddWithValue("layerId", layerId);
+        command.Parameters.AddWithValue("srid", srid);
+        command.Parameters.Add(new NpgsqlParameter("hasCursor", NpgsqlDbType.Boolean) { Value = hasCursor });
+        command.Parameters.Add(new NpgsqlParameter("tableOid", NpgsqlDbType.Oid)
+        {
+            Value = hasCursor ? tableOid : 0u
+        });
+        command.Parameters.Add(new NpgsqlParameter("ctid", NpgsqlDbType.Text)
+        {
+            Value = hasCursor ? ctid ?? string.Empty : DBNull.Value
+        });
+        command.Parameters.AddWithValue("batchSize", _materializationBatchSize);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new SnapshotPage(0, null, null);
+        }
+
+        var inserted = reader.IsDBNull(0) ? 0 : reader.GetInt32(0);
+        uint? sourceOid = null;
+        if (!reader.IsDBNull(1))
+        {
+            var oid = reader.GetInt64(1);
+            if (oid < 0 || oid > uint.MaxValue)
+            {
+                throw new InvalidOperationException("Snapshot page returned a tableoid outside the oid range.");
+            }
+
+            sourceOid = (uint)oid;
+        }
+
+        var sourceTid = reader.IsDBNull(2) ? null : reader.GetString(2);
+        return new SnapshotPage(inserted, sourceOid, sourceTid);
+    }
+
+    /// <summary>
+    /// Runs the keyset copy under one publication budget. Statement timeout is set once,
+    /// transaction-local, for every page.
+    /// </summary>
+    private async Task<T> ExecuteUnderSnapshotBudgetAsync<T>(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Func<CancellationToken, int, Task<T>> action,
+        CancellationToken cancellationToken)
+    {
+        var commandTimeout = _materializationTimeoutSeconds + SnapshotCommandTimeoutGraceSeconds;
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(_materializationTimeoutSeconds));
+        try
+        {
+            await using var serverTimeout = new NpgsqlCommand(
+                "SELECT set_config('statement_timeout', @timeout, true)", connection, transaction)
+            {
+                CommandTimeout = commandTimeout
+            };
+            serverTimeout.Parameters.AddWithValue("timeout",
+                FormattableString.Invariant($"{commandTimeout}s"));
+            await serverTimeout.ExecuteScalarAsync(budget.Token).ConfigureAwait(false);
+            return await action(budget.Token, commandTimeout).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && budget.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Layer snapshot materialization exceeded its {_materializationTimeoutSeconds}-second budget "
+                + $"({LayerPublishingOptions.SectionName}:MaterializationTimeoutSeconds). The publication transaction "
+                + "rolls back; the source table is retained.", exception);
+        }
+    }
+
+    /// <summary>Seconds the driver read timeout extends past the snapshot budget.</summary>
+    internal const int SnapshotCommandTimeoutGraceSeconds = 30;
+
+    /// <summary>
+    /// Runs one canonical snapshot command (copy or pre-refresh delete) under the publication
+    /// budget instead of the connection's ordinary command timeout. The command stays inside the
+    /// caller's transaction, so expiry or caller cancellation leaves it to roll back; the source
+    /// table is never modified.
+    /// </summary>
+    internal async Task<object?> ExecuteSnapshotCommandAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    {
+        if (command.Transaction is null)
+        {
+            throw new InvalidOperationException("Snapshot commands require a publication transaction.");
+        }
+
+        // The wall-clock budget below is the bound. The driver's read timeout is only a backstop,
+        // set past the budget so expiry surfaces as a cooperative cancellation (connection stays
+        // usable for the rollback) rather than a driver timeout that may break the connection.
+        command.CommandTimeout = _materializationTimeoutSeconds + SnapshotCommandTimeoutGraceSeconds;
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(_materializationTimeoutSeconds));
+
+        try
+        {
+            // Startup options may impose a shorter server timeout even when the driver's
+            // timeout is extended. Keep the override local to the publication transaction.
+            await using var serverTimeout = new NpgsqlCommand(
+                "SELECT set_config('statement_timeout', @timeout, true)", command.Connection, command.Transaction)
+            {
+                CommandTimeout = command.CommandTimeout
+            };
+            serverTimeout.Parameters.AddWithValue("timeout",
+                FormattableString.Invariant($"{command.CommandTimeout}s"));
+            await serverTimeout.ExecuteScalarAsync(budget.Token).ConfigureAwait(false);
+            return await command.ExecuteScalarAsync(budget.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && budget.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Layer snapshot materialization exceeded its {_materializationTimeoutSeconds}-second budget "
+                + $"({LayerPublishingOptions.SectionName}:MaterializationTimeoutSeconds). The publication transaction "
+                + "rolls back; the source table is retained.", exception);
+        }
     }
 
     private static async Task<bool> ServiceExistsAsync(
@@ -344,7 +729,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    private static async Task EnsureServiceAsync(
+    private static async Task<bool> EnsureServiceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
@@ -379,7 +764,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@capabilities", _defaultCapabilities);
         command.Parameters.AddWithValue("@connectionId", (object?)persistedConnectionId ?? DBNull.Value);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private static async Task<Guid?> ResolvePersistedConnectionIdAsync(

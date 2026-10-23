@@ -90,6 +90,7 @@ internal sealed partial class FeatureDataAccess
             double d => d,
             float f => (double)f,
             string s => s,
+            DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt,
                 dt.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : dt.Kind)),
             DateTimeOffset dto => dto,

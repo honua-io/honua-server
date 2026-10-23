@@ -103,6 +103,8 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
 
 env:
+  # Preserve the upstream reaper index while avoiding Docker Hub authentication.
+  TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
   DOTNET_VERSION: '10.0.x'
   # Keep one persistent MSBuild server alive across restore/build/test calls in
   # each job. Roslyn shared compilation remains enabled by default.
@@ -111,18 +113,22 @@ env:
   DOTNET_NOLOGO: true
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '20'
-  # honua-sdk-js ref for MCP certification and LLM smoke tests.
-  # STATUS (#2807): this pinned commit does NOT yet contain the
-  # `test:certification`, `test:certification:artifact`, or `test:llm-smoke`
-  # scripts (they are honua-sdk-js #484 work), so the mcp-certification /
-  # mcp-llm-smoke lanes skip cleanly and produce NO certification artifact
-  # today. Do not read the pin as evidence that the MCP surface is certified.
-  # IMPORTANT: once the scripts land, re-pin this to the SDK tag or commit SHA
-  # that contains them so results are reproducible release-grade evidence for a
-  # given server commit. A branch name like 'trunk' is useful for development
-  # but its artifacts are not release-grade evidence.
-  # workflow_dispatch `sdk_ref` overrides this value for manual replays.
-  MCP_SDK_REF: '404242df3cbf10f707ee9137405bf93b3de0012d'
+  # Immutable mcp-server-v0.1.19 release source with isolated certification
+  # settings and native gRPC count/statistics. Both live backends remain required.
+  # workflow_dispatch sdk_ref remains an
+  # explicit override for development/release replays, recorded in each receipt.
+  MCP_SDK_REF: 'ae6a835b5334a14c380b085d1af57161243ae0d5'
+  # Release certification lanes (honua-io/honua-release#376 R18): the job ids
+  # whose check-runs must ALL conclude `success` in the newest completed
+  # schedule/workflow_dispatch run of this workflow before a trunk sha is
+  # certified. This is the one declaration of that list: the nightly container
+  # build reads it (scripts/ci/select-certified-nightly-sha.py) to image only
+  # certified shas, and honua-release's resolver requires the same check-run
+  # names (certification/full-matrix-checks.yaml there). Every lane here must
+  # run on a full-matrix workflow_dispatch -- see the run_all escalation in
+  # the `changes` job.
+  # The separate format job remains required through ci-gate, preserving the shared five-lane contract.
+  CERTIFICATION_LANE_JOBS: 'build dotnet-foundation-tests python-integration-tests test-all ci-gate'
 
 permissions:
   contents: read
@@ -360,7 +366,7 @@ jobs:
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -411,22 +417,33 @@ jobs:
           set -euo pipefail
           # PRs and selective batches run the complete compatibility suite without
           # coverage instrumentation; scheduled/manual full CI remains authoritative.
-          POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":false}]'
-          POSTGRES_FULL='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true},{"pg_image":"postgis/postgis:17-3.5","pg_suffix":"17","collect_coverage":false},{"pg_image":"postgis/postgis:18-3.6","pg_suffix":"18","collect_coverage":false}]'
+          POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_service_image":"mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5","pg_suffix":"16","collect_coverage":false}]'
+          POSTGRES_FULL='[{"pg_image":"postgis/postgis:16-3.4","pg_service_image":"mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5","pg_suffix":"16","collect_coverage":true},{"pg_image":"postgis/postgis:17-3.5","pg_service_image":"mirror.gcr.io/postgis/postgis:17-3.5@sha256:8dfee83d8bd4c2873dc4a233c13ba2799a44f2edb16a0552d58715917fac32ba","pg_suffix":"17","collect_coverage":false},{"pg_image":"postgis/postgis:18-3.6","pg_service_image":"mirror.gcr.io/postgis/postgis:18-3.6@sha256:7e00e8c3539fdd43f513b98806c8204714dcd09dea683c259e333d7690317119","pg_suffix":"18","collect_coverage":false}]'
 
           # Fail safe: if the diff range cannot be computed (e.g. no merge-base after a
           # full base fetch), run the full build/integration lane rather than silently
           # skipping the required build jobs. A diff failure must NEVER fall through to
           # build_changes=false (that left PRs stuck BLOCKED with build jobs "skipping").
-          if ! CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" 2>/dev/null); then
+          if ! CHANGED_FILES=$(git diff --no-renames --name-only "${{ steps.diff.outputs.range }}" 2>/dev/null); then
             echo "::warning::Diff range '${{ steps.diff.outputs.range }}' unavailable (no merge-base); running the full build lane."
+            # targeted-shards fails safe to run_all on the same range, so a
+            # dispatch here is a full matrix and must run every lane, including
+            # the full_ci-gated certification lanes (see the run_all escalation
+            # below). A pull request keeps the baseline compatibility set.
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              UNAVAILABLE_FULL_CI=false
+              UNAVAILABLE_POSTGRES="${POSTGRES_BASELINE}"
+            else
+              UNAVAILABLE_FULL_CI=true
+              UNAVAILABLE_POSTGRES="${POSTGRES_FULL}"
+            fi
             {
               echo "build_changes=true"
               echo "non_test_changes=true"
               echo "integration_changes=true"
               echo "integration_reason=diff_range_unavailable"
-              echo "full_ci=false"
-              echo "postgres_matrix=${POSTGRES_BASELINE}"
+              echo "full_ci=${UNAVAILABLE_FULL_CI}"
+              echo "postgres_matrix=${UNAVAILABLE_POSTGRES}"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -450,6 +467,32 @@ jobs:
              [ "${{ steps.diff.outputs.trailing_selective }}" = "true" ] &&
              [ "${{ inputs.full_ci }}" != "true" ]; then
             SELECTIVE_BATCH=true
+          fi
+          # A selective dispatch the shard router cannot scope is a FULL matrix
+          # (honua-io/honua-release#376 R18). The router answers run_all for an
+          # empty range -- a re-dispatch at an already-verified head, where
+          # selective_base == HEAD -- and for infrastructure/unmapped changes,
+          # and targeted-shards then selects every shard. This job used to
+          # derive build/integration/full_ci from the bare diff regardless, so
+          # Build & Format Check, .NET Foundation Tests and Python Integration
+          # Tests SKIPPED in a run that still concluded success; as the newest
+          # completed run on its sha it superseded the real full-matrix
+          # certification there (7aad613: run 37183672893 over 37181115405).
+          # Run the whole matrix instead, so a dispatched full matrix certifies.
+          # Pull requests keep their path-based skipping: this only applies to
+          # selective workflow_dispatch runs.
+          if [ "${SELECTIVE_BATCH}" = "true" ]; then
+            if ROUTER_DESCRIPTOR=$(printf '%s\n' "${CHANGED_FILES}" | scripts/ci/honua-server-targeted-tests.sh --stdin); then
+              ROUTER_RUN_ALL=$(jq -r '.run_all' <<<"${ROUTER_DESCRIPTOR}")
+              ROUTER_REASON=$(jq -r '.reason' <<<"${ROUTER_DESCRIPTOR}")
+            else
+              ROUTER_RUN_ALL=true
+              ROUTER_REASON=targeted_selection_failed
+            fi
+            if [ "${ROUTER_RUN_ALL}" = "true" ]; then
+              echo "Shard router resolved run_all (${ROUTER_REASON}); this dispatch runs the full matrix."
+              SELECTIVE_BATCH=false
+            fi
           fi
           echo "Selective batch decision: ref_name=${GITHUB_REF_NAME} full_ci=${{ inputs.full_ci }} selective=${SELECTIVE_BATCH}"
           if [ "${{ github.event_name }}" != "pull_request" ] && [ "${SELECTIVE_BATCH}" != "true" ]; then
@@ -560,7 +603,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -635,6 +678,8 @@ jobs:
               })
             | sort_by(-.dispatch_rank)
           ' .github/ci-shards.json)
+          matrix_include=$(printf '%s' "${matrix_include}" | python3 scripts/ci/annotate-shard-resources.py \
+            --catalog .github/test-projects.json)
           if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
             echo "::error::matrix_include is empty — targeted-shards selected no shards"
             exit 1
@@ -650,7 +695,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Validate workflow and shard routing metadata
         run: |
@@ -678,12 +723,15 @@ jobs:
 
   build:
     name: Build & Format Check
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
-    needs: changes
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+    needs: [changes, targeted-shards]
+    outputs:
+      producer_attempt: ${{ steps.managed-publish.outputs.producer-attempt }}
+      managed_sdk_version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -700,12 +748,10 @@ jobs:
           df -h / || true
 
       - name: Setup .NET
+        id: managed-sdk
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Restore
-        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
       - name: Compute affected projects
         id: affected
@@ -737,29 +783,101 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
+          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
+          cat "${RUNNER_TEMP}/protocol-profiles.json"
+
+      - name: Select managed producer outputs and build graph
+        id: managed-plan
+        env:
+          SELECTED_MATRIX: ${{ needs.targeted-shards.outputs.matrix_include }}
+          AFFECTED_MODE: ${{ steps.affected.outputs.mode }}
+          AFFECTED_PROJECTS: ${{ steps.affected.outputs.projects }}
+        run: |
+          printf '%s' "${SELECTED_MATRIX:-[]}" > "${RUNNER_TEMP}/managed-matrix.json"
+          python3 scripts/ci/managed-test-build.py projects --lane ci \
+            --matrix-file "${RUNNER_TEMP}/managed-matrix.json" --output "${RUNNER_TEMP}/managed-projects.json"
+          target=Honua.sln
+          if [[ "${AFFECTED_MODE}" == affected ]]; then
+            python3 -c 'import json,os; json.dump({"solution":{"path":"Honua.sln","projects":os.environ["AFFECTED_PROJECTS"].split()}},open(os.environ["RUNNER_TEMP"]+"/affected-base.slnf","w"))'
+            target="${RUNNER_TEMP}/managed-build.slnf"
+            python3 scripts/ci/managed-test-build.py filter --projects-file "${RUNNER_TEMP}/managed-projects.json" \
+              --base-filter "${RUNNER_TEMP}/affected-base.slnf" --output "${target}"
+          fi
+          echo "target=${target}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore producer build graph
+        env:
+          BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
+        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
 
       - name: Build (warnings as errors)
-        run: |
-          if [[ "${{ steps.affected.outputs.mode }}" == "affected" ]]; then
-            # shellcheck disable=SC2086
-            dotnet build ${{ steps.affected.outputs.projects }} \
-              --no-restore \
-              --configuration Release \
-              -graphBuild \
-              /p:TreatWarningsAsErrors=true
-          else
-            dotnet build Honua.sln \
-              --no-restore \
-              --configuration Release \
-              -graphBuild \
-              /p:TreatWarningsAsErrors=true
-          fi
+        env:
+          BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
+        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
 
+      - name: Build selected protocol profiles
+        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
+
+      # Package pristine outputs before any test/coverage process can modify them.
+      - name: Publish managed test outputs
+        id: managed-publish
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: publish
+          projects-file: ${{ runner.temp }}/managed-projects.json
+          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' }}
+
+      # Observe where the normal producer has all inspected/reference outputs.
+      # The complete collector remains required in the downstream server family;
+      # this adds only a small CI tool build, no inspected build or transport.
+      - name: Build source inventory observation tool
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 5
+        run: >-
+          dotnet build eng/ci/Honua.Ci.SourceInventory/Honua.Ci.SourceInventory.csproj
+          --configuration Release -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
+
+      - name: Verify source inventory fixture semantics
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 3
+        run: |
+          dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
+          python3 scripts/ci/source-inventory-pilot/test_run.py
+
+      - name: Observe source inventory metadata parity
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 15
+        continue-on-error: true
+        run: >-
+          python3 scripts/ci/source-inventory-pilot/run.py
+          --tool eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll
+
+      - name: Upload producer source inventory observations
+        if: always() && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 3
+        with:
+          name: source-inventory-pilot-${{ github.run_attempt }}
+          path: tests/TestResults/source-inventory-pilot/
+          if-no-files-found: warn
+          retention-days: 7
+
+
+  format:
+    name: Format Check
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore complete format context
+        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
       - name: Format Check
-        # --no-restore: the `Restore` step above already restored Honua.sln and
-        # the build consumed those exact assets, so letting `dotnet format`
-        # re-evaluate restore is pure repeated network/project work with no gain
-        # in format coverage. Identical to the lean gate's own format line.
         run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
   # Foundation test FAMILIES (#3567). This lane used to be a single serial job
@@ -779,9 +897,8 @@ jobs:
   dotnet-foundation-family-tests:
     name: .NET Foundation Tests (${{ matrix.family_name }})
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    # Each family restores and builds its own closure. Run in parallel with
-    # Build & Format Check; CI Gate still requires every result via `test-all`.
-    needs: changes
+    # Consume the verified producer; misses build only this family closure.
+    needs: [changes, build]
     runs-on: ubuntu-latest
     # Per-family budget. The pre-split job carried a single 110-minute
     # orchestrator timeout covering every step; these are the same
@@ -806,7 +923,7 @@ jobs:
             timeout_minutes: 30
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -820,7 +937,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
+        with:
+          # The server family runs TierTraitEnforcementTests, which compares the
+          # baseline with HEAD's first parent. Checkout's default depth 1 omits it.
+          fetch-depth: 2
 
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
@@ -836,31 +957,73 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
 
-      - name: Restore
-        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
+      - name: Select foundation outputs
+        run: python3 scripts/ci/managed-test-build.py projects --lane foundation --family '${{ matrix.family }}' --output "${RUNNER_TEMP}/foundation-projects.json"
+
+      - name: Restore package prerequisites before foundation materialization
+        timeout-minutes: 10
+        run: >-
+          python3 scripts/ci/managed-test-build.py fallback
+          --projects-file "${RUNNER_TEMP}/foundation-projects.json"
+          --restored-file "${RUNNER_TEMP}/foundation-projects.json"
+
+      - name: Consume managed foundation outputs
+        id: managed-consume
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: consume
+          projects-file: ${{ runner.temp }}/foundation-projects.json
+          producer-attempt: ${{ needs.build.outputs.producer_attempt }}
+          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' }}
+
+      - name: Build missing foundation outputs
+        timeout-minutes: 25
+        env:
+          RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/foundation-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
-      # The pre-split job computed an affected-project closure (ADR-0043 PR #2)
-      # and built THAT, then ran `dotnet test --no-build` against projects that
-      # closure did not necessarily contain — correct only because the fallback
-      # was a full-solution build. Each family now builds exactly the projects
-      # it is about to test, in ONE MSBuild invocation so the shared closure is
-      # walked once and parallelised. That is both smaller than the
-      # full-solution build for the Protocols/Providers families and immune to
-      # the diff shape, which is what makes `--no-build` safe below.
-      - name: Build foundation family binaries
-        timeout-minutes: 25
-        run: scripts/ci/run-foundation-family.sh build ${{ matrix.family }}
+      # Trunk validation can start before the post-merge writer finishes. Use
+      # fresh projections here too, preserving every authored-input validator.
+      - name: Regenerate foundation projections and report advisory drift
+        if: matrix.family == 'server'
+        timeout-minutes: 10
+        run: |
+          python3 -m pip install -r scripts/ci/okf-requirements.txt
+          bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
+          bash scripts/ci/report-generated-file-drift.sh
+
+      - name: Run source architecture after projection regeneration
+        if: matrix.family == 'server'
+        timeout-minutes: 15
+        run: >-
+          dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
+          --configuration Release --no-build --no-restore
+          --logger "trx;LogFileName=source-architecture-tests.trx" --results-directory ./tests/TestResults
+
+      - name: Prepare foundation Testcontainers images
+        if: matrix.family != 'core'
+        timeout-minutes: 12
+        shell: bash
+        env:
+          FOUNDATION_FAMILY: ${{ matrix.family }}
+        run: |
+          case "${FOUNDATION_FAMILY}" in
+            server|protocols) scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis ;;
+            providers) scripts/ci/prepare-testcontainer-images.sh ryuk mysql ;;
+            *) echo "::error::Unknown container-consuming foundation family"; exit 2 ;;
+          esac
 
       - name: Run foundation family tests
         timeout-minutes: 45
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
 
       - name: Upload foundation family test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -874,7 +1037,7 @@ jobs:
       # coverage (as before the split), but the artifact is uploaded per family
       # so the fan-in job below can merge whatever exists without special-casing.
       - name: Upload foundation family coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -902,7 +1065,7 @@ jobs:
     steps:
       # Needed for scripts/ci/run-foundation-family.sh, which supplies the
       # expected trx count the parity check below asserts against.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # continue-on-error: a family that died before its upload step leaves no
       # artifact to download, and that must surface as the family's own failure
@@ -923,8 +1086,12 @@ jobs:
         run: |
           trx_count=$(find tests/TestResults -name '*.trx' 2>/dev/null | wc -l)
           cobertura_count=$(find tests/TestResults -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
-          expected_trx=$(scripts/ci/run-foundation-family.sh expected-trx-count)
+          expected_trx=$(( $(scripts/ci/run-foundation-family.sh expected-trx-count) + 1 ))
           family_result='${{ needs.dotnet-foundation-family-tests.result }}'
+          if [[ "${family_result}" == success && ! -f tests/TestResults/source-architecture-tests.trx ]]; then
+            echo "::error::Source architecture evidence is missing from successful foundation families."
+            exit 1
+          fi
 
           {
             echo "### .NET Foundation Tests"
@@ -952,7 +1119,7 @@ jobs:
       # coverage is aggregated across families in one place rather than being
       # scattered by the split.
       - name: Upload foundation test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 5
         with:
@@ -962,7 +1129,7 @@ jobs:
           retention-days: 7
 
       - name: Upload foundation coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 5
         with:
@@ -1018,9 +1185,8 @@ jobs:
     # isn't lost. Delete the matrix.advisory clause once #1965 fixes the tests.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    # Every shard restores and builds its own test project. Waiting for the
-    # independent build/format job added ~14 minutes to the critical path.
-    needs: [changes, targeted-shards]
+    # Explicit producer dependency; only unmaterialized projects compile here.
+    needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     # Advisory shards (matrix.advisory == true in .github/ci-shards.json) RUN and
     # publish results but do NOT gate the merge: continue-on-error is applied to the
@@ -1041,13 +1207,13 @@ jobs:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
-      HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
+      HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: ${{ toJSON(matrix.needs_postgres) != 'false' && 'mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' || '' }}
         env:
           POSTGRES_USER: honua
-          POSTGRES_PASSWORD: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
@@ -1058,7 +1224,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # Reclaim runner disk while .NET setup and cache planning run. The
       # modular topology (8 protocol
@@ -1073,9 +1239,41 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
+
+      - name: Select shard managed outputs
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: |
+          python3 scripts/ci/managed-test-build.py projects --lane shard \
+            --project "${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}" \
+            --output "${RUNNER_TEMP}/shard-projects.json"
+
+      - name: Restore package prerequisites before shard materialization
+        timeout-minutes: 10
+        run: >-
+          python3 scripts/ci/managed-test-build.py fallback
+          --projects-file "${RUNNER_TEMP}/shard-projects.json"
+          --restored-file "${RUNNER_TEMP}/shard-projects.json"
+
+      - name: Consume managed shard outputs
+        id: managed-consume
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: consume
+          projects-file: ${{ runner.temp }}/shard-projects.json
+          producer-attempt: ${{ needs.build.outputs.producer_attempt }}
+          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && matrix.advisory != true }}
+
+      - name: Record managed materialization
+        id: managed-status
+        env:
+          RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
+        run: echo "restored=$(jq -r 'length > 0' "${RESTORED_PROJECTS}")" >> "$GITHUB_OUTPUT"
 
       - name: Plan shard-local exact-head cache
         id: shard-cache-plan
+        if: steps.managed-status.outputs.restored != 'true'
         shell: bash
         env:
           SHARD_NAME: ${{ matrix.shard_name }}
@@ -1142,6 +1340,7 @@ jobs:
 
       - name: Verify and unpack exact-head shard cache
         id: shard-cache-materialize
+        if: steps.managed-status.outputs.restored != 'true'
         shell: bash
         env:
           CACHE_HIT_FIRST: ${{ steps.shard-cache-download.outputs.cache-hit }}
@@ -1158,33 +1357,16 @@ jobs:
             --cache-hit "${cache_hit}" \
             --read-mode '${{ steps.shard-cache-plan.outputs.restore_mode }}'
 
-      - name: Restore
-        if: steps.shard-cache-materialize.outputs.restored != 'true'
-        # Phase 2 / ADR-0042 routing: each shard targets its declared csproj
-        # (matrix.csproj) and falls back to Honua.Server.Tests.csproj for
-        # legacy shards that have not been migrated to a per-protocol project.
-        env:
-          SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: |
-          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          scripts/ci/dotnet-restore-retry.sh "${csproj}"
-
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
       - name: Build server test binaries
         id: shard-cache-build
-        if: steps.shard-cache-materialize.outputs.restored != 'true'
+        if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'
         timeout-minutes: 20
         env:
-          SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: |
-          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          dotnet build "${csproj}" \
-            --no-restore \
-            --configuration Release \
-            -graphBuild \
-            /p:RunAnalyzers=false
+          RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       - name: Package shard-local cache payload
         id: shard-cache-package
@@ -1222,7 +1404,7 @@ jobs:
         run: echo "milliseconds=$(( $(date +%s%3N) - ${{ steps.shard-cache-save-start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
 
       - name: Report shard cache decision
-        if: always()
+        if: always() && steps.shard-cache-plan.outcome == 'success'
         shell: bash
         env:
           CACHE_KEY: ${{ steps.shard-cache-plan.outputs.cache_key }}
@@ -1286,6 +1468,46 @@ jobs:
             echo "- Package / save: \`${package_ms} / ${SAVE_MS:-0} ms\`"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Prepare shard Testcontainers images
+        timeout-minutes: 12
+        shell: bash
+        env:
+          SERVER_SHARD: ${{ matrix.shard_name }}
+        run: |
+          # Only these current shard filters select explicit Redis fixtures.
+          images=()
+          case "${SERVER_SHARD}" in
+            'Admin & Infrastructure'| \
+            'Migration'| \
+            'FeatureServer Editing and Relationships'| \
+            'FeatureServer Query Services and Replication'| \
+            'OGC API Tiles Coverages and Processes'| \
+            'GeoServices GPServer and NAServer'| \
+            'Caching File Storage Styling and Infrastructure'| \
+            'Operator Eval Harness'| \
+            'gRPC Protocol and Scene'| \
+            'MCP and Sessions'| \
+            'Server Features Admin Runtime Operations'| \
+            'Server Features Admin Authorization'| \
+            'Server Features Admin Authorization Matrix'| \
+            'Server Features Admin Network and Jobs'| \
+            'Server Features Admin Integrations and Automation'| \
+            'Server Features Streaming Snapshot and Conformance'| \
+            'Server Features Data Enrichment and Capabilities'| \
+            'Server Features Miscellaneous'| \
+            'Server Features Studio Packaging') images+=(redis) ;;
+          esac
+          if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
+            images+=(postgis17)
+          fi
+          # These real-process/seed proofs create their own PostGIS containers.
+          if [[ "${SERVER_SHARD}" == 'Core and Cloud Contracts' ]]; then
+            images+=(postgis16 postgis18)
+          fi
+          if (( ${#images[@]} > 0 )); then
+            scripts/ci/prepare-testcontainer-images.sh ryuk "${images[@]}"
+          fi
+
       - name: Run server test shard
         # Advisory shards (matrix.advisory==true) swallow their test failure HERE so
         # the job concludes success and the PR stays CLEAN (see job comment above).
@@ -1309,9 +1531,63 @@ jobs:
         run: |
           scripts/ci/run-server-test-shard.sh
 
+      # #3204 drain guard, ADVISORY. Three shards hit their test budget in 24
+      # hours (#4450, #4455, and Analytics Studio Export on run 34072577139).
+      # Every one of them was already spending >85% of its budget on the run
+      # BEFORE it went red, and nothing said so — the drain of test-heavy
+      # must-fix PRs kept adding cases until a shard tipped over on trunk.
+      #
+      # WHERE THIS FIRES. Only here, on the full matrix: the nightly schedule,
+      # a manual dispatch, and the train's train/batch/* dispatch. It is NOT a
+      # per-PR signal — pr-gate.yml runs no shard matrix at all, so a PR head
+      # produces no *.timing.json anywhere and there is nothing for the audit to
+      # read. Under the trailing-matrix landing model that means the warning
+      # lands after merge; the value is that it lands while the shard still
+      # PASSES at >85%, instead of one or more runs later when it times out and
+      # turns trunk red. Making this a genuine pre-merge signal would require
+      # per-PR shard execution, which #2865 deliberately removed.
+      #
+      # CONTRACT (#4790): advisory, not a gate. `--advisory` makes the guard emit
+      # HONUA_SHARD_OVER_MAX_UTILIZATION as a ::warning:: and exit 0, so the
+      # step's annotation, exit code and conclusion all say the same thing. The
+      # only hard capacity band is the shard runner's own
+      # HONUA_SHARD_CAPACITY_EXHAUSTED at 100% of the test budget, which the
+      # merge train classifies as terminal. Below it sit two warning bands:
+      # HONUA_SHARD_LOW_HEADROOM at 80% (run-server-test-shard.sh) and this
+      # guard at 85%. The job summary table is the per-run report; the
+      # multi-run trend is the re-basing audit in
+      # docs/internal/ci/shard-timeout-budgets.md. A guard that failed here would
+      # red trunk on a passing shard whenever a runner was slow, which is a
+      # flake, not a signal. continue-on-error remains only so a crash in the
+      # audit itself cannot fail a shard whose tests passed.
+      - name: Report shard headroom (advisory)
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! ls tests/TestResults/*.timing.json >/dev/null 2>&1; then
+            echo "No timing artifact for this shard; nothing to report."
+            exit 0
+          fi
+          table=$(python3 scripts/ci/audit-shard-headroom.py \
+            --timings-dir tests/TestResults --markdown 2>/dev/null \
+            | grep -Ev '\| no_data \|')
+          printf '%s\n' "${table}"
+          {
+            echo "### Server test shard headroom"
+            echo
+            printf '%s\n' "${table}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          # Advisory: the ::warning:: annotation is the signal and --advisory
+          # exits 0, so the step never reports a failure it does not mean.
+          python3 scripts/ci/audit-shard-headroom.py \
+            --timings-dir tests/TestResults --max-utilization 0.85 --advisory >/dev/null
+
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: operator-eval-report
           path: tests/TestResults/eval-report.json
@@ -1328,7 +1604,7 @@ jobs:
 
       - name: Upload shard test results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         timeout-minutes: 3
         with:
           name: server-test-results-${{ matrix.artifact_suffix }}
@@ -1357,12 +1633,9 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: changes
-    # Step caps sit inside the job cap with the >=10 min non-test overhead margin
-    # the ci-shards.json budget policy asks for (#3054): build 15m + test 10m
-    # under a 30m job cap. Measured locally on this branch: 318 discovered cases
-    # run in ~1s once built, and a cold Release build of the test project takes
-    # ~6 min, so the caps bound a hang rather than normal growth.
-    timeout-minutes: 30
+    # Native PDAL compilation (30m), managed build (15m), and real execution
+    # (10m) retain headroom for restore, image pulls, and receipt upload.
+    timeout-minutes: 75
     env:
       HONUA_TEST_CONFIGURATION: Release
       # Suppresses GdalCliFactAttribute's "tool not on PATH" skip, so a runner
@@ -1370,7 +1643,7 @@ jobs:
       # reporting them skipped with a green exit code (#3271).
       HONUA_REQUIRE_GDAL_CLI: "true"
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1410,6 +1683,36 @@ jobs:
           dotnet build tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-restore \
             --configuration Release
+
+      # The native-tools stage apt-installs from archive.ubuntu.com and compiles
+      # PDAL from source. Built cold, a mirror slowdown alone blew the 30-minute
+      # cap (trunk runs 34575122292 / 34582125299: 97 MB at 75 kB/s), so read
+      # the layers worker-gdal-image.yml publishes (mode=max) for this
+      # Dockerfile. Read-only: a native-tools-only export would evict that
+      # workflow's managed publish layers. A cache miss builds cold as before.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Log in to GHCR for build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build production PDAL native tools for execution proofs
+        # A verified digest avoids rebuilding native tools. Every miss preserves
+        # the existing 30-minute production build; actual PDAL proofs stay below.
+        timeout-minutes: 35
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_NATIVE_TOOLS_REUSE: ${{ vars.HONUA_NATIVE_TOOLS_REUSE != 'false' && 'true' || 'false' }}
+        run: python3 scripts/ci/native-tools-image.py resolve --output tests/TestResults/native-tools-proof.json
+
+      - name: Prepare GDAL Testcontainers images
+        timeout-minutes: 12
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis
 
       - name: Run Worker GDAL tests
         id: run-tests
@@ -1482,7 +1785,7 @@ jobs:
 
       - name: Upload Worker GDAL test results
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         timeout-minutes: 3
         with:
           name: worker-gdal-test-results
@@ -1497,10 +1800,12 @@ jobs:
     timeout-minutes: 25
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
+      # testcontainers-python uses this override rather than the .NET variable.
+      RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1527,10 +1832,10 @@ jobs:
             --no-restore \
             --configuration Release
 
-      - name: Install GDAL tools
+      - name: Install GDAL tools and native Parquet dependency
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin
+          sudo apt-get install -yqq gdal-bin libatomic1
           ogrinfo --version
 
       - name: Install Python test dependencies
@@ -1538,12 +1843,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tests/python/requirements.txt
 
+      - name: Prepare Python Testcontainers images
+        timeout-minutes: 7
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18
+
+      - name: Prove GeoParquet independent-consumer execution
+        # GeoParquet GA evidence requires every cell: skips and collection errors fail.
+        working-directory: tests/python
+        run: |
+          set -euo pipefail
+          mkdir -p ../TestResults
+          report="../TestResults/geoparquet-interop.xml"
+          status=0
+          pytest --tb=short -q feature_server/test_geoparquet_interop.py --junitxml="${report}" || status=$?
+          python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}" "$(git rev-parse HEAD)"
+
       - name: Run Python Integration Tests (OGC + FeatureServer + GDAL)
         run: pytest --tb=short
         working-directory: tests/python
 
       - name: Upload Python test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -1562,7 +1882,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -1588,6 +1908,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
+      - changes
       # Both the family matrix and its fan-in: a bug in the fan-in job's result
       # check cannot then leave a foundation family un-gated (#3567).
       - dotnet-foundation-family-tests
@@ -1601,7 +1922,18 @@ jobs:
       - maplibre-compat
     steps:
       - name: Check required test job results
+        env:
+          REQUIRE_TEST_LANES: ${{ needs.changes.outputs.integration_changes == 'true' }}
+          FOUNDATION_MATRIX_RESULT: ${{ needs.dotnet-foundation-family-tests.result }}
+          FOUNDATION_RESULT: ${{ needs.dotnet-foundation-tests.result }}
+          SERVER_TEST_RESULT: ${{ needs.server-tests.result }}
         run: |
+          if [[ "${REQUIRE_TEST_LANES}" == true ]]; then
+            if [[ "${FOUNDATION_MATRIX_RESULT}" != success || "${FOUNDATION_RESULT}" != success || "${SERVER_TEST_RESULT}" != success ]]; then
+              echo "::error::Selected integration lanes must succeed: foundation-matrix=${FOUNDATION_MATRIX_RESULT}, foundation=${FOUNDATION_RESULT}, server=${SERVER_TEST_RESULT}"
+              exit 1
+            fi
+          fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
             echo "::error::One or more required test jobs failed."
             exit 1
@@ -1620,7 +1952,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -1634,12 +1966,22 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pyyaml
+        shell: bash
+        run: python -m pip install 'pyyaml>=6,<7'
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          post-seed-yaml: tests/seed/browser-compat.yaml
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -1723,7 +2065,7 @@ jobs:
             echo "(could not query feature counts — DB unreachable?)"
 
       - name: Upload JavaScript test diagnostics
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: javascript-integration-results
@@ -1733,7 +2075,7 @@ jobs:
           retention-days: 7
 
       - name: Upload OpenLayers Evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: openlayers-compat-results
@@ -1750,7 +2092,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -1764,7 +2106,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -1849,7 +2191,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: esri-leaflet-browser-results
@@ -1866,7 +2208,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -1880,7 +2222,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -1963,7 +2305,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: maplibre-compat-results
           path: |
@@ -1974,7 +2316,7 @@ jobs:
       # Startup failures happen before Playwright can produce test results.
       - name: Upload MapLibre server startup log
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: maplibre-server-startup-log
           path: ${{ runner.temp }}/honua-server-setup.log
@@ -1986,6 +2328,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
+    env:
+      HONUA_MCP_CERT_TARGET: standalone
+      HONUA_BASE_URL: http://localhost:5000
+      HONUA_TRANSPORT: ${{ matrix.transport }}
+      HONUA_SERVICE_ID: test_service
+      HONUA_MCP_SERVICE_ID: test_service_mcp
+      HONUA_LAYER_ID: '0'
+      # Published Metadata V2 layer index, not service binding order.
+      HONUA_MCP_LAYER_ID: '10'
+      HONUA_API_KEY: "ci-admin-password"
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
       # Both legs check the same package.json so the value is always consistent.
@@ -1996,7 +2348,7 @@ jobs:
         transport: [grpc-web, rest]
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2010,7 +2362,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -2050,17 +2402,6 @@ jobs:
         if: steps.setup.outputs.cert-available == 'true'
         run: npm run test:certification
         working-directory: honua-sdk-js/mcp
-        env:
-          HONUA_BASE_URL: http://localhost:5000
-          HONUA_TRANSPORT: ${{ matrix.transport }}
-          HONUA_SERVICE_ID: test_service
-          HONUA_MCP_SERVICE_ID: test_service_mcp
-          HONUA_LAYER_ID: '0'
-          # MCP map tools accept the service-local layer index advertised by
-          # honua_list_layers, not the backing storage layer id from the seed.
-          HONUA_MCP_LAYER_ID: '0'
-          HONUA_DEV_AUTH: "true"
-          HONUA_API_KEY: "ci-admin-password"
 
       - name: Warn if certification ran without artifact support
         if: steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available != 'true'
@@ -2074,13 +2415,22 @@ jobs:
           echo "Land the artifact reporter in \`honua-sdk-js\` to produce release-grade evidence." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate certification artifact
-        if: always() && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
+        if: always() && steps.setup.outcome == 'success' && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
         run: npm run test:certification:artifact
         working-directory: honua-sdk-js/mcp
 
+      - name: Verify live certification artifact identity
+        if: always() && steps.setup.outcome == 'success' && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
+        shell: bash
+        run: |
+          python3 scripts/certification/verify_mcp_live_certification.py \
+            honua-sdk-js/mcp/mcp-certification-results.json \
+            --transport "$HONUA_TRANSPORT" --base-url "$HONUA_BASE_URL" \
+            --sdk-source "$(git -C honua-sdk-js rev-parse HEAD)"
+
       - name: Upload certification artifact
         if: always() && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-certification-${{ matrix.transport }}
           path: |
@@ -2098,7 +2448,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2112,7 +2462,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Honua MCP environment
         id: setup
@@ -2165,7 +2515,6 @@ jobs:
           HONUA_TRANSPORT: rest
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
-          HONUA_DEV_AUTH: "true"
           HONUA_API_KEY: "ci-admin-password"
           HONUA_EVAL_BEDROCK: ${{ steps.bedrock.outputs.available == 'true' && '1' || '' }}
           HONUA_EVAL_BEDROCK_MODEL: ${{ vars.HONUA_MCP_SMOKE_BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
@@ -2173,7 +2522,7 @@ jobs:
 
       - name: Upload LLM smoke transcripts
         if: always() && steps.setup.outputs.smoke-available == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-llm-smoke-transcripts
           path: |
@@ -2188,7 +2537,7 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: changes
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       # Ordinary PRs run the Aurora PG 16 baseline. Scheduled/manual full CI
       # and PRs labeled `ci/full` run the expanded 16/17/18 matrix.
@@ -2197,7 +2546,7 @@ jobs:
         include: ${{ fromJson(needs.changes.outputs.postgres_matrix) }}
     services:
       postgres:
-        image: ${{ matrix.pg_image }}
+        image: ${{ matrix.pg_service_image }}
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2211,7 +2560,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2233,6 +2582,10 @@ jobs:
         # benchmarks, sibling test projects) stay out of the build graph.
         run: dotnet build tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --no-restore
 
+      - name: Prepare optional-raster Testcontainers images
+        timeout-minutes: 8
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgres16
+
       - name: Run Postgres compatibility tests
         env:
           HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
@@ -2249,7 +2602,12 @@ jobs:
           # — and rejected a whole merge-train batch; the inner bound turns
           # that hang into a fast failure that names the image and leaves a
           # complete log.
-          TEST_TIMEOUT_MINUTES: "10"
+          # The full-matrix 16-3.4 leg also collects coverage. Instrumentation
+          # adds ~4 minutes of testhost start-up and slows the 2,000+ tests, so
+          # that leg measured just over 10 minutes on runs 38158644558 and
+          # 38193561888 with every test already finished (#5884). Give only the
+          # coverage leg 20 minutes; the uninstrumented legs keep 10.
+          TEST_TIMEOUT_MINUTES: ${{ matrix.collect_coverage && '20' || '10' }}
         run: |
           test_args=(
             dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
@@ -2287,7 +2645,7 @@ jobs:
           exit "${rc}"
 
       - name: Upload Postgres coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: ${{ always() && matrix.collect_coverage }}
         timeout-minutes: 3
         with:
@@ -2315,7 +2673,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2425,7 +2783,7 @@ jobs:
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2453,6 +2811,11 @@ jobs:
             -o ./publish
         working-directory: src/Honua.Server
 
+      - name: Verify Published Scene Fixture
+        run: |
+          python3 -m unittest discover -s tests/python -p test_scene_fixture_publication.py
+          python3 scripts/ci/verify-scene-fixture-publication.py --publish-dir src/Honua.Server/publish
+
       - name: Verify Binary Size
         run: |
           SIZE=$(stat --printf="%s" ./publish/Honua.Server 2>/dev/null || echo "0")
@@ -2479,7 +2842,7 @@ jobs:
       packages: write
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2494,7 +2857,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Pre-pull BuildKit image with retries
         timeout-minutes: 3
@@ -2665,7 +3028,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Resolve Console image
         id: console_image
@@ -2718,7 +3081,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
+        with:
+          # TierTraitEnforcementTests compares the baseline with HEAD's first parent.
+          fetch-depth: 2
 
       # Mirror the build job's disk reclaim — the full-solution build can
       # exhaust ubuntu-latest disk once every project writes Release outputs.
@@ -2764,12 +3130,25 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check required job results
+        env:
+          REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+          REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          FORMAT_RESULT: ${{ needs.format.result }}
         run: |
+          if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
+            echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_FORMAT}" == true && "${FORMAT_RESULT}" != success ]]; then
+            echo "::error::Selected full-format verification must succeed, got ${FORMAT_RESULT}."
+            exit 1
+          fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
             echo "::error::One or more required CI jobs failed."
             exit 1

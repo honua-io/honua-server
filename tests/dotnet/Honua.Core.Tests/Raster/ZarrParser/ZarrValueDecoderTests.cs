@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Raster.ZarrParser;
 
 public class ZarrValueDecoderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecodeFirst_Float32_DecodesValue()
     {
@@ -24,6 +25,7 @@ public class ZarrValueDecoderTests
         value.Should().BeApproximately(21.5, 1e-6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecodeFirst_Int16_DecodesValue()
     {
@@ -35,6 +37,7 @@ public class ZarrValueDecoderTests
         value.Should().Be(-123);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecode_UnsignedByte_DecodesValue()
     {
@@ -42,12 +45,14 @@ public class ZarrValueDecoderTests
         value.Should().Be(200);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecode_EmptyBuffer_ReturnsFalse()
     {
         ZarrValueDecoder.TryDecode([], "<f8", out _).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecode_UnsupportedDtype_ReturnsFalse()
     {

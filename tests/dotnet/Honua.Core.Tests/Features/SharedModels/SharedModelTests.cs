@@ -16,6 +16,7 @@ public class SharedModelTests
     private static readonly double[] _expectedBbox = [-180.0, -90.0, 180.0, 90.0];
     private static readonly double[] _expectedBbox2dLower = [-180.0, -90.0];
     private static readonly double[] _expectedBbox2dUpper = [180.0, 90.0];
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SpatialReference_Create_WithWkidOnly_SetsCorrectValues()
     {
@@ -30,6 +31,7 @@ public class SharedModelTests
         spatialRef.Wkt.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SpatialReference_Create_WithAllParameters_SetsCorrectValues()
     {
@@ -44,6 +46,7 @@ public class SharedModelTests
         spatialRef.Wkt.Should().Be("GEOGCS[\"WGS 84\"]");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SpatialReference_Create_WithGeocentricSrid_IsNotGeographic()
     {
@@ -53,6 +56,7 @@ public class SharedModelTests
         spatialRef.IsProjected.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SpatialReference_Create_WithGeocentricWkidIn4000Range_IsNotGeographic()
     {
@@ -62,6 +66,7 @@ public class SharedModelTests
         spatialRef.IsProjected.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SpatialReference_Create_WithGeocentricItrfWkid_IsNotGeographic()
     {
@@ -71,6 +76,7 @@ public class SharedModelTests
         spatialRef.IsProjected.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SpatialReference_Create_WithGeodeticCartesianWkt_IsNotGeographic()
     {
@@ -86,6 +92,24 @@ public class SharedModelTests
         spatialRef.IsProjected.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void SpatialReference_Create_WithWkt1Geocentric_IsNotGeographicEvenWhenWkidIsGeographic()
+    {
+        // WKID 4326 is on the geographic allowlist. WKT must win, and the WKT1 token is
+        // GEOCCS — the substring GEOCS matches neither GEOCCS nor GEOGCS.
+        var spatialRef = SpatialReference.Create(
+            4326,
+            null,
+            null,
+            null,
+            "GEOCCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"metre\",1]]");
+
+        spatialRef.IsGeographic.Should().BeFalse();
+        spatialRef.IsProjected.Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SpatialReference_Create_WithGeographicWkt_IsGeographic()
     {
@@ -101,6 +125,7 @@ public class SharedModelTests
         spatialRef.IsProjected.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ServiceError_Create_WithCodeAndMessage_SetsCorrectValues()
     {
@@ -114,6 +139,7 @@ public class SharedModelTests
         error.Details.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ServiceError_GetNumericCode_ReturnsCorrectValue()
     {
@@ -126,6 +152,7 @@ public class SharedModelTests
         stringError.GetNumericCode().Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GeoJsonFeatureBase_Create_WithoutGeometry_SetsCorrectValues()
     {
@@ -145,6 +172,7 @@ public class SharedModelTests
         feature.HasGeometry.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void PagedResponseBase_Create_WithAllParameters_SetsCorrectValues()
     {
@@ -157,6 +185,7 @@ public class SharedModelTests
         response.ExceededTransferLimit.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ToBoundingBox_ReturnsCorrectArray()
     {
@@ -170,6 +199,7 @@ public class SharedModelTests
         bbox.Should().BeEquivalentTo(_expectedBbox);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ToBoundingBox2D_ReturnsCorrectArray()
     {
@@ -185,6 +215,7 @@ public class SharedModelTests
         bbox2d[1].Should().BeEquivalentTo(_expectedBbox2dUpper);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ToFeatureExtent_FromBoundingBox_ReturnsCorrectExtent()
     {
@@ -202,6 +233,7 @@ public class SharedModelTests
         extent.SpatialReference.Should().Be(4326);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BoundingBox_WithAntimeridianCrossing_IsValidAndContainsRanges()
     {
@@ -218,6 +250,7 @@ public class SharedModelTests
         crossing.Intersects(middle).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BoundingBox_Union_DisjointRanges_UsesShortestLongitudeSpan()
     {
@@ -231,6 +264,7 @@ public class SharedModelTests
         union.MaxX.Should().Be(40);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BoundingBox_Union_AcrossDateline_PreservesCrossing()
     {
@@ -244,6 +278,7 @@ public class SharedModelTests
         union.MaxX.Should().Be(-170);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BoundingBox_Intersection_PreservesAntimeridianCrossing()
     {
@@ -258,6 +293,7 @@ public class SharedModelTests
         intersection!.Value.MaxX.Should().Be(-175);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ExtractSridFromCrs_WithEpsgUri_ReturnsCorrectSrid()
     {
@@ -271,6 +307,7 @@ public class SharedModelTests
         srid.Should().Be(4326);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ExtractSridFromCrs_WithEpsgPrefix_ReturnsCorrectSrid()
     {
@@ -284,6 +321,7 @@ public class SharedModelTests
         srid.Should().Be(3857);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ExtractSridFromCrs_WithCrs84Alias_ReturnsWgs84Srid()
     {
@@ -297,6 +335,7 @@ public class SharedModelTests
         srid.Should().Be(4326);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_TryExtractSridFromCrs_WithInvalidCrs_ReturnsFalse()
     {
@@ -311,6 +350,7 @@ public class SharedModelTests
         srid.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ExtractSridFromCrs_WithInvalidCrs_ThrowsFormatException()
     {
@@ -324,6 +364,7 @@ public class SharedModelTests
         act.Should().Throw<FormatException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtentExtensions_ToOgcCrsUri_ReturnsCorrectFormat()
     {
@@ -334,6 +375,7 @@ public class SharedModelTests
         crsUri.Should().Be("http://www.opengis.net/def/crs/EPSG/0/3857");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ModelConversions_ToGeoJsonBase_FromFeature_ReturnsCorrectBase()
     {
@@ -355,6 +397,7 @@ public class SharedModelTests
         geoJsonBase.HasGeometry.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ModelConversions_ToSpatialReference_FromSrid_ReturnsCorrectSpatialRef()
     {
@@ -366,6 +409,7 @@ public class SharedModelTests
         spatialRef.LatestWkid.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ModelConversions_CreateValidationError_ReturnsCorrectError()
     {
@@ -378,6 +422,7 @@ public class SharedModelTests
         error.Target.Should().Be("fieldName");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ModelConversions_CreateNotFoundError_ReturnsCorrectError()
     {
@@ -389,6 +434,7 @@ public class SharedModelTests
         error.Message.Should().Be("Layer not found");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GeoJsonGeometryBase_Create_WithType_SetsCorrectValues()
     {

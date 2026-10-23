@@ -141,6 +141,7 @@ public sealed class GdalProximityCorrectnessTests
                             ? noData : allocation ? label : distance;
                         var actual = output.RootElement.GetProperty("cells")[y][x].GetDouble();
                         var because = $"{processId} {units} max={limit} only23={onlySecond}, cell ({x},{y})";
+                        // codeql[cs/equality-on-floats]: nodata is an exact sentinel; distances use BeApproximately below
                         if (allocation || expected == noData)
                         {
                             actual.Should().Be(expected, because);

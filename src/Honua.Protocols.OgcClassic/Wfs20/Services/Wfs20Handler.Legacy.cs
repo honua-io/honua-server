@@ -7,10 +7,13 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
@@ -45,11 +48,11 @@ internal sealed partial class Wfs20Handler
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var featureTypes = await BuildFeatureTypesAsync(descriptors, cancellationToken).ConfigureAwait(false);
-        var wfsUrl = $"{baseUrl.TrimEnd('/')}/wfs";
+        var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl.TrimEnd('/')}/wfs");
 
         return IsWfs10(version)
             ? BuildWfs10Capabilities(wfsUrl, featureTypes)
-            : BuildWfs11Capabilities(wfsUrl, featureTypes);
+            : BuildWfs11Capabilities(wfsUrl, featureTypes, _featureReader);
     }
 
     internal async Task<string> HandleLegacyDescribeFeatureTypeAsync(
@@ -134,6 +137,18 @@ internal sealed partial class Wfs20Handler
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
             {
+                if (await RequiresAuthenticationForWithheldTypesAsync(context, unknownTypes, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+                    return CreateLegacyWfsException(
+                        version,
+                        "AccessDenied",
+                        AccessPolicyHelpers.AuthRequiredMessage,
+                        "typeName",
+                        StatusCodes.Status401Unauthorized);
+                }
+
                 return CreateLegacyWfsException(
                     version,
                     "InvalidParameterValue",
@@ -168,7 +183,7 @@ internal sealed partial class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return CreateLegacyWfsException(version, "InvalidParameterValue", "Invalid WFS parameter value; see logs for details.");
+            return CreateLegacyWfsException(version, "InvalidParameterValue", DescribeValidationFailure(ex));
         }
         catch (WfsQueryException ex)
         {
@@ -197,8 +212,11 @@ internal sealed partial class Wfs20Handler
         return new LegacyXmlResult(xml, "application/xml", statusCode);
     }
 
-    private static string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes)
+    internal static string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes, IFeatureReader reader)
     {
+        var edits = reader is IFeatureDataProvider provider
+            ? provider.Capabilities.Edits
+            : FeatureProviderEditCapabilities.ReadOnly;
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
         sb.AppendLine($"""<wfs:WFS_Capabilities xmlns:wfs="{LegacyWfsNamespace}" xmlns:ows="{Ows10Namespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:cdf="http://www.opengis.net/cite/data" xmlns:cgf="http://www.opengis.net/cite/geometry" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.1.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.1.0/wfs.xsd">""");
@@ -223,7 +241,7 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("    </ows:ServiceContact>");
         sb.AppendLine("  </ows:ServiceProvider>");
         AppendWfs11OperationsMetadata(sb, wfsUrl);
-        AppendWfs11FeatureTypeList(sb, featureTypes);
+        AppendWfs11FeatureTypeList(sb, featureTypes, edits);
         AppendWfs11FilterCapabilities(sb);
         sb.AppendLine("</wfs:WFS_Capabilities>");
         return sb.ToString();
@@ -238,7 +256,10 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("    <Name>Honua WFS</Name>");
         sb.AppendLine("    <Title>Honua WFS 1.0.0</Title>");
         sb.AppendLine("    <Abstract>Honua WFS 1.0.0 compatibility endpoint.</Abstract>");
-        sb.AppendLine("    <OnlineResource>http://honua.io</OnlineResource>");
+        // WFS 1.0.0 Service/OnlineResource is the top-level URL of this service, so it is
+        // the deployment's own endpoint (Public:BaseUrl), never a vendor site: customers
+        // serve Honua on their own domains.
+        sb.AppendLine($"""    <OnlineResource>{XmlEscape(wfsUrl)}</OnlineResource>""");
         sb.AppendLine("    <Fees>NONE</Fees>");
         sb.AppendLine("    <AccessConstraints>NONE</AccessConstraints>");
         sb.AppendLine("  </Service>");
@@ -247,6 +268,7 @@ internal sealed partial class Wfs20Handler
         AppendWfs10Operation(sb, "GetCapabilities", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: false);
         AppendWfs10Operation(sb, "DescribeFeatureType", wfsUrl, includeSchemaDescriptionLanguage: true, includeResultFormat: false);
         AppendWfs10Operation(sb, "GetFeature", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: true);
+        AppendWfs10Operation(sb, "Transaction", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: false, includeGet: false);
         sb.AppendLine("    </Request>");
         sb.AppendLine("  </Capability>");
         AppendWfs10FeatureTypeList(sb, featureTypes);
@@ -261,15 +283,19 @@ internal sealed partial class Wfs20Handler
         AppendWfs11Operation(sb, "GetCapabilities", wfsUrl);
         AppendWfs11Operation(sb, "DescribeFeatureType", wfsUrl);
         AppendWfs11Operation(sb, "GetFeature", wfsUrl);
+        AppendWfs11Operation(sb, "Transaction", wfsUrl, includeGet: false);
         sb.AppendLine("  </ows:OperationsMetadata>");
     }
 
-    private static void AppendWfs11Operation(StringBuilder sb, string name, string wfsUrl)
+    private static void AppendWfs11Operation(StringBuilder sb, string name, string wfsUrl, bool includeGet = true)
     {
         sb.Append("    <ows:Operation name=\"").Append(XmlEscape(name)).AppendLine("\">");
         sb.AppendLine("      <ows:DCP>");
         sb.AppendLine("        <ows:HTTP>");
-        sb.Append("          <ows:Get xlink:href=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        if (includeGet)
+        {
+            sb.Append("          <ows:Get xlink:href=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        }
         sb.Append("          <ows:Post xlink:href=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
         sb.AppendLine("        </ows:HTTP>");
         sb.AppendLine("      </ows:DCP>");
@@ -281,7 +307,8 @@ internal sealed partial class Wfs20Handler
         string name,
         string wfsUrl,
         bool includeSchemaDescriptionLanguage,
-        bool includeResultFormat)
+        bool includeResultFormat,
+        bool includeGet = true)
     {
         sb.Append("      <").Append(name).AppendLine(">");
         if (includeSchemaDescriptionLanguage)
@@ -300,16 +327,34 @@ internal sealed partial class Wfs20Handler
 
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
-        sb.Append("            <Get onlineResource=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        if (includeGet)
+        {
+            sb.Append("            <Get onlineResource=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        }
         sb.Append("            <Post onlineResource=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
         sb.AppendLine("          </HTTP>");
         sb.AppendLine("        </DCPType>");
         sb.Append("      </").Append(name).AppendLine(">");
     }
 
-    private static void AppendWfs11FeatureTypeList(StringBuilder sb, IReadOnlyList<FeatureType> featureTypes)
+    private static void AppendWfs11FeatureTypeList(StringBuilder sb, IReadOnlyList<FeatureType> featureTypes, FeatureProviderEditCapabilities edits)
     {
         sb.AppendLine("  <wfs:FeatureTypeList>");
+        sb.AppendLine("    <wfs:Operations>");
+        sb.AppendLine("      <wfs:Operation>Query</wfs:Operation>");
+        if (edits.SupportsCreate)
+        {
+            sb.AppendLine("      <wfs:Operation>Insert</wfs:Operation>");
+        }
+        if (edits.SupportsUpdate)
+        {
+            sb.AppendLine("      <wfs:Operation>Update</wfs:Operation>");
+        }
+        if (edits.SupportsDelete)
+        {
+            sb.AppendLine("      <wfs:Operation>Delete</wfs:Operation>");
+        }
+        sb.AppendLine("    </wfs:Operations>");
         foreach (var featureType in featureTypes)
         {
             sb.AppendLine("    <wfs:FeatureType>");
@@ -341,6 +386,9 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("  <FeatureTypeList>");
         sb.AppendLine("    <Operations>");
         sb.AppendLine("      <Query />");
+        sb.AppendLine("      <Insert />");
+        sb.AppendLine("      <Update />");
+        sb.AppendLine("      <Delete />");
         sb.AppendLine("    </Operations>");
         foreach (var featureType in featureTypes)
         {
@@ -481,7 +529,7 @@ internal sealed partial class Wfs20Handler
         var queryResults = new List<(LayerQueryPlan Plan, ImmutableArray<Feature> Features)>(planSet.Plans.Length);
         foreach (var plan in planSet.Plans)
         {
-            var result = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken)
+            var result = await ReaderFor(plan).QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken)
                 .ConfigureAwait(false);
             queryResults.Add((plan, result.Items));
         }
@@ -646,16 +694,17 @@ internal sealed partial class Wfs20Handler
 
     private static void WriteLegacyGeometryField(XmlWriter writer, string version, LayerQueryPlan plan, Feature feature)
     {
-        var geometryField = plan.Descriptor.Resource.FindPrimaryGeometryField();
-        if (geometryField is null || feature.Geometry is null)
+        var geometryPropertyName = ResolveGeometryPropertyName(plan.Descriptor.Resource);
+        if (geometryPropertyName is null || feature.Geometry is null)
         {
             return;
         }
 
+        var geometryField = plan.Descriptor.Resource.FindPrimaryGeometryField();
         writer.WriteStartElement(
-            GetFieldNamespacePrefix(plan.Descriptor, geometryField),
-            XmlConvert.EncodeLocalName(geometryField.Name),
-            GetFieldNamespaceUri(plan.Descriptor, geometryField));
+            geometryField is null ? plan.Descriptor.NamespacePrefix : GetFieldNamespacePrefix(plan.Descriptor, geometryField),
+            XmlConvert.EncodeLocalName(geometryPropertyName),
+            geometryField is null ? plan.Descriptor.NamespaceUri : GetFieldNamespaceUri(plan.Descriptor, geometryField));
         WriteLegacyGeometry(writer, version, plan, feature.Geometry);
         writer.WriteEndElement();
     }
@@ -731,54 +780,120 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static void WriteGml31Geometry(XmlWriter writer, Geometry geometry, string srsName, AxisOrder axisOrder, bool includeSrsName)
+    private static string? BuildGeometryGmlFragment(byte[]? geometryWkb, LayerQueryPlan plan, string gmlNamespace)
+    {
+        if (geometryWkb is null || geometryWkb.Length == 0)
+        {
+            return null;
+        }
+
+        // A fresh reader: NTS WKBReader is not safe to share across requests.
+        var geometry = new WKBReader().Read(geometryWkb);
+        var outputSrid = plan.Query.OutputSrid ??
+            plan.Query.SpatialReferenceSrid ??
+            plan.Descriptor.Resource.ReadSrid() ??
+            SpatialReference.WGS84.Wkid;
+        var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
+        var srsName = FormatCrs(outputSrid, axisOrder);
+        var settings = new XmlWriterSettings
+        {
+            OmitXmlDeclaration = true,
+            ConformanceLevel = ConformanceLevel.Fragment,
+            Indent = false
+        };
+        var builder = new StringBuilder();
+        using (var writer = XmlWriter.Create(builder, settings))
+        {
+            WriteGml31Geometry(writer, geometry, srsName, axisOrder, includeSrsName: true, gmlNamespace);
+            writer.Flush();
+        }
+
+        return builder.ToString();
+    }
+
+    private static void WriteGml31Geometry(
+        XmlWriter writer,
+        Geometry geometry,
+        string srsName,
+        AxisOrder axisOrder,
+        bool includeSrsName,
+        string gmlNamespace = GmlLegacyNamespace)
     {
         switch (geometry)
         {
             case Point point:
-                writer.WriteStartElement("gml", "Point", GmlLegacyNamespace);
+                writer.WriteStartElement("gml", "Point", gmlNamespace);
                 WriteSrsName(writer, srsName, includeSrsName);
-                writer.WriteElementString("gml", "pos", GmlLegacyNamespace, FormatCoordinatePair(point.Coordinate, axisOrder, separator: " "));
+                writer.WriteElementString("gml", "pos", gmlNamespace, FormatCoordinatePair(point.Coordinate, axisOrder, separator: " "));
                 writer.WriteEndElement();
                 break;
             case LineString line:
-                writer.WriteStartElement("gml", "LineString", GmlLegacyNamespace);
+                writer.WriteStartElement("gml", "LineString", gmlNamespace);
                 WriteSrsName(writer, srsName, includeSrsName);
-                writer.WriteElementString("gml", "posList", GmlLegacyNamespace, FormatPosList(line.Coordinates, axisOrder));
+                writer.WriteElementString("gml", "posList", gmlNamespace, FormatPosList(line.Coordinates, axisOrder));
                 writer.WriteEndElement();
                 break;
             case Polygon polygon:
-                writer.WriteStartElement("gml", "Polygon", GmlLegacyNamespace);
+                writer.WriteStartElement("gml", "Polygon", gmlNamespace);
                 WriteSrsName(writer, srsName, includeSrsName);
-                writer.WriteStartElement("gml", "exterior", GmlLegacyNamespace);
-                writer.WriteStartElement("gml", "LinearRing", GmlLegacyNamespace);
-                writer.WriteElementString("gml", "posList", GmlLegacyNamespace, FormatPosList(polygon.ExteriorRing.Coordinates, axisOrder));
+                writer.WriteStartElement("gml", "exterior", gmlNamespace);
+                writer.WriteStartElement("gml", "LinearRing", gmlNamespace);
+                writer.WriteElementString("gml", "posList", gmlNamespace, FormatPosList(polygon.ExteriorRing.Coordinates, axisOrder));
                 writer.WriteEndElement();
                 writer.WriteEndElement();
                 foreach (var interior in Enumerable.Range(0, polygon.NumInteriorRings).Select(polygon.GetInteriorRingN))
                 {
-                    writer.WriteStartElement("gml", "interior", GmlLegacyNamespace);
-                    writer.WriteStartElement("gml", "LinearRing", GmlLegacyNamespace);
-                    writer.WriteElementString("gml", "posList", GmlLegacyNamespace, FormatPosList(interior.Coordinates, axisOrder));
+                    writer.WriteStartElement("gml", "interior", gmlNamespace);
+                    writer.WriteStartElement("gml", "LinearRing", gmlNamespace);
+                    writer.WriteElementString("gml", "posList", gmlNamespace, FormatPosList(interior.Coordinates, axisOrder));
                     writer.WriteEndElement();
                     writer.WriteEndElement();
                 }
 
                 writer.WriteEndElement();
+                break;
+            // NTS models MultiPoint, MultiLineString and MultiPolygon as GeometryCollection
+            // subclasses, so these cases must precede the collection case; otherwise a
+            // homogeneous aggregate is emitted as gml:MultiGeometry and a client infers a
+            // mixed-geometry layer instead of the advertised multi-geometry one. GML 3.0
+            // deprecated gml:MultiLineString and gml:MultiPolygon in favour of MultiCurve
+            // and MultiSurface, which is also what MapGeometryPropertyType advertises for
+            // these geometry types; the GML 2 writer below keeps the older spellings.
+            case MultiPoint multiPoint:
+                WriteGml31Aggregate(writer, multiPoint, "MultiPoint", "pointMember", srsName, axisOrder, includeSrsName, gmlNamespace);
+                break;
+            case MultiLineString multiLineString:
+                WriteGml31Aggregate(writer, multiLineString, "MultiCurve", "curveMember", srsName, axisOrder, includeSrsName, gmlNamespace);
+                break;
+            case MultiPolygon multiPolygon:
+                WriteGml31Aggregate(writer, multiPolygon, "MultiSurface", "surfaceMember", srsName, axisOrder, includeSrsName, gmlNamespace);
                 break;
             case GeometryCollection collection:
-                writer.WriteStartElement("gml", "MultiGeometry", GmlLegacyNamespace);
-                WriteSrsName(writer, srsName, includeSrsName);
-                for (var i = 0; i < collection.NumGeometries; i++)
-                {
-                    writer.WriteStartElement("gml", "geometryMember", GmlLegacyNamespace);
-                    WriteGml31Geometry(writer, collection.GetGeometryN(i), srsName, axisOrder, includeSrsName: false);
-                    writer.WriteEndElement();
-                }
-
-                writer.WriteEndElement();
+                WriteGml31Aggregate(writer, collection, "MultiGeometry", "geometryMember", srsName, axisOrder, includeSrsName, gmlNamespace);
                 break;
         }
+    }
+
+    private static void WriteGml31Aggregate(
+        XmlWriter writer,
+        GeometryCollection aggregate,
+        string elementName,
+        string memberElementName,
+        string srsName,
+        AxisOrder axisOrder,
+        bool includeSrsName,
+        string gmlNamespace = GmlLegacyNamespace)
+    {
+        writer.WriteStartElement("gml", elementName, gmlNamespace);
+        WriteSrsName(writer, srsName, includeSrsName);
+        for (var i = 0; i < aggregate.NumGeometries; i++)
+        {
+            writer.WriteStartElement("gml", memberElementName, gmlNamespace);
+            WriteGml31Geometry(writer, aggregate.GetGeometryN(i), srsName, axisOrder, includeSrsName: false, gmlNamespace);
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
     }
 
     private static void WriteGml2Geometry(XmlWriter writer, Geometry geometry, string srsName, AxisOrder axisOrder, bool includeSrsName)
@@ -1070,6 +1185,50 @@ internal sealed partial class Wfs20Handler
 </xsd:schema>
 """;
 
+    /// <summary>
+    /// XML nesting allowed while rewriting a Filter Encoding 1.1 filter. The rewrite runs before
+    /// <see cref="Fes20Parser"/> applies the shared expression-depth guard, so it is bounded here:
+    /// the shared expression limit plus room for GML geometry nested inside a spatial operand.
+    /// </summary>
+    private const int MaxLegacyFilterElementDepth = FilterExpressionNormalizer.MaxExpressionDepth + 16;
+
+    /// <summary>
+    /// Rewrites a WFS 2.0 FILTER that uses the Filter Encoding 1.1 <c>ogc:Filter</c> encoding
+    /// into FES 2.0, using the same rewrite as the WFS 1.x endpoints. Many clients keep sending
+    /// that encoding after negotiating WFS 2.0.0. Any other filter is returned unchanged, so FES
+    /// 2.0 input and malformed XML still reach <see cref="Fes20Parser"/> as before.
+    /// </summary>
+    internal static string? NormalizeOgcFilterEncoding(string? filter)
+    {
+        // Cheap pre-check: an element can only be in the ogc namespace if the namespace URI
+        // appears in the text, so FES 2.0 filters are not parsed an extra time.
+        if (string.IsNullOrWhiteSpace(filter) ||
+            !filter.Contains(OgcFilterNamespace, StringComparison.Ordinal))
+        {
+            return filter;
+        }
+
+        XDocument document;
+        try
+        {
+            document = SecureXmlDocumentParser.Parse(filter, LoadOptions.PreserveWhitespace);
+        }
+        catch (XmlException)
+        {
+            return filter;
+        }
+
+        var root = document.Root;
+        if (root is null ||
+            !string.Equals(root.Name.NamespaceName, OgcFilterNamespace, StringComparison.Ordinal) ||
+            !string.Equals(root.Name.LocalName, "Filter", StringComparison.Ordinal))
+        {
+            return filter;
+        }
+
+        return NormalizeLegacyFilterElement(root).ToString(SaveOptions.DisableFormatting);
+    }
+
     private static string? NormalizeLegacyFilterXml(string? filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
@@ -1080,17 +1239,23 @@ internal sealed partial class Wfs20Handler
         try
         {
             var document = SecureXmlDocumentParser.Parse(filter, LoadOptions.PreserveWhitespace);
-            var root = document.Root ?? throw new Fes20ParseException("FILTER must contain a root element.");
+            var root = document.Root ?? throw Fes20ParseException.Reportable("FILTER must contain a root element.");
             return NormalizeLegacyFilterElement(root).ToString(SaveOptions.DisableFormatting);
         }
         catch (XmlException ex)
         {
-            throw new Fes20ParseException("Invalid legacy WFS FILTER XML.", ex);
+            throw Fes20ParseException.Reportable("FILTER is not well-formed XML.", ex);
         }
     }
 
-    private static XElement NormalizeLegacyFilterElement(XElement element)
+    private static XElement NormalizeLegacyFilterElement(XElement element, int depth = 1)
     {
+        if (depth > MaxLegacyFilterElementDepth)
+        {
+            throw Fes20ParseException.Reportable(
+                $"Filter exceeds the maximum XML nesting depth of {MaxLegacyFilterElementDepth} elements.");
+        }
+
         if (TryCreateLegacyCoordinateGeometry(element, out var normalizedGeometry))
         {
             return normalizedGeometry;
@@ -1104,7 +1269,7 @@ internal sealed partial class Wfs20Handler
             switch (node)
             {
                 case XElement child:
-                    normalized.Add(NormalizeLegacyFilterElement(child));
+                    normalized.Add(NormalizeLegacyFilterElement(child, depth + 1));
                     break;
                 case XCData cdata:
                     normalized.Add(new XCData(cdata.Value));
@@ -1211,7 +1376,7 @@ internal sealed partial class Wfs20Handler
     {
         if (!TryReadLegacyCoordinateTuples(box, out var coordinates) || coordinates.Length < 2)
         {
-            throw new Fes20ParseException("GML Box must contain at least two coordinate tuples.");
+            throw Fes20ParseException.Reportable("GML Box must contain at least two coordinate tuples.");
         }
 
         var envelope = CreateNormalizedGmlElement(box, "Envelope");
@@ -1246,6 +1411,7 @@ internal sealed partial class Wfs20Handler
             .ToArray();
         if (coordElements.Length > 0)
         {
+            Fes20Parser.EnsureCoordinateCountWithinLimits(coordElements.Length);
             coordinates = coordElements.Select(ParseLegacyCoordElement).ToArray();
             return true;
         }
@@ -1259,11 +1425,18 @@ internal sealed partial class Wfs20Handler
         var coordinateSeparator = coordinatesElement.Attribute("cs")?.Value ?? ",";
         var tupleSeparator = coordinatesElement.Attribute("ts")?.Value ?? " ";
         var decimalSeparator = coordinatesElement.Attribute("decimal")?.Value ?? ".";
-        var tuples = SplitLegacyCoordinateTuples(coordinatesElement.Value, tupleSeparator);
+
+        // Apply the shared filter-geometry limits before splitting and rewriting, so an
+        // oversized list is rejected without materialising it.
+        var coordinateText = coordinatesElement.Value;
+        Fes20Parser.EnsureGeometryTextWithinLimits(coordinateText);
+        var tuples = SplitLegacyCoordinateTuples(coordinateText, tupleSeparator);
         if (tuples.Length == 0)
         {
-            throw new Fes20ParseException("GML coordinates must contain at least one coordinate tuple.");
+            throw Fes20ParseException.Reportable("GML coordinates must contain at least one coordinate tuple.");
         }
+
+        Fes20Parser.EnsureCoordinateCountWithinLimits(tuples.Length);
 
         var coordinates = new Coordinate[tuples.Length];
         for (var index = 0; index < tuples.Length; index++)
@@ -1273,7 +1446,7 @@ internal sealed partial class Wfs20Handler
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (ordinates.Length < 2)
             {
-                throw new Fes20ParseException("GML coordinate tuple must contain at least two ordinates.");
+                throw Fes20ParseException.Reportable("GML coordinate tuple must contain at least two ordinates.");
             }
 
             coordinates[index] = new Coordinate(
@@ -1306,7 +1479,7 @@ internal sealed partial class Wfs20Handler
             ?.Value;
         if (string.IsNullOrWhiteSpace(x) || string.IsNullOrWhiteSpace(y))
         {
-            throw new Fes20ParseException("GML coord must contain X and Y ordinates.");
+            throw Fes20ParseException.Reportable("GML coord must contain X and Y ordinates.");
         }
 
         return new Coordinate(ParseLegacyOrdinate(x, "."), ParseLegacyOrdinate(y, "."));
@@ -1322,7 +1495,7 @@ internal sealed partial class Wfs20Handler
         if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate) ||
             !double.IsFinite(ordinate))
         {
-            throw new Fes20ParseException("GML coordinate ordinate must be a finite number.");
+            throw Fes20ParseException.Reportable("GML coordinate ordinate must be a finite number.");
         }
 
         return ordinate;

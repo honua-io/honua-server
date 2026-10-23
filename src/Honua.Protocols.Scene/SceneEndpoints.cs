@@ -95,6 +95,11 @@ internal static partial class SceneEndpoints
                 + "Honua scene metadata and source references without converting 3D Tiles "
                 + "geometry into native USD geometry.")
             .WithTags(ScenesTag)
+            // Explicit no-cache decision (SEC-20), unlike its tileset/asset siblings:
+            // this route never opted into a named output-cache policy, so it also never
+            // picked up the range/no-store/access-token bypasses those policies carry.
+            // Declare the decision rather than inherit one from the shared base policy.
+            .CacheOutput(static policy => policy.NoCache())
             .Produces(StatusCodes.Status200OK, contentType: SceneContentTypes.OpenUsdStageContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
@@ -402,10 +407,8 @@ internal static partial class SceneEndpoints
                         // InvalidOperationException from its constructor
                         // when any binding option is invalid (signing key
                         // unset, TTL or refresh fraction out of range).
-                        // Resolving inside this try block keeps the
-                        // misconfiguration response structured (matches the
-                        // issue endpoint) rather than surfacing as an
-                        // unhandled 500.
+                        // Resolving inside this try block keeps verifier
+                        // configuration state from escaping as a server error.
                         var envelopeService = context.RequestServices
                             .GetRequiredService<ISceneAccessEnvelopeService>();
                         validation = envelopeService.Validate(rawToken, scene.Id);
@@ -413,15 +416,19 @@ internal static partial class SceneEndpoints
                     catch (InvalidOperationException ex)
                     {
                         SceneAccessLog.OptionsMisconfigured(logger, scene.Id, ex.Message);
-                        return StandardErrorHelpers.CreateInternalServerError(
+                        return StandardErrorHelpers.CreateUnauthorized(
                             context,
-                            "Scene access envelope verification is not configured.");
+                            "Scene access credential is invalid.");
                     }
 
                     switch (validation)
                     {
                         case EnvelopeValidationResult.Allowed:
                             tokenTransport = extractedTokenTransport;
+                            // Envelope authorization does not attach a principal.
+                            // Notify the final cache policy so a fresh private
+                            // response cannot outlive the token's authorization.
+                            AuthenticationResponseCachePolicy.MarkAuthenticated(context);
                             break;
                         case EnvelopeValidationResult.Expired:
                             SceneAccessLog.TokenExpired(logger, scene.Id);
@@ -583,7 +590,7 @@ internal static partial class SceneEndpoints
         headers[HeaderNames.AcceptRanges] = "bytes";
     }
 
-    private static void SetDynamicSceneCacheHeaders(
+    internal static void SetDynamicSceneCacheHeaders(
         HttpContext context,
         string etag,
         TimeSpan maxAge,

@@ -134,13 +134,17 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 afterRestartPoll.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
                 afterRestartPoll.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
                     .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
-                childAfterRestartPoll.Should().BeNull("a missing child record must not be treated as a successful rollback");
                 if (childAfterRestartPoll is not null)
                 {
-                    throw new InvalidOperationException("The child operation unexpectedly remained in the store.");
+                    throw new InvalidOperationException(
+                        "a missing child record must not be treated as a successful rollback");
                 }
                 afterRestartPoll.ErrorMessage.Should().Contain("could not be read back");
-                runtime.RunRequests.Should().HaveCount(2, "the missing child must not trigger a second provider rollback");
+                // honua-server#4618: the previous replica is retained (not stopped) through cutover, so
+                // the initial rollback settled by repointing the proxy directly rather than relaunching
+                // from image — only the initial standby ever ran. The missing child after restart must
+                // not add a second provider start either.
+                runtime.RunRequests.Should().HaveCount(1, "the retained previous replica let rollback repoint the proxy without a relaunch, and the missing child after restart must not trigger a provider start either");
                 ledger.FinalSplitStateReason = afterRestartPoll.ErrorMessage;
             }
             else if (priorRevisionAvailable)
@@ -161,7 +165,10 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                     .Should().Be(CoordinatedReleaseStepStatus.RolledBack);
                 childAfterSettlement.Status.Should().Be(WorkflowOperationStatus.RolledBack);
                 childAfterSettlement.ObservedState.Should().Be(CurrentRevision);
-                runtime.RunRequests.Should().HaveCount(2, "the initial standby and one prior-revision relaunch are the only provider starts");
+                // honua-server#4618: the previous replica is retained (not stopped) through cutover, so
+                // rollback recovers by repointing the proxy directly at the still-running prior revision
+                // instead of relaunching it from image — the initial standby is the only provider start.
+                runtime.RunRequests.Should().HaveCount(1, "the retained previous replica made a relaunch unnecessary");
                 restartedBackend.RollbackRequestCalls.Should().Be(0, "restart observes settlement and must not issue a second provider rollback");
 
                 var bodyObservedAt = DateTimeOffset.UtcNow;
@@ -187,7 +194,6 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             else
             {
                 afterRestartPoll.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
-                childAfterRestartPoll.Should().NotBeNull();
                 var manualChildAfterRestart = childAfterRestartPoll ?? throw new InvalidOperationException("The manual child operation could not be read back.");
                 manualChildAfterRestart.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
                 manualChildAfterRestart.ObservedState.Should().Be(DesiredRevision, "the ledger must preserve that the failed revision remained observed");
@@ -451,7 +457,10 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 [SelfHostedDeployParameterKeys.ActivePort] = options.Value.ActivePort.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.StandbyPort] = options.Value.StandbyPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.ContainerPort] = options.Value.ContainerPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                [SelfHostedDeployParameterKeys.Image] = DesiredRevision
+                [SelfHostedDeployParameterKeys.Image] = DesiredRevision,
+                [RollbackDataPlaneCompletion.FunctionalQueryPathParameterKey] = "/body",
+                [RollbackDataPlaneCompletion.LocalFunctionalQueryExpectedContainsParameterKey] = CurrentRevision,
+                [RollbackDataPlaneCompletion.LocalFunctionalQueryForbiddenContainsParameterKey] = DesiredRevision
             }
         };
 
@@ -553,15 +562,21 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
             var failures = 0;
+            var reached = false;
+            string? body = null;
             for (var i = 0; i < samples; i++)
             {
                 try
                 {
                     using var response = await client.GetAsync(url, cancellationToken);
+                    reached = true;
                     if ((int)response.StatusCode != expectedStatusCode)
                     {
                         failures++;
+                        continue;
                     }
+
+                    body ??= await response.Content.ReadAsStringAsync(cancellationToken);
                 }
                 catch (HttpRequestException)
                 {
@@ -573,6 +588,8 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             {
                 Attempts = samples,
                 Failures = failures,
+                Reached = reached,
+                Body = body,
                 Detail = failures == 0 ? "local marker server healthy" : "local marker server unhealthy"
             };
         }

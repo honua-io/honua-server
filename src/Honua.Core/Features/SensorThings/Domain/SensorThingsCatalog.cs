@@ -28,13 +28,13 @@ public sealed record SensorThingsDatastream
     public required string ObservationType { get; init; }
 
     /// <summary>Unit-of-measurement display name (e.g. <c>degree Celsius</c>).</summary>
-    public required string UnitName { get; init; }
+    public required string? UnitName { get; init; }
 
     /// <summary>Unit-of-measurement symbol (e.g. <c>°C</c>).</summary>
-    public required string UnitSymbol { get; init; }
+    public required string? UnitSymbol { get; init; }
 
     /// <summary>Unit-of-measurement definition URI (UCUM or QUDT).</summary>
-    public required string UnitDefinition { get; init; }
+    public required string? UnitDefinition { get; init; }
 
     /// <summary>Identifier of the related Thing (device).</summary>
     public required long ThingId { get; init; }
@@ -88,6 +88,9 @@ public sealed record SensorThingsSensor
 
     /// <summary>Sensor metadata (a URL or inline description per the encoding type).</summary>
     public required string Metadata { get; init; }
+
+    /// <summary>Canonical JSON metadata, including structured formats.</summary>
+    public System.Text.Json.JsonElement? JsonMetadata { get; init; }
 }
 
 /// <summary>
@@ -129,7 +132,13 @@ public sealed record SensorThingsObservation
     public DateTimeOffset? ResultTime { get; init; }
 
     /// <summary>The numeric measurement result.</summary>
-    public required double Result { get; init; }
+    public required double? Result { get; init; }
+
+    /// <summary>The complete typed observation result; nonnumeric results have no numeric projection.</summary>
+    public System.Text.Json.JsonElement? JsonResult { get; init; }
+
+    /// <summary>The inclusive end of an interval phenomenon time, when present.</summary>
+    public DateTimeOffset? PhenomenonTimeEnd { get; init; }
 
     /// <summary>Identifier of the related FeatureOfInterest, if any.</summary>
     public long? FeatureOfInterestId { get; init; }
@@ -142,16 +151,52 @@ public sealed record SensorThingsObservation
 /// <param name="DatastreamId">Restrict to a single datastream when set.</param>
 /// <param name="WhereSql">A parameterized SQL WHERE fragment translated from a STA <c>$filter</c>.</param>
 /// <param name="WhereParameters">Ordered parameter values for <paramref name="WhereSql"/> placeholders <c>@p0..@pN</c>.</param>
-/// <param name="OrderByDescending">When true order by <c>phenomenonTime</c> descending; otherwise ascending.</param>
+/// <param name="OrderBySql">
+/// The ORDER BY body translated from a STA <c>$orderby</c>. Like <paramref name="WhereSql"/>
+/// this is a server-built fragment over whitelisted column names, never request text.
+/// </param>
 /// <param name="Skip">Number of leading rows to skip (<c>$skip</c>).</param>
 /// <param name="Top">Maximum number of rows to return (<c>$top</c>); the caller clamps this.</param>
 public readonly record struct ObservationQuery(
     long? DatastreamId,
     string? WhereSql,
     IReadOnlyList<object?> WhereParameters,
-    bool OrderByDescending,
+    string? OrderBySql,
     int Skip,
     int Top);
+
+/// <summary>
+/// A filtered, ordered, paged query over one of the SensorThings catalog entity sets
+/// (Things, Sensors, ObservedProperties, Datastreams).
+/// </summary>
+/// <param name="WhereSql">A parameterized SQL WHERE fragment translated from a STA <c>$filter</c>.</param>
+/// <param name="WhereParameters">Ordered parameter values for <paramref name="WhereSql"/> placeholders <c>@p0..@pN</c>.</param>
+/// <param name="OrderBySql">
+/// The ORDER BY body translated from a STA <c>$orderby</c>, or null for the entity's
+/// default ordering. Built by the protocol adapter from a whitelist of column names.
+/// </param>
+/// <param name="Skip">Number of leading rows to skip (<c>$skip</c>).</param>
+/// <param name="Top">Maximum number of rows to return (<c>$top</c>); the caller clamps this.</param>
+public readonly record struct CatalogQuery(
+    string? WhereSql,
+    IReadOnlyList<object?> WhereParameters,
+    string? OrderBySql,
+    int Skip,
+    int Top)
+{
+    /// <summary>Restricts a Datastream list/count to the related Thing, in addition to the filter.</summary>
+    public long? DatastreamThingId { get; init; }
+
+    /// <summary>Restricts a Datastream list/count to the related Sensor, in addition to the filter.</summary>
+    public long? DatastreamSensorId { get; init; }
+
+    /// <summary>Restricts a Datastream list/count to the related ObservedProperty, in addition to the filter.</summary>
+    public long? DatastreamObservedPropertyId { get; init; }
+
+    /// <summary>An unfiltered, unordered query over the first page of an entity set.</summary>
+    public static CatalogQuery Page(int skip, int top) =>
+        new(null, Array.Empty<object?>(), null, skip, top);
+}
 
 /// <summary>
 /// A single observation row supplied to <c>IObservationStore.IngestObservationsAsync</c>
@@ -177,7 +222,11 @@ public readonly record struct ObservationIngestRow(
 /// <param name="Id">Stable identifier of the related entity. When 0, the store assigns one.</param>
 /// <param name="Name">Entity name (used only when creating a new entity).</param>
 /// <param name="Description">Entity description (used only when creating a new entity).</param>
-public readonly record struct RelatedEntityRef(long Id, string? Name, string? Description);
+/// <param name="EncodingType">Encoding of Sensor metadata.</param>
+/// <param name="Metadata">Sensor metadata representation.</param>
+/// <param name="Definition">ObservedProperty definition URI.</param>
+public readonly record struct RelatedEntityRef(long Id, string? Name, string? Description,
+    string? EncodingType = null, System.Text.Json.JsonElement? Metadata = null, string? Definition = null);
 
 /// <summary>
 /// Request to create a SensorThings <c>Datastream</c> and, when needed, the related
@@ -196,13 +245,13 @@ public sealed record CreateDatastreamRequest
         "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement";
 
     /// <summary>Unit-of-measurement display name.</summary>
-    public required string UnitName { get; init; }
+    public required string? UnitName { get; init; }
 
     /// <summary>Unit-of-measurement symbol.</summary>
-    public required string UnitSymbol { get; init; }
+    public required string? UnitSymbol { get; init; }
 
     /// <summary>Unit-of-measurement definition URI.</summary>
-    public required string UnitDefinition { get; init; }
+    public required string? UnitDefinition { get; init; }
 
     /// <summary>The related Thing (created when its id does not already exist).</summary>
     public required RelatedEntityRef Thing { get; init; }

@@ -90,9 +90,9 @@ public static class CustomCodeJobContract
     // --- server-set customcode.* parameters (never caller-supplied) -------------
 
     /// <summary>
-    /// The per-job S3 output prefix. SERVER-SET only: a caller-supplied value is
-    /// overwritten so user code can never redirect its outputs outside its job's
-    /// isolated prefix.
+    /// The per-job S3 output prefix. SERVER-SET only: a submission that supplies one is
+    /// refused by the shared submit path, and the gate always assigns the value, so user
+    /// code can never redirect its outputs outside its job's isolated prefix.
     /// </summary>
     public const string OutputPrefixParam = "customcode.output_prefix";
 

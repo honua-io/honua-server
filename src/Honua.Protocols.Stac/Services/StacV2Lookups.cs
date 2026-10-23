@@ -19,21 +19,29 @@ internal static class StacV2Lookups
     /// <summary>
     /// Resolved STAC publication view: the canonical resource being published, the
     /// matching <see cref="MetadataV2Publication"/>, the publishing service, and the
-    /// integer service-local layer index used to address the underlying feature store.
+    /// integer service-local layer index that identifies the collection.
     /// </summary>
     /// <remarks>
     /// <see cref="LayerIndex"/> is required to be present on every STAC publication; the
-    /// resolver skips publications without one because the data path
-    /// (<see cref="Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader"/>) is
-    /// still keyed on a numeric layer id. This matches the
-    /// <c>layer-index identity</c> open question called out by the cutover plan.
+    /// resolver skips publications without one because collection ids are numeric. Feature
+    /// reads (<see cref="Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader"/>)
+    /// use <see cref="StorageLayerId"/>, never the layer index.
     /// </remarks>
     internal readonly record struct ResolvedStacPublication(
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
         MetadataV2Service Service,
         int LayerIndex,
-        MetadataV2GraphSnapshot Snapshot);
+        MetadataV2GraphSnapshot Snapshot)
+    {
+        /// <summary>
+        /// The storage-layer handle feature reads for this collection use, resolved through
+        /// the shared resolver; <see langword="null"/> when the publication has none.
+        /// <see cref="LayerIndex"/> is the protocol-facing collection id and is not a
+        /// storage handle.
+        /// </summary>
+        public int? StorageLayerId => Snapshot.ResolveStorageLayerId(Publication, Resource);
+    }
 
     /// <summary>
     /// Enumerates the STAC publications visible to the caller. A publication is visible

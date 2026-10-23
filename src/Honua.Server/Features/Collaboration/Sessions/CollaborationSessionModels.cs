@@ -456,11 +456,27 @@ internal sealed record SavedMapCollaborationAuthorizationResult
         new(SavedMapCollaborationAuthorizationStatus.Forbidden, detail);
 }
 
+/// <summary>
+/// Why a join produced no session. Numeric values are the HTTP status the join endpoints emit.
+/// </summary>
+internal enum CollaborationJoinRefusal
+{
+    None = 0,
+    InvalidRequest = 400,
+    CapacityExceeded = 429
+}
+
 internal sealed record CollaborationJoinResult
 {
     public required SavedMapCollaborationAuthorizationResult Authorization { get; init; }
 
     public CollaborationJoinResponse? Response { get; init; }
+
+    /// <summary>Set when <see cref="Response"/> is null for a reason other than authorization.</summary>
+    public CollaborationJoinRefusal Refusal { get; init; }
+
+    /// <summary>Client-safe detail for <see cref="Refusal"/>. Does not echo the submitted field.</summary>
+    public string? Detail { get; init; }
 }
 
 internal interface ISavedMapCollaborationAuthorizer

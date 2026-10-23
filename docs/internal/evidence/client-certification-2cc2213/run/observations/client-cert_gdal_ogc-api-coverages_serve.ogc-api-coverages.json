@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/ogc-api-coverages/serve.ogc-api-coverages",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal",
+  "client_version": "3.8.4",
+  "client_version_detail": "GDAL 3.8.4, released 2024/02/08",
+  "surface": "ogc-api-coverages",
+  "operation": "serve.ogc-api-coverages",
+  "protocol_version": "OGC API - Coverages 1.0",
+  "protocol_profile": "core+geotiff",
+  "started_at": "2026-09-16T21:42:22.510771Z",
+  "finished_at": "2026-09-16T21:42:22.598041Z",
+  "duration_ms": 87,
+  "status": "fail",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "boundary",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "failed checks positive:open the collection with the OGCAPI driver's coverage API, boundary:an edge window reads through a spatially subset request, crs-axis:the coverage is georeferenced in lon/lat, media-schema:the coverage decodes as GeoTIFF",
+  "primary_request_url": "http://honua:5000/ogc/coverages/collections/2000/coverage",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "open the collection with the OGCAPI driver's coverage API",
+      "outcome": "fail",
+      "detail": "AssertionError: GDAL 3.8.4 OGCAPI: API COVERAGE requested, but not available; the collection advertises coverage links [('http://www.opengis.net/def/rel/ogc/1.0/coverage', 'image/tiff')], which this driver release does not recognise as a coverage endpoint\nAssertionError: GDAL 3.8.4 OGCAPI: API COVERAGE requested, but not available; the collection advertises coverage links [('http://www.opengis.net/def/rel/ogc/1.0/coverage', 'image/tiff')], which this driver release does not recognise as a coverage endpoint",
+      "request_url": null,
+      "duration_ms": 24
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown coverage collection is refused",
+      "outcome": "pass",
+      "detail": "{\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027999999\\u0027 not found.\",\"instance\":\"/ogc/coverages/collections/999999\",\"correlationId\":\"00-5cb3b0fdc91c2f1dc325dae7ea",
+      "request_url": null,
+      "duration_ms": 8
+    },
+    {
+      "facet": "auth",
+      "name": "a protected coverage collection is challenged",
+      "outcome": "pass",
+      "detail": "{'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401}",
+      "request_url": null,
+      "duration_ms": 33
+    },
+    {
+      "facet": "boundary",
+      "name": "an edge window reads through a spatially subset request",
+      "outcome": "fail",
+      "detail": "RuntimeError: API COVERAGE requested, but not available\nRuntimeError: API COVERAGE requested, but not available",
+      "request_url": null,
+      "duration_ms": 6
+    },
+    {
+      "facet": "crs-axis",
+      "name": "the coverage is georeferenced in lon/lat",
+      "outcome": "fail",
+      "detail": "RuntimeError: API COVERAGE requested, but not available\nRuntimeError: API COVERAGE requested, but not available",
+      "request_url": null,
+      "duration_ms": 8
+    },
+    {
+      "facet": "media-schema",
+      "name": "the coverage decodes as GeoTIFF",
+      "outcome": "fail",
+      "detail": "RuntimeError: API COVERAGE requested, but not available\nRuntimeError: API COVERAGE requested, but not available",
+      "request_url": null,
+      "duration_ms": 7
+    }
+  ]
+}

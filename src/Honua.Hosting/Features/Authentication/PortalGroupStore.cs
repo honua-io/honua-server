@@ -13,14 +13,15 @@ namespace Honua.Infrastructure.Authentication;
 /// share content to groups.
 /// </summary>
 /// <remarks>
-/// In-memory to mirror the established <see cref="IOAuthClientStore"/> /
-/// <c>IAdminApiKeyStore</c> pattern — no parallel durable store (ADR-0049). A
-/// future increment may back it with the durable store behind this same interface
-/// without changing callers. Identity is consumed from the shared
+/// The Postgres profile uses durable storage; non-Postgres profiles use the
+/// process-local implementation below. Identity is consumed from the shared
 /// principal/role model; this store owns only group membership, not RBAC roles.
 /// </remarks>
 internal interface IPortalGroupStore
 {
+    /// <summary>Reads current membership without caching or blocking asynchronous I/O.</summary>
+    IReadOnlyList<string> GetGroupIdsForUser(string username, string? tenantId = null);
+
     /// <summary>Lists every group (used by group search / admin surfaces).</summary>
     Task<IReadOnlyList<PortalGroupRecord>> ListAsync(CancellationToken cancellationToken);
 
@@ -39,8 +40,6 @@ internal interface IPortalGroupStore
     /// <summary>Removes users from a group (idempotent). Returns the updated record, or null when absent.</summary>
     Task<PortalGroupRecord?> RemoveUsersAsync(string groupId, IReadOnlyList<string> usernames, CancellationToken cancellationToken);
 
-    /// <summary>Returns the ids of groups <paramref name="username"/> belongs to.</summary>
-    Task<IReadOnlyList<string>> GetGroupIdsForUserAsync(string username, CancellationToken cancellationToken);
 }
 
 /// <summary>Group access tiers (ArcGIS community group <c>access</c>).</summary>
@@ -61,7 +60,8 @@ internal sealed record PortalGroupRegistration(
     string Title,
     string? Description,
     string Access,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    string? TenantId = null);
 
 /// <summary>A community group and its membership.</summary>
 internal sealed record PortalGroupRecord(
@@ -73,7 +73,8 @@ internal sealed record PortalGroupRecord(
     IReadOnlyList<string> Tags,
     IReadOnlyList<string> Members,
     DateTimeOffset Created,
-    DateTimeOffset Modified);
+    DateTimeOffset Modified,
+    string? TenantId = null);
 
 internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null) : IPortalGroupStore
 {
@@ -121,7 +122,8 @@ internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null
             // The owner is implicitly a member so they can see group-shared content.
             Members: [owner],
             Created: now,
-            Modified: now);
+            Modified: now,
+            TenantId: registration.TenantId);
 
         if (!_groups.TryAdd(id, record))
         {
@@ -149,20 +151,20 @@ internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null
     public Task<PortalGroupRecord?> RemoveUsersAsync(string groupId, IReadOnlyList<string> usernames, CancellationToken cancellationToken)
         => MutateMembersAsync(groupId, usernames, add: false, cancellationToken);
 
-    public Task<IReadOnlyList<string>> GetGroupIdsForUserAsync(string username, CancellationToken cancellationToken)
+    public IReadOnlyList<string> GetGroupIdsForUser(string username, string? tenantId = null)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(username))
         {
-            return Task.FromResult<IReadOnlyList<string>>([]);
+            return [];
         }
 
-        IReadOnlyList<string> result = _groups.Values
-            .Where(g => g.Members.Contains(username, StringComparer.OrdinalIgnoreCase))
+        return _groups.Values
+            .Where(g => string.Equals(g.TenantId, tenantId, StringComparison.Ordinal)
+                && (string.Equals(g.Owner, username, StringComparison.OrdinalIgnoreCase)
+                    || g.Members.Contains(username, StringComparer.OrdinalIgnoreCase)))
             .Select(g => g.Id)
             .ToList()
             .AsReadOnly();
-        return Task.FromResult(result);
     }
 
     private Task<PortalGroupRecord?> MutateMembersAsync(

@@ -5,6 +5,11 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -22,6 +27,42 @@ namespace Honua.Server.Tests.Admin;
 [Protocol(TestProtocols.Admin)]
 public sealed class LayerPublishingExceptionMappingTests
 {
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
+    public async Task ListLayers_PinsRouteConnectionAndCarriesItToGraphScope(bool byName)
+    {
+        var connectionId = Guid.NewGuid();
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetConnectionByNameAsync("catalog", Arg.Any<CancellationToken>())
+            .Returns(new DataConnection { ConnectionId = connectionId, Name = "catalog" });
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>()).Returns("resolved-connection");
+        var publisher = Substitute.For<ILayerPublishingService>();
+        publisher.ListPublishedLayersAsync("resolved-connection", "default", connectionId, Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<PublishedLayerSummary>());
+        var fixture = new WebAppFixture()
+            .ReplaceService<ISecureConnectionRegistry>(registry)
+            .ReplaceService<ISecureConnectionResolver>(resolver)
+            .ReplaceService<ILayerPublishingService>(publisher);
+        await fixture.InitializeAsync();
+        try
+        {
+            var routeId = byName ? "catalog" : connectionId.ToString("D");
+            var response = await fixture.CreateAdminClient().GetAsync($"/api/v1/admin/connections/{routeId}/layers");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            await publisher.Received(1).ListPublishedLayersAsync("resolved-connection", "default", connectionId, Arg.Any<CancellationToken>());
+            await resolver.Received(1).ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>());
+            await resolver.DidNotReceive().ResolveConnectionStringAsync("catalog", Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
@@ -153,6 +194,54 @@ public sealed class LayerPublishingExceptionMappingTests
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().ContainEquivalentOf("requested resource was not found");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_WhenMetadataGraphConflicts_ReturnsConflictWithoutEtag()
+    {
+        var connectionId = Guid.NewGuid();
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>())
+            .Returns("resolved-connection");
+        var publisher = Substitute.For<ILayerPublishingService>();
+        publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<PublishedLayerSummary>(
+                new MetadataV2GraphConcurrencyException(
+                    "Metadata v2 etag mismatch for environment 'Test': expected \"old\" but found \"new\".",
+                    "\"old\"",
+                    "\"new\"")));
+        // The publish route migrates the resolved connection before calling the publisher.
+        var migrations = Substitute.For<IDatabaseMigrationRunner>();
+        migrations.RunMigrationsAsync(
+                Arg.Any<string>(),
+                Arg.Any<System.Reflection.Assembly>(),
+                Arg.Any<CancellationToken>())
+            .Returns(DatabaseMigrationResult.Succeeded());
+        var fixture = new WebAppFixture()
+            .ReplaceService<ISecureConnectionResolver>(resolver)
+            .ReplaceService<IDatabaseMigrationRunner>(migrations)
+            .ReplaceService<ILayerPublishingService>(publisher);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.CreateAdminClient().PostAsJsonAsync(
+                $"/api/v1/admin/connections/{connectionId:D}/layers",
+                CreatePublishRequest());
+
+            var payload = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict, payload);
+            payload.Should().Contain("The catalog was updated concurrently. Retry the request.");
+            payload.Should().NotContain("etag mismatch");
+            payload.Should().NotContain("\"old\"");
+            payload.Should().NotContain("\"new\"");
         }
         finally
         {

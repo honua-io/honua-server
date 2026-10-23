@@ -12,6 +12,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
@@ -26,6 +27,7 @@ public sealed class OgcTileCacheExportServiceTests
     private const string LayerId = "basemap";
     private const string TileMatrixSetId = "WebMercatorQuad";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_AutomatedTileSet_DeterministicallyFetchesAndPersistsTiles()
     {
@@ -69,6 +71,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().HaveCount(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_DryRun_DoesNotFetchTilesOrWriteSink()
     {
@@ -100,6 +103,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.EnsureCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_RerunWithSameSink_IsIdempotent()
     {
@@ -150,6 +154,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().HaveCount(1, "no duplicate row should be created on rerun");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_RequestedZoomBeyondSafetyThreshold_ReclassifiesAsManualReview()
     {
@@ -184,6 +189,7 @@ public sealed class OgcTileCacheExportServiceTests
         tileSet.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileCacheZoomThresholdExceeded);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_NonTrivialTileMatrixSet_IsSkippedAsManualReview()
     {
@@ -215,6 +221,7 @@ public sealed class OgcTileCacheExportServiceTests
         tileSet.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileCacheSkippedManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_TileFetchFailure_PropagatesAsTileSetWarning()
     {
@@ -247,6 +254,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_ScannerFailure_ReturnsFailureResult()
     {
@@ -272,6 +280,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_NonWmtsInventory_ReturnsFailureResult()
     {
@@ -294,6 +303,59 @@ public sealed class OgcTileCacheExportServiceTests
 
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("WMTS endpoint");
+    }
+
+    [UnitTest]
+    public async Task ExportAsync_MatrixHostOutsideAllowlist_DoesNotFetchThatLevel()
+    {
+        var inventory = BuildWmtsInventory(trivial: true);
+        inventory = inventory with
+        {
+            ExternalDependencies =
+            [
+                .. inventory.ExternalDependencies,
+                new MigrationExternalDependency
+                {
+                    Id = "resource-url:matrix-host",
+                    ContainerId = "service:wmts",
+                    ResourceId = $"wmts-layer:{LayerId}",
+                    Kind = "ogc-endpoint",
+                    Name = "ResourceURL",
+                    Address = "https://{TileMatrix}.example/tiles/{TileCol}/{TileRow}.png",
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["operation"] = "ResourceURL",
+                        ["format"] = "image/png"
+                    },
+                    Compatibility = Partial(
+                        "ResourceURL template captured.",
+                        ImportCompatibilityCodes.OgcWmtsTileOnlySource)
+                }
+            ]
+        };
+        var handler = new CountingTileHandler();
+        using var httpClient = new HttpClient(handler);
+        var sink = new InMemoryTileCacheSink();
+        var service = new OgcTileCacheExportService(
+            new InMemoryScanner(inventory),
+            sink,
+            httpClient,
+            NullLogger<OgcTileCacheExportService>.Instance);
+
+        var result = await service.ExportAsync(new OgcTileCacheExportRequest
+        {
+            ServiceUrl = ServiceUrl,
+            ApplyMode = true,
+            AllowedServiceHostSuffixes = ["0.example"],
+            MinZoom = 0,
+            MaxZoom = 1
+        });
+
+        handler.RequestUris.Should().ContainSingle();
+        handler.RequestUris[0].Host.Should().Be("0.example");
+        result.TilesPersisted.Should().Be(1);
+        result.TilesFailed.Should().Be(4);
+        result.TileSets.Should().ContainSingle().Which.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileCacheFetchFailed);
     }
 
     private static MigrationSourceInventoryArtifact BuildWmtsInventory(bool trivial)
@@ -452,5 +514,14 @@ public sealed class OgcTileCacheExportServiceTests
 
             return Task.FromResult(OgcTileCacheWriteStatus.AlreadyPresent);
         }
+
+        public Task<OgcTileCacheWriteStatus> ReplaceTileAsync(OgcTileCacheRecord record, CancellationToken cancellationToken = default)
+            => WriteTileAsync(record, cancellationToken);
+
+        public Task DeleteTilesExceptAsync(
+            string tileCacheId,
+            IReadOnlyList<OgcTileCoordinate> retained,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

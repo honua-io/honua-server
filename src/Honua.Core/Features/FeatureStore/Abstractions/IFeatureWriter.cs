@@ -94,6 +94,33 @@ public interface IFeatureWriter
                 $"Resource '{resource.Metadata.Id}' has no resolvable storage-layer id.");
         return await ApplyEditsAsync(storageLayerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Applies a batch and, when this writer can, persists <paramref name="receipt"/> in the
+    /// same transaction as the edit. The default cannot: <see cref="FeatureEditApplication.ReceiptDurable"/>
+    /// is false and the batch follows
+    /// <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>.
+    /// </summary>
+    /// <param name="layerId">Layer identifier for the operations.</param>
+    /// <param name="editBatch">Batch of operations to apply.</param>
+    /// <param name="receipt">Receipt that must commit with a committed edit.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The edit result and whether the receipt committed with it.</returns>
+    Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        _ = receipt;
+        return ApplyWithoutDurableReceiptAsync();
+
+        async Task<FeatureEditApplication> ApplyWithoutDurableReceiptAsync()
+        {
+            var result = await ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            return new FeatureEditApplication { Result = result, ReceiptDurable = false };
+        }
+    }
 }
 
 /// <summary>

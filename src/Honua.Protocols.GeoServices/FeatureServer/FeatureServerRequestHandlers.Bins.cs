@@ -4,10 +4,13 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Tiles.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -21,6 +24,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const int MaxFixedBoundaryCount = 1000;
     private static async Task<IResult> HandleQueryBinsGet(
         string serviceId,
         int layerId,
@@ -97,7 +101,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -171,8 +176,28 @@ internal static partial class FeatureServerEndpoints
             return whereError!;
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var rows = await featureReader.QueryBinsAsync(storageLayerId.Value, query, binDefinition, cancellationToken);
+        var (filteredQuery, filterError) = await ApplyAnalyticsFiltersAsync(
+            context, resource, values, query, cancellationToken).ConfigureAwait(false);
+        if (filterError != null)
+        {
+            return filterError;
+        }
+
+        query = filteredQuery;
+
+        var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+            context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+        ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
+        try
+        {
+            rows = await featureReader.QueryBinsAsync(storageLayerId.Value, query, binDefinition, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "queryBins is not supported by the configured feature provider for this layer.");
+        }
 
         var responseFeatures = rows.Select(row => new GeoServicesFeature
         {
@@ -188,12 +213,19 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Returns whether the field exists on the layer schema (or is the layer's
+    /// Returns whether the field exists on the layer's public schema (or is the layer's
     /// resolved object-id field, which may be internal rather than schema-listed).
+    /// Publisher-hidden fields are treated as absent, matching /query outStatistics, so
+    /// bins, date bins and H3 summaries cannot aggregate a hidden column (#6098).
     /// </summary>
     private static bool IsSchemaField(MetadataV2Resource resource, string fieldName)
     {
-        return resource.SchemaFields.Any(field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+        if (resource.IsHiddenSchemaField(fieldName))
+        {
+            return false;
+        }
+
+        return resource.FindVisibleSchemaField(fieldName) is not null
             || string.Equals(
                 GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
                 fieldName,
@@ -268,6 +300,27 @@ internal static partial class FeatureServerEndpoints
         }
 
         return true;
+    }
+
+    private static async Task<IFeatureReader> ResolveAnalyticsFeatureReaderAsync(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        var fallbackReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        return await new TileFeatureProviderResolver(
+            context.RequestServices.GetService<FeatureProviderQueryRouter>()).ResolveFeatureReaderAsync(
+                snapshot,
+                service,
+                resource,
+                publication,
+                storageLayerId,
+                fallbackReader,
+                cancellationToken).ConfigureAwait(false);
     }
 
     private static bool TryParseBinDefinition(string json, out BinDefinition binDefinition, out string? error)
@@ -422,9 +475,21 @@ internal static partial class FeatureServerEndpoints
         var boundaries = ImmutableArray.CreateBuilder<double>();
         foreach (var item in boundariesEl.EnumerateArray())
         {
-            if (!item.TryGetDouble(out var val))
+            if (!item.TryGetDouble(out var val) || !double.IsFinite(val))
             {
-                error = "fixedBoundariesBin.boundaries must contain numeric values.";
+                error = "fixedBoundariesBin.boundaries must contain finite numeric values.";
+                return false;
+            }
+
+            if (boundaries.Count == MaxFixedBoundaryCount)
+            {
+                error = $"fixedBoundariesBin.boundaries cannot contain more than {MaxFixedBoundaryCount} values.";
+                return false;
+            }
+
+            if (boundaries.Count > 0 && val <= boundaries[^1])
+            {
+                error = "fixedBoundariesBin.boundaries must be strictly increasing.";
                 return false;
             }
 

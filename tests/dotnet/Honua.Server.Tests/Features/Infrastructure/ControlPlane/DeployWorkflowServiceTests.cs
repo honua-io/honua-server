@@ -6,13 +6,16 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -474,9 +477,13 @@ public sealed class DeployWorkflowServiceTests
 
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         var succeeded = await store.GetAsync(operation.OperationId);
-        succeeded!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        succeeded.CompletedAt.Should().NotBeNull();
-        succeeded.Deploy!.CurrentRevision.Should().Be("sha256:old");
+        // honua-server#4618: promotion opens a post-activation observation window instead of finishing
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        succeeded!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        succeeded.CompletedAt.Should().BeNull();
+        succeeded.Deploy!.Protection.Should().NotBeNull();
+        succeeded.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
+        succeeded.Deploy.CurrentRevision.Should().Be("sha256:old");
         succeeded.ObservedState.Should().Be(succeeded.Deploy.DesiredRevision);
     }
 
@@ -576,14 +583,14 @@ public sealed class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
-        var evaluator = CreateTelemetryEvaluator("""
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"25"]}]}}
+        var evaluator = CreateTelemetryEvaluator($$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"0.01"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"150"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"150"]}]}}
             """);
         var reconciler = CreateReconciler(store, backend, evaluator);
 
@@ -591,8 +598,11 @@ public sealed class DeployWorkflowServiceTests
         var updated = await store.GetAsync(operation.OperationId);
 
         updated.Should().NotBeNull();
-        updated!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        updated.CurrentPhase.Should().Contain("Telemetry gate passed");
+        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        updated.Deploy!.Protection.Should().NotBeNull();
+        updated.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
     }
 
     [Fact]
@@ -616,14 +626,14 @@ public sealed class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
-        var evaluator = CreateTelemetryEvaluator("""
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"25"]}]}}
+        var evaluator = CreateTelemetryEvaluator($$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.25"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"0.25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"150"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"150"]}]}}
             """);
         var reconciler = CreateReconciler(store, backend, evaluator);
 
@@ -653,12 +663,17 @@ public sealed class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
+        // The Kubernetes preset also contributes a latency signal; #4617 requires every configured
+        // signal to carry evidence, so the fixture answers all three queries (sample, error, latency).
         var evaluator = CreateTelemetryEvaluator(
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"25"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"0.01"]}]}}
+            """,
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"150"]}]}}
             """);
         var reconciler = CreateReconciler(store, backend, evaluator);
 
@@ -666,8 +681,12 @@ public sealed class DeployWorkflowServiceTests
         var promoted = await store.GetAsync(operation.OperationId);
 
         promoted.Should().NotBeNull();
-        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        promoted.Deploy!.CurrentRevision.Should().Be("sha256:old");
+        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        promoted.Deploy!.Protection.Should().NotBeNull();
+        promoted.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
+        promoted.Deploy.CurrentRevision.Should().Be("sha256:old");
         promoted.ObservedState.Should().Be("sha256:new");
         backend.PromoteCount.Should().Be(1);
     }
@@ -697,14 +716,19 @@ public sealed class DeployWorkflowServiceTests
             await Task.Delay(10);
             await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
             var snapshot = await store.GetAsync(operation.OperationId);
-            if (snapshot!.Status == WorkflowOperationStatus.Succeeded)
+            // honua-server#4618: the terminal step's promotion opens a post-activation observation
+            // window rather than settling immediately, so "promoted" is now signalled by an open
+            // Protection record rather than a terminal Succeeded status.
+            if (snapshot!.Deploy?.Protection != null)
             {
                 break;
             }
         }
 
         var promoted = await store.GetAsync(operation.OperationId);
-        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        promoted.Deploy!.Protection.Should().NotBeNull();
+        promoted.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
         promoted.ObservedState.Should().Be("sha256:new");
         // Intermediate steps (25, 50) are applied through StartAsync; the terminal step promotes.
         backend.AppliedCanaryWeights.Should().ContainInOrder("25", "50");
@@ -732,7 +756,8 @@ public sealed class DeployWorkflowServiceTests
             snapshot = await store.GetAsync(operation.OperationId);
             if (snapshot!.Status is WorkflowOperationStatus.RollbackRequested
                 or WorkflowOperationStatus.RolledBack
-                or WorkflowOperationStatus.Succeeded)
+                or WorkflowOperationStatus.Succeeded
+                || snapshot.Deploy?.Protection != null)
             {
                 break;
             }
@@ -777,7 +802,11 @@ public sealed class DeployWorkflowServiceTests
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         var promoted = await store.GetAsync(operation.OperationId);
 
-        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        promoted.Deploy!.Protection.Should().NotBeNull();
+        promoted.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
         promoted.ObservedState.Should().Be("sha256:new");
         backend.PromoteCount.Should().Be(1, "single-step deploys promote once with no ramp stepping");
         backend.AppliedCanaryWeights.Should().BeEmpty("no intermediate StartAsync calls without a ramp");
@@ -830,6 +859,407 @@ public sealed class DeployWorkflowServiceTests
         plan.Should().NotBeNull();
         plan!.Plan.IsReadyToSubmit.Should().BeFalse();
         plan.Plan.BlockingReasons.Should().Contain(reason => reason.Contains("canary ramp", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithInvalidTelemetryPolicy_BlocksSubmissionAndNamesEveryProblem()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.error_rate.threshold"] = "NaN",
+                ["telemetry.max_stalenes_seconds"] = "60"
+            });
+
+        plan.Should().NotBeNull();
+        plan!.Plan.IsReadyToSubmit.Should().BeFalse();
+        plan.Plan.BlockingReasons.Should().ContainSingle(reason => reason.StartsWith("Telemetry gate configuration rejected", StringComparison.Ordinal))
+            .Which.Should().Contain("telemetry.error_rate.threshold must be")
+            .And.Contain("'telemetry.max_stalenes_seconds' is not a recognized deploy telemetry parameter");
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CreateAsync_SubmitImmediately_WithInvalidTelemetryPolicy_NeverMutatesBackend()
+    {
+        // Validation happens before mutation (#4617): the operation is recorded as Planned with the
+        // blocking reason, the backend is never started, and a later submit is refused.
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+
+        var operation = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Ship it",
+            "gate-typo",
+            "corr-gate",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only"
+            });
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.BlockingReasons.Should().Contain(reason => reason.Contains("requires telemetry.healthz.url or telemetry.golden_query.url", StringComparison.Ordinal));
+        backend.StartCount.Should().Be(0, "an invalid telemetry gate must block submission before the backend is mutated");
+
+        var submit = () => service.SubmitAsync(operation.OperationId, "alice", "retry");
+        await submit.Should().ThrowAsync<ResourceConflictException>();
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithUnconfiguredTelemetryConnection_BlocksWhenConnectionsAreKnown()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" }
+                ]
+            }));
+
+        var unknown = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string> { ["telemetry.connection"] = "staging-prom" });
+        var known = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string> { ["telemetry.connection"] = "prod-prom" });
+
+        unknown!.Plan.IsReadyToSubmit.Should().BeFalse();
+        unknown.Plan.BlockingReasons.Should().Contain(reason => reason.Contains("connection 'staging-prom' is not configured", StringComparison.Ordinal));
+        known!.Plan.IsReadyToSubmit.Should().BeTrue();
+        known.Plan.BlockingReasons.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithStalenessBoundOnFixedWindowProvider_BlocksInsteadOfIgnoringIt()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-cw", Provider = "cloudwatch", BaseUrl = "https://monitoring.us-east-1.amazonaws.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-az", Provider = "azuremonitor", Region = "workspace-id" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-custom", Provider = "victoriametrics", BaseUrl = "https://example.com" }
+                ]
+            }));
+
+        var cloudWatchBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-cw", "60"));
+        var azureBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-az", "60"));
+        var cloudWatchDefault = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-cw", null));
+        var prometheusBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-prom", "60"));
+        var customBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-custom", "60"));
+
+        cloudWatchBounded!.Plan.IsReadyToSubmit.Should().BeFalse();
+        cloudWatchBounded.Plan.BlockingReasons.Should().ContainSingle()
+            .Which.Should().Contain("telemetry.max_staleness_seconds is not honored by connection 'prod-cw'")
+            .And.Contain("its 'cloudwatch' provider reads a fixed 300-second query window");
+        azureBounded!.Plan.IsReadyToSubmit.Should().BeFalse();
+        azureBounded.Plan.BlockingReasons.Should().ContainSingle()
+            .Which.Should().Contain("its 'azuremonitor' provider reads a fixed 300-second query window");
+        cloudWatchDefault!.Plan.IsReadyToSubmit.Should().BeTrue("without an explicit bound nothing is ignored");
+        prometheusBounded!.Plan.IsReadyToSubmit.Should().BeTrue("the prometheus provider checks each sample's observation time");
+        customBounded!.Plan.IsReadyToSubmit.Should().BeTrue("a host-registered provider is not assumed to ignore the bound");
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_WhenConnectionChangedToFixedWindowProviderAfterPlanning_RefusesBeforeMutation()
+    {
+        var backend = new ImmediateDeployBackend();
+        var options = new ControlPlaneOptions
+        {
+            TelemetryConnections =
+            [
+                new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" }
+            ]
+        };
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(options));
+
+        var operation = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Ship it",
+            "gate-provider-swap",
+            "corr-provider-swap",
+            OperationPriority.Normal,
+            submitImmediately: false,
+            parameterOverrides: MetricGate("prod-prom", "60"));
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.BlockingReasons.Should().BeEmpty("the bound is honored by the provider configured at plan time");
+
+        // An options reload between plan and submit points the same connection id at CloudWatch.
+        options.TelemetryConnections =
+        [
+            new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "cloudwatch", BaseUrl = "https://monitoring.us-east-1.amazonaws.com" }
+        ];
+
+        var submit = () => service.SubmitAsync(operation.OperationId, "alice", "submit");
+        (await submit.Should().ThrowAsync<ResourceConflictException>())
+            .WithMessage("*its 'cloudwatch' provider reads a fixed 300-second query window*");
+        backend.StartCount.Should().Be(0, "the gate is re-checked before the operation is claimed or the backend is started");
+
+        // The same operation submits once the configuration honors the bound again.
+        options.TelemetryConnections =
+        [
+            new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" }
+        ];
+        var submitted = await service.SubmitAsync(operation.OperationId, "alice", "submit");
+
+        submitted!.Status.Should().NotBe(WorkflowOperationStatus.Planned);
+        backend.StartCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task PlanAsync_WithErrorCountNumerator_IsReadyOnlyForFixedWindowCloudProviders()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-cw", Provider = "cloudwatch", BaseUrl = "https://monitoring.us-east-1.amazonaws.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-az", Provider = "azuremonitor", Region = "workspace-id" }
+                ]
+            }));
+
+        static Dictionary<string, string> ErrorCountGate(string connectionId) => new()
+        {
+            ["telemetry.connection"] = connectionId,
+            ["telemetry.error_count.query"] = "target_5xx_count",
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.sample_count.query"] = "request_count",
+            ["telemetry.sample_count.minimum"] = "10"
+        };
+
+        var cloudWatch = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: ErrorCountGate("prod-cw"));
+        var azure = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: ErrorCountGate("prod-az"));
+        var prometheus = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: ErrorCountGate("prod-prom"));
+
+        cloudWatch!.Plan.IsReadyToSubmit.Should().BeTrue();
+        azure!.Plan.IsReadyToSubmit.Should().BeTrue();
+        prometheus!.Plan.IsReadyToSubmit.Should().BeFalse("the prometheus provider never reads an error-count numerator");
+        prometheus.Plan.BlockingReasons.Should().ContainSingle()
+            .Which.Should().Contain("telemetry.error_count.query is not supported by connection 'prod-prom'");
+        backend.StartCount.Should().Be(0);
+    }
+
+    private static Dictionary<string, string> MetricGate(string connectionId, string? maxStalenessSeconds)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = connectionId,
+            ["telemetry.error_rate.query"] = "errors / requests",
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.sample_count.query"] = "request_count",
+            ["telemetry.sample_count.minimum"] = "10"
+        };
+        if (maxStalenessSeconds != null)
+        {
+            parameters["telemetry.max_staleness_seconds"] = maxStalenessSeconds;
+        }
+
+        return parameters;
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithHealthOnlyProfile_IsReadyWithoutAnyMetricsConnection()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions()));
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            });
+
+        plan!.Plan.IsReadyToSubmit.Should().BeTrue("the explicit health-only profile needs no metrics connection");
+        plan.Plan.BlockingReasons.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("telemetry.golden_query.url", "http://host.docker.internal:19182/golden")]
+    [InlineData("telemetry.golden_query.url", "https://10.0.0.12:19182/golden")]
+    [InlineData("telemetry.healthz.url", "https://127.0.0.1:19182/healthz/ready")]
+    [InlineData("telemetry.healthz.url", "http://192.168.1.20/healthz/ready")]
+    public async Task PlanAsync_WithProbeUrlTheRuntimeProbeRefuses_BlocksSubmission(string key, string url)
+    {
+        // honua-server#4988: a probe URL the runtime probe always refuses must not be admitted at plan
+        // time; otherwise the gate reports itself misconfigured and fails a correct candidate at the
+        // exposure deadline.
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(new TestWorkflowOperationStore(), backend);
+        var parameters = new Dictionary<string, string>
+        {
+            ["telemetry.policy"] = "health-only",
+            [key] = url
+        };
+        if (key == "telemetry.golden_query.url")
+        {
+            parameters["telemetry.golden_query.expected_contains"] = "candidate-b";
+        }
+
+        var plan = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: parameters);
+
+        plan!.Plan.IsReadyToSubmit.Should().BeFalse();
+        plan.Plan.BlockingReasons.Should().ContainSingle(reason => reason.Contains(key, StringComparison.Ordinal))
+            .Which.Should().StartWith("Telemetry gate configuration rejected");
+        var runtimeVerdict = await OutboundHttpUrlValidator.ValidateAsync(url, CancellationToken.None);
+        runtimeVerdict.IsValid.Should().BeFalse("the plan must refuse exactly what the runtime probe refuses");
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_SavedPlanWithProbeUrlTheRuntimeProbeRefuses_RefusesBeforeMutation()
+    {
+        // A saved plan is submitted later (e.g. after approval); the probe destination is re-checked then,
+        // before the operation is claimed or the backend is started.
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+        var operation = CreateOperationRecord(
+            WorkflowOperationStatus.Planned,
+            parameters: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.golden_query.url"] = "https://10.0.0.12:19182/golden",
+                ["telemetry.golden_query.expected_contains"] = "candidate-b"
+            });
+        await store.TryCreateAsync(operation);
+
+        var submit = () => service.SubmitAsync(operation.OperationId, "alice", "ship");
+
+        (await submit.Should().ThrowAsync<ResourceConflictException>())
+            .WithMessage("*telemetry.golden_query.url*");
+        backend.StartCount.Should().Be(0);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.Planned);
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithPublicHttpsProbeUrls_AdmitsTheGate()
+    {
+        var service = CreateService(new TestWorkflowOperationStore(), new ImmediateDeployBackend());
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://93.184.215.14/healthz/ready",
+                ["telemetry.golden_query.url"] = "https://93.184.215.14/golden",
+                ["telemetry.golden_query.expected_contains"] = "candidate-b"
+            });
+
+        plan!.Plan.IsReadyToSubmit.Should().BeTrue();
+        plan.Plan.BlockingReasons.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateAsync_SubmitImmediately_WithPrivateGoldenQueryUrl_NeverMutatesBackend()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+
+        var operation = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Ship it",
+            "golden-private",
+            "corr-golden-private",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.golden_query.url"] = "http://host.docker.internal:19182/golden",
+                ["telemetry.golden_query.expected_contains"] = "candidate-b"
+            });
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.BlockingReasons.Should().Contain(reason => reason.Contains("telemetry.golden_query.url", StringComparison.Ordinal));
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithUnrecognizedPromotionGate_BlocksInsteadOfFallingBack()
+    {
+        var service = CreateService(new TestWorkflowOperationStore(), new ImmediateDeployBackend());
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string> { [DeployPromotionPolicy.PromotionGateParameterKey] = "heath" });
+
+        plan!.Plan.IsReadyToSubmit.Should().BeFalse();
+        plan.Plan.BlockingReasons.Should().Contain(reason => reason.Contains("'heath' is not recognized", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -981,6 +1411,10 @@ public sealed class DeployWorkflowServiceTests
             }
         };
     }
+
+    // Prometheus samples are stamped "now" so the gate's default 5-minute freshness bound (#4617)
+    // accepts them as current evidence.
+    private static string NowUnixSeconds => DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static StubDeployTelemetrySignalEvaluator AlwaysHealthyTelemetry()
         => new(new DeployTelemetryDecision { Message = "Telemetry gate passed: error-rate signal is within threshold." });

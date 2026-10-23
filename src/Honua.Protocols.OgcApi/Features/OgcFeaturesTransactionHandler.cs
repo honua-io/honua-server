@@ -75,9 +75,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var storageLayerId = publication.LayerIndex
-                ?? snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
             if (storageLayerId is not { } layerId)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
@@ -131,15 +129,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             // DELETE requires Delete — so an insert-only grantee cannot slip an update or delete
             // through the batch surface. Each distinct kind is checked once.
             var batchOperationError = await AuthorizeBatchOperationKindsAsync(
-                context, resource, layerValidation.Service, batchRequest, cancellationToken).ConfigureAwait(false);
+                context, resource, layerValidation.Service, publication, batchRequest, cancellationToken).ConfigureAwait(false);
             if (batchOperationError is not null)
             {
                 return batchOperationError;
             }
 
             var preparedBatch = await PrepareBatchOperationsAsync(
+                context,
                 layerId,
                 snapshot,
+                layerValidation.Service,
                 publication,
                 resource,
                 batchRequest,
@@ -326,6 +326,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         HttpContext context,
         MetadataV2Resource resource,
         MetadataV2Service? service,
+        MetadataV2Publication publication,
         BatchRequest batchRequest,
         CancellationToken cancellationToken)
     {
@@ -355,6 +356,27 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             if (error is not null)
             {
                 return error;
+            }
+
+            // The single-feature surfaces get this from ValidateCollectionWriteAccessV2Async,
+            // which is called here without a specific operation because a batch body may mix
+            // kinds. Each distinct kind present must still be declared by the publication,
+            // otherwise the batch surface accepts edits the collection never advertised
+            // (#4707).
+            if (service is not null)
+            {
+                var capability = op switch
+                {
+                    AuthorizationOperation.Insert => MetadataV2EditCapabilities.Create,
+                    AuthorizationOperation.Update => MetadataV2EditCapabilities.Update,
+                    _ => MetadataV2EditCapabilities.Delete
+                };
+                var capabilityError = LayerValidationHelpers.ValidateDeclaredEditCapability(
+                    context, service, publication, capability);
+                if (capabilityError is not null)
+                {
+                    return capabilityError;
+                }
             }
         }
 
@@ -386,9 +408,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var storageLayerId = publication.LayerIndex
-                ?? snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
             if (storageLayerId is not { } layerId)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
@@ -417,6 +437,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var objectId = resolvedFeature.Value.ObjectId;
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
+
+            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // holds a lease on cannot be replaced or merged out from under them, on this
+            // surface as much as on GeoServices applyEdits.
+            if (await OgcFeatureLockGuard.RejectIfLockedAsync(
+                    context, layerValidation.Service, publication, layerId, objectId, "replace", cancellationToken)
+                    .ConfigureAwait(false) is { } lockedResult)
+            {
+                return lockedResult;
+            }
 
             var contentTypeError = OgcFeaturePayloadReader.ValidateFeatureContentType(context);
             if (contentTypeError is not null)
@@ -532,7 +562,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
                     }
 
-                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while replacing the feature.");
+                    return OgcFeatureEditFailureMapper.ToResult(
+                        context, updateResult, "An error occurred while replacing the feature.");
                 }
 
                 var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
@@ -682,9 +713,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var storageLayerId = publication.LayerIndex
-                ?? snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
             if (storageLayerId is not { } layerId)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
@@ -714,6 +743,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
+
+            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // holds a lease on cannot be replaced or merged out from under them, on this
+            // surface as much as on GeoServices applyEdits.
+            if (await OgcFeatureLockGuard.RejectIfLockedAsync(
+                    context, layerValidation.Service, publication, layerId, objectId, "update", cancellationToken)
+                    .ConfigureAwait(false) is { } lockedResult)
+            {
+                return lockedResult;
+            }
+
 
             // PATCH merges a read snapshot. Always revalidate it inside the write
             // transaction so omitted properties and geometry cannot overwrite concurrent
@@ -806,7 +846,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
+            // Enforce the layer geometry type only on a geometry the PATCH supplies; an existing
+            // geometry carried through a property-only patch is not re-typed.
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(
+                geometryWkb,
+                patchRequest.HasGeometry
+                    ? FeatureMutationValidator.ResolveLayerGeometryType(resource)
+                    : MetadataV2GeometryType.None,
+                cancellationToken);
             if (!geometryValidation.IsValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(
@@ -895,7 +942,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
                     }
 
-                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while patching the feature.");
+                    return OgcFeatureEditFailureMapper.ToResult(
+                        context, updateResult, "An error occurred while patching the feature.");
                 }
 
                 var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
@@ -996,7 +1044,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    private async Task<FeatureEditResult> ExecuteEditAsync(
+    internal async Task<FeatureEditResult> ExecuteEditAsync(
         HttpContext context,
         int layerId,
         MetadataV2Resource resource,
@@ -1022,6 +1070,21 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            _featureReader,
+            layerId,
+            resource.OwnerEditPolicy,
+            editBatch,
+            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+            cancellationToken).ConfigureAwait(false);
+        if (!prepared.IsAllowed)
+        {
+            return OwnerEditPolicyFieldAccess.DeniedEditResult(
+                editBatch,
+                prepared.DenialReason ?? "Edit not permitted.");
+        }
+
+        editBatch = prepared.Batch;
         // Per-row geometry-change semantics: a single-op caller (PATCH, single-op
         // Replace) passes geometryChangedOverride so the attribute-only or replace-of-
         // null cases are tracked precisely without inferring from the merged feature's
@@ -1442,8 +1505,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private async Task<PreparedBatchPlan> PrepareBatchOperationsAsync(
+        HttpContext context,
         int layerId,
         MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service? service,
         MetadataV2Publication publication,
         MetadataV2Resource resource,
         BatchRequest batchRequest,
@@ -1505,6 +1570,40 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
 
             var preparedOperation = prepared.Operation! with { Index = index };
+
+            // Collaborative-editing lease enforcement (#4402). Evaluated here, after the
+            // operation resolved to a concrete OBJECTID and before anything is written, so
+            // a locked target fails validation and the whole batch — which always runs with
+            // RollbackOnFailure — leaves every stored row untouched.
+            var lockConflict = preparedOperation.OperationKind == BatchOperationKind.Create
+                ? null
+                : await OgcFeatureLockGuard.DescribeConflictAsync(
+                    context,
+                    service,
+                    publication,
+                    layerId,
+                    preparedOperation.ObjectId ?? 0,
+                    preparedOperation.OperationKind == BatchOperationKind.Delete ? "delete" : "update",
+                    cancellationToken).ConfigureAwait(false);
+            if (lockConflict is not null)
+            {
+                validationFailed = true;
+                validationResults[index] = CreateBatchFailure(operation.Id, lockConflict, 423);
+
+                foreach (var priorOperation in preparedOperations)
+                {
+                    validationResults[priorOperation.Index] = CreateRolledBackBatchFailure(priorOperation.Operation.Id);
+                }
+
+                if (batchRequest.FailFast)
+                {
+                    processedCount = index + 1;
+                    break;
+                }
+
+                continue;
+            }
+
             preparedOperations.Add(preparedOperation);
             ApplyPreparationState(validationState, preparedOperation);
         }
@@ -1845,20 +1944,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static int DetermineBatchFailureStatus(EditOperationResult editResult)
-    {
-        if (string.Equals(editResult.ErrorMessage, "Operation rolled back.", StringComparison.Ordinal))
-        {
-            return 424;
-        }
-
-        if (!string.IsNullOrWhiteSpace(editResult.ErrorMessage) &&
-            editResult.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase))
-        {
-            return 404;
-        }
-
-        return editResult.ErrorCode >= 500 ? 500 : 400;
-    }
+        => OgcFeatureEditFailureMapper.DetermineStatus(editResult);
 
     private static BatchOperationResult CreateBatchFailure(string? operationId, string message, int statusCode)
         => new()

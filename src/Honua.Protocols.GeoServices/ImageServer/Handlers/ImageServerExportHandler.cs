@@ -13,6 +13,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Raster;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -39,6 +40,8 @@ internal sealed class ImageServerExportHandler
     private const int MaxAllowedOutputDimension = 4096;
     private const int MinCompressionQuality = 0;
     private const int MaxCompressionQuality = 100;
+    private const string PixelTypeConversionNotImplemented =
+        "pixelType conversion is not implemented on this service. Omit pixelType, use UNKNOWN, or name the service's own pixel type.";
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ImageServerExportBackend _exportBackend;
@@ -66,7 +69,7 @@ internal sealed class ImageServerExportHandler
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
         => ExportImageCoreAsync(
-            context, layerId, request, publicationId: null, AuthorizationOperation.Export, cancellationToken);
+            context, layerId, request, publicationId: null, AuthorizationOperation.Export, requireAllBandsValid: false, cancellationToken);
 
     /// <summary>
     /// Exports the exact publication already resolved by a service-scoped caller.
@@ -78,10 +81,20 @@ internal sealed class ImageServerExportHandler
         string publicationId,
         AuthorizationOperation authorizationOperation,
         CancellationToken cancellationToken = default)
+        => ExportImageAsync(context, layerId, request, publicationId, authorizationOperation, false, cancellationToken);
+
+    public Task<IResult> ExportImageAsync(
+        HttpContext context,
+        int layerId,
+        ExportImageRequest request,
+        string publicationId,
+        AuthorizationOperation authorizationOperation,
+        bool requireAllBandsValid,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         return ExportImageCoreAsync(
-            context, layerId, request, publicationId, authorizationOperation, cancellationToken);
+            context, layerId, request, publicationId, authorizationOperation, requireAllBandsValid, cancellationToken);
     }
 
     private async Task<IResult> ExportImageCoreAsync(
@@ -90,6 +103,7 @@ internal sealed class ImageServerExportHandler
         ExportImageRequest request,
         string? publicationId,
         AuthorizationOperation authorizationOperation,
+        bool requireAllBandsValid,
         CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -102,7 +116,7 @@ internal sealed class ImageServerExportHandler
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resolved = publicationId is null
-                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
                 : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
             if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
             {
@@ -153,8 +167,23 @@ internal sealed class ImageServerExportHandler
                     multidimensionalError ?? "Invalid multidimensionalDefinition.");
             }
 
+            // Raw pixel blocks (bsq, bip, lerc) frame the canonical planar samples in the layout
+            // the caller named; the store returns RasterFormat.Raw for all three. The output format
+            // is Raw only when the format parsed as a layout, so the layout is read only then.
+            _ = ImageServerPixelBlockEncoder.TryParseLayout(request.Format, out var pixelBlockLayout);
+
             if (dimensionConstraints.Count > 0)
             {
+                if (exportQuery.OutputFormat == RasterFormat.Raw)
+                {
+                    return StandardErrorHelpers.CreateNotImplemented(context,
+                        "Raw pixel-block export (bsq, bip, lerc) of multidimensional slices requires a raw-sample slice reader.");
+                }
+
+                if (!ImageServerPixelTypes.IsNative(request.PixelType, storedPixelType: null))
+                {
+                    return StandardErrorHelpers.CreateNotImplemented(context, PixelTypeConversionNotImplemented);
+                }
                 return await ExportMultidimensionalSliceAsync(
                         context,
                         storageLayerId,
@@ -166,13 +195,13 @@ internal sealed class ImageServerExportHandler
                     .ConfigureAwait(false);
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidExportParameters(_logger, layerId, timeError ?? "Invalid time parameter");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -200,6 +229,7 @@ internal sealed class ImageServerExportHandler
                 Geometry = exportQuery.ClipRegion?.Geometry,
                 GeometrySrid = exportQuery.ClipRegion?.Srid,
                 Timestamp = mosaicRule.Method == MosaicMethod.LockRaster ? null : timestamp,
+                TimeStart = mosaicRule.Method == MosaicMethod.LockRaster ? null : timeStart,
             };
 
             var selectedRasters = await _exportBackend.QueryRastersAsync(storageLayerId, selectionQuery, cancellationToken);
@@ -214,6 +244,65 @@ internal sealed class ImageServerExportHandler
             if (selectedRasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
+
+                // Esri answers an exportImage whose extent holds no data with an empty image, not
+                // an error, and tiling clients depend on that: QGIS's arcgismapserver provider
+                // splits the canvas into a grid of adjacent extents and treats a JSON body as a
+                // failed tile, so every tile past the layer's footprint failed. Only a framed
+                // request (bbox plus output size) has a canvas to draw; anything else, and a layer
+                // holding no raster at all, still reports not-found.
+                if (exportQuery is { CoverClipExtent: true, ClipRegion.Inverted: false, OutputWidth: > 0, OutputHeight: > 0 })
+                {
+                    var emptyResult = await _exportBackend.ExportEmptyExtentAsync(
+                        storageLayerId,
+                        exportQuery,
+                        cancellationToken).ConfigureAwait(false);
+
+                    if (emptyResult.Data.Length > 0 && !ImageServerPixelTypes.IsNative(request.PixelType, emptyResult.PixelType))
+                    {
+                        ImageServerLog.InvalidExportParameters(_logger, layerId, PixelTypeConversionNotImplemented);
+                        return StandardErrorHelpers.CreateNotImplemented(context, PixelTypeConversionNotImplemented);
+                    }
+
+                    if (exportQuery.OutputFormat == RasterFormat.Raw && emptyResult.Data.Length > 0)
+                    {
+                        emptyResult = ImageServerPixelBlockEncoder.Encode(emptyResult, pixelBlockLayout, requireAllBandsValid);
+                    }
+
+                    if (emptyResult.Data is { Length: > 0 })
+                    {
+                        if (WantsInlineImageResponse(request.F))
+                        {
+                            ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
+                            scope.SetSuccess(1);
+                            return Results.File(emptyResult.Data, emptyResult.ContentType);
+                        }
+
+                        var emptyImageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
+                            emptyResult.Data,
+                            emptyResult.ContentType,
+                            TimeSpan.FromHours(1),
+                            principal: context.User,
+                            cancellationToken: cancellationToken);
+
+                        var emptyResponse = new ExportImageResponse
+                        {
+                            Href = emptyImageUrl,
+                            Width = emptyResult.Width,
+                            Height = emptyResult.Height,
+                            Extent = BuildExtent(
+                                emptyResult.Extent,
+                                request.Bbox,
+                                bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr),
+                                emptyResult.Srid),
+                        };
+
+                        ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
+                        scope.SetSuccess(1);
+                        return Results.Json(emptyResponse, ImageServerJsonContext.Default.ExportImageResponse);
+                    }
+                }
+
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
@@ -225,6 +314,14 @@ internal sealed class ImageServerExportHandler
                 var unsupportedMessage = "mosaicRule mosaicMethod is not implemented on this service.";
                 ImageServerLog.InvalidExportParameters(_logger, layerId, unsupportedMessage);
                 return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
+            }
+
+            // pixelType converts the stored samples. Naming the service's own sample type (as
+            // pixel-block clients do on every read) needs no conversion and is a no-op.
+            if (!selectedRasters.All(raster => ImageServerPixelTypes.IsNative(request.PixelType, raster.PixelType)))
+            {
+                ImageServerLog.InvalidExportParameters(_logger, layerId, PixelTypeConversionNotImplemented);
+                return StandardErrorHelpers.CreateNotImplemented(context, PixelTypeConversionNotImplemented);
             }
 
             var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(selectedRasters);
@@ -245,6 +342,11 @@ internal sealed class ImageServerExportHandler
                 ordering,
                 mosaicRule.ToAttributeSort(),
                 cancellationToken);
+
+            if (exportQuery.OutputFormat == RasterFormat.Raw)
+            {
+                result = ImageServerPixelBlockEncoder.Encode(result, pixelBlockLayout, requireAllBandsValid);
+            }
 
             if (WantsInlineImageResponse(request.F))
             {
@@ -671,24 +773,30 @@ internal sealed class ImageServerExportHandler
                 return false;
             }
 
-            if (!string.IsNullOrWhiteSpace(request.PixelType) &&
-                !string.Equals(request.PixelType, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
+            // A pixelType naming the stored sample type is a no-op; that needs the selected
+            // rasters, so it is checked once they are known. Anything else is a conversion.
+            if (!string.IsNullOrWhiteSpace(request.PixelType) && !IsEsriPixelType(request.PixelType))
             {
-                error = new ExportParameterParseError(
-                    "pixelType conversion is not implemented on this service. Omit pixelType or use UNKNOWN.",
-                    IsNotImplemented: true);
+                error = new ExportParameterParseError(PixelTypeConversionNotImplemented, IsNotImplemented: true);
                 return false;
             }
 
+            var isPixelBlock = ImageServerPixelBlockEncoder.TryParseLayout(request.Format, out var pixelBlockLayout);
             if (!TryParseExportFormat(request.Format, out var outputFormat) ||
-                outputFormat is RasterFormat.COG or RasterFormat.Raw)
+                outputFormat == RasterFormat.COG ||
+                outputFormat == RasterFormat.Raw && !isPixelBlock)
             {
                 error = new ExportParameterParseError(
-                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif.");
+                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif, bsq, bip, lerc.");
                 return false;
             }
 
-            if (!TryResolveTiffCompression(request.Compression, outputFormat, out var tiffCompression, out var compressionError))
+            if (!TryResolveTiffCompression(
+                    request.Compression,
+                    outputFormat,
+                    isPixelBlock ? pixelBlockLayout : null,
+                    out var tiffCompression,
+                    out var compressionError))
             {
                 error = new ExportParameterParseError(compressionError ?? "compression is invalid.");
                 return false;
@@ -764,6 +872,9 @@ internal sealed class ImageServerExportHandler
                 var writer = new NetTopologySuite.IO.WKBWriter();
                 var geometryBytes = writer.Write(geometry);
 
+                // Esri clients paint the returned pixels across the requested bbox, so the image
+                // must cover the whole bbox with NoData outside the data (#4060), not just the
+                // bbox-raster intersection stretched to size.
                 query = query with
                 {
                     ClipRegion = new RasterClipRegion
@@ -771,6 +882,7 @@ internal sealed class ImageServerExportHandler
                         Geometry = geometryBytes,
                         Srid = bboxSrid,
                     },
+                    CoverClipExtent = true,
                 };
             }
 
@@ -810,6 +922,11 @@ internal sealed class ImageServerExportHandler
 
         switch (normalized)
         {
+            case "bsq":
+            case "bip":
+            case "lerc":
+                outputFormat = RasterFormat.Raw;
+                return true;
             case "jpgpng":
                 // Esri "jpgpng" means "JPEG where opaque, PNG where transparency is needed".
                 // This service emits a single concrete encoding; PNG preserves transparency
@@ -832,7 +949,7 @@ internal sealed class ImageServerExportHandler
     // indices). Honua's raster store uses 1-based band indexing, so each index is
     // shifted by one. The selection is forwarded to the shared export pipeline via
     // RasterQuery.Bands; an empty or whitespace value means "all bands".
-    private static bool TryParseBandIds(string? bandIds, out int[]? bands, out string? error)
+    internal static bool TryParseBandIds(string? bandIds, out int[]? bands, out string? error)
     {
         bands = null;
         error = null;
@@ -851,8 +968,9 @@ internal sealed class ImageServerExportHandler
         var parsed = new List<int>(parts.Length);
         foreach (var part in parts)
         {
+            // int.MaxValue has no 1-based store band: shifting it would wrap negative.
             if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var zeroBased) ||
-                zeroBased < 0)
+                zeroBased is < 0 or int.MaxValue)
             {
                 error = "bandIds must be a comma-separated list of non-negative band indices.";
                 return false;
@@ -895,6 +1013,7 @@ internal sealed class ImageServerExportHandler
     private static bool TryResolveTiffCompression(
         string? compression,
         RasterFormat outputFormat,
+        ImageServerPixelBlockLayout? pixelBlockLayout,
         out TiffCompression? tiffCompression,
         out string? errorMessage)
     {
@@ -904,6 +1023,23 @@ internal sealed class ImageServerExportHandler
         if (string.IsNullOrWhiteSpace(compression))
         {
             return true;
+        }
+
+        if (outputFormat == RasterFormat.Raw)
+        {
+            var requested = compression.Trim();
+            if (string.Equals(requested, "None", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // A lerc block is itself the LERC encoding (lossless here), so naming it is a no-op.
+            if (pixelBlockLayout == ImageServerPixelBlockLayout.Lerc)
+            {
+                if (string.Equals(requested, "LERC", StringComparison.OrdinalIgnoreCase)) return true;
+                errorMessage = "lerc pixel blocks are lossless LERC; compression must be None or LERC.";
+                return false;
+            }
+
+            errorMessage = "BSQ and BIP pixel blocks are uncompressed; compression must be None.";
+            return false;
         }
 
         if (outputFormat != RasterFormat.TIFF)
@@ -979,6 +1115,11 @@ internal sealed class ImageServerExportHandler
             _ => ResamplingAlgorithm.Bilinear,
         };
     }
+
+    private static bool IsEsriPixelType(string pixelType)
+        => pixelType.Trim().ToUpperInvariant() is
+            "UNKNOWN" or "U1" or "U2" or "U4" or "U8" or "S8" or "U16" or "S16"
+            or "U32" or "S32" or "F32" or "F64" or "C64" or "C128";
 
     private static bool WantsInlineImageResponse(string? format)
         => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);

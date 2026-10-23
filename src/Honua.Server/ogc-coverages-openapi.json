@@ -254,7 +254,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive native/storage CRS pixel size as one value or width,height. Maps to RasterQuery.PixelSize before output reprojection. The derived output must not exceed 8192 pixels on either axis, checked in storage CRS against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
+            "description": "Positive native/storage CRS pixel size as one value or width,height. Maps to RasterQuery.PixelSize before output reprojection. The derived output must not exceed 8192 pixels on either axis, checked in storage CRS against the requested bbox or subset when supplied and otherwise against coverage extent or native grid metadata."
           },
           {
             "name": "scale-factor",
@@ -263,7 +263,7 @@
               "type": "number",
               "exclusiveMinimum": 0
             },
-            "description": "Positive multiplier for the native pixel size. The derived output must not exceed 8192 pixels on either axis, checked in storage CRS against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
+            "description": "Positive multiplier for the native pixel size. The derived output must not exceed 8192 pixels on either axis, checked in storage CRS against the requested bbox or subset when supplied and otherwise against coverage extent or native grid metadata."
           },
           {
             "name": "scale-size",
@@ -271,7 +271,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Output size as width,height or axis-size pairs such as x(512),y(512), with each axis from 1 through 8192 pixels."
+            "description": "Output size as width,height or axis-size pairs such as x(512),y(512), with each axis from 1 through 8192 pixels. Canonical named axes must be in x-then-y order; the legacy scaleSize alias also permits reversed named axes."
           },
           {
             "name": "f",
@@ -288,6 +288,22 @@
               ]
             },
             "description": "Coverage encoding. Defaults to GeoTIFF when no explicit format or Accept header is supplied."
+          },
+          {
+            "name": "subset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Named spatial trims, e.g. Lon(-123:-121),Lat(37:39), in either order. Lon/Lat use CRS84; x/y use storage CRS. Repeated subset parameters are supported. Cannot be combined with bbox. Single-raster coverages support finite trim intervals; Zarr retains its dimension-index subset contract."
+          },
+          {
+            "name": "scaleSize",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Legacy GDAL alias for scale-size. Named axes may appear in either order. Cannot be combined with scale-size or another scaling control."
           }
         ],
         "responses": {

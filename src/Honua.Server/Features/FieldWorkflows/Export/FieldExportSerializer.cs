@@ -24,27 +24,30 @@ internal static class FieldExportSerializer
         "submissionId", "formId", "formVersion", "serviceId", "layerId",
         "targetFeatureId", "operation", "syncStatus", "hasValidationIssues",
         "hasConflict", "submitterHash", "deviceId", "attachmentCount", "submittedAt",
-        "reviewStatus", "assignedTo", "decidedBy", "decidedAt", "decisionNote"
+        "reviewStatus", "assignedTo", "decidedBy", "decidedAt", "decisionNote",
+        "truncated"
     ];
 
     /// <summary>
     /// Serializes <paramref name="items"/> into a UTF-8 byte payload for the
-    /// supplied <paramref name="format"/>.
+    /// supplied <paramref name="format"/>. <paramref name="truncated"/> is written
+    /// on the GeoJSON collection and as the trailing CSV column.
     /// </summary>
-    public static byte[] Serialize(string format, FieldSubmissionRecord[] items)
+    public static byte[] Serialize(string format, FieldSubmissionRecord[] items, bool truncated = false)
         => format switch
         {
-            FieldExportFormat.Csv => SerializeCsv(items),
-            _ => SerializeGeoJson(items)
+            FieldExportFormat.Csv => SerializeCsv(items, truncated),
+            _ => SerializeGeoJson(items, truncated)
         };
 
-    private static byte[] SerializeGeoJson(FieldSubmissionRecord[] items)
+    private static byte[] SerializeGeoJson(FieldSubmissionRecord[] items, bool truncated)
     {
         using var stream = new MemoryStream();
         using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
             writer.WriteString("type", "FeatureCollection");
+            writer.WriteBoolean("truncated", truncated);
             writer.WriteStartArray("features");
 
             foreach (var item in items)
@@ -104,10 +107,11 @@ internal static class FieldExportSerializer
         }
     }
 
-    private static byte[] SerializeCsv(FieldSubmissionRecord[] items)
+    private static byte[] SerializeCsv(FieldSubmissionRecord[] items, bool truncated)
     {
         var builder = new StringBuilder();
         builder.AppendLine(string.Join(',', CsvHeader));
+        var truncatedCell = truncated ? "true" : "false";
 
         foreach (var fields in items.Select(item => new[]
         {
@@ -129,7 +133,8 @@ internal static class FieldExportSerializer
             item.Review.AssignedTo ?? string.Empty,
             item.Review.DecidedBy ?? string.Empty,
             item.Review.DecidedAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
-            item.Review.DecisionNote ?? string.Empty
+            item.Review.DecisionNote ?? string.Empty,
+            truncatedCell
         }))
         {
             builder.AppendLine(string.Join(',', Array.ConvertAll(fields, EscapeCsv)));

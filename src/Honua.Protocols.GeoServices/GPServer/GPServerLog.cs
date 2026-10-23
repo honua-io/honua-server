@@ -9,6 +9,9 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// </summary>
 internal static partial class GPServerLog
 {
+    [LoggerMessage(8149, LogLevel.Warning, "GPServer SOAP operation failed for service {ServiceId}: {Operation}")]
+    public static partial void SoapOperationFailed(ILogger logger, string serviceId, string operation, Exception exception);
+
     [LoggerMessage(8100, LogLevel.Debug, "GPServer service info requested: ServiceId={ServiceId}")]
     public static partial void ServiceInfoRequested(ILogger logger, string serviceId);
 

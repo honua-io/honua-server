@@ -141,6 +141,7 @@ public sealed class FeatureCatalogDriftTests
             var descriptor = gatedDescriptorId is null ? null : new CapabilityRegistry().Find(gatedDescriptorId);
             var gateTier = descriptor?.Maturity switch
             {
+                CapabilityMaturity.Internal => "internal",
                 CapabilityMaturity.Experimental => FeatureCatalogGenerator.MaturityExperimental,
                 CapabilityMaturity.Preview => FeatureCatalogGenerator.MaturityPreview,
                 _ => FeatureCatalogGenerator.MaturityImplemented,
@@ -225,6 +226,22 @@ public sealed class FeatureCatalogDriftTests
         alerting.Should().OnlyContain(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview,
             "the 2026-09-04 operator ruling keeps every customer-alerting route Preview; "
             + "qualification tests do not replace a reviewed GA promotion with receipts");
+    }
+
+    [ArchitectureTest]
+    public void WpsRoutes_AreCataloguedUnderServeWps()
+    {
+        var wps = LoadCommittedCatalog().Entries
+            .Where(entry => entry.Route.Equals("/wps", StringComparison.OrdinalIgnoreCase)
+                || entry.Route.StartsWith("/wps/", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        wps.Should().NotBeEmpty("the served WPS 2.0 routes must be projected into feature-catalog.json");
+        wps.Should().Contain(entry => entry.Method == "GET" && entry.Route == "/wps");
+        wps.Should().Contain(entry => entry.Method == "POST" && entry.Route == "/wps");
+        wps.Should().OnlyContain(
+            entry => entry.Capability == "serve.wps" && entry.Family != "uncategorized",
+            "every /wps route must join the serve.wps capability instead of an uncategorized family");
     }
 
     [ArchitectureTest]

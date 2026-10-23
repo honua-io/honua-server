@@ -249,7 +249,13 @@ internal static partial class GeoServerImportEndpoints
         try
         {
             jobManager = context.RequestServices.GetRequiredService<GeoServerImportJobManager>();
-            if (!jobManager.CanAcceptNewJobs)
+            // Probe recovery before refusing (#4877); see GeoservicesImportEndpoints.
+            if (!await ImportCoordinationRecovery.TryAdmitAsync(
+                    jobManager,
+                    jobManager.JobQueue,
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    cancellationToken).ConfigureAwait(false))
             {
                 await AdminResponseWriter.WriteErrorAsync(
                     context,
@@ -381,29 +387,10 @@ internal static partial class GeoServerImportEndpoints
             return null;
         }
 
-        var secretProvider = context.RequestServices.GetService<ISecretProvider>();
-        if (!IsSupportedSecretReference(request.PasswordSecretReference, secretProvider))
-        {
-            return "PasswordSecretReference must use a supported secret reference format.";
-        }
-
-        if (!IsSupportedSecretReference(request.HonuaApiKeySecretReference, secretProvider))
-        {
-            return "HonuaApiKeySecretReference must use a supported secret reference format.";
-        }
-
-        return null;
-    }
-
-    private static bool IsSupportedSecretReference(string? secretReference, ISecretProvider? secretProvider)
-    {
-        if (string.IsNullOrWhiteSpace(secretReference))
-        {
-            return true;
-        }
-
-        return SecretReferenceResolver.IsEnvironmentReference(secretReference) ||
-            (secretProvider?.IsSecretReference(secretReference) ?? false);
+        return RequestSecretReferenceValidation.Validate(
+                context.RequestServices, request.PasswordSecretReference, "PasswordSecretReference")
+            ?? RequestSecretReferenceValidation.Validate(
+                context.RequestServices, request.HonuaApiKeySecretReference, "HonuaApiKeySecretReference");
     }
 
     private static async Task TryRollbackQueuedStateAsync(
@@ -527,7 +514,26 @@ internal static partial class GeoServerImportEndpoints
                 CurrentPhase = "Cancellation requested"
             };
 
-            await jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromHours(24), cancellationToken);
+            var transition = await jobManager.TryTransitionAsync(jobId, cancelledProgress,
+                ((IOperationProgress)progress).Status, cancellationToken).ConfigureAwait(false);
+            while (transition.Outcome == ProgressCompareAndSetOutcome.StatusMismatch &&
+                transition.CurrentProgress is GeoServerImportProgress current && IsActiveStatus(current.Status))
+            {
+                cancelledProgress = current with
+                {
+                    Status = GeoServerImportStatus.Cancelled,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Cancellation requested"
+                };
+                transition = await jobManager.TryTransitionAsync(jobId, cancelledProgress,
+                    ((IOperationProgress)current).Status, cancellationToken).ConfigureAwait(false);
+            }
+            if (transition.Outcome != ProgressCompareAndSetOutcome.Updated)
+            {
+                await AdminResponseWriter.WriteErrorAsync(context,
+                    "GeoServer import job is no longer active", StatusCodes.Status409Conflict);
+                return;
+            }
             await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
 
             Log.ImportJobCancelled(GetLogger(context), jobId);

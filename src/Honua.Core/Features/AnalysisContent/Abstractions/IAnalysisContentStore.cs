@@ -139,6 +139,20 @@ public interface IAnalysisContentStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Deletes one immutable version. When that version is the item's current pointer,
+    /// the pointer rewinds to the highest remaining version. Returns false when the
+    /// item or version is absent. Callers never abandon the only remaining version.
+    /// </summary>
+    /// <param name="itemId">Content item identifier.</param>
+    /// <param name="version">Version number to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when the version was deleted; otherwise false.</returns>
+    Task<bool> TryAbandonVersionAsync(
+        string itemId,
+        int version,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists content item roots in a stable, paged order (most recently updated first,
     /// then by item identifier). Supports optional filtering by kind and lifecycle.
     /// </summary>

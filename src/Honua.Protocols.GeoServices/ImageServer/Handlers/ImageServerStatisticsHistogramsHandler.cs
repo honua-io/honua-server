@@ -17,8 +17,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 /// <summary>
 /// Computes ImageServer <c>computeStatisticsHistograms</c>/<c>computeHistograms</c>.
-/// Analyses the whole selected raster(s) by default, or only the pixels inside a
-/// supplied AOI <c>geometry</c> envelope when one is provided.
+/// Analyses the whole selected raster(s) by default. A polygon AOI is clipped to
+/// that polygon; an envelope or point AOI is clipped to its envelope. Raster
+/// selection still uses the AOI bounding envelope.
 /// </summary>
 internal sealed class ImageServerStatisticsHistogramsHandler
 {
@@ -80,7 +81,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -101,26 +102,27 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             }
 
             // Per ArcGIS ImageServer spec, rasterIds selects raster catalog object IDs (long).
-            // Band selection (1-based) is done via the optional bandIds extension parameter.
-            if (!TryParseRasterIds(GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
+            // Band selection is done via the optional bandIds extension parameter, 0-based like
+            // exportImage bandIds (#4068) and shifted to the raster store's 1-based bands.
+            if (!ImageServerCatalogIdParser.TryParseRasterIds(GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, rasterIdsError ?? "Invalid rasterIds");
                 return StandardErrorHelpers.CreateBadRequest(context, rasterIdsError ?? "Invalid rasterIds.");
             }
 
-            if (!TryParseBandIds(GetString(values, "bandIds"), out var bands, out var bandIdsError))
+            if (!ImageServerCatalogIdParser.TryParseBandIds(GetString(values, "bandIds"), out var bands, out var bandIdsError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, bandIdsError ?? "Invalid bandIds");
                 return StandardErrorHelpers.CreateBadRequest(context, bandIdsError ?? "Invalid bandIds.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -142,10 +144,11 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
             }
 
-            // When the caller supplies an AOI geometry we scope raster selection to the rasters
-            // intersecting its bounding envelope (the shared raster selection path), rather than
-            // building a parallel geometry-clipped raster reader.
+            // Raster selection uses the AOI bounding envelope. Pixel statistics use the
+            // polygon itself when the AOI has rings, so a triangle is not analysed as its
+            // bounding rectangle.
             byte[]? selectionGeometry = null;
+            byte[]? clipGeometry = null;
             int? selectionSrid = null;
             var rawGeometry = GetString(values, "geometry");
             if (!string.IsNullOrWhiteSpace(rawGeometry))
@@ -156,9 +159,33 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometry.");
                 }
 
+                if (!ImageServerGeometryHelpers.TryCreatePolygonClipGeometry(
+                        rawGeometry,
+                        GetString(values, "geometryType"),
+                        out clipGeometry,
+                        out var clipError))
+                {
+                    ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, clipError ?? "Invalid geometry");
+                    return StandardErrorHelpers.CreateBadRequest(context, clipError ?? "Invalid geometry.");
+                }
+
                 selectionGeometry = ImageServerMosaicHelpers.CreateEnvelopeGeometry(aoi.XMin, aoi.YMin, aoi.XMax, aoi.YMax);
+                clipGeometry ??= selectionGeometry;
                 selectionSrid = aoi.Srid;
             }
+
+            // Parse before selection so a lock, an unsupported where, or an unsupported
+            // method constrains the rasters the same way exportImage and identify do.
+            var rawMosaicRule = GetString(values, "mosaicRule");
+            if (!ImageServerMosaicRule.TryParse(rawMosaicRule, out var mosaicRule, out var mosaicError, out var mosaicNotImplemented))
+            {
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, mosaicError);
+                return mosaicNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicError)
+                    : StandardErrorHelpers.CreateBadRequest(context, mosaicError);
+            }
+
+            var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
 
             // Resolve the catalog rasters to analyse. When rasterIds is omitted we fall back to the
             // selected layer mosaic instead of arbitrarily picking the newest raster.
@@ -188,7 +215,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     layerId,
                     new RasterSelectionQuery
                     {
-                        Timestamp = timestamp,
+                        Timestamp = isLockRaster ? null : timestamp,
+                        TimeStart = isLockRaster ? null : timeStart,
                         Geometry = selectionGeometry,
                         GeometrySrid = selectionSrid,
                     },
@@ -202,22 +230,36 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 targetRasters.AddRange(selected);
             }
 
-            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
+            targetRasters = mosaicRule.RestrictToLockedRasters(targetRasters).ToList();
+            if (targetRasters.Count == 0)
+            {
+                ImageServerLog.NoRastersFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            if (mosaicRule.Method == MosaicMethod.Unsupported && targetRasters.Count > 1)
+            {
+                const string unsupportedMessage = "mosaicRule mosaicMethod is not implemented on this service.";
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, unsupportedMessage);
+                return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
+            }
+
+            var mergeStrategy = mosaicRule.Operation
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
             var statisticsList = new List<BandStatistic>();
             var histogramsList = new List<BandHistogram>();
 
-            // When an AOI geometry is supplied, analyse only the pixels inside it by
-            // clipping the raster/mosaic to the geometry envelope; otherwise analyse the
-            // whole selected raster(s).
-            var hasAoi = selectionGeometry is not null;
+            // When an AOI geometry is supplied, analyse only the pixels inside the clip
+            // geometry (the polygon when one was supplied, otherwise its envelope).
+            var hasAoi = clipGeometry is not null;
             if ((rasterIds is null or { Length: 0 }) && targetRasters.Count > 1)
             {
                 var mosaicIds = targetRasters.Select(r => r.Id).ToArray();
                 var statistics = hasAoi
-                    ? await _rasterStore.GetClippedMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, rendering, cancellationToken)
+                    ? await _rasterStore.GetClippedMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, clipGeometry!, selectionSrid, bands, rendering, cancellationToken)
                     : await _rasterStore.GetMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, bands, rendering, cancellationToken);
                 var histograms = hasAoi
-                    ? await _rasterStore.GetClippedMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
+                    ? await _rasterStore.GetClippedMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, clipGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
                     : await _rasterStore.GetMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, bands, binCount, rendering, cancellationToken);
                 AppendAlignedBandResults(statisticsList, histogramsList, bands, statistics, histograms);
             }
@@ -226,10 +268,10 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 foreach (var raster in targetRasters)
                 {
                     var statistics = hasAoi
-                        ? await _rasterStore.GetClippedStatisticsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, rendering, cancellationToken)
+                        ? await _rasterStore.GetClippedStatisticsAsync(layerId, raster.Id, clipGeometry!, selectionSrid, bands, rendering, cancellationToken)
                         : await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, rendering, cancellationToken);
                     var histograms = hasAoi
-                        ? await _rasterStore.GetClippedHistogramsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
+                        ? await _rasterStore.GetClippedHistogramsAsync(layerId, raster.Id, clipGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
                         : await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, rendering, cancellationToken);
 
                     // The store implementations do not guarantee a shared band order:
@@ -341,13 +383,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 : new BandStatistic());
 
             histogramsList.Add(hasHist
-                ? new BandHistogram
-                {
-                    Size = h.BinCount,
-                    Min = h.Min,
-                    Max = h.Max,
-                    Counts = h.Counts,
-                }
+                ? ImageServerHistogramProjection.Project(h)
                 : new BandHistogram { Counts = Array.Empty<long>() });
         }
     }
@@ -399,127 +435,6 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         }
     }
 
-    /// <summary>
-    /// Parses the Esri <c>rasterIds</c> parameter as a list of raster catalog object IDs (long).
-    /// Accepts CSV (e.g. <c>1,3</c>) or JSON array (e.g. <c>[1,3]</c>) form.
-    /// </summary>
-    private static bool TryParseRasterIds(string? raw, out long[]? rasterIds, out string? error)
-    {
-        rasterIds = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return true;
-        }
-
-        var trimmed = raw.Trim();
-        if (trimmed.StartsWith('['))
-        {
-            try
-            {
-                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
-                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
-                {
-                    error = "rasterIds must be a JSON array of catalog object IDs.";
-                    return false;
-                }
-
-                var values = new List<long>(doc.RootElement.GetArrayLength());
-                foreach (var element in doc.RootElement.EnumerateArray())
-                {
-                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt64(out var id) || id <= 0)
-                    {
-                        error = "rasterIds entries must be positive catalog object IDs.";
-                        return false;
-                    }
-                    values.Add(id);
-                }
-                rasterIds = values.Count == 0 ? null : values.ToArray();
-                return true;
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                error = "rasterIds must be valid JSON.";
-                return false;
-            }
-        }
-
-        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var parsed = new List<long>(parts.Length);
-        foreach (var part in parts)
-        {
-            if (!long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) || id <= 0)
-            {
-                error = "rasterIds entries must be positive catalog object IDs.";
-                return false;
-            }
-            parsed.Add(id);
-        }
-        rasterIds = parsed.Count == 0 ? null : parsed.ToArray();
-        return true;
-    }
-
-    /// <summary>
-    /// Parses the optional <c>bandIds</c> extension parameter as a list of 1-based band indices.
-    /// Accepts CSV or JSON array form.
-    /// </summary>
-    private static bool TryParseBandIds(string? raw, out int[]? bands, out string? error)
-    {
-        bands = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return true;
-        }
-
-        var trimmed = raw.Trim();
-        if (trimmed.StartsWith('['))
-        {
-            try
-            {
-                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
-                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
-                {
-                    error = "bandIds must be a JSON array of 1-based band indices.";
-                    return false;
-                }
-
-                var values = new List<int>(doc.RootElement.GetArrayLength());
-                foreach (var element in doc.RootElement.EnumerateArray())
-                {
-                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band <= 0)
-                    {
-                        error = "bandIds entries must be positive integers.";
-                        return false;
-                    }
-                    values.Add(band);
-                }
-                bands = values.Count == 0 ? null : values.ToArray();
-                return true;
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                error = "bandIds must be valid JSON.";
-                return false;
-            }
-        }
-
-        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var parsed = new List<int>(parts.Length);
-        foreach (var part in parts)
-        {
-            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band <= 0)
-            {
-                error = "bandIds entries must be positive integers.";
-                return false;
-            }
-            parsed.Add(band);
-        }
-        bands = parsed.Count == 0 ? null : parsed.ToArray();
-        return true;
-    }
 
     private static bool IsSupportedFormat(string? format)
         => string.IsNullOrWhiteSpace(format) ||

@@ -4,12 +4,14 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Authentication;
@@ -78,7 +80,7 @@ internal sealed class ImageServerTileHandler
             // Validate layer exists in the Metadata v2 graph
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resolved = publicationId is null
-                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
                 : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
             if (resolved is null)
             {
@@ -103,12 +105,12 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif, cog.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeStart, out var timeError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -121,7 +123,7 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            if (publicationId is not null && await RequireCurrentPublicationAccessAsync(snapshot, resolvedLayer, context, cancellationToken).ConfigureAwait(false) is { } accessError)
             {
                 return accessError;
             }
@@ -138,7 +140,8 @@ internal sealed class ImageServerTileHandler
                 {
                     Geometry = tileGeometry,
                     GeometrySrid = 3857,
-                    Timestamp = timestamp
+                    Timestamp = timestamp,
+                    TimeStart = timeStart
                 },
                 cancellationToken);
 
@@ -147,7 +150,7 @@ internal sealed class ImageServerTileHandler
             if (selectedRasters.Length == 0 && _cogTileResolver == null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                return CreateMissingTileResponse(context, "No rasters found for layer.");
             }
 
             if (selectedRasters.Length > 0)
@@ -167,6 +170,7 @@ internal sealed class ImageServerTileHandler
                     selectedRasters,
                     mergeStrategy,
                     timestamp,
+                    timeStart,
                     context.Request.Query["mosaicRule"].ToString(),
                     rasterFormat,
                     level,
@@ -236,10 +240,18 @@ internal sealed class ImageServerTileHandler
             }
 
             // Fallback: Check COGs (Pro edition required)
-            if (_cogTileResolver != null)
+            if (_cogTileResolver != null
+                && resolvedLayer.Publication.LayerIndex is { } publicationLayerIndex
+                && CogPublicationBinding.Resolve(snapshot, publicationLayerIndex)?.Metadata.Id
+                    == resolvedLayer.Publication.Metadata.Id)
             {
                 var lookup = await _cogTileResolver.GetTileForLayerAsync(
-                    layerId, level, row, col, rasterFormat, cancellationToken);
+                    publicationLayerIndex,
+                    level,
+                    row,
+                    col,
+                    rasterFormat,
+                    cancellationToken);
 
                 if (lookup.EditionGateHit)
                 {
@@ -260,7 +272,7 @@ internal sealed class ImageServerTileHandler
             }
 
             ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
-            return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
+            return CreateMissingTileResponse(context, "Image tile not found.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -313,7 +325,7 @@ internal sealed class ImageServerTileHandler
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resolved = publicationId is null
-                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
                 : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
             if (resolved is null)
             {
@@ -331,12 +343,12 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif, cog.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeStart, out var timeError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -349,7 +361,7 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            if (publicationId is not null && await RequireCurrentPublicationAccessAsync(snapshot, resolvedLayer, context, cancellationToken).ConfigureAwait(false) is { } accessError)
             {
                 return accessError;
             }
@@ -367,7 +379,8 @@ internal sealed class ImageServerTileHandler
                 {
                     Geometry = tileGeometry,
                     GeometrySrid = grid.Srid,
-                    Timestamp = timestamp
+                    Timestamp = timestamp,
+                    TimeStart = timeStart
                 },
                 cancellationToken);
 
@@ -376,7 +389,7 @@ internal sealed class ImageServerTileHandler
             if (selectedRasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                return CreateMissingTileResponse(context, "No rasters found for layer.");
             }
 
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
@@ -404,6 +417,7 @@ internal sealed class ImageServerTileHandler
                 selectedRasters,
                 mergeStrategy,
                 timestamp,
+                timeStart,
                 context.Request.Query["mosaicRule"].ToString(),
                 rasterFormat,
                 level,
@@ -442,7 +456,7 @@ internal sealed class ImageServerTileHandler
             if (tileResult == null)
             {
                 ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
-                return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
+                return CreateMissingTileResponse(context, "Image tile not found.");
             }
 
             var result = tileResult.Value;
@@ -503,10 +517,11 @@ internal sealed class ImageServerTileHandler
             && currentCacheLayerId == (expectedCacheLayerId ?? expectedStorageLayerId);
     }
 
-    private static IResult? RequireCurrentPublicationAccess(
+    private static async Task<IResult?> RequireCurrentPublicationAccessAsync(
         MetadataV2GraphSnapshot snapshot,
         ImageServerV2Lookups.ResolvedImageLayer resolvedLayer,
-        HttpContext context)
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         if (resolvedLayer.Resource is null ||
             !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var service))
@@ -523,7 +538,10 @@ internal sealed class ImageServerTileHandler
             return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
         }
 
-        return AccessPolicyHelpers.RequireResourceAccess(context, resolvedLayer.Resource, service);
+        // Authorize the same operation the tile and WMTS routes resolved this publication with
+        // (ImageServerLayerResolver defaults to Query), so both checks admit the same principals.
+        return await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resolvedLayer.Resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
     }
 
     private static byte[] CreateTileEnvelope(int level, int row, int col)
@@ -560,6 +578,14 @@ internal sealed class ImageServerTileHandler
             }
         }
     }
+
+    private static IResult CreateMissingTileResponse(HttpContext context, string detail)
+        // Tile misses are transport 404s, unlike ordinary GeoServices operation errors.
+        // There is no configured blank-tile fallback to advertise or synthesize here.
+        => StandardErrorResponseFormatter.FormatError(
+            context,
+            StandardErrorResponse.NotFound(detail),
+            new ErrorResponseFormatterOptions { GeoServicesUseHttpStatus = true });
 
     // ImageServer tiles are only served in the "default" style; kept as a named constant so the
     // cache key partitions by style even though a non-default style cannot currently be requested.

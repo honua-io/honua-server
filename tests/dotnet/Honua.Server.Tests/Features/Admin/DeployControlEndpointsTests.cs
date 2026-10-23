@@ -258,6 +258,123 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/plan")]
+    public async Task PlanDeployOperation_WithInvalidTelemetryGate_ReturnsBlockedPlan()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/deploy/plan", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:abc123",
+            parameters = new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.error_rate.threshold"] = "NaN",
+                ["telemetry.warmup_seconds"] = "0"
+            }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("readyToSubmit").GetBoolean().Should().BeFalse();
+        root.GetProperty("blockingReasons").EnumerateArray()
+            .Select(reason => reason.GetString() ?? string.Empty)
+            .Should().Contain(reason =>
+                reason.Contains("Telemetry gate configuration rejected", StringComparison.Ordinal) &&
+                reason.Contains("telemetry.error_rate.threshold must be", StringComparison.Ordinal) &&
+                reason.Contains("telemetry.warmup_seconds must be", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/plan")]
+    public async Task PlanDeployOperation_WithUnconfiguredTelemetryConnection_ReturnsBlockedPlan()
+    {
+        // The test host declares no ControlPlane:TelemetryConnections, so a structurally valid metrics
+        // gate that names a connection can never be satisfied and must be refused before submission.
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/deploy/plan", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:abc123",
+            parameters = new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom"
+            }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("readyToSubmit").GetBoolean().Should().BeFalse();
+        root.GetProperty("blockingReasons").EnumerateArray()
+            .Select(reason => reason.GetString() ?? string.Empty)
+            .Should().Contain(reason => reason.Contains("connection 'prod-prom' is not configured", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/plan")]
+    public async Task PlanDeployOperation_WithHealthOnlyTelemetryProfile_IsReadyWithoutMetricsConnection()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/deploy/plan", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:abc123",
+            parameters = new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("readyToSubmit").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations")]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/submit")]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
+    public async Task CreateDeployOperation_WithInvalidTelemetryGate_IsNeverSubmittedToBackend()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:bad-gate",
+            reason = "Gate typo",
+            submitImmediately = true,
+            parameters = new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                ["telemetry.healthz.sample"] = "5"
+            }
+        });
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var createRoot = createDocument.RootElement;
+        var operationId = createRoot.GetProperty("operationId").GetString();
+        createRoot.GetProperty("status").GetString().Should().Be("Planned", "submitImmediately must not reach the backend with an invalid gate");
+        createRoot.GetProperty("blockingReasons").EnumerateArray()
+            .Select(reason => reason.GetString() ?? string.Empty)
+            .Should().Contain(reason => reason.Contains("'telemetry.healthz.sample' is not a recognized deploy telemetry parameter", StringComparison.Ordinal));
+
+        var submitResponse = await _client.PostAsJsonAsync($"/api/v1/admin/deploy/operations/{operationId}/submit", new
+        {
+            reason = "Try anyway"
+        });
+        submitResponse.StatusCode.Should().NotBe(HttpStatusCode.OK, "a blocked operation cannot be submitted");
+
+        var getResponse = await _client.GetAsync($"/api/v1/admin/deploy/operations/{operationId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        getDocument.RootElement.GetProperty("status").GetString().Should().Be("Planned");
+        (getDocument.RootElement.TryGetProperty("providerOperationId", out var providerOperationId) &&
+            providerOperationId.ValueKind == JsonValueKind.String)
+            .Should().BeFalse("the deploy backend was never called");
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/deploy/operations")]
     [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/submit")]
@@ -528,7 +645,11 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            document.RootElement.GetProperty("status").GetString().Should().Be("Succeeded");
+            // honua-server#4618: a forced manual promotion opens the same post-activation observation
+            // window an automatic promotion does, so the operation stays Reconciling with a Protection
+            // record rather than jumping straight to a terminal Succeeded.
+            document.RootElement.GetProperty("status").GetString().Should().Be("Reconciling");
+            document.RootElement.GetProperty("protection").GetProperty("phase").GetString().Should().Be("observing");
             backend.PromoteCalls.Should().Be(1);
         }
         finally

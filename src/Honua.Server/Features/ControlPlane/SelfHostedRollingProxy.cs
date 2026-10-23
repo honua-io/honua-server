@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Configuration;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -123,12 +125,24 @@ internal static class SelfHostedProxyReconstruction
     /// <summary>
     /// Resolves the address the proxy should forward to by inspecting running replica containers.
     /// Prefers the configured active port; falls back to the standby port when the active replica is
-    /// gone (the post-promotion world). Returns null when neither replica is running so the caller can
-    /// keep its configured default.
+    /// gone. Returns null when neither replica is running so the caller can keep its configured default.
     /// </summary>
+    /// <param name="containers">Live containers discovered from the container runtime.</param>
+    /// <param name="options">Self-hosted deploy configuration (ports, naming).</param>
+    /// <param name="activeDeployOperations">
+    /// Active <see cref="WorkflowOperationKind.Deploy"/> operations, when the durable workflow store is
+    /// available. Since the old replica is now retained (not removed) through the post-activation
+    /// observation window (honua-server#4618), container ground truth alone cannot distinguish "still
+    /// baking" (both replicas running, traffic still on active) from "cutover complete, old replica
+    /// retained for recovery" (both replicas running, traffic now on standby) — container labels never
+    /// change between the two. A durable operation whose <c>Deploy.Protection</c> is set is unambiguous
+    /// proof that cutover already completed for that target, so it takes priority over the container-only
+    /// heuristic below. Pass null (the container-only heuristic) when the workflow store is unavailable.
+    /// </param>
     public static string? ResolveRunningDestination(
         IReadOnlyList<ContainerSummary> containers,
-        SelfHostedDeployOptions options)
+        SelfHostedDeployOptions options,
+        IReadOnlyList<WorkflowOperationRecord>? activeDeployOperations = null)
     {
         ArgumentNullException.ThrowIfNull(containers);
         ArgumentNullException.ThrowIfNull(options);
@@ -137,6 +151,15 @@ internal static class SelfHostedProxyReconstruction
         var host = string.IsNullOrWhiteSpace(options.Host) ? "127.0.0.1" : options.Host;
         var activeName = $"{prefix}-{options.ActivePort.ToString(CultureInfo.InvariantCulture)}";
         var standbyName = $"{prefix}-{options.StandbyPort.ToString(CultureInfo.InvariantCulture)}";
+
+        var provenPromoted = activeDeployOperations?.Any(operation =>
+            operation.Kind == WorkflowOperationKind.Deploy &&
+            operation.Deploy is { TargetKind: DeployTargetKind.SelfHostedRolling, Protection: not null })
+            ?? false;
+        if (provenPromoted && IsRunning(containers, standbyName))
+        {
+            return Address(host, options.StandbyPort);
+        }
 
         if (IsRunning(containers, activeName))
         {
@@ -169,6 +192,7 @@ internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
 
     private readonly InMemoryConfigProvider _configProvider;
     private readonly IContainerRuntimeClient _containerRuntime;
+    private readonly IWorkflowOperationStore? _workflowStore;
     private readonly SelfHostedDeployOptions _options;
     private readonly object _sync = new();
     private string _activeAddress;
@@ -176,11 +200,13 @@ internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
     public YarpInMemoryProxyStateSwapper(
         InMemoryConfigProvider configProvider,
         IContainerRuntimeClient containerRuntime,
-        Microsoft.Extensions.Options.IOptions<SelfHostedDeployOptions> options)
+        Microsoft.Extensions.Options.IOptions<SelfHostedDeployOptions> options,
+        IWorkflowOperationStore? workflowStore = null)
     {
         _configProvider = configProvider;
         _containerRuntime = containerRuntime;
         _options = options.Value;
+        _workflowStore = workflowStore;
         _activeAddress = InitialActiveAddress(_options);
     }
 
@@ -216,8 +242,10 @@ internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
     /// <summary>
     /// Repoints the proxy at the replica that is actually running, discovered from the container
     /// runtime. Called at startup so a front-process restart that lost the in-memory swap decision does
-    /// not keep forwarding to a deleted active replica. Best-effort: when no replica is discovered the
-    /// configured active destination is left in place.
+    /// not keep forwarding to a stale replica — including, since honua-server#4618, a restart that lands
+    /// mid post-activation observation window, where both replicas are legitimately running at once and
+    /// only the durable workflow store (when available) can prove which one already has traffic.
+    /// Best-effort: when no replica is discovered the configured active destination is left in place.
     /// </summary>
     public async Task ReconcileFromRuntimeAsync(CancellationToken cancellationToken)
     {
@@ -225,7 +253,11 @@ internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
             .ListAsync(_options.ContainerRuntime, NoLabelSelectors, cancellationToken)
             .ConfigureAwait(false);
 
-        var destination = SelfHostedProxyReconstruction.ResolveRunningDestination(containers, _options);
+        var activeDeployOperations = _workflowStore != null
+            ? await _workflowStore.ListActiveAsync(WorkflowOperationKind.Deploy, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        var destination = SelfHostedProxyReconstruction.ResolveRunningDestination(containers, _options, activeDeployOperations);
         if (string.IsNullOrEmpty(destination) || string.Equals(destination, ActiveDestinationAddress, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -343,8 +375,10 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
 
         var clampedSamples = Math.Clamp(samples <= 0 ? 1 : samples, MinimumSamples, MaximumSamples);
         var timeout = Math.Max(1, timeoutSeconds);
-        var client = httpClientFactory.CreateClient("control-plane-telemetry");
+        var client = httpClientFactory.CreateClient(ControlPlaneHttpClients.Probe);
         var failures = 0;
+        var reached = false;
+        string? body = null;
 
         for (var attempt = 0; attempt < clampedSamples; attempt++)
         {
@@ -357,10 +391,14 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
                 using var response = await client
                     .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
                     .ConfigureAwait(false);
+                reached = true;
                 if ((int)response.StatusCode != expectedStatusCode)
                 {
                     failures++;
+                    continue;
                 }
+
+                body ??= await ReadProbeBodyAsync(response, timeoutCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -383,8 +421,37 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
         {
             Attempts = clampedSamples,
             Failures = failures,
+            Reached = reached,
+            Body = body,
             Detail = $"{failures} of {clampedSamples} replica health checks did not return {expectedStatusCode.ToString(CultureInfo.InvariantCulture)}."
         };
+    }
+
+    private static async Task<string?> ReadProbeBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        const int limit = 65_536;
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var rented = new byte[4096];
+        var total = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(rented.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+            if (total > limit)
+            {
+                return null;
+            }
+
+            buffer.Write(rented, 0, read);
+        }
+
+        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static partial class Log
@@ -435,6 +502,13 @@ internal sealed partial class ProcessContainerRuntimeClient(ILogger<ProcessConta
         {
             arguments.Add("-e");
             arguments.Add($"{variable.Key}={variable.Value}");
+        }
+
+        // Read-only so a replica can never write back to operator-supplied material (#4617).
+        foreach (var mount in request.Mounts)
+        {
+            arguments.Add("-v");
+            arguments.Add($"{mount.HostPath}:{mount.ContainerPath}:ro");
         }
 
         arguments.Add("-p");

@@ -111,12 +111,13 @@ public static class GeographicSridClassifier
     /// <summary>
     /// Narrow allowlist of geographic (degree) SRIDs for which a WGS 84 spheroid geodesic distance
     /// is applied directly by the provider distance paths. Intentionally a subset of
-    /// <see cref="GeographicSrids"/>; see the type remarks and #2731 before changing it.
+    /// <see cref="GeographicSrids"/>. NAD27 (4267) stays on the broad geographic list for axis
+    /// order, but it is not safe here: DuckDB measures those degrees on the WGS 84 spheroid
+    /// with no datum shift. See the type remarks and #2731 before widening this list.
     /// </summary>
     public static readonly ImmutableArray<int> GeodesicDistanceSafeSrids =
     [
         4258,   // ETRS89
-        4267,   // NAD27
         4269,   // NAD83
         4283,   // GDA94
         4326,   // WGS 84

@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
@@ -66,9 +69,13 @@ public sealed class AdminOperationApprovalBridgeTests
     }
 
     [UnitTest]
-    public async Task CreateProposalAsync_MissingGateway_ReturnsNonDurableFailure()
+    public async Task CreateProposalAsync_DurableStoreWithoutGateway_ReturnsNonDurableFailure()
     {
-        var bridge = CreateBridge(new ServiceCollection().BuildServiceProvider());
+        // A real proposal store with no gateway is a composition defect, not a Redis-off host:
+        // the bridge keeps its fail-closed non-durable result rather than naming Redis (#5733).
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+        var bridge = CreateBridge(services.BuildServiceProvider());
 
         var result = await bridge.CreateProposalAsync(
             Descriptor(),
@@ -80,6 +87,27 @@ public sealed class AdminOperationApprovalBridgeTests
         result.ProposalId.Should().BeNull();
         result.AuditId.Should().BeNull();
         result.Reason.Should().Contain("gateway is unavailable");
+    }
+
+    [UnitTest]
+    public async Task CreateProposalAsync_NoDurableControlPlane_RefusesWithTypedRedisDependency()
+    {
+        // No gateway and no durable proposal store (absent, or the Redis-off placeholder): the
+        // control plane was never composed, so the bridge refuses with the typed receipt (#5733).
+        foreach (var services in new[]
+                 {
+                     new ServiceCollection(),
+                     new ServiceCollection().AddSingleton<IOperationProposalStore, UnavailableOperationProposalStore>(),
+                 })
+        {
+            var bridge = CreateBridge(services.BuildServiceProvider());
+
+            var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(
+                () => bridge.CreateProposalAsync(Descriptor(), Request(), Context(), Decision()));
+
+            refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
+        }
     }
 
     [UnitTest]
@@ -161,6 +189,62 @@ public sealed class AdminOperationApprovalBridgeTests
         captured.ScopeGoverned.Should().BeTrue();
         captured.RecognizedScopes.Should().Equal("honua.mcp.update");
         captured.OperationInstanceId.Should().NotBe(result.ProposalId);
+    }
+
+    [UnitTest]
+    public async Task CreateProposalAsync_ForwardsInvocationIdempotencyKey_ToDurableProposal()
+    {
+        var captured = await CaptureGatewayRequestAsync(
+            CreateBridge,
+            Request(),
+            Context() with { IdempotencyKey = "scoped-invocation-key" });
+
+        captured.IdempotencyKey.Should().Be("scoped-invocation-key",
+            "a retry must fold onto the sealed proposal instead of minting a duplicate (#3361)");
+    }
+
+    [UnitTest]
+    public async Task CreateProposalAsync_MapperScopedIdempotencyKey_WinsOverInvocationKey()
+    {
+        var captured = await CaptureGatewayRequestAsync(
+            services => new AdminOperationApprovalBridge(
+                services,
+                [new TestMapper("mapper-scoped-key")],
+                NullLogger<AdminOperationApprovalBridge>.Instance),
+            Request(),
+            Context() with { IdempotencyKey = "scoped-invocation-key" });
+
+        captured.IdempotencyKey.Should().Be("mapper-scoped-key");
+    }
+
+    private static async Task<OperationGatewayRequest> CaptureGatewayRequestAsync(
+        Func<IServiceProvider, AdminOperationApprovalBridge> createBridge,
+        OperationRequest request,
+        OperationPolicyContext context)
+    {
+        OperationGatewayRequest? captured = null;
+        var gateway = Substitute.For<IOperationGateway>();
+        gateway.CreateApprovalProposalAsync(
+                Arg.Any<string>(),
+                Arg.Do<OperationGatewayRequest>(value => captured = value),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.ProposalCreated,
+                Decision = GatewayDecision(),
+                ProposalId = "proposal-123",
+                AuditId = "audit-456",
+            });
+        var services = new ServiceCollection()
+            .AddSingleton(gateway)
+            .AddSingleton(AllowApprovalGuardrail())
+            .BuildServiceProvider();
+
+        var result = await createBridge(services).CreateProposalAsync(Descriptor(), request, context, Decision());
+
+        result.IsDurable.Should().BeTrue();
+        captured.Should().NotBeNull();
+        return captured!;
     }
 
     [UnitTest]
@@ -263,7 +347,7 @@ public sealed class AdminOperationApprovalBridgeTests
         return guardrail;
     }
 
-    private sealed class TestMapper : IOperationApprovalRequestMapper
+    private sealed class TestMapper(string? idempotencyKey = null) : IOperationApprovalRequestMapper
     {
         public string OperationId => "admin.test";
 
@@ -277,6 +361,7 @@ public sealed class AdminOperationApprovalBridgeTests
                 Kind = OperationClass.AdminConfigChange,
                 RequestedBy = context.PrincipalId,
                 ExecutionPayload = "{}",
+                IdempotencyKey = idempotencyKey,
             };
 
         public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)

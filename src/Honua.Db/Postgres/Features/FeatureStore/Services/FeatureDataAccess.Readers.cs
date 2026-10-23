@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -114,21 +113,6 @@ internal sealed partial class FeatureDataAccess
         return JsonSerializer.Serialize(dictionary, FeatureAttributesJsonContext.Default.DictionaryStringObject);
     }
 
-    private static Dictionary<string, object?>? DeserializeFromJsonString(string json)
-    {
-        return JsonSerializer.Deserialize(json, FeatureAttributesJsonContext.Default.DictionaryStringObject);
-    }
-
-    private static object? ConvertJsonElementToObject(object? value)
-    {
-        if (value is JsonElement element)
-        {
-            return JsonElementConverter.ConvertToScalar(element);
-        }
-
-        return value;
-    }
-
     private ImmutableDictionary<string, object?> ReadAttributes(NpgsqlDataReader reader, long id)
     {
         var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
@@ -136,14 +120,7 @@ internal sealed partial class FeatureDataAccess
 
         try
         {
-            var deserializedDict = string.IsNullOrWhiteSpace(attributesJson)
-                ? new Dictionary<string, object?>()
-                : DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
-
-            foreach (var (key, value) in deserializedDict)
-            {
-                attributesDictionary[key] = ConvertJsonElementToObject(value);
-            }
+            FeatureAttributeJsonReader.ReadInto(attributesJson, attributesDictionary);
 
             attributesDictionary["objectid"] = id;
 

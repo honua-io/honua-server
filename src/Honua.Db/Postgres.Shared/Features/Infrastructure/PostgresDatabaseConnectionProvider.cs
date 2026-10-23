@@ -70,12 +70,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
                 onRetry: (ex, delay, attempt) =>
                 {
                     retryCount = attempt;
-                    activity?.AddEvent(new ActivityEvent("retry", tags: new ActivityTagsCollection
-                    {
-                        { "attempt", attempt },
-                        { "delay_ms", delay.TotalMilliseconds },
-                        { "error.message", ex.Message }
-                    }));
+                    activity?.AddEvent(PostgresRetryActivityEvent.Create("retry", ex, delay, attempt));
 
                     PostgresLog.ConnectionRetry(_logger, attempt, ex.Message);
                 },
@@ -185,12 +180,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
             operation,
             onRetry: (ex, delay, attempt) =>
             {
-                activity?.AddEvent(new ActivityEvent("deadlock_retry", tags: new ActivityTagsCollection
-                {
-                    { "attempt", attempt },
-                    { "delay_ms", delay.TotalMilliseconds },
-                    { "error.message", ex.Message }
-                }));
+                activity?.AddEvent(PostgresRetryActivityEvent.Create("deadlock_retry", ex, delay, attempt));
 
                 PostgresLog.DeadlockRetry(_logger, attempt, ex.Message);
             },
@@ -214,16 +204,44 @@ internal sealed class PostgresDatabaseConnectionProvider(
             operation,
             onRetry: (ex, delay, attempt) =>
             {
-                activity?.AddEvent(new ActivityEvent("deadlock_retry", tags: new ActivityTagsCollection
-                {
-                    { "attempt", attempt },
-                    { "delay_ms", delay.TotalMilliseconds },
-                    { "error.message", ex.Message }
-                }));
+                activity?.AddEvent(PostgresRetryActivityEvent.Create("deadlock_retry", ex, delay, attempt));
 
                 PostgresLog.DeadlockRetry(_logger, attempt, ex.Message);
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+}
+
+/// <summary>
+/// Builds the span events recorded for connection and deadlock retries. The exception message goes
+/// through <see cref="TelemetryExceptionDetailPolicy"/> because event attributes are beyond the
+/// reach of the span sanitizer: with <c>Tracing:ExportExceptionDetails</c> off (the default) only
+/// the exception type and SQLSTATE are recorded, and when on the message is sanitized and bounded
+/// (honua-server#5475).
+/// </summary>
+internal static class PostgresRetryActivityEvent
+{
+    public static ActivityEvent Create(string name, Exception exception, TimeSpan delay, int attempt)
+    {
+        var tags = new ActivityTagsCollection
+        {
+            { "attempt", attempt },
+            { "delay_ms", delay.TotalMilliseconds },
+            { "error.type", exception.GetType().FullName },
+        };
+
+        if (exception is DbException { SqlState: { Length: > 0 } sqlState })
+        {
+            tags.Add("db.response.status_code", sqlState);
+        }
+
+        var message = TelemetryExceptionDetailPolicy.ExportableMessage(exception);
+        if (message is not null)
+        {
+            tags.Add("error.message", message);
+        }
+
+        return new ActivityEvent(name, tags: tags);
     }
 }
 

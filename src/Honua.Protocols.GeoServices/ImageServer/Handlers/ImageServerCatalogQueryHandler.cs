@@ -67,18 +67,35 @@ internal sealed class ImageServerCatalogQueryHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (!TryParseQuery(values, out var query, out var parseError))
+            if (!TryParseQuery(
+                    values,
+                    GeoServicesGeometryConverter.ResolveConfiguredCurveVertexBudget(context.RequestServices),
+                    out var query,
+                    out var parseError))
             {
                 ImageServerLog.InvalidCatalogQueryParameters(_logger, layerId, parseError ?? "Invalid query parameter.");
                 return StandardErrorHelpers.CreateBadRequest(
                     context,
                     parseError ?? "Invalid query parameter.");
+            }
+
+            var maskResource = resolved.Resource
+                ?? throw new InvalidOperationException("ImageServer resource metadata is unavailable.");
+            var maskedFields = await _fieldMaskSource.ResolveAsync(maskResource, cancellationToken).ConfigureAwait(false);
+            query.EnforcedMaskedFields = maskedFields;
+            try
+            {
+                ImageServerCatalogSecurity.Validate(query, maskedFields);
+            }
+            catch (ImageServerCatalogFilterException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer catalog query filter.");
             }
 
             var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, query.Time);
@@ -97,16 +114,6 @@ internal sealed class ImageServerCatalogQueryHandler
                 ImageServerLog.InvalidCatalogQueryParameters(_logger, layerId, ex.Message);
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer catalog query filter.");
             }
-
-            // RBAC field-level masking (#2159): drop attribute (field) names the
-            // principal's role is not permitted to see. This is the ImageServer
-            // companion to the FeatureServer column masking (#2108): the same policy
-            // source (IFieldMaskSource) and the same masked representation (the field
-            // is absent), enforced server-side before serialization so a masked column
-            // never leaks — even when the caller explicitly requests it via outFields.
-            var maskedFields = resolved.Resource is { } maskResource
-                ? await _fieldMaskSource.ResolveAsync(maskResource, cancellationToken).ConfigureAwait(false)
-                : ImmutableArray<string>.Empty;
 
             ImageServerLog.CatalogQueryCompleted(_logger, layerId, page.Items.Count, page.TotalCount);
 
@@ -154,14 +161,18 @@ internal sealed class ImageServerCatalogQueryHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
+            var resource = resolved.Resource
+                ?? throw new InvalidOperationException("ImageServer resource metadata is unavailable.");
+            var maskedFields = await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
             var query = new ImageServerCatalogQuery
             {
+                EnforcedMaskedFields = maskedFields,
                 ObjectIds = [rasterId],
                 Limit = 1,
                 ReturnGeometry = true,
@@ -173,9 +184,6 @@ internal sealed class ImageServerCatalogQueryHandler
                 return StandardErrorHelpers.CreateNotFound(context, $"Raster catalog item {rasterId} not found.");
             }
 
-            var maskedFields = resolved.Resource is { } resource
-                ? await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false)
-                : ImmutableArray<string>.Empty;
             var feature = BuildFeature(item, query, maskedFields);
 
             scope.SetSuccess(1);
@@ -200,6 +208,7 @@ internal sealed class ImageServerCatalogQueryHandler
 
     private static bool TryParseQuery(
         IReadOnlyDictionary<string, StringValues> values,
+        int maxCurveVertices,
         out ImageServerCatalogQuery query,
         out string? error)
     {
@@ -234,13 +243,13 @@ internal sealed class ImageServerCatalogQueryHandler
             }
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var time, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var time, out var timeStart, out var timeError))
         {
             error = timeError;
             return false;
         }
 
-        if (!TryParseSpatialFilter(values, out var spatialFilter, out error))
+        if (!TryParseSpatialFilter(values, maxCurveVertices, out var spatialFilter, out error))
         {
             return false;
         }
@@ -294,6 +303,7 @@ internal sealed class ImageServerCatalogQueryHandler
             OutputSrid = outputSrid,
             SpatialFilter = spatialFilter,
             Time = time,
+            TimeStart = timeStart,
             Offset = offset,
             Limit = limit,
             OrderBy = orderBy,
@@ -320,6 +330,7 @@ internal sealed class ImageServerCatalogQueryHandler
     /// </summary>
     private static bool TryParseSpatialFilter(
         IReadOnlyDictionary<string, StringValues> values,
+        int maxCurveVertices,
         out ImageServerCatalogSpatialFilter? spatialFilter,
         out string? error)
     {
@@ -378,7 +389,7 @@ internal sealed class ImageServerCatalogQueryHandler
         if (relation != RasterCatalogSpatialRelation.EnvelopeIntersects &&
             !IsEnvelopeShaped(normalizedGeometry))
         {
-            if (!TryConvertGeometryToWkb(normalizedGeometry, filterSrid, out exactGeometry, out var wkbError))
+            if (!TryConvertGeometryToWkb(normalizedGeometry, filterSrid, maxCurveVertices, out exactGeometry, out var wkbError))
             {
                 error = wkbError;
                 return false;
@@ -439,6 +450,7 @@ internal sealed class ImageServerCatalogQueryHandler
     private static bool TryConvertGeometryToWkb(
         string geometryJson,
         int? filterSrid,
+        int maxCurveVertices,
         out byte[]? wkb,
         out string? error)
     {
@@ -464,7 +476,7 @@ internal sealed class ImageServerCatalogQueryHandler
 
         try
         {
-            wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, filterSrid);
+            wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, filterSrid, maxCurveVertices);
             return true;
         }
         catch (ArgumentException)
@@ -769,44 +781,18 @@ internal sealed class ImageServerCatalogQueryHandler
         IReadOnlyList<string>? outFields = null,
         ImmutableArray<string> maskedFields = default)
     {
-        Field[] allFields =
-        [
-            new Field { Name = "OBJECTID", Type = "esriFieldTypeOID", Alias = "OBJECTID" },
-            new Field { Name = "Name", Type = "esriFieldTypeString", Alias = "Name", Nullable = true },
-            new Field { Name = "MinPS", Type = "esriFieldTypeDouble", Alias = "MinPS" },
-            new Field { Name = "MaxPS", Type = "esriFieldTypeDouble", Alias = "MaxPS" },
-            new Field { Name = "LowPS", Type = "esriFieldTypeDouble", Alias = "LowPS" },
-            new Field { Name = "HighPS", Type = "esriFieldTypeDouble", Alias = "HighPS" },
-            new Field { Name = "CenterX", Type = "esriFieldTypeDouble", Alias = "CenterX" },
-            new Field { Name = "CenterY", Type = "esriFieldTypeDouble", Alias = "CenterY" },
-            new Field { Name = "ZOrder", Type = "esriFieldTypeInteger", Alias = "ZOrder" },
-            new Field { Name = "Shape_Length", Type = "esriFieldTypeDouble", Alias = "Shape_Length" },
-            new Field { Name = "Shape_Area", Type = "esriFieldTypeDouble", Alias = "Shape_Area" },
-            new Field { Name = "BandCount", Type = "esriFieldTypeInteger", Alias = "BandCount" },
-            new Field { Name = "PixelType", Type = "esriFieldTypeString", Alias = "PixelType", Nullable = true },
-            new Field { Name = "AcquisitionDate", Type = "esriFieldTypeDate", Alias = "AcquisitionDate", Nullable = true },
-            new Field { Name = "CreatedAt", Type = "esriFieldTypeDate", Alias = "CreatedAt" },
-        ];
-
-        var masked = maskedFields.IsDefaultOrEmpty
-            ? null
-            : new HashSet<string>(maskedFields, StringComparer.OrdinalIgnoreCase);
-
+        // Drop masked fields from the advertised schema so the response field set
+        // matches the masked attribute set (#2159).
+        var fields = ImageServerCatalogFields.Schema(maskedFields);
         if (outFields is not { Count: > 0 })
         {
-            // Drop masked fields from the advertised schema so the response field set
-            // matches the masked attribute set (#2159).
-            return masked is null
-                ? allFields
-                : allFields.Where(field => !masked.Contains(field.Name)).ToArray();
+            return fields;
         }
 
         // Preserve the canonical field order rather than the caller's order so the
         // schema stays stable and matches the attribute emit order.
         var allowed = new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase);
-        return allFields
-            .Where(field => allowed.Contains(field.Name) && (masked is null || !masked.Contains(field.Name)))
-            .ToArray();
+        return fields.Where(field => allowed.Contains(field.Name)).ToArray();
     }
 
     private static List<long>? ParseObjectIds(string? raw)

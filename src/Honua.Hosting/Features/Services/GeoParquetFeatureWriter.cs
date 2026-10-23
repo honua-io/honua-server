@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Types;
@@ -66,6 +68,7 @@ public static partial class GeoParquetFeatureWriter
     /// <param name="geometryLimits">Geometry output limits.</param>
     /// <param name="outFields">Requested output fields, or null / ["*"] for all.</param>
     /// <param name="logger">Optional logger for conversion diagnostics.</param>
+    /// <param name="encodingLimits">Optional encoding budgets; defaults apply when omitted.</param>
     /// <returns>The GeoParquet payload and its content type.</returns>
     public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
@@ -77,12 +80,15 @@ public static partial class GeoParquetFeatureWriter
         bool returnM,
         GeometryLimits geometryLimits,
         string[]? outFields = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        GeoParquetLimits? encodingLimits = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
+        encodingLimits ??= new GeoParquetLimits();
+        ValidateEncodingLimits(encodingLimits);
 
         var features = result.Items;
-        var includeGeometry = returnGeometry && HasGeometry(resource);
+        var includeGeometry = returnGeometry && resource.HasGeometry();
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
         // Resolve (and thereby validate) the output-CRS PROJJSON up-front so a non-resolvable
@@ -90,45 +96,54 @@ public static partial class GeoParquetFeatureWriter
         _ = ResolveGeoParquetCrsProjJson(includeGeometry, srid);
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
+        var batches = PlanBatches(features, encodingLimits);
         if (features.Length == 0)
         {
-            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid);
+            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, encodingLimits);
         }
 
         var runtimeFields = DetectRuntimeFields(features, resource);
-
-        BinaryArray? geometryArray = null;
-        StructArray? bboxArray = null;
-        string[]? geometryTypes = null;
-        if (returnGeometry && HasGeometry(resource))
+        batches = PlanBatches(features, encodingLimits, resource.SchemaFields.Count + runtimeFields.Count + 6);
+        // A small type set is all the metadata pass retains. Encoding each batch later keeps
+        // Arrow buffers bounded while still describing types found in the final batch.
+        var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
+        if (includeGeometry)
         {
-            (geometryArray, bboxArray, geometryTypes) = BuildGeometryArray(
-                features,
-                srid,
-                returnZ,
-                returnM,
-                geometryLimits,
-                logger);
+            foreach (var feature in features)
+            {
+                var (_, _, _, geometryType) = ProcessGeometryCore(feature.Geometry, srid,
+                    geometryLimits, returnZ, returnM, feature.Id, logger, encodeWkb: false);
+                if (geometryType is not null)
+                {
+                    geometryTypes.Add(geometryType);
+                }
+            }
         }
 
         var (schema, fieldsToInclude, resolvedObjectIdFieldName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
-            runtimeFields,
-            geometryTypes);
+            runtimeFields, geometryTypes);
 
-        var arrays = BuildArrays(
-            features,
-            schema,
-            returnGeometry,
-            geometryArray,
-            bboxArray,
-            resolvedObjectIdFieldName,
-            fieldsToInclude,
-            logger);
+        return (WriteArrowParquet(schema, writer =>
+        {
+            foreach (var (offset, count) in batches)
+            {
+                var batchFeatures = features.Slice(offset, count);
+                BinaryArray? geometryArray = null;
+                StructArray? bboxArray = null;
+                if (includeGeometry)
+                {
+                    (geometryArray, bboxArray, _) = BuildGeometryArray(batchFeatures, srid,
+                        returnZ, returnM, geometryLimits, logger);
+                }
 
-        using var recordBatch = new RecordBatch(schema, arrays, features.Length);
-
-        return (WriteArrowParquet(schema, recordBatch), ContentType);
+                var arrays = BuildArrays(batchFeatures, schema, returnGeometry, geometryArray,
+                    bboxArray, resolvedObjectIdFieldName, fieldsToInclude, logger);
+                using var recordBatch = new RecordBatch(schema, arrays, count);
+                // This API flushes a new row group for each batch; do not use the buffered API.
+                writer.WriteRecordBatch(recordBatch, encodingLimits.MaxRowsPerBatch);
+            }
+        }, encodingLimits), ContentType);
     }
 
     // Single chokepoint for the native ParquetSharp Arrow encoder. The ParquetSharp NuGet
@@ -138,11 +153,11 @@ public static partial class GeoParquetFeatureWriter
     // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
     // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
-    private static byte[] WriteArrowParquet(Schema schema, RecordBatch? recordBatch)
+    private static byte[] WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
+        using var stream = new BoundedParquetStream(limits.MaxResponseBytes);
         try
         {
-            using var stream = new MemoryStream();
             // Construct and dispose the builder itself explicitly (rather than chaining off
             // the fluent StoreSchema() return value) so the builder instance is always
             // disposed even if StoreSchema() were ever changed to return a different object.
@@ -151,15 +166,18 @@ public static partial class GeoParquetFeatureWriter
             using var arrowWriterProperties = arrowWriterPropertiesBuilder.Build();
             using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
             {
-                if (recordBatch is not null)
-                {
-                    writer.WriteRecordBatch(recordBatch);
-                }
+                writeBatches?.Invoke(writer);
 
                 writer.Close();
             }
 
             return stream.ToArray();
+        }
+        catch (Exception) when (stream.LimitExceeded)
+        {
+            // The native callback can wrap a managed Stream exception. Keep the shared
+            // budget contract even when the refusal occurs while writing the footer.
+            throw new GeoParquetLimitExceededException();
         }
         catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
         {
@@ -212,12 +230,13 @@ public static partial class GeoParquetFeatureWriter
         string objectIdFieldName,
         bool returnGeometry,
         string[]? outFields,
-        int? outputSrid)
+        int? outputSrid,
+        GeoParquetLimits encodingLimits)
     {
         var (schema, _, _) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
-        return (WriteArrowParquet(schema, recordBatch: null), ContentType);
+        return (WriteArrowParquet(schema, writeBatches: null, encodingLimits), ContentType);
     }
 
     /// <summary>
@@ -245,7 +264,7 @@ public static partial class GeoParquetFeatureWriter
             new Field(objectIdFieldName, new Int64Type(), false)
         };
 
-        if (returnGeometry && HasGeometry(resource))
+        if (returnGeometry && resource.HasGeometry())
         {
             schemaFields.Add(new Field(GeometryColumnName, new BinaryType(), true));
         }
@@ -270,7 +289,7 @@ public static partial class GeoParquetFeatureWriter
 
         // GeoParquet 1.1 covering bbox column. Declared last so attribute/runtime ordering stays
         // stable; the `geo` metadata `covering` maps xmin/ymin/xmax/ymax onto this struct.
-        if (returnGeometry && HasGeometry(resource))
+        if (returnGeometry && resource.HasGeometry())
         {
             schemaFields.Add(new Field(BboxColumnName, CreateBboxStructType(), nullable: true));
         }
@@ -292,7 +311,7 @@ public static partial class GeoParquetFeatureWriter
     {
         var metadata = new Dictionary<string, string>();
 
-        if (!returnGeometry || !HasGeometry(resource))
+        if (!returnGeometry || !resource.HasGeometry())
         {
             return metadata;
         }
@@ -306,7 +325,7 @@ public static partial class GeoParquetFeatureWriter
         var geometryTypesPart = isEmpty || resource.ReadGeometryType() == MetadataV2GeometryType.Mixed
             ? "[]"
             : geometryTypes is { Count: > 0 }
-                ? JsonSerializer.Serialize(geometryTypes.OrderBy(static type => type, StringComparer.Ordinal))
+                ? SerializeGeometryTypes(geometryTypes)
                 : "[]";
 
         // GeoParquet stores the column CRS as PROJJSON. EPSG:4326 output keeps the default
@@ -326,6 +345,36 @@ public static partial class GeoParquetFeatureWriter
         metadata[GeoMetadataKey] = geoJson;
 
         return metadata;
+    }
+
+    /// <summary>
+    /// Encodes a GeoParquet <c>geometry_types</c> value: a JSON array of the given type names,
+    /// sorted ordinally and JSON-escaped.
+    /// </summary>
+    /// <remarks>
+    /// Written with <see cref="Utf8JsonWriter"/> instead of the <c>JsonSerializer.Serialize</c>
+    /// overload that takes no type info. The shipped server sets
+    /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c>, so that overload threw for every
+    /// page with a concrete geometry type, and <c>f=parquet</c> / <c>f=geoarrow</c> answered with a
+    /// 500 error envelope instead of a file (honua-server#4747).
+    /// </remarks>
+    public static string SerializeGeometryTypes(IEnumerable<string> geometryTypes)
+    {
+        ArgumentNullException.ThrowIfNull(geometryTypes);
+
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartArray();
+            foreach (var geometryType in geometryTypes.OrderBy(static type => type, StringComparer.Ordinal))
+            {
+                writer.WriteStringValue(geometryType);
+            }
+
+            writer.WriteEndArray();
+        }
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
     /// <summary>
@@ -527,9 +576,6 @@ public static partial class GeoParquetFeatureWriter
             _ => "TEXT"
         };
     }
-
-    private static bool HasGeometry(MetadataV2Resource resource)
-        => resource.ReadGeometryType() != MetadataV2GeometryType.None;
 
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
@@ -810,7 +856,8 @@ public static partial class GeoParquetFeatureWriter
         bool returnZ,
         bool returnM,
         long featureId = 0,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        bool encodeWkb = true)
     {
         if (geometryBytes == null || geometryBytes.Length == 0)
         {
@@ -854,7 +901,7 @@ public static partial class GeoParquetFeatureWriter
         // column so the stored bbox exactly matches the WKB. Empty geometries have a null envelope
         // and therefore a null bbox row.
         var envelope = geometry.EnvelopeInternal;
-        return (writer.Write(geometry), envelope, hasZ, MapGeometryInstanceTypeToGeoParquet(geometry, hasZ));
+        return (encodeWkb ? writer.Write(geometry) : null, envelope, hasZ, MapGeometryInstanceTypeToGeoParquet(geometry, hasZ));
     }
 
     private static string? MapGeometryInstanceTypeToGeoParquet(Geometry geometry, bool hasZ)

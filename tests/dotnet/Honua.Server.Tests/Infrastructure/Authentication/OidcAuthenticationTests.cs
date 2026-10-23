@@ -12,6 +12,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 using Honua.Server.Tests;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -733,6 +734,7 @@ public class OidcAuthenticationTests
     [Endpoint("GET /ogc/maps/openapi.json")]
     [Endpoint("GET /ogc/styles/openapi.json")]
     [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /ogc/records/openapi.json")]
     [Endpoint("GET /stac/openapi.json")]
     public void GlobalControlPlaneEndpoints_AreMarkedTenantIndependent()
     {
@@ -764,6 +766,7 @@ public class OidcAuthenticationTests
             "/ogc/maps/openapi.json",
             "/ogc/styles/openapi.json",
             "/ogc/processes/openapi.json",
+            "/ogc/records/openapi.json",
             "/stac/openapi.json"
         })
         {
@@ -1089,6 +1092,7 @@ public class OidcAuthenticationTests
     [Endpoint("GET /ogc/maps/openapi.json")]
     [Endpoint("GET /ogc/styles/openapi.json")]
     [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /ogc/records/openapi.json")]
     [Endpoint("GET /stac/openapi.json")]
     public async Task OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution()
     {
@@ -1110,6 +1114,7 @@ public class OidcAuthenticationTests
             "/ogc/maps/openapi.json",
             "/ogc/styles/openapi.json",
             "/ogc/processes/openapi.json",
+            "/ogc/records/openapi.json",
             "/stac/openapi.json"
         })
         {
@@ -1176,30 +1181,25 @@ public class OidcAuthenticationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/version")]
-    public async Task AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled()
+    [Endpoint("POST /mcp")]
+    public async Task AdminEndpoint_OidcEnabled_ReusedBearerToken_IsAdmittedWithinLifetimeButReplaysOnMcpWhenReplayProtectionEnabled()
     {
+        // honua-server#4899: replay protection must not make an ordinary access token
+        // single-use. The token stays reusable on the HTTP API it was first admitted on,
+        // and presenting it to another surface (the MCP transport) is still a replay.
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
         {
             ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "true"
         });
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"]);
 
-        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
-        firstRequest.Headers.Add("Authorization", $"Bearer {token}");
-        var firstResponse = await client.SendAsync(firstRequest);
-
-        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
-        secondRequest.Headers.Add("Authorization", $"Bearer {token}");
-        var secondResponse = await client.SendAsync(secondRequest);
-
-        Assert.Equal(System.Net.HttpStatusCode.OK, firstResponse.StatusCode);
-        AssertBearerFailureStatusCode(secondResponse.StatusCode);
+        await AssertBearerReusableOnHttpApiButReplayedOnMcpAsync(client);
     }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/version")]
+    [Endpoint("POST /mcp")]
     public async Task AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection()
     {
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
@@ -1217,18 +1217,49 @@ public class OidcAuthenticationTests
             },
             oidcSettings: settings);
         using var client = factory.CreateClient();
+
+        // The memory store still records where the token was admitted: reuse on the HTTP
+        // API is admitted and the cross-surface replay is refused.
+        await AssertBearerReusableOnHttpApiButReplayedOnMcpAsync(client);
+    }
+
+    private static async Task AssertBearerReusableOnHttpApiButReplayedOnMcpAsync(HttpClient client)
+    {
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
-        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
-        firstRequest.Headers.Add("Authorization", $"Bearer {token}");
-        var firstResponse = await client.SendAsync(firstRequest);
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            using var response = await client.SendAsync(request);
+            Assert.True(
+                response.StatusCode == System.Net.HttpStatusCode.OK,
+                $"Request {attempt} reusing a still-valid bearer on the HTTP API returned {(int)response.StatusCode}.");
+        }
 
-        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
-        secondRequest.Headers.Add("Authorization", $"Bearer {token}");
-        var secondResponse = await client.SendAsync(secondRequest);
+        using (var replay = CreateMcpInitializeRequest(token))
+        using (var replayResponse = await client.SendAsync(replay))
+        {
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, replayResponse.StatusCode);
+        }
 
-        Assert.Equal(System.Net.HttpStatusCode.OK, firstResponse.StatusCode);
-        AssertBearerFailureStatusCode(secondResponse.StatusCode);
+        // Negative control: a token never seen before is not refused as a replay on MCP.
+        using var fresh = CreateMcpInitializeRequest(GenerateTestJwtToken(roles: ["admin"]));
+        using var freshResponse = await client.SendAsync(fresh);
+        Assert.NotEqual(System.Net.HttpStatusCode.Unauthorized, freshResponse.StatusCode);
+    }
+
+    private static HttpRequestMessage CreateMcpInitializeRequest(string token)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = new StringContent(
+                """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"honua-tests","version":"1.0.0"}}}""",
+                Encoding.UTF8,
+                "application/json")
+        };
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        return request;
     }
 
     [IntegrationTest]
@@ -1530,11 +1561,12 @@ public class OidcAuthenticationTests
         var logger = new TestLogger<OidcClaimsTransformation>();
         var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
+        // The API-key handler marks the auth_type it mints as framework-owned (SEC-10).
         var claims = new List<Claim>
         {
             new(ClaimTypes.Name, "admin"),
             new(ClaimTypes.Role, "admin"),
-            new("auth_type", "admin")
+            CanonicalSecurityActor.CreateStampedClaim("auth_type", "admin")
         };
         var identity = new ClaimsIdentity(claims, "ApiKey");
         var principal = new ClaimsPrincipal(identity);

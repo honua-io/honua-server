@@ -30,7 +30,7 @@ namespace Honua.Protocols.Ogc.Classic.Wcs20;
 /// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).
 /// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </summary>
-internal sealed class Wcs20Handler
+internal sealed partial class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;
     private static readonly XNamespace Ows = Wcs20Utilities.OwsNamespace;
@@ -64,6 +64,7 @@ internal sealed class Wcs20Handler
         Wcs20Utilities.Parameters.Interpolation,
         Wcs20Utilities.Parameters.DateTime,
         Wcs20Utilities.Parameters.Time,
+        "token",
     };
 
     private static readonly HashSet<string> _explicitlyUnsupportedGetCoverageParameters = new(StringComparer.OrdinalIgnoreCase)
@@ -103,16 +104,23 @@ internal sealed class Wcs20Handler
             operation = Wcs20Utilities.Operations.GetCapabilities;
         }
 
-        context.Items[RequestTelemetryClassifier.OperationItemKey] =
-            "wcs." + operation.Trim().ToLowerInvariant();
+        // Closed WCS operation set. A caller-supplied REQUEST must not mint a
+        // serving-latency or activity label (SRV-INF-018).
+        var telemetryOperation = ResolveTelemetryOperation(operation);
+        context.Items[RequestTelemetryClassifier.OperationItemKey] = telemetryOperation;
+
+        var isLegacy = Wcs20Utilities.IsVersion10(
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions));
+        var protocol = isLegacy ? HonuaTelemetry.Protocols.Wcs10 : HonuaTelemetry.Protocols.Wcs20;
 
         using var telemetry = HonuaTelemetryScope.StartFeature(
-            operation,
-            HonuaTelemetry.Protocols.Wcs20,
+            telemetryOperation,
+            protocol,
             scope.LayerId?.ToString(CultureInfo.InvariantCulture) ?? scope.ServiceId ?? "service");
         telemetry
-            .WithTag(HonuaTelemetry.Tags.Operation, operation)
-            .WithTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wcs20);
+            .WithTag(HonuaTelemetry.Tags.Operation, telemetryOperation)
+            .WithTag(HonuaTelemetry.Tags.Protocol, protocol);
         if (scope.ServiceId is not null)
         {
             telemetry.WithTag(HonuaTelemetry.Tags.ServiceId, scope.ServiceId);
@@ -122,10 +130,23 @@ internal sealed class Wcs20Handler
 
         try
         {
-            var commonError = ValidateCommonParameters(context, operation);
+            var commonError = ValidateCommonParameters(context, operation, isLegacy);
             if (commonError is not null)
             {
                 return commonError;
+            }
+
+            // Version selection, mirroring how Wfs20DispatcherEndpoint serves WFS 1.0.0
+            // and 1.1.0 beside 2.0.0: the routes, endpoint registry entries and
+            // telemetry classifiers stay as they are, and only the encoding differs
+            // (honua-server#5020). Stock QGIS speaks WCS 1.0/1.1 only, so without this
+            // branch no QGIS client can open a coverage.
+            if (isLegacy)
+            {
+                var legacyResult = await HandleWcs10Async(context, scope, operation, cancellationToken)
+                    .ConfigureAwait(false);
+                Wcs20Log.RequestCompleted(_logger, operation, scope.DisplayName);
+                return legacyResult;
             }
 
             IResult result;
@@ -164,7 +185,9 @@ internal sealed class Wcs20Handler
             // a WCS ExceptionReport rather than swallowed or leaked to the client.
             Wcs20Log.RequestFailed(_logger, ex, operation, scope.DisplayName);
             telemetry.RecordException(ex);
-            return Wcs20ErrorResults.CreateInternalServerError("Failed to process WCS request.");
+            return isLegacy
+                ? Wcs10ErrorResults.CreateInternalServerError("Failed to process WCS request.")
+                : Wcs20ErrorResults.CreateInternalServerError("Failed to process WCS request.");
         }
     }
 
@@ -184,7 +207,7 @@ internal sealed class Wcs20Handler
             {
                 return Wcs20ErrorResults.CreateBadRequest(
                     Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                    $"Unsupported version. This service supports only WCS {Wcs20Utilities.Version}.",
+                    $"Unsupported version. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
                     Wcs20Utilities.Parameters.AcceptVersions);
             }
         }
@@ -569,7 +592,8 @@ internal sealed class Wcs20Handler
         foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
+            if (!snapshot.IsRoutable(publication) ||
+                !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service.Service))
             {
                 continue;
             }
@@ -580,10 +604,7 @@ internal sealed class Wcs20Handler
                 continue;
             }
 
-            // Prefer publication.LayerIndex (the protocol-facing handle) and fall
-            // back to the storage binding's StorageLayerId; matches the canonical
-            // V2 resolution order used by the FeatureServer ports.
-            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, routableResource);
             if (!storageLayerId.HasValue)
             {
                 continue;
@@ -604,7 +625,8 @@ internal sealed class Wcs20Handler
                 continue;
             }
 
-            coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service));
+            coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service,
+                entry.Publication.LayerIndex));
         }
 
         return new CoverageListResult(coverages, null);
@@ -659,12 +681,13 @@ internal sealed class Wcs20Handler
 
         var resource = snapshot.ResolveResource(publication);
         if (!snapshot.IsRoutable(publication) ||
+            !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service.Service) ||
             !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service.Service))
         {
             return new CoverageResolutionResult(null, null);
         }
 
-        var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
         if (!storageLayerId.HasValue)
         {
             return new CoverageResolutionResult(null, null);
@@ -673,7 +696,8 @@ internal sealed class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new CoverageResolutionResult(null, null)
-            : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value, service.Service), null);
+            : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value,
+                service.Service, publication.LayerIndex), null);
     }
 
     private async Task<LayerCoverageResult> ResolveLayerScopedCoverageAsync(
@@ -688,12 +712,19 @@ internal sealed class Wcs20Handler
         // the resource directly from the storage-layer index, with a fallback to
         // publication.LayerIndex for fixtures/graphs that haven't migrated their
         // storage bindings (matches the resolution order used elsewhere in the V2 ports).
-        if (!TryResolveResourceForLayer(snapshot, layerId, out var resource))
+        if (!TryResolveResourceForLayer(context, snapshot, layerId, out var resource, out var owningService))
         {
             return new LayerCoverageResult(null, null);
         }
 
-        var accessDecision = AccessPolicyHelpers.EvaluateAccess(context, resource.AccessPolicy, servicePolicy: null);
+        // The owning service's policy is part of the decision (honua-server#4388). It
+        // was previously passed as null here, so a service-level read restriction was
+        // discarded on this route: a resource with no policy of its own resolved to
+        // "any authenticated principal", and DescribeCoverage/GetCoverage served the
+        // coverage to a caller the service denies. Every other classic surface (WMS
+        // and WMTS via RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async)
+        // evaluates both policies.
+        var accessDecision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource, owningService);
         if (!accessDecision.IsAllowed)
         {
             return failOnAccessDenied
@@ -707,40 +738,171 @@ internal sealed class Wcs20Handler
             : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, null), null);
     }
 
-    private static bool TryResolveResourceForLayer(MetadataV2GraphSnapshot snapshot, int layerId, out MetadataV2Resource resource)
+    private static bool TryResolveResourceForLayer(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        out MetadataV2Resource resource,
+        out MetadataV2Service? owningService)
     {
         var matchingBindings = snapshot.Graph.StorageBindings
             .Where(candidate => candidate.StorageLayerId == layerId)
             .ToArray();
-        foreach (var binding in matchingBindings)
+
+        // Storage-layer ids are not unique across stores — the default test graph binds
+        // both a feature resource and a raster resource at id 0 — so a coverage route
+        // must prefer the raster resource rather than whichever binding happens to come
+        // first. Taking the first match would let an unrelated feature service's policy
+        // decide a coverage request.
+        var routable = matchingBindings
+            .Select(binding => snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var candidate)
+                && binding.IsRoutable(candidate)
+                    ? candidate
+                    : null)
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .ToArray();
+
+        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ResourceType.RasterDataset)
+            ?? routable.FirstOrDefault();
+        if (preferred is not null)
         {
-            if (snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var byBinding) &&
-                binding.IsRoutable(byBinding))
-            {
-                resource = byBinding;
-                return true;
-            }
+            resource = preferred;
+            return TryFindOwningService(context, snapshot, preferred, out owningService);
         }
         if (matchingBindings.Length > 0)
         {
             resource = default!;
+            owningService = null;
             return false;
         }
 
-        var resolved = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == layerId)
-            .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
-            .FirstOrDefault(candidate => snapshot.IsRoutable(candidate.Publication))
-            .Resource;
-        if (resolved is not null)
+        // No storage binding. A publication LayerIndex can belong to any protocol, so
+        // this fallback must use the same coverage-protocol filter as TryFindOwningService.
+        // Otherwise a FeatureServer publication at the same integer authorizes the WCS
+        // route for a key such as read:features/roads.
+        var fallbackOwners = snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerId)
+            .Select(publication => (
+                Publication: publication,
+                Resource: snapshot.ResolveResource(publication),
+                Service: snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
+                    ? service
+                    : null))
+            .Where(entry => entry.Resource is not null &&
+                entry.Service is not null &&
+                snapshot.IsRoutable(entry.Publication) &&
+                IsCoverageProtocol(entry.Service) &&
+                TenantScopeHelpers.IsPublicationVisible(context, entry.Publication, entry.Resource, entry.Service))
+            .Select(entry => (Resource: entry.Resource!, Service: entry.Service!))
+            .ToArray();
+        if (fallbackOwners.Length > 0)
         {
-            resource = resolved;
+            var rasterOwners = fallbackOwners
+                .Where(entry => entry.Resource.Type == MetadataV2ResourceType.RasterDataset)
+                .ToArray();
+            (resource, owningService) = SelectCoverageOwner(
+                context,
+                rasterOwners.Length > 0 ? rasterOwners : fallbackOwners);
             return true;
         }
 
         resource = default!;
+        owningService = null;
         return false;
     }
+
+    /// <summary>
+    /// Finds the service that publishes <paramref name="resource"/> over a coverage
+    /// surface, so the layer-scoped WCS route can honour a service-level access policy
+    /// (honua-server#4388). The route is keyed by an integer storage-layer handle and
+    /// carries no service segment, so the owning service has to be recovered from the
+    /// publication graph.
+    /// </summary>
+    /// <remarks>
+    /// Only services that actually expose this route — those enabling ImageServer or
+    /// WCS — are considered. A resource can be published by several services, and
+    /// borrowing the policy of one that cannot serve coverages at all (a feature
+    /// service, say) would let an unrelated policy decide a coverage request in either
+    /// direction. A scope-governed key selects a visible owner its grant allows.
+    /// Other callers prefer a policy-bearing service, and a service with a null
+    /// policy is still retained so scoped keys have a real target. When coverage
+    /// publications exist but none is tenant-visible, fail closed.
+    /// </remarks>
+    private static bool TryFindOwningService(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Resource resource,
+        out MetadataV2Service? owningService)
+    {
+        owningService = null;
+        var hasCoveragePublication = false;
+        var visible = new List<(MetadataV2Resource Resource, MetadataV2Service Service)>();
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
+                !snapshot.IsRoutable(publication))
+            {
+                continue;
+            }
+
+            if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
+                IsCoverageProtocol(service))
+            {
+                hasCoveragePublication = true;
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                {
+                    continue;
+                }
+
+                visible.Add((resource, service));
+            }
+        }
+
+        if (visible.Count == 0)
+        {
+            return !hasCoveragePublication;
+        }
+
+        (_, owningService) = SelectCoverageOwner(context, visible);
+        return true;
+    }
+
+    /// <summary>
+    /// Picks the coverage service a direct layer route is authorized against.
+    /// A scope-governed key is matched to a visible owner its grant allows, so graph
+    /// order cannot reject <c>read:second/resource</c> just because another
+    /// policy-bearing owner was published first. Callers that are not scope-governed
+    /// still prefer the first policy-bearing owner, which keeps an anonymous or
+    /// role-restricted publication from hiding behind an earlier unrestricted one.
+    /// </summary>
+    private static (MetadataV2Resource Resource, MetadataV2Service Service) SelectCoverageOwner(
+        HttpContext context,
+        IReadOnlyList<(MetadataV2Resource Resource, MetadataV2Service Service)> visible)
+    {
+        (MetadataV2Resource Resource, MetadataV2Service Service)? policyBearing = null;
+        (MetadataV2Resource Resource, MetadataV2Service Service)? grantMatch = null;
+        var scopeGoverned = LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User);
+        foreach (var candidate in visible)
+        {
+            if (candidate.Service.AccessPolicy is not null)
+            {
+                policyBearing ??= candidate;
+            }
+
+            if (scopeGoverned &&
+                AccessPolicyHelpers.EvaluateResourceAccess(context, candidate.Resource, candidate.Service).IsAllowed)
+            {
+                grantMatch ??= candidate;
+            }
+        }
+
+        return grantMatch ?? policyBearing ?? visible[0];
+    }
+
+    private static bool IsCoverageProtocol(MetadataV2Service service)
+        => IsProtocolEnabled(service, WcsProtocolName) ||
+           IsProtocolEnabled(service, ServiceProtocols.ImageServer);
 
     private static ServiceResolutionResult ResolveService(
         HttpContext context,
@@ -761,7 +923,20 @@ internal sealed class Wcs20Handler
         // ServiceId-as-name routing used by /ogc/services/{serviceId}/...
         if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
         {
-            service = snapshot.FindService(serviceId);
+            // A display name does not identify one service. The canonical graph
+            // projects a single logical service across several protocol facets that
+            // intentionally share a name while carrying distinct ids - see
+            // 051_RelaxMetadataV2ServiceNameIndex.sql, which dropped the unique name
+            // index for exactly this reason, and the V1 compat snapshot, which emits
+            // those same-named facets. Taking the first name match and then asking
+            // whether it enables WCS rejects the request whenever the match happens to
+            // be the feature or map facet, even though the image facet serves
+            // coverages: every WCS route answered "WCS is not enabled for this
+            // service" while ImageServer on the same name answered 200. So pick the
+            // facet that actually serves this protocol, and only fall back to a bare
+            // name match so a service genuinely without WCS still reports that.
+            service = FindServiceForProtocol(snapshot, serviceId, WcsProtocolName)
+                ?? snapshot.FindService(serviceId);
         }
 
         if (service is null || !service.IsRoutable())
@@ -782,7 +957,23 @@ internal sealed class Wcs20Handler
                     "WCS is not enabled for this service."));
         }
 
-        var serviceAccess = AccessPolicyHelpers.EvaluateAccess(context, layerPolicy: null, service.AccessPolicy);
+        var serviceAccess = AccessPolicyHelpers.EvaluateServiceAccess(context, service);
+        if (!serviceAccess.IsAllowed && LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User))
+        {
+            // A layer-restricted read key may bootstrap only its own published
+            // coverages. The ordinary per-resource checks below still filter the
+            // capabilities list and each requested coverage independently.
+            var hasReadableCoverage = snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication => snapshot.IsRoutable(publication) &&
+                    snapshot.ResolveResource(publication) is { } resource &&
+                    snapshot.ResolveStorageLayerId(publication, resource).HasValue &&
+                    TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service) &&
+                    AccessPolicyHelpers.IsResourceAccessible(context, resource, service));
+            if (hasReadableCoverage)
+            {
+                serviceAccess = AccessDecision.Allowed();
+            }
+        }
         if (!serviceAccess.IsAllowed)
         {
             return new ServiceResolutionResult(null, CreateAccessDeniedResult(serviceAccess));
@@ -790,6 +981,21 @@ internal sealed class Wcs20Handler
 
         return new ServiceResolutionResult(service, null);
     }
+
+    /// <summary>
+    /// Finds the routable service with this display name that enables
+    /// <paramref name="protocol"/>. Returns <c>null</c> when no same-named facet serves
+    /// it, so the caller can fall back to a plain name match and report the protocol as
+    /// disabled rather than the service as missing.
+    /// </summary>
+    private static MetadataV2Service? FindServiceForProtocol(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceName,
+        string protocol)
+        => snapshot.Graph.Services.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)
+            && candidate.IsRoutable()
+            && IsProtocolEnabled(candidate, protocol));
 
     private static bool IsProtocolEnabled(MetadataV2Service service, string protocol)
         => service.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
@@ -824,8 +1030,10 @@ internal sealed class Wcs20Handler
     /// Resolves the bounded set of transformable CRS values for the supplied coverage
     /// native SRIDs. Seeds each native CRS plus the default identifiers (WGS84, WebMercator),
     /// keeps only those the CRS registry can resolve (== transformable via ST_Transform),
-    /// and returns both the SRID set (for GetCoverage validation) and the ordered EPSG-URI
-    /// list (for GetCapabilities advertisement) so the two always agree.
+    /// and returns both the SRID set (for GetCoverage validation) and the ordered CRS-URI
+    /// list (for GetCapabilities advertisement) so the two always agree. The advertised
+    /// identifiers are the ones this service actually honours, so SRID 4326 is advertised
+    /// as CRS84 (see <see cref="CreateCrsUri"/>).
     /// </summary>
     private async Task<WcsSupportedCrs> ResolveSupportedCrsAsync(
         IEnumerable<int?> nativeSrids,
@@ -858,7 +1066,7 @@ internal sealed class Wcs20Handler
             {
                 case true:
                     srids.Add(seed);
-                    uris.Add(CreateEpsgUri(seed));
+                    uris.Add(CreateCrsUri(seed));
                     break;
             }
         }
@@ -866,26 +1074,36 @@ internal sealed class Wcs20Handler
         return new WcsSupportedCrs(srids, uris);
     }
 
-    private static IResult? ValidateCommonParameters(HttpContext context, string operation)
+    private static IResult? ValidateCommonParameters(HttpContext context, string operation, bool isLegacy)
     {
         var service = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Service);
         if (!string.IsNullOrWhiteSpace(service) &&
             !string.Equals(service, Wcs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
         {
-            return Wcs20ErrorResults.CreateBadRequest(
-                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                "SERVICE must be WCS when supplied.",
-                Wcs20Utilities.Parameters.Service);
+            return isLegacy
+                ? Wcs10ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                    "SERVICE must be WCS when supplied.",
+                    Wcs20Utilities.Parameters.Service)
+                : Wcs20ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                    "SERVICE must be WCS when supplied.",
+                    Wcs20Utilities.Parameters.Service);
         }
 
         var version = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version);
         if (!string.IsNullOrWhiteSpace(version) &&
             !OgcParameterValidator.TryParseVersion(version, Wcs20Utilities.SupportedVersions, out _, out _))
         {
-            return Wcs20ErrorResults.CreateBadRequest(
-                Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                $"Unsupported version '{version}'. This service supports only WCS {Wcs20Utilities.Version}.",
-                Wcs20Utilities.Parameters.Version);
+            return isLegacy
+                ? Wcs10ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                    $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                    Wcs20Utilities.Parameters.Version)
+                : Wcs20ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
+                    $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                    Wcs20Utilities.Parameters.Version);
         }
 
         if (!Wcs20Utilities.ImplementedOperations.Contains(operation))
@@ -896,7 +1114,15 @@ internal sealed class Wcs20Handler
         return null;
     }
 
-    private static IResult? ValidateGetCoverageParameters(IQueryCollection query)
+    /// <summary>
+    /// Maps a WCS REQUEST value onto the closed telemetry label
+    /// (<c>wcs.getcapabilities</c>, <c>wcs.describecoverage</c>, <c>wcs.getcoverage</c>,
+    /// or <c>wcs.unsupported</c>).
+    /// </summary>
+    internal static string ResolveTelemetryOperation(string operation)
+        => RequestTelemetryClassifier.ResolveBoundedOgcOperation("wcs", operation);
+
+    internal static IResult? ValidateGetCoverageParameters(IQueryCollection query)
     {
         foreach (var parameter in query.Keys)
         {
@@ -1067,8 +1293,8 @@ internal sealed class Wcs20Handler
                 new XElement(Ows + "UpperCorner", FormatPosition(extent.XMax, extent.YMax))));
         }
 
-        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.LayerId)));
-        children.Add(new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"));
+        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId)));
+        children.Add(new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"));
 
         return new XElement(Wcs + "CoverageSummary", children);
     }
@@ -1100,8 +1326,9 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var coverageId = FormatCoverageId(coverage.LayerId);
-        var srsName = CreateEpsgUri(srid);
+        var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
+        // Coverage coordinates use x/y order, which CRS84 declares (see CreateCrsUri).
+        var srsName = CreateCrsUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
             new XAttribute(Gml + "id", coverageId),
             new XElement(Gml + "boundedBy",
@@ -1134,7 +1361,7 @@ internal sealed class Wcs20Handler
                     Enumerable.Range(1, Math.Max(coverage.Raster.BandCount, 1))
                         .Select(band => BuildBandField(coverage.Raster, band)))),
             new XElement(Wcs + "ServiceParameters",
-                new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"),
+                new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"),
                 new XElement(Wcs + "nativeFormat", Wcs20Utilities.TiffContentType)));
 
         return true;
@@ -1281,6 +1508,26 @@ internal sealed class Wcs20Handler
 
         sliceWidth = width ?? baseWidth;
         sliceHeight = height ?? baseHeight;
+
+        // Validate the effective grid for every scaling operator and native export
+        // before either the raster provider or a multidimensional reader allocates it.
+        if (sliceWidth > MaxWcsOutputDimension || sliceHeight > MaxWcsOutputDimension ||
+            (long)sliceWidth * sliceHeight > 16L * 1024L * 1024L)
+        {
+            var locator = new[]
+            {
+                Wcs20Utilities.Parameters.ScaleSize,
+                Wcs20Utilities.Parameters.ScaleFactor,
+                Wcs20Utilities.Parameters.ScaleAxes,
+                Wcs20Utilities.Parameters.ScaleExtent
+            }.FirstOrDefault(parameter => !string.IsNullOrWhiteSpace(GetQueryValue(query, parameter)))
+                ?? Wcs20Utilities.Parameters.CoverageId;
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                $"Coverage output exceeds the {MaxWcsOutputDimension}-pixel per-axis limit. Select a smaller subset or down-scale the output.",
+                locator);
+            return false;
+        }
 
         if (!TryResolveInterpolation(query, out var resampling, out error))
         {
@@ -1760,14 +2007,17 @@ internal sealed class Wcs20Handler
         ref int baseWidth,
         ref int baseHeight)
     {
-        if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent))
+        if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent) ||
+            // codeql[cs/equality-on-floats]: only an exactly axis-aligned grid can be bounded by envelope proportions
+            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
         {
             return;
         }
 
         var fullWidth = extent.XMax - extent.XMin;
         var fullHeight = extent.YMax - extent.YMin;
-        if (fullWidth <= 0 || fullHeight <= 0 || raster.Width <= 0 || raster.Height <= 0)
+        if (!double.IsFinite(fullWidth) || !double.IsFinite(fullHeight) ||
+            fullWidth <= 0 || fullHeight <= 0 || raster.Width <= 0 || raster.Height <= 0)
         {
             return;
         }
@@ -1779,8 +2029,20 @@ internal sealed class Wcs20Handler
             return;
         }
 
-        baseWidth = Math.Max(1, (int)Math.Round(raster.Width * (clipWidth / fullWidth), MidpointRounding.AwayFromZero));
-        baseHeight = Math.Max(1, (int)Math.Round(raster.Height * (clipHeight / fullHeight), MidpointRounding.AwayFromZero));
+        // Round each edge outward: a window narrower than N pixels can still
+        // touch N+1 native cells when its edges are not aligned with the grid.
+        var width = Math.Ceiling((Math.Min(clip.MaxX, extent.XMax) - extent.XMin) / fullWidth * raster.Width) -
+            Math.Floor((Math.Max(clip.MinX, extent.XMin) - extent.XMin) / fullWidth * raster.Width);
+        var height = Math.Ceiling((Math.Min(clip.MaxY, extent.YMax) - extent.YMin) / fullHeight * raster.Height) -
+            Math.Floor((Math.Max(clip.MinY, extent.YMin) - extent.YMin) / fullHeight * raster.Height);
+        if (!double.IsFinite(width) || !double.IsFinite(height) ||
+            width < 1 || height < 1 || width > int.MaxValue || height > int.MaxValue)
+        {
+            return;
+        }
+
+        baseWidth = (int)width;
+        baseHeight = (int)height;
     }
 
     // WCS 2.0 Scaling extension coordinator. At most one scaling operator may be
@@ -2005,8 +2267,10 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var span = (long)high - (long)low + 1;
-        if (span <= 0 || span > int.MaxValue)
+        // Check the floating-point span before narrowing either endpoint. Large
+        // finite coordinates can overflow integer subtraction or casts.
+        var span = high - low + 1;
+        if (!double.IsFinite(span) || span <= 0 || span > int.MaxValue)
         {
             return false;
         }
@@ -2816,9 +3080,13 @@ internal sealed class Wcs20Handler
         var geoTransform = raster.GeoTransform;
         if (geoTransform is { Length: >= 6 })
         {
-            origin = new Coordinate(geoTransform[0], geoTransform[3]);
             xVector = new Coordinate(geoTransform[1], geoTransform[4]);
             yVector = new Coordinate(geoTransform[2], geoTransform[5]);
+            // GDAL transforms locate the pixel corner; GML grid coordinates locate
+            // the sample center. Include both vectors for rotated grids.
+            origin = new Coordinate(
+                geoTransform[0] + (xVector.X + yVector.X) / 2,
+                geoTransform[3] + (xVector.Y + yVector.Y) / 2);
             return true;
         }
 
@@ -2830,14 +3098,17 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        origin = new Coordinate(extent.XMin, extent.YMax);
         xVector = new Coordinate((extent.XMax - extent.XMin) / raster.Width, 0);
         yVector = new Coordinate(0, -((extent.YMax - extent.YMin) / raster.Height));
+        origin = new Coordinate(extent.XMin + xVector.X / 2, extent.YMax + yVector.Y / 2);
         return true;
     }
 
     private static IEnumerable<XAttribute> RootNamespaceAttributes()
     {
+        // CoverageSubtype is a QName. Keep its GML coverage namespace binding
+        // while using the unprefixed spelling accepted by ArcGIS Pro's WCS driver.
+        yield return new XAttribute("xmlns", Wcs20Utilities.GmlcovNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "wcs", Wcs20Utilities.WcsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "ows", Wcs20Utilities.OwsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "crs", Wcs20Utilities.CrsNamespace);
@@ -2852,11 +3123,23 @@ internal sealed class Wcs20Handler
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var path = context.Request.Path.HasValue ? context.Request.Path.Value : string.Empty;
-        return string.Concat(baseUrl, path);
+        return BaseUrlResolver.PreserveToken(context.Request, string.Concat(baseUrl, path));
     }
 
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
+
+    /// <summary>
+    /// Maps an SRID to the CRS identifier this service both advertises and honours.
+    /// SRID 4326 becomes CRS84 because every coverage envelope, offset vector, SUBSET
+    /// and BBOX here is expressed in longitude/latitude order (TryCreateEnvelope always
+    /// parses east-north); EPSG:4326 declares the opposite latitude/longitude order, so
+    /// advertising it would invite reversed subsets from conforming clients. EPSG:4326
+    /// spellings stay accepted on request for compatibility -- they resolve to the same
+    /// SRID -- but the longitude/latitude identifier is the one clients are offered.
+    /// </summary>
+    private static string CreateCrsUri(int srid)
+        => srid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(srid);
 
     private static string FormatPosition(double x, double y)
         => string.Concat(FormatDouble(x), " ", FormatDouble(y));
@@ -2913,7 +3196,12 @@ internal sealed class Wcs20Handler
 
     private readonly record struct ServiceResolutionResult(MetadataV2Service? Service, IResult? Error);
 
-    private readonly record struct WcsCoverage(MetadataV2Resource Resource, int LayerId, RasterInfo Raster, MetadataV2Service? Service);
+    private readonly record struct WcsCoverage(
+        MetadataV2Resource Resource,
+        int LayerId,
+        RasterInfo Raster,
+        MetadataV2Service? Service,
+        int? PublicationLayerIndex = null);
 
     private readonly record struct WcsCoverageIdentifier(string Raw, int? LayerId);
 

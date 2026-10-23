@@ -14,6 +14,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -29,11 +30,162 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Forms;
 
 public sealed class FormSubmissionServiceTests
 {
+    private static readonly MetadataV2OwnerEditPolicy EnabledOwnerPolicy = new()
+    {
+        Enabled = true,
+        OwnerField = "owner",
+        StampOwnerOnInsert = true
+    };
+
+    [UnitTheory]
+    [InlineData(FormSubmissionOperations.Update)]
+    [InlineData(FormSubmissionOperations.Delete)]
+    public async Task SubmitAsync_NonOwnerMutation_IsRejectedBeforeWriter(string operation)
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(allowedOperations: [operation]);
+        var writer = new FakeFeatureWriter();
+        var reader = ReaderWithOwner("another-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var context = CreateContext(CreateSubmission($"other-{operation}", operation, targetFeatureId: 101), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().ContainSingle(issue => issue.Code == "ownerEditDenied");
+        body.ValidationIssues[0].Message.Should().NotContain("another-user");
+        writer.ApplyEditsCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
+        await reader.Received(1).QueryAsync(TargetLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_OwnerDenialReplay_RemainsForbiddenWithoutASecondWriteOrClaim()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(allowedOperations: [FormSubmissionOperations.Update]);
+        var writer = new FakeFeatureWriter();
+        var reader = ReaderWithOwner("another-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var request = CreateSubmission("owner-denial-replay", FormSubmissionOperations.Update, targetFeatureId: 101);
+        var firstContext = CreateContext(request, requestServices);
+
+        var first = await service.SubmitAsync(firstContext, store.PackageVersion.FormId);
+        await first.ExecuteAsync(firstContext);
+        firstContext.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+
+        var replayContext = CreateContext(request, requestServices);
+        var replay = await service.SubmitAsync(replayContext, store.PackageVersion.FormId);
+        await replay.ExecuteAsync(replayContext);
+
+        replayContext.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var replayBody = ReadResponseBody(replayContext);
+        replayBody.IdempotentReplay.Should().BeTrue();
+        replayBody.ValidationIssues.Should().ContainSingle(issue => issue.Code == "ownerEditDenied");
+        writer.ApplyEditsCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
+        store.CreateSubmissionCalls.Should().Be(1);
+        await reader.Received(1).QueryAsync(TargetLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(FormSubmissionOperations.Update)]
+    [InlineData(FormSubmissionOperations.Delete)]
+    public async Task SubmitAsync_OwnerMutation_CarriesAtomicOwnerGuard(string operation)
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(allowedOperations: [operation]);
+        var writer = new FakeFeatureWriter
+        {
+            Result = operation == FormSubmissionOperations.Update
+                ? FeatureEditResult.Success(0, 1, 0)
+                : FeatureEditResult.Success(0, 0, 1)
+        };
+        var reader = ReaderWithOwner("field-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var context = CreateContext(CreateSubmission($"owner-{operation}", operation, targetFeatureId: 101), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        writer.ApplyEditsCalls.Should().Be(1);
+        var batch = writer.LastBatch ?? throw new InvalidOperationException("The owner mutation did not reach the writer.");
+        batch.OwnerGuards.Should().ContainSingle()
+            .Which.Should().Be(new OwnerEditGuard(101, "owner", "field-user"));
+        if (operation == FormSubmissionOperations.Update)
+        {
+            batch.Updates.Should().ContainSingle();
+            batch.Updates[0].Attributes["owner"].Should().Be("field-user");
+        }
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_AdminAndDisabledPolicy_BypassStoredOwner()
+    {
+        using var requestServices = CreateRequestServices();
+        var reader = ReaderWithOwner("another-user");
+        var adminStore = new FakeFormPackageStore(allowedOperations: [FormSubmissionOperations.Update]);
+        var adminWriter = new FakeFeatureWriter();
+        var adminService = CreateService(adminStore, adminWriter, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var adminContext = CreateContext(CreateSubmission("admin-update", FormSubmissionOperations.Update, targetFeatureId: 101), requestServices);
+        adminContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "form-admin"), new Claim("roles", "admin")], "test"));
+
+        var adminResult = await adminService.SubmitAsync(adminContext, adminStore.PackageVersion.FormId);
+        await adminResult.ExecuteAsync(adminContext);
+
+        adminContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        adminWriter.ApplyEditsCalls.Should().Be(1);
+        var adminBatch = adminWriter.LastBatch ?? throw new InvalidOperationException("The admin mutation did not reach the writer.");
+        adminBatch.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
+
+        var disabledStore = new FakeFormPackageStore(allowedOperations: [FormSubmissionOperations.Update]);
+        var disabledWriter = new FakeFeatureWriter();
+        var disabledService = CreateService(disabledStore, disabledWriter, featureReader: reader,
+            ownerPolicy: EnabledOwnerPolicy with { Enabled = false });
+        var disabledContext = CreateContext(CreateSubmission("disabled-update", FormSubmissionOperations.Update, targetFeatureId: 101), requestServices);
+
+        var disabledResult = await disabledService.SubmitAsync(disabledContext, disabledStore.PackageVersion.FormId);
+        await disabledResult.ExecuteAsync(disabledContext);
+
+        disabledContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        disabledWriter.ApplyEditsCalls.Should().Be(1);
+        var disabledBatch = disabledWriter.LastBatch ?? throw new InvalidOperationException("The disabled-policy mutation did not reach the writer.");
+        disabledBatch.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
+        await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_Create_StampsAuthenticatedOwner()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter();
+        var reader = ReaderWithOwner("another-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var context = CreateContext(CreateSubmission("owner-create"), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        writer.ApplyEditsCalls.Should().Be(1);
+        var batch = writer.LastBatch ?? throw new InvalidOperationException("The create did not reach the writer.");
+        batch.Creates.Should().ContainSingle();
+        batch.Creates[0].Attributes["owner"].Should().Be("field-user");
+        await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     public async Task SubmitAsync_WhenRequestAbortedAfterEdit_PersistsTerminalResponseWithServerToken()
     {
@@ -321,7 +473,7 @@ public sealed class FormSubmissionServiceTests
     }
 
     [UnitTest]
-    public async Task SubmitAsync_WhenPostClaimTimeoutOccurs_DeletesClaimAndReturns500WithoutPersistingReplay()
+    public async Task SRV_INF_006_WhenEditOutcomeIsUnknown_PreservesClaimAsTerminalFailure()
     {
         using var requestServices = CreateRequestServices();
         var store = new FakeFormPackageStore();
@@ -339,16 +491,105 @@ public sealed class FormSubmissionServiceTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         var body = ReadResponseBody(context);
         body.Status.Should().Be("failed");
-        body.Retry!.Retryable.Should().BeTrue();
+        body.Retry!.Retryable.Should().BeFalse();
         body.IdempotentReplay.Should().BeFalse();
 
-        // Claim must be deleted so the same idempotency key can re-execute
+        store.DeleteCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
+        store.CompletedResponse!.Retry!.Retryable.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SubmitAsync_UnknownOutcomeWithoutUsableKey_DoesNotPromiseReplay(string? idempotencyKey)
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter
+        {
+            OnApplyEdits = () => throw new OperationCanceledException("Lost acknowledgement.")
+        };
+        var service = CreateService(store, writer);
+        var context = CreateContext(CreateSubmission(idempotencyKey), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Retry!.Retryable.Should().BeFalse();
+        body.Retry.Reason.Should().Contain("replay protection is unavailable").And.Contain("Reconcile");
+        body.Retry.Reason.Should().NotContain("Reuse this idempotency key");
+        body.EditOutcome!.Error.Should().NotContain("will not be re-executed");
+        store.GetSubmissionByIdempotencyCalls.Should().Be(0);
+        writer.ApplyEditsCalls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_AttachmentCancellationAfterSuccessfulEdit_PreservesKnownResultOnReplay()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(includeAttachment: true, attachmentFieldRequired: false);
+        var writer = new FakeFeatureWriter();
+        var attachments = new RecordingAttachmentStore
+        {
+            OnUpload = () => throw new OperationCanceledException("Attachment timed out.")
+        };
+        var service = CreateService(store, writer, attachments);
+        var request = CreateSubmission("attachment-timeout", includeAttachment: true);
+        var context = CreateMultipartContext(request, requestServices, CreateFormFile());
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("failed");
+        body.EditOutcome!.Succeeded.Should().BeTrue();
+        body.EditOutcome.Created.Should().Be(1);
+        body.EditOutcome.Error.Should().BeNull();
+        body.TargetFeatureId.Should().Be(101);
+        body.Retry!.Reason.Should().Contain("feature edit completed").And.NotContain("may have committed");
+        store.DeleteCalls.Should().Be(0);
+
+        var replayContext = CreateMultipartContext(request, requestServices, CreateFormFile());
+        var replay = await service.SubmitAsync(replayContext, store.PackageVersion.FormId);
+        await replay.ExecuteAsync(replayContext);
+        var replayBody = ReadResponseBody(replayContext);
+        replayBody.IdempotentReplay.Should().BeTrue();
+        replayBody.EditOutcome.Should().BeEquivalentTo(body.EditOutcome);
+        writer.ApplyEditsCalls.Should().Be(1);
+        attachments.UploadCalls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ReadOnlyProviderRejectsWrite_ReleasesClaimWithoutTerminalReplay()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter
+        {
+            OnApplyEdits = () => throw new ReadOnlyFeatureWriteException("Provider is read-only.")
+        };
+        var service = CreateService(store, writer);
+        var context = CreateContext(CreateSubmission("readonly-retry"), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Retry!.Retryable.Should().BeTrue();
+        body.EditOutcome!.Succeeded.Should().BeFalse();
+        body.EditOutcome.Error.Should().Be("Submission could not be applied.");
         store.DeleteCalls.Should().Be(1);
         store.CompleteCalls.Should().Be(0);
     }
 
     [UnitTest]
-    public async Task SubmitAsync_WhenUnhandledExceptionOccurs_DeletesClaimAndReturns500WithoutPersistingReplay()
+    public async Task SubmitAsync_WhenWriterOutcomeIsUnknown_PreservesClaimAndReturns500()
     {
         using var requestServices = CreateRequestServices();
         var store = new FakeFormPackageStore();
@@ -365,22 +606,22 @@ public sealed class FormSubmissionServiceTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         var body = ReadResponseBody(context);
         body.Status.Should().Be("failed");
-        body.Retry!.Retryable.Should().BeTrue();
+        body.Retry!.Retryable.Should().BeFalse();
         body.IdempotentReplay.Should().BeFalse();
 
-        store.DeleteCalls.Should().Be(1);
-        store.CompleteCalls.Should().Be(0);
+        store.DeleteCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
     }
 
     [UnitTest]
-    public async Task SubmitAsync_WhenTransientFailureClaimDeleteFails_StillReturns500WithoutThrowing()
+    public async Task SubmitAsync_WhenUnknownEditOutcomeCompletionFails_StillReturns500WithoutThrowing()
     {
-        // When DeleteSubmissionAsync itself throws, the service must swallow the error and still
-        // return 500 — the client receives the failure response rather than an unhandled exception.
+        // When terminal persistence itself throws, the service must retain the pending claim and
+        // still return 500 rather than replacing the original failure with an unhandled exception.
         using var requestServices = CreateRequestServices();
         var store = new FakeFormPackageStore
         {
-            DeleteShouldThrow = true
+            CompleteShouldThrow = true
         };
         var writer = new FakeFeatureWriter
         {
@@ -395,8 +636,8 @@ public sealed class FormSubmissionServiceTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         var body = ReadResponseBody(context);
         body.Status.Should().Be("failed");
-        store.DeleteCalls.Should().Be(1);
-        store.CompleteCalls.Should().Be(0);
+        store.DeleteCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
     }
 
     [UnitTest]
@@ -433,14 +674,17 @@ public sealed class FormSubmissionServiceTests
     private static FormSubmissionService CreateService(
         FakeFormPackageStore store,
         FakeFeatureWriter writer,
-        IAttachmentStore? attachmentStore = null)
+        IAttachmentStore? attachmentStore = null,
+        IFeatureReader? featureReader = null,
+        MetadataV2OwnerEditPolicy? ownerPolicy = null)
     {
-        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider());
+        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider(ownerPolicy));
         return new FormSubmissionService(
             store,
             new FormPackageValidator(targetMetadataResolver, Options.Create(CreateLimitsOptions())),
             targetMetadataResolver,
             new PassThroughEditProcessor(),
+            featureReader ?? Substitute.For<IFeatureReader>(),
             writer,
             attachmentStore ?? new RecordingAttachmentStore(),
             Options.Create(CreateLimitsOptions()),
@@ -452,8 +696,18 @@ public sealed class FormSubmissionServiceTests
     private const string TargetServiceName = "test";
     private const int TargetLayerId = 0;
 
-    private static TestMetadataV2GraphProvider CreateMetadataProvider()
-        => new TestMetadataV2GraphBuilder()
+    private static IFeatureReader ReaderWithOwner(string owner)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(TargetLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1,
+            [Feature.Create(101, null, ImmutableDictionary<string, object?>.Empty.Add("owner", owner))]));
+        return reader;
+    }
+
+    private static TestMetadataV2GraphProvider CreateMetadataProvider(MetadataV2OwnerEditPolicy? ownerPolicy = null)
+    {
+        var builder = new TestMetadataV2GraphBuilder()
             .AddConnection("managed", "Managed")
             .AddResource(
                 "resource-inspections",
@@ -462,6 +716,7 @@ public sealed class FormSubmissionServiceTests
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Editable = true },
                     new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255, Editable = true },
+                    new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String, Length = 255, Editable = true },
                     new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Editable = false }
                 ],
                 spatial: new MetadataV2ResourceSpatial
@@ -499,8 +754,14 @@ public sealed class FormSubmissionServiceTests
                 "resource-inspections",
                 layerIndex: TargetLayerId,
                 storageBindingId: "binding-inspections",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
-            .BuildProvider();
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+        if (ownerPolicy is not null)
+        {
+            builder.WithOwnerEditPolicy("resource-inspections", ownerPolicy);
+        }
+
+        return builder.BuildProvider();
+    }
 
     private static JsonElement JsonArray(IEnumerable<string> values)
         => JsonSerializer.SerializeToElement(values);
@@ -626,7 +887,7 @@ public sealed class FormSubmissionServiceTests
         };
 
     private static FormSubmissionRequest CreateSubmission(
-        string idempotencyKey,
+        string? idempotencyKey,
         string operation = FormSubmissionOperations.Create,
         bool includeAttachment = false,
         long? targetFeatureId = null,
@@ -777,9 +1038,13 @@ public sealed class FormSubmissionServiceTests
 
         public bool ClaimResult { get; init; } = true;
 
+        public int CreateSubmissionCalls { get; private set; }
+
         public int CompleteCalls { get; private set; }
 
         public bool CompleteTokenWasCanceled { get; private set; }
+
+        public bool CompleteShouldThrow { get; init; }
 
         public FormSubmissionResponse? CompletedResponse { get; private set; }
 
@@ -856,6 +1121,16 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             GetSubmissionByIdempotencyCalls++;
+            if (CompletedResponse is not null)
+            {
+                return Task.FromResult<FormSubmissionRecord?>(new FormSubmissionRecord
+                {
+                    SubmissionId = CompletedResponse.SubmissionId,
+                    RequestHash = LastRequestHash ?? string.Empty,
+                    Status = CompletedResponse.Status,
+                    Response = CompletedResponse
+                });
+            }
             if (GetSubmissionByIdempotencyCalls == 1)
             {
                 return Task.FromResult<FormSubmissionRecord?>(null);
@@ -879,6 +1154,7 @@ public sealed class FormSubmissionServiceTests
             string status,
             CancellationToken cancellationToken = default)
         {
+            CreateSubmissionCalls++;
             LastRequestHash = requestHash;
             return Task.FromResult(ClaimResult);
         }
@@ -890,6 +1166,10 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             CompleteCalls++;
+            if (CompleteShouldThrow)
+            {
+                throw new InvalidOperationException("Simulated completion failure.");
+            }
             CompleteTokenWasCanceled = cancellationToken.IsCancellationRequested;
             if (CompleteTokenWasCanceled)
             {
@@ -939,7 +1219,17 @@ public sealed class FormSubmissionServiceTests
             => editRequest;
 
         public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-            => FeatureEditBatch.Create();
+            => FeatureEditBatch.Create(
+                creates: editRequest.Creates is { } creates
+                    ? creates.Select(static feature => Feature.Create(0, feature.Geometry,
+                        feature.Attributes ?? ImmutableDictionary<string, object?>.Empty)).ToImmutableArray()
+                    : ImmutableArray<Feature>.Empty,
+                updates: editRequest.Updates is { } updates
+                    ? updates.Select(static feature => Feature.Create(feature.ObjectId!.Value, feature.Geometry,
+                        feature.Attributes ?? ImmutableDictionary<string, object?>.Empty))
+                        .ToImmutableArray()
+                    : ImmutableArray<Feature>.Empty,
+                deletes: editRequest.Deletes ?? ImmutableArray<long>.Empty);
 
         public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
             => TransactionValidationResult.Success();
@@ -957,6 +1247,8 @@ public sealed class FormSubmissionServiceTests
     private sealed class FakeFeatureWriter : IFeatureWriter
     {
         public int ApplyEditsCalls { get; private set; }
+
+        public FeatureEditBatch? LastBatch { get; private set; }
 
         public Action? OnApplyEdits { get; init; }
 
@@ -977,6 +1269,7 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             ApplyEditsCalls++;
+            LastBatch = editBatch;
             OnApplyEdits?.Invoke();
             return Task.FromResult(Result);
         }
@@ -987,6 +1280,8 @@ public sealed class FormSubmissionServiceTests
         public int ListCalls { get; private set; }
 
         public int UploadCalls { get; private set; }
+
+        public Action? OnUpload { get; init; }
 
         public Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
             => Task.FromResult<Attachment?>(null);
@@ -1030,6 +1325,7 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             UploadCalls++;
+            OnUpload?.Invoke();
             return Task.FromResult(Attachment.Create(
                 UploadCalls,
                 featureId,

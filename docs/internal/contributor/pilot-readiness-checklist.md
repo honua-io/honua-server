@@ -80,7 +80,7 @@ the scale test suite. The `dotnet` shim applies the shared build/test lock.
 
 HONUA_SCALE_TEST_BASE_URL=http://localhost:8080 \
 HONUA_SCALE_TEST_REDIS=localhost:6379 \
-HONUA_SCALE_TEST_ADMIN_API_KEY=scale-test-admin-password \
+HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD" \
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale
 ```
 

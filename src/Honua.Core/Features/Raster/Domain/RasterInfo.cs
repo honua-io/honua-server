@@ -54,6 +54,12 @@ public readonly record struct RasterInfo
     public double? NoDataValue { get; init; }
 
     /// <summary>
+    /// Whether every stored band has the same NoData value as <see cref="NoDataValue"/>.
+    /// False when uniformity has not been established by the provider.
+    /// </summary>
+    public bool HasUniformNoDataValue { get; init; }
+
+    /// <summary>
     /// Geotransform coefficients for pixel-to-world coordinate transformation.
     /// Array of 6 values: [upperleftx, scalex, skewx, upperlefty, skewy, scaley].
     /// </summary>

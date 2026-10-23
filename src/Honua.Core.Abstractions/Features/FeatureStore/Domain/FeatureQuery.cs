@@ -25,6 +25,20 @@ public readonly record struct FeatureQuery
     /// </summary>
     public SqlFragment? SqlFilter { get; init; }
 
+    /// <summary>
+    /// Extension key set on <c>UnifiedQuery.Extensions</c> when <see cref="SqlFilter"/>
+    /// contains predicates that <see cref="Where"/> does not represent (a time filter or
+    /// object ids that were not forwarded on <see cref="ObjectIds"/>).
+    /// </summary>
+    public const string SqlFilterSupplementsWhereExtensionKey = "sqlFilterSupplementsWhere";
+
+    /// <summary>
+    /// True when <see cref="SqlFilter"/> is not just the translation of <see cref="Where"/>.
+    /// Providers that forward <see cref="Where"/> and cannot translate parameterized SQL
+    /// must fail closed instead of dropping the extra predicates.
+    /// </summary>
+    public bool SqlFilterSupplementsWhere { get; init; }
+
     /// <summary>Provider-neutral literal text search, composed with other query filters.</summary>
     public FeatureTextSearch? TextSearch { get; init; }
 
@@ -93,6 +107,14 @@ public readonly record struct FeatureQuery
     /// the selected (Esri-parity) pipeline rather than PROJ's implicit default.
     /// </summary>
     public DatumTransformationSelection? OutputDatumTransformation { get; init; }
+
+    /// <summary>
+    /// Optional datum transformation for a spatial filter whose SRID differs from
+    /// <see cref="SpatialReferenceSrid"/>. This is the filter CRS to the layer CRS,
+    /// independent of <see cref="OutputDatumTransformation"/> (layer CRS to output CRS).
+    /// When unset, providers use two-argument <c>ST_Transform</c>.
+    /// </summary>
+    public DatumTransformationSelection? SpatialFilterDatumTransformation { get; init; }
 
     /// <summary>
     /// Optional output axis order for formats that encode coordinates according to CRS axis definitions.
@@ -364,6 +386,12 @@ public readonly record struct SpatialFilter
     /// Whether to include the computed distance value in results for KNN queries.
     /// </summary>
     public bool ReturnDistance { get; init; }
+
+    /// <summary>
+    /// True when the filter geometry was split into two envelopes around the antimeridian.
+    /// Index checks must test each half. The union bounding box would cover every longitude.
+    /// </summary>
+    public bool AntimeridianSplit { get; init; }
 
     /// <summary>
     /// Creates a spatial filter

@@ -46,7 +46,8 @@ internal sealed class AzureContainerAppsGitOpsDeployBackend(ILogger<AzureContain
 /// </summary>
 internal sealed partial class AzureContainerAppsRevisionDeployBackend(
     IAzureContainerAppsRevisionClient revisionClient,
-    ILogger<AzureContainerAppsRevisionDeployBackend> logger) : IDeployBackend
+    ILogger<AzureContainerAppsRevisionDeployBackend> logger,
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
 {
     public string BackendName => "honua-azure-container-apps-revision";
 
@@ -234,13 +235,13 @@ internal sealed partial class AzureContainerAppsRevisionDeployBackend(
                         .FirstOrDefault(t => string.Equals(t.RevisionName, rollbackRevision, StringComparison.OrdinalIgnoreCase));
                     if (rollbackTraffic is { Weight: 100 })
                     {
-                        return new DeployObservation
-                        {
-                            Status = WorkflowOperationStatus.RolledBack,
-                            ProviderOperationId = operation.ProviderOperationId,
-                            ObservedRevision = rollbackRevision,
-                            Message = $"Container App '{target.AppName}' traffic is fully restored to revision '{rollbackRevision}'."
-                        };
+                        return await CompleteContainerAppRollbackAsync(
+                                operation,
+                                spec,
+                                target,
+                                rollbackRevision,
+                                cancellationToken)
+                            .ConfigureAwait(false);
                     }
                 }
 
@@ -297,6 +298,45 @@ internal sealed partial class AzureContainerAppsRevisionDeployBackend(
                 Message = "Container Apps state lookup failed."
             };
         }
+    }
+
+    private async Task<DeployObservation> CompleteContainerAppRollbackAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        AzureContainerAppsDeployTarget target,
+        string rollbackRevision,
+        CancellationToken cancellationToken)
+    {
+        var revision = await revisionClient.GetRevisionAsync(
+                target.SubscriptionId!,
+                target.ResourceGroupName!,
+                target.AppName!,
+                rollbackRevision,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var ready = revision.Active &&
+            string.Equals(revision.HealthState, "Healthy", StringComparison.OrdinalIgnoreCase) &&
+            (string.IsNullOrWhiteSpace(revision.RunningState) ||
+             string.Equals(revision.RunningState, "Running", StringComparison.OrdinalIgnoreCase));
+        var functionalQuery = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(
+                dataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = true,
+                ServingRevision = rollbackRevision,
+                HealthyEndpointCount = ready ? 1 : 0,
+                RegisteredEndpointCount = revision.Active || !string.IsNullOrWhiteSpace(revision.HealthState) ? 1 : 0,
+                FunctionalQuery = functionalQuery,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, operation.ProviderOperationId);
     }
 
     public async Task<DeployObservation> PromoteAsync(
@@ -468,7 +508,8 @@ internal sealed partial class AzureContainerAppsRevisionDeployBackend(
 /// </summary>
 internal sealed partial class AzureFunctionsGitOpsDeployBackend(
     IAzureFunctionsSlotClient slotClient,
-    ILogger<AzureFunctionsGitOpsDeployBackend> logger) : IDeployBackend
+    ILogger<AzureFunctionsGitOpsDeployBackend> logger,
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
 {
     public string BackendName => "honua-gitops-azure-functions";
 
@@ -659,13 +700,12 @@ internal sealed partial class AzureFunctionsGitOpsDeployBackend(
             {
                 if (ImagesMatch(productionImage, target.CurrentImage))
                 {
-                    return new DeployObservation
-                    {
-                        Status = WorkflowOperationStatus.RolledBack,
-                        ProviderOperationId = operation.ProviderOperationId,
-                        ObservedRevision = observedRevision,
-                        Message = $"Azure Functions production is back on image '{target.CurrentImage}'."
-                    };
+                    return await CompleteFunctionsRollbackAsync(
+                            operation,
+                            spec,
+                            productionImage,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 return new DeployObservation
@@ -707,6 +747,38 @@ internal sealed partial class AzureFunctionsGitOpsDeployBackend(
                 Message = "Azure Functions state lookup failed."
             };
         }
+    }
+
+    private async Task<DeployObservation> CompleteFunctionsRollbackAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        string? productionImage,
+        CancellationToken cancellationToken)
+    {
+        var readiness = await RollbackDataPlaneCompletion.ProbeReadinessAsync(
+                dataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var functionalQuery = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(
+                dataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = true,
+                ServingRevision = productionImage,
+                HealthyEndpointCount = readiness == true ? 1 : 0,
+                RegisteredEndpointCount = readiness.HasValue ? 1 : 0,
+                FunctionalQuery = functionalQuery,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, operation.ProviderOperationId);
     }
 
     public async Task<DeployObservation> RollbackAsync(

@@ -2,12 +2,19 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
@@ -27,6 +34,21 @@ public class OgcMapsBasicTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    private static double[] ReadLandingBbox(JsonDocument json)
+    {
+        var bbox = json.RootElement.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")
+            .EnumerateArray().First().EnumerateArray()
+            .Select(value => value.GetDouble()).ToArray();
+        bbox.Should().HaveCount(4);
+        var isWholeWorld = Math.Abs(bbox[0] + 180d) <= 1e-9
+            && Math.Abs(bbox[1] + 90d) <= 1e-9
+            && Math.Abs(bbox[2] - 180d) <= 1e-9
+            && Math.Abs(bbox[3] - 90d) <= 1e-9;
+        isWholeWorld.Should().BeFalse(
+            "an omitted or real dataset extent must not be replaced with the whole world");
+        return bbox;
+    }
+
     private async Task<string> StoreCollectionStyleAsync()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -39,6 +61,66 @@ public class OgcMapsBasicTests : IAsyncLifetime
             TestLayerId,
             "{\"version\":8,\"sources\":{},\"layers\":[]}");
         return resource.Metadata.Name!;
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Endpoint("GET /ogc/maps/collections")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_DiscoveryLinks_EnumerateResolvableMapCollections()
+    {
+        using var landing = await _fixture.Client.GetAsync("/ogc/maps");
+        landing.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var landingJson = JsonDocument.Parse(await landing.Content.ReadAsStringAsync());
+        var links = landingJson.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        links.Should().Contain(link => link.GetProperty("rel").GetString() ==
+            "http://www.opengis.net/def/rel/ogc/1.0/map");
+        var dataLink = links.Single(link => link.GetProperty("rel").GetString() == "data");
+        using var response = await _fixture.Client.GetAsync(new Uri(dataLink.GetProperty("href").GetString()!).PathAndQuery);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var collections = json.RootElement.GetProperty("collections").EnumerateArray().ToArray();
+        collections.Should().NotBeEmpty();
+        collections.Count(collection => collection.TryGetProperty("extent", out _)).Should().BeGreaterThan(0,
+            "the seeded layer declares a bounding box, so extent parity must exercise a present extent");
+        collections.Select(collection => collection.GetProperty("id").GetString()).Should().OnlyHaveUniqueItems();
+        foreach (var collection in collections)
+        {
+            var self = collection.GetProperty("links").EnumerateArray()
+                .Single(link => link.GetProperty("rel").GetString() == "self");
+            using var detail = await _fixture.Client.GetAsync(new Uri(self.GetProperty("href").GetString()!).PathAndQuery);
+            detail.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+            detailJson.RootElement.GetProperty("id").GetString().Should().Be(collection.GetProperty("id").GetString());
+            var hasExtent = collection.TryGetProperty("extent", out var listedExtent);
+            detailJson.RootElement.TryGetProperty("extent", out var detailExtent).Should().Be(hasExtent);
+            if (hasExtent)
+            {
+                detailExtent.GetRawText().Should().Be(listedExtent.GetRawText());
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollections_ProtectedResource_IsOmittedForAnonymousCaller()
+    {
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ResourceMetadata(TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["maps-reader"] });
+        using var anonymousClient = fixture.CreateClient();
+        using var response = await anonymousClient.GetAsync("/ogc/maps/collections");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("collections").EnumerateArray()
+            .Should().NotContain(collection => collection.GetProperty("id").GetString() == "0");
+        response.Headers.Age.Should().BeNull();
     }
 
     [IntegrationTest]
@@ -59,6 +141,126 @@ public class OgcMapsBasicTests : IAsyncLifetime
             .Select(link => link.GetProperty("href").GetString())
             .Should()
             .Contain(href => href != null && href.EndsWith("/ogc/maps/openapi.json", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_AdvertisesTheSeededDatasetExtent()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/maps");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = JsonDocument.Parse(content);
+
+        // Layer 0 is the only seeded Maps resource that declares a bbox: -123, 37, -122, 38 in CRS84.
+        var bbox = ReadLandingBbox(json);
+        bbox[0].Should().BeApproximately(-123, 1e-6);
+        bbox[1].Should().BeApproximately(37, 1e-6);
+        bbox[2].Should().BeApproximately(-122, 1e-6);
+        bbox[3].Should().BeApproximately(38, 1e-6);
+        json.RootElement.GetProperty("crs").EnumerateArray().Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_MixedCrsExtent_AgreesWithPostGisBoundaryOracle()
+    {
+        const double projectedMinX = 530000;
+        const double projectedMinY = 180000;
+        const double projectedMaxX = 531000;
+        const double projectedMaxY = 181000;
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Id == "res-layer-1");
+        var original = resource.Spatial;
+        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial
+        {
+            SpatialReference = new MetadataV2SpatialReference { Srid = 27700, Crs = "EPSG:27700" },
+            GeometryType = MetadataV2GeometryType.Point,
+            PrimaryGeometryField = "shape",
+            Bbox = new MetadataV2Bbox
+            {
+                West = projectedMinX,
+                South = projectedMinY,
+                East = projectedMaxX,
+                North = projectedMaxY,
+            },
+        });
+
+        try
+        {
+            var response = await _fixture.Client.GetAsync("/ogc/maps");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            using var json = JsonDocument.Parse(content);
+            var bbox = ReadLandingBbox(json);
+
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT ST_XMin(g), ST_YMin(g), ST_XMax(g), ST_YMax(g)
+                FROM (
+                    SELECT ST_Transform(
+                        ST_Segmentize(
+                            ST_Boundary(ST_MakeEnvelope(@minX, @minY, @maxX, @maxY, @fromSrid)),
+                            250),
+                        @toSrid) AS g
+                ) transformed
+                """;
+            command.Parameters.AddWithValue("minX", projectedMinX);
+            command.Parameters.AddWithValue("minY", projectedMinY);
+            command.Parameters.AddWithValue("maxX", projectedMaxX);
+            command.Parameters.AddWithValue("maxY", projectedMaxY);
+            command.Parameters.AddWithValue("fromSrid", 27700);
+            command.Parameters.AddWithValue("toSrid", 4326);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            var oracle = (
+                MinX: reader.GetDouble(0),
+                MinY: reader.GetDouble(1),
+                MaxX: reader.GetDouble(2),
+                MaxY: reader.GetDouble(3));
+
+            const double seededMinX = -123;
+            const double seededMinY = 37;
+            const double seededMaxX = -122;
+            const double seededMaxY = 38;
+            bbox[0].Should().BeApproximately(Math.Min(seededMinX, oracle.MinX), 0.02);
+            bbox[1].Should().BeApproximately(Math.Min(seededMinY, oracle.MinY), 0.02);
+            bbox[2].Should().BeApproximately(Math.Max(seededMaxX, oracle.MaxX), 0.02);
+            bbox[3].Should().BeApproximately(Math.Max(seededMaxY, oracle.MaxY), 0.02);
+            (bbox[2] - bbox[0]).Should().BeGreaterThan(10,
+                "the transformed British National Grid box must widen the seeded California extent");
+        }
+        finally
+        {
+            _fixture.UpdateV2ResourceMetadata(1, spatial: original);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/map")]
+    [Operation(Operations.Metadata)]
+    public async Task DatasetMap_WithExplicitBbox_DoesNotFailAsAnUnmappedServerError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/maps/map?bbox=-122.6,37.4,-122.4,37.6&bbox-crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84&f=png");
+        ((int)response.StatusCode).Should().NotBe((int)HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_SecondAnonymousRead_IsNotASharedCacheReplay()
+    {
+        using var first = await _fixture.Client.GetAsync("/ogc/maps");
+        using var second = await _fixture.Client.GetAsync("/ogc/maps");
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.Headers.Age.Should().BeNull(
+            "the landing page is per-principal and must not be stored in the shared output cache");
     }
 
     [IntegrationTest]
@@ -117,6 +319,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
 
         json.RootElement.GetProperty("openapi").GetString().Should().NotBeNullOrWhiteSpace();
         json.RootElement.GetProperty("paths").TryGetProperty("/ogc/maps", out _).Should().BeTrue();
+        json.RootElement.GetProperty("paths").TryGetProperty("/ogc/maps/collections", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -201,6 +404,122 @@ public class OgcMapsBasicTests : IAsyncLifetime
             .ToArray();
 
         conformanceClasses.Should().Contain(c => c != null && c.Contains("ogcapi-maps"));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollection_MapServingCollection_ReturnsDescriptionWhoseMapLinksRender()
+    {
+        // #4991: GDAL's OGCAPI driver (QGIS's OGC API - Maps provider) reads the collection
+        // resource before it requests /map, so a collection that renders must also describe
+        // itself. GDAL takes the map URL only from the http:// relation with a media type; for any
+        // other link it keeps whichever comes last, so without it QGIS requested the
+        // rel=alternate HTML link as the map.
+        var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("id").GetString().Should().NotBeNullOrWhiteSpace();
+
+        var links = root.GetProperty("links").EnumerateArray().ToArray();
+        var mapLinks = links
+            .Where(link => link.GetProperty("rel").GetString() is "https://www.opengis.net/def/rel/ogc/1.0/map" or "[ogc-rel:map]" or "http://www.opengis.net/def/rel/ogc/1.0/map")
+            .ToArray();
+        mapLinks.Select(link => link.GetProperty("rel").GetString()).Should().BeEquivalentTo(
+            ["https://www.opengis.net/def/rel/ogc/1.0/map", "[ogc-rel:map]", "http://www.opengis.net/def/rel/ogc/1.0/map"]);
+        links.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "self"
+            && link.GetProperty("href").GetString()!.EndsWith($"/ogc/maps/collections/{root.GetProperty("id").GetString()}", StringComparison.Ordinal));
+
+        foreach (var mapLink in mapLinks)
+        {
+            mapLink.GetProperty("type").GetString().Should().Be("image/png");
+            var mapPath = new Uri(mapLink.GetProperty("href").GetString()!).AbsolutePath;
+            mapPath.Should().EndWith("/map");
+
+            // The advertised link must resolve: follow it the way GDAL does, with a bbox window.
+            var map = await _fixture.Client.GetAsync($"{mapPath}?bbox=-180,-90,180,90&width=64&height=64");
+            map.StatusCode.Should().Be(HttpStatusCode.OK, $"the advertised map link {mapPath} must render");
+            map.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        }
+
+        // GDAL georeferences the map from extent.spatial.bbox; it must be the resource extent.
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[TestLayerId];
+        var bbox = resource.ReadBbox();
+        if (bbox is null)
+        {
+            root.TryGetProperty("extent", out _).Should().BeFalse("a resource without an extent advertises none");
+        }
+        else
+        {
+            var advertised = root.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")[0]
+                .EnumerateArray().Select(value => value.GetDouble()).ToArray();
+            advertised.Should().HaveCount(4);
+            advertised[0].Should().BeLessThanOrEqualTo(advertised[2]);
+            advertised[1].Should().BeLessThanOrEqualTo(advertised[3]);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollection_NonExistentCollection_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/maps/collections/99999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollection_ProtectedCollection_RefusesAnonymousWith401AndAdmitsEntitledCaller()
+    {
+        // #4991: a protected collection answers anonymous callers with 401, on the collection
+        // resource and on its map, instead of the 404 that told clients it did not exist.
+        const string entitledRole = "maps-reader";
+        const string referer = "https://ogcapi-maps-collection-proof.example/";
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        {
+            // Displace the development-authentication bypass, which makes every caller an admin.
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ResourceMetadata(
+            TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [entitledRole] });
+
+        var token = (await fixture.GetService<IPortalTokenIssuer>().IssueAsync(
+            new PortalTokenIssueRequest(
+                "maps-analyst",
+                "maps-analyst",
+                TenantId: null,
+                Roles: [entitledRole],
+                PortalTokenClientType.Referer,
+                referer,
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None)).Token;
+
+        var collectionPath = $"/ogc/maps/collections/{TestLayerId}";
+        var mapPath = $"{collectionPath}/map?bbox=-180,-90,180,90&width=64&height=64";
+        foreach (var path in new[] { collectionPath, mapPath })
+        {
+            using var anonymousClient = fixture.CreateClient();
+            using var anonymous = await anonymousClient.GetAsync(path);
+            anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"anonymous {path}");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Referrer = new Uri(referer);
+            using var entitledClient = fixture.CreateClient();
+            using var entitled = await entitledClient.SendAsync(request);
+            entitled.StatusCode.Should().Be(HttpStatusCode.OK, $"entitled {path}: {await entitled.Content.ReadAsStringAsync()}");
+        }
     }
 
     [IntegrationTest]

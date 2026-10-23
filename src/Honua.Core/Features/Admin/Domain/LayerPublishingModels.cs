@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+using Honua.Core.Features.Operations.Domain;
+
 namespace Honua.Core.Features.Admin.Domain;
 
 /// <summary>
@@ -8,6 +11,16 @@ namespace Honua.Core.Features.Admin.Domain;
 /// </summary>
 public sealed class LayerPublishRequest
 {
+    /// <summary>
+    /// Publish an independent editable copy in the server's managed feature store.
+    /// The source remains unchanged. Source object IDs are retained in
+    /// <c>honua_source_id</c>; the copy receives its own stable object IDs.
+    /// </summary>
+    public bool CreateEditableCopy { get; init; }
+
+    /// <summary>Allow an empty generated output with a known schema. Ordinary publication requires rows.</summary>
+    public bool AllowEmptyTable { get; init; }
+
     /// <summary>
     /// Schema containing the source table (e.g., "public").
     /// </summary>
@@ -39,6 +52,16 @@ public sealed class LayerPublishRequest
     public string? GeometryType { get; init; }
 
     /// <summary>
+    /// Whether the published geometries contain elevation ordinates. Defaults to false.
+    /// </summary>
+    public bool HasZ { get; init; }
+
+    /// <summary>
+    /// Whether the published geometries contain measure ordinates. Defaults to false.
+    /// </summary>
+    public bool HasM { get; init; }
+
+    /// <summary>
     /// Spatial reference identifier (SRID).
     /// </summary>
     public int? Srid { get; init; }
@@ -47,6 +70,12 @@ public sealed class LayerPublishRequest
     /// Primary key column name.
     /// </summary>
     public string? PrimaryKey { get; init; }
+
+    /// <summary>Published UUID column containing imported edit-stable global IDs. Does not grant editing.</summary>
+    public string? GlobalIdField { get; init; }
+
+    /// <summary>Whether this resource exposes the configured attachment store. Does not prove attachment-copy fidelity.</summary>
+    public bool SupportsAttachments { get; init; }
 
     /// <summary>
     /// List of attribute fields to publish (empty means include all).
@@ -57,6 +86,12 @@ public sealed class LayerPublishRequest
     /// Optional service name for publishing (defaults to "default").
     /// </summary>
     public string? ServiceName { get; init; }
+
+    /// <summary>
+    /// Optional metadata grouping namespace. A non-null value requires a trusted tenant context.
+    /// Null preserves legacy unscoped publication; existing services cannot be retagged.
+    /// </summary>
+    public string? Namespace { get; init; }
 
     /// <summary>
     /// Optional connection identifier to associate with the service.
@@ -103,6 +138,55 @@ public sealed class LayerPublishRequest
     /// Null when the source layer declared none.
     /// </summary>
     public IReadOnlyList<Honua.Core.Features.Metadata.Domain.V2.MetadataV2AttributeRule>? AttributeRules { get; init; }
+
+    /// <summary>
+    /// Where the published layer's features live. <see cref="LayerStorageMode.Source"/> (the
+    /// default) serves the live source table; <see cref="LayerStorageMode.Managed"/> copies the
+    /// source rows into the managed feature store, which then owns the layer's features and
+    /// accepts edits.
+    /// </summary>
+    public LayerStorageMode StorageMode { get; init; } = LayerStorageMode.Source;
+
+    /// <summary>
+    /// Capability tokens declared on the layer's feature publication (for example
+    /// <c>Query</c>, <c>Create</c>, <c>Update</c>, <c>Delete</c>). Null or empty keeps the
+    /// read-only default <c>["Query","Extract"]</c>. Edit tokens require
+    /// <see cref="LayerStorageMode.Managed"/>.
+    /// </summary>
+    public IReadOnlyList<string>? Capabilities { get; init; }
+
+    /// <summary>
+    /// SHA-256 of the host, port, and database pinned when a committed sink wrote the table.
+    /// Absent for ordinary publication. Not accepted from the public HTTP body; a queued job
+    /// carries it on its own payload. Settable so the job worker can apply it after mapping.
+    /// </summary>
+    public string? ConnectionEndpointFingerprint { get; set; }
+
+    /// <summary>
+    /// Server-revalidated source evidence for a committed sink publish. Never read from an
+    /// HTTP body; the queued worker stores only its bounded durable coordinates separately.
+    /// </summary>
+    [JsonIgnore]
+    public VerifiedCommittedSinkPublication? CommittedSinkPublication { get; set; }
+}
+
+/// <summary>
+/// Storage a published layer's features are served from and written to.
+/// </summary>
+public enum LayerStorageMode
+{
+    /// <summary>
+    /// Features are read from the live source table. The server cannot write through a
+    /// source table, so edits are refused (honua-server#4707).
+    /// </summary>
+    Source,
+
+    /// <summary>
+    /// Source rows are copied into the managed feature store at publish time. The managed
+    /// store is then authoritative for the layer: reads and edits both use it, and the
+    /// layer no longer tracks the source table (honua-server#4859).
+    /// </summary>
+    Managed
 }
 
 /// <summary>
@@ -110,6 +194,16 @@ public sealed class LayerPublishRequest
 /// </summary>
 public sealed class TablePublishValidationRequest
 {
+    /// <summary>Allow an empty generated output with a known schema. Defaults to false.</summary>
+    public bool AllowEmptyTable { get; init; }
+
+    /// <summary>
+    /// Validate for a managed-store publication: the managed store assigns object ids, so the
+    /// source key may be of any type or absent, and an existing layer over the same table is
+    /// not a conflict. Defaults to false.
+    /// </summary>
+    public bool ManagedStore { get; init; }
+
     /// <summary>
     /// Schema containing the source table.
     /// </summary>
@@ -149,6 +243,16 @@ public sealed class TablePublishValidationRequest
     /// Selected attribute fields to publish. Empty means all discovered columns.
     /// </summary>
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Endpoint fingerprint pinned by a committed sink. See
+    /// <see cref="LayerPublishRequest.ConnectionEndpointFingerprint"/>.
+    /// </summary>
+    public string? ConnectionEndpointFingerprint { get; set; }
+
+    /// <summary>Server-revalidated committed sink evidence, excluded from public JSON.</summary>
+    [JsonIgnore]
+    public VerifiedCommittedSinkPublication? CommittedSinkPublication { get; set; }
 }
 
 /// <summary>
@@ -398,6 +502,21 @@ public sealed class PublishedLayerSummary
     /// Name of the service this layer belongs to.
     /// </summary>
     public required string ServiceName { get; init; }
+
+    /// <summary>The exact metadata graph revision committed by this publish, when available.</summary>
+    public long? MetadataRevision { get; init; }
+
+    /// <summary>
+    /// Storage mode the layer was published with (<c>source</c> or <c>managed</c>). Set on
+    /// publish responses; null on listings.
+    /// </summary>
+    public string? StorageMode { get; init; }
+
+    /// <summary>
+    /// Capability tokens declared on the layer's feature publication. Set on publish
+    /// responses; null on listings.
+    /// </summary>
+    public IReadOnlyList<string>? Capabilities { get; init; }
 }
 
 /// <summary>

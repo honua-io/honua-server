@@ -125,12 +125,13 @@ internal static class ServiceSettingsEndpoints
         HandleGetSettings(
             string serviceName,
             [FromServices] IMetadataV2GraphProvider graphProvider,
+            [FromServices] IMetadataV2GraphStore? graphStore,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
         try
         {
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out var services))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -183,7 +184,7 @@ internal static class ServiceSettingsEndpoints
                     $"Invalid protocol(s): {string.Join(", ", invalid)}. Valid values: {string.Join(", ", MetadataV2ServiceProtocols.All)}"));
             }
 
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out _))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -250,7 +251,7 @@ internal static class ServiceSettingsEndpoints
     {
         try
         {
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out _))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -332,7 +333,7 @@ internal static class ServiceSettingsEndpoints
     {
         try
         {
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out var services))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -379,11 +380,19 @@ internal static class ServiceSettingsEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
             }
 
-            if (request.RasterMosaic?.MergeStrategy is { Length: > 0 } mergeStrategyValue
-                && !TryNormalizeMergeStrategy(mergeStrategyValue, out _))
+            // Raster mosaic settings have no Metadata v2 home. Refuse the whole
+            // request so a 200 cannot echo a merge strategy that was not stored.
+            if (request.RasterMosaic is not null)
             {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(
-                    $"Invalid mergeStrategy '{mergeStrategyValue}'. Allowed values: newest, oldest, average, max, min."));
+                ServiceSettingsLog.UpdateLayerMetadataFailed(
+                    logger,
+                    serviceName,
+                    layerId,
+                    new NotSupportedException("Raster mosaic settings have no Metadata v2 representation yet."));
+                return TypedResults.Problem(
+                    title: "Raster mosaic settings update not supported",
+                    detail: "Raster mosaic settings have no Metadata v2 representation yet.",
+                    statusCode: StatusCodes.Status501NotImplemented);
             }
 
             var governanceRequested = request.License is not null ||
@@ -401,30 +410,6 @@ internal static class ServiceSettingsEndpoints
                     out var governanceError))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
-            }
-
-            // RasterMosaic has no typed V2 home yet — we keep echoing the requested merge
-            // strategy in the response (so PUT semantics are preserved for callers), but
-            // it does not round-trip through the graph store. Documented in the mutator
-            // below.
-            RasterMosaicResponse? updatedRasterMosaic = null;
-            if (request.RasterMosaic is not null)
-            {
-                string? mergeStrategy;
-                if (request.RasterMosaic.MergeStrategy is null)
-                {
-                    mergeStrategy = null;
-                }
-                else if (request.RasterMosaic.MergeStrategy.Length == 0)
-                {
-                    mergeStrategy = null;
-                }
-                else
-                {
-                    TryNormalizeMergeStrategy(request.RasterMosaic.MergeStrategy, out var canonical);
-                    mergeStrategy = canonical;
-                }
-                updatedRasterMosaic = new RasterMosaicResponse { MergeStrategy = mergeStrategy };
             }
 
             var mutation = await MutateResourceByIdAsync(
@@ -486,6 +471,7 @@ internal static class ServiceSettingsEndpoints
                     // GET responses can still echo what the caller PUT.
                     return next;
                 },
+                request.Editing,
                 context.RequestAborted).ConfigureAwait(false);
             if (mutation.BindingConflict)
             {
@@ -502,7 +488,8 @@ internal static class ServiceSettingsEndpoints
                     ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
             }
 
-            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
+            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
+                request.Editing is not null ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(
                 layerId,
@@ -510,8 +497,13 @@ internal static class ServiceSettingsEndpoints
                 persistedResource.Metadata,
                 persistedResource.AccessPolicy,
                 persistedResource.Temporal,
-                updatedRasterMosaic);
+                null,
+                persistedResource.Editing);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
+        }
+        catch (ArgumentException ex) when (request.Editing is not null)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -530,6 +522,29 @@ internal static class ServiceSettingsEndpoints
     /// (FeatureServer / MapServer / Stac all named "test"); the v1 admin contract was
     /// service-name-keyed, so we collapse those entries the same way at response time.
     /// </summary>
+    /// <summary>
+    /// Resolves the graph snapshot used to look up <paramref name="serviceName"/>. The cached read
+    /// path is tried first; on a miss the persisted store is consulted before answering 404, because
+    /// the cached snapshot can predate a write that just committed (on another node, or within the
+    /// snapshot TTL if the cross-node invalidation message was lost). A hit costs nothing extra.
+    /// </summary>
+    private static async ValueTask<MetadataV2GraphSnapshot> GetSnapshotForServiceAsync(
+        IMetadataV2GraphProvider graphProvider,
+        IMetadataV2GraphStore? graphStore,
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // File-backed dev and test hosts register the provider only. A missing store must not
+        // fail endpoint binding, and a provider hit does not need the persisted fallback.
+        if (graphStore is null || TryResolveServicesByName(snapshot, serviceName, out _))
+        {
+            return snapshot;
+        }
+
+        return await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static bool TryResolveServicesByName(
         MetadataV2GraphSnapshot snapshot,
         string serviceName,
@@ -604,12 +619,14 @@ internal static class ServiceSettingsEndpoints
         MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
         MetadataV2ResourceTemporal? timeInfo,
-        RasterMosaicResponse? rasterMosaic)
+        RasterMosaicResponse? rasterMosaic,
+        MetadataV2ResourceEditing? editing)
     {
         return new LayerMetadataResponse
         {
             LayerId = layerId,
             LayerName = layerName,
+            Editing = editing,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
@@ -770,40 +787,12 @@ internal static class ServiceSettingsEndpoints
         return relationIndex;
     }
 
-    /// <summary>
-    /// Validates a raster mosaic merge strategy against the canonical set and normalizes to
-    /// the lowercase canonical token. Allowed: newest, oldest, average, max, min.
-    /// </summary>
-    private static bool TryNormalizeMergeStrategy(string value, out string canonical)
-    {
-        switch (value.Trim().ToLowerInvariant())
-        {
-            case "newest":
-                canonical = "newest";
-                return true;
-            case "oldest":
-                canonical = "oldest";
-                return true;
-            case "average":
-                canonical = "average";
-                return true;
-            case "max":
-                canonical = "max";
-                return true;
-            case "min":
-                canonical = "min";
-                return true;
-            default:
-                canonical = string.Empty;
-                return false;
-        }
-    }
-
     private static async Task InvalidateServiceCatalogCacheAsync(
         HttpContext context,
         IMetadataV2GraphProvider graphProvider,
         string serviceName,
-        ILogger<ServiceSettingsEndpointsLog> logger)
+        ILogger<ServiceSettingsEndpointsLog> logger,
+        string? resourceId = null)
     {
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator == null)
@@ -822,7 +811,7 @@ internal static class ServiceSettingsEndpoints
                 .Select(s => s.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
             var layerIds = snapshot.Graph.Publications
-                .Where(p => serviceIds.Contains(p.ServiceId))
+                .Where(p => serviceIds.Contains(p.ServiceId) || (resourceId is not null && p.ResourceId == resourceId))
                 .Select(p => p.LayerIndex)
                 .Where(layerIndex => layerIndex.HasValue)
                 .Select(layerIndex => layerIndex!.Value)
@@ -830,7 +819,7 @@ internal static class ServiceSettingsEndpoints
                 .ToArray();
 
             await cacheInvalidator.InvalidateServiceCatalogAsync(
-                serviceName,
+                resourceId is null ? serviceName : null,
                 layerIds,
                 context.RequestAborted).ConfigureAwait(false);
         }
@@ -914,6 +903,7 @@ internal static class ServiceSettingsEndpoints
         int layerId,
         string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        MetadataV2EditingPatch? editingPatch,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -949,6 +939,21 @@ internal static class ServiceSettingsEndpoints
                 Resources = resources,
                 Revision = snapshot.Graph.Revision + 1,
             };
+
+            if (editingPatch is not null)
+            {
+                var serviceIds = snapshot.Graph.Services.Where(service =>
+                        string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) &&
+                        ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+                    .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+                var publicationIds = snapshot.Graph.Publications.Where(publication =>
+                        publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
+                        publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                        publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
+                    .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+                updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
+                mutatedResource = updated.Resources.Single(resource => resource.Metadata.Id == resourceId);
+            }
 
             try
             {

@@ -1,3 +1,9 @@
+---
+type: reference
+title: "OpenAPI and the API explorer"
+description: "Honua serves OpenAPI documents at runtime for each protocol surface, ships pinned spec bundles in the repository, and can host an interactive explorer at /docs."
+resource: "honua://capability/discovery.capability-manifest"
+---
 # OpenAPI and the API explorer
 
 Honua serves OpenAPI documents at runtime for each protocol surface, ships pinned spec bundles in the repository, and can host an interactive explorer at `/docs`. This page lists each and when to use which.

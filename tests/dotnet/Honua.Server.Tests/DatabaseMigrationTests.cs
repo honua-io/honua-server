@@ -4,7 +4,14 @@
 using System.Reflection;
 using DbUp;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Publishing.Domain;
+using Honua.Db.Postgres.Features.Publishing;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Microsoft.Extensions.Configuration;
 using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -124,6 +131,274 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             (12L, 7, 902L, (short)1, "upload-replica"),
             (13L, 7, 903L, (short)2, (string?)null)
         });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalDeploymentMigration_DefaultExistingDatabase_RemainsExpandOnlyWithoutApproval()
+    {
+        var assembly = typeof(Program).Assembly;
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), ServerCoreSchemaMigrations.Manifest);
+        var fresh = await runner.RunMigrationsAsync(_connectionString, assembly);
+        fresh.Successful.Should().BeTrue($"fresh installs require no contract approval: {fresh.ErrorMessage}");
+        const string script = "Honua.Server.Migrations.134_VersionCanonicalDeployments.sql";
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using (var journal = new Npgsql.NpgsqlCommand(
+            "DELETE FROM public.schema_versions WHERE scriptname = @script", connection))
+        {
+            journal.Parameters.AddWithValue("script", script);
+            (await journal.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var plan = await runner.PlanMigrationsAsync(_connectionString, assembly);
+        plan.Successful.Should().BeTrue();
+        plan.HasContractScripts.Should().BeFalse("134 only adds fields on the existing physical family");
+        var upgrade = await runner.RunMigrationsAsync(_connectionString, assembly);
+        upgrade.Successful.Should().BeTrue(upgrade.ErrorMessage);
+        upgrade.AppliedScripts.Should().Equal(script);
+        var restart = await runner.RunMigrationsAsync(_connectionString, assembly);
+        restart.Successful.Should().BeTrue(restart.ErrorMessage);
+        restart.AppliedScripts.Should().BeEmpty("the journal prevents replay on restart");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData("expand", true)]
+    [InlineData("opted-out", false)]
+    [InlineData("contract", false)]
+    public async Task CanonicalRunner_RollbackAcrossNewerDeclaredMigration_StartsOnlyWhenItVerifiesExpand(
+        string kind, bool rollbackStarts)
+    {
+        // #6477: this image is the N-1 reader. A newer image applied one more migration and recorded
+        // its forward-compatibility declaration; image-only rollback keeps that database.
+        var assembly = typeof(Program).Assembly;
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), ServerCoreSchemaMigrations.Manifest);
+        var fresh = await runner.RunMigrationsAsync(_connectionString, assembly);
+        fresh.Successful.Should().BeTrue(fresh.ErrorMessage);
+
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT (SELECT COUNT(*) FROM public.schema_versions),
+                   (SELECT COUNT(*) FROM public.schema_version_reader_compatibility),
+                   (SELECT classification FROM public.schema_version_reader_compatibility
+                    WHERE script_name = 'Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql')
+            """;
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(1).Should().Be(reader.GetInt64(0), "every journaled script this image ships is declared");
+            reader.GetString(2).Should().Be("expand");
+        }
+
+        const string future = "Honua.Server.Migrations.999_FutureRollbackProbe.sql";
+        var sql = kind switch
+        {
+            "expand" => "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);",
+            "opted-out" => "-- honua:reader-incompatible reason=older readers write rows the new trigger rejects\n" +
+                "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);",
+            _ => "-- honua:compatibility-review reason=contract phase after the rollout\n" +
+                "CREATE TABLE IF NOT EXISTS honua.future_rollback_probe (id integer PRIMARY KEY);\n" +
+                "ALTER TABLE honua.future_rollback_probe RENAME COLUMN id TO probe_id;",
+        };
+        command.CommandText = sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@script, now());";
+        command.Parameters.AddWithValue("script", future);
+        await command.ExecuteNonQueryAsync();
+        await PostgresDatabaseMigrationRunner.RecordReaderCompatibilityDeclarationsAsync(
+            connection, [MigrationReaderCompatibility.Declare(future, sql)], CancellationToken.None);
+
+        var rollback = await runner.RunMigrationsAsync(_connectionString, assembly);
+        var plan = await runner.PlanMigrationsAsync(_connectionString, assembly);
+        if (rollbackStarts)
+        {
+            rollback.Successful.Should().BeTrue(rollback.ErrorMessage);
+            rollback.AppliedScripts.Should().BeEmpty();
+            plan.Successful.Should().BeTrue(plan.ErrorMessage);
+            plan.ExecutedButNotDiscoveredScripts.Should().Equal(future);
+        }
+        else
+        {
+            rollback.Successful.Should().BeFalse();
+            rollback.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>()
+                .Which.DeclarationRefusals.Should().ContainKey(future);
+            plan.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>();
+        }
+
+        // HONUA_SKIP_MIGRATIONS=true (and degraded start) runs only the guard. It applies the same
+        // read-only declaration check, so it reaches the same verdict as the runner.
+        var skippedMigrationsStartup = () => new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest)
+            .VerifyAsync(_connectionString);
+        if (rollbackStarts)
+        {
+            await skippedMigrationsStartup.Should().NotThrowAsync();
+        }
+        else
+        {
+            var refusal = (await skippedMigrationsStartup.Should().ThrowAsync<DatabaseSchemaCompatibilityException>()).Which;
+            refusal.UnknownMigrations.Should().Equal(future);
+            refusal.DeclarationRefusals.Should().ContainKey(future);
+        }
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData("legacy", true)]
+    [InlineData("configured", true)]
+    [InlineData("duplicate", false)]
+    [InlineData("partial-legacy", false)]
+    [InlineData("partial-configured", false)]
+    public async Task CanonicalDeploymentMigration_CustomSchema_PreservesPhysicalFamilyAndRefusesAmbiguity(
+        string state, bool succeeds)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using (var schema = new Npgsql.NpgsqlCommand("CREATE SCHEMA honua", connection))
+        {
+            await schema.ExecuteNonQueryAsync();
+        }
+        // Execute 082 unchanged: its hard-coded honua schema is the production legacy input.
+        await ApplyCanonicalDeploymentMigrationAsync(connection, "082_CreatePromotionStores.sql");
+        await using (var seed = new Npgsql.NpgsqlCommand("""
+            INSERT INTO honua.promotion_deployments
+                (deployment_id, source_kind, source_id, target_id, status, document, created_at, updated_at)
+            VALUES ('retained', 'map', 'source', 'target', 'Published', '{"name":"Café","count":42}', now(), now());
+            INSERT INTO honua.promotion_published_services
+                (service_id, intent_id, source_kind, source_id, target_kind, status, document, published_at, updated_at)
+            VALUES ('service', 'intent', 'map', 'source', 'hosted', 'Published', '{"identity":"retained"}', now(), now());
+            """, connection))
+        {
+            await seed.ExecuteNonQueryAsync();
+        }
+        await using var original = new Npgsql.NpgsqlCommand(
+            "SELECT 'honua.promotion_deployments'::regclass::oid", connection);
+        var originalOid = (uint)(await original.ExecuteScalarAsync())!;
+        if (state == "configured")
+        {
+            await using var move = new Npgsql.NpgsqlCommand($"""
+                ALTER TABLE honua.promotion_deployments SET SCHEMA {_schemaName};
+                ALTER TABLE honua.promotion_published_services SET SCHEMA {_schemaName};
+                """, connection);
+            await move.ExecuteNonQueryAsync();
+        }
+        else if (state == "duplicate" || state == "partial-configured")
+        {
+            await using var duplicate = new Npgsql.NpgsqlCommand($"""
+                CREATE TABLE {_schemaName}.promotion_deployments (LIKE honua.promotion_deployments INCLUDING ALL);
+                """ + (state == "duplicate"
+                ? $"CREATE TABLE {_schemaName}.promotion_published_services (LIKE honua.promotion_published_services INCLUDING ALL);"
+                : string.Empty), connection);
+            await duplicate.ExecuteNonQueryAsync();
+        }
+        else if (state == "partial-legacy")
+        {
+            await using var partial = new Npgsql.NpgsqlCommand("DROP TABLE honua.promotion_published_services", connection);
+            await partial.ExecuteNonQueryAsync();
+        }
+
+        if (state == "legacy")
+        {
+            // The original 134 first statement fails against unchanged production 082.
+            var originalAlter = async () =>
+            {
+                await using var command = new Npgsql.NpgsqlCommand(
+                    $"ALTER TABLE {_schemaName}.promotion_deployments ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0", connection);
+                await command.ExecuteNonQueryAsync();
+            };
+            var failure = await originalAlter.Should().ThrowAsync<Npgsql.PostgresException>();
+            failure.Which.SqlState.Should().Be(Npgsql.PostgresErrorCodes.UndefinedTable);
+        }
+
+        foreach (var script in new[] { "035_CreateStudioPackageLifecycle.sql", "036_CreateContentPublications.sql" })
+        {
+            await ApplyCanonicalDeploymentMigrationAsync(connection, script);
+        }
+        var apply = () => ApplyCanonicalDeploymentMigrationAsync(connection, "134_VersionCanonicalDeployments.sql");
+        if (!succeeds)
+        {
+            await apply.Should().ThrowAsync<Npgsql.PostgresException>().WithMessage("*Canonical promotion family*");
+            await using var unchanged = new Npgsql.NpgsqlCommand(
+                "SELECT 'honua.promotion_deployments'::regclass::oid", connection);
+            ((uint)(await unchanged.ExecuteScalarAsync())!).Should().Be(originalOid,
+                "refusal must leave the legacy object untouched");
+            await using var rejectedSource = Npgsql.NpgsqlDataSource.Create(_connectionString);
+            var deploymentRead = () => new PostgresDeploymentStore(rejectedSource, _schemaName).GetAsync("unknown");
+            await deploymentRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
+            var serviceRead = () => new PostgresPublishedServiceStore(rejectedSource, _schemaName).GetAsync("unknown");
+            await serviceRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
+            var publicIdRead = () => new PostgresPublishedServiceStore(rejectedSource, _schemaName).FindByPublicIdAsync("unknown");
+            await publicIdRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
+            var collisionRead = () => new PostgresPublishedServiceStore(rejectedSource, _schemaName).FindCollidingPublicIdsAsync(["unknown"]);
+            await collisionRead.Should().ThrowAsync<InvalidOperationException>().WithMessage("*promotion family*");
+            return;
+        }
+
+        var physicalSchema = state == "configured" ? _schemaName : "honua";
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await apply();
+            await using var preserved = new Npgsql.NpgsqlCommand($"""
+                SELECT tableoid::oid, version, document->>'name', document->>'count',
+                    (SELECT document->>'identity' FROM {physicalSchema}.promotion_published_services WHERE service_id = 'service')
+                FROM {physicalSchema}.promotion_deployments WHERE deployment_id = 'retained';
+                """, connection);
+            await using var row = await preserved.ExecuteReaderAsync();
+            (await row.ReadAsync()).Should().BeTrue();
+            row.GetFieldValue<uint>(0).Should().Be(originalOid);
+            row.GetInt64(1).Should().Be(0);
+            row.GetString(2).Should().Be("Café");
+            row.GetString(3).Should().Be("42");
+            row.GetString(4).Should().Be("retained");
+            (await row.ReadAsync()).Should().BeFalse();
+        }
+        await using var dataSource = Npgsql.NpgsqlDataSource.Create(_connectionString);
+        var deploymentWriter = new PostgresDeploymentStore(dataSource, _schemaName);
+        var deployment = Deployment.CreateDraft("canonical-roundtrip", DeploymentSource.FromPublishedService("canonical-service"),
+            DeploymentTarget.ForStudioPublishedRoute("/maps/physical-schema"));
+        (await deploymentWriter.TryCreateAsync(deployment)).Should().BeTrue();
+        var deploymentReader = new PostgresDeploymentStore(dataSource, _schemaName);
+        (await deploymentReader.GetAsync(deployment.DeploymentId)).Should().BeEquivalentTo(deployment);
+        var retired = deployment.WithRetired("retire after readback") with { Version = 1 };
+        (await deploymentWriter.TrySetAsync(retired, 0)).Should().BeTrue();
+        (await deploymentReader.GetAsync(deployment.DeploymentId)).Should().BeEquivalentTo(retired);
+        var now = DateTimeOffset.UtcNow;
+        var service = new PublishedServiceRecord
+        {
+            ServiceId = "canonical-service",
+            IntentId = "canonical-intent",
+            SourceKind = PublishSourceKind.ResultPackage,
+            SourceId = "source",
+            TargetKind = PublishTargetKind.FeatureService,
+            Status = PublishedServiceStatus.Active,
+            PublishedAt = now,
+            UpdatedAt = now
+        };
+        var serviceWriter = new PostgresPublishedServiceStore(dataSource, _schemaName);
+        (await serviceWriter.TryCreateAsync(service)).Should().BeTrue();
+        var serviceReader = new PostgresPublishedServiceStore(dataSource, _schemaName);
+        (await serviceReader.GetAsync(service.ServiceId)).Should().BeEquivalentTo(service);
+        var updatedService = service with { Status = PublishedServiceStatus.Decommissioned };
+        await serviceWriter.SetAsync(updatedService);
+        (await serviceReader.GetAsync(service.ServiceId)).Should().BeEquivalentTo(updatedService);
+        (await serviceReader.FindByPublicIdAsync("CANONICAL-SERVICE")).Should().BeEquivalentTo(updatedService);
+        (await serviceReader.FindByPublicIdAsync("missing")).Should().BeNull();
+        (await serviceReader.FindCollidingPublicIdsAsync(["CANONICAL-SERVICE", "missing"]))
+            .Should().ContainSingle().Which.Should().Be("CANONICAL-SERVICE",
+                "decommissioned canonical records reserve the same public identity in either physical family");
+    }
+
+    private async Task ApplyCanonicalDeploymentMigrationAsync(Npgsql.NpgsqlConnection connection, string filename)
+    {
+        var assembly = typeof(Program).Assembly;
+        var resource = assembly.GetManifestResourceNames().Single(name => name.EndsWith(filename, StringComparison.Ordinal));
+        await using var stream = assembly.GetManifestResourceStream(resource)!;
+        using var reader = new StreamReader(stream);
+        var sql = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_schemaName}\"", StringComparison.Ordinal);
+        await using var command = new Npgsql.NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     [Fact]
@@ -425,6 +700,122 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_OnPopulatedInitialSchema_PreservesCoreRowsAndBackfillsOnUpgradeAndRestart()
+    {
+        var assembly = typeof(Program).Assembly;
+        // Match the canonical runner: unqualified shipped DDL belongs in public even
+        // when the fixture connection has a different default search path.
+        var migrationConnectionString = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = "public"
+        }.ConnectionString;
+        // Install an actual shipped baseline and journal it as an existing deployment. All
+        // subsequent scripts from both roots must execute over rows, not an empty schema.
+        var baseline = DeployChanges.To
+            .PostgresqlDatabase(migrationConnectionString)
+            .JournalToPostgresqlTable("public", "schema_versions")
+            .WithScriptsEmbeddedInAssembly(assembly, name =>
+                name.EndsWith(".001_CreateHonuaSchema.sql", StringComparison.Ordinal))
+            .WithVariable("HonuaSchema", "\"honua\"")
+            .WithTransaction()
+            .Build()
+            .PerformUpgrade();
+        baseline.Successful.Should().BeTrue($"baseline must be installed: {baseline.Error}");
+        baseline.Scripts.Should().ContainSingle();
+
+        await using var connection = new Npgsql.NpgsqlConnection(migrationConnectionString);
+        await connection.OpenAsync();
+        await using (var seed = connection.CreateCommand())
+        {
+            seed.CommandText = """
+                INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities)
+                VALUES ('upgrade_receipt', 'Customer service: café', 4326, ARRAY['JSON', 'GeoJSON'], ARRAY['Query']);
+                INSERT INTO honua.layers (layer_id, layer_name, description, table_schema, table_name,
+                    geometry_type, srid, storage_options, min_scale, max_scale, default_visibility, enabled)
+                VALUES (4413, 'Customer points', 'Keep metadata', 'public', 'features', 'Point', 4326,
+                    '{"owner":"customer","nested":{"keep":true}}', 12.5, 1000.25, false, true);
+                INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+                VALUES ('upgrade_receipt', 4413, 7);
+                INSERT INTO honua.layer_fields (layer_id, field_name, field_type, field_order,
+                    max_length, nullable, default_value, description, domain, hidden)
+                VALUES (4413, 'name', 'text', 1, 128, false, 'unknown', 'Customer field',
+                    '{"type":"codedValue","codedValues":[{"name":"Café","code":"A"}]}', true);
+                INSERT INTO public.features (objectid, layer_id, geometry, attributes)
+                VALUES (441301, 4413, ST_GeomFromEWKT('SRID=4326;POINT Z(-157.8 21.3 42.25)'),
+                        '{"name":"Café","count":9007199254740991,"active":true,"optional":null}'),
+                       (441302, 4413, NULL, '{"name":"No geometry","count":-19,"active":false}');
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        // Capture every original column, including defaults, timestamps, arrays and EWKB.
+        // storage_srid is the one intentional initial-schema backfill (migration 021).
+        var tables = new[] { "honua.services", "honua.layers", "honua.service_layers", "honua.layer_fields", "public.features" };
+        var snapshots = new List<(string Sql, string Json)>();
+        foreach (var table in tables)
+        {
+            await using var columns = connection.CreateCommand();
+            columns.CommandText = """
+                SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum)
+                FROM pg_attribute WHERE attrelid = @table::regclass
+                    AND attnum > 0 AND NOT attisdropped AND attname <> 'storage_srid';
+                """;
+            columns.Parameters.AddWithValue("table", table);
+            var projection = (string)(await columns.ExecuteScalarAsync())!;
+            var sql = $"SELECT jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text FROM (SELECT {projection} FROM {table}) t";
+            await using var snapshot = new Npgsql.NpgsqlCommand(sql, connection);
+            snapshots.Add((sql, (string)(await snapshot.ExecuteScalarAsync())!));
+        }
+
+        snapshots.Should().Contain(snapshot => snapshot.Json.Contains("Caf\u00e9", StringComparison.Ordinal),
+            "the receipt must exercise non-ASCII customer text");
+
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var planner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var plan = await planner.PlanMigrationsAsync(_connectionString, assembly);
+        plan.Successful.Should().BeTrue($"populated baseline must plan successfully: {plan.Error}");
+        plan.JournalIsNonEmpty.Should().BeTrue();
+        plan.PendingScripts.Should().NotBeEmpty();
+        // Use the normal exact-plan approval rather than disabling migration safety for the test.
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [MigrationSafetyOptions.ApproveContractMigrationsKey] =
+                MigrationSafetyClassifier.ComputeContractApprovalNonce(plan.ContractScriptNames)
+        }).Build();
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var upgrade = await runner.RunMigrationsAsync(_connectionString, assembly);
+            upgrade.Successful.Should().BeTrue($"populated upgrade/restart {attempt} failed: {upgrade.ErrorMessage}");
+            if (attempt == 0)
+            {
+                upgrade.AppliedScripts.Should().BeEquivalentTo(plan.PendingScripts,
+                    "every discovered pending script from both migration roots must actually execute");
+            }
+            else
+            {
+                upgrade.AppliedScripts.Should().BeEmpty("restart must use the journal without replaying scripts");
+            }
+
+            foreach (var (sql, expected) in snapshots)
+            {
+                await using var snapshot = new Npgsql.NpgsqlCommand(sql, connection);
+                (await snapshot.ExecuteScalarAsync()).Should().Be(expected,
+                    $"all original customer values must survive upgrade/restart {attempt}: {sql}");
+            }
+
+            await using var backfill = new Npgsql.NpgsqlCommand(
+                "SELECT storage_srid FROM honua.layers WHERE layer_id = 4413", connection);
+            (await backfill.ExecuteScalarAsync()).Should().Be(4326,
+                "migration 021 backfills the storage CRS without changing customer metadata");
+            await guard.VerifyAsync(_connectionString);
+        }
+    }
+
     [Fact]
     public async Task CanonicalRunner_OnFreshDatabase_JournalsBothMigrationRootsAndVerifiesPhysicalFloor()
     {
@@ -482,6 +873,84 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
         var verify = () => guard.VerifyAsync(_connectionString);
         await verify.Should().NotThrowAsync("a fully migrated restore candidate must pass the guarded DR floor");
+    }
+
+    [Fact]
+    public async Task CoreSchemaGuard_WhenSensorThingsIdSequencesAreMissing_RejectsTheSensorThingsRequirement()
+    {
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var result = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        result.Successful.Should().BeTrue();
+        result.AppliedScripts.Should().Contain(
+            ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration!);
+
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        // A fully migrated database satisfies the requirement the observation store asserts.
+        var satisfied = () => guard.VerifyRequirementAsync(
+            connection,
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        await satisfied.Should().NotThrowAsync();
+
+        // Ingest allocates @iot.ids from these sequences: dropping them must fail the floor
+        // through the strict physical-family floor, not surface as a NOT NULL violation on
+        // the first insert (#4199). Migration 127 validates the complete family, including
+        // the original sequences introduced by 116; its diagnosis must name both defects.
+        await using (var drop = connection.CreateCommand())
+        {
+            // CASCADE also drops the column defaults that reference them, which is exactly
+            // the state a partially-restored schema is in.
+            drop.CommandText = "DROP SEQUENCE honua.sta_observation_id_seq, honua.sta_datastream_id_seq CASCADE;";
+            await drop.ExecuteNonQueryAsync();
+        }
+
+        var missingSequences = () => guard.VerifyRequirementAsync(
+            connection,
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        var sequenceFailure = await missingSequences.Should()
+            .ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+        sequenceFailure.Which.MigrationScript.Should()
+            .Be(ServerCoreSchemaMigrations.Manifest.SensorThingsSensingMigration);
+        sequenceFailure.Which.FailureKind.Should().Be(
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
+        sequenceFailure.Which.Message.Should().Contain("sta_observation_id_seq");
+        sequenceFailure.Which.Message.Should().Contain("sta_datastream_id_seq");
+
+        // Isolate the journal defect from the physical defect above. The immutable 116
+        // resource uses CREATE SEQUENCE IF NOT EXISTS, restores owned defaults and
+        // resets sequences from existing IDs; direct fixture replay never edits the journal.
+        await using (var restore = connection.CreateCommand())
+        {
+            restore.CommandText = (await ReadEmbeddedMigrationAsync("116_AddSensorThingsIdSequences.sql"))
+                .Replace("$HonuaSchema$", "\"honua\"", StringComparison.Ordinal);
+            await restore.ExecuteNonQueryAsync();
+        }
+        var restored = () => guard.VerifyRequirementAsync(
+            connection, Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        await restored.Should().NotThrowAsync("the exact physical sequence floor is restored before removing its receipt");
+
+        // With all physical objects intact, only the un-journaled 116 receipt is refused.
+        await using (var unjournal = connection.CreateCommand())
+        {
+            unjournal.CommandText = "DELETE FROM public.schema_versions WHERE scriptname = @script;";
+            unjournal.Parameters.AddWithValue(
+                "script", ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration!);
+            await unjournal.ExecuteNonQueryAsync();
+        }
+
+        var notApplied = () => guard.VerifyRequirementAsync(
+            connection,
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        var journalFailure = await notApplied.Should()
+            .ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+        journalFailure.Which.MigrationScript.Should()
+            .Be(ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration);
+        journalFailure.Which.FailureKind.Should().Be(
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
     }
 
     [Fact]

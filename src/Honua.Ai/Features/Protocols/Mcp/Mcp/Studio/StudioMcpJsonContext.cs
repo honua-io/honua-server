@@ -23,6 +23,11 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// <see cref="JsonSerializerContext"/> types independently declaring the same
 /// serializable type is supported by the source generator.
 /// </summary>
+[JsonSerializable(typeof(McpStudioSaveVersionArgument))]
+[JsonSerializable(typeof(McpStudioReopenVersionArgument))]
+[JsonSerializable(typeof(McpStudioGetVersionArgument))]
+[JsonSerializable(typeof(McpStudioGetVersionOutput))]
+[JsonSerializable(typeof(McpStudioSaveVersionOutput))]
 [JsonSerializable(typeof(McpStudioCreateDraftArgument))]
 [JsonSerializable(typeof(McpStudioDraftMutationOutput))]
 [JsonSerializable(typeof(McpStudioDraftIdArgument))]

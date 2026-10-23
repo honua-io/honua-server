@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<gpx version="1.1" creator="GDAL 3.14.0dev-951e07ecebe21de09235a507eb1cd9c055bd25bb" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ogr="http://osgeo.org/gdal" xmlns="http://www.topografix.com/GPX/1/1" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+<metadata>
+<bounds minlat="-54.801900000000003" minlon="-157.858300000000014" maxlat="37.774900000000002" maxlon="-68.302899999999994"/>                                   
+</metadata>
+<wpt lat="37.7749" lon="-122.4194">
+  <extensions>
+    <ogr:site_id>1</ogr:site_id>
+    <ogr:site_name>San Francisco</ogr:site_name>
+    <ogr:elev_m>16.5</ogr:elev_m>
+    <ogr:surveyed>2026/01/15</ogr:surveyed>
+  </extensions>
+</wpt>
+<wpt lat="21.3069" lon="-157.8583">
+  <extensions>
+    <ogr:site_id>2</ogr:site_id>
+    <ogr:site_name>Hawaiʻi 東京</ogr:site_name>
+    <ogr:elev_m>-3.25</ogr:elev_m>
+    <ogr:surveyed>2026/02/20</ogr:surveyed>
+  </extensions>
+</wpt>
+<wpt lat="-54.8019" lon="-68.3029">
+  <extensions>
+    <ogr:site_id>3</ogr:site_id>
+    <ogr:site_name>Ushuaia</ogr:site_name>
+    <ogr:elev_m>23.0</ogr:elev_m>
+    <ogr:surveyed>2026/03/01</ogr:surveyed>
+  </extensions>
+</wpt>
+</gpx>

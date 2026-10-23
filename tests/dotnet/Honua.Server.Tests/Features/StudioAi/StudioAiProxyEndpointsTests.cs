@@ -422,6 +422,30 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task PostChat_OverDefaultPromptLimit_Returns400ProblemNamingTheLimit()
+    {
+        // honua-server#4919: the host leaves StudioAiProxy:MaxPromptCharacters at its default.
+        var limit = new Honua.Ai.StudioAiProxy.StudioAiProxyConfiguration().MaxPromptCharacters;
+        var client = _fixture.CreateAdminClient();
+        _audit.Recorded.Clear();
+
+        var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            messages = new[] { new { role = "user", content = new string('x', limit + 1) } }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        document.RootElement.GetProperty("detail").GetString().Should().Be(
+            $"Request content exceeds the configured limit of {limit} characters.");
+        _audit.Recorded.Should().NotContain(e => e.Action == "studio_ai.chat",
+            because: "an over-limit request is refused before any provider call");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task PostChat_KnownButUnreachableProvider_StreamsErrorEventAndRecordsOneFailureAudit()
     {
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();

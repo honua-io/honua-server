@@ -1,14 +1,17 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Net.Http;
 using System.Security.Claims;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -19,9 +22,11 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// <see cref="PortalOAuthTokenService"/>. These prove, independent of the HTTP
 /// pipeline: (1) with the grant disabled the request is rejected with
 /// <c>unsupported_grant_type</c> exactly as before — the no-behaviour-change-by-default
-/// guarantee; (2) with the grant enabled a valid API-key secret mints an opaque,
-/// IP-bound portal token carrying the key's permissions as roles, and no refresh
-/// token; (3) an unknown/missing secret is rejected with <c>invalid_client</c>.
+/// guarantee; (2) with the grant enabled a full-admin API-key secret mints an opaque,
+/// IP-bound portal token carrying the admin role, and no refresh token; (3) a
+/// constrained key is refused with <c>unauthorized_client</c> rather than having its
+/// permission labels turned into roles (#4577); (4) an unknown/missing secret is
+/// rejected with <c>invalid_client</c>.
 /// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -53,11 +58,11 @@ public sealed class PortalOAuthClientCredentialsTests
     }
 
     [UnitTest]
-    public async Task Exchange_ClientCredentials_WhenEnabledWithValidSecret_MintsIpBoundTokenWithRolesAndNoRefresh()
+    public async Task Exchange_ClientCredentials_WhenEnabledWithFullAdminSecret_MintsIpBoundAdminTokenAndNoRefresh()
     {
         var (service, issuer, secret) = await CreateServiceAsync(
             enableClientCredentials: true,
-            permissions: ["services:read", "services:write"]);
+            permissions: ["admin:*", "field-editor"]);
 
         var result = await service.ExchangeAsync(
             ClientCredentialsRequest(secret),
@@ -70,16 +75,17 @@ public sealed class PortalOAuthClientCredentialsTests
         // client_credentials never issues a refresh token (RFC 6749 §4.4.3).
         result.RefreshToken.Should().BeNull();
 
-        // The token is IP-bound: it validates only from the issuing client IP and the
-        // hydrated principal carries the API key's permissions as roles, so the RBAC
-        // resolver decides per-operation access exactly as for any other principal.
+        // The token is IP-bound: it validates only from the issuing client IP. The
+        // hydrated principal carries the admin role the key confers on X-API-Key, and
+        // no permission label becomes a role (#4577).
         var validation = await issuer.ValidateAsync(
             result.AccessToken!,
             new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
             CancellationToken.None);
         validation.Should().NotBeNull();
-        validation!.Principal.IsInRole("services:read").Should().BeTrue();
-        validation.Principal.IsInRole("services:write").Should().BeTrue();
+        validation!.Principal.IsInRole("admin").Should().BeTrue();
+        validation.Principal.IsInRole("admin:*").Should().BeFalse();
+        validation.Principal.IsInRole("field-editor").Should().BeFalse();
         validation.Principal.FindFirstValue("auth_type").Should().NotBeNull();
 
         var wrongIp = await issuer.ValidateAsync(
@@ -90,13 +96,36 @@ public sealed class PortalOAuthClientCredentialsTests
     }
 
     [UnitTest]
-    public async Task Exchange_ClientCredentials_ScopeNarrowsToHeldPermissionsOnly()
+    public async Task Exchange_ClientCredentials_TokenFollowsTheApiKeyItWasIssuedFrom()
+    {
+        var keyExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var (service, issuer, secret, keyStore, keyId) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            permissions: ["admin:*"],
+            keyExpiresAt: keyExpiresAt);
+
+        var result = await service.ExchangeAsync(ClientCredentialsRequest(secret), requestBinding: "x", CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        // The token lifetime is clamped to the key's own expiry.
+        result.ExpiresInSeconds.Should().BeLessThanOrEqualTo(5 * 60);
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: ClientIp);
+        (await issuer.ValidateAsync(result.AccessToken!, binding, CancellationToken.None)).Should().NotBeNull();
+
+        await keyStore.RevokeAsync(keyId, CancellationToken.None);
+
+        (await issuer.ValidateAsync(result.AccessToken!, binding, CancellationToken.None))
+            .Should().BeNull("the API key the token was issued from was revoked");
+    }
+
+    [UnitTest]
+    public async Task Exchange_ClientCredentials_ScopeNeverAddsUnheldRoles()
     {
         var (service, issuer, secret) = await CreateServiceAsync(
             enableClientCredentials: true,
-            permissions: ["services:read", "services:write"]);
+            permissions: ["admin:*"]);
 
-        var request = ClientCredentialsRequest(secret) with { Scope = "services:read admin:everything" };
+        var request = ClientCredentialsRequest(secret) with { Scope = "field-editor admin:everything" };
         var result = await service.ExchangeAsync(request, requestBinding: "x", CancellationToken.None);
 
         result.Succeeded.Should().BeTrue();
@@ -105,11 +134,48 @@ public sealed class PortalOAuthClientCredentialsTests
             new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
             CancellationToken.None);
         validation.Should().NotBeNull();
-        // The requested scope narrows to the held permission; the unheld scope is
-        // dropped, never escalated.
-        validation!.Principal.IsInRole("services:read").Should().BeTrue();
-        validation.Principal.IsInRole("services:write").Should().BeFalse();
+        // Requested scopes the token would not hold are dropped, never escalated.
+        validation!.Principal.IsInRole("admin").Should().BeTrue();
+        validation.Principal.IsInRole("field-editor").Should().BeFalse();
         validation.Principal.IsInRole("admin:everything").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Exchange_ClientCredentials_ConstrainedKeys_AreRefusedNotProjectedAsRoles()
+    {
+        // #4577: X-API-Key authenticates these keys as non-admin principals with
+        // permission claims. A token holds roles only, so the exchange is refused
+        // instead of turning a label such as "field-editor" into a role.
+        var operation = AdminApiKeyPermission.CreateApprovedOperationGrants(
+            "PUT", "/api/v1/admin/metadata/layers/1/filter", "tenant-a");
+        string[][] grants =
+        [
+            ["services:read", "services:write"],
+            ["field-editor"],
+            ["read:allowed-service"],
+            ["write:allowed-service/1"],
+            ["admin:read"],
+            ["admin:read", "admin:approve"],
+            ["ops:read"],
+            operation.ToArray(),
+            [.. operation, "admin:*"]
+        ];
+
+        foreach (var permissions in grants)
+        {
+            var (service, _, secret) = await CreateServiceAsync(
+                enableClientCredentials: true,
+                permissions: permissions);
+
+            var result = await service.ExchangeAsync(
+                ClientCredentialsRequest(secret),
+                requestBinding: "x",
+                CancellationToken.None);
+
+            result.Succeeded.Should().BeFalse(string.Join(',', permissions));
+            result.Error.Should().Be("unauthorized_client");
+            result.AccessToken.Should().BeNull();
+        }
     }
 
     [UnitTest]
@@ -241,6 +307,215 @@ public sealed class PortalOAuthClientCredentialsTests
         result.Error.Should().Be("invalid_client");
     }
 
+    [UnitTest]
+    public async Task AuthorizationCode_FederatedSourceExpiry_ClampsAccessAndRefreshTokens()
+    {
+        var (service, store) = CreateCodeExchangeService();
+        var sourceExpires = DateTimeOffset.UtcNow.AddMinutes(2);
+        var code = await store.CreateAuthorizationCodeAsync(
+            AuthorizationCode(sourceExpires),
+            CancellationToken.None);
+
+        var result = await service.ExchangeAsync(
+            new PortalOAuthTokenRequest(
+                GrantType: "authorization_code",
+                Code: code,
+                CodeVerifier: null,
+                RedirectUri: "https://app.example/cb",
+                ClientId: "desktop",
+                RefreshToken: null,
+                IncludeRefreshToken: true),
+            requestBinding: "https://app.example/cb",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        result.ExpiresInSeconds.Should().BeInRange(30, 150);
+        result.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        var stored = await store.GetRefreshTokenAsync(result.RefreshToken, CancellationToken.None);
+        stored.Should().NotBeNull();
+        stored!.ExpiresAt.Should().BeCloseTo(sourceExpires, TimeSpan.FromSeconds(2));
+        stored.Principal.Source!.ExpiresAt.Should().Be(sourceExpires);
+
+        var refreshed = await service.ExchangeAsync(
+            new PortalOAuthTokenRequest(
+                GrantType: "refresh_token",
+                Code: null,
+                CodeVerifier: null,
+                RedirectUri: null,
+                ClientId: "desktop",
+                RefreshToken: result.RefreshToken,
+                IncludeRefreshToken: true),
+            requestBinding: "https://app.example/cb",
+            CancellationToken.None);
+
+        refreshed.Succeeded.Should().BeTrue();
+        refreshed.ExpiresInSeconds.Should().BeInRange(30, 150);
+    }
+
+    [UnitTest]
+    public async Task AuthorizationCode_ExpiredFederatedSource_IsRejected()
+    {
+        var (service, store) = CreateCodeExchangeService();
+        var code = await store.CreateAuthorizationCodeAsync(
+            AuthorizationCode(DateTimeOffset.UtcNow.AddMinutes(-1)),
+            CancellationToken.None);
+
+        var result = await service.ExchangeAsync(
+            new PortalOAuthTokenRequest(
+                GrantType: "authorization_code",
+                Code: code,
+                CodeVerifier: null,
+                RedirectUri: "https://app.example/cb",
+                ClientId: "desktop",
+                RefreshToken: null,
+                IncludeRefreshToken: true),
+            requestBinding: "https://app.example/cb",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("invalid_grant");
+        result.AccessToken.Should().BeNull();
+        result.RefreshToken.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task Exchange_ValidAdminApiKey_WithFederationEnabled_DoesNotCallIdp()
+    {
+        // #6166: a Honua admin API key is accepted locally. The stub answers 200
+        // text/html so a federation-first regression cannot mint a token and is visible
+        // as a call.
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, secret, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            permissions: AdminAll,
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            ClientCredentialsRequest(secret),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        result.Error.Should().BeNull();
+        handler.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Exchange_FirstClassClientSecret_WithFederationEnabled_DoesNotCallIdp()
+    {
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, clientId, secret) = await CreateFirstClassServiceAsync(
+            allowedGrantTypes: ClientCredentialsGrantTypes,
+            allowedScopes: ReadOnlyScopes,
+            scopeDefinitions: [("features:read", ServicesRead)],
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            FirstClassRequest(clientId, secret) with { Scope = "features:read" },
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        handler.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Exchange_ConstrainedApiKey_WithFederationEnabled_IsRefusedWithoutCallingIdp()
+    {
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, secret, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            permissions: ["field-editor"],
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            ClientCredentialsRequest(secret),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("unauthorized_client");
+        handler.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Exchange_FederationHtmlSuccessBody_ReturnsInvalidClient()
+    {
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, _, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            ClientCredentialsRequest("not-a-local-secret"),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("invalid_client");
+        handler.Calls.Should().Be(1);
+    }
+
+    private static PortalOAuthClientCredentialsFederationOptions FederationOn()
+        => new()
+        {
+            Enabled = true,
+            TokenEndpoint = "https://idp.example/oauth/token",
+            GrantedRoles = ["services:read"],
+        };
+
+    private static HttpResponseMessage HtmlOk()
+        => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html><body>ok</body></html>", Encoding.UTF8, "text/html"),
+        };
+
+    private static PortalOAuthAuthorizationCode AuthorizationCode(DateTimeOffset sourceExpires)
+        => new()
+        {
+            ClientId = "desktop",
+            RedirectUri = "https://app.example/cb",
+            ExpirationMinutes = 60,
+            Principal = PortalOAuthPrincipal.From(new PortalCredentialPrincipal(
+                "named.user@example.com",
+                "Named User",
+                null,
+                ["org_user"],
+                Source: new PortalCredentialSource(
+                    PortalCredentialSourceKind.FederatedToken,
+                    Reference: "https://idp.example|named.user@example.com",
+                    ExpiresAt: sourceExpires))),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+        };
+
+    private static (PortalOAuthTokenService Service, PortalOAuthStore Store) CreateCodeExchangeService()
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var options = Options.Create(new PortalTokenAuthenticationOptions
+        {
+            OAuth2 = new PortalOAuth2Options { RequirePkce = false },
+        });
+        var jwtService = new PortalJwtAccessTokenService(issuer, options);
+        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var service = new PortalOAuthTokenService(
+            issuer,
+            store,
+            new InMemoryAdminApiKeyStore(),
+            new InMemoryOAuthClientStore(),
+            new InMemoryOAuthScopeCatalogue(),
+            jwtService,
+            federation,
+            options);
+        return (service, store);
+    }
+
     private static PortalOAuthTokenRequest FirstClassRequest(string clientId, string? clientSecret)
         => new(
             GrantType: "client_credentials",
@@ -258,7 +533,9 @@ public sealed class PortalOAuthClientCredentialsTests
         CreateFirstClassServiceAsync(
             IReadOnlyList<string> allowedGrantTypes,
             IReadOnlyList<string> allowedScopes,
-            IReadOnlyList<(string Scope, string[] Permissions)> scopeDefinitions)
+            IReadOnlyList<(string Scope, string[] Permissions)> scopeDefinitions,
+            IHttpClientFactory? httpClientFactory = null,
+            PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
@@ -287,11 +564,15 @@ public sealed class PortalOAuthClientCredentialsTests
 
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
-            OAuth2 = new PortalOAuth2Options { EnableClientCredentials = true },
+            OAuth2 = new PortalOAuth2Options
+            {
+                EnableClientCredentials = true,
+                ClientCredentialsFederation = federationOptions ?? new PortalOAuthClientCredentialsFederationOptions(),
+            },
         });
 
         var jwtService = new PortalJwtAccessTokenService(issuer, options);
-        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var federation = new ClientCredentialsFederationService(httpClientFactory ?? new NullHttpClientFactory(), options);
         var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, jwtService, federation, options);
         return (service, issuer, created.Record.ClientId, created.Secret!);
     }
@@ -313,28 +594,55 @@ public sealed class PortalOAuthClientCredentialsTests
         bool enableClientCredentials,
         IReadOnlyList<string>? permissions = null)
     {
+        var (service, issuer, secret, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials, permissions);
+        return (service, issuer, secret);
+    }
+
+    /// <summary>
+    /// Builds the service over an issuer wired to the real source validator, so a token
+    /// minted from the API key is re-checked against that key on every restore.
+    /// </summary>
+    private static async Task<(PortalOAuthTokenService Service, IPortalTokenIssuer Issuer, string Secret, InMemoryAdminApiKeyStore KeyStore, Guid KeyId)>
+        CreateKeyBoundServiceAsync(
+            bool enableClientCredentials,
+            IReadOnlyList<string>? permissions = null,
+            DateTimeOffset? keyExpiresAt = null,
+            IHttpClientFactory? httpClientFactory = null,
+            PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
+    {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
         var apiKeyStore = new InMemoryAdminApiKeyStore();
         var created = await apiKeyStore.CreateAsync(
             name: "etl-worker",
             permissions: permissions ?? [],
-            expiresAt: null,
+            expiresAt: keyExpiresAt,
             createdBy: "test",
             CancellationToken.None);
 
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
-            OAuth2 = new PortalOAuth2Options { EnableClientCredentials = enableClientCredentials },
+            OAuth2 = new PortalOAuth2Options
+            {
+                EnableClientCredentials = enableClientCredentials,
+                ClientCredentialsFederation = federationOptions ?? new PortalOAuthClientCredentialsFederationOptions(),
+            },
+            SourceRevalidationSeconds = 0,
         });
+
+        var services = new ServiceCollection()
+            .AddSingleton<IAdminApiKeyStore>(apiKeyStore)
+            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(memoryCache, options, sp))
+            .BuildServiceProvider();
+        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
+        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
 
         var clientStore = new InMemoryOAuthClientStore();
         var scopeCatalogue = new InMemoryOAuthScopeCatalogue();
         var jwtService = new PortalJwtAccessTokenService(issuer, options);
-        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var federation = new ClientCredentialsFederationService(httpClientFactory ?? new NullHttpClientFactory(), options);
         var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, jwtService, federation, options);
-        return (service, issuer, created.Key);
+        return (service, issuer, created.Key, apiKeyStore, created.Record.Id);
     }
 
     /// <summary>
@@ -345,5 +653,21 @@ public sealed class PortalOAuthClientCredentialsTests
     private sealed class NullHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class RecordingHttpClientFactory(RecordingHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
+
+    private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(responder(request));
+        }
     }
 }

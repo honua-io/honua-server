@@ -4,12 +4,14 @@
 using System.Buffers;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -32,10 +34,10 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// policy decision point (allow / require-approval / dry-run-first / deny) before any
 /// executor runs. For a deterministic, read-only descriptor the result is param-keyed
 /// cached (<see cref="IPublishedOperationCache"/>): identical inputs from the
-/// identical principal context (principal id + tier + roles are part of the key)
-/// return an identical result without re-execution, so a cached policy-allowed result
-/// is never served across principals. Non-deterministic or side-effecting descriptors
-/// are never cached.
+/// identical principal context (principal id, tier, roles, scopes, connection, and
+/// service are part of the key) return an identical result without re-execution.
+/// A hit re-checks OAuth scope authority and the composed policy decision point.
+/// Non-deterministic or side-effecting descriptors are never cached.
 /// </remarks>
 internal sealed class PublishedOperationTool : IMcpTool
 {
@@ -44,6 +46,13 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     /// <summary>Prefix for MCP tool names projected from <c>admin.*</c> operation ids.</summary>
     public const string AdminNamePrefix = "honua_admin_";
+
+    // Matches the full-catalog publication guard: a published tool accepts secret references,
+    // never a plaintext password, token, or api key. secretReference and secretType stay.
+    private static readonly Regex SecretValueInputName = new(
+        "password|passphrase|secret|credential|token|api[-_]?key|private[-_]?key",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled,
+        TimeSpan.FromSeconds(1));
 
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
@@ -167,11 +176,9 @@ internal sealed class PublishedOperationTool : IMcpTool
         }
 
         // The policy context is resolved BEFORE the cache is consulted because it is
-        // part of the cache key: the cache-hit fast path skips the policy decision
-        // point, so a hit may only ever serve a result to the identical principal
-        // context (principal id + tier + roles) that was already policy-allowed for
-        // these exact inputs. A different caller — or the same caller with changed
-        // roles/tier — always misses and takes a fresh policy round-trip.
+        // part of the cache key. A hit still re-checks scope authority and, when a
+        // policy decision point is composed, that gate, so a narrowed token cannot
+        // reuse an allow cached for a broader token.
         var context = new OperationPolicyContext
         {
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
@@ -188,19 +195,58 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         var parameters = ReadParameters(arguments);
         var dryRun = ReadBool(arguments, "dryRun");
+        var connectionId = ReadString(arguments, "connectionId");
+        var serviceName = ReadString(arguments, "serviceName");
+        var request = new OperationRequest
+        {
+            OperationId = _descriptor.OperationId,
+            ConnectionId = connectionId,
+            ServiceName = serviceName,
+            Parameters = parameters,
+            DryRun = dryRun,
+        };
 
         var cacheKey = IsCacheable && !dryRun
-            ? IPublishedOperationCache.BuildKey(_descriptor.OperationId, _catalogVersion, parameters, context)
+            ? IPublishedOperationCache.BuildKey(
+                _descriptor.OperationId,
+                _catalogVersion,
+                parameters,
+                context,
+                connectionId,
+                serviceName)
             : null;
 
+        if (cacheKey is not null && OperationScopeMapping.ExceedsScopeAuthority(request, context))
+        {
+            return McpToolHelpers.SuccessResult(
+                ScopeDeniedOutput(),
+                McpJsonContext.Default.McpOperationToolOutput);
+        }
+
         // Deterministic, read-only cache hit: identical inputs from the identical
-        // principal context → identical result, no re-execution.
+        // principal context → identical result, no re-execution. Scope was checked
+        // above; a composed policy decision point is checked again before the hit
+        // is returned.
         if (cacheKey is not null)
         {
             var cache = httpContext.RequestServices.GetService<IPublishedOperationCache>();
             var hit = cache?.TryGet(cacheKey);
             if (hit is not null)
             {
+                var policy = httpContext.RequestServices.GetService<IOperationPolicyDecisionPoint>();
+                if (policy is not null)
+                {
+                    var decision = await policy
+                        .EvaluateAsync(_descriptor, request, context, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (decision.Kind != PolicyDecisionKind.Allow)
+                    {
+                        return McpToolHelpers.SuccessResult(
+                            PolicyGateOutput(decision),
+                            McpJsonContext.Default.McpOperationToolOutput);
+                    }
+                }
+
                 var envelopeFactory = httpContext.RequestServices.GetService<IOperationEnvelopeFactory>();
                 if (envelopeFactory is null || string.IsNullOrWhiteSpace(hit.OperationInstanceId))
                 {
@@ -236,15 +282,6 @@ internal sealed class PublishedOperationTool : IMcpTool
                 new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
-        var request = new OperationRequest
-        {
-            OperationId = _descriptor.OperationId,
-            ConnectionId = ReadString(arguments, "connectionId"),
-            ServiceName = ReadString(arguments, "serviceName"),
-            Parameters = parameters,
-            DryRun = dryRun,
-        };
-
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
         var output = Project(handle, cacheKey);
 
@@ -278,6 +315,46 @@ internal sealed class PublishedOperationTool : IMcpTool
                 requiresAuthentication: false,
                 message: "Caller is not authorized to invoke admin operations.");
         }
+    }
+
+    private McpOperationToolOutput ScopeDeniedOutput()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return Project(new OperationHandle
+        {
+            OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
+            OperationId = _descriptor.OperationId,
+            CorrelationId = $"corr-{Guid.NewGuid():N}",
+            Status = OperationHandleStatus.Denied,
+            PolicyDecision = PolicyDecisionKind.Deny,
+            AuthorizationOutcome = OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Reason = "Operation exceeds the caller's OAuth scope authority.",
+        }, cacheKey: null);
+    }
+
+    private McpOperationToolOutput PolicyGateOutput(PolicyDecision decision)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var status = decision.Kind switch
+        {
+            PolicyDecisionKind.RequireApproval => OperationHandleStatus.RequiresApproval,
+            PolicyDecisionKind.DryRunFirst => OperationHandleStatus.DryRunRequired,
+            PolicyDecisionKind.Deny => OperationHandleStatus.Denied,
+            _ => OperationHandleStatus.Failed,
+        };
+        return Project(new OperationHandle
+        {
+            OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
+            OperationId = _descriptor.OperationId,
+            CorrelationId = $"corr-{Guid.NewGuid():N}",
+            Status = status,
+            PolicyDecision = decision.Kind,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Reason = decision.Reason ?? decision.Kind.ToString(),
+        }, cacheKey: null);
     }
 
     private McpOperationToolOutput Project(OperationHandle handle, string? cacheKey) => new()
@@ -349,7 +426,18 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     private Dictionary<string, string?> ReadParameters(JsonElement? arguments)
     {
+        // The operation descriptor can accept plaintext credentials for other transports.
+        // MCP advertises references only, so reject hidden secret fields before dispatch
+        // rather than letting a manually constructed tools/call bypass that contract.
+        if (arguments is { ValueKind: JsonValueKind.Object } supplied
+            && supplied.EnumerateObject().Any(property => IsSecretValueInput(property.Name)))
+        {
+            throw new GeoprocessingValidationException(
+                "Inline credentials are not accepted by published MCP tools; use a secretReference.");
+        }
+
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where]: copies only arguments the caller actually supplied
         foreach (var parameter in _descriptor.InputSchema)
         {
             if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(parameter.Name, out _))
@@ -409,6 +497,11 @@ internal sealed class PublishedOperationTool : IMcpTool
             writer.WriteStartObject("properties");
             foreach (var parameter in parameters)
             {
+                if (IsSecretValueInput(parameter.Name))
+                {
+                    continue;
+                }
+
                 writer.WriteStartObject(parameter.Name);
                 WriteSchema(writer, parameter.Schema);
                 if (!string.IsNullOrWhiteSpace(parameter.Title))
@@ -429,7 +522,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             writer.WriteEndObject();
 
             writer.WriteStartArray("required");
-            foreach (var parameter in parameters.Where(parameter => parameter.Required))
+            foreach (var parameter in parameters.Where(parameter => parameter.Required && !IsSecretValueInput(parameter.Name)))
             {
                 writer.WriteStringValue(parameter.Name);
             }
@@ -441,6 +534,11 @@ internal sealed class PublishedOperationTool : IMcpTool
         using var document = JsonDocument.Parse(buffer.WrittenMemory);
         return document.RootElement.Clone();
     }
+
+    private static bool IsSecretValueInput(string name) =>
+        SecretValueInputName.IsMatch(name)
+        && !name.EndsWith("Reference", StringComparison.Ordinal)
+        && !name.EndsWith("Type", StringComparison.Ordinal);
 
     private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
     {

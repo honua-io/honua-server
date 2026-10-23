@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Environment variables"
+description: "Honua is configured entirely through environment variables (or the equivalent appsettings.json keys)."
+---
 # Environment variables
 
 Honua is configured entirely through environment variables (or the equivalent `appsettings.json` keys). Nested configuration sections use the double-underscore convention: `Cache__Enabled` binds to `Cache:Enabled`. Defaults below are the compiled/shipped defaults; `.env.example`, `.env.docker.example`, and `.env.production.example` in the repository root are ready-to-copy templates. Runtime configuration metadata is also served at `GET /api/v1/admin/config`.
@@ -9,6 +14,12 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | `ConnectionStrings__DefaultConnection` | Always (PostgreSQL provider, the default). |
 | `HONUA_ADMIN_PASSWORD` | Production — admin endpoints refuse to operate without it. |
 | `Security__ConnectionEncryption__MasterKey` | Non-development environments — startup fails without it. Encrypts stored data-connection credentials (minimum 32 characters); in Development, registering a data connection fails until it is set. |
+
+## Settings document
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `HONUA_SETTINGS_DOCUMENT` (`Settings__Document`) | — (none) | `aws:secretsmanager:<name-or-arn>` of a secret whose value is a JSON object of configuration keys (nested objects map to `Section:Key`, arrays to `Section:0..n`, flat `Section__Key` names accepted). Loaded once at startup above `appsettings*.json` and below environment variables and the command line. Values may themselves be `aws:secretsmanager:` references. An unreadable, non-JSON, non-object or larger-than-64 KB document refuses startup; only the key count and the reference are logged. Use it to stay under the 4 KB AWS Lambda environment limit; see [Keep settings out of the 4 KB Lambda environment](../../guides/deploy/cloud-deployments.md#keep-settings-out-of-the-4-kb-lambda-environment). |
 
 ## Database and providers
 
@@ -38,6 +49,9 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `HONUA_ADMIN_PASSWORD` | — (**required in production**) | Password for the admin API (`/api/v1/admin/*`). |
 | `Security__ConnectionEncryption__MasterKey` | — (**required outside Development**) | Master key (minimum 32 characters) used to encrypt stored data-connection credentials; startup fails without it outside Development. |
 | `Security__ConnectionEncryption__Salt` | derived from master key | Optional explicit salt for master-key derivation; set it to control salt rotation (a warning is logged when derived). |
+| `Security__RequestSecretReferences__AllowedEnvironmentVariables__0..n` | empty | Environment variable names that a request-supplied `env:NAME` secret reference may name (exact match). With every `RequestSecretReferences` list empty, all request-supplied secret references are refused. See [Secret references](../../guides/deploy/configuration.md#references-supplied-in-a-request). |
+| `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0..n` | empty | Environment variable name prefixes that a request-supplied `env:NAME` reference may name. Never matches names containing `__`. |
+| `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0..n` | empty | Whole-reference prefixes (provider segment included, e.g. `aws:secretsmanager:honua/imports/`) that a request-supplied reference may name for non-environment providers. |
 | `Authentication__ClientCertificates__Mode` | `Disabled` | Client-certificate auth mode: `Disabled`, `Optional`, `RequiredForNative`, `RequiredForAdmin`, `RequiredForEnvironment`. **Experimental** — has no effect unless `Capabilities__Experimental__security.mtls__Enabled=true` (or the global experimental switch); see [TLS and mTLS](../../guides/secure/tls-and-mtls.md). |
 | `Authentication__ClientCertificates__EnvironmentId` | — | Environment id matched by `RequiredForEnvironment` and trust profiles. |
 | `Authentication__ClientCertificates__ProtectedAdminPathPrefixes__N` | — | Admin path prefixes protected by client-certificate auth. |
@@ -53,8 +67,8 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Honua__SceneAccessSigning__SigningKey` | — | HMAC-SHA256 key for protected 3D Tiles scene access envelopes; required when any scene has an `AccessPolicy`. |
 | `Honua__SceneAccessSigning__TokenTtlMinutes` | `15` | Scene access token lifetime. |
 | `Honua__SceneAccessSigning__RefreshAfterFractionOfTtl` | `0.5` | Fraction of the TTL after which clients should refresh. |
-| `HONUA_DEV_AUTH` | `false` | Development auth bypass; only active when `ASPNETCORE_ENVIRONMENT=Test` and the acknowledgement below is set. Production refuses to start when set. |
-| `HONUA_DEV_AUTH_ACK` | — | Must be `i-understand-this-bypasses-auth` for the bypass to activate. |
+| `HONUA_DEV_AUTH` | `false` | Development auth bypass; only active when `ASPNETCORE_ENVIRONMENT=Test` and `HONUA_DEV_AUTH_ALLOW_BYPASS=true` is also set. Production refuses to start when set. |
+| `HONUA_DEV_AUTH_ALLOW_BYPASS` | — | Must be `true` for the bypass to activate. Both this and `HONUA_DEV_AUTH` are required, and both are ignored outside `Test`. |
 | `HONUA_ENABLE_OBSERVABILITY_TEST_SEED` | `false` | Dev/Test-only admin fixture seed endpoint; fails startup in production. |
 | `Compliance__Soc2ReadinessClaimed` / `Compliance__FedRampReadinessClaimed` | unset | Operator readiness claims for the compliance posture report. |
 | `Compliance__DataResidency__Enforced` | `false` | Flips the data-residency policy view and dry-run verdict (does not block egress by itself). |
@@ -62,6 +76,37 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Compliance__DependencyOverrides__*` | unset | Attestations for sidecar-provided capabilities (audit log, SSO, RBAC, transport encryption, data residency). |
 
 OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generic) and API-key management are covered in the [authentication guide](../../guides/secure/authentication.md).
+
+### Operation policy
+
+Typed operations (the `/api/v1/operations/{id}/submit` surface and the MCP operation tools) pass through one policy decision point configured under `Operations:Policy`. Rules are evaluated first-match-wins; when none matches, the default decision applies.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Operations__Policy__Enabled` | `false` (`true` in `appsettings.Production.json`) | Enforce the policy. Disabled is a pass-through allow. Production refuses to start unless it is `true`. |
+| `Operations__Policy__DefaultDecision` | `Allow` (`Deny` in `appsettings.Production.json`) | `Allow`, `Deny`, `RequireApproval`, or `DryRunFirst` when no rule matches. Production refuses to start with `Allow`. |
+| `Operations__Policy__DefaultReason` | — (`No policy rule matched this caller; Production denies by default.` in Production) | Reason returned with a default decision. |
+| `Operations__Policy__DefaultApprovalLane` | — | Approval lane for a `RequireApproval` default. |
+| `Operations__Policy__Rules__N__OperationId` / `__Tier` / `__Role` / `__Decision` / `__Reason` / `__ApprovalLane` | none | Operator rules. `OperationId` `*` matches any operation; an unset `Tier` or `Role` matches any caller. `Role` is matched against the caller's role claims. |
+| `Operations__Policy__BuiltInProductionRules` | `true` | In Production, append the two built-in administrator rules after the operator rules. Set `false` for a policy where only operator rules can allow an operation. Ignored outside Production. |
+
+**Production semantics.** With the shipped `appsettings.Production.json`, the effective policy is: your operator rules, then two built-in rules declared in code, then the fail-closed `Deny` default.
+
+1. `OperationId=*`, `Role=admin`, `Decision=Allow`, reason `built-in: full administrators execute directly`. Matches the bootstrap password admin and API keys with `admin`, `*`, `admin:*`, `admin:write`, or `admin:manage` grants.
+2. `OperationId=*`, `Role=scoped-admin-key`, `Decision=Allow`, reason `built-in: administrative keys execute directly`. Matches API keys with narrower administrative grants such as `admin:read` or `admin:approve`. The policy decision does not widen authority: the operation surface still checks the key's grants against each operation's side effect, so an `admin:read` key cannot run a mutating operation.
+
+Every other caller, for example a `write:*` layer write key (`layer-write-key`), an ordinary scoped key (`scoped-api-key`), or an anonymous caller, is denied with the default reason. Approved-operation credentials (`approved-operation`) need no rule: they are minted only to replay an already-approved proposal, and that replay does not consult the policy again. A decision produced by a built-in rule carries its `built-in:` reason, and startup logs the effective policy, for example `Operation policy: 0 operator rules + 2 built-in rules, default Deny (builtInRules: True)`.
+
+Because operator rules come first, you can still restrict administrators. For example, to require approval before any administrator publishes a service:
+
+```bash
+Operations__Policy__Rules__0__OperationId=service.publish
+Operations__Policy__Rules__0__Role=admin
+Operations__Policy__Rules__0__Decision=RequireApproval
+Operations__Policy__Rules__0__ApprovalLane=publish-review
+```
+
+To run a pure fail-closed policy instead, set `Operations__Policy__BuiltInProductionRules=false` and allow each caller with your own rules. The startup check that `Enabled` is `true` and `DefaultDecision` is not `Allow` applies either way.
 
 ## Licensing
 
@@ -95,6 +140,20 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Cache__RetryIntervalSeconds` | `30` | Redis reconnect interval after a failure. |
 | `Cache__KeyPrefix` | `honua:` | Key prefix for shared Redis instances. |
 
+## MCP sessions
+
+These settings bind from the `Mcp` section. See [Harden the MCP endpoint](../../guides/connect/ai-agents-mcp.md#harden-the-mcp-endpoint-production) for the full list.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Mcp__SessionIdleTimeout` | `00:30:00` | Sliding idle TTL for an MCP session. With Redis connected, this is also the TTL of the shared session record. |
+| `Mcp__StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience. Serves a well-formed but unknown `Mcp-Session-Id` without a session instead of returning `404`. |
+| `Mcp__SessionMode` | `Auto` | Session mode when Redis is not connected: `Auto` (stateless on a multi-instance host such as Lambda, in-memory otherwise), `InMemory`, or `Stateless`. |
+| `Mcp__SessionSigningKey` | — | Secret, shared by every instance, that keys stateless session ids. When unset, `ConnectionStrings__DefaultConnection` is used. |
+| `Mcp__StatelessSessionLifetime` | `08:00:00` | Absolute lifetime of a stateless session id, counted from `initialize`. |
+
+When `ConnectionStrings__Redis` is set, MCP session records are shared through Redis (`mcp:session:<id>`). A session negotiated on any instance is then honoured by every instance. Without Redis, a single instance keeps sessions in memory, and a multi-instance host (AWS Lambda, `Deployment__Mode=MultiNode`) issues signed stateless session ids that any instance can validate. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]`.
+
 ## File storage
 
 | Variable | Default | Purpose |
@@ -113,18 +172,32 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `Import__ObjectStore__AllowedBuckets__N` | — (empty denies every bucket) | Bucket names the host may import with `s3://`. An entry ending in `*` matches that prefix. Matching is case-insensitive. |
+| `Import__ObjectStore__AssumeRoles__N__RoleArn` | — | IAM role ARN the request may ask the host to assume. |
+| `Import__ObjectStore__AssumeRoles__N__ExternalId` | — | External id for that role's trust policy. Never accepted from the import request, logged, or written to the audit record. |
+| `Import__ObjectStore__Region` | SDK default | Optional region for the customer-bucket client. |
+| `Import__ObjectStore__ServiceUrl` | — | Optional endpoint override for a VPC endpoint or a development emulator. Production imports leave this unset. |
+| `Import__ObjectStore__ForcePathStyle` | `false` (on when `ServiceUrl` is set) | Path-style addressing for the customer-bucket client. |
+| `Import__Limits__MaxObjectStoreImportBytes` | 50 GiB | Largest `s3://` object the import will accept. Published as `maxObjectStoreImportBytes` on `GET /api/v1/admin/import/limits`. An object above this size is refused before any byte is read. |
 | `Limits__Imports__MaxPreviewSize` | `10485760` (10 MiB) | Max file size for import preview. |
 | `Limits__Imports__MaxSyncImportSize` | `52428800` (50 MiB) | Max file size for general synchronous imports; direct PostGIS raster uploads use the lower of this value and the fixed 50 MiB serving-process ceiling. |
 | `Limits__Imports__MaxImportSize` | `524288000` (500 MiB) | Max file size for any import. |
 | `Limits__Imports__MaxPreviewFeatures` | `100` | Max features returned by a preview. |
 | `Limits__Imports__BatchSize` | `1000` | Insert batch size for import writes. |
+| `LayerPublishing__MaterializationTimeoutSeconds` | `300` | PostgreSQL budget, in seconds (1–3600), for the canonical snapshot copy made when a layer is published or its snapshot is refreshed, such as automatic publication after a large import. It is a wall-clock and command budget for that copy only; ordinary query timeouts are unchanged and caller cancellation still applies. Expiry rolls the publication back, keeps the imported table, and reports the import as needing review. Out-of-range values fail at startup. |
 | `Migration__AllowedServiceHostSuffixes__N` | — (unset) | Optional remote GIS migration/import source allowlist. Each entry matches the exact host or its subdomains. Unset permits any otherwise-safe public host; an explicitly empty array rejects all hosts. |
 | `Limits__MaxUploadSizeBytes` | `104857600` (100 MiB) | General upload ceiling. |
+| `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch and Parquet row group. |
+| `Limits__GeoParquet__MaxEstimatedBatchBytes` | `8388608` (8 MiB) | Byte admission estimate per batch; an individual row must fit. |
+| `Limits__GeoParquet__MaxEstimatedInputBytes` | `134217728` (128 MiB) | Byte admission estimate for a materialized GeoParquet query result. |
+| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded GeoParquet payload and buffer capacity ceiling, including footer. |
 | `Limits__Query__MaxRecordCount` | `10000` | Max features per query response. |
 | `Limits__Query__DefaultRecordCount` | `1000` | Default page size when the client does not specify one. |
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |
 | `Limits__Query__QueryTimeout` | `00:00:30` | Per-query timeout. |
 | `Limits__Query__MaxBboxAreaSqKm` | `100000` | Max bounding-box query area. |
+| `Limits__Query__MaxMapLayersPerRequest` | `50` | Max layer tokens in one WMS GetMap/GetFeatureInfo `LAYERS` or `QUERY_LAYERS` list; larger lists are rejected with `InvalidParameterValue`. |
+| `Limits__Replica__MaxChangesPerLayer` | `50000` | Max adds, updates, or deletes per layer in one offline replica response. Larger backlogs are delivered in consecutive generation windows (`exceededTransferLimit: true`), never rejected. |
 | `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |
 | `Limits__Geometry__MaxCoordinatePrecision` | `8` | Max coordinate decimal precision. |
@@ -133,7 +206,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Limits__Edits__MaxPayloadSize` | `26214400` (25 MiB) | Max edit payload size. |
 | `Limits__Attachments__MaxAttachmentSize` | `5242880` (5 MiB) | Max single attachment size. |
 | `Limits__Attachments__MaxAttachmentsPerFeature` | `5` | Max attachments per feature. |
-| `Limits__Attachments__AllowedMimeTypes` | `image/*,application/pdf` | Allowed attachment MIME types. |
+| `Limits__Attachments__AllowedMimeTypes` | `image/*,application/pdf,text/plain,text/csv,application/json` | Allowed attachment MIME types. |
 | `Limits__Tiles__MaxFeaturesPerTile` | see `.env.example` | Max features rendered into one vector tile. |
 | `Limits__Tiles__TileTimeout` | see `.env.example` | Per-tile generation timeout. |
 | `Limits__Tiles__MaxTileZoom` / `Limits__Tiles__MinTileZoom` | `22` / `0` | Served zoom range. |
@@ -141,6 +214,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `TileOptions__CacheMaxAge` | see `.env.example` | `Cache-Control: max-age` for tile responses (seconds). |
 | `TileOptions__TileExtent` / `TileOptions__TileBuffer` | `4096` / `256` | MVT tile extent and buffer. |
 | `Limits__Analytics__MaxInputFeatures` | `100000` | Max input features for spatial analytics queries. |
+| `Limits__Analytics__MaxInputBytes` | `536870912` | Max cumulative serialized geometry and attribute bytes a layer-sourced geoprocessing job streams from one layer before computing; exceeding it fails the job with a resource-limit message. |
 | `Limits__Elevation__MaxSampleCount` | `500` | Max samples per elevation profile request. |
 
 The effective import limits are also served at `GET /api/v1/admin/import/limits`.
@@ -166,15 +240,20 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | --- | --- | --- |
 | `HONUA_SERVE_API_DOCS` (`ServeApiDocs`) | `true` in Development, else `false` | Serve the interactive API explorer at `/docs` ([details](../openapi-and-explorer.md)). |
 | `HONUA_SERVE_STAC_DEMO` (`ServeStacOpsDemo`) | `true` in Development/Test, else `false` | Serve the hosted STAC operations demo at `/samples/stac-ops/`. |
-| `HONUA_SKIP_MIGRATIONS` | `false` | Skip database migrations on startup (out-of-band migration flows own their own upgrade safety — the migration-safety settings below do not apply). |
+| `HONUA_SKIP_MIGRATIONS` | `false` | Skip database migrations on startup; the server verifies the migration journal against its binary instead. Apply the migrations out of band first with `HONUA_MIGRATE_ONLY=true`. |
+| `HONUA_MIGRATE_ONLY` | `false` | Apply database migrations, print one JSON summary line to standard output and exit, without serving. Runs the PostGIS preflight and every migration-safety setting below; starts no listener or background service and needs no Redis, licence, admin password or encryption key. Also accepted as `--HONUA_MIGRATE_ONLY=true`. Ignores `HONUA_SKIP_MIGRATIONS`; refused inside AWS Lambda. Exit codes and summary fields: [Run migrations out of band](../../guides/deploy/upgrade-and-rollback.md#run-migrations-out-of-band). |
+| `Database__PreferSerialBoundedSpatialReads` | unset (automatic) | Serial planning for eligible source-backed point bbox reads with first-page limits of 1–100 and default ordering. Set `false` to opt out; `true` explicitly enables the same bounded policy. Counts have an independent policy below. Aggregates, streaming, tiles, larger/later pages and caller-owned transactions retain ordinary planning. See the [PostGIS profile](data-sources/postgis.md#bounded-source-backed-spatial-reads). |
+| `Database__DisableJitForSourceSpatialCounts` | `false` | Opt-in transaction-local JIT suppression for exact counts on source-backed point layers with simple intersects/envelope bboxes. Preserves predicates and parallel-worker settings; excludes ambient and borrowed transactions. See the [PostGIS count profile](data-sources/postgis.md#source-backed-spatial-counts). |
+| `Database__PreferSerialSourceSpatialCounts` | unset (automatic) | Serial planning for exact counts associated with eligible bounded source-backed point bbox reads. Standalone and unbounded counts retain database planning. Set `false` to opt out or `true` to include eligible standalone spatial counts. Independent of count JIT suppression and the read option; excludes distinct, non-default versions and caller-owned transactions. See the [PostGIS profile](data-sources/postgis.md#source-backed-spatial-counts). |
 | `Database__MigrationSafety__ContractApplyPolicy` | `Gate` | `Gate` requires explicit approval before pending reviewed contract-phase (schema-narrowing) migrations apply on an existing database. Journal-scoped: fresh installs always provision fully. See [Deploy with Docker Compose — Upgrade & Rollback](../../guides/deploy/docker-compose.md#upgrade--rollback). |
 | `HONUA_APPROVE_CONTRACT_MIGRATIONS` | unset | One-shot operator approval nonce printed by the migration safety error. Unset it after the upgrade. |
+| `Database__AdoptSeededSchemaOnFirstMigration` | `false` | For test and certification fixtures that create migration-owned tables before the server's first boot. When `true` and the migration journal (`public.schema_versions`) is empty, the pending migrations adopt complete seed-created tables instead of failing with `SchemaExistsWithoutJournal`. Before anything runs, each present table is checked against its creation migration: every column and its type, nullability, default/generated expression and owned sequence, required constraints, partitioning and table properties, and definitions of existing indexes. Missing tables and standalone indexes and later schema alterations are left to the pending migrations; the full schema floor is verified afterwards. Has no effect once any migration is journaled. Leave it unset in production so a database that has lost its journal fails closed. |
 | `Database__MigrationSafety__BackupCommand` | — (none) | Optional shell command run immediately before contract-phase migrations apply on an existing database (e.g. `pg_dump ...`); non-zero exit aborts the migration run. Configuration-source only — never settable via the admin API or database. |
 | `FeatureChangeEvents__Webhook__Enabled` | `false` | Enable outbound webhook delivery of feature-change events. |
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
 
-Application-level rate limiting is deferred; enforce rate limits at your edge proxy, load balancer, or WAF.
+Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF.
 
 ## Admission and pooling
 
@@ -198,6 +277,7 @@ Database connection pool and query admission:
 | `Limits__Connections__AdaptiveConcurrencyTargetDurationMs` | `100` | Target database lease duration. |
 | `Limits__Connections__AdaptiveConcurrencyUpdateIntervalMs` | `1000` | Min interval between adaptive adjustments. |
 | `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with AWS RDS Proxy and transaction-mode poolers — see [PostGIS connection poolers and proxies](data-sources/postgis.md#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
+| `Database__SessionSettings__Mode` | `connection` | `connection` sets the PostgreSQL session timeouts and default `search_path` on every connection; `role-defaults` issues no session `SET` (lets RDS Proxy multiplex) and relies on `ALTER ROLE` defaults, verified with a startup warning — see [PostGIS role defaults](data-sources/postgis.md#role-defaults-instead-of-per-connection-set). |
 
 Session settings (`StatementTimeout`, `LockTimeout`, `IdleInTransactionTimeout`, default `search_path`) are applied with `SET` statements after each physical connection opens, so Honua works behind AWS RDS Proxy and PgBouncer (session mode); see the [PostGIS pooler notes](data-sources/postgis.md#connection-poolers-and-proxies-rds-proxy-pgbouncer).
 
@@ -214,20 +294,13 @@ Geoprocessing job admission and executor guardrails:
 | `ExecutionAdmission__DefaultRetryAfterSeconds` | `10` | `Retry-After` hint for throttled submissions. |
 | `Geoprocessing__Executors__MaxArtifactBytes` | `52428800` (50 MiB) | Max single artifact payload a built-in executor publishes. |
 | `Geoprocessing__Executors__OutputRootDirectory` | OS temp dir | Root for file-sink outputs; traversal outside is rejected. |
-| `Geoprocessing__Executors__ResultRetention` | `7.00:00:00` | Retention TTL for durable result packages. |
+| `Geoprocessing__Executors__ResultRetention` | `7.00:00:00` | How long a finished job's results stay available, measured from completion. Also the TTL of the durable result package. After it elapses, results requests return not-found while the job status record may still be readable. |
 | `Geoprocessing__ImageryInference__Provider` | *(unset — lane dormant)* | Cloud inference backend for `imagery.classify`. Supported: `http` (generic REST speaking Honua's own JSON inference contract — not the OpenAI chat-completions format; implement it directly or put a thin gateway in front of your model server). `sagemaker`/`vertex`/`azureml` are recognized but fail clearly until SDK adapters land. |
 | `Geoprocessing__ImageryInference__Endpoint` | *(unset)* | Absolute http(s) invocation URL of the inference endpoint. Never echoed to callers. |
 | `Geoprocessing__ImageryInference__ApiKey` | *(unset)* | Backend API key: a secret reference (resolved through the secret store), a literal, or unset to fall back to `HONUA_IMAGERY_INFERENCE_API_KEY`. Never logged. |
 | `Geoprocessing__ImageryInference__ApiKeyHeader` | *(unset — `Authorization: Bearer`)* | Optional custom header name to carry the API key (for example `x-api-key`). |
 | `Geoprocessing__ImageryInference__DefaultModel` | *(unset)* | Fallback model reference when a job omits the `model` input. |
 | `Geoprocessing__ImageryInference__TimeoutSeconds` | `300` | Per-request delegation timeout (clamped to 1–3600). |
-
-## Related pages
-
-- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
-- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
-- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
-
 
 ## Vector tile output budget
 
@@ -246,3 +319,75 @@ Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
 that was chosen as a pixel dimension. The database still encodes the tile under
 its existing feature and statement limits before the output length is known.
+
+## Studio AI proxy request budget
+
+`StudioAiProxy__MaxPromptCharacters` defaults to `128000` and accepts values
+from `1` to `500000`. It caps the UTF-16 characters in one
+`POST /api/v1/studio/ai/chat` request before any provider is called. The count
+includes message content, the system prompt, and assistant tool-call IDs, names
+and arguments. It also includes every tool definition's name, description,
+input schema, annotations and output schema. A model-driven session re-sends
+its tool definitions on every round, so they count against the limit each time.
+An oversized request gets HTTP 400 with an `application/problem+json` body
+whose `detail` names the limit: `Request content exceeds the configured limit
+of 128000 characters.`
+
+The default is sized for the shipped setup-view Studio map lifecycle: create,
+update, validate, get, save, reopen, then propose. The eight Studio tool
+definitions add about 16,300 characters to every round, and the transcript
+grows with each tool result. The propose round counts about 32,600 characters
+(about 37,000 request bytes on the 2026.1 candidate), so the previous default of
+`32000` refused it. `128000` leaves more than three times
+that for longer sessions and repair rounds. At roughly four characters per token it is about
+32,000 input tokens, within the context window of the supported adapter kinds'
+tool-capable models. Lower it to bound provider cost. A model-driven lifecycle
+then stops at the first round over the limit, so replay your longest session
+first.
+
+`StudioAiProxy__MaxRequestBytes` (`1048576`) separately caps the HTTP body
+size, and oversized bodies get HTTP 413.
+
+## Related pages
+
+- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
+- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
+- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
+
+
+### GeoParquet query memory budgets
+
+GeoServices `f=parquet` and OData `$format=parquet` share the configured
+`Limits:GeoParquet` budgets. A response that cannot fit is rejected with the shared
+protocol-specific 413 error contract. Reduce the requested page or selected fields,
+or omit geometry. The existing query authorization, ordering and paging are applied
+before encoding; the writer retains that order and never spatially sorts results.
+
+Each Arrow batch is admitted by both row count and an estimated byte total, then
+written as its own Parquet row group and disposed. The estimate counts six bytes per
+input WKB byte or string character, two per binary-attribute byte, and fixed row,
+attribute and output-column bookkeeping. The input budget is checked before native
+encoding or geometry decoding. A second pass accounts for the discovered schema's
+column buffers. Geometry-type discovery retains only the type names across batches;
+it decodes geometries again during bounded encoding so metadata includes the last
+batch's dimensionality without retaining every encoded geometry.
+
+These are admission and encoding bounds, **not streaming query execution or a process
+RSS ceiling**. The provider has already materialized the query result. The returned
+`byte[]` coexists with the bounded output buffer during `ToArray()`, so these two
+buffers can consume up to twice `MaxResponseBytes`; buffer growth can temporarily
+retain an old allocation awaiting collection. Managed geometry objects, Arrow/native
+codec allocations, runtime overhead and concurrent requests add to that memory.
+The estimates intentionally reject wide or geometry-heavy pages independently of
+row count, but do not claim an exact bound on those allocations. Size container
+memory and request concurrency using measurements of the deployed workload.
+
+The formatter regression `FormatAsGeoParquet_WideGeometryPage_RecordsMemoryAndBoundsRowGroups`
+records a 10,000-row, 512-character/32-vertex workload's managed allocation totals,
+process peak working set and payload bytes in the existing .NET test output. Process
+peak includes the test host and any preceding tests, so it is an observation rather
+than an isolated per-request RSS claim. The existing mandatory GeoParquet consumer
+lane independently reads full 10,000-row responses with PyArrow and GeoPandas and
+checks footer row-group bounds, IDs, values, nulls, CRS and bbox covering. Required
+consumer executions retain the existing no-skip receipt policy. Import byte guards
+and accepted multi-row-group imports are unchanged.

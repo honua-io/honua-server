@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Protocols.Ogc.Classic;
 
@@ -45,8 +47,35 @@ internal static class OgcClassicRequestHelpers
         return true;
     }
 
+    /// <summary>
+    /// Builds the GetFeatureInfo attribute set for one feature: internal attributes and the
+    /// resource's publisher-hidden fields are omitted (matching WFS GetFeature), while
+    /// undeclared runtime attributes pass through (#6098).
+    /// </summary>
+    internal static Dictionary<string, object?> BuildVisibleFeatureInfoAttributes(
+        Feature feature,
+        IReadOnlySet<string> hiddenFields)
+    {
+        var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var attribute in feature.Attributes)
+        {
+            if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key) ||
+                hiddenFields.Contains(attribute.Key))
+            {
+                continue;
+            }
+
+            attributes[attribute.Key] = attribute.Value;
+        }
+
+        return attributes;
+    }
+
     internal static string FormatFeatureInfoValue(object? value)
     {
+        // Preserve the existing text/GML 0/1 representation without coercing
+        // Boolean values in JSON properties.
+        value = FeatureAttributeValueNormalizer.Normalize(value);
         if (value is null)
         {
             return string.Empty;

@@ -29,7 +29,7 @@ public sealed class StartupConfigurationHelpersTests
     [Trait("Tier", "Fast")]
     public void FinalSourceOrdering_ResolvesSecurityOverrideInsteadOfBaseSecret()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "honua-security-precedence-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Join(Path.GetTempPath(), "honua-security-precedence-" + Guid.NewGuid().ToString("N"));
         var baseName = "HONUA_BASE_SECRET_" + Guid.NewGuid().ToString("N");
         var overrideName = "HONUA_OVERRIDE_SECRET_" + Guid.NewGuid().ToString("N");
         var expected = Guid.NewGuid().ToString("N");
@@ -40,10 +40,10 @@ public sealed class StartupConfigurationHelpersTests
             Environment.SetEnvironmentVariable(overrideName, expected);
             foreach (var (file, name) in new[] { ("appsettings.json", baseName), ("appsettings.Security.json", overrideName) })
             {
-                File.WriteAllText(Path.Combine(directory, file),
+                File.WriteAllText(Path.Join(directory, file),
                     $$"""{"HONUA_ADMIN_PASSWORD":"env:{{name}}","Security:ConnectionEncryption:MasterKey":"env:{{name}}","ConnectionStrings:Redis":"env:{{name}}"}""");
             }
-            File.WriteAllText(Path.Combine(directory, "appsettings.Production.json"), "{}");
+            File.WriteAllText(Path.Join(directory, "appsettings.Production.json"), "{}");
             using var configuration = new ConfigurationManager();
             configuration.SetBasePath(directory);
             configuration.AddJsonFile("appsettings.json");
@@ -74,12 +74,12 @@ public sealed class StartupConfigurationHelpersTests
     [InlineData("Aspire:StackExchange:Redis:ConnectionString")]
     public async Task SecuritySourceReordering_PreservesAwsResolvedSnapshot(string key)
     {
-        var directory = Path.Combine(Path.GetTempPath(), "honua-aws-order-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Join(Path.GetTempPath(), "honua-aws-order-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
-            File.WriteAllText(Path.Combine(directory, "appsettings.json"), "{}");
-            File.WriteAllText(Path.Combine(directory, "appsettings.Production.json"), "{}");
+            File.WriteAllText(Path.Join(directory, "appsettings.json"), "{}");
+            File.WriteAllText(Path.Join(directory, "appsettings.Production.json"), "{}");
             const string reference = "aws:secretsmanager:regression/redis";
             var resolved = "localhost:6379,password=" + Guid.NewGuid().ToString("N");
             using var configuration = new ConfigurationManager();
@@ -115,18 +115,18 @@ public sealed class StartupConfigurationHelpersTests
     [InlineData("Aspire:StackExchange:Redis:ConnectionString", true)]
     public void SecuritySourceReordering_PreservesResolvedEnvironmentReferences(string key, bool includeSecurityFile)
     {
-        var directory = Path.Combine(Path.GetTempPath(), "honua-secret-order-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Join(Path.GetTempPath(), "honua-secret-order-" + Guid.NewGuid().ToString("N"));
         var prefix = "HONUA_SECRET_ORDER_" + Guid.NewGuid().ToString("N") + "_";
         var referenceName = prefix + "VALUE";
         var configurationName = prefix + key.Replace(":", "__", StringComparison.Ordinal);
         Directory.CreateDirectory(directory);
         try
         {
-            File.WriteAllText(Path.Combine(directory, "appsettings.json"), "{}");
-            File.WriteAllText(Path.Combine(directory, "appsettings.Production.json"), "{}");
+            File.WriteAllText(Path.Join(directory, "appsettings.json"), "{}");
+            File.WriteAllText(Path.Join(directory, "appsettings.Production.json"), "{}");
             if (includeSecurityFile)
             {
-                File.WriteAllText(Path.Combine(directory, "appsettings.Security.json"), "{}");
+                File.WriteAllText(Path.Join(directory, "appsettings.Security.json"), "{}");
             }
             var resolved = "localhost:6379,password=" + Guid.NewGuid().ToString("N");
             Environment.SetEnvironmentVariable(referenceName, resolved);

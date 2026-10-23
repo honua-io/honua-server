@@ -6,6 +6,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Guardrails;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -14,8 +17,10 @@ using Honua.Db.Postgres.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -24,11 +29,18 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private readonly RedisFixture _redis = new();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
+        await _redis.InitializeAsync();
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+        });
         _fixture.ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
@@ -45,12 +57,18 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         foreach (var migration in new[]
                  {
                      "035_CreateStudioPackageLifecycle.sql", "036_CreateContentPublications.sql",
+                     "082_CreatePromotionStores.sql",
                      "089_AddStudioContentEnumerationIndexes.sql", "090_AddStudioContentItemOwner.sql",
+                     // honua-server#4905 adds studio_*.tenant_id, which every lifecycle write reads.
+                     "120_AddStudioTenantOwnership.sql",
+                     "126_AddStudioContentHashInput.sql",
+                     "134_VersionCanonicalDeployments.sql",
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", migration));
-            await _fixture.Postgres.ExecuteAsync(
-                sql.Replace("$HonuaSchema$", $"\"{_studioSchema}\"", StringComparison.Ordinal));
+            sql = sql.Replace("$HonuaSchema$", $"\"{_studioSchema}\"", StringComparison.Ordinal);
+            // Execute 082 unchanged: production keeps the canonical promotion family in honua.
+            await _fixture.Postgres.ExecuteAsync(sql);
         }
         _client = _fixture.CreateAdminClient();
     }
@@ -60,6 +78,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         _client.Dispose();
         await _fixture.Postgres.DropSchemaAsync(_studioSchema);
         await _fixture.DisposeAsync();
+        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -240,11 +259,23 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             var lifecycle = reader.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
+
+            // Composition is complete. The class override still requires approval, and an
+            // admin publishes in the same call anyway: the proposal floor is not applied.
+            _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
+                .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
+            _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
+                .Tier.Should().Be(GuardrailTier.RequiresApproval);
+            const string route = "/studio/dashboard-fixture";
             var intent = await CallAsync("propose_publication",
-                $$"""{"draftId":"{{reopened.DraftId}}","generation":{{reopened.Generation}},"route":"/studio/dashboard-fixture","visibility":"private"}""");
-            intent.GetProperty("recorded").GetBoolean().Should().BeTrue();
-            intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
-            (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"{{route}}","visibility":"personal"}""");
+            intent.GetProperty("status").GetString().Should().Be("Published");
+            intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
+            intent.GetProperty("shareUrl").GetString().Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+            intent.TryGetProperty("proposalId", out _).Should().BeFalse();
+            var pointers = await lifecycle.GetPointersAsync(version.ItemId);
+            pointers!.CurrentVersionId.Should().Be(version.VersionId);
+            pointers.PublishedVersionId.Should().Be(version.VersionId);
             (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
         }
         finally

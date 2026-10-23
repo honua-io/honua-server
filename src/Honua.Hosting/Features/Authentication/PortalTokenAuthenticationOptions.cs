@@ -45,10 +45,27 @@ public sealed class PortalTokenAuthenticationOptions
     public int DefaultExpirationMinutes { get; set; } = DefaultExpirationMinutesValue;
 
     /// <summary>
+    /// Default interval, in seconds, at which the credential a token was issued from is
+    /// re-read (SEC-9).
+    /// </summary>
+    public const int DefaultSourceRevalidationSecondsValue = 10;
+
+    /// <summary>
     /// Upper bound on the lifetime a caller may request via <c>expiration</c>.
-    /// Requests above this value are clamped to the maximum.
+    /// Requests above this value are clamped to the maximum. The issued token is
+    /// additionally clamped to the expiry of the credential it was minted from, so a
+    /// short-lived key never yields a long-lived token.
     /// </summary>
     public int MaxExpirationMinutes { get; set; } = DefaultMaxExpirationMinutesValue;
+
+    /// <summary>
+    /// How long, in seconds, a token's source credential may be treated as unchanged before it
+    /// is re-read. Bounds the cost of the per-request source check to one point read per
+    /// credential per interval per instance, and is also the worst-case delay before a
+    /// revoked, expired or rotated credential stops its tokens. Set to <c>0</c> to re-read on
+    /// every request.
+    /// </summary>
+    public int SourceRevalidationSeconds { get; set; } = DefaultSourceRevalidationSecondsValue;
 
     /// <summary>
     /// Hardening options for the ArcGIS OAuth2 named-user bridge
@@ -183,14 +200,14 @@ public sealed class PortalOAuthJwtOptions
 
 /// <summary>
 /// Optional pluggable IdP/OIDC federation for the OAuth2 <c>client_credentials</c>
-/// grant (ADR-0053 Increment 3, #1889). When enabled, the presented
-/// <c>client_id</c>/<c>client_secret</c> are delegated to an external OIDC token
-/// endpoint (the operator's centralised machine-identity IdP) rather than the
-/// in-tree client registry / Admin API-key store. On a successful federated
-/// exchange Honua mints its own opaque (or JWT) portal access token bound to the
-/// caller IP, carrying roles mapped from the federated response — there is no
-/// parallel token store (ADR-0049). Off by default and composes only when
-/// <see cref="PortalOAuth2Options.EnableClientCredentials"/> is also set.
+/// grant (ADR-0053 Increment 3, #1889). When enabled, a credential that matches
+/// neither the in-tree client registry nor the Admin API-key store is delegated to
+/// an external OIDC token endpoint (the operator's centralised machine-identity
+/// IdP). A secret either local store accepts is never forwarded (#6166). On a
+/// successful federated exchange Honua mints its own opaque (or JWT) portal access
+/// token bound to the caller IP, carrying roles mapped from the federated response
+/// — there is no parallel token store (ADR-0049). Off by default and composes only
+/// when <see cref="PortalOAuth2Options.EnableClientCredentials"/> is also set.
 /// </summary>
 public sealed class PortalOAuthClientCredentialsFederationOptions
 {
@@ -201,9 +218,9 @@ public sealed class PortalOAuthClientCredentialsFederationOptions
     public const string SectionName = "ClientCredentialsFederation";
 
     /// <summary>
-    /// When <see langword="true"/> the <c>client_credentials</c> grant is delegated to
-    /// the external token endpoint before falling back to the in-tree client registry /
-    /// API-key store. Defaults to <see langword="false"/>.
+    /// When <see langword="true"/> a <c>client_credentials</c> credential that misses
+    /// the in-tree client registry and API-key store is delegated to the external
+    /// token endpoint. Defaults to <see langword="false"/>.
     /// </summary>
     public bool Enabled { get; set; }
 

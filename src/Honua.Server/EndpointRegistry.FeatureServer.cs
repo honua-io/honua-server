@@ -35,10 +35,15 @@ public static partial class EndpointRegistry
 
         // GeoServices VersionManagementServer — Esri-style branch versioning (#1272, ADR-0051).
         new("GET", "/rest/services/{serviceId}/VersionManagementServer"),
+        new("POST", "/rest/services/{serviceId}/VersionManagementServer"),
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions"),
+        new("GET", "/rest/services/{serviceId}/VersionManagementServer/versionInfos"),
+        new("POST", "/rest/services/{serviceId}/VersionManagementServer/versionInfos"),
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"),
+        new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/create"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete"),
+        new("POST", "/rest/services/{serviceId}/VersionManagementServer/delete"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/alter"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startReading"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/stopReading"),
@@ -51,7 +56,6 @@ public static partial class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/append"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append"),
-        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
         // queryDomains also accepts POST so clients can submit large layers arrays (#1825).
@@ -114,10 +118,12 @@ public static partial class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}"),
     ];

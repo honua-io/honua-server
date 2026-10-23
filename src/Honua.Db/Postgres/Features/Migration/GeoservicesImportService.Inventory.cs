@@ -30,24 +30,12 @@ internal sealed partial class GeoservicesImportService
 
         try
         {
-            using var serviceDocument = await _restClient.GetJsonDocumentAsync(
-                $"{normalizedUrl}?f=json",
+            using var serviceDocument = await _restClient.GetServiceMetadataAsync(
+                normalizedUrl,
                 ResiliencePolicyOptions.Default.MaxRetryAttempts,
                 request.TimeoutSeconds,
                 request.Credentials,
                 cancellationToken).ConfigureAwait(false);
-
-            if (TryReadArcGisError(serviceDocument.RootElement, out var errorCode, out var errorMessage))
-            {
-                var (authMode, code) = ClassifyArcGisError(errorCode, request.Credentials);
-                return CreateFailedScanArtifact(
-                    normalizedUrl,
-                    authMode,
-                    code,
-                    errorMessage,
-                    serviceType: ExtractServiceType(normalizedUrl),
-                    credentialsSupplied: HasCredentialMaterial(request.Credentials));
-            }
 
             var serviceKey = GetServiceKey(normalizedUrl);
             var serviceDisplayName = GetServiceDisplayName(serviceDocument.RootElement, serviceKey);
@@ -178,6 +166,18 @@ internal sealed partial class GeoservicesImportService
                 FidelityMatrix = MigrationFidelityMatrixBuilder.Build(orderedFidelityClassifications)
             };
         }
+        catch (ArcGisAuthenticationException ex)
+        {
+            Log.InventoryScanFailed(_logger, normalizedUrl, ex);
+            var (authMode, code) = ClassifyArcGisError(ex.UpstreamStatusCode, request.Credentials);
+            return CreateFailedScanArtifact(
+                normalizedUrl,
+                authMode,
+                code,
+                "The ArcGIS service requires valid credentials with read access for discovery.",
+                ExtractServiceType(normalizedUrl),
+                HasCredentialMaterial(request.Credentials));
+        }
         catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
             Log.InventoryScanFailed(_logger, normalizedUrl, ex);
@@ -216,17 +216,13 @@ internal sealed partial class GeoservicesImportService
         GeoservicesCredentialDescriptor? credentials,
         CancellationToken cancellationToken)
     {
-        using var resourceDocument = await _restClient.GetJsonDocumentAsync(
-            $"{normalizedUrl}/{resourceReference.Id}?f=json",
+        using var resourceDocument = await _restClient.GetLayerMetadataAsync(
+            normalizedUrl,
+            resourceReference.Id,
             ResiliencePolicyOptions.Default.MaxRetryAttempts,
             timeoutSeconds,
             credentials,
             cancellationToken).ConfigureAwait(false);
-
-        if (TryReadArcGisError(resourceDocument.RootElement, out _, out var resourceError))
-        {
-            throw new InvalidOperationException(resourceError);
-        }
 
         var resourceCapabilities = SplitCsv(GetOptionalStringProperty(resourceDocument.RootElement, "capabilities"));
         var advertisedCapabilities = resourceCapabilities.Length == 0 ? serviceCapabilities : resourceCapabilities;

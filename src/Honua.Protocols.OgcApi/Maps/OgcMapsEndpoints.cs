@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -12,6 +15,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Maps.Handlers;
 using Honua.Protocols.Ogc.Api.Maps.Models;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps;
 
@@ -27,6 +31,8 @@ public static partial class OgcMapsEndpoints
     private static readonly ImmutableHashSet<string> OpenApiQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
 
+    private const string OgcApiMapsProtocol = "OGC-API-Maps";
+
     /// <summary>
     /// Maps OGC API - Maps endpoints to the application.
     /// </summary>
@@ -41,8 +47,11 @@ public static partial class OgcMapsEndpoints
             .WithSummary("Get OGC API - Maps landing page")
             .WithDescription("The landing page provides links to the OGC API - Maps definition and related resources")
             .Produces<LandingPage>(StatusCodes.Status200OK, MediaTypes.Json)
-            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
-            .CacheOutput("OgcMapsLandingPage");
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html);
+        // #5048: the landing page now describes the extent and CRS of the collections THIS
+        // caller may see, so it is per-principal and must not be served from the shared
+        // anonymous output cache - the same reason other principal-specific surfaces opt
+        // out. The response is built from the in-memory metadata graph, so it stays cheap.
 
         // Core conformance endpoint
         group.MapGet("/conformance", GetConformance)
@@ -62,6 +71,24 @@ public static partial class OgcMapsEndpoints
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcMapsOpenApi");
+
+        group.MapGet("/collections", GetCollections)
+            .WithDisplayName("Get Maps Collections")
+            .WithName("GetMapsCollections")
+            .WithSummary("List accessible collections that serve maps")
+            .Produces<Collections>(StatusCodes.Status200OK, MediaTypes.Json)
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html);
+
+        // Collection description - map clients read it before requesting the map
+        group.MapGet("/collections/{collectionId}", GetCollection)
+            .WithDisplayName("Get Maps Collection")
+            .WithName("GetMapsCollection")
+            .WithSummary("Describe a collection that serves maps")
+            .WithDescription("Returns the collection description with its extent and map links, for every collection that serves a map")
+            .Produces<CollectionInfo>(StatusCodes.Status200OK, MediaTypes.Json)
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
+            .Produces(401)
+            .Produces(404);
 
         // Collection maps - single collection rendering
         group.MapGet("/collections/{collectionId}/map", GetCollectionMap)
@@ -121,7 +148,7 @@ public static partial class OgcMapsEndpoints
     /// <summary>
     /// Get OGC API - Maps landing page.
     /// </summary>
-    private static IResult GetLandingPage(HttpContext context, string? f)
+    private static async Task<IResult> GetLandingPage(HttpContext context, string? f)
     {
         if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
                 context,
@@ -132,6 +159,8 @@ public static partial class OgcMapsEndpoints
         {
             return errorResult!;
         }
+
+        var (extent, supportedCrs, storageCrs) = await BuildDatasetMetadataAsync(context).ConfigureAwait(false);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/maps";
@@ -155,11 +184,25 @@ public static partial class OgcMapsEndpoints
             type: "image/png",
             title: "Dataset map"));
 
+        links.Add(Link.Create(
+            href: BaseUrlResolver.PreserveToken(context.Request, $"{basePath}/map"),
+            rel: RegisteredMapRelation,
+            type: MediaTypes.Png,
+            title: "Dataset map"));
+        links.Add(Link.Create(
+            href: BaseUrlResolver.PreserveToken(context.Request, $"{basePath}/collections"),
+            rel: RelationTypes.Data,
+            type: MediaTypes.Json,
+            title: "Map collections"));
+
         var landingPage = new LandingPage
         {
             Title = "Honua OGC API Maps",
             Description = "OGC API Maps implementation for server-rendered imagery",
             Supports3d = false,
+            Extent = extent,
+            Crs = supportedCrs,
+            StorageCrs = storageCrs,
             Links = links.ToImmutable()
         };
 
@@ -218,13 +261,111 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.RenderCollectionMapAsync(layerId.Value, request, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.RenderCollectionMapAsync(layerId, request, context: context, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds the dataset extent, common CRS list and shared storage CRS advertised by the
+    /// landing page, from the Maps-enabled collections this caller may see (#5048).
+    /// </summary>
+    /// <remarks>
+    /// Discovery enumerates through <see cref="OgcMapsResourceResolver.EnumerateDatasetEntries"/>
+    /// and combines extents through <see cref="OgcMapsResourceResolver.BuildDatasetExtentAsync"/>,
+    /// the same helpers the dataset-map render path uses, so the landing page cannot describe
+    /// a viewport the renderer would not produce. Nothing is invented: when the bounds cannot
+    /// be transformed to CRS84 the extent is omitted and CRS84 is withdrawn from the
+    /// advertised list rather than reported as a world extent.
+    /// </remarks>
+    private static async Task<(Extent? Extent, ImmutableArray<string>? Crs, string? StorageCrs)> BuildDatasetMetadataAsync(
+        HttpContext context)
+    {
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
+        if (graphProvider is null)
+        {
+            // Setup-only hosts map routes before a data provider is configured.
+            return (null, null, null);
+        }
+
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger(typeof(OgcMapsEndpoints));
+
+        var resources = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, logger)
+            .Where(entry => OgcMapsResourceResolver.IsProtocolEnabled(entry.Service, OgcApiMapsProtocol)
+                && AccessPolicyHelpers.RequireResourceAccess(context, entry.Resource, entry.Service) is null)
+            .OrderBy(entry => entry.LayerId)
+            .Select(entry => entry.Resource)
+            .ToArray();
+        if (resources.Length == 0)
+        {
+            return (null, null, null);
+        }
+
+        var (datasetExtent, transformUnavailable) = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            resources, coordinateTransformService, cancellationToken, snapshot).ConfigureAwait(false);
+
+        Extent? extent = null;
+        if (datasetExtent is { } bounds)
+        {
+            var crs84 = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                bounds.MinX,
+                bounds.MinY,
+                bounds.MaxX,
+                bounds.MaxY,
+                bounds.SpatialReference,
+                coordinateTransformService!,
+                cancellationToken).ConfigureAwait(false);
+            transformUnavailable |= crs84 is null;
+            if (crs84 is { } geographic)
+            {
+                extent = new Extent
+                {
+                    Spatial = new Honua.Protocols.Ogc.Common.SpatialExtent
+                    {
+                        BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
+                            geographic.MinLon, geographic.MinLat, geographic.MaxLon, geographic.MaxLat)),
+                        Crs = SpatialReference.WGS84.ToOgcCrsUri()
+                    }
+                };
+            }
+        }
+
+        // Advertise only what every mapped resource can serve.
+        var supportedCrs = resources
+            .Select(resource => (IEnumerable<string>)SpatialReference
+                .Create(resource.ReadSrid() ?? SpatialReference.WGS84.Wkid).GetSupportedCrsUris())
+            .Aggregate((IEnumerable<string>?)null, (common, current) => common is null
+                ? current
+                : common.Intersect(current, StringComparer.OrdinalIgnoreCase))
+            ?.ToImmutableArray() ?? ImmutableArray<string>.Empty;
+        if (transformUnavailable)
+        {
+            // A declared CRS84 fallback does not establish that this dataset can be
+            // transformed into it, so it is withdrawn rather than advertised untruthfully.
+            supportedCrs = supportedCrs
+                .Where(crs => !string.Equals(crs, SpatialReference.WGS84.ToOgcCrsUri(), StringComparison.OrdinalIgnoreCase))
+                .ToImmutableArray();
+        }
+
+        var storageSrids = resources
+            .Select(resource => resource.Spatial?.StorageCrs?.ResolveSrid() ?? resource.ReadSrid())
+            .Distinct()
+            .ToArray();
+        var storageCrs = storageSrids is [int storageSrid] && storageSrid != SpatialReference.WGS84.Wkid
+            ? SpatialReference.Create(storageSrid).ToOgcCrsUri()
+            : null;
+
+        return (extent, supportedCrs, storageCrs);
     }
 
     /// <summary>
@@ -262,10 +403,10 @@ public static partial class OgcMapsEndpoints
             var invalidCollections = new List<string>();
             foreach (var token in collectionTokens)
             {
-                var layerId = await ResolveCollectionLayerIdAsync(context, token, cancellationToken);
-                if (layerId.HasValue)
+                var resolution = await ResolveCollectionAsync(context, token, cancellationToken);
+                if (resolution.Error is null)
                 {
-                    collectionIds.Add(layerId.Value);
+                    collectionIds.Add(resolution.LayerId!.Value);
                 }
                 else
                 {
@@ -307,13 +448,15 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.RenderStyledMapAsync(layerId.Value, styleId, request, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.RenderStyledMapAsync(layerId, styleId, request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -326,13 +469,15 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.GetMapTileSetsAsync(layerId.Value, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.GetMapTileSetsAsync(layerId, context: context, cancellationToken);
     }
 
     private static async Task<IResult> GetCollectionMapTileSet(
@@ -343,20 +488,42 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.GetMapTileSetAsync(layerId.Value, tileMatrixSetId, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.GetMapTileSetAsync(layerId, tileMatrixSetId, context: context, cancellationToken);
     }
 
-    private static async Task<int?> ResolveCollectionLayerIdAsync(
+    /// <summary>
+    /// Outcome of resolving a Maps collection: the validated publication and its storage layer
+    /// id, or the response to return instead (the access-policy refusal for a protected
+    /// collection, otherwise 404).
+    /// </summary>
+    private readonly record struct MapsCollectionResolution(
+        MetadataV2Publication? Publication,
+        MetadataV2Resource? Resource,
+        int? LayerId,
+        IResult? Error);
+
+    private static Task<MapsCollectionResolution> ResolveCollectionAsync(
         HttpContext context,
         string value,
         CancellationToken cancellationToken)
+        => ResolveCollectionAsync(context, value, null, cancellationToken);
+
+    private static async Task<MapsCollectionResolution> ResolveCollectionAsync(
+        HttpContext context,
+        string value,
+        MetadataV2GraphSnapshot? snapshot,
+        CancellationToken cancellationToken)
     {
+        snapshot ??= await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         // Resolve the publication (not just the resource) so map rendering can fall back to
         // the publication-scoped storage binding. The previous implementation resolved only
         // the resource and called ResolveStorageLayerId(resource), which returns null whenever
@@ -369,19 +536,39 @@ public static partial class OgcMapsEndpoints
         var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
             value,
+            snapshot: snapshot,
+            preferExactPublicationId: true,
             requiredProtocol: ServiceProtocols.OgcApiMaps,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!validation.IsValid || validation.Publication is null || validation.Resource is null)
+        // A protected collection answers with the access-policy refusal (401/403), as the
+        // Features and Tiles collection routes do, so an anonymous client learns it must
+        // authenticate instead of concluding the collection does not exist (#4991).
+        if (!validation.IsValid && validation.ErrorResult is { } accessError && IsAccessRefusal(accessError))
         {
-            return null;
+            return new MapsCollectionResolution(null, null, null, accessError);
         }
 
-        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return validation.Publication.LayerIndex
-            ?? snapshot.ResolveStorageLayerId(validation.Publication)
-            ?? snapshot.ResolveStorageLayerId(validation.Resource);
+        if (!validation.IsValid || validation.Publication is null || validation.Resource is null)
+        {
+            return new MapsCollectionResolution(
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{value}' not found."));
+        }
+
+        var layerId = snapshot.ResolveStorageLayerId(validation.Publication, validation.Resource);
+        return layerId.HasValue
+            ? new MapsCollectionResolution(validation.Publication, validation.Resource, layerId, null)
+            : new MapsCollectionResolution(
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{value}' not found."));
     }
+
+    private static bool IsAccessRefusal(IResult result)
+        => result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden };
 
     private static bool HasEmptyCommaSeparatedToken(string value)
         => value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);

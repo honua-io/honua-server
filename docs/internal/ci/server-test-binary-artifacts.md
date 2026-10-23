@@ -5,20 +5,194 @@ retains neutral Unix plus `linux`/`linux-x64` runtime assets, and removes every
 other RID directory. It preserves PDBs, test data, configuration, and NuGet
 `obj` state so a clean consumer can run `dotnet test --no-build --no-restore`.
 
-This contract does not enable a shared CI producer. Issue #2708 owns that
-orchestration decision after the hosted transfer benchmark in #2722. The
-payload implementation and integrity proof are tracked by #2721.
+The same-run producer/consumer path is described below. The historical v1
+shard cache remains compatible; its original payload work is tracked by #2721.
+
+## Build once, verify in consumers (#5998)
+
+`PR Gate` and full `ci.yml` use an explicit managed build producer. The producer
+restores the exact solution or solution filter it compiles, with Release,
+warnings as errors, analyzers enabled, and shared compilation disabled. The
+selected shard projects are unioned with required gate/foundation projects.
+Full formatting runs independently with its complete restore context.
+
+The producer publishes one pristine artifact per selected test project before
+any test or coverage collector can instrument outputs. Transfers are sequential:
+only one temporary archive is staged at a time. Publication sends
+`Honua.Server.Tests` first because it serves the most consumers; remaining
+projects retain caller order. A ten-minute total transfer budget bounds outages;
+remaining projects then use the fallback path. Each consumer downloads only its
+project set in caller order, verifies it, and runs its existing tests with `--no-build
+--no-restore`. Coverlet operates on the consumer's private copy. The full
+reflection architecture collector remains required; splitting source guards
+does not remove or defer that coverage.
+
+The same-run v2 contract adds workflow run ID, Linux/x64 platform, configuration,
+canonical build properties, and project-registry digest to the exact checkout
+SHA and SDK identity. The SHA is the checked-out merge commit on pull requests.
+Artifacts are named by producer attempt, so rerunning a failed consumer can use
+the successful producer's original attempt in that same workflow run. Retention
+is one day. No branch-prefix lookup or cross-run artifact search is used; the
+existing v1 exact-head shard cache remains a separate fallback in full CI.
+
+The producer exports its actual selected `dotnet --version`, rather than the
+floating `10.0.x` request. Managed consumers install that exact version into a
+private runner-temp SDK directory and verify both the selected version and
+effective host/runtime-root paths before restoration. This prevents an SDK
+rollout between jobs from changing the toolchain: a producer using 10.0.401 and
+a later consumer resolving 10.0.402 must not be treated as the same identity.
+The installation uses the supported `DOTNET_INSTALL_DIR` behavior of
+[actions/setup-dotnet](https://github.com/actions/setup-dotnet#environment-variables).
+No repository/global SDK policy, Docker SDK image or artifact identity override
+is introduced; the existing exact SDK comparison remains mandatory.
+
+Full-CI foundation and shard consumers restore their selected package graph
+before materializing either managed artifacts or the exact-head shard cache.
+This prerequisite step performs no compilation. A read-only trunk NuGet cache
+can lack packages introduced by the current branch; the static web asset root
+verifier must see those packages before it can accept the binary payload.
+Restoring only after acceptance would make a new package version force a cold
+build even on an exact-source cache hit. Package restore failure still fails the
+job, and payload source, SDK, hash and static-root verification remain unchanged.
+
+Restore stages and verifies the whole payload before replacing any output root.
+Installation is transactional and rolls back on failure. `Honua.Server.Tests`
+contains its copied test runtime and required static assets; it does not duplicate
+`src/Honua.Server/bin/Release`. The required canonical boot/migrations smoke runs
+on the producer after pristine artifact publication, using its existing host
+output. Consumer tests retain their complete test runtime and static-asset
+verification within the same artifact size limits.
+
+Each project emits a concise console receipt with status, reason, source and
+archive hash. Packaging-limit failures include the measured bound, without
+logging payload contents.
+
+Missing, expired, corrupt, oversized, or unavailable artifacts leave a project
+unrestored. The consumer restores/builds the union of missing projects once,
+then runs the unchanged test commands. If binaries are valid but the NuGet
+cache lacks their test tooling, it restores that selected dependency graph
+without compiling the valid projects. A well-formed payload with a conflicting
+identity or malformed producer plan fails the job. Neither case turns missing
+test evidence into success. Advisory-only compilation retains its existing
+consumer-side, non-gating behavior.
+
+Set repository variable `HONUA_MANAGED_TEST_ARTIFACTS=false` to disable the
+same-run transport. Consumers then use the scoped restore/build fallback;
+required tests and review admission still run. This switch does not activate the
+separate `PR_GATE_BUILD_CACHE` or change `HONUA_SERVER_TEST_PREBUILD_CONSUME`.
+NuGet continues to cache dependencies, not internal compiled test outputs.
+
+Planning is read-only and does not invoke dotnet or Docker:
+
+```bash
+python3 scripts/ci/managed-test-build.py projects --lane pr --output /tmp/pr-projects.json
+python3 scripts/ci/managed-test-build.py projects --lane foundation --family server --output /tmp/foundation-projects.json
+scripts/ci/pre-pr-check.sh --dry-run
+```
+
+For quick local architecture feedback, the source-only project builds only its
+abstractions and analyzer dependencies:
+
+```bash
+dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj --configuration Release
+```
+
+Use the existing admitted local CI entry point for builds. Normal, `--fast`, and
+full pre-PR checks still run both architecture suites; `--fast` has not become a
+way to omit the full collector. The moved-class inventory and dependency guards
+prevent source tests from silently regaining runtime references or disappearing
+from required verification.
+
+The transport writes per-project receipts with artifact IDs, source and archive
+hashes, restoration status, and fallback reasons in the runner temporary
+directory, with durable per-project outcomes in the job summary. Existing TRX,
+shard timing, and required aggregate checks remain the execution evidence. The artifact SDK is pinned with a lockfile in
+`.github/actions/managed-test-artifacts`; no NuGet package is published to move
+these outputs.
 
 ## Bounds and integrity
 
 `package-server-test-binaries.sh` creates a deterministic gzip-1 archive and a
 manifest keyed by exact commit, SDK version, project, and contract version. The
-default limits are 256 MiB compressed, 512 MiB staged, and 120 seconds to
+default limits are 320 MiB compressed, 768 MiB staged, and 120 seconds to
 package. Evidence is valid for at most 24 hours; restore rejects future or
 expired manifests even if the transport still retains their bytes.
 `restore-server-test-binaries.sh` rejects toolchain/source/project
-mismatches, size drift, digest failures, unsafe paths, missing project assets,
-or missing binaries/PDBs before extraction is accepted.
+mismatches, size drift, digest failures, unsafe paths, entries outside the
+declared payload roots, missing project assets, missing binaries/PDBs, or a
+missing static web asset content root before extraction is accepted.
+
+The size limits were re-based by #4453, which made every payload of a project
+that references `Honua.Server` carry the hosted Blazor content roots (see
+[Static web asset content roots](#static-web-asset-content-roots-4453)).
+Measured locally at `19cb64cb6a` with .NET SDK 10.0.400, the same build packaged
+before and after the change:
+
+| Project | Staged before | Staged after | Archive before | Archive after | Pack seconds |
+|---|---:|---:|---:|---:|---:|
+| stac | 390.4 MiB | 438.5 MiB | 149.6 MiB | 181.8 MiB | 8.7 |
+| server | 456.1 MiB | 504.2 MiB | 171.9 MiB | 204.1 MiB | 10.8 |
+
+`server` is the largest registered payload. After the change it stood at 98.5%
+of the previous 512 MiB staged limit, and packaging is not `continue-on-error`,
+so the next growth would have turned the writer shard red. The new limits put
+it at 66% staged and 64% compressed, the same headroom for both.
+
+## Static web asset content roots (#4453)
+
+Test projects that reference `Honua.Server` ship `*.staticwebassets.runtime.json`
+manifests. Each names the directories the host serves static web assets from,
+as absolute paths on the building machine. Several of those directories are
+build outputs of *other* projects: the hosted STAC ops demo's
+`samples/Honua.StacOpsDemo/bin/<Configuration>/net10.0/wwwroot` (the ~420
+`_framework/` files), its `obj/.../compressed` and `obj/.../scopedcss/bundle`,
+and `src/Honua.Server/obj/.../compressed`. The payload used to stage only the
+test project's own `bin/` and `obj/`. A materializing shard therefore served
+404 for `/samples/stac-ops/_framework/blazor.webassembly.js` where a building
+shard served 200 (attempt 2 of run 34039679229).
+
+`package-server-test-binaries.sh` classifies every referenced root:
+
+| Class | Where the root is | Handling |
+|---|---|---|
+| `payload` | inside the repository, with a `bin` or `obj` path segment | staged at its repository-relative path; a root the build never materialized is staged empty, which is what the building host sees once `LoadHostedBlazorStaticWebAssets` pre-creates it (#2904) |
+| `checkout` | inside the repository, outside `bin`/`obj` | not staged; packaging fails if `git ls-files --others` finds any untracked or ignored file under it |
+| `nuget` | under `NUGET_PACKAGES` (default `~/.nuget/packages`) | not staged; must exist when packaging |
+
+Packaging fails on any other root. Roots inside the test project's own output
+are already staged. The manifest records `repo_root` and
+`static_web_asset_content_roots`.
+
+Restore then:
+
+- rejects a declared payload root unless it is a normalized repository-relative
+  path with a `bin` or `obj` segment;
+- rejects an archive entry that lies outside the test project's
+  `bin/<Configuration>`, its `obj`, or a declared payload root. Extraction
+  targets the repository root, so this stops a payload overwriting checkout
+  content;
+- after extraction, rejects the payload if any content root named by a restored
+  runtime manifest is missing. Roots under the packaging `repo_root` are checked
+  at the same relative path under the destination.
+
+A rejection takes the existing `rejected_cache_evidence` path.
+`server-test-shard-cache.sh` removes the test project output and every declared
+payload root, and the shard restores and builds as usual. A shard either sees
+the content roots a local build would give it, or it builds; reuse can no longer
+change a test outcome. A consumer whose NuGet cache lacks a package that owns a
+content root now rebuilds rather than serving 404, which costs time only.
+
+The guard is `scripts/ci/validate-server-test-binary-artifacts.sh`, run by
+router validation. It packages and restores a fixture with all three classes,
+an empty unmaterialized root and one of the test project's own roots. It fails
+if a consumer missing a checkout or NuGet root is accepted, if a declared root
+is unsafe, or if packaging accepts an untracked checkout file or a root outside
+the repository. `validate-server-test-shard-cache.sh` covers rejection cleanup,
+and `validate-server-test-archive.test.py` covers the entry scope check.
+
+Shard layout no longer constrains which shard of a project owns tests of hosted
+Blazor assets. The `dispatch_rank` cache-writer pin that
+`validate-ci-router.sh` carried for `StacOpsDemoEndpointTests` was removed.
 
 `.github/server-test-artifact-projects.json` is the complete project registry.
 Router validation requires it to equal the effective unique `csproj` set in
@@ -85,7 +259,7 @@ slice promoted out of shadow, and it is promoted without adding a producer job:
 The key includes the workflow run id. Cache keys are immutable and a payload is
 valid for 24 hours, so a key scoped only to the commit SHA becomes permanently
 poisoned once its payload ages out: every later run of that unchanged head — a
-Saturday scheduled full matrix, a manual dispatch — would download up to 256 MiB
+Saturday scheduled full matrix, a manual dispatch — would download up to 320 MiB
 in every one of ~65 shards, reject it on TTL (`rejected_cache_evidence`),
 rebuild, and then fail to re-save because the immutable key already exists. That
 repeats on every future run of that SHA. Before attempt-1 reads this could only

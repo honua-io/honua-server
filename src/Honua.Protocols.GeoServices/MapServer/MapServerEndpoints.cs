@@ -227,6 +227,7 @@ internal static partial class MapServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Layer (GET)")
             .WithName("MapServerQueryGet")
             .WithSummary("Query features from a MapServer layer using GET")
@@ -234,6 +235,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Layer (POST)")
             .WithName("MapServerQueryPost")
             .WithSummary("Query features from a MapServer layer using POST")
@@ -242,6 +244,7 @@ internal static partial class MapServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Service (GET)")
             .WithName("MapServerServiceQueryGet")
             .WithSummary("Query features from a MapServer service using GET")
@@ -249,6 +252,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Service (POST)")
             .WithName("MapServerServiceQueryPost")
             .WithSummary("Query features from a MapServer service using POST")
@@ -265,6 +269,15 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
 
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/allLayersAndTables",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
+            .WithDisplayName("Get All Layers and Tables (POST)")
+            .WithName("MapServerAllLayersAndTablesPost")
+            .WithSummary("Get metadata for all layers and tables")
+            .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
         // The ArcGIS Maps SDK for JavaScript and the .NET Runtime SDK hydrate
         // sublayers via /MapServer/layers (the canonical Esri spelling of the
         // allLayersAndTables resource). Return the identical document (#1454).
@@ -276,6 +289,15 @@ internal static partial class MapServerEndpoints
             .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/layers",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
+            .WithDisplayName("Get All Layers and Tables (layers resource, POST)")
+            .WithName("MapServerLayersPost")
+            .WithSummary("Get metadata for all layers and tables")
+            .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/queryDomains",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleQueryDomains(context))

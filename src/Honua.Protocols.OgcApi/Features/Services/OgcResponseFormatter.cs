@@ -250,7 +250,8 @@ internal static class OgcResponseFormatter
         DateTimeOffset? timeStamp = null,
         string? gmlApplicationSchemaUrl = null,
         string? outputCrsUri = null,
-        AxisOrder outputAxisOrder = AxisOrder.EastNorth)
+        AxisOrder outputAxisOrder = AxisOrder.EastNorth,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         var builder = new StringBuilder();
         AppendGmlFeatureCollectionStart(builder, gmlApplicationSchemaUrl);
@@ -278,7 +279,7 @@ internal static class OgcResponseFormatter
             builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
             using var writer = new StringWriter(builder, CultureInfo.InvariantCulture);
             WriteGmlGeometryProperty(writer, feature.GeometryGml, "      ", escapedId, outputCrsUri, outputAxisOrder);
-            WriteGmlProperties(writer, feature.Attributes, "      ");
+            WriteGmlProperties(writer, feature.Attributes, "      ", hiddenFields);
             builder.AppendLine("    </app:Feature>");
             builder.AppendLine("  </wfs:member>");
         }
@@ -299,7 +300,8 @@ internal static class OgcResponseFormatter
         string? gmlApplicationSchemaUrl,
         string? outputCrsUri,
         AxisOrder outputAxisOrder,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         // OGC API Features Part 1 §7.8.3 and WFS 2.0 §8.8.5.2 require numberReturned to
         // equal the actual number of features in the document.  The pre-computed estimate
@@ -345,7 +347,7 @@ internal static class OgcResponseFormatter
             await writer.WriteLineAsync("  <wfs:member>");
             await writer.WriteLineAsync($"    <app:Feature gml:id=\"{escapedId}\">");
             WriteGmlGeometryProperty(writer, feature.GeometryGml, "      ", escapedId, outputCrsUri, outputAxisOrder);
-            WriteGmlProperties(writer, feature.Attributes, "      ");
+            WriteGmlProperties(writer, feature.Attributes, "      ", hiddenFields);
             await writer.WriteLineAsync("    </app:Feature>");
             await writer.WriteLineAsync("  </wfs:member>");
             if (++writtenSinceFlush >= StreamingFlushInterval)
@@ -373,7 +375,8 @@ internal static class OgcResponseFormatter
         string? gmlApplicationSchemaUrl,
         string? outputCrsUri,
         AxisOrder outputAxisOrder,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         await using var writer = new StreamWriter(
             bodyWriter.AsStream(),
@@ -405,7 +408,7 @@ internal static class OgcResponseFormatter
             await writer.WriteLineAsync("  <wfs:member>");
             await writer.WriteLineAsync($"    <app:Feature gml:id=\"{escapedId}\">");
             WriteGmlGeometryProperty(writer, feature.GeometryGml, "      ", escapedId, outputCrsUri, outputAxisOrder);
-            WriteGmlProperties(writer, feature.Attributes, "      ");
+            WriteGmlProperties(writer, feature.Attributes, "      ", hiddenFields);
             await writer.WriteLineAsync("    </app:Feature>");
             await writer.WriteLineAsync("  </wfs:member>");
             if (++writtenSinceFlush >= StreamingFlushInterval)
@@ -448,14 +451,15 @@ internal static class OgcResponseFormatter
     public static string BuildGmlSingleFeature(
         GmlFeature feature,
         string? outputCrsUri = null,
-        AxisOrder outputAxisOrder = AxisOrder.EastNorth)
+        AxisOrder outputAxisOrder = AxisOrder.EastNorth,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         var builder = new StringBuilder();
         var escapedId = CreateGmlId(feature.Id, "feature_");
         builder.AppendLine($"<app:Feature xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" gml:id=\"{escapedId}\">");
         using var writer = new StringWriter(builder, CultureInfo.InvariantCulture);
         WriteGmlGeometryProperty(writer, feature.GeometryGml, "  ", escapedId, outputCrsUri, outputAxisOrder);
-        WriteGmlProperties(writer, feature.Attributes, "  ");
+        WriteGmlProperties(writer, feature.Attributes, "  ", hiddenFields);
         builder.AppendLine("</app:Feature>");
         return builder.ToString();
     }
@@ -909,7 +913,7 @@ internal static class OgcResponseFormatter
         return geometryMarkup.Insert(insertAt, $" gml:id=\"{safeId}\"");
     }
 
-    private static void WriteGmlProperties(TextWriter writer, ImmutableDictionary<string, object?> properties, string indent)
+    private static void WriteGmlProperties(TextWriter writer, ImmutableDictionary<string, object?> properties, string indent, IReadOnlySet<string>? hiddenFields)
     {
         if (properties.IsEmpty)
         {
@@ -918,7 +922,7 @@ internal static class OgcResponseFormatter
 
         foreach (var (key, value) in properties)
         {
-            if (value == null)
+            if (value == null || hiddenFields?.Contains(key) == true)
             {
                 continue;
             }

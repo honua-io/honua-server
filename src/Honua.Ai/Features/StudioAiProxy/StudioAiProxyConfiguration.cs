@@ -37,10 +37,13 @@ public sealed class StudioAiProxyConfiguration
     public string DefaultProvider { get; set; } = string.Empty;
 
     /// <summary>
-    /// Maximum accepted prompt size across all message content, in UTF-16 characters. Oversized
-    /// requests are rejected before any provider is called.
+    /// Maximum accepted prompt size in UTF-16 characters, counting message content, the system prompt,
+    /// assistant tool-call arguments and every tool definition (re-sent and re-counted each round).
+    /// Oversized requests are rejected before any provider is called. The default admits a setup-view
+    /// Studio map lifecycle (about 17 KB of Studio tool definitions plus a growing transcript) with
+    /// headroom; 32,000 refused it at propose (honua-server#4919).
     /// </summary>
-    public int MaxPromptCharacters { get; set; } = 32_000;
+    public int MaxPromptCharacters { get; set; } = 128_000;
 
     /// <summary>Maximum UTF-8 bytes accepted by the Studio AI chat HTTP route.</summary>
     public int MaxRequestBytes { get; set; } = 1_048_576;
@@ -193,7 +196,7 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
             ValidateRequiredString(signing.PrivateKeyReference, "StudioAiProxy:TranscriptSigning:PrivateKeyReference", errors);
             ValidateRange(signing.LifetimeSeconds, 30, 86_400, "StudioAiProxy:TranscriptSigning:LifetimeSeconds", errors);
             if (!string.IsNullOrWhiteSpace(signing.PrivateKeyReference)
-                && !signing.PrivateKeyReference.Contains("://", StringComparison.Ordinal))
+                && !IsTranscriptSigningReference(signing.PrivateKeyReference))
             {
                 errors.Add("StudioAiProxy:TranscriptSigning:PrivateKeyReference must be a secret reference, not inline key material.");
             }
@@ -246,6 +249,22 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
                 errors.Add($"{prefix}:NotBefore must be earlier than NotAfter.");
             }
         }
+    }
+
+    private static bool IsTranscriptSigningReference(string reference)
+    {
+        if (reference.Contains("://", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // The built-in AWS resolver uses provider:service:identifier, not a URI authority.
+        // Runtime provider resolution and key validation still happen in the transcript signer.
+        const string awsPrefix = "aws:secretsmanager:";
+        return reference.StartsWith(awsPrefix, StringComparison.OrdinalIgnoreCase)
+            && reference.Length > awsPrefix.Length
+            && reference[awsPrefix.Length] != '?'
+            && !reference.Any(static character => char.IsWhiteSpace(character) || char.IsControl(character));
     }
 
     private static void ValidateProvider(string name, StudioAiProxyProviderOptions provider, List<string> errors)

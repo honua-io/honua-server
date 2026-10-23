@@ -83,6 +83,57 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
     }
 
+    /// <inheritdoc />
+    public async Task<TableInfo?> DiscoverNonSpatialTableAsync(
+        DbConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            return null;
+        }
+
+        ArgumentNullException.ThrowIfNull(connection);
+        var postgres = connection.RequireNpgsqlConnection();
+
+        const string sql = """
+            SELECT table_schema, table_name
+            FROM information_schema.tables AS tables
+            WHERE table_schema = @schema AND table_name = @table
+              AND table_type IN ('BASE TABLE', 'FOREIGN TABLE')
+              AND table_schema <> ALL(@metadataSchemas)
+              AND table_schema <> 'information_schema'
+              AND table_schema !~ '^pg_'
+              AND table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
+              AND NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns AS columns
+                  WHERE columns.table_schema = tables.table_schema
+                    AND columns.table_name = tables.table_name
+                    AND columns.udt_name IN ('geometry', 'geography'));
+            """;
+        await using (var command = new NpgsqlCommand(sql, postgres))
+        {
+            command.Parameters.AddWithValue("schema", schema);
+            command.Parameters.AddWithValue("table", table);
+            command.Parameters.Add("metadataSchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value =
+                _schemaConfiguration.MetadataSchemas.ToArray();
+            if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not string)
+            {
+                return null;
+            }
+        }
+
+        return new TableInfo
+        {
+            Schema = schema,
+            Table = table,
+            EstimatedRows = await GetEstimatedRowCountAsync(postgres, schema, table, cancellationToken).ConfigureAwait(false),
+            Columns = await GetTableColumnsAsync(postgres, schema, table, cancellationToken).ConfigureAwait(false)
+        };
+    }
+
     private async Task<List<TableInfo>> DiscoverPostGisTablesCoreAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)
@@ -101,13 +152,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
             FROM geometry_columns
             WHERE f_table_schema <> ALL(@metadataSchemas)
               AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-              AND (
-                  f_table_schema = ANY(@discoverySchemas)
-                  OR (
-                      f_table_schema <> 'information_schema'
-                      AND f_table_schema !~ '^pg_'
-                  )
-              )
+              AND f_table_schema = ANY(@discoverySchemas)
 
             UNION ALL
 
@@ -121,13 +166,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
             FROM geography_columns
             WHERE f_table_schema <> ALL(@metadataSchemas)
               AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-              AND (
-                  f_table_schema = ANY(@discoverySchemas)
-                  OR (
-                      f_table_schema <> 'information_schema'
-                      AND f_table_schema !~ '^pg_'
-                  )
-              )
+              AND f_table_schema = ANY(@discoverySchemas)
 
             ORDER BY schema, table_name
             """;
@@ -193,6 +232,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
         string table,
         CancellationToken cancellationToken = default)
     {
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            return null;
+        }
+
         ArgumentNullException.ThrowIfNull(connectionString);
 
         try
@@ -202,7 +246,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var discoverySchemas = _schemaConfiguration.ResolveDiscoverySchemas(_schemaContext?.CurrentSchema);
+            var discoverySchemas = CommittedSinkSchemaGate.DiscoverySchemas(
+                _schemaConfiguration, _schemaContext?.CurrentSchema, schema);
             const string sql = """
                 SELECT
                     f_table_schema as schema,
@@ -211,17 +256,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     type as geometry_type,
                     srid
                 FROM geometry_columns
-                WHERE lower(f_table_schema) = lower(@schema)
+                WHERE f_table_schema = @schema
                   AND lower(f_table_name) = lower(@table)
                   AND f_table_schema <> ALL(@metadataSchemas)
                   AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-                  AND (
-                      f_table_schema = ANY(@discoverySchemas)
-                      OR (
-                          f_table_schema <> 'information_schema'
-                          AND f_table_schema !~ '^pg_'
-                      )
-                  )
+                  AND f_table_schema = ANY(@discoverySchemas)
 
                 UNION ALL
 
@@ -232,17 +271,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     type as geometry_type,
                     srid
                 FROM geography_columns
-                WHERE lower(f_table_schema) = lower(@schema)
+                WHERE f_table_schema = @schema
                   AND lower(f_table_name) = lower(@table)
                   AND f_table_schema <> ALL(@metadataSchemas)
                   AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-                  AND (
-                      f_table_schema = ANY(@discoverySchemas)
-                      OR (
-                          f_table_schema <> 'information_schema'
-                          AND f_table_schema !~ '^pg_'
-                      )
-                  )
+                  AND f_table_schema = ANY(@discoverySchemas)
 
                 LIMIT 1
                 """;

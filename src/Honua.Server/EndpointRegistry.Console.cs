@@ -68,6 +68,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/operations/{id}/validate"),
         new("POST", "/api/v1/operations/{id}/submit"),
         new("GET", "/api/v1/operations/handles/{handleId}"),
+        new("POST", "/api/v1/operations/handles/{handleId}/secrets/{referenceId}/consume"),
         new("GET", "/api/v1/console/workflow-packages"),
         new("POST", "/api/v1/console/workflow-packages"),
         new("GET", "/api/v1/console/workflow-packages/{packageId}"),
@@ -79,6 +80,8 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/dry-run"),
         new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish"),
         new("GET", "/api/v1/console/workflow-publications"),
+        new("DELETE", "/api/v1/console/workflow-publications/{publicationId}"),
+        new("POST", "/api/v1/console/workflow-publications/{publicationId}/status"),
         new("POST", "/api/v1/console/workflow-publications/{publicationId}/runs"),
     ];
 }

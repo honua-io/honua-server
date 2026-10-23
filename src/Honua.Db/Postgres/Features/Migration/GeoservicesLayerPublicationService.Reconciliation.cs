@@ -25,14 +25,22 @@ internal readonly record struct GeoservicesReconciliationGateOutcome
     /// <summary>Per-layer data-reconciliation artifact, when reconciliation ran.</summary>
     public MigrationReconciliationArtifact? Artifact { get; init; }
 
-    /// <summary>Catalog parity report, when one was produced. Always <c>null</c> on the per-layer geoservices path today.</summary>
+    /// <summary>Catalog parity report, when one was produced.</summary>
     public MigrationCatalogReconciliationReport? CatalogReport { get; init; }
 
-    /// <summary>True when a hard finding routes the run to operator review.</summary>
-    public bool NeedsReview { get; init; }
+    /// <summary>
+    /// True when the data-movement reconciliation probe actually ran. <c>false</c> when no
+    /// reconciliation service is registered or the probe threw. Distinguishes "ran and passed" from
+    /// "never ran", which <see cref="Artifact"/> being non-null cannot (#4600).
+    /// </summary>
+    public bool DataCheckExecuted { get; init; }
 
-    /// <summary>Operator-visible reason the run was routed to review. <c>null</c> when the gate passed.</summary>
-    public string? ReviewReason { get; init; }
+    /// <summary>
+    /// True when the catalog reconciliation pass actually ran against a published catalog entry.
+    /// <c>false</c> when there was no read-back seam, no activated snapshot, or no published entry
+    /// to locate — in each case schema parity is unproven rather than proven good (#4600).
+    /// </summary>
+    public bool CatalogCheckExecuted { get; init; }
 }
 
 internal sealed partial class GeoservicesLayerPublicationService
@@ -48,7 +56,9 @@ internal sealed partial class GeoservicesLayerPublicationService
         string jobId,
         GeoservicesLayerInfo layerInfo,
         PublishedLayerSummary publishedLayer,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SourceGeometryCensus? sourceGeometry = null,
+        BoundingBox? queriedSourceExtent = null)
     {
         if (_reconciliationService is null)
         {
@@ -57,7 +67,13 @@ internal sealed partial class GeoservicesLayerPublicationService
 
         try
         {
-            var reconciliationRequest = BuildReconciliationRequest(request, jobId, layerInfo, publishedLayer);
+            var reconciliationRequest = BuildReconciliationRequest(
+                request,
+                jobId,
+                layerInfo,
+                publishedLayer,
+                sourceGeometry,
+                queriedSourceExtent);
             var artifact = await _reconciliationService
                 .ReconcileAsync(reconciliationRequest, cancellationToken)
                 .ConfigureAwait(false);
@@ -65,12 +81,16 @@ internal sealed partial class GeoservicesLayerPublicationService
             // Catalog reconciliation (issue #1379): reconcile the published Metadata v2 catalog entry
             // against the apply-time source layer definition. This is the deeper "counts can match
             // while the schema is wrong" pass (schema/domain/identifier/relationship/attachment/
-            // subtype). It is recorded on the artifact and surfaced separately; it does NOT change
-            // the #1380 gate verdict, which stays driven by the data-movement artifact below.
+            // subtype). Since #4600 its findings feed the same unified migration verdict as the
+            // data-movement artifact rather than being recorded and then ignored.
             var catalogReport = await RunCatalogReconciliationAsync(
                 jobId,
                 layerInfo,
                 publishedLayer,
+                request.TargetSrid,
+                artifact.Layers.SingleOrDefault(layer =>
+                    layer.TargetHonuaLayerId == publishedLayer.LayerId &&
+                    layer.SourceLayerId == reconciliationRequest.Layers[0].SourceLayerId)?.Extent.Target,
                 cancellationToken).ConfigureAwait(false);
 
             // Bind the catalog report to the artifact so both travel together through persistence,
@@ -80,20 +100,12 @@ internal sealed partial class GeoservicesLayerPublicationService
                 artifact = artifact with { CatalogReconciliation = catalogReport };
             }
 
-            // Parity gate (issue #1380): a hard (fail) finding blocks Completed and routes the run to
-            // NeedsReview. Warn and skipped classifications are recorded on the artifact but do not
-            // block — they surface to operators without halting the import.
-            var needsReview = string.Equals(
-                artifact.Classification,
-                MigrationReconciliationClassifications.Fail,
-                StringComparison.Ordinal);
-
             return new GeoservicesReconciliationGateOutcome
             {
                 Artifact = artifact,
                 CatalogReport = catalogReport,
-                NeedsReview = needsReview,
-                ReviewReason = needsReview ? BuildReviewReason(artifact) : null
+                DataCheckExecuted = true,
+                CatalogCheckExecuted = catalogReport is not null
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -121,11 +133,12 @@ internal sealed partial class GeoservicesLayerPublicationService
         GeoservicesImportRequest request,
         string jobId,
         GeoservicesLayerInfo layerInfo,
-        PublishedLayerSummary publishedLayer)
+        PublishedLayerSummary publishedLayer,
+        SourceGeometryCensus? sourceGeometry,
+        BoundingBox? queriedSourceExtent)
     {
-        var sourceFieldNames = layerInfo.Fields
-            .Where(static field => !field.IsObjectId && !GeoservicesImportService.IsGeometryField(field))
-            .Select(static field => field.Name.SanitizeFieldName())
+        var sourceFieldNames = GeoservicesImportColumns.Map(layerInfo).Columns
+            .Select(static column => column.ColumnName)
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
 
@@ -144,11 +157,18 @@ internal sealed partial class GeoservicesLayerPublicationService
             SourceLayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
             TargetHonuaLayerId = publishedLayer.LayerId,
             SourceFeatureCount = layerInfo.FeatureCount,
+            SourceHasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType),
             SourceExtent = sourceExtent,
+            PlannedTargetSrid = request.TargetSrid,
             SourceFieldNames = sourceFieldNames,
-            // The where-clause supplied to the import is mirrored onto the reconciliation count
-            // probe so a partial import (subset of source features) is reconciled apples-to-apples.
-            FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause
+            // The import writes only the selected source population into its own target table, and
+            // the caller supplies the source count under the import filter. The where-clause is kept
+            // as provenance; it is not re-run against the target (#4826).
+            TargetContainsOnlyImportedFeatures = true,
+            FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause,
+            FilterFieldMappings = BuildFilterFieldMappings(layerInfo),
+            SourceGeometry = sourceGeometry,
+            QueriedSourceExtent = queriedSourceExtent
         };
 
         return new LayerReconciliationRequest
@@ -159,14 +179,36 @@ internal sealed partial class GeoservicesLayerPublicationService
         };
     }
 
-    private static string BuildReviewReason(MigrationReconciliationArtifact artifact)
+    /// <summary>
+    /// Source name to physical column when the import renamed the field. A dedicated target
+    /// does not execute the filter; the map is there for a shared-target compiler. Object ids
+    /// stay unmapped because the target surrogate key is not the source OBJECTID.
+    /// </summary>
+    private static Dictionary<string, string>? BuildFilterFieldMappings(GeoservicesLayerInfo layerInfo)
     {
-        if (artifact.Reasons.Length > 0)
+        var map = GeoservicesImportColumns.Map(layerInfo);
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in map.Columns)
         {
-            return $"Post-publish reconciliation reported {artifact.Summary.FailCount} blocking finding(s): {string.Join(" ", artifact.Reasons)}";
+            if (!string.Equals(column.Field.Name, column.ColumnName, StringComparison.Ordinal))
+            {
+                mappings[column.Field.Name] = column.ColumnName;
+            }
         }
 
-        return $"Post-publish reconciliation reported {artifact.Summary.FailCount} blocking finding(s).";
+        if (map.Spatial)
+        {
+            foreach (var field in layerInfo.Fields)
+            {
+                if (GeoservicesImportService.IsGeometryField(field) &&
+                    !string.Equals(field.Name, "geom", StringComparison.Ordinal))
+                {
+                    mappings[field.Name] = "geom";
+                }
+            }
+        }
+
+        return mappings.Count == 0 ? null : mappings;
     }
 
     /// <summary>
@@ -182,6 +224,8 @@ internal sealed partial class GeoservicesLayerPublicationService
         string jobId,
         GeoservicesLayerInfo layerInfo,
         PublishedLayerSummary publishedLayer,
+        int plannedTargetSrid,
+        ExtentBox? observedTargetExtent,
         CancellationToken cancellationToken)
     {
         if (_metadataWriteBaseReader is null)
@@ -222,6 +266,8 @@ internal sealed partial class GeoservicesLayerPublicationService
                     Resource = inventoryResource,
                     PublishedResource = published,
                     SourceBbox = sourceBbox,
+                    PlannedTargetSrid = plannedTargetSrid,
+                    ObservedTargetExtent = observedTargetExtent,
                     TargetResourceId = published.Metadata.Id,
                     // The per-layer geoservices import path does not currently translate relationship
                     // classes here (relationship apply is a separate flow); pass none so relationship
@@ -239,7 +285,7 @@ internal sealed partial class GeoservicesLayerPublicationService
     /// SRID, attachment advertisement). Coded-value domains that exceeded the capture cap surface
     /// with no captured values so the reconciler's cap guard does not false-fail them.
     /// </summary>
-    private static MigrationInventoryResource BuildInventoryResourceFromLayerInfo(GeoservicesLayerInfo layerInfo)
+    internal static MigrationInventoryResource BuildInventoryResourceFromLayerInfo(GeoservicesLayerInfo layerInfo)
     {
         var srid = layerInfo.SpatialReferenceWkid
             ?? layerInfo.Extent?.SpatialReferenceWkid;
@@ -256,8 +302,13 @@ internal sealed partial class GeoservicesLayerPublicationService
             }
             : [];
 
+        // Import creates the geometry column as geom, independently of its source name (Shape,
+        // for example). Compare that expected physical field without dropping its type checks.
+        // Attribute fields keep their own names, including an ordinary attribute named Shape.
+        var hasGeometryColumn = !string.IsNullOrEmpty(layerInfo.GeometryType);
         var fields = layerInfo.Fields
-            .Select(BuildInventoryField)
+            .Select(field => BuildInventoryField(field,
+                hasGeometryColumn && GeoservicesImportService.IsGeometryField(field) ? "geom" : field.Name))
             .ToArray();
 
         return new MigrationInventoryResource
@@ -279,7 +330,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         };
     }
 
-    private static MigrationInventoryField BuildInventoryField(GeoservicesFieldInfo field)
+    private static MigrationInventoryField BuildInventoryField(GeoservicesFieldInfo field, string targetFieldName)
     {
         var domain = field.Domain;
         string? domainType = domain?.Type;
@@ -302,7 +353,7 @@ internal sealed partial class GeoservicesLayerPublicationService
 
         return new MigrationInventoryField
         {
-            Name = field.Name,
+            Name = targetFieldName,
             Alias = string.Equals(field.Alias, field.Name, StringComparison.Ordinal) ? null : field.Alias,
             FieldType = field.Type,
             Nullable = field.Nullable,

@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
@@ -45,6 +44,26 @@ public sealed class GdalErrorSanitizerTests
     }
 
     [UnitTest]
+    public void Sanitize_RedactsVsiPathsAndEndpointHosts()
+    {
+        var workspace = "/tmp/honua-gdal-worker/job-abc-123";
+        var stderr =
+            $"ERROR 1: {workspace}/input.tif and /vsis3/secret-bucket/tenant/a.tif " +
+            "curl: Could not resolve host: minio.internal http://minio.internal:9000/secret-bucket/tenant/a.tif";
+
+        var sanitized = GdalErrorSanitizer.Sanitize(stderr, workspace, ["minio.internal"]);
+
+        sanitized.Should().Contain("<scratch>/input.tif");
+        sanitized.Should().NotContain("secret-bucket");
+        sanitized.Should().NotContain("tenant/a.tif");
+        sanitized.Should().NotContain("/vsis3/");
+        sanitized.Should().NotContain("minio.internal");
+        sanitized.Should().NotContain("http://");
+        GdalErrorSanitizer.TruncateForLog(stderr).Should().Contain("/vsis3/secret-bucket/tenant/a.tif");
+        GdalErrorSanitizer.TruncateForLog(stderr).Should().Contain("minio.internal");
+    }
+
+    [UnitTest]
     public void Sanitize_TruncatesVeryLongStderr_WithEllipsis()
     {
         var stderr = new string('x', 1000);
@@ -68,7 +87,7 @@ public sealed class GdalErrorSanitizerTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
-                ("source", Convert.ToBase64String(Encoding.UTF8.GetBytes("dem"))));
+                ("source", GdalCli.RasterBase64("dem")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 

@@ -45,13 +45,54 @@ public static class MetadataV2GraphValidator
 
         ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
         ValidateResources(errors, graph.Resources, storageBindingsById);
+        ValidateCompositeRelationships(errors, resourcesById);
         ValidatePublications(errors, graph.Publications, resourcesById, storageBindingsById, serviceIds);
+        ValidateUnboundPublicationLayerIndexes(errors, graph, resourcesById);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
         ValidateObjectMetadataUniversals(errors, graph);
         ValidateStyleResources(errors, graph);
 
         return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
+    }
+
+    private static void ValidateCompositeRelationships(
+        List<string> errors,
+        Dictionary<string, MetadataV2Resource> resourcesById)
+    {
+        foreach (var resource in resourcesById.Values)
+        {
+            if (!MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+            {
+                continue;
+            }
+
+            if (resource.Editing?.CanModify == true)
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' has composite relationships and cannot enable editing until ownership edits are supported.");
+            }
+
+            foreach (var relationship in resource.Relationships.Where(static relationship => relationship.Composite))
+            {
+                if (!resourcesById.TryGetValue(relationship.RelatedResourceId, out var related))
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' composite relationship '{relationship.Id}' references a missing resource.");
+                    continue;
+                }
+
+                // Both ends must retain the constraint. Otherwise dropping the
+                // destination declaration could accidentally leave its writes enabled.
+                var reciprocal = related.Relationships.Any(candidate =>
+                    candidate.Composite &&
+                    string.Equals(candidate.RelatedResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+                    string.Equals(candidate.OriginField, relationship.DestinationField, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(candidate.DestinationField, relationship.OriginField, StringComparison.OrdinalIgnoreCase));
+                if (!reciprocal)
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' composite relationship '{relationship.Id}' requires a reciprocal composite declaration on '{related.Metadata.Id}'.");
+                }
+            }
+        }
     }
 
     private static Dictionary<string, TEntity> ToUniqueDictionary<TEntity>(
@@ -538,6 +579,51 @@ public static class MetadataV2GraphValidator
         }
     }
 
+    /// <summary>
+    /// A storage-backed publication that carries no storage binding of its own, on a
+    /// resource that resolves no storage-layer id, is addressed by its service-local
+    /// layer index alone. That index must not equal a storage-layer id another resource
+    /// binds: the two would then name the same storage, and the publication would read
+    /// and write the other resource's data under its own access policy (SEC-4).
+    /// </summary>
+    private static void ValidateUnboundPublicationLayerIndexes(
+        List<string> errors,
+        MetadataV2Graph graph,
+        Dictionary<string, MetadataV2Resource> resourcesById)
+    {
+        var storageOwners = new Dictionary<int, string>();
+        var boundResourceIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var binding in graph.StorageBindings)
+        {
+            if (binding.StorageLayerId is not int storageLayerId)
+            {
+                continue;
+            }
+
+            storageOwners.TryAdd(storageLayerId, binding.ResourceId);
+            boundResourceIds.Add(binding.ResourceId);
+        }
+
+        foreach (var publication in graph.Publications)
+        {
+            if (publication.StorageBindingId is not null
+                || publication.LayerIndex is not int layerIndex
+                || !resourcesById.TryGetValue(publication.ResourceId, out var resource)
+                || resource.Type is not (MetadataV2ResourceType.FeatureDataset
+                    or MetadataV2ResourceType.RasterDataset
+                    or MetadataV2ResourceType.TileDataset)
+                || boundResourceIds.Contains(resource.Metadata.Id)
+                || !storageOwners.TryGetValue(layerIndex, out var ownerResourceId)
+                || string.Equals(ownerResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            errors.Add(
+                $"publication '{publication.Metadata.Id}' has no storage binding and its layer index {layerIndex} is the storage layer id of resource '{ownerResourceId}'.");
+        }
+    }
+
     private static readonly HashSet<string> CanonicalStyleEncodings = new(StringComparer.Ordinal)
     {
         "mapbox-style",
@@ -743,6 +829,14 @@ public static class MetadataV2GraphValidator
         // Service→publications is now derived from publication.ServiceId only;
         // the redundant Service.PublicationIds slot was removed in design slice 55/N.
         _ = publicationsById;
+
+        foreach (var service in services)
+        {
+            if (!MetadataV2MapServerDrawing.TryResolveCachedDrawing(service, out _))
+            {
+                errors.Add($"service '{service.Metadata.Id}' options.{MetadataV2MapServerDrawing.OptionName} must be 'cached' or 'dynamic'.");
+            }
+        }
 
         foreach (var configured in services
                      .Select(service => (Service: service, Settings: service.Settings))

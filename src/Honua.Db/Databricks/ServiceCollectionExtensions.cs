@@ -78,7 +78,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDatabricksFeatureQueryBuilder, DatabricksFeatureQueryBuilder>();
         services.AddScoped<IDatabricksFeatureDataAccess, DatabricksFeatureDataAccess>();
 
-        services.AddScoped<DatabricksFeatureStore>();
+        services.AddScoped<DatabricksFeatureStore>(sp => new DatabricksFeatureStore(
+            sp.GetRequiredService<DatabricksLayerMappingRegistry>(),
+            sp.GetRequiredService<IDatabricksFeatureQueryBuilder>(),
+            sp.GetRequiredService<IDatabricksFeatureDataAccess>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DatabricksFeatureStore>());
 
         // Export the single dialect for this provider (architecture guardrail asserts one

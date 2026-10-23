@@ -3,6 +3,7 @@
 
 namespace Honua.Server;
 
+/// <summary>Catalog and auxiliary protocol entries in the HTTP endpoint registry.</summary>
 public static partial class EndpointRegistry
 {
     // Expression-bodied (computed) so it is a method, not a static field
@@ -43,6 +44,43 @@ public static partial class EndpointRegistry
         new("POST", "/stac/search"),
 
         // OGC SensorThings API (STA v1.1) read surface (#1747)
+        new("GET", "/sta/v1.1"),
+        new("GET", "/sta/v1.1/Locations"),
+        new("GET", "/sta/v1.1/Locations({id})"),
+        new("GET", "/sta/v1.1/HistoricalLocations"),
+        new("GET", "/sta/v1.1/HistoricalLocations({id})"),
+        new("GET", "/sta/v1.1/FeaturesOfInterest"),
+        new("GET", "/sta/v1.1/FeaturesOfInterest({id})"),
+        new("POST", "/sta/v1.1/Things"),
+        new("POST", "/sta/v1.1/Locations"),
+        new("POST", "/sta/v1.1/HistoricalLocations"),
+        new("POST", "/sta/v1.1/Sensors"),
+        new("POST", "/sta/v1.1/ObservedProperties"),
+        new("POST", "/sta/v1.1/FeaturesOfInterest"),
+        new("PATCH", "/sta/v1.1/Things({id})"),
+        new("DELETE", "/sta/v1.1/Things({id})"),
+        new("PATCH", "/sta/v1.1/Locations({id})"),
+        new("DELETE", "/sta/v1.1/Locations({id})"),
+        new("PATCH", "/sta/v1.1/HistoricalLocations({id})"),
+        new("DELETE", "/sta/v1.1/HistoricalLocations({id})"),
+        new("PATCH", "/sta/v1.1/Datastreams({id})"),
+        new("DELETE", "/sta/v1.1/Datastreams({id})"),
+        new("PATCH", "/sta/v1.1/Sensors({id})"),
+        new("DELETE", "/sta/v1.1/Sensors({id})"),
+        new("PATCH", "/sta/v1.1/ObservedProperties({id})"),
+        new("DELETE", "/sta/v1.1/ObservedProperties({id})"),
+        new("PATCH", "/sta/v1.1/Observations({id})"),
+        new("DELETE", "/sta/v1.1/Observations({id})"),
+        new("PATCH", "/sta/v1.1/FeaturesOfInterest({id})"),
+        new("DELETE", "/sta/v1.1/FeaturesOfInterest({id})"),
+        new("GET", "/sta/v1.1/Things({id})/Locations"),
+        new("GET", "/sta/v1.1/Things({id})/HistoricalLocations"),
+        new("GET", "/sta/v1.1/Locations({id})/Things"),
+        new("GET", "/sta/v1.1/Locations({id})/HistoricalLocations"),
+        new("GET", "/sta/v1.1/HistoricalLocations({id})/Thing"),
+        new("GET", "/sta/v1.1/HistoricalLocations({id})/Locations"),
+        new("GET", "/sta/v1.1/Observations({id})/FeatureOfInterest"),
+        new("GET", "/sta/v1.1/FeaturesOfInterest({id})/Observations"),
         new("GET", "/sta/v1.1/Things"),
         new("GET", "/sta/v1.1/Things({id})"),
         new("GET", "/sta/v1.1/Sensors"),
@@ -55,11 +93,24 @@ public static partial class EndpointRegistry
         new("GET", "/sta/v1.1/Observations"),
         new("GET", "/sta/v1.1/Observations({id})"),
 
+        new("GET", "/sta/v1.1/Things({id})/Datastreams"),
+        new("GET", "/sta/v1.1/Sensors({id})/Datastreams"),
+        new("GET", "/sta/v1.1/ObservedProperties({id})/Datastreams"),
+        new("GET", "/sta/v1.1/Datastreams({id})/Thing"),
+        new("GET", "/sta/v1.1/Datastreams({id})/Sensor"),
+        new("GET", "/sta/v1.1/Datastreams({id})/ObservedProperty"),
+        new("GET", "/sta/v1.1/Observations({id})/Datastream"),
+
         // OGC SensorThings API (STA v1.1) Phase 2 ingest + Phase 3 streaming (#1747)
         new("POST", "/sta/v1.1/Observations"),
         new("POST", "/sta/v1.1/Datastreams({id})/Observations"),
         new("POST", "/sta/v1.1/Datastreams"),
         new("GET", "/sta/v1.1/ObservationsStream"),
+        new("GET", "/sta/v1.1/{**resourcePath}"),
+        new("POST", "/sta/v1.1/{**resourcePath}"),
+        new("PUT", "/sta/v1.1/{**resourcePath}"),
+        new("PATCH", "/sta/v1.1/{**resourcePath}"),
+        new("DELETE", "/sta/v1.1/{**resourcePath}"),
 
         // Hosted samples
         new("GET", "/samples/stac-ops"),

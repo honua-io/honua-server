@@ -17,6 +17,7 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer.Models;
 [JsonSerializable(typeof(VersionInfo))]
 [JsonSerializable(typeof(VersionInfo[]))]
 [JsonSerializable(typeof(VersionListResponse))]
+[JsonSerializable(typeof(VersionInfosResponse))]
 [JsonSerializable(typeof(CreateVersionResponse))]
 [JsonSerializable(typeof(VersionMomentResponse))]
 [JsonSerializable(typeof(VersionConflictFieldDiffInfo))]

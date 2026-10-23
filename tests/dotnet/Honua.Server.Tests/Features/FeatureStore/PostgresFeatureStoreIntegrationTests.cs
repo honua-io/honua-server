@@ -795,6 +795,61 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         result.Items.First().Id.Should().Be(21);
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.QueryRelatedRecords)]
+    [InlineData("objectid")]
+    [InlineData("object_id")]
+    public async Task QueryRelatedAsync_DestinationKeyIsObjectId_ReturnsParentForEachChild(string destinationKey)
+    {
+        // Child-to-parent relate: the origin (child) carries the parent's object id in an
+        // attribute, and the destination key is the parent's object id column. Rows written
+        // through CreateAsync do not repeat their object id inside the attributes JSON, which
+        // is what a real layer looks like.
+        var store = CreateFeatureStore();
+        var parentA = await store.CreateAsync(
+            LinesLayerId,
+            Feature.Create(0, CreateLineStringWkb([(-121.0, 38.0), (-121.1, 38.1)]),
+                ImmutableDictionary<string, object?>.Empty.Add("road_type", "parent-a")),
+            CancellationToken.None);
+        var parentB = await store.CreateAsync(
+            LinesLayerId,
+            Feature.Create(0, CreateLineStringWkb([(-121.2, 38.2), (-121.3, 38.3)]),
+                ImmutableDictionary<string, object?>.Empty.Add("road_type", "parent-b")),
+            CancellationToken.None);
+
+        async Task<long> CreateChildAsync(object? parentId)
+        {
+            var attributes = ImmutableDictionary<string, object?>.Empty.Add("category", "child");
+            if (parentId is not null)
+            {
+                attributes = attributes.Add("parent_id", parentId);
+            }
+
+            var child = await store.CreateAsync(
+                PointsLayerId,
+                Feature.Create(0, CreatePointWkb(-120.5, 38.5), attributes),
+                CancellationToken.None);
+            return child.Id;
+        }
+
+        var childOfA = await CreateChildAsync(parentA.Id);
+        var secondChildOfA = await CreateChildAsync(parentA.Id.ToString(CultureInfo.InvariantCulture));
+        var childOfB = await CreateChildAsync(parentB.Id);
+        var orphan = await CreateChildAsync("not-an-object-id");
+        var unlinked = await CreateChildAsync(null);
+
+        var result = await store.QueryRelatedAsync(
+            PointsLayerId,
+            RelatedQuery.ForObjects([childOfA, secondChildOfA, childOfB, orphan, unlinked], LinesLayerId, "parent_id", destinationKey),
+            CancellationToken.None);
+
+        result.Items.Select(parent => parent.Id).Should().Equal(parentA.Id, parentB.Id);
+        result.Items.Single(parent => parent.Id == parentA.Id).Attributes[RelatedQuery.OriginObjectIdsAttribute]
+            .Should().BeEquivalentTo(new[] { childOfA, secondChildOfA });
+        result.Items.Single(parent => parent.Id == parentB.Id).Attributes[RelatedQuery.OriginObjectIdsAttribute]
+            .Should().BeEquivalentTo(new[] { childOfB });
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     public async Task Query_DifferentGeometryTypes_ShouldHandleAllTypes()

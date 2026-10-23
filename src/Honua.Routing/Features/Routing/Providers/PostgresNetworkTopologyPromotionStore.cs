@@ -35,7 +35,7 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
         "edge_table, vertex_table";
 
     private const string PromotionColumns =
-        "promotion_id, dataset_id, from_generation, to_generation, kind, actor, reason, idempotency_key, evidence_digest, promoted_at";
+        "promotion_id, dataset_id, from_generation, to_generation, kind, actor, reason, idempotency_key, evidence_digest, promoted_at, request_hash";
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
@@ -73,6 +73,12 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
         var replay = await TryGetIdempotentReplayAsync(transaction, datasetId, idempotencyKey, cancellationToken).ConfigureAwait(false);
         if (replay is not null)
         {
+            NetworkTopologyPromotionRequestBinding.EnsureCompatible(
+                replay,
+                NetworkTopologyPromotionKind.Promote,
+                candidateGeneration,
+                expectedActiveGeneration,
+                expectedActiveRowVersion);
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             return replay;
         }
@@ -138,6 +144,12 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
         var replay = await TryGetIdempotentReplayAsync(transaction, datasetId, idempotencyKey, cancellationToken).ConfigureAwait(false);
         if (replay is not null)
         {
+            NetworkTopologyPromotionRequestBinding.EnsureCompatible(
+                replay,
+                NetworkTopologyPromotionKind.Rollback,
+                targetGeneration,
+                expectedActiveGeneration,
+                expectedActiveRowVersion);
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             return replay;
         }
@@ -272,12 +284,14 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
             .ConfigureAwait(false);
 
         var promotionId = $"promo_{Guid.NewGuid():N}";
+        var requestHash = NetworkTopologyPromotionRequestBinding.Compute(
+            kind, target.Generation, active.Generation, active.RowVersion);
         var saved = await transaction.QuerySingleOrDefaultAsync(
                 $"""
                 INSERT INTO honua.network_topology_promotions
-                    (promotion_id, dataset_id, from_generation, to_generation, kind, actor, reason, idempotency_key, evidence_digest, promoted_at)
+                    (promotion_id, dataset_id, from_generation, to_generation, kind, actor, reason, idempotency_key, evidence_digest, promoted_at, request_hash)
                 VALUES
-                    (@promotion_id, @dataset_id, @from_generation, @to_generation, @kind, @actor, @reason, @idempotency_key, @evidence_digest, @now)
+                    (@promotion_id, @dataset_id, @from_generation, @to_generation, @kind, @actor, @reason, @idempotency_key, @evidence_digest, @now, @request_hash)
                 RETURNING {PromotionColumns};
                 """,
                 MapPromotion,
@@ -293,6 +307,7 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
                     ["idempotency_key"] = idempotencyKey,
                     ["evidence_digest"] = evidenceDigest,
                     ["now"] = now,
+                    ["request_hash"] = requestHash,
                 },
                 cancellationToken)
             .ConfigureAwait(false)
@@ -438,5 +453,6 @@ internal sealed class PostgresNetworkTopologyPromotionStore : INetworkTopologyPr
         row.IsNull(6) ? null : row.GetFieldValue<string>(6),
         row.GetFieldValue<string>(7),
         row.IsNull(8) ? null : row.GetFieldValue<string>(8),
-        row.GetFieldValue<DateTimeOffset>(9));
+        row.GetFieldValue<DateTimeOffset>(9),
+        row.IsNull(10) ? null : row.GetFieldValue<string>(10));
 }

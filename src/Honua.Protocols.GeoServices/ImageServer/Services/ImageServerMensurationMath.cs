@@ -20,11 +20,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 internal static class ImageServerMensurationMath
 {
     /// <summary>
-    /// IUGG mean Earth radius R1 = (2a + b) / 3 ≈ 6371008.8 m. The spherical
-    /// haversine/bearing approximation uses the mean radius (rather than the Web Mercator
-    /// sphere's semi-major axis 6378137 m) because it minimizes global RMS error across all
-    /// latitudes for a single-radius sphere; the ~0.11% difference is far below the accuracy
-    /// clients expect from Basic mensuration.
+    /// IUGG mean Earth radius R1 = (2a + b) / 3 ≈ 6371008.8 m. Distance and bearing
+    /// use Vincenty on the WGS 84 ellipsoid. This radius remains only for the
+    /// near-antipodal haversine fallback inside <see cref="Wgs84Vincenty"/>.
     /// </summary>
     internal const double MeanEarthRadiusMeters = 6371008.8;
 
@@ -33,7 +31,7 @@ internal static class ImageServerMensurationMath
     /// </summary>
     internal enum MeasureSpace
     {
-        /// <summary>Coordinates are geographic lon/lat degrees; use spherical geodesic math.</summary>
+        /// <summary>Coordinates are geographic lon/lat degrees; measure on the WGS 84 ellipsoid.</summary>
         Geodesic,
 
         /// <summary>Coordinates are projected easting/northing meters; use planar Euclidean math.</summary>
@@ -92,18 +90,10 @@ internal static class ImageServerMensurationMath
     }
 
     /// <summary>
-    /// Great-circle (haversine) distance in meters between two lon/lat points.
+    /// WGS 84 ellipsoidal distance in meters between two lon/lat points.
     /// </summary>
     internal static double GeodesicDistanceMeters(double lon1, double lat1, double lon2, double lat2)
-    {
-        var phi1 = DegreesToRadians(lat1);
-        var phi2 = DegreesToRadians(lat2);
-        var dPhi = DegreesToRadians(lat2 - lat1);
-        var dLambda = DegreesToRadians(lon2 - lon1);
-        var a = (Math.Sin(dPhi / 2d) * Math.Sin(dPhi / 2d)) +
-                (Math.Cos(phi1) * Math.Cos(phi2) * Math.Sin(dLambda / 2d) * Math.Sin(dLambda / 2d));
-        return 2d * MeanEarthRadiusMeters * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1d - a));
-    }
+        => Wgs84Vincenty.DistanceMeters(lon1, lat1, lon2, lat2);
 
     /// <summary>
     /// Shadow-based object height in meters: <c>height = shadowLength · tan(sunElevation)</c>.
@@ -138,20 +128,10 @@ internal static class ImageServerMensurationMath
     }
 
     /// <summary>
-    /// True initial bearing (forward azimuth) in degrees clockwise from north, computed on
-    /// the sphere from lon/lat. Consistent with the geodesic distance model.
+    /// Initial bearing (forward azimuth) in degrees clockwise from north on the WGS 84 ellipsoid.
     /// </summary>
     internal static double InitialBearingDegrees(double lon1, double lat1, double lon2, double lat2)
-    {
-        var phi1 = DegreesToRadians(lat1);
-        var phi2 = DegreesToRadians(lat2);
-        var dLambda = DegreesToRadians(lon2 - lon1);
-        var yComponent = Math.Sin(dLambda) * Math.Cos(phi2);
-        var xComponent = (Math.Cos(phi1) * Math.Sin(phi2)) -
-                         (Math.Sin(phi1) * Math.Cos(phi2) * Math.Cos(dLambda));
-        var degrees = RadiansToDegrees(Math.Atan2(yComponent, xComponent));
-        return NormalizeBearing(degrees);
-    }
+        => Wgs84Vincenty.InitialBearingDegrees(lon1, lat1, lon2, lat2);
 
     /// <summary>
     /// Grid bearing in degrees clockwise from the projected +Y axis for projected-meter
@@ -164,9 +144,10 @@ internal static class ImageServerMensurationMath
     }
 
     /// <summary>
-    /// Ground area in square meters of a geographic (lon/lat) ring using an equirectangular
-    /// projection about the ring's mean latitude. Longitudes are unwrapped first so rings that
-    /// cross the antimeridian project to a continuous polygon rather than wrapping through 360°.
+    /// Ground area in square meters of a geographic ring. Edges are densified along the
+    /// WGS 84 geodesic at about 10 km, then measured in an azimuthal equidistant plane
+    /// centered on the vertex mean. Longitudes are unwrapped first so an antimeridian
+    /// ring stays one polygon.
     /// </summary>
     internal static double GeodesicRingAreaSquareMeters(IReadOnlyList<(double Lon, double Lat)> ring)
     {
@@ -184,24 +165,40 @@ internal static class ImageServerMensurationMath
         }
 
         UnwrapLongitudesInPlace(lons);
-        var lat0 = 0d;
-        for (var i = 0; i < lats.Length; i++)
+        var originLon = 0d;
+        var originLat = 0d;
+        for (var i = 0; i < lons.Length; i++)
         {
-            lat0 += lats[i];
+            originLon += lons[i];
+            originLat += lats[i];
         }
 
-        lat0 /= lats.Length;
-        var cosLat0 = Math.Cos(DegreesToRadians(lat0));
+        originLon /= lons.Length;
+        originLat /= lats.Length;
 
-        var projected = new (double X, double Y)[ring.Count];
+        const double segmentMeters = 10_000d;
+        var densified = new List<(double X, double Y)>(ring.Count * 4);
         for (var i = 0; i < ring.Count; i++)
         {
-            projected[i] = (
-                MeanEarthRadiusMeters * DegreesToRadians(lons[i]) * cosLat0,
-                MeanEarthRadiusMeters * DegreesToRadians(lats[i]));
+            var j = (i + 1) % ring.Count;
+            var start = (lons[i], lats[i]);
+            var end = (lons[j], lats[j]);
+            var edgeLength = Wgs84Vincenty.DistanceMeters(start.Item1, start.Item2, end.Item1, end.Item2);
+            var steps = Math.Max(1, (int)Math.Ceiling(edgeLength / segmentMeters));
+            var bearing = Wgs84Vincenty.InitialBearingDegrees(start.Item1, start.Item2, end.Item1, end.Item2);
+            for (var step = 0; step < steps; step++)
+            {
+                var point = step == 0
+                    ? start
+                    : Wgs84Vincenty.Direct(start.Item1, start.Item2, bearing, edgeLength * step / steps);
+                var distance = Wgs84Vincenty.DistanceMeters(originLon, originLat, point.Item1, point.Item2);
+                var azimuth = DegreesToRadians(
+                    Wgs84Vincenty.InitialBearingDegrees(originLon, originLat, point.Item1, point.Item2));
+                densified.Add((distance * Math.Sin(azimuth), distance * Math.Cos(azimuth)));
+            }
         }
 
-        return PlanarRingAreaSquareMeters(projected);
+        return PlanarRingAreaSquareMeters(densified);
     }
 
     /// <summary>

@@ -75,14 +75,51 @@ public interface IStudioPackageStore
     /// </summary>
     Task<StudioPackageDraftListResult> ListDraftsAsync(StudioPackageDraftQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>Creates a persisted publication request for an immutable version.</summary>
-    Task<StudioPublicationRequest> CreatePublicationRequestAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Creates a persisted publication request for an immutable version and, when the request is
+    /// accepted, advances the item's published pointer.
+    /// </summary>
+    /// <param name="request">The publication request to persist.</param>
+    /// <param name="expectedCurrentVersionId">
+    /// Compare-and-set precondition (honua-server#3980): the item's <c>current_version_id</c> as
+    /// observed when the proposal was validated/approved. Implementations must compare it against
+    /// the live pointer <em>atomically with</em> the published-pointer update, so a draft saved
+    /// between validation and actuation cannot publish a version the reviewer never approved as
+    /// current. <see langword="null"/> waives the precondition and is reserved for callers that
+    /// have no approved pointer expectation to assert.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="StudioPublicationPointerConflictException">
+    /// The item's current pointer no longer equals <paramref name="expectedCurrentVersionId"/>;
+    /// nothing is persisted.
+    /// </exception>
+    /// <exception cref="StudioPublicationRouteConflictException">
+    /// An accepted request names a route already governed by a different content item.
+    /// Nothing is persisted.
+    /// </exception>
+    Task<StudioPublicationRequest> CreatePublicationRequestAsync(
+        StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Gets one persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
         Guid requestId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the accepted publication request that currently governs <paramref name="route"/>
+    /// (honua-server#4907). Each item is governed by its newest accepted publication request.
+    /// A route has one governing item: creating an accepted request for a route another item
+    /// already governs is rejected. Republishing an item at another route retires the old
+    /// one. Returns <see langword="null"/> when nothing is published at the route. Callers
+    /// serve the item's published pointer rather than the request's version, so a rollback
+    /// is honoured.
+    /// </summary>
+    Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
         CancellationToken cancellationToken = default);
 
     /// <summary>Creates a persisted rollback request and updates item pointers.</summary>
@@ -93,6 +130,72 @@ public interface IStudioPackageStore
         string? actorId,
         string? reason,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Raised when a publication request cannot advance an item's published pointer because the
+/// item's current pointer no longer equals the version the approval validated
+/// (honua-server#3980). Derives from <see cref="InvalidOperationException"/> so it flows through
+/// the existing Studio conflict mapping (<c>409 Conflict</c> on the REST surface, a failed
+/// operation handle with <c>errorKind=conflict</c> on the durable operation runtime).
+/// </summary>
+public sealed class StudioPublicationPointerConflictException : InvalidOperationException
+{
+    /// <summary>Initializes the conflict with the observed and expected pointers.</summary>
+    public StudioPublicationPointerConflictException(Guid itemId, Guid? expectedCurrentVersionId, Guid? actualCurrentVersionId)
+        : base(
+            $"Studio content item '{itemId:D}' advanced past the approved version; " +
+            $"expected current version '{Describe(expectedCurrentVersionId)}' but found '{Describe(actualCurrentVersionId)}'. " +
+            "Re-validate the publication proposal against the current version and retry.")
+    {
+        ItemId = itemId;
+        ExpectedCurrentVersionId = expectedCurrentVersionId;
+        ActualCurrentVersionId = actualCurrentVersionId;
+    }
+
+    /// <summary>Content item whose pointer moved.</summary>
+    public Guid ItemId { get; }
+
+    /// <summary>Current version the approval validated against.</summary>
+    public Guid? ExpectedCurrentVersionId { get; }
+
+    /// <summary>
+    /// Current version observed at actuation, or <see langword="null"/> when the durable store
+    /// rejected the compare-and-set without reporting the winning pointer.
+    /// </summary>
+    public Guid? ActualCurrentVersionId { get; }
+
+    private static string Describe(Guid? versionId) => versionId?.ToString("D") ?? "(none)";
+}
+
+/// <summary>
+/// Raised when an accepted publication request names a route that another content item
+/// already governs. Derives from <see cref="InvalidOperationException"/> so it flows
+/// through the existing Studio conflict mapping (<c>409 Conflict</c> on the REST surface,
+/// a failed operation handle with <c>errorKind=conflict</c> on the durable operation runtime).
+/// </summary>
+public sealed class StudioPublicationRouteConflictException : InvalidOperationException
+{
+    /// <summary>Initializes the conflict for a route owned by another item.</summary>
+    /// <param name="route">The intent route that is already claimed.</param>
+    /// <param name="itemId">The item that tried to claim <paramref name="route"/>.</param>
+    /// <param name="owningItemId">The item whose governing request already owns the route.</param>
+    public StudioPublicationRouteConflictException(string route, Guid itemId, Guid owningItemId)
+        : base($"Route '{route}' is already claimed by another Studio publication.")
+    {
+        Route = route;
+        ItemId = itemId;
+        OwningItemId = owningItemId;
+    }
+
+    /// <summary>Intent route that is already claimed.</summary>
+    public string Route { get; }
+
+    /// <summary>Content item that tried to claim <see cref="Route"/>.</summary>
+    public Guid ItemId { get; }
+
+    /// <summary>Content item whose governing request already owns <see cref="Route"/>.</summary>
+    public Guid OwningItemId { get; }
 }
 
 /// <summary>
@@ -221,19 +324,57 @@ public interface IStudioPackageLifecycleService
     Task<StudioVersionComparison?> CompareVersionsAsync(Guid itemId, Guid leftVersionId, Guid rightVersionId, CancellationToken cancellationToken = default);
 
     /// <summary>Creates a publication request for an immutable version.</summary>
+    /// <param name="itemId">Content item identifier.</param>
+    /// <param name="versionId">Immutable version requested for publication.</param>
+    /// <param name="expectedCurrentVersionId">
+    /// Compare-and-set precondition passed through to
+    /// <see cref="IStudioPackageStore.CreatePublicationRequestAsync"/> (honua-server#3980).
+    /// </param>
+    /// <param name="intent">Publication intent override.</param>
+    /// <param name="warningAcknowledgement">Optional acknowledgement for validation warnings.</param>
+    /// <param name="actorId">Requesting actor.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="StudioPublicationPointerConflictException">
+    /// The item's current pointer moved after the proposal was validated.
+    /// </exception>
+    /// <exception cref="StudioPublicationRouteConflictException">
+    /// The effective route is already governed by a different content item.
+    /// </exception>
     Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
+        Guid? expectedCurrentVersionId,
         StudioPublicationIntent? intent,
         string? warningAcknowledgement,
         string? actorId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a publication request with a caller-allocated polling identifier.</summary>
+    Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
+        Guid itemId,
+        Guid versionId,
+        Guid? expectedCurrentVersionId,
+        StudioPublicationIntent? intent,
+        string? warningAcknowledgement,
+        string? actorId,
+        Guid publicationRequestId,
+        CancellationToken cancellationToken = default)
+        => CreatePublicationRequestAsync(
+            itemId, versionId, expectedCurrentVersionId, intent, warningAcknowledgement, actorId, cancellationToken);
 
     /// <summary>Gets one persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
         Guid requestId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the accepted publication request that currently governs <paramref name="route"/>
+    /// (honua-server#4907); see <see cref="IStudioPackageStore.GetActivePublicationRequestByRouteAsync"/>.
+    /// </summary>
+    Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
         CancellationToken cancellationToken = default);
 
     /// <summary>Reopens an immutable version as a new mutable draft.</summary>

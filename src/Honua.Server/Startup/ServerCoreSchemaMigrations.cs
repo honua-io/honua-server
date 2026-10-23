@@ -13,7 +13,7 @@ namespace Honua.Server.Startup;
 internal static class ServerCoreSchemaMigrations
 {
     internal static readonly PostgresCoreSchemaMigrationManifest Manifest = new(
-        "Honua.Server",
+        typeof(ServerCoreSchemaMigrations).Assembly.GetName().Name!,
         "Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql",
         "Honua.Server.Migrations.034_CreateMetadataV2ReleasePackages.sql",
         "Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql",
@@ -22,5 +22,18 @@ internal static class ServerCoreSchemaMigrations
         "Honua.Server.Migrations.064_CreateRasterFootprints.sql",
         "Honua.Server.Migrations.109_AdoptConfiguredGuardedSchema.sql",
         "Honua.Server.Migrations.110_PreserveGovernedLineage.sql",
-        "Honua.Server.Migrations.001_CreateHonuaSchema.sql");
+        "Honua.Server.Migrations.001_CreateHonuaSchema.sql",
+        "Honua.Server.Migrations.116_AddSensorThingsIdSequences.sql",
+        "Honua.Server.Migrations.127_CompleteSensorThingsSensing.sql")
+    {
+        Attachments = new(
+            "Honua.Server.Migrations.002_CreateAttachmentsTable.sql",
+            "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql",
+            "Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template",
+            "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3"),
+        KnownMigrationNames = typeof(ServerCoreSchemaMigrations).Assembly.GetManifestResourceNames()
+            .Concat(typeof(PostgresDatabaseMigrationRunner).Assembly.GetManifestResourceNames())
+            .Where(name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.Ordinal)
+    };
 }

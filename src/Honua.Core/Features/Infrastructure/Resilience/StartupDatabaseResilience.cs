@@ -28,16 +28,15 @@ public static class StartupDatabaseResilience
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
-    /// <item><description><c>53300</c> — too_many_connections (pool/slot exhaustion).</description></item>
-    /// <item><description><c>53400</c> — configuration_limit_exceeded.</description></item>
+    /// <item><description><c>53*</c> — insufficient resources class, including <c>53300</c>
+    /// too_many_connections (pool/slot exhaustion, e.g. RDS "remaining connection slots are
+    /// reserved") and <c>53400</c> configuration_limit_exceeded.</description></item>
     /// <item><description><c>57P03</c> — cannot_connect_now (server still starting up).</description></item>
     /// <item><description><c>08*</c> — connection exception class (connection_failure, etc.).</description></item>
     /// </list>
     /// </remarks>
     private static readonly string[] TransientSqlStates =
     [
-        "53300",
-        "53400",
         "57P03",
     ];
 
@@ -123,12 +122,84 @@ public static class StartupDatabaseResilience
         }
 
         // Class 08 — Connection Exception (connection_failure, sqlclient_unable_to_establish, etc.).
-        if (sqlState.StartsWith("08", StringComparison.Ordinal))
+        // Class 53 — Insufficient Resources (too_many_connections, configuration_limit_exceeded, ...).
+        if (sqlState.StartsWith("08", StringComparison.Ordinal)
+            || sqlState.StartsWith("53", StringComparison.Ordinal))
         {
             return true;
         }
 
         return TransientSqlStates.Contains(sqlState, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Describes the class of a database failure for operator-facing health and log surfaces
+    /// without echoing the provider message, which can carry host names, ports or other
+    /// connection-string fragments.
+    /// </summary>
+    /// <param name="exception">The failure to describe.</param>
+    /// <returns>A short, sanitized description such as
+    /// <c>SQLSTATE 53300 (class 53: insufficient resources)</c>, <c>timeout</c> or
+    /// <c>socket error (ConnectionRefused)</c>; the exception message is never included.</returns>
+    public static string DescribeFailureClass(Exception? exception)
+    {
+        if (exception is null)
+        {
+            return "unknown failure";
+        }
+
+        if (exception is AggregateException aggregate && aggregate.InnerExceptions.Count > 0)
+        {
+            return DescribeFailureClass(aggregate.InnerExceptions[0]);
+        }
+
+        string? fallback = null;
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            var typeName = current.GetType().FullName ?? current.GetType().Name;
+            if (typeName is "Npgsql.PostgresException" && TryReadSqlState(current) is { Length: 5 } sqlState)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "SQLSTATE {0} ({1})",
+                    sqlState,
+                    DescribeSqlStateClass(sqlState));
+            }
+
+            if (current is TimeoutException)
+            {
+                fallback ??= "timeout";
+            }
+            else if (current is System.Net.Sockets.SocketException socketException)
+            {
+                fallback ??= string.Format(
+                    CultureInfo.InvariantCulture,
+                    "socket error ({0})",
+                    socketException.SocketErrorCode);
+            }
+        }
+
+        if (fallback is not null)
+        {
+            return fallback;
+        }
+
+        var outerName = exception.GetType().Name;
+        return (exception.GetType().FullName ?? outerName).StartsWith("Npgsql.", StringComparison.Ordinal)
+            ? "connection failure (" + outerName + ")"
+            : "failure (" + outerName + ")";
+    }
+
+    private static string DescribeSqlStateClass(string sqlState)
+    {
+        var sqlClass = sqlState[..2];
+        return sqlClass switch
+        {
+            "08" => "class 08: connection exception",
+            "53" => "class 53: insufficient resources",
+            "57" => "class 57: operator intervention",
+            _ => "class " + sqlClass,
+        };
     }
 
     [UnconditionalSuppressMessage(

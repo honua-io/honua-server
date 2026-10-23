@@ -105,18 +105,10 @@ internal static class GeoservicesCredentialResolution
                 return "GeoServices credential mode must be token, oauth, or basic.";
         }
 
-        var secretProvider = serviceProvider.GetService<ISecretProvider>();
-        if (!IsSupportedSecretReference(credentials.AccessTokenSecretReference, secretProvider))
-        {
-            return "AccessTokenSecretReference must use a supported secret reference format.";
-        }
-
-        if (!IsSupportedSecretReference(credentials.PasswordSecretReference, secretProvider))
-        {
-            return "PasswordSecretReference must use a supported secret reference format.";
-        }
-
-        return null;
+        return RequestSecretReferenceValidation.Validate(
+                serviceProvider, credentials.AccessTokenSecretReference, "AccessTokenSecretReference")
+            ?? RequestSecretReferenceValidation.Validate(
+                serviceProvider, credentials.PasswordSecretReference, "PasswordSecretReference");
     }
 
     private static bool IsKnownExplicitMode(string? requestedMode, string normalizedMode)
@@ -209,43 +201,14 @@ internal static class GeoservicesCredentialResolution
         };
     }
 
-    private static async Task<string> ResolveRequiredSecretAsync(
+    private static Task<string> ResolveRequiredSecretAsync(
         IServiceProvider serviceProvider,
         string secretReference,
         string secretDescription,
         CancellationToken cancellationToken)
-    {
-        if (SecretReferenceResolver.IsEnvironmentReference(secretReference))
-        {
-            var resolvedEnvironmentValue = SecretReferenceResolver.ResolveEnvironmentReference(secretReference, secretDescription);
-            if (string.IsNullOrWhiteSpace(resolvedEnvironmentValue))
-            {
-                throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
-            }
-
-            return resolvedEnvironmentValue;
-        }
-
-        var secretProvider = serviceProvider.GetService<ISecretProvider>()
-            ?? throw new InvalidOperationException("GeoServices import secret references require secret provider services.");
-
-        var resolved = await secretProvider.GetSecretAsync(secretReference, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
-        }
-
-        return resolved;
-    }
-
-    private static bool IsSupportedSecretReference(string? secretReference, ISecretProvider? secretProvider)
-    {
-        if (string.IsNullOrWhiteSpace(secretReference))
-        {
-            return true;
-        }
-
-        return SecretReferenceResolver.IsEnvironmentReference(secretReference) ||
-            (secretProvider?.IsSecretReference(secretReference) ?? false);
-    }
+        => RequestSecretReferenceValidation.ResolveRequiredAsync(
+            serviceProvider,
+            secretReference,
+            secretDescription,
+            cancellationToken);
 }

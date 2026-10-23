@@ -20,7 +20,7 @@ namespace Honua.Server.Features.Admin;
 /// onto <see cref="MetadataV2Resource.Relationships"/>; popup/drawing into <c>resource.Extensions</c>), which
 /// the FeatureServer/OGC/OData emitters already read back.
 /// </summary>
-internal static class AdminLayerAuthoringEndpoints
+internal static partial class AdminLayerAuthoringEndpoints
 {
     private const string PopupInfoExtensionKey = "geoservices:popupInfo";
     private const string DrawingInfoExtensionKey = "geoservices:drawingInfo";
@@ -41,6 +41,7 @@ internal static class AdminLayerAuthoringEndpoints
         _ = group.MapPut("/{layerId:int}/drawing-info", HandleSetDrawingInfo).WithName("SetAdminLayerDrawingInfo");
         _ = group.MapGet("/{layerId:int}/relationships", HandleGetRelationships).WithName("GetAdminLayerRelationships");
         _ = group.MapPut("/{layerId:int}/relationships", HandleSetRelationships).WithName("SetAdminLayerRelationships");
+        _ = group.MapPut("/relationships/batch", HandleSetRelationshipsBatch).WithName("SetAdminLayerRelationshipsBatch");
     }
 
     // ---- popupInfo + drawingInfo (resource.Extensions documents) ----------------------------------------
@@ -111,6 +112,17 @@ internal static class AdminLayerAuthoringEndpoints
             return problem!;
         }
 
+        var preview = AdminLayerConfigurationTargets.Resolve(
+            await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
+            layerId);
+        if (preview.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                preview.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
+
         // An empty/null body clears the document; otherwise it must be a JSON object.
         var clearing = document.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined;
         if (!clearing && document.ValueKind != JsonValueKind.Object)
@@ -120,8 +132,16 @@ internal static class AdminLayerAuthoringEndpoints
         }
 
         var stored = clearing ? (JsonElement?)null : document.Clone();
-        await MutateResourceForLayerAsync(
+        var written = await AdminLayerConfigurationTargets.WriteAsync(
             graphStore, layerId, res => WithExtension(res, key, stored), cancellationToken).ConfigureAwait(false);
+        if (written.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                written.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
+
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
@@ -152,17 +172,17 @@ internal static class AdminLayerAuthoringEndpoints
 
     private static async Task<IResult> HandleGetRelationships(
         int layerId, HttpContext context,
-        [FromServices] IResourceValidator resourceValidator,
         [FromServices] IMetadataV2GraphStore graphStore,
         CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
-        if (problem != null || resource == null)
+        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var (resource, error) = ResolveRelationshipResource(layerId, snapshot);
+        if (error is not null || resource is null)
         {
-            return problem!;
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound,
+                error ?? $"Layer {layerId} was not found.");
         }
 
-        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(
             ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(layerId, resource, snapshot)),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipResponse);
@@ -170,39 +190,31 @@ internal static class AdminLayerAuthoringEndpoints
 
     private static async Task<IResult> HandleSetRelationships(
         int layerId, LayerRelationshipUpdateRequest request, HttpContext context,
-        [FromServices] IResourceValidator resourceValidator,
         [FromServices] IMetadataV2GraphStore graphStore,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
-        if (problem != null || resource == null)
+        var batch = new LayerRelationshipBatchUpdateRequest
+        {
+            Layers = [new LayerRelationshipBatchUpdateItem { LayerId = layerId, Relationships = request.Relationships }],
+        };
+        var (saved, problem) = await ApplyRelationshipBatchAsync(
+            batch, context, graphStore, cacheInvalidator, cancellationToken).ConfigureAwait(false);
+        if (problem is not null || saved is null)
         {
             return problem!;
         }
 
-        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var (relationships, validationError) = BuildRelationships(layerId, resource, request, snapshot);
-        if (validationError != null)
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
-        }
-
-        await MutateResourceForLayerAsync(
-            graphStore, layerId, res => res with { Relationships = relationships }, cancellationToken).ConfigureAwait(false);
-        await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
-
-        var updated = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var refreshedResource = updated.Graph.Resources.FirstOrDefault(r => r.Metadata.Id == resource.Metadata.Id) ?? resource;
+        var resource = ResolveRelationshipResource(layerId, saved).Resource!;
         return Results.Json(
-            ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(layerId, refreshedResource, updated)),
+            ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(layerId, resource, saved)),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipResponse);
     }
 
     private static (MetadataV2Relationship[] Relationships, string? Error) BuildRelationships(
         int layerId, MetadataV2Resource resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot)
     {
-        if (request.Relationships.Count > MaxRelationships)
+        if (request.Relationships is null || request.Relationships.Count > MaxRelationships)
         {
             return ([], $"At most {MaxRelationships} relationships are allowed.");
         }
@@ -213,7 +225,7 @@ internal static class AdminLayerAuthoringEndpoints
 
         foreach (var item in request.Relationships)
         {
-            if (string.IsNullOrWhiteSpace(item.Id) || string.IsNullOrWhiteSpace(item.Name))
+            if (item is null || string.IsNullOrWhiteSpace(item.Id) || string.IsNullOrWhiteSpace(item.Name))
             {
                 return ([], "Each relationship requires an id and a name.");
             }
@@ -233,16 +245,22 @@ internal static class AdminLayerAuthoringEndpoints
                 return ([], $"Relationship '{item.Id}' cardinality must be one-to-one, one-to-many, or many-to-many.");
             }
 
-            var targetPublication = snapshot.Graph.Publications
-                .FirstOrDefault(p => p.Identifier.IsNumeric && p.LayerIndex == item.RelatedLayerId);
-            if (targetPublication is null)
+            var role = string.IsNullOrWhiteSpace(item.Role) ? "origin" : item.Role;
+            if (!string.Equals(role, "origin", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(role, "destination", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(role, "esriRelRoleOrigin", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(role, "esriRelRoleDestination", StringComparison.OrdinalIgnoreCase))
             {
-                return ([], $"Related layer {item.RelatedLayerId} was not found.");
+                return ([], $"Relationship '{item.Id}' role must be origin or destination.");
             }
 
-            var targetResource = snapshot.Graph.Resources.FirstOrDefault(r => r.Metadata.Id == targetPublication.ResourceId);
-            if (targetResource is null
-                || !targetResource.SchemaFields.Any(field => field.Name.Equals(item.DestinationField, StringComparison.OrdinalIgnoreCase)))
+            var (targetResource, targetError) = ResolveRelationshipResource(item.RelatedLayerId, snapshot);
+            if (targetError is not null || targetResource is null)
+            {
+                return ([], targetError);
+            }
+
+            if (!targetResource.SchemaFields.Any(field => field.Name.Equals(item.DestinationField, StringComparison.OrdinalIgnoreCase)))
             {
                 return ([], $"Destination field '{item.DestinationField}' does not exist on related layer {item.RelatedLayerId}.");
             }
@@ -252,12 +270,13 @@ internal static class AdminLayerAuthoringEndpoints
                 Id = item.Id,
                 Name = item.Name,
                 Description = item.Description,
-                RelatedResourceId = targetPublication.ResourceId,
-                Role = string.IsNullOrWhiteSpace(item.Role) ? "origin" : item.Role,
+                RelatedResourceId = targetResource.Metadata.Id,
+                Role = role,
                 Cardinality = item.Cardinality,
                 OriginField = item.OriginField,
                 DestinationField = item.DestinationField,
                 EsriRelationshipId = item.EsriRelationshipId,
+                Composite = item.Composite,
             });
         }
 
@@ -278,6 +297,7 @@ internal static class AdminLayerAuthoringEndpoints
             OriginField = rel.OriginField,
             DestinationField = rel.DestinationField,
             EsriRelationshipId = rel.EsriRelationshipId,
+            Composite = rel.Composite,
         }).ToArray();
 
         return new LayerRelationshipResponse { LayerId = layerId, Relationships = items };
@@ -285,15 +305,15 @@ internal static class AdminLayerAuthoringEndpoints
 
     private static int ResolveLayerIdForResource(string resourceId, MetadataV2GraphSnapshot snapshot)
     {
-        var publication = snapshot.Graph.Publications
-            .FirstOrDefault(p => p.Identifier.IsNumeric && p.ResourceId == resourceId);
-        return publication?.LayerIndex ?? -1;
+        return snapshot.Index.ResourcesById.TryGetValue(resourceId, out var resource)
+            ? snapshot.ResolveStorageLayerId(resource) ?? -1
+            : -1;
     }
 
     private static bool IsValidCardinality(string cardinality) =>
-        cardinality.Equals("one-to-one", StringComparison.OrdinalIgnoreCase)
-        || cardinality.Equals("one-to-many", StringComparison.OrdinalIgnoreCase)
-        || cardinality.Equals("many-to-many", StringComparison.OrdinalIgnoreCase);
+        string.Equals(cardinality, "one-to-one", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(cardinality, "one-to-many", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(cardinality, "many-to-many", StringComparison.OrdinalIgnoreCase);
 
     // ---- shared helpers ---------------------------------------------------------------------------------
 
@@ -311,60 +331,6 @@ internal static class AdminLayerAuthoringEndpoints
         }
 
         return (layerResult.Resource, null);
-    }
-
-    /// <summary>
-    /// Read-modify-write the resource(s) a layer publishes through, with an optimistic-concurrency retry on
-    /// Metadata v2 etag mismatch (background writers can bump the etag between the read and the save).
-    /// </summary>
-    private static async Task MutateResourceForLayerAsync(
-        IMetadataV2GraphStore graphStore, int layerId,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate, CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var targetResourceIds = snapshot.Graph.Publications
-                .Where(p => p.Identifier.IsNumeric && p.LayerIndex == layerId)
-                .Select(p => p.ResourceId)
-                .ToHashSet(StringComparer.Ordinal);
-            if (targetResourceIds.Count == 0)
-            {
-                return;
-            }
-
-            var resources = snapshot.Graph.Resources.ToArray();
-            var mutated = false;
-            for (var i = 0; i < resources.Length; i++)
-            {
-                if (targetResourceIds.Contains(resources[i].Metadata.Id))
-                {
-                    resources[i] = mutate(resources[i]);
-                    mutated = true;
-                }
-            }
-
-            if (!mutated)
-            {
-                return;
-            }
-
-            var updated = snapshot.Graph with
-            {
-                Resources = resources,
-                Revision = snapshot.Graph.Revision + 1,
-            };
-
-            try
-            {
-                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
-            {
-                // Concurrent etag bump — re-read and re-apply.
-            }
-        }
     }
 
     private static bool IsEtagMismatch(Exception exception) =>

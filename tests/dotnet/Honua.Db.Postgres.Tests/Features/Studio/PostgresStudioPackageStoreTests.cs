@@ -7,9 +7,14 @@ using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.MultiTenancy;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.Db.Postgres.Features.Publishing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -19,6 +24,210 @@ namespace Honua.Db.Postgres.Tests.Features.Studio;
 [Collection("Database")]
 public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 {
+    [IntegrationTest]
+    public async Task AcceptedMapPublication_CommitsCanonicalDeploymentWithPointer_AndRepublishSupersedes()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests) + "_Deploy");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var writer = new PostgresStudioPackageStore(provider, schema);
+            var deploymentReader = new PostgresDeploymentStore(fixture.DataSource, schema);
+            var map = MapPackage.CreateDraft("map-provenance", "honua_map_package.v1", [], []);
+            var draft = BuildDraft("1=1", "map-provenance") with
+            {
+                Family = StudioPackageFamily.Map,
+                TenantId = "tenant-map",
+                Envelope = new StudioPackageEnvelope
+                {
+                    Family = StudioPackageFamily.Map,
+                    SchemaVersion = "studio_map.v1",
+                    Format = map.Format,
+                    Body = JsonSerializer.SerializeToElement(map, PackagingJsonContext.Default.MapPackage)
+                }
+            };
+            draft = await writer.CreateDraftAsync(draft);
+            var firstVersion = await writer.CreateVersionAsync(draft, "approved map", "tester");
+
+            StudioPublicationRequest Request(
+                StudioContentVersion version,
+                string? route,
+                DateTimeOffset? createdAt = null) => new()
+                {
+                    RequestId = Guid.NewGuid(),
+                    ItemId = version.ItemId,
+                    VersionId = version.VersionId,
+                    Intent = route is null ? null : new StudioPublicationIntent { Route = route, Visibility = "public" },
+                    Status = StudioPublicationRequestStatus.Accepted,
+                    Validation = version.Validation,
+                    RequestedBy = "approver",
+                    CreatedAt = createdAt ?? DateTimeOffset.UtcNow
+                };
+
+            var blank = await writer.CreatePublicationRequestAsync(Request(firstVersion, null), firstVersion.VersionId);
+            blank.DeploymentId.Should().BeNull();
+
+            var firstRequest = Request(firstVersion, "/maps/first", DateTimeOffset.UtcNow.AddHours(1)) with
+            {
+                Intent = new StudioPublicationIntent
+                {
+                    Route = "/maps/first",
+                    Visibility = "public",
+                    Metadata = JsonSerializer.Deserialize<JsonElement>(
+                        "{\"zz\":1,\"a\":{\"later\":2,\"earlier\":1}}")
+                }
+            };
+            var first = await writer.CreatePublicationRequestAsync(firstRequest, firstVersion.VersionId);
+            first.DeploymentId.Should().NotBeNullOrWhiteSpace();
+            first.DeploymentResourceUri.Should().Be($"honua://deployments/{first.DeploymentId}");
+            var equivalentReplay = firstRequest with
+            {
+                Intent = firstRequest.Intent! with
+                {
+                    Metadata = JsonSerializer.Deserialize<JsonElement>(
+                        "{\"a\":{\"earlier\":1,\"later\":2},\"zz\":1}")
+                }
+            };
+            var replay = await writer.CreatePublicationRequestAsync(equivalentReplay, firstVersion.VersionId);
+            replay.DeploymentId.Should().Be(first.DeploymentId,
+                "a lost response with semantically equal JSONB must replay the committed deployment identity");
+            var changedMetadataReplay = async () => await writer.CreatePublicationRequestAsync(
+                firstRequest with
+                {
+                    Intent = firstRequest.Intent! with
+                    {
+                        Metadata = JsonSerializer.Deserialize<JsonElement>(
+                            "{\"a\":{\"earlier\":1,\"later\":3},\"zz\":1}")
+                    }
+                }, firstVersion.VersionId);
+            await changedMetadataReplay.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("The Studio publication request ID is already bound to different content.");
+            var conflictingReplay = async () => await writer.CreatePublicationRequestAsync(
+                firstRequest with { Intent = new StudioPublicationIntent { Route = "/maps/forged", Visibility = "public" } },
+                firstVersion.VersionId);
+            await conflictingReplay.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("The Studio publication request ID is already bound to different content.");
+            var freshStore = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var activeFirst = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first");
+            activeFirst!.DeploymentId.Should().Be(first.DeploymentId);
+            activeFirst.ActiveDeploymentId.Should().Be(first.DeploymentId);
+            var firstDeployment = await deploymentReader.GetAsync(first.DeploymentId!);
+            firstDeployment.Should().NotBeNull();
+            firstDeployment!.Source.Kind.Should().Be(DeploymentSourceKind.StudioPublishedVersion);
+            firstDeployment.Source.StudioItemId.Should().Be(firstVersion.ItemId);
+            firstDeployment.Source.StudioVersionId.Should().Be(firstVersion.VersionId);
+            firstDeployment.Source.StudioContentHash.Should().Be(firstVersion.ContentHash);
+            firstDeployment.Source.StudioOwnerId.Should().Be("tester");
+            firstDeployment.Source.StudioPublicationRequestId.Should().Be(first.RequestId);
+            firstDeployment.Source.StudioFamily.Should().Be(StudioPackageFamily.Map);
+            firstDeployment.Audit.TenantId.Should().Be("tenant-map");
+            firstDeployment.Audit.RequestedBy.Should().Be("approver");
+            firstDeployment.Status.Should().Be(DeploymentStatus.Active);
+            firstDeployment.PublicationState.Should().Be(DeploymentPublicationState.Published);
+            firstDeployment.Runtime.Health.Should().Be(RuntimeHealth.Unknown,
+                "a committed route pointer is not an HTTP health observation");
+            firstDeployment.Target.RoutePrefix.Should().Be(StudioPublishedRoutes.BuildActiveUrl("/maps/first"));
+
+            var bridgedDraft = await writer.CreateDraftAsync(BuildDraft("1=1", "bridged-route-hint"));
+            var bridgedVersion = await writer.CreateVersionAsync(bridgedDraft, "native bridge", "bridge-owner");
+            var bridged = await writer.CreatePublicationRequestAsync(
+                Request(bridgedVersion, "/maps/first") with { GovernsStudioRoutes = false },
+                bridgedVersion.VersionId);
+            bridged.DeploymentId.Should().BeNull();
+            bridged.PublicationUrl.Should().BeNull();
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first"))!.RequestId
+                .Should().Be(first.RequestId,
+                    "a native bridge hint does not claim the hosted Studio route");
+
+            var secondVersion = await writer.CreateVersionAsync(draft, "republish map", "tester");
+            var second = await writer.CreatePublicationRequestAsync(
+                Request(secondVersion, "/maps/second", DateTimeOffset.UtcNow.AddHours(-1)),
+                secondVersion.VersionId);
+            second.DeploymentId.Should().NotBe(first.DeploymentId);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first")).Should().BeNull();
+            var activeSecond = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second");
+            activeSecond!.DeploymentId.Should().Be(second.DeploymentId);
+            activeSecond.ActiveDeploymentId.Should().Be(second.DeploymentId);
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(second.RequestId,
+                    "the item row lock records accepted publication order even with inverted request timestamps");
+            var superseded = await deploymentReader.GetAsync(first.DeploymentId!);
+            superseded!.Status.Should().Be(DeploymentStatus.Superseded);
+            superseded.SupersededByDeploymentId.Should().Be(second.DeploymentId);
+            superseded.Version.Should().Be(1);
+            (await deploymentReader.GetAsync(second.DeploymentId!))!.Status.Should().Be(DeploymentStatus.Active);
+
+            var rollback = await writer.RollbackAsync(
+                firstVersion.ItemId, firstVersion.VersionId, StudioRollbackPointer.Published,
+                "rollback-operator", "restore approved map");
+            rollback.Pointers.PublishedVersionId.Should().Be(firstVersion.VersionId);
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(second.RequestId,
+                    "rollback restores a version on the governing accepted route");
+            var afterRollback = await deploymentReader.ListActiveAsync();
+            var restored = afterRollback.Should().ContainSingle(candidate =>
+                candidate.Source.StudioItemId == firstVersion.ItemId).Subject;
+            restored.Source.StudioVersionId.Should().Be(firstVersion.VersionId);
+            restored.Source.StudioContentHash.Should().Be(firstVersion.ContentHash);
+            restored.Source.StudioPublicationRequestId.Should().Be(second.RequestId);
+            restored.Source.StudioRollbackRequestId.Should().Be(rollback.RequestId);
+            restored.Audit.RequestedBy.Should().Be("rollback-operator");
+            restored.Target.RoutePrefix.Should().Be(StudioPublishedRoutes.BuildActiveUrl("/maps/second"));
+            restored.Runtime.Health.Should().Be(RuntimeHealth.Unknown);
+            rollback.DeploymentId.Should().Be(restored.DeploymentId);
+            rollback.DeploymentResourceUri.Should().Be($"honua://deployments/{restored.DeploymentId}");
+            (await ReadRollbackDeploymentIdAsync(schema, rollback.RequestId))
+                .Should().Be(restored.DeploymentId,
+                    "the rollback receipt must retain its successor identity after the transaction");
+            var activeAfterRollback = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second");
+            activeAfterRollback!.RequestId.Should().Be(second.RequestId);
+            activeAfterRollback.VersionId.Should().Be(second.VersionId);
+            activeAfterRollback.DeploymentId.Should().Be(second.DeploymentId,
+                "the governing publication's historical request/version/deployment tuple is immutable");
+            activeAfterRollback.ActiveDeploymentId.Should().Be(restored.DeploymentId);
+            activeAfterRollback.ActiveDeploymentResourceUri.Should().Be(rollback.DeploymentResourceUri);
+            (await freshStore.GetPublicationRequestAsync(second.ItemId, second.VersionId, second.RequestId))!
+                .DeploymentId.Should().Be(second.DeploymentId,
+                    "the original immutable publication receipt keeps its own deployment identity");
+            var retiredByRollback = await deploymentReader.GetAsync(second.DeploymentId!);
+            retiredByRollback!.Status.Should().Be(DeploymentStatus.Superseded);
+            retiredByRollback.SupersededByDeploymentId.Should().Be(restored.DeploymentId);
+
+            var withdrawn = await writer.CreatePublicationRequestAsync(
+                Request(secondVersion, null), secondVersion.VersionId);
+            withdrawn.DeploymentId.Should().BeNull();
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(withdrawn.RequestId);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first")).Should().BeNull();
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second")).Should().BeNull();
+            var retiredOnWithdrawal = await deploymentReader.GetAsync(restored.DeploymentId);
+            retiredOnWithdrawal!.Status.Should().Be(DeploymentStatus.Retired);
+            retiredOnWithdrawal.PublicationState.Should().Be(DeploymentPublicationState.Retired);
+            retiredOnWithdrawal.Version.Should().Be(1);
+            (await deploymentReader.ListActiveAsync()).Should().BeEmpty();
+
+            var reclaimDraft = await writer.CreateDraftAsync(BuildDraft("1=1", "map-route-reclaim") with
+            {
+                Family = StudioPackageFamily.Map,
+                TenantId = "tenant-map",
+                Envelope = draft.Envelope
+            });
+            var reclaimVersion = await writer.CreateVersionAsync(reclaimDraft, "new route owner", "tester");
+            var reclaimed = await writer.CreatePublicationRequestAsync(
+                Request(reclaimVersion, "/maps/second"), reclaimVersion.VersionId);
+            reclaimed.DeploymentId.Should().NotBeNullOrWhiteSpace();
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second"))!.RequestId
+                .Should().Be(reclaimed.RequestId);
+            (await deploymentReader.ListActiveAsync()).Should().ContainSingle(deployment =>
+                deployment.DeploymentId == reclaimed.DeploymentId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task CheckpointVersion_AssociationCommitsWithVersionAndSupportsRecoveryLookup()
     {
@@ -175,6 +384,69 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    // honua-server#5449: the envelope column is jsonb, which reorders object keys, so the version
+    // read must return the persisted bytes that were hashed rather than a re-serialization; a
+    // legacy row with no persisted input is rebuilt only when the rebuild still hashes to the
+    // stored digest, and enumerations leave the input out.
+    [IntegrationTest]
+    public async Task GetVersion_ContentHashInput_IsThePersistedHashedBytesAndLegacyRowsRebuildOnlyWhenTheyMatch()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var draft = BuildDraft("1=1");
+            using (var body = JsonDocument.Parse("""{"middle":{"y":2,"b":[3,1]},"alpha":1,"zeta":"NAME = 'Caf\u00e9 & <Co>'"}"""))
+            {
+                draft = draft with { Envelope = draft.Envelope with { Body = body.RootElement.Clone() } };
+            }
+
+            var saved = await store.CreateVersionAsync(await store.CreateDraftAsync(draft), "save", "tester");
+            var read = await store.GetVersionAsync(saved.ItemId, saved.VersionId);
+            read!.ContentHashInput.Should().NotBeNullOrEmpty();
+            read.ContentHashInput.Should().Be(saved.ContentHashInput);
+            var input = Convert.FromBase64String(read.ContentHashInput!);
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input)).ToLowerInvariant()
+                .Should().Be(read.ContentHash, "contentHash is the SHA-256 of the returned canonical input");
+            using (var hashed = JsonDocument.Parse(input))
+            {
+                hashed.RootElement.GetProperty("body").GetProperty("zeta").GetString().Should().Be("NAME = 'Caf\u00e9 & <Co>'");
+            }
+
+            StudioPackageHash.Compute(read.Envelope).Should().NotBe(
+                read.ContentHash,
+                "jsonb reorders the body keys, so re-serializing the stored envelope cannot reproduce the hashed bytes");
+            (await store.ListVersionsAsync(saved.ItemId)).Should().ContainSingle()
+                .Which.ContentHashInput.Should().BeNull("enumerations do not carry the canonical input");
+
+            // A version saved before migration 126 (or by an older binary) has no persisted input.
+            var legacy = await store.CreateVersionAsync(
+                await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "legacy-query")), "legacy", "tester");
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    UPDATE "{schema}".studio_content_versions SET content_hash_input = NULL
+                    WHERE version_id IN (@legacy, @reordered)
+                    """;
+                command.Parameters.AddWithValue("@legacy", legacy.VersionId);
+                command.Parameters.AddWithValue("@reordered", saved.VersionId);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var rebuilt = await store.GetVersionAsync(legacy.ItemId, legacy.VersionId);
+            rebuilt!.ContentHashInput.Should().NotBeNull("a single-key body round-trips jsonb unchanged, so the rebuild matches");
+            StudioPackageHash.ComputeFromInput(Convert.FromBase64String(rebuilt.ContentHashInput!)).Should().Be(rebuilt.ContentHash);
+            (await store.GetVersionAsync(saved.ItemId, saved.VersionId))!.ContentHashInput.Should().BeNull(
+                "a rebuild that no longer hashes to the stored digest is withheld rather than returned");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task PackageStore_CreateVersionPublishAndRollback_PersistsImmutableVersionState()
     {
@@ -224,7 +496,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = secondVersion.Validation,
                 RequestedBy = "tester",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: secondVersion.VersionId);
             publication.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
 
             var rollback = await store.RollbackAsync(
@@ -240,6 +512,64 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             var originalAfterRollback = await store.GetVersionAsync(version.ItemId, version.VersionId);
             originalAfterRollback.Should().NotBeNull();
             originalAfterRollback!.Envelope.Body!.Value.GetProperty("where").GetString().Should().Be("1=1");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    // honua-server#4907: the published-route resolver reads this lookup, so the SQL must follow
+    // each item's governing (newest accepted) request -- pending requests never govern, a route
+    // the item republished away from retires, and another item cannot take the route.
+    [IntegrationTest]
+    public async Task PackageStore_ActivePublicationByRoute_FollowsGoverningAcceptedRequest()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var version = await store.CreateVersionAsync(await store.CreateDraftAsync(BuildDraft("1=1")), "first save", "tester");
+            var other = await store.CreateVersionAsync(
+                await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "other-query")), "first save", "tester");
+            var at = DateTimeOffset.UtcNow;
+
+            StudioPublicationRequest Request(StudioContentVersion target, string route, StudioPublicationRequestStatus status, int seconds) => new()
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = target.ItemId,
+                VersionId = target.VersionId,
+                Intent = new StudioPublicationIntent { Route = route, Visibility = "public" },
+                Status = status,
+                Validation = target.Validation,
+                RequestedBy = "tester",
+                CreatedAt = at.AddSeconds(seconds),
+            };
+
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/parcels")).Should().BeNull();
+            await store.CreatePublicationRequestAsync(
+                Request(version, "/maps/parcels", StudioPublicationRequestStatus.Pending, 0), expectedCurrentVersionId: null);
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/parcels")).Should().BeNull("a pending request never governs a route");
+
+            var accepted = await store.CreatePublicationRequestAsync(
+                Request(version, "/maps/parcels", StudioPublicationRequestStatus.Accepted, 1), version.VersionId);
+            var resolved = await store.GetActivePublicationRequestByRouteAsync("/maps/parcels");
+            resolved!.RequestId.Should().Be(accepted.RequestId);
+            resolved.Intent!.Route.Should().Be("/maps/parcels");
+
+            var moved = await store.CreatePublicationRequestAsync(
+                Request(version, "/maps/moved", StudioPublicationRequestStatus.Accepted, 2), version.VersionId);
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/parcels")).Should().BeNull("the item was republished at another route");
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/moved"))!.RequestId.Should().Be(moved.RequestId);
+
+            var claim = async () => await store.CreatePublicationRequestAsync(
+                Request(other, "/maps/moved", StudioPublicationRequestStatus.Accepted, 3), other.VersionId);
+            await claim.Should().ThrowAsync<StudioPublicationRouteConflictException>();
+            var owner = await store.GetActivePublicationRequestByRouteAsync("/maps/moved");
+            owner!.RequestId.Should().Be(moved.RequestId);
+            owner.ItemId.Should().Be(version.ItemId);
         }
         finally
         {
@@ -338,6 +668,81 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    // honua-server#3980: the published-pointer move must carry the approval's expected
+    // current_version_id as a SQL predicate inside the request-insert transaction, so a version
+    // saved after validation makes the UPDATE match zero rows and rolls the whole request back.
+    [IntegrationTest]
+    public async Task PackageStore_PublicationRequestWithStaleExpectedCurrentVersion_RollsBackAndConflicts()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var created = await store.CreateDraftAsync(BuildDraft("1=1", "cas-publish-query"));
+            var approved = await store.CreateVersionAsync(created, "first save", "tester");
+
+            // The concurrent draft save that lands between validation and actuation.
+            var updated = await store.UpdateDraftAsync(created with
+            {
+                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Generation = created.Generation,
+            });
+            updated.Should().NotBeNull();
+            var superseding = await store.CreateVersionAsync(updated!, "second save", "tester");
+            superseding.VersionId.Should().NotBe(approved.VersionId);
+
+            var staleRequestId = Guid.NewGuid();
+            var act = async () => await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = staleRequestId,
+                ItemId = approved.ItemId,
+                VersionId = approved.VersionId,
+                Intent = approved.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = approved.Validation,
+                RequestedBy = "tester",
+                CreatedAt = DateTimeOffset.UtcNow,
+            }, expectedCurrentVersionId: approved.VersionId);
+
+            var conflict = await act.Should().ThrowAsync<StudioPublicationPointerConflictException>();
+            conflict.Which.ExpectedCurrentVersionId.Should().Be(approved.VersionId);
+            conflict.Which.ActualCurrentVersionId.Should().Be(superseding.VersionId);
+
+            var pointers = await store.GetPointersAsync(approved.ItemId);
+            pointers.Should().NotBeNull();
+            pointers!.PublishedVersionId.Should().BeNull("the stale approved version must never publish");
+            pointers.CurrentVersionId.Should().Be(superseding.VersionId);
+            // The insert shares the failed UPDATE's transaction, so the request row rolls back too.
+            var persisted = await store.GetPublicationRequestAsync(
+                approved.ItemId, approved.VersionId, staleRequestId);
+            persisted.Should().BeNull();
+
+            // Same schema, same item: the predicate still lets the current version publish.
+            var accepted = await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = superseding.ItemId,
+                VersionId = superseding.VersionId,
+                Intent = superseding.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = superseding.Validation,
+                RequestedBy = "tester",
+                CreatedAt = DateTimeOffset.UtcNow,
+            }, expectedCurrentVersionId: superseding.VersionId);
+
+            accepted.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+            var advanced = await store.GetPointersAsync(superseding.ItemId);
+            advanced!.PublishedVersionId.Should().Be(superseding.VersionId);
+            advanced.CurrentVersionId.Should().Be(superseding.VersionId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task PackageStore_PublicationRequestWithForeignVersion_RejectsOwnershipMismatch()
     {
@@ -362,7 +767,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = secondVersion.Validation,
                 RequestedBy = "tester",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: firstVersion.VersionId);
 
             await act.Should().ThrowAsync<KeyNotFoundException>()
                 .WithMessage("Studio content version was not found.");
@@ -398,7 +803,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = version.Validation,
                 RequestedBy = "tester",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: version.VersionId);
 
             request.Status.Should().Be(StudioPublicationRequestStatus.Pending);
             var pointers = await store.GetPointersAsync(version.ItemId);
@@ -473,7 +878,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = version.Validation,
                 RequestedBy = "alice",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: version.VersionId);
 
             var byOwner = await store.ListContentItemsAsync(new StudioContentItemQuery { OwnerId = "bob" });
             byOwner.Items.Should().ContainSingle(i => i.ItemId == draftOnly.ItemId);
@@ -768,6 +1173,168 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task StudioContent_RecordsItsTenant_AndEnumerationStaysInsideIt()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            var tenantADraft = await store.CreateDraftAsync(
+                BuildDraft("1=1", packageKey: "alpha") with { TenantId = "tenant-a" });
+            var tenantBDraft = await store.CreateDraftAsync(
+                BuildDraft("1=1", packageKey: "beta") with { TenantId = "tenant-b" });
+            var tenantAVersion = await store.CreateVersionAsync(tenantADraft, "seed", "alice");
+
+            (await store.GetDraftAsync(tenantADraft.DraftId))!.TenantId.Should().Be("tenant-a");
+            tenantAVersion.TenantId.Should().Be(
+                "tenant-a",
+                "an immutable version inherits the tenant of the draft it was minted from");
+            (await store.GetVersionAsync(tenantADraft.ItemId, tenantAVersion.VersionId))!.TenantId
+                .Should().Be("tenant-a");
+            (await store.GetPointersAsync(tenantADraft.ItemId))!.TenantId.Should().Be("tenant-a");
+
+            var tenantAItems = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("tenant-a", false), Limit = 50 });
+            tenantAItems.Items.Select(static item => item.ItemId).Should().BeEquivalentTo([tenantADraft.ItemId]);
+            tenantAItems.Total.Should().Be(1, "the COUNT behind the page uses the same tenant filter");
+
+            var tenantBItems = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("tenant-b", false), Limit = 50 });
+            tenantBItems.Items.Select(static item => item.ItemId).Should().BeEquivalentTo([tenantBDraft.ItemId]);
+
+            var tenantADrafts = await store.ListDraftsAsync(
+                new StudioPackageDraftQuery { Tenant = new TenantScopeFilter("tenant-a", false), Limit = 50 });
+            tenantADrafts.Items.Select(static draft => draft.DraftId).Should().BeEquivalentTo([tenantADraft.DraftId]);
+            tenantADrafts.Total.Should().Be(1);
+
+            var everyTenant = await store.ListContentItemsAsync(new StudioContentItemQuery { Limit = 50 });
+            everyTenant.Items.Should().HaveCount(
+                2,
+                "an absent scope is the multi-tenant-admin case and is not filtered");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task StudioContent_WithNoRecordedTenant_IsOnlyEnumerableByTheDefaultTenantScope()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            // A writer with no resolved request tenant (a background checkpoint, or any write
+            // predating honua-server#4905) records no tenant at all. Such rows belong to the
+            // deployment's default tenant, which the caller's scope reports as IncludeUnassigned.
+            var unassigned = await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "legacy"));
+
+            var defaultScope = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("public", true), Limit = 50 });
+            defaultScope.Items.Select(static item => item.ItemId).Should().Contain(unassigned.ItemId);
+            defaultScope.Total.Should().Be(1);
+
+            var otherTenant = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("tenant-b", false), Limit = 50 });
+            otherTenant.Items.Should().BeEmpty("another tenant never inherits tenant-unassigned content");
+            otherTenant.Total.Should().Be(0);
+
+            var unresolvedTenant = await store.ListDraftsAsync(
+                new StudioPackageDraftQuery { Tenant = new TenantScopeFilter(null, true), Limit = 50 });
+            unresolvedTenant.Items.Select(static draft => draft.DraftId).Should().Contain(unassigned.DraftId);
+
+            var unresolvedButNotDefault = await store.ListDraftsAsync(
+                new StudioPackageDraftQuery { Tenant = new TenantScopeFilter(null, false), Limit = 50 });
+            unresolvedButNotDefault.Items.Should().BeEmpty();
+            unresolvedButNotDefault.Total.Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Migration120_BackfillsTheTenantAlreadyEncodedInATenantQualifiedOwnerId()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            // Pre-upgrade state: the Studio lifecycle tables without the tenant column.
+            var root = FindRepoRoot();
+            foreach (var migrationFile in new[]
+                     {
+                         "035_CreateStudioPackageLifecycle.sql",
+                         "036_CreateContentPublications.sql",
+                         "089_AddStudioContentEnumerationIndexes.sql",
+                         "090_AddStudioContentItemOwner.sql",
+                     })
+            {
+                await ApplyStudioMigrationAsync(schema, migrationFile, root);
+            }
+
+            var qualifiedItemId = Guid.NewGuid();
+            var unqualifiedItemId = Guid.NewGuid();
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    INSERT INTO "{schema}".studio_content_items
+                        (item_id, package_key, family, owner_id, created_by, updated_by)
+                    VALUES
+                        (@qualified_item_id, 'legacy-qualified', 'query', @owner_id, 'alice', 'alice'),
+                        (@unqualified_item_id, 'legacy-unqualified', 'query', 'shared-studio-key', 'key', 'key');
+                    """;
+                command.Parameters.AddWithValue("@qualified_item_id", qualifiedItemId);
+                command.Parameters.AddWithValue("@unqualified_item_id", unqualifiedItemId);
+                command.Parameters.AddWithValue(
+                    "@owner_id",
+                    "subject:https%3A%2F%2Fidp.example.com:alice@tenant:tenant-legacy");
+                await command.ExecuteNonQueryAsync();
+            }
+
+            // Upgrade, applied twice so the migration's idempotence is proven rather than assumed.
+            await ApplyStudioMigrationAsync(schema, "120_AddStudioTenantOwnership.sql", root);
+            await ApplyStudioMigrationAsync(schema, "120_AddStudioTenantOwnership.sql", root);
+
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            (await store.GetPointersAsync(qualifiedItemId))!.TenantId.Should().Be(
+                "tenant-legacy",
+                "a tenant-qualified owner id already names its tenant, so the upgrade recovers it precisely");
+            (await store.GetPointersAsync(unqualifiedItemId))!.TenantId.Should().BeNull(
+                "an owner id with no tenant segment stays unassigned and is attributed to the default tenant at runtime");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private async Task<Guid?> ReadGoverningPublicationRequestIdAsync(string schema, Guid itemId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT governing_publication_request_id FROM \"{schema}\".studio_content_items WHERE item_id = @item_id";
+        command.Parameters.AddWithValue("@item_id", itemId);
+        var value = await command.ExecuteScalarAsync();
+        return value is Guid requestId ? requestId : null;
+    }
+
+    private async Task<string?> ReadRollbackDeploymentIdAsync(string schema, Guid requestId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT deployment_id FROM \"{schema}\".studio_rollback_requests WHERE request_id = @request_id";
+        command.Parameters.AddWithValue("@request_id", requestId);
+        return await command.ExecuteScalarAsync() as string;
+    }
+
     private async Task EnsureStudioTablesAsync(string schema)
     {
         var root = FindRepoRoot();
@@ -781,12 +1348,20 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                  {
                      "035_CreateStudioPackageLifecycle.sql",
                      "036_CreateContentPublications.sql",
+                     "082_CreatePromotionStores.sql",
                      "089_AddStudioContentEnumerationIndexes.sql",
                      "090_AddStudioContentItemOwner.sql",
                      "092_CreateSavedMapOperationLog.sql",
                      "093_EnsureConfiguredStudioPackageLifecycle.sql",
                      "094_CreateSavedMapCheckpointVersionRecovery.sql",
                      "095_DeleteSavedMapOperationLogWithStudioDraft.sql",
+                     // Migration 120 adds the tenant_id column every Studio lifecycle write and
+                     // read now carries (honua-server#4905).
+                     "120_AddStudioTenantOwnership.sql",
+                     // Migration 126 adds the persisted canonical content-hash input the version
+                     // insert and single-version read carry (honua-server#5449).
+                     "126_AddStudioContentHashInput.sql",
+                     "134_VersionCanonicalDeployments.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);
@@ -798,6 +1373,10 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
         var sql = await File.ReadAllTextAsync(migrationPath);
         sql = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
+        if (migrationFile == "082_CreatePromotionStores.sql")
+        {
+            sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        }
         await fixture.ExecuteAsync(sql, schema);
     }
 

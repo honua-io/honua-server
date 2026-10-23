@@ -59,6 +59,13 @@ public static class CapabilityUnavailableCodes
     /// <summary>The capability-manifest id the durable job substrate backs.</summary>
     public const string DurableJobsCapability = "jobs.runner";
 
+    /// <summary>
+    /// The capability-manifest id the governed operation proposal/approval control plane backs
+    /// (honua-server#5733). Carried on every control-plane capability-unavailable refusal so a
+    /// client can join it to the manifest entry that reports the same surface unavailable.
+    /// </summary>
+    public const string ControlPlaneProposalsCapability = "operations.proposals";
+
     /// <summary>Operator-facing remediation for a server started without Redis.</summary>
     public const string RedisRemediation =
         "Set ConnectionStrings__Redis to a reachable Redis instance and restart the server. " +
@@ -68,7 +75,7 @@ public static class CapabilityUnavailableCodes
 
     /// <summary>Canonical documentation anchor for the Redis-optional install decision.</summary>
     public const string RedisRemediationRef =
-        "https://docs.honua.io/guides/deploy/docker-compose#redis-is-optional-postgis-is-not";
+        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
 
     /// <summary>
     /// Remediation for a host where Redis IS configured but the Pro <c>caching.redis</c>
@@ -84,7 +91,7 @@ public static class CapabilityUnavailableCodes
 
     /// <summary>Documentation anchor for the entitlement remediation.</summary>
     public const string EntitlementRemediationRef =
-        "https://docs.honua.io/guides/deploy/docker-compose#redis-is-configured-but-not-entitled";
+        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-configured-but-not-entitled";
 
     /// <summary>Detail sentence for a refusal caused by an unentitled (but present) Redis.</summary>
     public const string UnentitledRedisDetail =
@@ -108,6 +115,36 @@ public static class CapabilityUnavailableCodes
         "job queue, so a submitted job would be persisted and never drain. The request is refused " +
         "rather than accepted into a queue that does not exist.";
 
+    /// <summary>
+    /// Dependency id when a managed job would be queued on a serverless host. Redis may be
+    /// present; the missing piece is a process that stays up to claim the local queue.
+    /// </summary>
+    public const string LongLivedHostDependency = "long-lived-host";
+
+    /// <summary>
+    /// Detail sentence when a managed geoprocessing submission would be left on the in-process
+    /// queue of a host that freezes between invocations.
+    /// </summary>
+    public const string ServerlessManagedDetail =
+        "Managed geoprocessing on this host would be queued for a background loop that stops " +
+        "when the invocation ends. The request is refused instead of being accepted and never " +
+        "run. Native processes run on the GDAL worker. Managed processes run on a long-lived " +
+        "API host, or they finish inside the request without being queued.";
+
+    /// <summary>Operator-facing remediation for a managed job refused on a serverless host.</summary>
+    public const string ServerlessManagedRemediation =
+        "Run managed geoprocessing on a long-lived host (local Docker or ECS). On this " +
+        "serverless cell, submit a native process so it runs on the GDAL worker. An operation " +
+        "that completes inside the request, without admission to the local job queue, is not " +
+        "refused by this check.";
+
+    /// <summary>
+    /// Documentation anchor for why a frozen host cannot drain a queued job. The same constraint
+    /// is what sends background file imports to Batch.
+    /// </summary>
+    public const string ServerlessManagedRemediationRef =
+        "https://honua.io/docs/guides/deploy/cloud-deployments/#background-file-imports-run-on-aws-batch";
+
     /// <summary>Short human-readable title shared by every capability-unavailable refusal.</summary>
     public const string Title = "Capability unavailable";
 
@@ -122,8 +159,8 @@ public static class CapabilityUnavailableCodes
     /// <c>caching.redis</c> entitlement is not, so "configure Redis" would be the wrong fix.
     /// </summary>
     /// <remarks>
-    /// Like <see cref="DurableControlPlaneDetail"/>, refusals on this path carry no
-    /// <c>capability</c> member — see that constant's remarks.
+    /// Like <see cref="DurableControlPlaneDetail"/>, refusals on this path carry
+    /// <see cref="ControlPlaneProposalsCapability"/> as their <c>capability</c> member.
     /// </remarks>
     public const string UnentitledControlPlaneDetail =
         "The operation proposal and approval control plane requires the Pro 'caching.redis' " +
@@ -160,11 +197,9 @@ public static class CapabilityUnavailableCodes
 
     /// <summary>Detail sentence for a refusal caused by the absent durable control plane.</summary>
     /// <remarks>
-    /// Refusals on this path deliberately carry no <c>capability</c> member: the manifest has no
-    /// capability id covering the proposal/approval control plane, and naming an unrelated id
-    /// (<c>operate.status</c>, which stays available) would send a client to a claim that
-    /// contradicts the refusal. Omitting the field is the honest answer until the manifest gains
-    /// an id for this surface.
+    /// Refusals on this path carry <see cref="ControlPlaneProposalsCapability"/> as their
+    /// <c>capability</c> member: the manifest reports <c>operations.proposals</c> unavailable
+    /// with reason code <c>dependency-unavailable</c> on the same hosts that emit this refusal.
     /// </remarks>
     public const string DurableControlPlaneDetail =
         "The operation proposal and approval control plane requires a Redis-backed durable " +

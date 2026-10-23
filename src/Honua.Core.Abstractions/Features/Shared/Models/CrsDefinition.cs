@@ -32,4 +32,11 @@ public readonly record struct CrsDefinition(string Uri, int Srid, AxisOrder Axis
     /// OGC Well-Known Text representation of the CRS, when available from the spatial reference registry.
     /// </summary>
     public string? Wkt { get; init; }
+
+    /// <summary>
+    /// Unit conversion factor from the registry. For a projected CRS this is metres per
+    /// native unit. For a geographic CRS this is radians per native angular unit.
+    /// Null when the definition was built without a registry unit.
+    /// </summary>
+    public double? LinearUnitFactor { get; init; }
 }

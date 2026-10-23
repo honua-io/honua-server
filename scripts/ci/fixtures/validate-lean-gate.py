@@ -46,18 +46,72 @@ require(
     "run architecture tests without rebuilding or restoring",
 )
 require(
-    r"dotnet test tests/dotnet/Honua\.Ai\.Tests/Honua\.Ai\.Tests\.csproj \\\s+--no-build \\\s+--no-restore",
+    r"dotnet test tests/dotnet/Honua\.Ai\.UnitTests/Honua\.Ai\.UnitTests\.csproj \\\s+--no-build \\\s+--no-restore",
     "run the focused MCP roster drift smoke without rebuilding or restoring",
 )
 require(
     r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
     "gate the complete taxonomy-alignment and capability-registry conformance classes",
 )
-require(
-    r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
-    "mirror the complete MCP drift class filter in the local pre-PR check",
-    text=PRE_PR_TEXT,
-)
+def require_local_mcp_filter(text: str) -> None:
+    """Bind the complete filter to the actual MCP dotnet-test invocation.
+
+    Accept a literal or one immutable-looking constant assignment before the
+    call. Do not accept the right string elsewhere, a partial filter, or a
+    correct constant that the command never uses. This is a static contract for
+    the script's supported forms, not a general shell evaluator.
+    """
+    expected = "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests"
+    invocation = re.search(
+        r"dotnet test tests/dotnet/Honua\.Ai\.UnitTests/Honua\.Ai\.UnitTests\.csproj"
+        r"(?P<arguments>(?:[^\n]*\\\n)*[^\n]*)", text)
+    if invocation is None:
+        raise AssertionError("local pre-PR check must execute the MCP test project")
+    arguments = invocation.group("arguments")
+    filters = re.findall(r'--filter "([^"\n]*)"', arguments)
+    if filters == [expected]:
+        return
+    assignments = list(re.finditer(r'^\s*(?:export )?MCP_GOVERNANCE_FILTER(?:\+)?=.*$', text, re.M))
+    if (filters != ["${MCP_GOVERNANCE_FILTER}"] or len(assignments) != 1
+            or assignments[0].start() >= invocation.start()
+            or assignments[0].group().strip() != f'MCP_GOVERNANCE_FILTER="{expected}"'):
+        raise AssertionError("lean gate must mirror the complete MCP drift class filter in the local pre-PR check")
+
+
+require_local_mcp_filter(PRE_PR_TEXT)
+
+# Mutation fixtures ensure resolving a constant does not weaken the contract.
+for changed in (
+    PRE_PR_TEXT.replace("FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests",
+                        "FullyQualifiedName~McpTaxonomyAlignmentTests"),
+    PRE_PR_TEXT.replace('--filter "${MCP_GOVERNANCE_FILTER}"', '--filter "FullyQualifiedName~McpTaxonomyAlignmentTests"'),
+    PRE_PR_TEXT.replace('--filter "${MCP_GOVERNANCE_FILTER}"', '--filter "${OTHER_FILTER}"'),
+    PRE_PR_TEXT + '\nMCP_GOVERNANCE_FILTER="FullyQualifiedName~McpTaxonomyAlignmentTests"\n',
+):
+    try:
+        require_local_mcp_filter(changed)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("local MCP filter checker accepted an incomplete or unbound filter")
+
+# Every test/generator step must be excluded from build-only production, and
+# restoration/compilation/format must be excluded from consumption-only testing.
+steps = re.split(r"(?=^    - name: )", TEXT, flags=re.M)[1:]
+for step in steps:
+    name = step.splitlines()[0]
+    if ('dotnet test ' in step or 'test-projects.py gate-fast' in step or 'Regenerate projections' in name):
+        assert "if: inputs.phase != 'build'" in step, name
+    if any(label in name for label in ['Compute gate build scope', 'Union producer test roots', 'Restore selected build scope', 'Build (warnings as errors)', 'Format Check']):
+        assert "if: inputs.phase != 'test'" in step, name
+assert steps[0].startswith('    - name: Validate gate phase')
+assert steps[1].startswith('    - name: Pre-pull Testcontainers PostGIS image')
+assert TEXT.index('Regenerate projections') < TEXT.index('Run .NET Tests (Architecture Source)')
+assert "default: 'all'" in TEXT and 'all|build|test)' in TEXT
+assert TEXT.count('/p:RunAnalyzers=true') == 2
+assert TEXT.count('/p:UseSharedCompilation=false') == 2
+assert '--projects-file "${PRODUCER_PROJECTS_FILE}"' in TEXT
+assert '--base-filter "${GATE_BUILD_FILTER}" --output "${GATE_BUILD_FILTER}"' in TEXT
 
 # ---------------------------------------------------------------------------
 # Affected-scope build contract (epic #3213).
@@ -148,13 +202,20 @@ seeded = set(re.findall(r'"([^"]+\.csproj)"', required_block.group(1)))
 # Every project the gate's own `dotnet test` steps execute must be compiled by a
 # narrowed build, because all of them run --no-build.
 executed = set(re.findall(r"dotnet test (\S+\.csproj)", TEXT))
+# Projection generation consumes Ai.Tests; native capability discovery also
+# requires the GDAL test output. These are producer roots, not extra test runs.
+generation_inputs = {
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
+    "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj",
+}
+executed |= generation_inputs
 
 if seeded != executed:
     missing = sorted(executed - seeded)
     extra = sorted(seeded - executed)
     raise AssertionError(
         "compute-lean-gate-build-scope.sh REQUIRED_TEST_PROJECTS must be exactly the "
-        "projects the lean gate's --no-build test steps execute; "
+        "projects the lean gate's --no-build verification and generation require; "
         f"missing={missing} unexpected={extra}"
     )
 
@@ -165,6 +226,18 @@ if seeded != executed:
 # ---------------------------------------------------------------------------
 
 PR_GATE_TEXT = PR_GATE.read_text(encoding="utf-8")
+# Build-output caching belongs to the setup action that runs before lean-gate.
+# Bound this match to that invocation so another job cannot satisfy it.
+require(
+    r"^  pr-gate:\n(?:(?!^  \S)[\s\S])*?"
+    r"uses: \./\.github/actions/setup-dotnet-ci\n"
+    r"        with:\n(?:          [^\n]*\n)*?"
+    r"          enable-build-cache: \$\{\{ vars\.PR_GATE_BUILD_CACHE == 'true' "
+    r"&& 'true' \|\| 'false' \}\}$",
+    "opt PR Gate into build caching only through vars.PR_GATE_BUILD_CACHE, "
+    "defaulting off",
+    text=PR_GATE_TEXT,
+)
 require(
     r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+build-scope: affected",
     "have pr-gate.yml pass build-scope: affected",
@@ -187,8 +260,23 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
-    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, format\]",
-    "keep the required PR Gate context as a fail-closed aggregator",
+    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, pr-gate-tests, format, ci-router-validation\]",
+    "keep the required PR Gate context as a fail-closed aggregator over "
+    "build/tests, format, and CI router validation",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"ci-router-validation:\n[\s\S]*?run: scripts/ci/pr-touches-ci-surface\.sh --github-output",
+    "classify every PR Gate run for CI-surface changes before deciding "
+    "whether to run the router/merge-authority guards",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"steps\.ci-surface\.outputs\.ci_surface == 'true'\n"
+    r"\s+run: \|\n\s+scripts/ci/validate-ci-router\.sh\n"
+    r"\s+bash scripts/ci/validate-single-merge-authority\.sh",
+    "run both trunk-only router guard scripts in PR Gate when a PR touches "
+    "the CI surface",
     text=PR_GATE_TEXT,
 )
 require(
@@ -240,15 +328,14 @@ PREPULL_TEXT = PREPULL_SCRIPT.read_text(encoding="utf-8")
 # of the concurrency contract: start the best-effort image pull before restore
 # and build, then await it immediately before the Testcontainers-backed test.
 require(
-    r"steps:\n(?:\s*(?:#.*)?\n)*"
     r"\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
-    r"\s+if: inputs\.prepull-postgis == 'true'\n"
+    r"\s+if: inputs\.phase != 'build' && inputs\.prepull-postgis == 'true'\n"
     r"\s+shell: bash\n\s+run: scripts/ci/prepull-testcontainers-postgis\.sh",
-    "start the Testcontainers PostGIS pre-pull as the first composite step",
+    "start the Testcontainers PostGIS pre-pull only for verification phases",
 )
 require(
     r"- name: Await Testcontainers PostGIS pre-pull\n"
-    r"\s+if: inputs\.prepull-postgis == 'true'\n"
+    r"\s+if: inputs\.phase != 'build' && inputs\.prepull-postgis == 'true'\n"
     r"\s+shell: bash\n"
     r"\s+run: scripts/ci/prepull-testcontainers-postgis\.sh --await\n\n"
     r"\s+- name: Run \.NET Tests \(Server Governance/Drift\)",
@@ -257,12 +344,12 @@ require(
 require(
     r"dotnet test tests/dotnet/Honua\.Server\.Tests/Honua\.Server\.Tests\.csproj \\\n"
     r"\s+--no-build \\\n\s+--no-restore \\\n\s+--configuration Release \\\n"
-    r'\s+--filter "Category=Architecture"',
-    "preserve the complete Server governance/drift assertion filter",
+    r'\s+--filter "Category=Architecture\|FullyQualifiedName~AlertPreviewFloorTests"',
+    "preserve the complete Server governance/drift filter and retained alerting Preview floors",
     text=TEXT,
 )
 require(
-    r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"[\s\S]*?'
+    r'FIXTURE="tests/dotnet/Honua\.TestKit\.Postgres/PostgresFixture\.cs"[\s\S]*?'
     r'resolve_image\(\) \{[\s\S]*?grep[^\n]+"\$\{FIXTURE\}"[\s\S]*?\}[\s\S]*?'
     r'image="\$\(resolve_image \|\| true\)"[\s\S]*?'
     r'nohup docker pull "\$\{image\}" > "\$\{LOG_FILE\}" 2>&1 &$',
@@ -319,3 +406,11 @@ if scope_mode(FORMAT_SCOPE_SCRIPT, FORMAT_SCOPE="affected", GITHUB_EVENT_NAME="m
     )
 
 print("Lean-gate command contract fixtures passed.")
+
+# Dynamic isolated Fast projects must be the same reviewed catalog in build and run.
+require(r'python3 scripts/ci/test-projects\.py gate-fast-projects',
+        'seed catalogued unit Fast projects in the combined build', text=SCOPE_TEXT)
+require(r'for project in "\$\{REQUIRED_TEST_PROJECTS\[@\]\}" "\$\{UNIT_FAST_TEST_PROJECTS\[@\]\}"',
+        'union dynamic Fast smoke inputs with existing required test projects', text=SCOPE_TEXT)
+require(r'python3 scripts/ci/test-projects\.py gate-fast\s',
+        'execute the catalogued isolated Fast smoke without another build')

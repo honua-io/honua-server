@@ -1,10 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Abstractions;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Server.Features.Alerts;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
@@ -19,6 +23,14 @@ internal static class AlertsServiceCollectionExtensions
         services
             .AddOptions<AlertOptions>()
             .Bind(configuration.GetSection(AlertOptions.SectionName))
+            // These workers use instance-wide persistence, outside the HTTP tenant
+            // middleware. Admin route denial cannot isolate evaluation or delivery.
+            .Validate(options => !options.Enabled ||
+                (!configuration.GetValue("MultiTenancy:Enabled", new TenantContextOptions().Enabled) &&
+                 !configuration.GetValue<bool>("MultiTenancy:SchemaRouting:Enabled")),
+                "Alert processing cannot run with tenant resolution or schema routing enabled: " +
+                "alert evaluation and delivery stores are instance-wide. Set Alerts:Enabled=false " +
+                "on multi-tenant instances; use a separate single-tenant instance for Preview alerts.")
             .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<AlertOptions>, AlertOptionsValidator>();
@@ -75,13 +87,32 @@ internal static class AlertsServiceCollectionExtensions
         // and the readiness path read the live snapshot.
         services.AddSingleton<AlertEvaluationBackgroundService>();
         services.AddSingleton<IAlertEvaluationHealth>(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
-        services.AddHostedService(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
 
         // Register the dispatcher once and expose it both as the hosted service and as the
         // health-state source, so the dispatch-backlog health check reads the live snapshot.
         services.AddSingleton<AlertDispatchBackgroundService>();
         services.AddSingleton<IAlertDispatchHealth>(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
-        services.AddHostedService(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
+        // Evaluation, dispatch, and the audit reconciler each take a pooled connection, and
+        // evaluation holds a dedicated advisory-lock connection. An event-handler Lambda
+        // cannot spare that from a pool of 2 (honua-server#6515).
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
+            services.AddHostedService(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
+        }
+
+        // Alert domain audit outbox (#3865). Registered unconditionally: the operator
+        // lifecycle endpoints are mapped regardless of the geofence capability flag,
+        // and an unreconciled audit intent is a control-plane integrity gap whether or
+        // not the evaluation pipeline is running.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<AlertAuditOutboxCompleter>();
+        services.AddScoped<IAlertAuditCompleter>(sp => sp.GetRequiredService<AlertAuditOutboxCompleter>());
+        services.AddSingleton<AlertAuditOutboxReconciler>();
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<AlertAuditOutboxReconciler>());
+        }
 
         return services;
     }

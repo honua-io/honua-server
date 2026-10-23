@@ -39,6 +39,15 @@ internal sealed class ImageServerExportBackend(
                 attributeSort,
                 cancellationToken);
 
+    /// <summary>
+    /// Renders the all-NoData canvas for an export whose extent selected no raster.
+    /// </summary>
+    public Task<RasterResult> ExportEmptyExtentAsync(
+        int layerId,
+        RasterQuery query,
+        CancellationToken cancellationToken)
+        => rasterStore.ExportEmptyExtentAsync(layerId, query, cancellationToken);
+
     public Task<RasterExtent?> GetExtentAsync(
         int layerId,
         long rasterId,

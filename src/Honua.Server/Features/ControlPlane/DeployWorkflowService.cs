@@ -13,6 +13,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
@@ -23,20 +24,39 @@ internal sealed partial class DeployWorkflowService
 {
     private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
     private const string RollbackSubmissionRetryablePhase = "Rollback provider submission was not confirmed; retry is allowed.";
+    private const string MaxStalenessParameterKey = "telemetry.max_staleness_seconds";
+    private const string ErrorCountParameterKey = "telemetry.error_count.query";
+
+    /// <summary>
+    /// Built-in providers that query a fixed window and never read a sample's observation time, so they
+    /// cannot honor <see cref="MaxStalenessParameterKey"/> (#4617). Host-registered providers are not
+    /// assumed to share that limitation.
+    /// </summary>
+    private static readonly HashSet<string> FixedWindowTelemetryProviders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cloudwatch",
+        "azuremonitor"
+    };
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
     private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly ILogger<DeployWorkflowService> _logger;
+    private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
+    private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
         IEnumerable<IWorkflowOperationStore> workflowStores,
         IEnumerable<IDeployBackend> backends,
         IOperatorApprovalEvaluator approvalEvaluator,
-        ILogger<DeployWorkflowService> logger)
+        ILogger<DeployWorkflowService> logger,
+        IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
+        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null)
     {
+        _controlPlaneOptions = controlPlaneOptions;
+        _tenantOptions = tenantOptions;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -125,8 +145,153 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
+        // Validate the telemetry and promotion gates before any mutation (#4617): an invalid,
+        // silently-ignored or unresolvable gate configuration blocks submission here instead of
+        // being discovered by the reconciler after the candidate is already receiving traffic.
+        foreach (var gateBlock in new[] { DescribeTelemetryGateBlock(spec), DeployPromotionPolicy.Validate(spec) }.OfType<string>())
+        {
+            plan = plan with
+            {
+                IsReadyToSubmit = false,
+                BlockingReasons = [.. plan.BlockingReasons, gateBlock]
+            };
+        }
+
+        plan = await ApplyProbeUrlValidationAsync(plan, spec, cancellationToken).ConfigureAwait(false);
+
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
+
+    /// <summary>
+    /// Refuses a synthetic health-probe or golden-query URL that the runtime probe would refuse
+    /// (honua-server#4988). Otherwise the rollout is admitted, the gate reports itself misconfigured
+    /// on every cycle, and a correct candidate is failed at its exposure deadline. A URL whose host
+    /// cannot be resolved right now is only a warning: that condition is transient, and the runtime
+    /// probe re-validates it on every cycle.
+    /// </summary>
+    private static async Task<DeployPlan> ApplyProbeUrlValidationAsync(
+        DeployPlan plan,
+        DeployOperationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var (blocks, warnings) = await DescribeProbeUrlFindingsAsync(spec, cancellationToken).ConfigureAwait(false);
+        if (blocks.Count == 0 && warnings.Count == 0)
+        {
+            return plan;
+        }
+
+        return plan with
+        {
+            IsReadyToSubmit = plan.IsReadyToSubmit && blocks.Count == 0,
+            BlockingReasons = [.. plan.BlockingReasons, .. blocks],
+            Warnings = [.. plan.Warnings, .. warnings]
+        };
+    }
+
+    private static async Task<(List<string> Blocks, List<string> Warnings)> DescribeProbeUrlFindingsAsync(
+        DeployOperationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var blocks = new List<string>();
+        var warnings = new List<string>();
+        var policy = DeployTelemetryPolicy.Parse(spec);
+        if (policy is not { IsValid: true })
+        {
+            return (blocks, warnings);
+        }
+
+        foreach (var (key, url) in new[]
+                 {
+                     ("telemetry.healthz.url", policy.HealthProbeUrl),
+                     ("telemetry.golden_query.url", policy.GoldenQueryUrl)
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                continue;
+            }
+
+            var validation = await DeployProbeUrlPolicy.ValidateAsync(url, cancellationToken).ConfigureAwait(false);
+            if (validation.IsValid)
+            {
+                continue;
+            }
+
+            if (validation.IsHostResolutionUnavailable)
+            {
+                warnings.Add($"{key} {validation.ErrorMessage} The probe re-checks it on every cycle.");
+                continue;
+            }
+
+            blocks.Add(
+                $"Telemetry gate configuration rejected: {key} {validation.ErrorMessage} " +
+                "Deploy probes only reach public HTTPS endpoints, so this gate could never be evaluated.");
+        }
+
+        return (blocks, warnings);
+    }
+
+    private string? DescribeTelemetryGateBlock(DeployOperationSpec spec)
+    {
+        var policy = DeployTelemetryPolicy.Parse(spec);
+        if (policy == null)
+        {
+            return null;
+        }
+
+        if (!policy.IsValid)
+        {
+            return $"Telemetry gate configuration rejected: {policy.ValidationError}";
+        }
+
+        if (policy.IsHealthOnly || _controlPlaneOptions == null)
+        {
+            return null;
+        }
+
+        var connection = _controlPlaneOptions.CurrentValue.TelemetryConnections.FirstOrDefault(candidate =>
+            string.Equals(candidate.ConnectionId, policy.ConnectionId, StringComparison.Ordinal));
+        if (connection == null)
+        {
+            return $"Telemetry gate configuration rejected: connection '{policy.ConnectionId}' is not configured under " +
+                "ControlPlane:TelemetryConnections, so the metric gate could never be satisfied.";
+        }
+
+        // CloudWatch and Azure Monitor query a fixed 300-second window and never read a sample's observation
+        // time, so an explicit staleness bound on them would be silently ignored (#4617).
+        if (spec.Parameters.TryGetValue(MaxStalenessParameterKey, out var staleness) &&
+            !string.IsNullOrWhiteSpace(staleness) &&
+            FixedWindowTelemetryProviders.Contains(connection.Provider?.Trim() ?? string.Empty))
+        {
+            return $"Telemetry gate configuration rejected: {MaxStalenessParameterKey} is not honored by connection " +
+                $"'{connection.ConnectionId}': its '{connection.Provider}' provider reads a fixed 300-second query window, " +
+                "so the bound would be silently ignored.";
+        }
+
+        // Only the fixed-window cloud providers read an error-count numerator and report a series that
+        // matched nothing (honua-server#6474). Elsewhere the numerator would never be read and the gate
+        // would hold until the evidence grace expired; Prometheus expresses the same intent with
+        // "or vector(0)" in telemetry.error_rate.query, as the built-in presets do.
+        if (!string.IsNullOrWhiteSpace(policy.ErrorCountQuery) &&
+            !FixedWindowTelemetryProviders.Contains(connection.Provider?.Trim() ?? string.Empty))
+        {
+            return $"Telemetry gate configuration rejected: {ErrorCountParameterKey} is not supported by connection " +
+                $"'{connection.ConnectionId}': its '{connection.Provider}' provider does not read an error-count numerator. " +
+                "Use telemetry.error_rate.query (for Prometheus, add \"or vector(0)\" to the error series).";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Records when the candidate first became exposed to traffic (#4617). Backends that cut over
+    /// synchronously inside <c>StartAsync</c> report <see cref="WorkflowOperationStatus.Reconciling"/>
+    /// or <see cref="WorkflowOperationStatus.Succeeded"/> immediately; an existing stamp is never moved.
+    /// </summary>
+    internal static DateTimeOffset? StampTrafficExposure(DateTimeOffset? existing, WorkflowOperationStatus status)
+        => existing ?? (status is WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded
+            ? DateTimeOffset.UtcNow
+            : null);
 
     public async Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
     {
@@ -229,6 +394,9 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                // honua-server#4958: the tenant binding is captured from the validated identity here,
+                // so the protection window sealed at activation can bind recovery to the same pair.
+                TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),
                 Reason = reason,
                 IdempotencyKey = idempotencyKey,
                 CorrelationId = correlationId,
@@ -274,7 +442,8 @@ internal sealed partial class DeployWorkflowService
                         ErrorMessage = null,
                         Deploy = operation.Deploy with
                         {
-                            CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision
+                            CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision,
+                            TrafficExposedAt = StampTrafficExposure(operation.Deploy.TrafficExposedAt, submission.Status)
                         }
                     };
                 }
@@ -321,7 +490,7 @@ internal sealed partial class DeployWorkflowService
 
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
         {
-            throw new InvalidOperationException("Only deploy workflow operations can be submitted.");
+            throw new ResourceConflictException("Only deploy workflow operations can be submitted.");
         }
 
         if (operation.Status is WorkflowOperationStatus.Submitted
@@ -341,11 +510,29 @@ internal sealed partial class DeployWorkflowService
                 $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", operation.BlockingReasons)}");
         }
 
+        // The persisted blocking reasons describe the connections as they were at plan time. A reload or
+        // restart can remove a connection or change its provider before submission, so check the gate again
+        // against the current configuration before anything is claimed or mutated (#4617).
+        if (DescribeTelemetryGateBlock(operation.Deploy) is { } gateBlock)
+        {
+            throw new ResourceConflictException(
+                $"Deploy operation '{operation.OperationId}' cannot be submitted: {gateBlock}");
+        }
+
+        // A probe host can resolve differently at submit time than it did at plan time (for example
+        // after an approval wait), so the probe destination rule is re-applied before any mutation (#4988).
+        var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(operation.Deploy, cancellationToken).ConfigureAwait(false);
+        if (probeBlocks.Count > 0)
+        {
+            throw new ResourceConflictException(
+                $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", probeBlocks)}");
+        }
+
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
         var backend = target == null ? null : ResolveBackend(target);
         if (backend == null)
         {
-            throw new InvalidOperationException(
+            throw new ResourceConflictException(
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
@@ -381,7 +568,8 @@ internal sealed partial class DeployWorkflowService
                 ErrorMessage = null,
                 Deploy = operation.Deploy with
                 {
-                    CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision
+                    CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision,
+                    TrafficExposedAt = StampTrafficExposure(operation.Deploy.TrafficExposedAt, submission.Status)
                 }
             };
 
@@ -464,7 +652,7 @@ internal sealed partial class DeployWorkflowService
                 "Only deploy workflow operations can be promoted.");
         }
 
-        var preconditionDetail = DescribePromotionPrecondition(operation.Status);
+        var preconditionDetail = DescribePromotionPrecondition(operation);
         if (preconditionDetail != null)
         {
             return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, preconditionDetail);
@@ -543,6 +731,12 @@ internal sealed partial class DeployWorkflowService
             Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
         };
 
+        // honua-server#4618: a manual promote bypasses the reconcile loop (it drives the backend
+        // directly, above), so it must open the same post-activation observation window the reconciler
+        // opens for an automatic promotion — otherwise a forced cutover would skip straight to a
+        // terminal Succeeded with no recovery window at all.
+        updated = DeployWorkflowReconciler.BeginPostActivationObservationIfPromoted(updated);
+
         await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         Log.DeployManuallyPromoted(
             _logger,
@@ -558,11 +752,16 @@ internal sealed partial class DeployWorkflowService
     /// Returns a human-readable reason when an operation cannot be manually promoted from its current
     /// status, or <see langword="null"/> when promotion may proceed. Promotion is valid only while the
     /// rollout is in flight (<see cref="WorkflowOperationStatus.Submitted"/> /
-    /// <see cref="WorkflowOperationStatus.Reconciling"/>).
+    /// <see cref="WorkflowOperationStatus.Reconciling"/>) and has not already activated a candidate — a
+    /// <see cref="WorkflowOperationStatus.Reconciling"/> operation with <c>Deploy.Protection</c> set
+    /// (honua-server#4618) is already past cutover and observing, so it is treated the same as
+    /// <see cref="WorkflowOperationStatus.Succeeded"/> here.
     /// </summary>
-    private static string? DescribePromotionPrecondition(WorkflowOperationStatus status)
-        => status switch
+    private static string? DescribePromotionPrecondition(WorkflowOperationRecord operation)
+        => operation.Status switch
         {
+            WorkflowOperationStatus.Reconciling when operation.Deploy?.Protection != null =>
+                "The deploy operation has already been promoted.",
             WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling => null,
             WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval =>
                 "The deploy operation must be submitted before it can be promoted.",
@@ -572,8 +771,8 @@ internal sealed partial class DeployWorkflowService
                 "The deploy operation has already been promoted.",
             WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
                 or WorkflowOperationStatus.ManualInterventionRequired =>
-                $"The deploy operation is already in a terminal state ({status}) and cannot be promoted.",
-            _ => $"The deploy operation cannot be promoted from status {status}."
+                $"The deploy operation is already in a terminal state ({operation.Status}) and cannot be promoted.",
+            _ => $"The deploy operation cannot be promoted from status {operation.Status}."
         };
 
     private static OperationAuditInfo MergePromotionAudit(OperationAuditInfo audit, string? requestedBy, string? reason)
@@ -615,7 +814,7 @@ internal sealed partial class DeployWorkflowService
 
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
         {
-            throw new InvalidOperationException("Rollback is only supported for deploy workflow operations.");
+            throw new ResourceConflictException("Rollback is only supported for deploy workflow operations.");
         }
 
         if (operation.Status == WorkflowOperationStatus.RollbackRequested &&
@@ -664,7 +863,11 @@ internal sealed partial class DeployWorkflowService
                     {
                         RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
                         Reason = reason ?? operation.Audit.Reason
-                    }
+                    },
+                    Deploy = DeployWorkflowReconciler.WithProtectionPhase(
+                        operation.Deploy,
+                        DeployProtectionPhase.Unavailable,
+                        "rollback-backend-unavailable")
                 };
             }
             else
@@ -704,6 +907,20 @@ internal sealed partial class DeployWorkflowService
                     await MarkRollbackSubmissionRetryableAsync(rollbackClaim, ex).ConfigureAwait(false);
                     throw;
                 }
+                // honua-server#4618: an out-of-band rollback (manual, or coordinated-release-driven via
+                // CoordinatedContainerStepExecutor) bypasses the reconciler's own rollback signaling, so
+                // it must keep Deploy.Protection's phase consistent with reality itself — otherwise a
+                // record promoted into an observation window would show "observing" forever even after
+                // recovery settled or failed.
+                var rollbackDeploySpec = observation.Status == WorkflowOperationStatus.RolledBack
+                    ? DeployWorkflowReconciler.WithoutProtection(rollbackClaim.Deploy!)
+                    : DeployWorkflowReconciler.WithProtectionPhase(
+                        rollbackClaim.Deploy!,
+                        observation.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired
+                            ? DeployProtectionPhase.Unavailable
+                            : DeployProtectionPhase.Recovering,
+                        "rollback-requested-out-of-band");
+
                 updated = rollbackClaim with
                 {
                     Status = observation.Status,
@@ -715,7 +932,8 @@ internal sealed partial class DeployWorkflowService
                         : null,
                     ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
                     CurrentPhase = observation.Message ?? "Rollback requested",
-                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null
+                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null,
+                    Deploy = rollbackDeploySpec
                 };
 
                 if (!await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -779,7 +997,7 @@ internal sealed partial class DeployWorkflowService
     {
         if (operation.MetadataRelease == null)
         {
-            throw new InvalidOperationException("Metadata release rollback requires metadata release context.");
+            throw new ResourceConflictException("Metadata release rollback requires metadata release context.");
         }
 
         if (operation.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack)

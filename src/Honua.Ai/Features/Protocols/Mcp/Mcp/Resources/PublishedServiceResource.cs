@@ -4,33 +4,36 @@
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
 /// <summary>
 /// MCP resource for <c>honua://published-services/{serviceId}</c>. Reads a
-/// <see cref="PublishedServiceRecord"/> through the canonical publishing store
-/// and surfaces provenance edges back to the originating intent, hosted
-/// deployments, and source result package. Authorization defers to the
+/// <see cref="PublishedServiceRecord"/> through the canonical promotion store,
+/// or an ordinary layer publication through the persisted Metadata v2 graph.
+/// Promotion provenance is surfaced only when a promotion record exists.
+/// Authorization starts with the
 /// <see cref="OperatorResourceType.PublishedService"/> grant evaluated by
-/// <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync"/>.
+/// <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync(System.Security.Claims.ClaimsPrincipal, OperatorResourceType, OperatorOperation, System.Threading.CancellationToken)"/>.
 /// </summary>
 internal sealed class PublishedServiceResource : IMcpResource
 {
     public const string Template = McpResourceUris.PublishedServicesPrefix + "{serviceId}";
 
-    private readonly IPublishedServiceStore _services;
-    private readonly IDeploymentStore _deployments;
+    private readonly IPublishedServiceStore? _services;
+    private readonly IDeploymentStore? _deployments;
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<PublishedServiceResource> _logger;
 
     public PublishedServiceResource(
-        IPublishedServiceStore services,
-        IDeploymentStore deployments,
+        IPublishedServiceStore? services,
+        IDeploymentStore? deployments,
         IGeoprocessingJobService jobService,
         ILogger<PublishedServiceResource> logger)
     {
@@ -50,21 +53,12 @@ internal sealed class PublishedServiceResource : IMcpResource
         {
             UriTemplate = Template,
             Name = "Published service",
-            Description = "Managed published service produced by the promotion lifecycle, with provenance edges back to the originating intent and hosted deployments.",
+            Description = "Published service from the canonical metadata catalog or managed promotion lifecycle, with provenance only when persisted.",
             MimeType = McpResourceHelpers.JsonMimeType
         }
     };
 
-    public bool CanHandle(string uri)
-    {
-        if (!uri.StartsWith(McpResourceUris.PublishedServicesPrefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var remainder = uri.AsSpan(McpResourceUris.PublishedServicesPrefix.Length);
-        return remainder.Length > 0 && !remainder.Contains('/');
-    }
+    public bool CanHandle(string uri) => McpResourceUris.TryParsePublishedServiceUri(uri, out _);
 
     public async Task<McpResourcesReadResult> ReadAsync(
         HttpContext httpContext,
@@ -77,17 +71,57 @@ internal sealed class PublishedServiceResource : IMcpResource
                 principal, OperatorResourceType.PublishedService, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
 
-        var serviceId = uri[McpResourceUris.PublishedServicesPrefix.Length..];
+        if (!McpResourceUris.TryParsePublishedServiceUri(uri, out var serviceId))
+        {
+            throw new GeoprocessingValidationException("The published service URI is not canonically encoded.");
+        }
+
         McpLog.ResourceRead(_logger, Family, uri);
 
-        var record = await _services.GetAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        PublishedServiceRecord? record;
+        try
+        {
+            record = _services is null
+                ? null
+                : await _services.FindByPublicIdAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PublishedServiceIdentityAmbiguousException exception)
+        {
+            throw new GeoprocessingValidationException(exception.Message);
+        }
+        var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is not null)
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            // A promotion record is independently readable under the operator
+            // grant. A metadata publication hidden by its own policy cannot
+            // make that legitimate promotion URI unreadable.
+            var catalog = await PublishedMetadataCatalogProjection.FindAsync(
+                httpContext, snapshot, serviceId, refuseDenied: record is null, cancellationToken)
+                .ConfigureAwait(false);
+            if (catalog is not null)
+            {
+                if (record is not null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Published service identity '{serviceId}' is shared by a promotion and a catalog publication.");
+                }
+
+                McpLog.PublishedServiceRead(_logger, serviceId, catalog.Service.Status?.Lifecycle.ToString() ?? "Active");
+                return McpResourceHelpers.SingleJsonContent(
+                    uri, catalog.ToDetail(), McpJsonContext.Default.McpPublishedServiceView);
+            }
+        }
+
         if (record is null)
         {
             throw new GeoprocessingNotFoundException($"Published service '{serviceId}' not found.");
         }
 
-        var deployments = await _deployments
-            .ListBySourceAsync(DeploymentSourceKind.PublishedService, serviceId, cancellationToken)
+        var deploymentStore = _deployments
+            ?? throw new InvalidOperationException("Published promotion records require a deployment store.");
+        var deployments = await deploymentStore
+            .ListBySourceAsync(DeploymentSourceKind.PublishedService, record.ServiceId, cancellationToken)
             .ConfigureAwait(false);
         deployments = PackageViewFactory.FilterPublished(deployments);
 

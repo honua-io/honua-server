@@ -46,7 +46,7 @@ public sealed class AnalysisReportResourceTests
         content.Uri.Should().Be("honua://jobs/job-xyz/report");
         content.MimeType.Should().Be("application/json");
 
-        var body = JsonDocument.Parse(content.Text).RootElement;
+        var body = JsonDocument.Parse(content.Text ?? throw new InvalidOperationException("Expected a text resource.")).RootElement;
         body.GetProperty("jobId").GetString().Should().Be("job-xyz");
         body.GetProperty("resultPackageId").GetString().Should().Be("pkg-1");
         body.GetProperty("reportContractVersion").GetString().Should().Be(ReportingConstants.ContractVersionV1);

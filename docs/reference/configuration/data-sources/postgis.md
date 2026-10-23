@@ -1,3 +1,8 @@
+---
+type: reference
+title: "PostGIS provider"
+description: "PostgreSQL with PostGIS is Honua's default and only full read/write provider."
+---
 # PostGIS provider
 
 PostgreSQL with PostGIS is Honua's default and only full read/write provider. This page covers the connection string, required extensions, managed-Postgres (Aurora / Azure Flexible Server) setup, and the pooling/admission variables that govern database load.
@@ -15,6 +20,29 @@ Host=db.example.com;Port=5432;Database=honua;Username=honua_app;Password=...;SSL
 - Honua expects a single primary (read-write) endpoint.
 - There is no replica connection setting — read replicas are not load-balanced at the application layer. Point Honua at the writer endpoint and rely on DNS-level failover.
 - For TLS configuration, see the [TLS guide](../../../guides/secure/tls-and-mtls.md).
+
+### Schemas
+
+| Variable | Purpose |
+| --- | --- |
+| `Database__Schema` | Metadata schema (default `honua`). Never an import target. |
+| `Database__DefaultOperationalSchema` | Schema imports write to when no target schema is given (default `honua_data`). |
+| `Database__OperationalSchemas__0`, `__1`, ... | Additional schemas that imports may target and table discovery searches. `public` and the default operational schema are always included. |
+
+An import that names any other target schema is refused with `400 Bad Request`.
+
+Attachments have an explicit physical compatibility rule. New installations
+create `attachments` and `import_attachment_cleanup` in the configured metadata
+schema. An existing complete family in `honua` stays there with its table and row
+identity; a configured-only family stays configured. Migration rendering and
+every attachment reader, writer and cleanup path use that same binding. A missing
+cleanup table is legitimate before migration 125 and is created there by 125.
+Honua refuses missing cleanup after 125, partial or split families, duplicate
+authorities, non-table objects, and incompatible column types or keys. Ordinary reads
+do not move, copy or repair these objects. An explicit `Attachments:Schema`
+override must resolve to the same physical family as the canonical metadata
+binding. A legacy `honua` override remains valid when both resolve there; two
+complete families in different metadata/override schemas are refused.
 
 ## Supported versions
 
@@ -51,14 +79,58 @@ Honua performs a PostGIS preflight check at startup:
 4. Non-Development environments fail fast (CrashLoopBackOff) if PostGIS is missing.
 5. Development mode logs a warning and continues. Missing `postgis_raster` warns but never blocks startup.
 
-For deployments using a non-default `Database:Schema`, migration 109 moves a
-complete legacy Metadata v2, SensorThings, or raster family out of `honua` into
-the configured schema. It aborts transactionally on partial or coexisting
+For deployments using a non-default `Database:Schema`, the canonical numbered
+application and eligible provider migrations adopt complete legacy guarded
+Metadata v2, SensorThings and raster families from `honua` into the configured
+schema. They abort transactionally on partial or coexisting
 families so operators can reconcile ambiguous state without an automatic merge.
 Because older nodes still query the legacy schema, this move is a contract-phase
 migration: drain older nodes, review the deploy preflight, and provide the
 one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce reported by the migration gate
 before applying it.
+
+The canonical promotion stores retain their existing physical tables. Migration
+082 historically created `promotion_deployments` and `promotion_published_services`
+in `honua` even when `Database:Schema` selected another metadata schema. Migration
+134 and the canonical stores use a complete family in the configured schema when
+no legacy family exists, or the complete legacy `honua` family when neither table
+exists in the configured schema. Partial or coexisting families refuse operation
+for reconciliation; reads never create, move, copy, or merge records. Studio
+metadata stays in the configured schema and references that same promotion family.
+Migration 134 adds the deployment revision without relocating tables. This
+additive change does not by itself qualify an older rollback image or a release.
+
+SensorThings sensing objects introduced by migration 127 can remain in `honua`
+after migration 109 adopts the earlier SensorThings tables. The sensing store
+and schema verifier resolve this complete physical family together: five sensing
+tables, three identifier sequences and two observation trigger functions. They
+use the configured family when the legacy family is absent, or the complete
+legacy sensing family alongside the configured base tables. Reads and writes do
+not move, copy or repair these objects. Partial, duplicate or mixed sensing
+families, incompatible foreign-key or trigger bindings, and identifier defaults
+that point at another sequence are refused. Fresh configured installations keep
+the whole family in the configured schema. This does not change the existing
+migration approval rules or establish rolling rollback compatibility.
+
+The diagnostic migration plan exposes `scriptBindings` with the configured and
+physical attachment schema, both qualified attachment/cleanup table identities,
+and the raw embedded-resource and rendered SQL hashes. For a new non-default
+physical schema, migration 002 also uses the immutable, hash-pinned
+`attachment-schema-preamble.v1.sql.template` contract. The Server composition
+manifest supplies the exact attachment journal identities, preamble resource name
+and raw hash to both the bootstrap runner and the DI attachment store; the
+PostgreSQL provider does not construct application resource identities. The plan records its exact
+resource identity and raw-byte hash; the full rendered SQL hash includes its
+validated schema projection. The contract is not independently discovered or
+journaled as a migration. Default/legacy physical authority and migration 125
+retain null preamble fields. Its
+`contractApprovalNonce` binds this custom attachment context alongside the actual
+pending contract-script set. A changed binding or rendering requires a newly
+reviewed plan; Honua refuses a token from the previous custom plan. Default-schema and unrelated
+historical approval identities remain unchanged, and fresh empty-journal installs
+retain the existing approval exemption. Enabling `postgis_raster` later does not
+make a pending reviewed provider contract an unattended expand-only change:
+inspect the actual plan before applying it.
 
 The preflight result is available via `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` in the `databaseCompatibility` field.
 
@@ -80,9 +152,32 @@ The preflight result is available via `GET /api/v1/admin/deploy/preflight?includ
 
 Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeout`, `idle_in_transaction_session_timeout`, and the default `search_path`) with plain `SET` statements that run after each physical connection opens — not via the libpq `options` startup parameter, which AWS RDS Proxy rejects (`0A000: Feature not supported: RDS Proxy currently doesn't support command-line options`) and transaction-mode poolers such as PgBouncer break on.
 
-- **AWS RDS Proxy** is supported and is the recommended way to protect connection slots when running Honua on Lambda or other rapidly scaling serverless platforms. Note that the per-connection `SET` statements cause [session pinning](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html) on the proxy: each Honua-held connection stays pinned to one database connection. This reduces the proxy's ability to multiplex but preserves the thing the proxy is deployed for — capping total database connections; size `Limits__Connections__MaxConnectionPoolSize` accordingly.
+- **AWS RDS Proxy** is supported and is the recommended way to protect connection slots when running Honua on Lambda or other rapidly scaling serverless platforms. Note that the per-connection `SET` statements cause [session pinning](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html) on the proxy: each Honua-held connection stays pinned to one database connection. This reduces the proxy's ability to multiplex but preserves the thing the proxy is deployed for — capping total database connections; size `Limits__Connections__MaxConnectionPoolSize` accordingly. To let the proxy multiplex, set `Database__SessionSettings__Mode=role-defaults` and move the settings onto the database role — see [Role defaults instead of per-connection SET](#role-defaults-instead-of-per-connection-set).
 - **PgBouncer (transaction mode)**: connections open without errors, but transaction-mode pooling does not guarantee that session-level `SET` values follow Honua's connection across transactions. Prefer session mode, or use direct connections with Honua's own pool limits.
 - **Npgsql multiplexing** (`Limits__Connections__Multiplexing=true`, default `false`) is mutually exclusive with RDS Proxy and transaction-mode poolers: in multiplexing mode Honua intentionally keeps the session settings on the `options` startup parameter, because startup parameters are the only delivery that survives interleaved logical sessions on shared physical connections. Leave multiplexing off (the default) when connecting through any pooler or proxy.
+
+### Role defaults instead of per-connection SET
+
+`Database__SessionSettings__Mode` (default `connection`) controls how the main data source applies the session settings:
+
+| Value | Behaviour |
+| --- | --- |
+| `connection` | Honua runs `SET lock_timeout`, `SET statement_timeout`, `SET idle_in_transaction_session_timeout` (and `SET search_path` when `Database__Schema` is set) on every new physical connection. Use it for direct connections. |
+| `role-defaults` | Honua issues no session `SET` and relies on the defaults of the database role it connects as, so a proxy can multiplex. Any other value fails startup. |
+
+In `role-defaults` mode set the defaults once, as an administrator, to the values of `Limits__Connections__LockTimeout`, `StatementTimeout` and `IdleInTransactionTimeout` (whole seconds):
+
+```sql
+ALTER ROLE "honua" SET lock_timeout = '30s';
+ALTER ROLE "honua" SET statement_timeout = '30s';
+ALTER ROLE "honua" SET idle_in_transaction_session_timeout = '60s';
+-- only when Database__Schema is set:
+ALTER ROLE "honua" SET search_path = "honua", public;
+```
+
+Role defaults apply to sessions opened after the change. At startup Honua reads the effective values once on a fresh connection and logs a warning (event 5870) naming the `ALTER ROLE` statement for each setting that is unset or differs; it never fails startup over this and never runs `ALTER ROLE` itself. The deploy preflight (`GET /api/v1/admin/deploy/preflight?includeDiagnostics=true`) reports the mode, the verification status and the statements under `databaseSessionSettings`.
+
+The mode covers the `DefaultConnection` data source only, whose role the startup check verifies. Named secure connections (`Database__SecureConnection__Name`), source-bound data sources, migrations and the PostGIS preflight keep setting their own values. Behind RDS Proxy also consider `Database__QueryCache__EnableAutomaticCaching=false`: the prepared-statement cache prepares statements on the server, which is session state a proxy can pin on. Schema-per-tenant routing (`MultiTenancy__SchemaRouting__Enabled=true`) still sets `search_path` per request.
 
 ## Pooling and admission variables
 
@@ -98,8 +193,173 @@ Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeou
 | `Limits__Connections__IdleInTransactionTimeout` | `00:01:00` | Idle-in-transaction timeout. |
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission below the concurrency ceiling. |
 | `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with RDS Proxy and transaction-mode poolers — see [Connection poolers and proxies](#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
+| `Database__SessionSettings__Mode` | `connection` | `connection` sets the session timeouts and default `search_path` on every connection; `role-defaults` issues no session `SET` and relies on `ALTER ROLE` defaults — see [Role defaults instead of per-connection SET](#role-defaults-instead-of-per-connection-set). |
+
+Pool maxima and minima apply **per data source, per Honua process**. The primary
+database, named secure connections, and registered source-bound feature/tile
+connections have independently owned pools. Source-bound reads use the configured
+pool settings and the same admission gate as primary database operations. A
+source's credentials, database, and search path remain independent of the primary
+connection. Primary `Database:Schema` and request-scoped schema overrides do not
+apply to bound source connections.
+
+The admission ceiling is shared within each process; it bounds active leases,
+not the sum of idle physical connections across pools or replicas. Account for
+all source pools and application replicas when budgeting PostgreSQL connection
+slots. Credential changes for a registered connection retire its previous pool;
+pending opens and active connection leases retain their pool until the connection
+is returned. This also protects multiplexed logical connections between commands.
+Shutdown retires all cached pools with the same lifetime guarantees. Legacy bindings without a stable connection
+ID use a separate pool for each distinct connection string.
+
+Named secure and source-bound pools are retired when their registered connection
+is deleted locally. Pools with no active or opening leases also expire after
+`Limits:Connections:ConnectionIdleLifetimeSeconds`, checked every
+`ConnectionPruningIntervalSeconds`. This bounds idle pools on other server
+instances and requests that finish opening after a deletion. The idle period
+starts when the last lease returns. Minimum pool size applies while the source
+pool remains active; a later request recreates an expired pool. Active leases
+finish normally, and the primary default database pool is unaffected.
 
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
+
+## Indexing numeric source columns
+
+For source-backed layers with physical columns, Honua retains the published
+numeric type in filter expressions. Newly published PostgreSQL `smallint` columns
+include a provider hint that lets simple `Integer` comparisons (`=`, `!=`, `<>`,
+`<`, `<=`, `>`, `>=` with an integer literal) use an ordinary index on the source
+column. Parameters retain their original integer width, including out-of-range
+literals.
+
+Publication hints can become stale. Before an eligible buffered or streaming read,
+Honua checks the actual column type in a row-free statement batched with the query
+in one database round trip. The batch holds the relation lock until execution
+finishes, preventing external DDL between verification and use. A mismatched type,
+domain, or custom operator search path uses the original declared-type query.
+The discarded statement is guarded against evaluating source rows or row-security
+policies. Existing transactions, bindings without hints, compound predicates,
+arithmetic, explicit casts, JSONB attributes, counts and aggregates retain the
+canonical casts.
+Republish an existing source layer to record its current smallint hints; existing
+publications do not discover or persist these hints during queries.
+
+Those canonical queries can still use an expression index matching the declared
+type. For example, `priority::integer` can prevent an ordinary `smallint` index
+from serving a selective filter; an expression index preserves its semantics:
+
+```sql
+CREATE INDEX CONCURRENTLY features_priority_integer_idx
+    ON public.features ((priority::integer));
+ANALYZE public.features;
+EXPLAIN SELECT * FROM public.features WHERE priority::integer = 32767;
+```
+
+Replace the example table and column with the source binding's names. Run
+`CREATE INDEX CONCURRENTLY` outside a transaction block. Check the actual query
+plan and workload before retaining the additional index: it consumes storage and
+adds maintenance work on writes. See PostgreSQL's
+[indexes on expressions](https://www.postgresql.org/docs/current/indexes-expressional.html).
+
+This example applies to physical `smallint` columns published as `Integer`, not
+fields stored inside a JSONB attributes document. Honua keeps numeric casts
+because removing them can change arithmetic overflow and decimal-to-Double
+comparison results. An expression index supports the canonical declared-type
+predicate without changing those query semantics. Check the plan before adding
+one to a newly published source whose simple comparisons already use its ordinary
+index.
+
+## Bounded source-backed spatial reads
+
+When `Database__PreferSerialBoundedSpatialReads` is unset, Honua automatically
+uses a narrow serial-planner policy for source-backed PostGIS point layers.
+Set it to `false` to retain PostgreSQL planning for these reads, or `true` to
+explicitly enable the same bounded policy. Eligible reads have a simple
+intersects/envelope bbox, an effective first-page limit of
+1–100 features before the extra pagination probe row, default ordering (including
+the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
+Unknown geometry types, ambient transactions and borrowed mutation transactions
+retain ordinary planning.
+This option does not change counts, statistics, streaming, tiles, larger pages,
+later pages or custom sorts. Count planning has separate options below.
+
+For an eligible read, Honua batches a transaction-local
+`max_parallel_workers_per_gather=0` setting with the original parameterized
+feature SELECT. The setting ends with the batch, including errors, cancellation
+and early reader disposal. The scoped SELECT uses the equivalent `SELECT ALL`
+modifier so auto-preparation cannot reuse a parallel plan from an ordinary read.
+Connection pool limits, query admission, predicates, authorization, CRS and
+pagination remain in effect.
+
+This profile targets parallel-worker startup overhead observed in bounded point
+bbox reads. It does not set a PostgreSQL global or session default. Benchmark
+representative selectivities and concurrent workloads on your deployment;
+limiting returned rows does not limit the work required to find them. An explicit
+`false` provides a control for measuring this policy and opting out.
+
+## Source-backed spatial counts
+
+`Database__DisableJitForSourceSpatialCounts=true` disables PostgreSQL JIT only
+within eligible count queries. The default is `false`. Eligible queries count
+source-backed point layers with a simple intersects/envelope bbox. Distinct
+queries, non-default branches, unknown geometry types, ambient transactions and
+borrowed mutation transactions retain ordinary planning. Page size and offset do
+not restrict eligibility: the exact count still considers all matching rows.
+
+Honua batches transaction-local `jit=off` with the original parameterized count.
+The setting ends with that batch, including SQL errors and cancellation, and the
+scoped count uses a distinct `SELECT ALL` identity to avoid reusing a generic plan
+prepared by the ordinary path. Spatial predicates, security filters and exact
+count results are unchanged. The profile does not alter parallel-worker settings
+or the planning of feature reads, statistics or tiles. It can be enabled
+independently of `PreferSerialBoundedSpatialReads`.
+
+This profile targets SQL compilation overhead observed in broad point-bbox
+counts. PostgreSQL JIT is separate from Honua Native AOT. It can help short queries
+where compilation costs outweigh execution savings; larger or more complex
+queries may benefit from JIT. Measure representative selectivities and concurrent
+workloads before enabling it. Keep this tuned profile separate from shipping
+defaults in benchmark reports.
+
+When `Database__PreferSerialSourceSpatialCounts` is unset, Honua automatically
+uses serial plans only for exact counts associated with the bounded reads
+described above. The count retains the originating query's eligibility limits:
+first page, limit 1–100, ascending primary-ID/default order, simple point bbox,
+and no distinct, branch-version or null-geometry request. Standalone counts
+retain PostgreSQL planning even if their query includes an eligible limit.
+Unbounded, larger-page and later-page reads also retain ordinary count planning.
+
+Set `Database__PreferSerialSourceSpatialCounts=false` to opt out of serial counts.
+Set it to `true` to explicitly enable serial plans for all eligible source-backed
+point bbox counts, including standalone counts and those associated with
+unbounded or later-page reads. The explicit option retains the broader
+eligibility described for count JIT suppression above.
+
+The read and count options are independent: opting out of serial feature reads
+does not opt out of automatically scoped associated counts, and vice versa.
+Serial counts batch transaction-local `max_parallel_workers_per_gather=0` with
+the count, without changing feature SELECT planning or PostgreSQL JIT unless the
+JIT option is also enabled. Explicit `EnvelopeIntersects` requests retain their existing bbox-only
+predicate; exact `Intersects` requests retain exact intersection.
+
+When both count options are enabled, both settings precede the same count in one
+implicit batch transaction. Ordinary, JIT-only, serial-only and combined counts
+use distinct SQL preparation identities so their generic plans cannot mix on a
+pooled connection. Both settings end on success, SQL errors and cancellation;
+caller-owned transactions retain their original planning behavior. Short first
+pages that already prove the exact total do not execute a count or apply either
+count setting.
+
+Serial counts target worker-startup overhead observed in a 100K-point SQL
+diagnostic. That experiment is not an application throughput result or evidence
+that serial execution wins for every dataset or selectivity. Validate throughput
+and tail latency under representative concurrent traffic, using an explicit
+`false` as the control. No global database setting or migration is required;
+these SQL planner policies are independent of Honua's JIT or Native AOT build.
+
+See PostgreSQL's [JIT decision documentation](https://www.postgresql.org/docs/17/jit-decision.html)
+and Npgsql's [batch transaction behavior](https://www.npgsql.org/doc/basic-usage.html#batching)
+for the underlying planner and transaction semantics.
 
 ## Related pages
 

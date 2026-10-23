@@ -1,0 +1,71 @@
+{
+  "issue": "honua-io/honua-server#4974",
+  "label": "diagnostic build of fix/4974-soap-services-bare-get at ccbe746c26 (framework-dependent Honua.Server output, same database and Redis as the candidate control)",
+  "recordedAt": "2026-09-16T19:06:05+00:00",
+  "requests": {
+    "GET /services?wsdl": {
+      "status": 200,
+      "contentType": "text/xml; charset=utf-8",
+      "bodySha256": "f5f58dafe4cb78bd03c4cec294ef7f2249b93885803d1b15373ab04170a5a2d2",
+      "bodyBytes": 10416,
+      "root": "{http://schemas.xmlsoap.org/wsdl/}definitions",
+      "wsdlOperations": [
+        "GetFolders",
+        "GetMessageFormats",
+        "GetMessageVersion",
+        "GetServiceDescriptions",
+        "GetServiceDescriptionsEx",
+        "GetTokenServiceURL",
+        "RequiresTokens"
+      ]
+    },
+    "GET /services": {
+      "status": 200,
+      "contentType": "text/xml; charset=utf-8",
+      "bodySha256": "f5f58dafe4cb78bd03c4cec294ef7f2249b93885803d1b15373ab04170a5a2d2",
+      "bodyBytes": 10416,
+      "root": "{http://schemas.xmlsoap.org/wsdl/}definitions",
+      "wsdlOperations": [
+        "GetFolders",
+        "GetMessageFormats",
+        "GetMessageVersion",
+        "GetServiceDescriptions",
+        "GetServiceDescriptionsEx",
+        "GetTokenServiceURL",
+        "RequiresTokens"
+      ]
+    },
+    "GET /services/": {
+      "status": 200,
+      "contentType": "text/xml; charset=utf-8",
+      "bodySha256": "f5f58dafe4cb78bd03c4cec294ef7f2249b93885803d1b15373ab04170a5a2d2",
+      "bodyBytes": 10416,
+      "root": "{http://schemas.xmlsoap.org/wsdl/}definitions",
+      "wsdlOperations": [
+        "GetFolders",
+        "GetMessageFormats",
+        "GetMessageVersion",
+        "GetServiceDescriptions",
+        "GetServiceDescriptionsEx",
+        "GetTokenServiceURL",
+        "RequiresTokens"
+      ]
+    },
+    "POST /services GetMessageVersion (9.0 namespace)": {
+      "status": 200,
+      "contentType": "text/xml; charset=utf-8",
+      "hasMessageVersion": true
+    }
+  },
+  "checks": {
+    "wsdlForm200": true,
+    "siteRoot200": true,
+    "siteRootServesCatalogWsdl": true,
+    "siteRootTrailingSlashServesCatalogWsdl": true,
+    "soapCatalogStillNegotiates": true
+  },
+  "summary": {
+    "total": 5,
+    "passed": 5
+  }
+}

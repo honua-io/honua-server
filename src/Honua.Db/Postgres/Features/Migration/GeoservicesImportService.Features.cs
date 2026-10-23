@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -30,31 +31,52 @@ internal sealed partial class GeoservicesImportService
         int targetSrid,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var inserted = 0;
         var failed = 0;
         string? firstError = null;
+        string? firstFailureReason = null;
         var higherDimensionCount = 0;
 
-        // Build insert statement
-        var fields = layerInfo.Fields.Where(f => !f.IsObjectId && !IsGeometryField(f)).ToArray();
+        // Build insert statement. Column names follow the same mapping as CREATE TABLE so a
+        // source OBJECTID/GEOM attribute, or two names that sanitize identically, cannot collide
+        // with the surrogate key or with each other. Attribute values are still read by source name.
+        var columnMap = GeoservicesImportColumns.Map(layerInfo);
+        var fields = columnMap.Columns.Select(column => column.Field).ToArray();
         var hasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType);
         var sourceObjectIdField = layerInfo.Fields.FirstOrDefault(f => f.IsObjectId)?.Name;
         var objectIdMap = new Dictionary<long, long>(features.Length);
+        var absentGeometryTargetIds = new HashSet<long>();
+        var unconvertedGeometryTargetIds = new HashSet<long>();
+        var invalidSourceGeometryTargetIds = new HashSet<long>();
 
-        var columnNames = string.Join(", ", fields.Select(f => $"\"{f.Name.SanitizeFieldName()}\""));
+        var columnList = new List<string>(fields.Length + 1);
+        columnList.AddRange(columnMap.Columns.Select(column => $"\"{column.ColumnName}\""));
         if (hasGeometry)
         {
-            columnNames += ", geom";
+            columnList.Add("geom");
         }
+
+        var columnNames = string.Join(", ", columnList);
 
         var parameterPlaceholders = string.Join(", ", fields.Select((_, i) => $"@p{i}"));
         if (hasGeometry)
         {
-            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid)}";
+            // A geometry-only layer has no attribute placeholders. Appending with a comma
+            // would emit VALUES (, geom-expr), which PostgreSQL rejects.
+            var geometryExpression = BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid);
+            parameterPlaceholders = parameterPlaceholders.Length == 0
+                ? geometryExpression
+                : $"{parameterPlaceholders}, {geometryExpression}";
         }
 
+        // Classify the source WKT, not the geometry stored after ST_MakeValid. A repaired
+        // polygon remains an inherited source defect or an unrepaired rewrite (#4826).
+        var sourceValidity = hasGeometry
+            ? $", CASE WHEN @geom IS NULL THEN NULL ELSE ST_IsValid(ST_GeomFromText(@geom, {targetSrid})) END"
+            : string.Empty;
         var insertSql =
-            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}";
+            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}{sourceValidity}";
 
         // Create the command once, add parameters with placeholder values, and prepare
         await using var cmd = connection.CreateCommand();
@@ -82,10 +104,11 @@ internal sealed partial class GeoservicesImportService
 
         foreach (var feature in features)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            // A failed SAVEPOINT has no row scope to roll back to.
+            await transaction.SaveAsync(savepointName, cancellationToken).ConfigureAwait(false);
             try
             {
-                await transaction.SaveAsync(savepointName, cancellationToken).ConfigureAwait(false);
-
                 // Update attribute parameter values
                 for (var i = 0; i < fields.Length; i++)
                 {
@@ -100,7 +123,11 @@ internal sealed partial class GeoservicesImportService
                     cmd.Parameters[$"p{i}"].Value = value ?? DBNull.Value;
                 }
 
-                // Update geometry parameter value
+                // Update geometry parameter value. A present source geometry that cannot be
+                // converted is still inserted as NULL so one bad shape does not drop the row,
+                // and the target id is recorded as transfer loss rather than an inherited null.
+                var sourceGeometryAbsent = false;
+                var sourceGeometryUnconverted = false;
                 if (hasGeometry && feature.Geometry.HasValue)
                 {
                     if (HasHigherDimensionCoordinates(feature.Geometry.Value))
@@ -111,6 +138,7 @@ internal sealed partial class GeoservicesImportService
                     var wkt = ConvertEsriGeometryToWkt(feature.Geometry.Value, layerInfo.HasZ, layerInfo.HasM);
                     if (wkt is null)
                     {
+                        sourceGeometryUnconverted = true;
                         Log.GeometryConversionFailed(_logger, tableName);
                     }
 
@@ -118,31 +146,67 @@ internal sealed partial class GeoservicesImportService
                 }
                 else if (hasGeometry)
                 {
+                    sourceGeometryAbsent = true;
                     cmd.Parameters["geom"].Value = DBNull.Value;
                 }
 
-                var rawInsertedId = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                long? insertedId = null;
+                bool? sourceGeometryValid = null;
+                await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && !reader.IsDBNull(0))
+                    {
+                        insertedId = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                        if (hasGeometry && !reader.IsDBNull(1))
+                        {
+                            sourceGeometryValid = reader.GetBoolean(1);
+                        }
+                    }
+                }
+
                 inserted++;
 
-                if (sourceObjectIdField is not null
-                    && TryReadSourceObjectId(feature, sourceObjectIdField, out var sourceOid)
-                    && rawInsertedId is not null
-                    && rawInsertedId is not DBNull)
+                if (insertedId is { } targetFeatureId)
                 {
-                    objectIdMap[sourceOid] = Convert.ToInt64(rawInsertedId, System.Globalization.CultureInfo.InvariantCulture);
+                    if (sourceGeometryAbsent)
+                    {
+                        absentGeometryTargetIds.Add(targetFeatureId);
+                    }
+                    else if (sourceGeometryUnconverted)
+                    {
+                        unconvertedGeometryTargetIds.Add(targetFeatureId);
+                    }
+                    else if (sourceGeometryValid == false)
+                    {
+                        invalidSourceGeometryTargetIds.Add(targetFeatureId);
+                    }
+
+                    if (sourceObjectIdField is not null
+                        && TryReadSourceObjectId(feature, sourceObjectIdField, out var sourceOid))
+                    {
+                        objectIdMap[sourceOid] = targetFeatureId;
+                    }
                 }
             }
             // Intentionally broad: per-feature insert failure; roll back to the savepoint so the
             // outer transaction is not poisoned by the 25P02 aborted-transaction state. Use
             // CancellationToken.None: if the caller's token has been cancelled we still need to
             // clean up the transaction state.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
+            catch (Exception ex) when (ex is not OutOfMemoryException
+                && !(ex is OperationCanceledException && cancellationToken.IsCancellationRequested))
             {
                 await transaction.RollbackAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
                 firstError ??= "Feature import failed.";
+                firstFailureReason ??= DescribeFeatureInsertFailure(ex);
                 Log.FeatureInsertFailed(_logger, ex.Message);
                 failed++;
             }
+
+            // Reusing a name only shadows an older savepoint. RELEASE is required
+            // after both success and ROLLBACK TO so subtransaction locks stay bounded.
+            // Finish this cleanup even if cancellation arrived after the row insert;
+            // the caller still owns rollback of the outer import transaction.
+            await transaction.ReleaseAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
         }
 
         if (firstError is not null)
@@ -155,7 +219,14 @@ internal sealed partial class GeoservicesImportService
             Log.HigherDimensionGeometryDetected(_logger, higherDimensionCount, tableName);
         }
 
-        return new InsertFeaturesResult(inserted, failed, objectIdMap);
+        return new InsertFeaturesResult(
+            inserted,
+            failed,
+            objectIdMap,
+            firstFailureReason,
+            absentGeometryTargetIds,
+            unconvertedGeometryTargetIds,
+            invalidSourceGeometryTargetIds);
     }
 
     private static bool TryReadSourceObjectId(
@@ -207,11 +278,18 @@ internal sealed partial class GeoservicesImportService
     /// Outcome of a single InsertFeaturesAsync batch: insert/fail counters plus a
     /// mapping from source ObjectId to the BIGSERIAL identifier assigned by the
     /// imported table. Used to link attachments back to the persisted features.
+    /// <see cref="FirstFailureReason"/> is the redacted reason the batch's first failed row was
+    /// rejected (see <see cref="DescribeFeatureInsertFailure"/>), or <see langword="null"/> when no
+    /// row failed.
     /// </summary>
     internal readonly record struct InsertFeaturesResult(
         int Inserted,
         int Failed,
-        Dictionary<long, long> ObjectIdMap);
+        Dictionary<long, long> ObjectIdMap,
+        string? FirstFailureReason = null,
+        HashSet<long>? AbsentGeometryTargetIds = null,
+        HashSet<long>? UnconvertedGeometryTargetIds = null,
+        HashSet<long>? InvalidSourceGeometryTargetIds = null);
 
     private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {
@@ -247,6 +325,13 @@ internal sealed partial class GeoservicesImportService
                 element.ValueKind == JsonValueKind.Number
                     ? DateTimeOffset.FromUnixTimeMilliseconds(element.GetInt64())
                     : null,
+
+            "ESRIFIELDTYPEDATEONLY" =>
+                element.ValueKind == JsonValueKind.String
+                    && DateOnly.TryParseExact(element.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out var dateOnly)
+                    ? dateOnly
+                    : throw new FormatException("Date-only fields require an ISO calendar date (yyyy-MM-dd)."),
 
             "ESRIFIELDTYPEGUID" or "ESRIFIELDTYPEGLOBALID" =>
                 element.ValueKind == JsonValueKind.String && Guid.TryParse(element.GetString(), out var guid)

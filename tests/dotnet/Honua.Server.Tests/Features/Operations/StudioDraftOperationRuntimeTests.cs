@@ -1,18 +1,23 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
-using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
+using Honua.Core.Features.Studio.Services.Bridging;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
-using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
@@ -25,6 +30,748 @@ public sealed class StudioDraftOperationRuntimeTests
             .Single(candidate => candidate.OperationId == StudioDraftOperations.CreatePublicationRequest);
 
         descriptor.ApprovalModel.Should().Be(OperationApprovalModel.StudioPublishRequest);
+    }
+
+    [UnitTest]
+    public async Task PublicationRequestValidation_RejectsMismatchedContentHashBeforeActuation()
+    {
+        var itemId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetVersionAsync(itemId, versionId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentVersion
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                VersionNumber = 1,
+                PackageKey = "parcels",
+                ContentHash = "saved-hash",
+                Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+                Validation = StudioValidationSummary.NotValidated,
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentItemPointers { ItemId = itemId, CurrentVersionId = versionId });
+        var executor = PublicationExecutor(lifecycle);
+        var payload = JsonSerializer.Serialize(
+            new StudioPublicationRequestPayload
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                ContentHash = "wrong-hash",
+                Intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+        var act = () => executor.ValidateAsync(Request(StudioDraftOperations.CreatePublicationRequest, payload));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*content hash*");
+        await lifecycle.DidNotReceiveWithAnyArgs().CreatePublicationRequestAsync(
+            default, default, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    public async Task PublicationRequestActuation_RejectsInvalidSavedVersion()
+    {
+        var itemId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetVersionAsync(itemId, versionId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentVersion
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                VersionNumber = 1,
+                PackageKey = "parcels",
+                ContentHash = "saved-hash",
+                Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+                Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        lifecycle.CreatePublicationRequestAsync(
+                itemId, versionId, versionId, Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(),
+                Arg.Any<string?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = itemId,
+                VersionId = versionId,
+                Status = StudioPublicationRequestStatus.Rejected,
+                Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        var executor = PublicationExecutor(lifecycle);
+        var payload = JsonSerializer.Serialize(
+            new StudioPublicationRequestPayload
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                ContentHash = "saved-hash",
+            },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload),
+            Context("rejected-publication"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.ResourceIds.Should().NotContainKey("activeUrl");
+    }
+
+    // honua-server#3980: ValidateAsync binds the proposal to the item's current version, but
+    // actuation runs later (approved replay) and used to reload only the version and hash. These
+    // two tests pin the compare-and-set that closes that window, driven through the real
+    // lifecycle + in-memory store so the pointer write is the one production uses.
+    [UnitTest]
+    public async Task PublicationRequestActuation_DraftSavedAfterValidation_ConflictsInsteadOfPublishingStaleVersion()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var approved = await SaveFirstVersionAsync(lifecycle);
+        var payload = PublicationPayload(approved);
+
+        // The reviewer validates the proposal against the version that is current right now.
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload));
+        validation.IsValid.Should().BeTrue();
+
+        // A draft is saved between validation and actuation, moving the item's current pointer.
+        var superseding = await SaveSecondVersionAsync(lifecycle, approved);
+        superseding.VersionId.Should().NotBe(approved.VersionId);
+        (await store.GetPointersAsync(approved.ItemId))!.CurrentVersionId
+            .Should().Be(superseding.VersionId);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload),
+            Context("stale-publication"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Result!.Details["errorKind"].Should().Be("conflict");
+        handle.Reason.Should().Contain("advanced past the approved version");
+        var pointers = await store.GetPointersAsync(approved.ItemId);
+        pointers!.PublishedVersionId.Should().BeNull("the stale approved version must never publish");
+        pointers.CurrentVersionId.Should().Be(superseding.VersionId);
+    }
+
+    [UnitTest]
+    public async Task PublicationRequestActuation_CurrentPointerUnchanged_AdvancesPublishedPointer()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var approved = await SaveFirstVersionAsync(lifecycle);
+        var payload = PublicationPayload(approved);
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload));
+        validation.IsValid.Should().BeTrue();
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload),
+            Context("clean-publication"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.ResourceIds!["versionId"].Should().Be(approved.VersionId.ToString("D"));
+        // honua-server#4907: the intent route is a governed key; activeUrl names the resolver
+        // that serves it, and that resolver resolves the route back to this publication.
+        handle.ResourceIds["route"].Should().Be("/studio/parcels");
+        handle.ResourceIds["activeUrl"].Should().Be("/api/v1/studio/published/studio/parcels");
+        var governing = await lifecycle.GetActivePublicationRequestByRouteAsync("/studio/parcels");
+        governing!.RequestId.ToString("D").Should().Be(handle.ResourceIds["publicationId"]);
+        var pointers = await store.GetPointersAsync(approved.ItemId);
+        pointers!.PublishedVersionId.Should().Be(approved.VersionId);
+        pointers.CurrentVersionId.Should().Be(approved.VersionId);
+    }
+
+    [UnitTest]
+    public void PublishedRoutes_BuildActiveUrl_EncodesSegmentsAndRoundTripsTheRouteKey()
+    {
+        StudioPublishedRoutes.BuildActiveUrl("/maps/parcels").Should().Be("/api/v1/studio/published/maps/parcels");
+        StudioPublishedRoutes.BuildActiveUrl("/maps/parcel map?v=1")
+            .Should().Be("/api/v1/studio/published/maps/parcel%20map%3Fv%3D1");
+        StudioPublishedRoutes.ToRouteKey("maps/parcels").Should().Be("/maps/parcels");
+        StudioPublishedRoutes.ToRouteKey(null).Should().Be("/");
+    }
+
+    // honua-server#3980 follow-up: OperationDispatcher stops after ValidateAsync for every
+    // non-Allow decision, so an approval-gated deployment never reaches
+    // CreatePublicationRequestAsync -- the actuation-path authority on intent validity. An
+    // invalid intent therefore has to be rejected pre-policy, and the rejection has to keep the
+    // errorKind=argument taxonomy the REST surface maps to 400 rather than degrading to 500.
+    [UnitTest]
+    public async Task PublicationRequestValidation_InvalidIntent_RejectsAsArgumentBeforePolicyRouting()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, InvalidIntentPayload(saved)));
+
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("invalid");
+        validation.ErrorKind.Should().Be("argument");
+        validation.ApprovalPlan.Should().BeNull("a rejected intent must never seed an approval plan");
+        validation.Messages.Should().ContainSingle()
+            .Which.Should().Contain("Publication intent is invalid").And.Contain("route must start with '/'");
+    }
+
+    [UnitTest]
+    public async Task PublicationRequestValidation_RouteClaimedByAnotherItem_RejectsAsConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var owner = await SaveFirstVersionAsync(lifecycle);
+        await lifecycle.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "studio-author");
+
+        var sameItem = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(owner)));
+        sameItem.IsValid.Should().BeTrue();
+
+        var otherDraft = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "publication-other",
+            WorkspaceId = "studio",
+            OwnerId = "studio-author",
+            ActorId = "studio-author",
+            Envelope = PublicationEnvelope("1=1"),
+        });
+        var other = await lifecycle.SaveDraftAsVersionAsync(otherDraft.DraftId, "first save", "studio-author");
+        other.Should().NotBeNull();
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(other!)));
+
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("invalid");
+        validation.ErrorKind.Should().Be("conflict");
+        validation.ApprovalPlan.Should().BeNull();
+        validation.Messages.Should().ContainSingle()
+            .Which.Should().Be("Route '/studio/parcels' is already claimed by another Studio publication.");
+        (await store.GetPointersAsync(other!.ItemId))!.PublishedVersionId.Should().BeNull();
+    }
+
+    // honua-server#5825: the pre-policy route check must not reject a bridged family whose
+    // native store, not the Studio store, owns the publication.
+    [UnitTest]
+    public async Task PublicationRequestValidation_BridgedFamily_AllowsRouteOwnedByNativeItem()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var bridge = new SingleItemFamilyBridge(StudioPackageFamily.Form);
+        var lifecycle = BuildLifecycle(store, new StudioFamilyPersistenceBridgeCatalog([bridge]));
+        var executor = PublicationExecutor(lifecycle);
+        var owner = await SaveFirstVersionAsync(lifecycle);
+        await lifecycle.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "studio-author");
+
+        var bridged = bridge.Seed();
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(bridged)));
+
+        validation.IsValid.Should().BeTrue();
+        validation.Status.Should().Be("valid");
+        validation.ErrorKind.Should().BeNull();
+        validation.ApprovalPlan.Should().NotBeNull();
+        (await store.GetPointersAsync(owner.ItemId))!.PublishedVersionId.Should().Be(owner.VersionId);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(bridged)),
+            Context("bridged-publication"));
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.ResourceIds.Should().NotContainKey("activeUrl");
+        handle.ResourceIds.Should().NotContainKey("route");
+        handle.ResourceIds.Should().ContainKey("publicationId");
+        (await lifecycle.GetActivePublicationRequestByRouteAsync("/studio/parcels"))!
+            .ItemId.Should().Be(owner.ItemId);
+    }
+
+    // honua-server#5825: a Form saved in the inner store before the bridge existed still owns
+    // Studio routes. The pre-policy check must reject it, or an approval deployment returns
+    // 202 and actuation then fails inside the inner store.
+    [UnitTest]
+    public async Task PublicationRequestValidation_InnerItemOfBridgedFamily_RejectsAsConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var unbridged = BuildLifecycle(store);
+        var legacyDraft = await unbridged.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "legacy-form",
+            WorkspaceId = "studio",
+            OwnerId = "studio-author",
+            ActorId = "studio-author",
+            Envelope = PublicationEnvelope("1=1") with
+            {
+                Family = StudioPackageFamily.Form,
+                Format = "studio_form_package.v1",
+            },
+        });
+        var legacy = await unbridged.SaveDraftAsVersionAsync(legacyDraft.DraftId, "saved before the form bridge", "studio-author");
+        legacy.Should().NotBeNull();
+
+        var lifecycle = BuildLifecycle(store, new StudioFamilyPersistenceBridgeCatalog(
+            [new SingleItemFamilyBridge(StudioPackageFamily.Form)]));
+        var executor = PublicationExecutor(lifecycle);
+        var owner = await SaveFirstVersionAsync(lifecycle);
+        await lifecycle.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "studio-author");
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(legacy!)));
+
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("invalid");
+        validation.ErrorKind.Should().Be("conflict");
+        validation.ApprovalPlan.Should().BeNull();
+        validation.Messages.Should().ContainSingle()
+            .Which.Should().Be("Route '/studio/parcels' is already claimed by another Studio publication.");
+        (await store.GetPointersAsync(legacy.ItemId))!.PublishedVersionId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task PublicationRequest_RequireApproval_InvalidIntentFailsAsArgumentWithoutProposal()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var bridge = new DurableApprovalBridge();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new RequireApprovalPolicy(),
+            TimeProvider.System,
+            approvalBridge: bridge,
+            instanceStore: new VolatileOperationInstanceStore(),
+            auditLog: new VolatileOperationAuditLog());
+
+        var handle = await dispatcher.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, InvalidIntentPayload(saved)),
+            new OperationPolicyContext { PrincipalId = "studio-operator" });
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Status.Should().NotBe(OperationHandleStatus.RequiresApproval);
+        handle.Result!.Details["errorKind"].Should().Be("argument");
+        handle.Reason.Should().Contain("Publication intent is invalid").And.Contain("route must start with '/'");
+        bridge.Request.Should().BeNull("an invalid intent must never be persisted as an approval proposal");
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task PublicationProposal_DirectExecuteEdition_AwaitsApprovalWithoutMovingPublishedPointer()
+    {
+        // #3429: on a Community deployment Studio draft mutations execute directly. Before the
+        // publication-proposal floor, an agent proposal published immediately and only then reported
+        // that it had not entered approval. The same request without the proposal action keeps the
+        // edition's direct-execute behavior for the REST publish-request surface.
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var entitlements = Substitute.For<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>();
+        entitlements.GetSnapshot().Returns(new Honua.Core.Features.Licensing.Domain.LicenseSnapshot(
+            Honua.Core.Features.Licensing.Domain.HonuaEdition.Community,
+            IsValid: true,
+            Honua.Core.Features.Licensing.Domain.LicenseValidationState.Valid,
+            ExpiresAt: null,
+            LicensedTo: "test",
+            LicenseId: "test",
+            IssuedAt: null,
+            Entitlements: [],
+            ActiveEntitlementKeys: new HashSet<string>(),
+            SnapshotVersion: 1,
+            KeyId: null));
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                entitlements,
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [PublicationExecutor(lifecycle)],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+
+        var proposal = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext
+            {
+                PrincipalId = "studio-author",
+                CorrelationId = "corr-proposal",
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+            });
+
+        proposal.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        proposal.Operation.ProposalId.Should().Be("proposal-studio");
+        proposal.Operation.ResourceIds.Should().ContainKey("requestId");
+        Guid.TryParse(proposal.Operation.ResourceIds["requestId"], out var publicationRequestId)
+            .Should().BeTrue();
+        bridge.Request!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        var proposalJson = bridge.Request.Parameters[StudioDraftOperations.PayloadParameter];
+        proposalJson.Should().NotBeNull();
+        var proposalPayload = JsonSerializer.Deserialize(
+            proposalJson!,
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+        proposalPayload!.RequestId.Should().Be(publicationRequestId);
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull(
+            "a proposal must never move the published pointer before a separate principal approves it");
+
+        var direct = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-direct" });
+
+        direct.Operation.Status.Should().Be(OperationHandleStatus.Completed);
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().Be(saved.VersionId);
+    }
+
+    [UnitTest]
+    public async Task LicensingDisabled_ComposesDirectly_WhilePublicationAndRollbackAwaitApproval()
+    {
+        // #4758: Licensing:Mode=Disabled reports Enterprise, which used to route every Studio draft
+        // mutation, including create, to approval. Composition now executes directly, while the
+        // REST publish-request, the agent publication proposal and rollback still wait for approval.
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [
+                    new StudioDraftCreateExecutor(lifecycle, TimeProvider.System),
+                    PublicationExecutor(lifecycle),
+                    new StudioRollbackExecutor(lifecycle, TimeProvider.System),
+                ],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+
+        var created = await runtime.CreateAsync(
+            new CreateStudioPackageDraftCommand
+            {
+                PackageKey = "disabled-compose",
+                WorkspaceId = "studio",
+                OwnerId = "studio-author",
+                ActorId = "studio-author",
+                Envelope = PublicationEnvelope("1=1"),
+            },
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-create" });
+
+        created.Operation.Status.Should().Be(OperationHandleStatus.Completed);
+        created.Value.Should().NotBeNull();
+        (await store.GetDraftAsync(created.Value!.DraftId)).Should().NotBeNull();
+        bridge.Request.Should().BeNull("draft composition must not create an approval proposal");
+
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+        var publication = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-publish" });
+
+        publication.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.Request!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        bridge.Request.GatewayRequest!.ActionDiscriminator.Should().Be(BuiltInGuardrailActions.StudioPublicationRequest);
+
+        var proposal = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext
+            {
+                PrincipalId = "studio-author",
+                CorrelationId = "corr-proposal",
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+            });
+
+        proposal.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.Request!.GatewayRequest!.ActionDiscriminator.Should().Be(BuiltInGuardrailActions.StudioPublicationProposal);
+
+        var rollback = await runtime.RollbackAsync(
+            saved.ItemId, saved.VersionId, StudioRollbackPointer.Current, "studio-author", "restore",
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-rollback" });
+
+        rollback.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.Request!.OperationId.Should().Be(StudioDraftOperations.Rollback);
+        var pointers = await store.GetPointersAsync(saved.ItemId);
+        pointers!.PublishedVersionId.Should().BeNull("neither publication nor rollback may move a pointer before approval");
+        pointers.CurrentVersionId.Should().Be(saved.VersionId);
+    }
+
+    [UnitTest]
+    public async Task LicensingDisabled_AdminPublication_ExecutesBeforeTheProposalGuardrail()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [PublicationExecutor(lifecycle)],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+
+        var published = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-admin",
+            new StudioDraftMutationContext
+            {
+                PrincipalId = "studio-admin",
+                CorrelationId = "corr-admin",
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+                PublishImmediately = true,
+            });
+
+        published.Operation.Status.Should().Be(OperationHandleStatus.Completed);
+        published.Operation.ProposalId.Should().BeNull();
+        published.Value.Should().NotBeNull();
+        published.Value!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        bridge.Request.Should().BeNull("an admin publication must not open an approval proposal");
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().Be(saved.VersionId);
+    }
+
+    [UnitTest]
+    public async Task PublicationRequest_IdempotentRetry_AdvertisesTheSealedRequestId()
+    {
+        // A lost 202 is retried with the same Idempotency-Key. The dispatcher returns the
+        // already-sealed proposal and does not adopt the retry payload, so the retry's
+        // ResourceIds must name the request id approval will persist.
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [PublicationExecutor(lifecycle)],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+        var context = new StudioDraftMutationContext
+        {
+            PrincipalId = "studio-author",
+            TenantId = "tenant-a",
+            CorrelationId = "corr-publish-retry",
+            IdempotencyKey = "publish-lost-202",
+        };
+
+        var first = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author", context);
+        var retry = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            context with { CorrelationId = "corr-publish-retry-2" });
+
+        first.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        retry.Operation.OperationInstanceId.Should().Be(first.Operation.OperationInstanceId);
+        retry.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.ProposalCount.Should().Be(1, "the retry must not seal a second proposal");
+        var advertised = first.Operation.ResourceIds["requestId"];
+        retry.Operation.ResourceIds["requestId"].Should().Be(advertised);
+        retry.Operation.ResourceIds["publicationId"].Should().Be(advertised);
+        Guid.TryParse(advertised, out var publicationRequestId).Should().BeTrue();
+
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.CreatePublicationRequest);
+        var mapper = new StudioDraftApprovalRequestMapper(StudioDraftOperations.CreatePublicationRequest);
+        var sealedRequest = mapper.Map(
+            descriptor,
+            bridge.Request!,
+            bridge.Context!,
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var replay = mapper.MapReplay(sealedRequest);
+        var sealedPayload = JsonSerializer.Deserialize(
+            replay.Request.Parameters[StudioDraftOperations.PayloadParameter]!,
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+        sealedPayload!.RequestId.Should().Be(publicationRequestId);
+
+        var actuated = await PublicationExecutor(lifecycle).SubmitAsync(replay.Request, Context("approve-sealed"));
+        actuated.Status.Should().Be(OperationHandleStatus.Completed);
+        actuated.ResourceIds["requestId"].Should().Be(advertised);
+        (await lifecycle.GetPublicationRequestAsync(saved.ItemId, saved.VersionId, publicationRequestId))!
+            .RequestId.Should().Be(publicationRequestId);
+        (await lifecycle.GetPublicationRequestAsync(saved.ItemId, saved.VersionId, Guid.NewGuid()))
+            .Should().BeNull();
+
+        var other = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            context with { IdempotencyKey = "publish-other", CorrelationId = "corr-publish-other" });
+        other.Operation.ResourceIds["requestId"].Should().NotBe(advertised);
+        bridge.ProposalCount.Should().Be(2);
+    }
+
+    private static string InvalidIntentPayload(StudioContentVersion version) => JsonSerializer.Serialize(
+        new StudioPublicationRequestPayload
+        {
+            ItemId = version.ItemId,
+            VersionId = version.VersionId,
+            ContentHash = version.ContentHash,
+            Intent = new StudioPublicationIntent { Route = "relative", Visibility = "organization" },
+            ActorId = "studio-author",
+        },
+        StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+    private static IStudioPackageLifecycleService BuildLifecycle(
+        IStudioPackageStore store,
+        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(store);
+        if (bridgeCatalog is not null)
+        {
+            services.AddSingleton(bridgeCatalog);
+        }
+
+        services.AddStudioPackageLifecycle();
+        return services.BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+    }
+
+    // StudioCreatePublicationRequestExecutor takes IStudioPackageValidator as a required
+    // dependency so the pre-policy intent guard can never be silently dropped by a host that
+    // forgot to register it. The validator is store-independent (it inspects envelopes and
+    // intents only), so every construction here resolves the same production type
+    // AddStudioPackageLifecycle composes.
+    private static StudioCreatePublicationRequestExecutor PublicationExecutor(
+        IStudioPackageLifecycleService lifecycle)
+        => new(
+            lifecycle,
+            TimeProvider.System,
+            new ServiceCollection()
+                .AddStudioPackageLifecycle()
+                .BuildServiceProvider()
+                .GetRequiredService<IStudioPackageValidator>());
+
+    private static async Task<StudioContentVersion> SaveFirstVersionAsync(IStudioPackageLifecycleService lifecycle)
+    {
+        var draft = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "publication-race",
+            WorkspaceId = "studio",
+            OwnerId = "studio-author",
+            ActorId = "studio-author",
+            Envelope = PublicationEnvelope("1=1"),
+        });
+
+        var version = await lifecycle.SaveDraftAsVersionAsync(draft.DraftId, "first save", "studio-author");
+        version.Should().NotBeNull();
+        return version!;
+    }
+
+    private static async Task<StudioContentVersion> SaveSecondVersionAsync(
+        IStudioPackageLifecycleService lifecycle,
+        StudioContentVersion approved)
+    {
+        var reopened = await lifecycle.ReopenVersionAsync(approved.ItemId, approved.VersionId, "studio-author");
+        reopened.Should().NotBeNull();
+        var updated = await lifecycle.UpdateDraftAsync(reopened!.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = reopened.PackageKey,
+            WorkspaceId = reopened.WorkspaceId,
+            OwnerId = reopened.OwnerId,
+            Envelope = PublicationEnvelope("POPULATION > 1000"),
+            Generation = reopened.Generation,
+            ActorId = "studio-author",
+        });
+        updated.Should().NotBeNull();
+
+        var version = await lifecycle.SaveDraftAsVersionAsync(updated!.DraftId, "edited query", "studio-author");
+        version.Should().NotBeNull();
+        return version!;
+    }
+
+    private static string PublicationPayload(StudioContentVersion version) => JsonSerializer.Serialize(
+        new StudioPublicationRequestPayload
+        {
+            ItemId = version.ItemId,
+            VersionId = version.VersionId,
+            ContentHash = version.ContentHash,
+            Intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            ActorId = "studio-author",
+        },
+        StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+    private static StudioPackageEnvelope PublicationEnvelope(string where)
+    {
+        using var body = JsonDocument.Parse($$"""{"where":"{{where}}"}""");
+        return new StudioPackageEnvelope
+        {
+            Family = StudioPackageFamily.Query,
+            SchemaVersion = "1.0",
+            Format = "studio_query_package.v1",
+            Bindings =
+            [
+                new StudioPackageBinding
+                {
+                    Key = "source",
+                    Kind = "content",
+                    Ref = "content.parcels",
+                    Crs = "EPSG:4326",
+                    Srid = 4326,
+                    RequiredPermissions = ["metadata.read"],
+                },
+            ],
+            Dependencies =
+            [
+                new StudioPackageDependency { Kind = "content-item", Ref = "content.parcels", VersionId = "v1" },
+            ],
+            Provenance =
+            [
+                new StudioProvenanceRef { Kind = "prompt", Ref = "prompt-1", Rel = "generated-by" },
+            ],
+            PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            Body = body.RootElement.Clone(),
+        };
     }
 
     [Theory]
@@ -143,6 +890,69 @@ public sealed class StudioDraftOperationRuntimeTests
 
         receipt.Operation.Should().BeSameAs(durable);
         receipt.Value.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task DeleteAsync_ReadOnlyScope_ReturnsDeniedBeforeAnyPersistenceOrActuation()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var store = Substitute.For<IOperationInstanceStore>();
+        var bridge = new DurableApprovalBridge();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [new StudioDraftDeleteExecutor(lifecycle, TimeProvider.System)],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            approvalBridge: bridge,
+            instanceStore: store,
+            auditLog: new VolatileOperationAuditLog());
+        var runtime = new StudioDraftMutationRuntime(dispatcher, store);
+
+        var receipt = await runtime.DeleteAsync(Guid.NewGuid(), new StudioDraftMutationContext
+        {
+            PrincipalId = "read-only-admin",
+            Roles = ["admin"],
+            ScopeGoverned = true,
+            RecognizedScopes = [OperatorScopeCatalog.Read],
+        });
+
+        receipt.Operation.Status.Should().Be(OperationHandleStatus.Denied);
+        receipt.Operation.PolicyDecision.Should().Be(PolicyDecisionKind.Deny);
+        receipt.Operation.AuthorizationOutcome.Should().Be(OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance);
+        receipt.Operation.Version.Should().Be(0);
+        receipt.Operation.AuditId.Should().BeNull();
+        receipt.Operation.ProposalId.Should().BeNull();
+        receipt.Value.Should().BeFalse();
+        store.ReceivedCalls().Should().BeEmpty("the request was refused before acceptance");
+        lifecycle.ReceivedCalls().Should().BeEmpty();
+        bridge.ProposalCount.Should().Be(0);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(OperationHandleStatus.Denied, 1, null, true)]
+    [InlineData(OperationHandleStatus.Denied, 0, "audit-persisted", true)]
+    [InlineData(OperationHandleStatus.Denied, 0, null, false)]
+    [InlineData(OperationHandleStatus.Completed, 0, null, true)]
+    [InlineData(OperationHandleStatus.Accepted, 0, null, true)]
+    public async Task DeleteAsync_OtherOutcomesStillRequireDurableReadback(
+        OperationHandleStatus status, long version, string? auditId, bool marked)
+    {
+        var handle = Handle(DateTimeOffset.UtcNow, "false") with
+        {
+            Status = status,
+            Version = version,
+            AuditId = auditId,
+            PolicyDecision = PolicyDecisionKind.Deny,
+            AuthorizationOutcome = marked ? OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance : null,
+            Result = null,
+        };
+        var runtime = new StudioDraftMutationRuntime(new StubInvoker(handle), new StubStore(null));
+
+        var act = () => runtime.DeleteAsync(Guid.NewGuid(), new StudioDraftMutationContext());
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not durably readable*");
     }
 
     [UnitTest]
@@ -348,7 +1158,7 @@ public sealed class StudioDraftOperationRuntimeTests
             CancellationToken cancellationToken = default) => Task.FromResult(handle);
     }
 
-    private sealed class StubStore(OperationHandle handle) : IOperationInstanceStore
+    private sealed class StubStore(OperationHandle? handle) : IOperationInstanceStore
     {
         public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -390,6 +1200,83 @@ public sealed class StudioDraftOperationRuntimeTests
             => throw new NotSupportedException();
     }
 
+    private sealed class SingleItemFamilyBridge : IStudioFamilyPersistenceBridge
+    {
+        private StudioContentVersion? _version;
+
+        public SingleItemFamilyBridge(StudioPackageFamily family) => Family = family;
+
+        public StudioPackageFamily Family { get; }
+
+        public string Format => "native-format.v1";
+
+        public bool PublishSupported => true;
+
+        public IReadOnlyList<StudioPackageOperation> SupportedOperations { get; } =
+            [StudioPackageOperation.PublishRequestCreate];
+
+        public IReadOnlyList<string> Limitations { get; } = ["test bridge"];
+
+        public StudioContentVersion Seed()
+        {
+            var itemId = Guid.NewGuid();
+            var versionId = Guid.NewGuid();
+            _version = new StudioContentVersion
+            {
+                ItemId = itemId,
+                PackageKey = "bridged-form",
+                VersionId = versionId,
+                VersionNumber = 1,
+                ContentHash = "bridged-hash",
+                Envelope = new StudioPackageEnvelope
+                {
+                    Family = Family,
+                    SchemaVersion = "1.0",
+                    Format = Format,
+                    PublicationIntent = new StudioPublicationIntent
+                    {
+                        Route = "/studio/parcels",
+                        Visibility = "organization",
+                    },
+                },
+                Validation = StudioValidationSummary.NotValidated,
+                CreatedAt = DateTimeOffset.UnixEpoch,
+            };
+            return _version;
+        }
+
+        public Task<IReadOnlyList<StudioContentItemSummary>> ListItemSummariesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioContentItemSummary>>([]);
+
+        public Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_version is { } version && version.ItemId == itemId
+                ? new StudioContentItemPointers
+                {
+                    ItemId = itemId,
+                    CurrentVersionId = version.VersionId,
+                }
+                : null);
+
+        public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioContentVersion>>(
+                _version is { } version && version.ItemId == itemId ? [version] : []);
+
+        public Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_version is { } version && version.ItemId == itemId && version.VersionId == versionId
+                ? version
+                : null);
+
+        public Task<StudioContentVersion> SaveVersionAsync(
+            StudioPackageDraft draft,
+            string? changeNote,
+            string? actorId,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioContentVersion>(new NotSupportedException());
+
+        public Task<StudioPublicationRequest> PublishAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(request);
+    }
+
     private sealed class RequireApprovalPolicy : IOperationPolicyDecisionPoint
     {
         public Task<PolicyDecision> EvaluateAsync(
@@ -407,6 +1294,7 @@ public sealed class StudioDraftOperationRuntimeTests
     {
         public OperationRequest? Request { get; private set; }
         public OperationPolicyContext? Context { get; private set; }
+        public int ProposalCount { get; private set; }
 
         public Task<OperationApprovalBridgeResult> CreateProposalAsync(
             IOperationDescriptor descriptor,
@@ -415,6 +1303,7 @@ public sealed class StudioDraftOperationRuntimeTests
             PolicyDecision decision,
             CancellationToken cancellationToken = default)
         {
+            ProposalCount++;
             Request = request;
             Context = context;
             return Task.FromResult(new OperationApprovalBridgeResult

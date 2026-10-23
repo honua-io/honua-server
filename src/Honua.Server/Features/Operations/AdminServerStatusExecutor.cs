@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Hosting;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Operations;
@@ -15,11 +17,16 @@ internal sealed class AdminServerStatusExecutor : IOperationExecutor
 
     private readonly IReadinessCheckService _readiness;
     private readonly TimeProvider _clock;
+    private readonly IServerInstanceIdentity _instance;
 
-    public AdminServerStatusExecutor(IReadinessCheckService readiness, TimeProvider clock)
+    public AdminServerStatusExecutor(
+        IReadinessCheckService readiness,
+        TimeProvider clock,
+        IServerInstanceIdentity instance)
     {
         _readiness = readiness ?? throw new ArgumentNullException(nameof(readiness));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _instance = instance ?? throw new ArgumentNullException(nameof(instance));
     }
 
     public string OperationId => OperationName;
@@ -60,7 +67,12 @@ internal sealed class AdminServerStatusExecutor : IOperationExecutor
                 {
                     ["status"] = status,
                     ["version"] = version,
-                    ["message"] = readiness.Message
+                    ["message"] = readiness.Message,
+                    // Which replica answered (same value as the Honua-Instance response header),
+                    // so a cross-replica read can be proven through this operation too.
+                    ["instanceId"] = _instance.InstanceId,
+                    ["instanceSource"] = _instance.Source,
+                    ["instanceStartedAt"] = _instance.StartedAt.ToString("O", CultureInfo.InvariantCulture)
                 }
             }
         };

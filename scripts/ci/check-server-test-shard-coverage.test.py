@@ -347,7 +347,7 @@ def walk(source: str, filename: str = "Sample.cs") -> dict[str, dict]:
              mock.patch.object(MODULE, "TEST_PROJECT_DIRS", {"proj": KNOWN}):
             MODULE.enumerate_classes.cache_clear()
             try:
-                return MODULE.enumerate_classes()
+                return {entry["fqn"]: entry for entry in MODULE.enumerate_classes().values()}
             finally:
                 MODULE.enumerate_classes.cache_clear()
 
@@ -506,8 +506,8 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
     csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in shard_defs}
     classes = MODULE.enumerate_test_classes()
     raster = [
-        fqn for fqn in classes
-        if fqn.startswith((
+        key for key, entry in classes.items()
+        if entry["fqn"].startswith((
             "Honua.Server.Tests.Features.Protocols.Cog.",
             "Honua.Server.Tests.Features.Protocols.Zarr.",
             "Honua.Server.Tests.Features.Protocols.Coverages.",
@@ -517,7 +517,7 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
     for fqn in raster:
         owners = [
             name for name, node in parsed.items()
-            if csprojs[name] == classes[fqn]["csproj"] and MODULE._eval(node, fqn)
+            if csprojs[name] == classes[fqn]["csproj"] and MODULE._eval(node, classes[fqn]["fqn"])
         ]
         assert owners == ["Raster Serving Scene Geometry and Terrain"], (fqn, owners)
 
@@ -529,16 +529,53 @@ def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> Non
     )
     fqn = "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests"
     classes = MODULE.enumerate_test_classes()
-    assert classes[fqn]["csproj"] == KNOWN
-    assert classes[fqn]["has_tests"]
+    assert classes[f"{KNOWN}::{fqn}"]["csproj"] == KNOWN
+    assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
     owners = [
         shard["name"] for shard in config["shards"]
-        if (shard.get("csproj") or KNOWN) == classes[fqn]["csproj"]
+        if (shard.get("csproj") or KNOWN) == classes[f"{KNOWN}::{fqn}"]["csproj"]
         and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
     ]
-    assert owners == ["Server Features Analytics Studio Export and Reporting"], owners
+    # #3204 moved Features.Studio (and this fixture with it) to `Server Features
+    # Studio Packaging`; the parent kept Export/Reporting/SpatialAnalytics.
+    assert owners == ["Server Features Studio Packaging"], owners
 
 
+def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
+    """Capacity moves leave the Core catch-all without orphaning or duplication."""
+    config = json.loads(
+        (REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8")
+    )
+    classes = MODULE.enumerate_test_classes()
+    for name, owner in (
+        ("CrsTransformationCorrectnessTests", "Core OGC Features and CRS"),
+        ("OgcFeaturesEndpointTests", "Core OGC Features and CRS"),
+        ("AttachmentEndpointTests", "Core Attachments"),
+        ("PostgresAttachmentStoreTests", "Core Attachments"),
+        ("QueryRelatedRecordsEndpointTests", "Core Related Records and Limits"),
+        ("LimitsEnforcementTests", "Core Related Records and Limits"),
+        # #3204: AdvancedSpatialQueryTests moved off `Core Endpoints` again. #4450
+        # put it there, which took Core Endpoints to 82% of its budget; it now
+        # shares a shard with StreamingFeatureServerEndpointTests, leaving the
+        # 24.6m FeatureServerEndpointTests alone on the parent.
+        ("AdvancedSpatialQueryTests", "Core Spatial Query and Streaming"),
+        ("StreamingFeatureServerEndpointTests", "Core Spatial Query and Streaming"),
+        ("Comprehensive.ApiSurfaceComplianceTests", "STAC and API Governance"),
+        ("Comprehensive.TestQualityValidationTests", "STAC and API Governance"),
+        ("PatchConcurrencyTests", "Core Mutation Concurrency"),
+    ):
+        fqn = f"Honua.Server.Tests.{name}"
+        assert classes[f"{KNOWN}::{fqn}"]["csproj"] == KNOWN
+        assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
+        owners = [
+            shard["name"] for shard in config["shards"]
+            if (shard.get("csproj") or KNOWN) == classes[f"{KNOWN}::{fqn}"]["csproj"]
+            and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
+        ]
+        assert owners == [owner], (fqn, owners)
+
+
+test_core_capacity_moves_have_exactly_one_server_assembly_owner()
 test_studio_dashboard_mcp_integration_has_one_server_assembly_owner()
 test_clause_flattening_and_selection_pool()
 test_dead_clause_inside_a_live_or_is_flagged()
@@ -571,4 +608,139 @@ test_nested_brackets_in_an_attribute_do_not_hide_the_method()
 test_nested_helper_classes_stay_nested()
 test_attribute_seen_but_unparsed_method_keeps_the_class_runnable()
 test_raster_serving_shard_owns_the_raster_serving_namespaces()
+
+
+def test_method_partition_rejects_holes_duplicates_and_leaks() -> None:
+    parent = MODULE._FilterParser("FullyQualifiedName~Ns.Tests").parse()
+    parsed = {"rest": MODULE._FilterParser(
+        "FullyQualifiedName~Ns.Tests&FullyQualifiedName!~Ns.Tests.Progress").parse(),
+        "progress": MODULE._FilterParser("FullyQualifiedName~Ns.Tests.Progress").parse()}
+    def errors(filters, fqn="Ns.Tests", methods=("Read", "Progress")):
+        return MODULE.partition_claim_errors("split", parent, list(filters), filters,
+                                             fqn, methods, "method")
+    assert errors(parsed) == []
+    assert "exactly one child" in errors({"rest": parsed["rest"]})[0]
+    assert "rest, duplicate" in errors({**parsed, "duplicate": parsed["rest"]})[0]
+    assert "leaks outside parent" in errors(
+        {"leak": MODULE._FilterParser("FullyQualifiedName~Ns.Other").parse()},
+        "Ns.Other", ("Read",))[0]
+    # Default class partitions retain the prior class-FQN contract.
+    assert MODULE.partition_claim_errors("split", parent, ["rest"], parsed,
+                                         "Ns.Tests", ("Progress",)) == []
+
+
+def test_method_partition_rejects_unresolved_runnable_methods() -> None:
+    parent = MODULE._FilterParser("FullyQualifiedName~Ns.Tests").parse()
+    children = {"all": parent}
+    for methods, unresolved in (((), False), (("Parsed",), True)):
+        assert "incomplete runnable-method inventory" in MODULE.partition_claim_errors(
+            "split", parent, ["all"], children, "Ns.Tests", methods,
+            "method", unresolved)[0]
+    # Class-granularity validation retains the prior attribute-based contract.
+    assert MODULE.partition_claim_errors("split", parent, ["all"], children,
+                                         "Ns.Tests", (), "class", True) == []
+    found = walk("""
+namespace Ns;
+public class Tests
+{
+    [Fact] public void Parsed() { }
+    [Fact] public unknown_shape;
+}
+""")
+    assert found["Ns.Tests"]["methods"] == {"Parsed"}
+    assert MODULE.runnable_classes(found) == found
+    assert MODULE.unresolved_method_classes(found) == ["Ns.Tests"]
+
+
+def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    partition = next(p for p in config["shard_partitions"]
+                     if p["name"] == "GPServer and NAServer capacity partition")
+    assert partition["granularity"] == "method"
+    shards = {s["name"]: s for s in config["shards"]}
+    parsed = {name: MODULE._FilterParser(s["filter"]).parse() for name, s in shards.items()}
+    parent = MODULE._FilterParser(partition["filter"]).parse()
+    classes = MODULE.runnable_classes(MODULE.enumerate_classes())
+    selected = 0
+    for key, info in classes.items():
+        fqn = info["fqn"]
+        if info["csproj"] != shards[partition["children"][0]]["csproj"]:
+            continue
+        assert MODULE.partition_claim_errors(partition["name"], parent,
+            partition["children"], parsed, fqn, info["methods"], "method") == [], fqn
+        if MODULE._eval(parent, fqn):
+            selected += len(info["methods"])
+    assert selected > 100
+    soap = "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests"
+    for method, expected in (("GetJobStatus_InvalidProgressHint_ReturnsSoapFaultBeforeJobLookup",
+                             "GeoServices GPServer SOAP Progress"),
+                            ("SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
+                             "GeoServices GPServer SOAP")):
+        assert method in classes[f"{shards[partition['children'][0]]['csproj']}::{soap}"]["methods"]
+        assert [name for name in partition["children"]
+                if MODULE._eval(parsed[name], soap + "." + method)] == [expected]
+    for name in partition["children"]:
+        assert shards[name]["test_timeout_minutes"] == 22
+        assert shards[name]["timeout_minutes"] == 32
+
+
+test_method_partition_rejects_holes_duplicates_and_leaks()
+test_method_partition_rejects_unresolved_runnable_methods()
+test_gp_nas_partition_preserves_every_runnable_method_and_budget()
+
+
+
+def test_core_attachments_split_preserves_union_and_disjoint_substring_ownership() -> None:
+    """All 64 combinations, including a name matching multiple former terms."""
+    config = json.loads((REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8"))
+    names = {"Core Attachments", "Core Related Records and Limits", "Core OGC Features and CRS"}
+    children = [s for s in config["shards"] if s["name"] in names]
+    assert len(children) == 3
+    terms = ["AttachmentEndpointTests", "PostgresAttachmentStoreTests", "QueryRelatedRecordsEndpointTests",
+             "OgcFeaturesEndpointTests", "LimitsEnforcementTests", "Honua.Server.Tests.CrsTransformationCorrectnessTests"]
+    parent = MODULE._FilterParser("|".join("FullyQualifiedName~" + term for term in terms)).parse()
+    parsed = [(s["name"], MODULE._FilterParser(s["filter"]).parse()) for s in children]
+    for mask in range(1 << len(terms)):
+        fqn = ".".join(term for i, term in enumerate(terms) if mask & (1 << i)) or "NoMatchingClass"
+        owners = [name for name, expression in parsed if MODULE._eval(expression, fqn)]
+        assert len(owners) == int(MODULE._eval(parent, fqn)), (mask, fqn, owners)
+
+
+def test_core_endpoint_split_preserves_methods_triggers_and_budgets() -> None:
+    """Every original runnable method has one owner, including future methods."""
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    partition = next(p for p in config["shard_partitions"]
+                     if p["name"] == "Core and API Governance capacity rebalance")
+    assert partition["granularity"] == "method"
+    shards = {s["name"]: s for s in config["shards"]}
+    children = ["Core Endpoints", "Core Endpoint Queries", "Core Endpoint Mutations"]
+    assert all(name in partition["children"] for name in children)
+    parent = MODULE._FilterParser("FullyQualifiedName~FeatureServerEndpointTests&FullyQualifiedName!~StreamingFeatureServerEndpointTests").parse()
+    parsed = {name: MODULE._FilterParser(shards[name]["filter"]).parse() for name in children}
+    classes = MODULE.runnable_classes(MODULE.enumerate_classes())
+    selected = 0
+    for info in classes.values():
+        if info["csproj"] != KNOWN:
+            continue
+        assert MODULE.partition_claim_errors(partition["name"], parent, children,
+            parsed, info["fqn"], info["methods"], "method") == [], info["fqn"]
+        if MODULE._eval(parent, info["fqn"]):
+            selected += len(info["methods"])
+    assert selected > 100
+    fqn = "Honua.Server.Tests.FeatureServerEndpointTests"
+    for method, owner in (("QueryFeatures_WithFormatJson_ReturnsGeoServicesJsonFormat", "Core Endpoint Queries"),
+                          ("ApplyEdits_WithAddOperation_ReturnsNewObjectId", "Core Endpoint Mutations"),
+                          ("GetServiceMetadata_WithValidServiceId_ReturnsServiceInfo", "Core Endpoints"),
+                          ("FutureMethod_RemainsCovered", "Core Endpoints")):
+        assert [name for name in children if MODULE._eval(parsed[name], fqn + "." + method)] == [owner]
+    for name in children:
+        assert shards[name]["test_timeout_minutes"] == 41
+        assert shards[name]["timeout_minutes"] == 51
+        assert shards[name]["paths"] == shards["Core Endpoints"]["paths"]
+        assert shards[name]["max_cpu_count"] == shards["Core Endpoints"]["max_cpu_count"]
+
+
+test_core_attachments_split_preserves_union_and_disjoint_substring_ownership()
+test_core_endpoint_split_preserves_methods_triggers_and_budgets()
+
 print("shard-filter-dangling-guard=ok")

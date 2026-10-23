@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Referenced GP output persistence"
+description: "Enabling Geoprocessing:OutputStaging requires a deployment-owned persistent volume contract."
+---
 # Referenced GP output persistence
 
 Enabling `Geoprocessing:OutputStaging` requires a deployment-owned persistent
@@ -18,11 +23,18 @@ deployments with staging disabled need no changes.
    backup policy covering its bytes, volume marker, job records, registration and
    retention state. Record the policy's opaque backup/restore identity.
 2. Mount that volume on every producer and consumer. Provision its root once using
-   `scripts/operations/Initialize-GpOutputStore.ps1` with `-RootPath`,
-   `-StoreReference`, `-PersistenceClass shared-persistent`, `-BackupIdentity` and
-   `-BackupStoreReferences`. The script refuses an absent directory, a store outside
-   the backup set, or an existing marker. It writes `.honua-gp-store.json` and emits
-   the complete application configuration section as JSON. Keep that marker out of
+   `scripts/operations/Initialize-GpOutputStore.ps1` (Windows hosts) or
+   `scripts/operations/initialize-gp-output-store.sh` (Linux hosts, including
+   container-mounted volumes) with the root path, store reference,
+   `shared-persistent` persistence class, backup identity and backup store
+   references. Both emit the same canonical form, so either may provision a volume
+   the other's hosts read. A topology that tunes the key prefix, inline ceiling,
+   read lease, sweep or retention settings must pass those same values here: they
+   are part of the digest, so provisioning with defaults would attest a contract no
+   host resolves. The scripts refuse an absent directory, a store outside the backup
+   set, or an existing marker. They write `.honua-gp-store.json`, print the
+   configuration digest, and the PowerShell script also emits the complete
+   application configuration section as JSON. Keep that marker out of
    application-generated initialization and restore it with the volume.
 3. Distribute the emitted configuration to **all** servers and workers. Only
    `LocalRootPath` may differ. The deployment inventory, not a per-pod template,
@@ -70,24 +82,3 @@ ceiling, preserve its descriptor, then read it through
 authorization. Assert the descriptor identity, media type, length and independently
 expected SHA-256; record readiness and the runtime attestation after recovery.
 Restoring only Redis/Postgres is insufficient when referenced staging is enabled.
-
-## Qualification receipts (#3900 and #3852)
-
-Both issues use this same contract, including `ProductionWorkerContainerHandoffTests`
-and its production-worker environment. Enumerate every topology enabling staging
-and every producer/consumer in each topology. Receipts must include image digests,
-topology/host inventory, each host's runtime attestation, backing volume identity,
-backup artifact/policy identity, descriptor, independent expected checksum, checksum
-from the authenticated server content path, replacement/restore timestamps and
-the result. Reject missing hosts, differing digests, omitted backup stores, and
-missing restored outputs. Do not generalize evidence to untested topologies.
-
-Pre-cut regressions cover unattested-directory rejection, identity/policy drift,
-mount loss, replacement host instances, and a restored volume read through the
-server route after the source volume is removed. The restore fixture is deterministic
-storage payload data, not a raster algorithm correctness receipt.
-
-Exact-candidate #3852 crash-boundary evidence and the signed release/DR receipt must
-be rerun against the cut server/worker images. The release decision record on
-2026-09-05 states that no candidate digest exists yet; these local regressions do
-not claim candidate qualification or a completed production backup-policy rehearsal.

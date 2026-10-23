@@ -408,7 +408,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
         var config = manifest.RootElement;
         var databaseImage = config.GetProperty("databaseImage").GetString()!;
         var setupAction = config.GetProperty("setupAction").GetString()!;
-        var setupPath = Path.Combine(
+        var setupPath = Path.Join(
             root, setupAction.Replace('/', Path.DirectorySeparatorChar));
         var setupDigest = Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(setupPath))).ToLowerInvariant();

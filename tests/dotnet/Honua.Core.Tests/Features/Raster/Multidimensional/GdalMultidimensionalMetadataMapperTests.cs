@@ -124,9 +124,52 @@ public sealed class GdalMultidimensionalMetadataMapperTests
         sst.NoData.Should().Be(-9999d);
 
         sst.Dimensions.Should().HaveCount(3);
-        sst.Dimensions[0].Should().Be(new MultidimensionalCoverageDimension("time", 3));
-        sst.Dimensions[1].Should().Be(new MultidimensionalCoverageDimension("lat", 4));
-        sst.Dimensions[2].Should().Be(new MultidimensionalCoverageDimension("lon", 5));
+        sst.Dimensions[0].Should().Be(new MultidimensionalCoverageDimension("time", 3) { Axis = MultidimensionalAxisKind.Temporal });
+        sst.Dimensions[1].Should().Be(new MultidimensionalCoverageDimension("lat", 4) { Axis = MultidimensionalAxisKind.HorizontalY });
+        sst.Dimensions[2].Should().Be(new MultidimensionalCoverageDimension("lon", 5) { Axis = MultidimensionalAxisKind.HorizontalX });
+    }
+
+    [UnitTest]
+    public void Map_MissingGdalAxisType_ClassifiesFromCfAttributes()
+    {
+        const string json = """
+        {
+          "type": "group",
+          "dimensions": [
+            {
+              "name": "latitude", "full_name": "/latitude", "size": 4,
+              "indexing_variable": { "latitude": { "attributes": { "standard_name": "latitude", "axis": "Y" }, "unit": "degrees_north" } }
+            },
+            {
+              "name": "longitude", "full_name": "/longitude", "size": 4,
+              "indexing_variable": { "longitude": { "attributes": { "axis": "X" }, "unit": "degrees_east" } }
+            },
+            {
+              "name": "time", "full_name": "/time", "size": 2,
+              "indexing_variable": { "time": { "attributes": { "standard_name": "time" }, "unit": "hours since 2024-01-01 00:00:00" } }
+            }
+          ],
+          "arrays": {
+            "latitude": { "full_name": "/latitude" },
+            "longitude": { "full_name": "/longitude" },
+            "time": { "full_name": "/time" },
+            "sea_surface_temperature": {
+              "full_name": "/sea_surface_temperature", "datatype": "Float32",
+              "dimensions": [ "/time", "/latitude", "/longitude" ],
+              "dimension_size": [ 2, 4, 4 ]
+            }
+          }
+        }
+        """;
+
+        var metadata = GdalMultidimensionalMetadataMapper.Map(
+            json, MultidimensionalCoverageFormat.NetCdf4, Array.Empty<string>());
+
+        var variable = metadata.Variables.Should().ContainSingle().Subject;
+        variable.Dimensions.Select(dimension => dimension.Axis).Should().Equal(
+            MultidimensionalAxisKind.Temporal,
+            MultidimensionalAxisKind.HorizontalY,
+            MultidimensionalAxisKind.HorizontalX);
     }
 
     [UnitTest]

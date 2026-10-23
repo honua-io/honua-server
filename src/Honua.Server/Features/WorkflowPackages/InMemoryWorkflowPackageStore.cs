@@ -8,15 +8,15 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 namespace Honua.Server.Features.WorkflowPackages;
 
 /// <summary>
-/// Process-local, non-durable <see cref="IWorkflowPackageStore"/>. Packages,
-/// versions, and publications do NOT survive a restart, while schedule
-/// publications persist their compiled cron <c>WorkflowDefinition</c> into the
-/// durable (Redis-backed) workflow definition store. After a restart the
-/// scheduler therefore keeps firing runs for definitions whose owning
-/// publication no longer exists, and those orphans can only be stopped by
-/// deleting the definition from Redis. Production deployments need a durable
-/// package store (or scheduler-side orphan reaping) before schedule
-/// publications can be relied on across restarts.
+/// Process-local <see cref="IWorkflowPackageStore"/> for tests and for hosts that
+/// do not compose PostGIS (the ephemeral profile). Packages, versions, and
+/// publications in this store do not survive a restart and are not visible to a
+/// peer process. A schedule publication's compiled <c>WorkflowDefinition</c> still
+/// lives in the durable definition store, so after a restart the scheduler can
+/// keep firing a definition whose owning publication is gone. That warning applies
+/// only to this ephemeral profile. PostGIS hosts use
+/// <c>PostgresWorkflowPackageStore</c>, and deleting or disabling the publication
+/// removes or disables that definition while this process is still up.
 /// </summary>
 internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
 {
@@ -63,12 +63,14 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
     public Task<WorkflowPackageVersion> CreateVersionAsync(
         string packageId,
         string packageHash,
+        WorkflowGraph validatedGraph,
         WorkflowPackageValidationResult validation,
         string? createdBy,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(packageHash);
+        ArgumentNullException.ThrowIfNull(validatedGraph);
         ArgumentNullException.ThrowIfNull(validation);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -79,15 +81,25 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
                 throw new KeyNotFoundException($"Workflow package '{packageId}' was not found.");
             }
 
+            var lockedHash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            var validatedHash = WorkflowPackageGraphHasher.Compute(validatedGraph);
+            if (!string.Equals(lockedHash, packageHash, StringComparison.Ordinal) ||
+                !string.Equals(validatedHash, packageHash, StringComparison.Ordinal))
+            {
+                throw new WorkflowPackageGraphConflictException(packageId);
+            }
+
             var versions = _versions.GetOrAdd(packageId, _ => []);
             var nextVersion = versions.Count == 0 ? 1 : versions.Max(version => version.Version) + 1;
             var version = new WorkflowPackageVersion
             {
                 PackageId = packageId,
                 Version = nextVersion,
-                SchemaVersion = package.Graph.SchemaVersion,
+                SchemaVersion = string.IsNullOrWhiteSpace(validatedGraph.SchemaVersion)
+                    ? "workflow-package.v1"
+                    : validatedGraph.SchemaVersion,
                 PackageHash = packageHash,
-                Graph = package.Graph,
+                Graph = validatedGraph,
                 Validation = validation,
                 CreatedAt = DateTimeOffset.UtcNow,
                 CreatedBy = createdBy
@@ -180,5 +192,60 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
             .OrderByDescending(publication => publication.CreatedAt)
             .ToArray();
         return Task.FromResult(result);
+    }
+
+    public Task<WorkflowPublication?> DeletePublicationAsync(
+        string publicationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        cancellationToken.ThrowIfCancellationRequested();
+        _publications.TryRemove(publicationId, out var publication);
+        return Task.FromResult(publication);
+    }
+
+    public Task<WorkflowPublication?> SetPublicationStatusAsync(
+        string publicationId,
+        WorkflowPublicationStatus status,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            if (!_publications.TryGetValue(publicationId, out var existing))
+            {
+                return Task.FromResult<WorkflowPublication?>(null);
+            }
+
+            var updated = existing with { Status = status };
+            _publications[publicationId] = updated;
+            return Task.FromResult<WorkflowPublication?>(updated);
+        }
+    }
+
+    public Task<bool> TryReplaceWorkflowDefinitionIdAsync(
+        string publicationId,
+        string expectedDefinitionId,
+        string replacementDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedDefinitionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(replacementDefinitionId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            if (!_publications.TryGetValue(publicationId, out var existing)
+                || !string.Equals(existing.WorkflowDefinitionId, expectedDefinitionId, StringComparison.Ordinal))
+            {
+                return Task.FromResult(false);
+            }
+
+            _publications[publicationId] = existing with { WorkflowDefinitionId = replacementDefinitionId };
+            return Task.FromResult(true);
+        }
     }
 }

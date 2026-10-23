@@ -213,6 +213,17 @@ internal static partial class Log
     public static partial void DatabaseMigrationsSkipped(ILogger logger);
 
     /// <summary>
+    /// Logs that a pre-existing raster provider baseline was journaled as adopted, not executed.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="scriptName">Journal script name recorded as adopted.</param>
+    [LoggerMessage(
+        EventId = 4031,
+        Level = LogLevel.Information,
+        Message = "Adopted raster provider baseline {ScriptName} into public.schema_versions without executing the migration")]
+    public static partial void RasterProviderBaselineAdopted(ILogger logger, string scriptName);
+
+    /// <summary>
     /// Logs when an individual migration script has been successfully applied.
     /// </summary>
     /// <param name="logger">The logger instance.</param>
@@ -230,6 +241,23 @@ internal static partial class Log
     public static partial void HealthCheckExecuted(
         ILogger logger, string checkName, string status, double elapsedMs);
 
+    /// <summary>
+    /// Records the Redis durability attestation outcome that readiness observed
+    /// (honua-server#4502). Information only (owner ruling 2026-10-10): the governed control
+    /// plane and the durable job runner stay available, and the capability manifest publishes the
+    /// outcome as <c>limits.job.redisDurability</c>. Debug level because it repeats per probe;
+    /// the startup log line is the operator-facing record. Typed so the cause is a structured
+    /// field rather than an interpolated string.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="cause">The attestation outcome cause.</param>
+    [LoggerMessage(
+        EventId = 4021,
+        Level = LogLevel.Debug,
+        Message = "Health check executed: Redis durability not attested ({Cause}); informational, the control plane and job runner remain available")]
+    public static partial void DurableJobSubstrateDegraded(
+        ILogger logger, Honua.Core.Features.Capabilities.DurableJobSubstrateCause cause);
+
     [LoggerMessage(
         EventId = 4030,
         Level = LogLevel.Debug,
@@ -244,40 +272,25 @@ internal static partial class Log
     public static partial void ConnectionRetry(
         ILogger logger, int attempt, string errorMessage);
 
-    [LoggerMessage(
-        EventId = 4050,
-        Level = LogLevel.Debug,
-        Message = "Request processing started: {Method} {Path}, ContentLength={ContentLength}, Timeout={TimeoutSeconds}s")]
-    public static partial void RequestProcessingStarted(
-        ILogger logger, string method, string path, long contentLength, double timeoutSeconds);
+    public static void RequestProcessingStarted(
+        ILogger logger, string method, string path, long contentLength, double timeoutSeconds)
+        => Honua.Infrastructure.Logging.ProtocolRequestLog.RequestProcessingStarted(logger, method, path, contentLength, timeoutSeconds);
 
-    [LoggerMessage(
-        EventId = 4051,
-        Level = LogLevel.Warning,
-        Message = "Request timed out: {Path} exceeded {TimeoutSeconds}s limit")]
-    public static partial void RequestTimedOut(
-        ILogger logger, string path, double timeoutSeconds);
+    public static void RequestTimedOut(
+        ILogger logger, string path, double timeoutSeconds)
+        => Honua.Infrastructure.Logging.ProtocolRequestLog.RequestTimedOut(logger, path, timeoutSeconds);
 
-    [LoggerMessage(
-        EventId = 4052,
-        Level = LogLevel.Warning,
-        Message = "Payload size exceeded: {Path} has {ActualSize:N0} bytes, limit is {MaxSize:N0} bytes")]
-    public static partial void PayloadSizeExceeded(
-        ILogger logger, string path, long actualSize, long maxSize);
+    public static void PayloadSizeExceeded(
+        ILogger logger, string path, long actualSize, long maxSize)
+        => Honua.Infrastructure.Logging.ProtocolRequestLog.PayloadSizeExceeded(logger, path, actualSize, maxSize);
 
-    [LoggerMessage(
-        EventId = 4053,
-        Level = LogLevel.Debug,
-        Message = "Payload size validation skipped: {Path} (Content-Length header not provided)")]
-    public static partial void PayloadSizeValidationSkipped(
-        ILogger logger, string path);
+    public static void PayloadSizeValidationSkipped(
+        ILogger logger, string path)
+        => Honua.Infrastructure.Logging.ProtocolRequestLog.PayloadSizeValidationSkipped(logger, path);
 
-    [LoggerMessage(
-        EventId = 4054,
-        Level = LogLevel.Warning,
-        Message = "Request processing error: {Path} failed with {ExceptionType}: {ErrorMessage}")]
-    public static partial void RequestProcessingError(
-        ILogger logger, string path, string exceptionType, string errorMessage, Exception exception);
+    public static void RequestProcessingError(
+        ILogger logger, string path, string exceptionType, string errorMessage, Exception exception)
+        => Honua.Infrastructure.Logging.ProtocolRequestLog.RequestProcessingError(logger, path, exceptionType, errorMessage, exception);
 
     /// <summary>
     /// Logs when the PostGIS preflight compatibility check is starting.
@@ -321,6 +334,20 @@ internal static partial class Log
         Level = LogLevel.Information,
         Message = "PostGIS preflight check skipped: no database compatibility checker is registered.")]
     public static partial void PostGisPreflightCheckSkipped(ILogger logger);
+
+    /// <summary>
+    /// Logs the per-instance identity this process stamps on every response (<c>Honua-Instance</c>).
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="instanceId">The resolved instance id.</param>
+    /// <param name="instanceIdSource">Which source produced the instance id.</param>
+    /// <param name="instanceStartedAt">When the identity was resolved.</param>
+    [LoggerMessage(
+        EventId = 4059,
+        Level = LogLevel.Information,
+        Message = "Server instance identity resolved: {InstanceId} (source={InstanceIdSource}, startedAt={InstanceStartedAt:O})")]
+    public static partial void ServerInstanceIdentityResolved(
+        ILogger logger, string instanceId, string instanceIdSource, DateTimeOffset instanceStartedAt);
 
     #endregion
 
@@ -407,12 +434,9 @@ internal static partial class Log
     public static partial void ApplyEditsFailed(
         ILogger logger, string layerId, string errorMessage, Exception exception);
 
-    [LoggerMessage(
-        EventId = 5005,
-        Level = LogLevel.Error,
-        Message = "Unhandled exception in {RequestPath} [CorrelationId: {CorrelationId}]: {ErrorMessage}")]
-    public static partial void UnhandledException(
-        ILogger logger, string requestPath, string correlationId, string errorMessage, Exception exception);
+    public static void UnhandledException(
+        ILogger logger, string requestPath, string correlationId, string errorMessage, Exception exception)
+        => Honua.Infrastructure.Logging.ProtocolRequestLog.UnhandledException(logger, requestPath, correlationId, errorMessage, exception);
 
     [LoggerMessage(
         EventId = 5010,
@@ -425,12 +449,13 @@ internal static partial class Log
     /// Logs when the PostGIS preflight check fails and the application is aborting startup.
     /// </summary>
     /// <param name="logger">The logger instance.</param>
+    /// <param name="causeClass">The preflight cause class (<c>incompatible-database</c> for a fatal failure).</param>
     /// <param name="errorMessage">The error message describing the failure.</param>
     [LoggerMessage(
         EventId = 5011,
         Level = LogLevel.Critical,
-        Message = "PostGIS preflight check failed: {ErrorMessage}. Startup aborted.")]
-    public static partial void PostGisPreflightCheckFailedCritical(ILogger logger, string errorMessage);
+        Message = "PostGIS preflight check failed ({CauseClass}): {ErrorMessage}. Startup aborted.")]
+    public static partial void PostGisPreflightCheckFailedCritical(ILogger logger, string causeClass, string errorMessage);
 
     /// <summary>
     /// Logs (loudly, at Warning) when startup enters degraded mode because the database was

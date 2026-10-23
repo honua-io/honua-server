@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementSer
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
 {
-    private const string ServiceId = WebAppFixture.TestServiceId;
+    private const string ServiceId = BranchVersioningPublicationFixture.ServiceName;
     private const string VmsBase = "/rest/services/" + ServiceId + "/VersionManagementServer";
     private const string LayerBase = "/rest/services/" + ServiceId + "/FeatureServer/0";
 
@@ -33,7 +33,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     {
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
         await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(ServiceId, ["Create", "Update", "Delete"]);
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Create", "Update", "Delete"]);
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -97,9 +98,9 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         var responseBody = await addResponse.Content.ReadAsStringAsync();
         using (var document = JsonDocument.Parse(responseBody))
         {
-            document.RootElement.TryGetProperty("editResults", out var editResults).Should().BeTrue(
+            document.RootElement.ValueKind.Should().Be(JsonValueKind.Array,
                 "service-level applyEdits should return per-layer results; body: {0}", responseBody);
-            editResults[0]
+            document.RootElement[0]
                 .GetProperty("addResults")[0]
                 .GetProperty("success").GetBoolean().Should().BeTrue();
         }
@@ -108,6 +109,96 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
             "the form-body gdbVersion must route the add into the branch");
         (await QueryCountAsync(marker, gdbVersion: null)).Should().Be(0,
             "the form-body gdbVersion must not leak the add into DEFAULT");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_WithGdbVersion_ReadsAndWritesBranchOnly()
+    {
+        // #6095: calculate must read candidates from the named version and write the
+        // updates there; DEFAULT must stay untouched.
+        var marker = "vcalc_" + Guid.NewGuid().ToString("N")[..8];
+        var seed = await PostFormAsync($"{LayerBase}/applyEdits", ("adds", BuildAddsJson(marker)), ("f", "json"));
+        seed.StatusCode.Should().Be(HttpStatusCode.OK, "seed add; body: {0}", await seed.Content.ReadAsStringAsync());
+        (await CountByMarkerAsync(seed)).Should().Be(1);
+
+        var versionGuid = await CreateVersionAsync("admin." + marker);
+
+        // A branch-only row: visible to a version-aware candidate read, invisible to DEFAULT.
+        var branchAdd = await PostFormAsync($"{LayerBase}/applyEdits",
+            ("adds", BuildAddsJson(marker)), ("gdbVersion", versionGuid), ("f", "json"));
+        (await CountByMarkerAsync(branchAdd)).Should().Be(1, "the branch-only add should commit to the version");
+
+        var calculated = marker + "_calc";
+        var calcExpression = JsonSerializer.Serialize(new[] { new { field = "name", value = calculated } });
+        var response = await PostFormAsync($"{LayerBase}/calculate",
+            ("where", $"name='{marker}'"),
+            ("calcExpression", calcExpression),
+            ("gdbVersion", versionGuid),
+            ("f", "json"));
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "versioned calculate; body: {0}", body);
+        using (var doc = JsonDocument.Parse(body))
+        {
+            doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("calculate must succeed: {0}", body);
+            doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(body);
+            doc.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(2,
+                "candidates must be read from the version (the DEFAULT row plus the branch-only row): {0}", body);
+        }
+
+        (await QueryCountAsync(calculated, versionGuid)).Should().Be(2,
+            "both version rows must carry the calculated value");
+        (await QueryCountAsync(calculated, gdbVersion: null)).Should().Be(0,
+            "calculate with gdbVersion must not write into DEFAULT");
+        (await QueryCountAsync(marker, gdbVersion: null)).Should().Be(1,
+            "the DEFAULT row must keep its original value");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Append)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
+    public async Task Append_WithGdbVersion_UpsertsWithinBranchOnly()
+    {
+        // #6095: append must match upserts within the named version and write adds and
+        // updates there; DEFAULT must stay untouched.
+        var marker = "vappend_" + Guid.NewGuid().ToString("N")[..8];
+        var versionGuid = await CreateVersionAsync("admin." + marker);
+
+        // A branch-only row that the upsert must match (a DEFAULT read finds nothing).
+        var branchAdd = await PostFormAsync($"{LayerBase}/applyEdits",
+            ("adds", BuildAddsJson(marker)), ("gdbVersion", versionGuid), ("f", "json"));
+        (await CountByMarkerAsync(branchAdd)).Should().Be(1, "the branch-only add should commit to the version");
+
+        var added = marker + "_new";
+        var edits = JsonSerializer.Serialize(new[]
+        {
+            new { attributes = new Dictionary<string, object?> { ["name"] = marker } },
+            new { attributes = new Dictionary<string, object?> { ["name"] = added } }
+        });
+        var response = await PostFormAsync($"{LayerBase}/append",
+            ("edits", edits),
+            ("upsert", "true"),
+            ("upsertMatchingField", "name"),
+            ("gdbVersion", versionGuid),
+            ("f", "json"));
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "versioned append; body: {0}", body);
+        using (var doc = JsonDocument.Parse(body))
+        {
+            doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("append must succeed: {0}", body);
+            doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(body);
+            doc.RootElement.GetProperty("numFeaturesAppended").GetInt32().Should().Be(2, body);
+        }
+
+        (await QueryCountAsync(marker, versionGuid)).Should().Be(1,
+            "the upsert must update the branch row it matched, not add a duplicate");
+        (await QueryCountAsync(added, versionGuid)).Should().Be(1,
+            "the unmatched feature must be added to the version");
+        (await QueryCountAsync(marker, gdbVersion: null)).Should().Be(0,
+            "append with gdbVersion must not write the upserted row into DEFAULT");
+        (await QueryCountAsync(added, gdbVersion: null)).Should().Be(0,
+            "append with gdbVersion must not write the added row into DEFAULT");
     }
 
     [IntegrationTest]
@@ -120,6 +211,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         doc.RootElement.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
@@ -132,6 +225,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         doc.RootElement.GetProperty("supportsBranchVersioning").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("hasVersionedData").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("versionManagementServerUrl").GetString()
@@ -209,6 +304,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "create should succeed; body: {0}", await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         return doc.RootElement.GetProperty("versionInfo").GetProperty("versionGuid").GetString()!;
     }
 
@@ -224,12 +321,16 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "query should succeed; body: {0}", await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         return doc.RootElement.GetProperty("count").GetInt32();
     }
 
     private static async Task<int> CountByMarkerAsync(HttpResponseMessage applyEditsResponse)
     {
         using var doc = JsonDocument.Parse(await applyEditsResponse.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         if (!doc.RootElement.TryGetProperty("addResults", out var addResults))
         {
             return 0;
@@ -259,6 +360,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     private static async Task<long> FirstAddObjectIdAsync(HttpResponseMessage applyEditsResponse)
     {
         using var doc = JsonDocument.Parse(await applyEditsResponse.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         var add = doc.RootElement.GetProperty("addResults").EnumerateArray().First();
         return add.GetProperty("objectId").GetInt64();
     }

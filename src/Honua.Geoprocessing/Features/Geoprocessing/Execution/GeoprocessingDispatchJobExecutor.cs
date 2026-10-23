@@ -12,6 +12,7 @@ using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -43,6 +44,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     private readonly ILogger<GeoprocessingDispatchJobExecutor> _logger;
     private readonly IProcessUsageTelemetry? _usageTelemetry;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
+    private readonly IGeoprocessingOutputObjectStore? _outputStore;
+    private readonly IExecutionJobStore? _jobStore;
+    private readonly IOptionsMonitor<GeoprocessingOutputStagingOptions>? _stagingOptions;
 
     /// <summary>
     /// Composes the dispatcher over the auto-registered per-process executors
@@ -65,7 +69,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         IEnumerable<IProcessExecutor> executors,
         ILogger<GeoprocessingDispatchJobExecutor> logger,
         IProcessUsageTelemetry? usageTelemetry = null,
-        IServiceScopeFactory? serviceScopeFactory = null)
+        IServiceScopeFactory? serviceScopeFactory = null,
+        IGeoprocessingOutputObjectStore? outputStore = null,
+        IExecutionJobStore? jobStore = null,
+        IOptionsMonitor<GeoprocessingOutputStagingOptions>? stagingOptions = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
@@ -77,6 +84,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         _logger = logger;
         _usageTelemetry = usageTelemetry;
         _serviceScopeFactory = serviceScopeFactory;
+        _outputStore = outputStore;
+        _jobStore = jobStore;
+        _stagingOptions = stagingOptions;
     }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -127,7 +137,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         using var securityScope = JobSecurityScope.Begin(job.Audit.SubmitterSecurityContext);
 
         JobExecutionResult result;
-        var (workspaceScope, effectiveContext, workspaceError) =
+        var (workspaceScope, effectiveContext, workspaceError, workspaceErrorIsRetryable) =
             await TryResolveWorkspaceRoutingAsync(job, context, cancellationToken).ConfigureAwait(false);
         using (workspaceScope)
         {
@@ -135,18 +145,29 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             {
                 Log.WorkspaceProviderUnavailable(_logger, job.OperationId, workspaceError);
                 activity?.SetStatus(ActivityStatusCode.Error, "env:workspace could not be resolved");
-                return JobExecutionResult.Failed(workspaceError);
+                return JobExecutionResult.Failed(workspaceError) with { IsRetryable = workspaceErrorIsRetryable };
             }
 
             try
             {
-                result = await handler.ExecuteAsync(job, effectiveContext, cancellationToken).ConfigureAwait(false);
+                var streamContext = new ManagedFeatureStreamContext(effectiveContext, job, _outputStore, _jobStore,
+                    _stagingOptions?.CurrentValue ?? new GeoprocessingOutputStagingOptions(), _serviceScopeFactory);
+                result = await handler.ExecuteAsync(job, streamContext, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TransformInputException ex)
+            {
+                return JobExecutionResult.Failed(ex.PublicMessage) with { IsRetryable = false };
             }
             catch (ArtifactAlreadyExistsException ex)
             {
                 Log.OutputCollision(_logger, job.OperationId, ex.Message);
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                return JobExecutionResult.Failed(ex.Message);
+                return JobExecutionResult.Failed(ex.Message) with { IsRetryable = false };
+            }
+            catch (WorkspaceQuotaExceededException ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                return JobExecutionResult.Failed(ex.Message) with { IsRetryable = false };
             }
             catch (ArtifactReplacementFailedException ex)
             {
@@ -188,7 +209,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     /// free" through the context they already call <c>PublishArtifactAsync</c>
     /// on — no executor needs its own workspace logic.
     /// </summary>
-    private async Task<(IDisposable? Scope, IJobExecutionContext EffectiveContext, string? Error)>
+    private async Task<(IDisposable? Scope, IJobExecutionContext EffectiveContext, string? Error, bool IsRetryable)>
         TryResolveWorkspaceRoutingAsync(
             ExecutionJobRecord job,
             IJobExecutionContext context,
@@ -197,7 +218,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         var requestedLabel = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkspace);
         if (string.IsNullOrWhiteSpace(requestedLabel))
         {
-            return (null, context, null);
+            return (null, context, null, true);
         }
 
         var scope = _serviceScopeFactory?.CreateScope();
@@ -206,17 +227,29 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         {
             scope?.Dispose();
             return (null, context,
-                $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.");
+                $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.", false);
         }
 
-        var ownerId = string.IsNullOrWhiteSpace(job.Audit.RequestedBy) ? "anonymous" : job.Audit.RequestedBy;
+        var workspaceOwner = job.Audit.SubmitterSecurityContext?.WorkspaceOwnerId ?? job.Audit.RequestedBy;
+        var ownerId = string.IsNullOrWhiteSpace(workspaceOwner) ? "anonymous" : workspaceOwner;
 
         Workspace resolvedWorkspace;
         try
         {
-            resolvedWorkspace = await workspaceLifecycle
-                .GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken)
-                .ConfigureAwait(false);
+            var scopeId = job.Audit.SubmitterSecurityContext?.TenantId;
+            resolvedWorkspace = scopeId is null
+                ? await workspaceLifecycle.GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken).ConfigureAwait(false)
+                : await workspaceLifecycle.GetOrCreateScopedWorkspaceAsync(ownerId, requestedLabel, scopeId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            scope?.Dispose();
+            throw;
+        }
+        catch (WorkspaceQuotaExceededException ex)
+        {
+            scope?.Dispose();
+            return (null, context, ex.Message, false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -226,7 +259,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             // stays provider-detail-free so it is safe to surface on the job status.
             scope?.Dispose();
             Log.WorkspaceResolutionFailed(_logger, job.OperationId, requestedLabel, ex);
-            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved.");
+            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved.", true);
         }
 
         var overwrite =
@@ -236,7 +269,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
         var effectiveContext = new WorkspaceRoutingJobExecutionContext(
             context, job, resolvedWorkspace.WorkspaceId, overwrite, workspaceLifecycle);
-        return (scope, effectiveContext, null);
+        return (scope, effectiveContext, null, true);
     }
 
     private static partial class Log

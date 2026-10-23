@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.IO.Pipelines;
 using System.Text.Json;
 using Honua.Core.Configuration;
@@ -52,12 +53,14 @@ internal interface IQueryFormatter
 internal sealed class QueryFormatter : IQueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
+    private readonly GeoParquetLimits _geoParquetLimits;
     private readonly PbfQueryFormatter _pbfFormatter;
     private readonly ILogger<QueryFormatter> _logger;
 
     public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter, ILogger<QueryFormatter> logger)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
         _pbfFormatter = pbfFormatter;
         _logger = logger;
     }
@@ -136,7 +139,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             returnM,
             effectiveLimits,
             outFields,
-            _logger);
+            _logger,
+            _geoParquetLimits);
 
         return (response, contentType);
     }
@@ -190,11 +194,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         var runtimeFieldNames = runtimeFields
             .Select(field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // esriFieldTypeDate fields must serialize as epoch-ms integers per the Esri f=json spec.
-        var dateFieldNames = resource.SchemaFields
-            .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
-            .Select(static field => field.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Preserve the distinct timestamp and calendar-date wire representations.
+        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
         GeoServicesFeature[] features = result.Items
             .Select(f => ConvertToGeoServicesFeature(
                 f,
@@ -204,7 +205,7 @@ internal sealed class QueryFormatter : IQueryFormatter
                 outFields,
                 visibleDeclaredAttributeFields,
                 runtimeFieldNames,
-                dateFieldNames,
+                temporalFieldTypes,
                 objectIdFieldName,
                 returnZ,
                 returnM,
@@ -289,7 +290,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         string[]? outFields,
         IReadOnlySet<string> declaredAttributeFields,
         IReadOnlySet<string> runtimeAttributeFields,
-        HashSet<string> dateFieldNames,
+        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes,
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
@@ -305,10 +306,9 @@ internal sealed class QueryFormatter : IQueryFormatter
                 GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName),
                 suppressObjectId);
 
-        // esriFieldTypeDate attributes must serialize as epoch-ms integers (the object/non-
-        // streaming serialization path has no field-type context downstream, so coerce here
-        // where the layer's date fields are known).
-        GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+        // The object serialization path loses field-type context downstream, so
+        // normalize timestamps and calendar dates while the schema is available.
+        GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
 
         return new GeoServicesFeature
         {
@@ -365,7 +365,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             {
                 if (ShouldIncludeGeoServicesAttribute(name, declaredAttributeFields, runtimeAttributeFields))
                 {
-                    all[name] = FeatureAttributeValueNormalizer.Normalize(value);
+                    all[name] = GeoServicesAttributeProjection.ToEsriValue(value);
                 }
             }
 
@@ -389,15 +389,33 @@ internal sealed class QueryFormatter : IQueryFormatter
         if (!suppressObjectId)
         {
             filtered[objectIdFieldName] = attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes)
-                ? FeatureAttributeValueNormalizer.Normalize(objectIdFromAttributes)
+                ? GeoServicesAttributeProjection.ToEsriValue(objectIdFromAttributes)
                 : objectIdValue;
         }
 
-        foreach (string field in outFields.Where(field =>
-            attributes.ContainsKey(field)
-            && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields)))
+        foreach (string field in outFields)
         {
-            filtered[field] = FeatureAttributeValueNormalizer.Normalize(attributes[field]);
+            if (!ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields))
+            {
+                continue;
+            }
+
+            if (attributes.TryGetValue(field, out var exact))
+            {
+                filtered[field] = GeoServicesAttributeProjection.ToEsriValue(exact);
+                continue;
+            }
+
+            foreach (var (name, value) in attributes)
+            {
+                if (!name.Equals(field, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                filtered[name] = GeoServicesAttributeProjection.ToEsriValue(value);
+                break;
+            }
         }
 
         return filtered;
@@ -453,7 +471,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     internal static GeoJsonFeatureBuildOptions CreateFeatureServerGeoJsonBuildOptions(
         MetadataV2Resource resource,
         IReadOnlySet<string>? projectedProperties)
-        => new(
+        => GeoJsonFeatureBaseBuilder.PrepareOptions(resource, new(
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
             // GeoJSON properties must mirror the f=json attributes, which carry only the
@@ -461,7 +479,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             // two formats stay faithful (the OID is also exposed via the feature `id`).
             IncludeObjectIdAlias: false,
             IncludeAdditionalAttributes: true,
-            ResolveIdFromProperties: true);
+            ResolveIdFromProperties: true));
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
         MetadataV2Resource resource,
@@ -563,21 +581,17 @@ internal sealed class QueryFormatter : IQueryFormatter
     {
         return value switch
         {
-            sbyte or byte or short or ushort or int or uint => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger", "INTEGER"),
-            long or ulong => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger64", "BIGINT"),
-            float => CreateRuntimeFieldInfo(name, "esriFieldTypeSingle", "REAL"),
-            double or decimal => CreateRuntimeFieldInfo(name, "esriFieldTypeDouble", "DOUBLE PRECISION"),
-            bool => CreateRuntimeFieldInfo(name, "esriFieldTypeSmallInteger", "BOOLEAN"),
-            DateTimeOffset or DateTime => CreateRuntimeFieldInfo(name, "esriFieldTypeDate", "TIMESTAMP WITH TIME ZONE"),
-            DateOnly => CreateRuntimeFieldInfo(name, "esriFieldTypeDate", "DATE"),
-            TimeOnly or TimeSpan => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "TIME"),
-            Guid => CreateRuntimeFieldInfo(name, "esriFieldTypeGUID", "UUID"),
-            byte[] => CreateRuntimeFieldInfo(name, "esriFieldTypeBlob", "BYTEA"),
-            string => CreateRuntimeFieldInfo(
-                name,
-                "esriFieldTypeString",
-                "TEXT",
-                GeoServicesFieldConventions.DefaultStringFieldLength),
+            sbyte or byte or short or ushort or int or uint => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger", "sqlTypeInteger"),
+            long or ulong => CreateRuntimeFieldInfo(name, "esriFieldTypeBigInteger", "sqlTypeOther"),
+            float => CreateRuntimeFieldInfo(name, "esriFieldTypeSingle", "sqlTypeFloat"),
+            double or decimal => CreateRuntimeFieldInfo(name, "esriFieldTypeDouble", "sqlTypeFloat"),
+            bool => CreateRuntimeFieldInfo(name, "esriFieldTypeSmallInteger", "sqlTypeOther"),
+            DateTimeOffset or DateTime => CreateRuntimeFieldInfo(name, "esriFieldTypeDate", "sqlTypeOther"),
+            DateOnly => CreateRuntimeFieldInfo(name, "esriFieldTypeDateOnly", "sqlTypeOther"),
+            TimeOnly or TimeSpan => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "sqlTypeNVarchar"),
+            Guid => CreateRuntimeFieldInfo(name, "esriFieldTypeGUID", "sqlTypeOther"),
+            byte[] => CreateRuntimeFieldInfo(name, "esriFieldTypeBlob", "sqlTypeOther"),
+            string => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "sqlTypeNVarchar"),
             _ => null
         };
     }
@@ -594,7 +608,9 @@ internal sealed class QueryFormatter : IQueryFormatter
             Type = type,
             SqlType = sqlType,
             Alias = name,
-            Length = length,
+            Length = type == "esriFieldTypeString"
+                ? GeoServicesFieldConventions.ResolveStringFieldLength(length)
+                : length,
             Nullable = true,
             Editable = false
         };
@@ -636,12 +652,19 @@ internal sealed class QueryFormatter : IQueryFormatter
         // The layer's object-id field must be typed esriFieldTypeOID regardless of its
         // SQL type so Esri clients can locate the OID field by type (see issue #1299).
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-        var isString = !isObjectId && field.Type == MetadataV2FieldType.String;
+        var geoServicesType = isObjectId
+            ? "esriFieldTypeOID"
+            : GeoServicesFieldConventions.MapFieldType(field.Type);
+        // Decided from the MAPPED Esri type, not the logical one: a Json or Time column is
+        // published as esriFieldTypeString and needs a positive length just as much as a
+        // String column does. Keying off MetadataV2FieldType.String left those two with a
+        // null length in query responses while the layer resource gave them 256 (#5197).
+        var isString = !isObjectId && geoServicesType == "esriFieldTypeString";
         return new GeoServicesFieldInfo
         {
             Name = field.Name,
-            Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServices(field.Type),
-            SqlType = field.SqlType ?? MapFieldTypeToSql(field.Type),
+            Type = geoServicesType,
+            SqlType = EsriSqlType(field),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients (arcpy/.NET SDK) require a positive length on string fields;
             // a null length is mapped to 0 and breaks inserts. Fall back to the
@@ -649,7 +672,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             Length = isString ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length) : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = field.Editable && !isGeometry && !isObjectId,
-            DefaultValue = field.DefaultValue.HasValue ? ConvertJsonElement(field.DefaultValue.Value) : null,
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field),
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden
         };
@@ -658,57 +681,19 @@ internal sealed class QueryFormatter : IQueryFormatter
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
-    private static string MapFieldTypeToGeoServices(MetadataV2FieldType type)
-        => type switch
-        {
-            MetadataV2FieldType.String => "esriFieldTypeString",
-            MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
-            MetadataV2FieldType.Double => "esriFieldTypeDouble",
-            MetadataV2FieldType.Float => "esriFieldTypeSingle",
-            MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
-            MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDate",
-            MetadataV2FieldType.Time => "esriFieldTypeString",
-            MetadataV2FieldType.Json => "esriFieldTypeString",
-            MetadataV2FieldType.Binary => "esriFieldTypeBlob",
-            MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
-            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => "esriFieldTypeGeometry",
-            _ => "esriFieldTypeString"
-        };
+    /// <summary>
+    /// The Esri <c>sqlType</c> for a field, never the provider's physical type name.
+    /// </summary>
+    /// <remarks>
+    /// Esri clients treat a non-enumeration <c>sqlType</c> on an
+    /// <c>esriFieldTypeString</c> field as unreadable. This used to fall back to
+    /// <c>field.SqlType</c>, which is the PostgreSQL name, so a query response described
+    /// the object id as <c>INTEGER</c> where the layer resource described it as
+    /// <c>sqlTypeInteger</c>. Both now resolve through the same mapping (#5197).
+    /// </remarks>
+    private static string EsriSqlType(MetadataV2Field field)
+        => GeoServicesFieldConventions.MapSqlType(field.Type);
 
-    private static string MapFieldTypeToSql(MetadataV2FieldType type)
-        => type switch
-        {
-            MetadataV2FieldType.String => "TEXT",
-            MetadataV2FieldType.Integer => "INTEGER",
-            MetadataV2FieldType.BigInteger => "BIGINT",
-            MetadataV2FieldType.Double => "DOUBLE PRECISION",
-            MetadataV2FieldType.Float => "REAL",
-            MetadataV2FieldType.Boolean => "BOOLEAN",
-            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
-            MetadataV2FieldType.Date => "DATE",
-            MetadataV2FieldType.Time => "TIME",
-            MetadataV2FieldType.Json => "JSONB",
-            MetadataV2FieldType.Binary => "BYTEA",
-            MetadataV2FieldType.Uuid => "UUID",
-            MetadataV2FieldType.Geometry => "GEOMETRY",
-            MetadataV2FieldType.Geography => "GEOGRAPHY",
-            _ => "TEXT"
-        };
-
-    private static object? ConvertJsonElement(JsonElement element)
-        => element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue :
-                                    element.TryGetDouble(out var doubleValue) ? doubleValue :
-                                    element.GetDecimal(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            _ => element.Clone()
-        };
 
     /// <summary>
     /// Converts WKB geometry to GeoJSON format
@@ -972,10 +957,12 @@ internal sealed class QueryFormatter : IQueryFormatter
     }
 
     /// <summary>
-    /// Maps a canonical geometry type to its Esri geometry-type token. Shared with
+    /// Maps a canonical geometry type to a layer geometry token. Shared with
     /// the queryRelatedRecords response builder so both surfaces agree (#1452).
+    /// Types that are not one of the five layer tokens (none, mixed, or a
+    /// heterogeneous collection) return null so the property is omitted.
     /// </summary>
-    internal static string MapGeometryType(MetadataV2GeometryType geometryType)
+    internal static string? MapGeometryType(MetadataV2GeometryType geometryType)
         => geometryType switch
         {
             MetadataV2GeometryType.Point => "esriGeometryPoint",
@@ -984,8 +971,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
             MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
             MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
+            _ => null
         };
 
     internal static bool ShouldReturnCentroid(MetadataV2Resource resource, bool returnCentroid)
@@ -1001,10 +987,12 @@ internal sealed class StreamingQueryFormatter
 {
     private const int FlushInterval = 32;
     private readonly GeometryLimits _geometryLimits;
+    private readonly GeoParquetLimits _geoParquetLimits;
 
     public StreamingQueryFormatter(IOptions<LimitsOptions> limitsOptions)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
     }
 
     public Task StreamAsGeoServicesJsonAsync(
@@ -1057,6 +1045,11 @@ internal sealed class StreamingQueryFormatter
         bool returnCentroid = false,
         CancellationToken cancellationToken = default)
     {
+        // Acquire the source before writing JSON so admission failures can still
+        // produce a complete protocol error. Keep only the current feature buffered.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
         {
             Indented = false,
@@ -1076,13 +1069,9 @@ internal sealed class StreamingQueryFormatter
                                    field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // esriFieldTypeDate fields must be written as epoch-ms integers per the Esri f=json
-        // spec. Capture their names so the value writer can coerce dates regardless of the
-        // CLR type they arrive in (DateTime/DateTimeOffset/DateOnly/ISO string).
-        var dateFieldNames = resource.SchemaFields
-            .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
-            .Select(static field => field.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Capture temporal types so the value writer distinguishes timestamp epochs
+        // from ISO calendar dates, including values that crossed a JSON cache boundary.
+        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(resource, queryFields, objectIdFieldName);
         var geometryType = resource.ReadGeometryType();
         var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
@@ -1097,7 +1086,11 @@ internal sealed class StreamingQueryFormatter
 
         if (hasGeometry)
         {
-            writer.WriteString("geometryType", MapGeometryType(geometryType));
+            var wireGeometryType = MapGeometryType(geometryType);
+            if (wireGeometryType is not null)
+            {
+                writer.WriteString("geometryType", wireGeometryType);
+            }
             writer.WriteStartObject("spatialReference");
             writer.WriteNumber("wkid", srid);
             writer.WriteNumber("latestWkid", srid);
@@ -1119,8 +1112,9 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartArray("features");
         var featuresSinceFlush = 0;
 
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             WriteGeoServicesFeature(
                 writer,
                 feature,
@@ -1130,7 +1124,7 @@ internal sealed class StreamingQueryFormatter
                 outFieldLookup,
                 allDeclaredAttributeFields,
                 visibleDeclaredAttributeFields,
-                dateFieldNames,
+                temporalFieldTypes,
                 objectIdFieldName,
                 returnZ,
                 returnM,
@@ -1142,6 +1136,8 @@ internal sealed class StreamingQueryFormatter
                 await writer.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
@@ -1200,6 +1196,11 @@ internal sealed class StreamingQueryFormatter
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
     {
+        // Acquire the source before writing JSON so admission failures can still
+        // produce a complete protocol error. Keep only the current feature buffered.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
         {
             Indented = false,
@@ -1221,8 +1222,9 @@ internal sealed class StreamingQueryFormatter
             forceSimplify: maxAllowableOffset is > 0);
         var featuresSinceFlush = 0;
 
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             WriteGeoJsonFeature(
                 writer,
                 feature,
@@ -1239,6 +1241,8 @@ internal sealed class StreamingQueryFormatter
                 await writer.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
@@ -1267,7 +1271,7 @@ internal sealed class StreamingQueryFormatter
         HashSet<string>? outFieldLookup,
         IReadOnlySet<string> allDeclaredAttributeFields,
         IReadOnlySet<string> visibleDeclaredAttributeFields,
-        IReadOnlySet<string> dateFieldNames,
+        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes,
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
@@ -1303,7 +1307,7 @@ internal sealed class StreamingQueryFormatter
                     objectIdWritten = true;
                 }
 
-                WriteJsonValue(writer, fieldName, kvp.Value, cancellationToken, dateFieldNames);
+                WriteJsonValue(writer, fieldName, kvp.Value, stringifyComplexValues: true, temporalFieldTypes, cancellationToken);
             }
         }
 
@@ -1428,7 +1432,7 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartObject("properties");
         foreach (var kvp in featureBase.Properties)
         {
-            WriteJsonValue(writer, kvp.Key, kvp.Value, cancellationToken);
+            WriteJsonValue(writer, kvp.Key, kvp.Value, stringifyComplexValues: false, temporalFieldTypes: null, cancellationToken);
         }
 
         writer.WriteEndObject();
@@ -1446,30 +1450,27 @@ internal sealed class StreamingQueryFormatter
     }
 
     /// <summary>
-    /// Writes a JSON value with proper type handling for the Esri GeoServices f=json
-    /// response. When <paramref name="dateFieldNames"/> contains <paramref name="propertyName"/>
-    /// the value is coerced to an epoch-millisecond integer (UTC) regardless of whether it
-    /// arrives as a <see cref="DateTime"/>, <see cref="DateTimeOffset"/>, <see cref="DateOnly"/>,
-    /// a numeric epoch, or an ISO/date string — matching the Esri spec's requirement that
-    /// <c>esriFieldTypeDate</c> values are epoch-millisecond integers.
+    /// Writes a JSON attribute, stringifying complex values only for Esri f=json;
+    /// GeoJSON keeps typed arrays and objects. When <paramref name="temporalFieldTypes"/> contains <paramref name="propertyName"/>
+    /// the declared type determines the wire representation: <c>esriFieldTypeDate</c>
+    /// uses epoch milliseconds and <c>esriFieldTypeDateOnly</c> uses ISO calendar dates.
     /// </summary>
     private static void WriteJsonValue(
         Utf8JsonWriter writer,
         string propertyName,
         object? value,
-        CancellationToken cancellationToken,
-        IReadOnlySet<string>? dateFieldNames = null)
+        bool stringifyComplexValues,
+        IReadOnlyDictionary<string, MetadataV2FieldType>? temporalFieldTypes,
+        CancellationToken cancellationToken)
     {
-        // Field-type-aware date coercion: the layer metadata knows this field is
-        // esriFieldTypeDate, so emit epoch-ms even when the value reaches us as a string
-        // (the canonical attribute pipeline can round-trip DateTime -> ISO string via JSON)
-        // or DateOnly. Numeric epoch values are passed through without double-conversion.
+        // Use schema semantics even when the CLR representation changed in a cache.
         if (value is not null
-            && dateFieldNames is not null
-            && dateFieldNames.Contains(propertyName)
-            && GeoServicesFieldConventions.TryConvertToEpochMilliseconds(value, out var epochMs))
+            && temporalFieldTypes is not null
+            && temporalFieldTypes.TryGetValue(propertyName, out var temporalType)
+            && GeoServicesFieldConventions.TryConvertTemporalValue(value, temporalType, out var converted))
         {
-            writer.WriteNumber(propertyName, epochMs);
+            writer.WritePropertyName(propertyName);
+            JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
             cancellationToken.ThrowIfCancellationRequested();
             return;
         }
@@ -1507,7 +1508,18 @@ internal sealed class StreamingQueryFormatter
                 writer.WriteNumber(propertyName, dto.ToUnixTimeMilliseconds());
                 break;
             case DateOnly dateOnly:
-                writer.WriteNumber(propertyName, GeoServicesFieldConventions.ToEpochMilliseconds(dateOnly));
+                writer.WriteString(propertyName, dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                break;
+            // GeoServices has no array or object field type, so a column whose values are
+            // complex is published as esriFieldTypeString and the value has to agree. The
+            // default arm below writes complex values as raw JSON, which emits an array
+            // for a field the same response declares a string. ArcGIS Pro stops reading
+            // the feature array at the first such row: a cursor over a layer whose first
+            // nine rows are strings and whose tenth is an array returns nine rows, and one
+            // whose first row is an array returns none - silently, with no error. See
+            // GeoServicesAttributeProjection and honua-server#5171.
+            case JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element when stringifyComplexValues:
+                writer.WriteString(propertyName, element.GetRawText());
                 break;
             default:
                 // For complex objects, serialize to JSON and write as raw JSON
@@ -1520,17 +1532,7 @@ internal sealed class StreamingQueryFormatter
         cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private static string MapGeometryType(MetadataV2GeometryType geometryType)
-        => geometryType switch
-        {
-            MetadataV2GeometryType.Point => "esriGeometryPoint",
-            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
-            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
-        };
+    private static string? MapGeometryType(MetadataV2GeometryType geometryType)
+        => QueryFormatter.MapGeometryType(geometryType);
 
 }

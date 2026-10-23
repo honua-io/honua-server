@@ -48,7 +48,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
         // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
         service.HasCurrentVersion.Should().BeFalse();
         service.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
-        service.Tasks.Should().Contain("geometry.buffer");
+        service.Tasks.Should().Contain("Honua_67656F6D657472792E627566666572");
 
         task.Name.Should().Be("geometry.buffer");
         // ADVERTISED executionType stays asynchronous (the established contract that
@@ -113,7 +113,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
     {
         var client = new GPServerClient(_fixture.Client, ServiceId);
 
-        // submitJob recognizes env:outSR/env:processSR/env:workspace/env:overwriteOutput
+        // submitJob honors env:outSR/env:workspace/env:overwriteOutput; processSR overrides are refused
         // (see GPServerEndpointTests' env:workspace/overwriteOutput coverage); any
         // other env:* control still yields a clear Esri 400 instead of being
         // silently stripped.

@@ -4,18 +4,26 @@
 using System.Globalization;
 using System.Net;
 using System.Security.Claims;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Routing.Features.Routing.Abstractions;
+using Honua.Routing.Features.Routing.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -38,10 +46,22 @@ public static class SharingRestEndpoints
 
     private const string JsonContentType = "application/json";
 
+    /// <summary>
+    /// Explicit no-cache decision shared by every Portal/Sharing GET (SEC-20).
+    /// This is an identity surface: <c>generateToken</c> returns a freshly issued
+    /// credential, and the discovery reads are scoped to the caller's portal token
+    /// (<c>?token=</c>, <c>Authorization</c>, or <c>X-Esri-Authorization</c>). None of
+    /// the responses is a pure function of the request URL, so none of them may be
+    /// stored in the shared output cache.
+    /// </summary>
+    private static readonly Action<OutputCachePolicyBuilder> NoOutputCache =
+        static policy => policy.NoCache();
+
     // The Portal facade only accepts the ArcGIS family of services as items, so
     // the search result page size is bounded to a sane default/maximum.
     private const int DefaultSearchPageSize = 10;
     private const int MaxSearchPageSize = 100;
+    private const string PortalId = "0123456789ABCDEF";
 
     /// <summary>
     /// Maps the <c>/sharing/rest/generateToken</c> POST and GET endpoints.
@@ -53,6 +73,7 @@ public static class SharingRestEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapPost("/sharing/rest/generateToken", HandleGenerateTokenAsync)
+            .WithMetadata(CredentialResponseCacheMetadata.Instance)
             .WithDisplayName("ArcGIS Portal Generate Token")
             .WithName("SharingRestGenerateTokenPost")
             .WithSummary("Issue an ArcGIS-compatible portal token")
@@ -66,6 +87,7 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status402PaymentRequired);
 
         endpoints.MapGet("/sharing/rest/generateToken", HandleGenerateTokenAsync)
+            .WithMetadata(CredentialResponseCacheMetadata.Instance)
             .WithDisplayName("ArcGIS Portal Generate Token (GET)")
             .WithName("SharingRestGenerateTokenGet")
             .WithSummary("Issue an ArcGIS-compatible portal token via query parameters")
@@ -80,6 +102,10 @@ public static class SharingRestEndpoints
             .WithTags("GeoServices Sharing")
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .AllowAnonymous()
+            // NoCache is required (SEC-20): the response body is a freshly issued,
+            // caller-bound credential, so it must never enter the shared output cache
+            // where the next caller of the same URL would be handed it.
+            .CacheOutput(NoOutputCache)
             .Produces<GenerateTokenResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
@@ -104,12 +130,34 @@ public static class SharingRestEndpoints
     /// <returns>The original builder, to support fluent chaining.</returns>
     private static IEndpointRouteBuilder MapSharingRestReadEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/sharing/rest", HandleSharingRoot)
+            .WithDisplayName("Portal Sharing Root")
+            .WithName("SharingRestRoot")
+            .WithSummary("Portal Sharing REST root discovery")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .Produces<SharingRootResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status404NotFound);
+
+        endpoints.MapGet("/arcgisuris.xml", HandlePortalUriList)
+            .WithDisplayName("ArcGIS Portal URI Discovery")
+            .WithName("SharingPortalUriList")
+            .WithSummary("Portal base URI discovery for native ArcGIS clients")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
+            .Produces(StatusCodes.Status200OK, contentType: "application/xml")
+            .Produces(StatusCodes.Status404NotFound);
+
         endpoints.MapGet("/sharing/rest/info", HandleInfoAsync)
             .WithDisplayName("ArcGIS Portal Sharing Info")
             .WithName("SharingRestInfo")
             .WithSummary("Portal version and authentication info")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<SharingInfoResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
@@ -125,6 +173,7 @@ public static class SharingRestEndpoints
             .WithSummary("RBAC-scoped portal/user self description")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<PortalSelfResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -134,9 +183,26 @@ public static class SharingRestEndpoints
             .WithSummary("RBAC-scoped user self description")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<CommunitySelfResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
+
+        endpoints.MapGet("/sharing/rest/community/users/{username}", HandleCommunityUserAsync)
+            .WithName("SharingRestCommunityUser")
+            .WithSummary("Describe the authenticated portal user")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .Produces<CommunitySelfResponse>(StatusCodes.Status200OK, JsonContentType);
+
+        endpoints.MapGet("/sharing/rest/content/users/{username}", HandleContentUserAsync)
+            .WithName("SharingRestContentUser")
+            .WithSummary("List the authenticated portal user's content")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .Produces<ContentUserResponse>(StatusCodes.Status200OK, JsonContentType);
 
         endpoints.MapGet("/sharing/rest/search", HandleSearchAsync)
             .WithDisplayName("ArcGIS Portal Search")
@@ -144,9 +210,18 @@ public static class SharingRestEndpoints
             .WithSummary("Search visible portal items with paging")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
+
+        endpoints.MapPost("/sharing/rest/search", HandleSearchAsync)
+            .WithName("SharingRestSearchPost")
+            .WithSummary("Search visible portal items with form parameters")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .DisableAntiforgery()
+            .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType);
 
         endpoints.MapGet("/sharing/rest/content/items/{id}", HandleContentItemAsync)
             .WithDisplayName("ArcGIS Portal Content Item")
@@ -154,6 +229,7 @@ public static class SharingRestEndpoints
             .WithSummary("Fetch a single portal item by id")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<PortalItem>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -163,13 +239,40 @@ public static class SharingRestEndpoints
             .WithSummary("Fetch a single portal item's data document by id")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<PortalItem>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
     }
 
-    private static async Task<IResult> HandleGenerateTokenAsync(
+    private static IResult HandleSharingRoot(HttpContext context, string? f, ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, f, logger);
+        return gate ?? Results.Json(new SharingRootResponse(), SharingRestJsonContext.Default.SharingRootResponse, contentType: JsonContentType);
+    }
+
+    private static IResult HandlePortalUriList(HttpContext context, ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, null, logger);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/') + "/";
+        var document = new XElement("ArcGISOnlineURIList",
+            new XElement("Name", "Honua"), new XElement("Base", baseUrl),
+            new XElement("PingTest", baseUrl + "sharing/rest/info?f=json"));
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var address) && address.Scheme == Uri.UriSchemeHttps)
+        {
+            document.Add(new XElement("Secure", baseUrl));
+        }
+
+        return Results.Content(document.ToString(SaveOptions.DisableFormatting), "application/xml", Encoding.UTF8);
+    }
+
+    internal static async Task<IResult> HandleGenerateTokenAsync(
         HttpContext context,
         [FromServices] IPortalTokenIssuer tokenIssuer,
         [FromServices] IPortalCredentialVerifier credentialVerifier,
@@ -193,8 +296,9 @@ public static class SharingRestEndpoints
             return entitlementFailure;
         }
 
-        var (username, password, clientType, refererInput, expirationMinutes, _, formatValid) =
+        var (username, password, portalToken, serverUrl, requestedClientType, refererInput, expirationMinutes, _, formatValid) =
             await ReadParametersAsync(context).ConfigureAwait(false);
+        var clientType = requestedClientType ?? PortalTokenClientType.Referer;
 
         // Detect whether credentials arrived via query string (GET or non-form POST). This is
         // used both for the HTTPS enforcement message and for the per-request audit log entry.
@@ -230,7 +334,27 @@ public static class SharingRestEndpoints
             PortalTokenLog.CredentialsFromQueryString(logger);
         }
 
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
+        // Federated exchange (#5491): a client signed in to the portal trades its portal token
+        // for one scoped to this server by presenting the token with the server's URL in place
+        // of a username and password.
+        var exchangeRequested = !string.IsNullOrWhiteSpace(portalToken) || !string.IsNullOrWhiteSpace(serverUrl);
+        if (exchangeRequested)
+        {
+            if (string.IsNullOrWhiteSpace(portalToken) || string.IsNullOrWhiteSpace(serverUrl))
+            {
+                PortalTokenLog.TokenIssuanceRejected(logger, "incomplete token exchange");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Both 'token' and 'serverUrl' are required for token exchange.");
+            }
+
+            if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out _))
+            {
+                PortalTokenLog.TokenIssuanceRejected(logger, "invalid server url");
+                return StandardErrorHelpers.CreateBadRequest(context, "A valid absolute 'serverUrl' is required.");
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "missing credentials");
             return StandardErrorHelpers.CreateBadRequest(
@@ -238,8 +362,15 @@ public static class SharingRestEndpoints
                 "Username and password are required.");
         }
 
-        var binding = ResolveBinding(context, clientType, refererInput);
-        if (binding is null)
+        // A federated exchange inherits the validated portal token's stored binding
+        // only when both client and referer are absent. A supplied referer with no
+        // client is the referer binding (the default client type), not a request to
+        // keep the old referer or to pass a binding value without a binding type.
+        var inheritBinding = exchangeRequested
+            && requestedClientType is null
+            && string.IsNullOrWhiteSpace(refererInput);
+        var binding = inheritBinding ? null : ResolveBinding(context, clientType, refererInput);
+        if (!inheritBinding && binding is null)
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "missing binding");
             return StandardErrorHelpers.CreateBadRequest(
@@ -247,6 +378,39 @@ public static class SharingRestEndpoints
                 clientType == PortalTokenClientType.Referer
                     ? "A 'referer' header or parameter is required when 'client' is 'referer'."
                     : "Client IP could not be determined for an 'ip' binding.");
+        }
+
+        var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
+
+        if (exchangeRequested)
+        {
+            // The presented token is the credential here, so the issuer checks it against this
+            // request's binding exactly as the authentication handler would, and derives the new
+            // token from the stored token rather than from a fresh credential check.
+            var exchange = await tokenIssuer.ExchangeAsync(
+                new PortalTokenExchangeRequest(
+                    Token: portalToken!,
+                    PresentedBinding: new PortalTokenBinding(
+                        Referer: context.Request.Headers.Referer.FirstOrDefault(),
+                        ClientIp: context.Connection.RemoteIpAddress?.ToString()),
+                    ClientType: inheritBinding ? null : clientType,
+                    BindingValue: binding,
+                    ExpiresAt: expiresAt),
+                context.RequestAborted).ConfigureAwait(false);
+            if (exchange is null)
+            {
+                PortalTokenLog.TokenIssuanceRejected(logger, "invalid token");
+                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
+                return StandardErrorHelpers.CreateInvalidToken(context);
+            }
+
+            return CreateGenerateTokenResponse(
+                logger,
+                exchange.PrincipalId,
+                exchange.TenantId,
+                exchange.ClientType,
+                exchange.Issuance);
         }
 
         var verified = await credentialVerifier
@@ -260,9 +424,6 @@ public static class SharingRestEndpoints
                 "Unable to generate token.");
         }
 
-        var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
-
         var issuance = await tokenIssuer.IssueAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: verified.PrincipalId,
@@ -270,7 +431,7 @@ public static class SharingRestEndpoints
                 TenantId: verified.TenantId ?? tenantContext.TenantId,
                 Roles: verified.Roles,
                 ClientType: clientType,
-                BindingValue: binding,
+                BindingValue: binding!,
                 ExpiresAt: expiresAt,
                 // Carry the verifier's provenance so the issued token's roles are revalidated
                 // against the live claims-mapping entitlement on every restore, rather than
@@ -281,16 +442,36 @@ public static class SharingRestEndpoints
                 // instead, that value never touched claims mapping.
                 TenantRequiresClaimsMappingEntitlement:
                     verified.TenantId is not null && verified.TenantRequiresClaimsMappingEntitlement,
-                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping),
+                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping,
+                AcceptMissingReferer: clientType == PortalTokenClientType.Referer,
+                // Carry the verified credential so the issuer clamps this token's lifetime to
+                // that credential's own expiry and re-checks it on every restore, instead of
+                // leaving the token valid after the credential stops being (SEC-9).
+                Source: verified.Source),
             context.RequestAborted).ConfigureAwait(false);
 
+        return CreateGenerateTokenResponse(
+            logger,
+            verified.PrincipalId,
+            verified.TenantId ?? tenantContext.TenantId,
+            clientType,
+            issuance);
+    }
+
+    private static IResult CreateGenerateTokenResponse(
+        ILogger<SharingRestLog> logger,
+        string principalId,
+        string? tenantId,
+        PortalTokenClientType clientType,
+        PortalTokenIssuance issuance)
+    {
         if (logger.IsEnabled(LogLevel.Information))
         {
 #pragma warning disable CA1873 // LogValueRedactor.Hash / ToString only invoked inside the IsEnabled gate above
             PortalTokenLog.TokenIssued(
                 logger,
-                LogValueRedactor.Hash(verified.PrincipalId),
-                LogValueRedactor.Hash(verified.TenantId ?? tenantContext.TenantId ?? string.Empty),
+                LogValueRedactor.Hash(principalId),
+                LogValueRedactor.Hash(tenantId ?? string.Empty),
                 clientType.ToString(),
                 issuance.ExpiresAt);
 #pragma warning restore CA1873
@@ -318,9 +499,10 @@ public static class SharingRestEndpoints
             return gate;
         }
 
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var baseUrl = GeoServicesPortalUrlResolver.GetBaseUrl(context);
         var response = new SharingInfoResponse
         {
+            OwningSystemUrl = baseUrl.TrimEnd('/'),
             AuthInfo = new SharingAuthInfo
             {
                 IsTokenBasedSecurity = tokenOptions.Value.Enabled,
@@ -331,7 +513,7 @@ public static class SharingRestEndpoints
         return Results.Json(response, SharingRestJsonContext.Default.SharingInfoResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandlePortalSelfAsync(
+    private static async Task<IResult> HandlePortalSelfAsync(
         HttpContext context,
         string? f,
         [FromServices] ILogger<SharingRestLog> logger)
@@ -353,17 +535,52 @@ public static class SharingRestEndpoints
 
         var response = new PortalSelfResponse
         {
-            Id = "0123456789ABCDEF",
+            Id = PortalId,
             Name = "Honua",
             User = user,
+            HelperServices = await BuildRoutingHelpersAsync(context, logger).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.PortalSelfResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandleCommunitySelfAsync(
+    private static async Task<PortalHelperServices> BuildRoutingHelpersAsync(HttpContext context, ILogger<SharingRestLog> logger)
+    {
+        RoutingProviderCapabilities capabilities;
+        try
+        {
+            var routing = context.RequestServices.GetService<IRoutingProvider>();
+            if (routing is null)
+            {
+                return new PortalHelperServices();
+            }
+
+            capabilities = await routing.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        {
+            // Routing is optional portal metadata. A provider failure must neither
+            // advertise unavailable helpers nor hide the rest of the portal identity.
+            SharingRestLog.RoutingHelpersUnavailable(logger, exception);
+            return new PortalHelperServices();
+        }
+
+        // NAServer is a provider-level service. Its routes accept the stable Routing
+        // name independently of feature-service publications in the metadata catalog.
+        var baseUrl = $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/rest/services/Routing/NAServer";
+        return new PortalHelperServices
+        {
+            Route = capabilities.SupportsRoute ? new PortalHelperService { Url = $"{baseUrl}/Route" } : null,
+            ServiceArea = capabilities.SupportsServiceArea ? new PortalHelperService { Url = $"{baseUrl}/ServiceArea" } : null,
+            ClosestFacility = capabilities.SupportsClosestFacility ? new PortalHelperService { Url = $"{baseUrl}/ClosestFacility" } : null,
+            OdCostMatrix = capabilities.SupportsOdCostMatrix ? new PortalHelperService { Url = $"{baseUrl}/ODCostMatrix" } : null,
+        };
+    }
+
+    private static async Task<IResult> HandleCommunitySelfAsync(
         HttpContext context,
         string? f,
+        [FromServices] IPortalGroupStore groupStore,
         [FromServices] ILogger<SharingRestLog> logger)
     {
         var gate = GateReadSurface(context, f, logger);
@@ -384,11 +601,68 @@ public static class SharingRestEndpoints
 
         var response = new CommunitySelfResponse
         {
+            Id = ResolveUsername(principal),
             Username = ResolveUsername(principal),
             FullName = ResolveDisplayName(principal),
+            Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, ResolveUsername(principal), context.RequestAborted).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<IResult> HandleCommunityUserAsync(HttpContext context, string username, string? f, IPortalGroupStore groupStore, ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, f, logger);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to describe a user.");
+        }
+
+        var current = ResolveUsername(context.User);
+        if (!string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
+        }
+
+        var groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, current, context.RequestAborted).ConfigureAwait(false);
+        return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User), Groups = groups }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<IResult> HandleContentUserAsync(
+        HttpContext context,
+        string username,
+        string? f,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] IPortalItemProjector projector,
+        [FromServices] ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, f, logger);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to list user content.");
+        }
+
+        var current = ResolveUsername(context.User);
+        if (!string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var unmappedOwnerIds = GetUnmappedOwnerIds(snapshot);
+        var items = projector.ProjectVisibleItems(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context))
+            .Where(item => unmappedOwnerIds.Contains(item.Id) || string.Equals(item.Owner, current, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return Results.Json(new ContentUserResponse { Username = current, Items = items }, SharingRestJsonContext.Default.ContentUserResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleSearchAsync(
@@ -404,15 +678,19 @@ public static class SharingRestEndpoints
             return gate;
         }
 
-        var query = ReadFirst(context.Request.Query["q"]) ?? string.Empty;
-        var (start, num) = ResolvePaging(context.Request.Query);
+        IFormCollection? form = context.Request.HasFormContentType ? await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false) : null;
+        var query = ReadFirst(context.Request.Query["q"]) ?? (form is null ? null : ReadFirst(form["q"])) ?? string.Empty;
+        var parameters = form is null
+            ? context.Request.Query
+            : new QueryCollection(form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase));
+        var (start, num) = ResolvePaging(parameters);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var visible = projector.ProjectVisibleItems(snapshot, context.User, baseUrl);
 
-        var filtered = ApplyQuery(visible, query);
-        var sorted = ApplySort(filtered, context.Request.Query);
+        var filtered = ApplyQuery(visible, query, GetUnmappedOwnerIds(snapshot));
+        var sorted = ApplySort(filtered, parameters);
 
         var total = sorted.Count;
         // Esri start is 1-based; clamp the slice to the available range.
@@ -512,7 +790,7 @@ public static class SharingRestEndpoints
         return null;
     }
 
-    private static (int Start, int Num) ResolvePaging(IQueryCollection query)
+    internal static (int Start, int Num) ResolvePaging(IQueryCollection query)
     {
         var start = 1;
         if (int.TryParse(ReadFirst(query["start"]), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedStart) &&
@@ -531,32 +809,229 @@ public static class SharingRestEndpoints
         return (start, num);
     }
 
+    private static HashSet<string> GetUnmappedOwnerIds(MetadataV2GraphSnapshot snapshot)
+        => snapshot.Graph.Services.Where(service => string.IsNullOrWhiteSpace(service.Metadata.Publisher))
+            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+
     /// <summary>
     /// Applies a coarse, case-insensitive Portal <c>q</c> filter over the projected
-    /// items. Supports the common <c>type:</c>, <c>owner:</c>, and <c>tags:</c>
-    /// field qualifiers plus free-text matching against title/snippet/tags; any
-    /// other qualifier degrades to free-text so unsupported syntax never errors.
+    /// items. Top-level <c>OR</c> is a disjunction and <c>AND</c> or whitespace is a
+    /// conjunction, respecting quotes and parentheses. Supports the common
+    /// <c>type:</c>, <c>owner:</c>, and <c>tags:</c> field qualifiers plus free-text
+    /// matching against title/snippet/tags; any other qualifier degrades to free-text
+    /// so unsupported syntax never errors.
     /// </summary>
-    private static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query)
+    internal static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query, HashSet<string> unmappedOwnerIds)
     {
-        if (string.IsNullOrWhiteSpace(query))
+        if (string.IsNullOrWhiteSpace(query) || query.Trim() == "*")
         {
             return items.ToList();
         }
 
-        var terms = TokenizeQuery(query);
+        return items.Where(item => MatchesExpression(item, query, unmappedOwnerIds)).ToList();
+    }
+
+    private static bool MatchesExpression(PortalItem item, string expression, HashSet<string> unmappedOwnerIds)
+    {
+        var orParts = SplitTopLevelKeyword(expression, "OR");
+        if (orParts.Count == 0)
+        {
+            return false;
+        }
+
+        if (orParts.Count > 1)
+        {
+            return orParts.Any(part => MatchesExpression(item, part, unmappedOwnerIds));
+        }
+
+        if (TryUnwrapParentheses(orParts[0], out var inner))
+        {
+            return MatchesExpression(item, inner, unmappedOwnerIds);
+        }
+
+        var andParts = SplitTopLevelKeyword(orParts[0], "AND");
+        if (andParts.Count > 1)
+        {
+            return andParts.All(part => MatchesExpression(item, part, unmappedOwnerIds));
+        }
+
+        return MatchesLeaf(item, orParts[0], unmappedOwnerIds);
+    }
+
+    private static bool MatchesLeaf(PortalItem item, string query, HashSet<string> unmappedOwnerIds)
+    {
+        const string qualifiedTermPattern = """(?<negative>-)?(?<field>[A-Za-z]+):\s*(?:\((?<group>[^)]*)\)|"(?<quoted>[^"]*)"|(?<value>[^\s()]+))""";
+        var terms = Regex.Matches(query, qualifiedTermPattern)
+            .Select(match => new SearchTerm(
+                match.Groups["field"].Value,
+                match.Groups["group"].Success ? match.Groups["group"].Value : match.Groups["quoted"].Success ? match.Groups["quoted"].Value : match.Groups["value"].Value,
+                match.Groups["negative"].Success))
+            .ToList();
         if (terms.Count == 0)
         {
-            return items.ToList();
+            var unqualifiedTerms = TokenizeQuery(query)
+                .Where(static term => !IsBooleanKeyword(term))
+                .ToList();
+            return unqualifiedTerms.Count > 0 && unqualifiedTerms.All(term => MatchesTerm(item, term));
         }
 
-        var result = new List<PortalItem>(items.Count);
-        foreach (var item in items.Where(item => terms.All(term => MatchesTerm(item, term))))
+        var freeTextTerms = TokenizeQuery(Regex.Replace(query, qualifiedTermPattern, " "))
+            .Select(term => term.Trim('(', ')'))
+            .Where(static term => term.Length > 0 && !IsBooleanKeyword(term))
+            .ToList();
+
+        // The projector's fallback owner is a display value, not a username mapping.
+        // Omit owner predicates for unmapped services; visibility was already checked
+        // by the shared RBAC projector, including for user-content listing.
+        return terms.All(term =>
+                (unmappedOwnerIds.Contains(item.Id) && string.Equals(term.Field, "owner", StringComparison.OrdinalIgnoreCase)) ||
+                term.Negative != MatchesQualifiedTerm(item, term.Field, term.Value)) &&
+            freeTextTerms.All(term => MatchesTerm(item, term));
+    }
+
+    private static List<string> SplitTopLevelKeyword(string expression, string keyword)
+    {
+        var parts = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var depth = 0;
+        var inQuotes = false;
+        for (var i = 0; i < expression.Length;)
         {
-            result.Add(item);
+            var ch = expression[i];
+            if (ch == '"')
+            {
+                inQuotes = !inQuotes;
+                current.Append(ch);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && ch == '(')
+            {
+                depth++;
+                current.Append(ch);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && ch == ')')
+            {
+                if (depth > 0)
+                {
+                    depth--;
+                }
+
+                current.Append(ch);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && depth == 0 && IsKeywordAt(expression, i, keyword))
+            {
+                parts.Add(current.ToString());
+                current.Clear();
+                i += keyword.Length;
+                continue;
+            }
+
+            current.Append(ch);
+            i++;
         }
 
-        return result;
+        parts.Add(current.ToString());
+        return parts
+            .Select(static part => part.Trim())
+            .Where(static part => part.Length > 0)
+            .ToList();
+    }
+
+    private static bool IsKeywordAt(string expression, int index, string keyword)
+    {
+        if (index + keyword.Length > expression.Length ||
+            !expression.AsSpan(index, keyword.Length).Equals(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (index > 0 && !char.IsWhiteSpace(expression[index - 1]))
+        {
+            return false;
+        }
+
+        var end = index + keyword.Length;
+        return end >= expression.Length || char.IsWhiteSpace(expression[end]);
+    }
+
+    private static bool TryUnwrapParentheses(string expression, out string inner)
+    {
+        inner = expression;
+        var trimmed = expression.Trim();
+        if (trimmed.Length < 2 || trimmed[0] != '(')
+        {
+            return false;
+        }
+
+        var depth = 0;
+        var inQuotes = false;
+        for (var i = 0; i < trimmed.Length; i++)
+        {
+            var ch = trimmed[i];
+            if (ch == '"')
+            {
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (inQuotes)
+            {
+                continue;
+            }
+
+            if (ch == '(')
+            {
+                depth++;
+            }
+            else if (ch == ')')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    if (i != trimmed.Length - 1)
+                    {
+                        return false;
+                    }
+
+                    inner = trimmed[1..^1];
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsBooleanKeyword(string term)
+        => string.Equals(term, "AND", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(term, "OR", StringComparison.OrdinalIgnoreCase);
+
+    private readonly record struct SearchTerm(string Field, string Value, bool Negative);
+
+    private static bool MatchesQualifiedTerm(PortalItem item, string field, string value)
+    {
+        var alternatives = Regex.Split(value, @"\s+OR\s+", RegexOptions.IgnoreCase)
+            .Select(candidate => candidate.Trim(' ', '"', '(', ')'));
+        return alternatives.Any(candidate => field.ToLowerInvariant() switch
+        {
+            "type" => item.Type.Contains(candidate, StringComparison.OrdinalIgnoreCase),
+            "typekeywords" => item.TypeKeywords.Any(keyword => keyword.Contains(candidate, StringComparison.OrdinalIgnoreCase)),
+            "owner" => string.Equals(item.Owner, candidate, StringComparison.OrdinalIgnoreCase),
+            "access" => string.Equals(item.Access, candidate, StringComparison.OrdinalIgnoreCase),
+            "orgid" => string.Equals(PortalId, candidate, StringComparison.OrdinalIgnoreCase),
+            "tags" => item.Tags.Any(tag => string.Equals(tag, candidate, StringComparison.OrdinalIgnoreCase)),
+            "id" => string.Equals(item.Id, candidate, StringComparison.OrdinalIgnoreCase),
+            "title" => item.Title.Contains(candidate, StringComparison.OrdinalIgnoreCase),
+            _ => FreeTextMatch(item, $"{field}:{candidate}"),
+        });
     }
 
     /// <summary>
@@ -688,6 +1163,8 @@ public static class SharingRestEndpoints
     {
         string? username;
         string? password;
+        string? portalToken;
+        string? serverUrl;
         string? clientRaw;
         string? refererInput;
         string? expirationRaw;
@@ -698,6 +1175,8 @@ public static class SharingRestEndpoints
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
             username = ReadFirst(form["username"]);
             password = ReadFirst(form["password"]);
+            portalToken = ReadFirst(form["token"]);
+            serverUrl = ReadFirst(form["serverUrl"]);
             clientRaw = ReadFirst(form["client"]);
             refererInput = ReadFirst(form["referer"]);
             expirationRaw = ReadFirst(form["expiration"]);
@@ -707,13 +1186,15 @@ public static class SharingRestEndpoints
         {
             username = ReadFirst(context.Request.Query["username"]);
             password = ReadFirst(context.Request.Query["password"]);
+            portalToken = ReadFirst(context.Request.Query["token"]);
+            serverUrl = ReadFirst(context.Request.Query["serverUrl"]);
             clientRaw = ReadFirst(context.Request.Query["client"]);
             refererInput = ReadFirst(context.Request.Query["referer"]);
             expirationRaw = ReadFirst(context.Request.Query["expiration"]);
             format = ReadFirst(context.Request.Query["f"]);
         }
 
-        var clientType = ParseClientType(clientRaw);
+        PortalTokenClientType? clientType = clientRaw is null ? null : ParseClientType(clientRaw);
 
         int? expirationMinutes = null;
         if (!string.IsNullOrWhiteSpace(expirationRaw) &&
@@ -729,6 +1210,8 @@ public static class SharingRestEndpoints
         return new GenerateTokenInputs(
             username,
             password,
+            portalToken,
+            serverUrl,
             clientType,
             refererInput,
             expirationMinutes,
@@ -819,7 +1302,9 @@ public static class SharingRestEndpoints
     private readonly record struct GenerateTokenInputs(
         string? Username,
         string? Password,
-        PortalTokenClientType ClientType,
+        string? PortalToken,
+        string? ServerUrl,
+        PortalTokenClientType? ClientType,
         string? RefererInput,
         int? ExpirationMinutes,
         string? Format,
@@ -828,7 +1313,15 @@ public static class SharingRestEndpoints
 
 internal sealed partial class SharingRestLog
 {
+    [LoggerMessage(EventId = 7139, Level = LogLevel.Warning,
+        Message = "Portal routing helpers omitted because the routing provider could not describe its capabilities.")]
+    public static partial void RoutingHelpersUnavailable(ILogger logger, Exception exception);
+
     [LoggerMessage(EventId = 7120, Level = LogLevel.Warning,
         Message = "Portal OAuth authorize rejected: redirect_uri is not registered in the deployment allow-list.")]
     public static partial void OAuthRedirectUriRejected(ILogger logger);
+
+    [LoggerMessage(EventId = 7142, Level = LogLevel.Information,
+        Message = "Portal item {ItemId} {Operation} was not applied; item access is unchanged.")]
+    public static partial void ItemSharingNotApplied(ILogger logger, string itemId, string operation);
 }

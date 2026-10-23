@@ -9,8 +9,10 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using System.Security.Claims;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
@@ -61,13 +63,25 @@ internal static class AccessPolicyHelpers
     /// </summary>
     internal static void AppendAuthenticationChallenge(HttpContext context)
     {
-        var authorization = context.Request.Headers.Authorization.FirstOrDefault();
         context.Response.Headers.Append(
             "WWW-Authenticate",
-            !string.IsNullOrWhiteSpace(authorization) &&
-            authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            AttemptedBearerCredential(context.Request)
                 ? "Bearer"
                 : "ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"");
+    }
+
+    // Portal tokens travel as an Authorization or X-Esri-Authorization bearer, the `token` query
+    // parameter, or a form field the portal-token handler has already parsed. A caller that tried
+    // any of them is told to present a bearer again, not an admin API key (honua-server#4778).
+    private static bool AttemptedBearerCredential(HttpRequest request)
+    {
+        static bool IsBearer(StringValues values) => values.Any(value => value is not null
+            && value.StartsWith(PortalTokenAuthenticationHandler.BearerPrefix, StringComparison.OrdinalIgnoreCase));
+
+        return IsBearer(request.Headers.Authorization)
+            || IsBearer(request.Headers[PortalTokenAuthenticationHandler.EsriAuthorizationHeader])
+            || request.Query.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter)
+            || request.HttpContext.Features.Get<IFormFeature>()?.Form?.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter) == true;
     }
 
     public static AccessDecision EvaluateAccess(
@@ -107,7 +121,12 @@ internal static class AccessPolicyHelpers
             return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
         }
 
-        return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+        if (scope == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, MetadataV2RelationshipEditPolicy.ReadOnlyReason);
+        }
+
+        return CreateAccessDeniedResult(context, EvaluateResourceAccess(context, resource, service, scope));
     }
 
     /// <summary>
@@ -200,6 +219,12 @@ internal static class AccessPolicyHelpers
         }
 
         var serviceName = service.Metadata.Name;
+        var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, serviceName, null, operation);
+        if (scopedKeyDecision is { } decision)
+        {
+            return CreateAccessDeniedResult(context, decision);
+        }
+
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
             var grantDecision = await EvaluateGrantAsync(
@@ -209,13 +234,21 @@ internal static class AccessPolicyHelpers
                 operation,
                 cancellationToken).ConfigureAwait(false);
 
-            if (grantDecision == GrantOutcome.Allow)
+            if (grantDecision.IsAllowed)
             {
-                return null;
+                if (!NarrowsWithRoleList(grantDecision.MatchedGrant))
+                {
+                    return null;
+                }
+
+                var granted = ApplyRoleListToGrant(
+                    context.RequestServices, context.User, resourcePolicy: null, service, operation);
+                return granted.IsAllowed ? null : CreateAccessDeniedResult(context, granted);
             }
         }
 
-        return RequireAccess(context, null, service.AccessPolicy, ScopeForOperation(operation));
+        return CreateAccessDeniedResult(context, EvaluateServicePolicy(
+            context.RequestServices, context.User, null, service, ScopeForOperation(operation), operation));
     }
 
     /// <summary>
@@ -255,7 +288,8 @@ internal static class AccessPolicyHelpers
     /// <summary>
     /// The single, request-context-free implementation of the resource access decision:
     /// tenant scope, then the per-operation RBAC grant resolver, then the coarse
-    /// <see cref="AccessPolicy"/> fallback. Every HTTP helper above delegates here, and
+    /// <see cref="AccessPolicy"/> fallback. A matching grant still has to pass an explicit
+    /// role list (#6358). Every HTTP helper above delegates here, and
     /// so does the principal-based <see cref="LayerAccessAuthorizer"/> used by the
     /// geoprocessing submit pipeline (honua-server#3046) — so the asynchronous job
     /// surface and the synchronous query surfaces cannot drift apart.
@@ -298,7 +332,19 @@ internal static class AccessPolicyHelpers
             return AccessDecision.Forbidden(TenantScopeDeniedReason);
         }
 
+        if (operation is AuthorizationOperation.Insert or AuthorizationOperation.Update or AuthorizationOperation.Delete &&
+            MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
+        }
+
         var serviceName = service?.Metadata.Name;
+        var scopedKeyDecision = EvaluateScopedKeyAccess(principal, serviceName, resource.Metadata.Name, operation);
+        if (scopedKeyDecision is { } decision)
+        {
+            return decision;
+        }
+
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
             var grantDecision = await EvaluateGrantCoreAsync(
@@ -310,21 +356,20 @@ internal static class AccessPolicyHelpers
                 cancellationToken,
                 requestCache).ConfigureAwait(false);
 
-            // An explicit per-operation grant authorizes the request directly.
-            if (grantDecision == GrantOutcome.Allow)
+            // A built-in wildcard grant does not skip an explicit role list (#6358).
+            // A grant that names this service and layer is an explicit allow and stands.
+            if (grantDecision.IsAllowed)
             {
-                return AccessDecision.Allowed();
+                return NarrowsWithRoleList(grantDecision.MatchedGrant)
+                    ? ApplyRoleListToGrant(services, principal, resource.AccessPolicy, service, operation)
+                    : AccessDecision.Allowed();
             }
         }
 
         // No matching grant (or no service context): preserve current behavior
         // by falling back to the coarse AccessPolicy evaluation.
-        var evaluator = services.GetRequiredService<IAccessPolicyEvaluator>();
-        return evaluator.Evaluate(
-            principal,
-            resource.AccessPolicy,
-            service?.AccessPolicy,
-            ScopeForOperation(operation));
+        return EvaluateServicePolicy(
+            services, principal, resource.AccessPolicy, service, ScopeForOperation(operation), operation);
     }
 
     /// <summary>
@@ -356,12 +401,34 @@ internal static class AccessPolicyHelpers
         _ => AccessScope.Read,
     };
 
+    // Scoped API-key grants must be checked against the target before any coarse
+    // policy or role grant can authorize the request. A missing target fails closed.
+    internal static AccessDecision? EvaluateScopedKeyAccess(
+        ClaimsPrincipal principal, string? serviceName, string? layerName, AuthorizationOperation operation)
+    {
+        if (!LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
+        {
+            return null;
+        }
+
+        var allowed = operation is AuthorizationOperation.Query or AuthorizationOperation.Read
+            or AuthorizationOperation.Metadata or AuthorizationOperation.Export
+            ? LayerScopedWriteKey.AllowsRead(principal, serviceName, layerName)
+            : operation is AuthorizationOperation.Insert or AuthorizationOperation.Update or AuthorizationOperation.Delete
+              && LayerScopedWriteKey.IsScopedWritePrincipal(principal)
+              && LayerScopedWriteKey.AllowsWrite(principal, serviceName, layerName);
+
+        return allowed
+            ? AccessDecision.Allowed()
+            : AccessDecision.Forbidden("API key permission does not grant access to this resource.");
+    }
+
     /// <summary>
     /// Consults the per-operation permission resolver for the supplied
     /// <c>(service, layer, operation)</c> tuple, mapping the request principal's
     /// claims to roles. Returns whether an explicit grant allows the request.
     /// </summary>
-    private static Task<GrantOutcome> EvaluateGrantAsync(
+    private static Task<GrantEvaluation> EvaluateGrantAsync(
         HttpContext context,
         string serviceName,
         string? layerName,
@@ -380,7 +447,7 @@ internal static class AccessPolicyHelpers
     /// Request-context-free grant evaluation shared by the HTTP helpers and the
     /// principal-based <see cref="LayerAccessAuthorizer"/> (honua-server#3046).
     /// </summary>
-    private static async Task<GrantOutcome> EvaluateGrantCoreAsync(
+    private static async Task<GrantEvaluation> EvaluateGrantCoreAsync(
         IServiceProvider services,
         ClaimsPrincipal principal,
         string serviceName,
@@ -392,7 +459,7 @@ internal static class AccessPolicyHelpers
         var resolver = services.GetService<IPermissionResolver>();
         if (resolver is null)
         {
-            return GrantOutcome.NoGrant;
+            return GrantEvaluation.None;
         }
 
         var options = services.GetRequiredService<IOptions<RbacOptions>>().Value;
@@ -400,7 +467,7 @@ internal static class AccessPolicyHelpers
         if (roles.Count == 0)
         {
             // No roles to resolve grants from — defer to the coarse policy.
-            return GrantOutcome.NoGrant;
+            return GrantEvaluation.None;
         }
 
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -448,16 +515,43 @@ internal static class AccessPolicyHelpers
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return decision.IsAllowed ? GrantOutcome.Allow : GrantOutcome.NoGrant;
+        return decision.IsAllowed
+            ? GrantEvaluation.Allowed(decision.MatchedGrant)
+            : GrantEvaluation.None;
     }
 
-    private enum GrantOutcome
+    private readonly record struct GrantEvaluation(bool IsAllowed, PermissionGrant? MatchedGrant)
     {
-        NoGrant = 0,
-        Allow = 1,
+        public static GrantEvaluation None => default;
+
+        public static GrantEvaluation Allowed(PermissionGrant? grant) => new(true, grant);
     }
+
+    /// <summary>
+    /// True when the grant is broad enough that a layer role list must still be
+    /// applied. Built-in viewer and editor grants are <c>*/*</c>. A grant that names
+    /// both the service and the layer is an explicit allow.
+    /// </summary>
+    private static bool NarrowsWithRoleList(PermissionGrant? grant)
+        => grant is null
+            || string.Equals(grant.Service, "*", StringComparison.Ordinal)
+            || string.Equals(grant.Layer, "*", StringComparison.Ordinal);
 
     public static IResult? RequireServiceAccess(
+        HttpContext context,
+        MetadataV2Service service,
+        AccessScope scope = AccessScope.Read)
+        => CreateAccessDeniedResult(context, EvaluateServiceAccess(context, service, scope));
+
+    /// <summary>
+    /// Evaluates a resolved service, including tenant and scoped-key targets, while
+    /// leaving protocol-specific serialization of a denial to the caller.
+    /// </summary>
+    /// <param name="context">The current request.</param>
+    /// <param name="service">The resolved target service.</param>
+    /// <param name="scope">The requested read or write scope.</param>
+    /// <returns>The tenant- and target-aware access decision.</returns>
+    public static AccessDecision EvaluateServiceAccess(
         HttpContext context,
         MetadataV2Service service,
         AccessScope scope = AccessScope.Read)
@@ -465,10 +559,11 @@ internal static class AccessPolicyHelpers
         ArgumentNullException.ThrowIfNull(service);
         if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
         {
-            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+            return AccessDecision.Forbidden(AccessForbiddenMessage);
         }
 
-        return RequireAccess(context, null, service.AccessPolicy, scope);
+        return EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope))
+            ?? EvaluateServicePolicy(context.RequestServices, context.User, null, service, scope);
     }
 
     public static bool IsResourceAccessible(
@@ -504,7 +599,59 @@ internal static class AccessPolicyHelpers
             return AccessDecision.Forbidden(TenantScopeDeniedReason);
         }
 
-        return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+        if (scope == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
+        }
+
+        return EvaluateScopedKeyAccess(context.User, service?.Metadata.Name, resource.Metadata.Name, DefaultOperationForScope(scope))
+            ?? EvaluateServicePolicy(context.RequestServices, context.User, resource.AccessPolicy, service, scope);
+    }
+
+    // An explicit group audience is an alternative service READ grant only.
+    // Resource policy remains authoritative, and callers enforce tenant/key scope first.
+    internal static AccessDecision EvaluateServicePolicy(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        AccessPolicy? resourcePolicy,
+        MetadataV2Service? service,
+        AccessScope scope,
+        AuthorizationOperation operation = AuthorizationOperation.Query)
+    {
+        var servicePolicy = service?.AccessPolicy;
+        if (scope == AccessScope.Read
+            && (operation is AuthorizationOperation.Query or AuthorizationOperation.Read
+                or AuthorizationOperation.Metadata or AuthorizationOperation.Export)
+            && service is not null
+            && services.GetService<IPortalResourceReadAuthorizer>()?.HasServiceAudience(principal, service) == true)
+        {
+            servicePolicy = null;
+        }
+
+        return services.GetRequiredService<IAccessPolicyEvaluator>()
+            .Evaluate(principal, resourcePolicy, servicePolicy, scope);
+    }
+
+    // Empty role lists and AllowAnonymous still allow, so the grant stands. A forbidden
+    // decision stands even when a replacement evaluator uses its own failure text.
+    // Authentication-required is not a role-list denial.
+    private static AccessDecision ApplyRoleListToGrant(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        AccessPolicy? resourcePolicy,
+        MetadataV2Service? service,
+        AuthorizationOperation operation)
+    {
+        var policyDecision = EvaluateServicePolicy(
+            services,
+            principal,
+            resourcePolicy,
+            service,
+            ScopeForOperation(operation),
+            operation);
+        return policyDecision is { IsAllowed: false, RequiresAuthentication: false }
+            ? policyDecision
+            : AccessDecision.Allowed();
     }
 
     /// <summary>
@@ -512,7 +659,8 @@ internal static class AccessPolicyHelpers
     /// per-operation permission resolver for the supplied operation first; when no
     /// grant matches it falls back to the coarse <see cref="AccessPolicy"/>
     /// evaluation, so visibility filtering (e.g. WFS GetFeature published types)
-    /// honors per-operation grants while ungranted services behave as before.
+    /// honors per-operation grants that an explicit role list also admits, while ungranted
+    /// services behave as before.
     /// </summary>
     /// <param name="context">The request context.</param>
     /// <param name="resource">The resource (layer) being accessed.</param>
@@ -609,19 +757,156 @@ internal static class AccessPolicyHelpers
         return updateError;
     }
 
+    /// <summary>
+    /// Projects visible resources using the canonical operation resolver and returns
+    /// the authentication/authorization error when every candidate is denied.
+    /// Evaluation and projection share one decision per resource.
+    /// </summary>
+    public static async Task<(T[] Resources, IResult? Error)> FilterAccessibleResourcesAsync<T>(
+        HttpContext context,
+        IEnumerable<T> candidates,
+        Func<T, MetadataV2Resource> resourceSelector,
+        MetadataV2Service service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        ArgumentNullException.ThrowIfNull(resourceSelector);
+        var visible = new List<T>();
+        AccessDecision? denial = null;
+        foreach (var candidate in candidates)
+        {
+            var decision = await EvaluateResourceAccessAsync(
+                context, resourceSelector(candidate), service, operation, cancellationToken).ConfigureAwait(false);
+            if (decision.IsAllowed)
+            {
+                visible.Add(candidate);
+            }
+            else if (denial is null || decision.RequiresAuthentication)
+            {
+                denial = decision;
+            }
+        }
+
+        return (visible.ToArray(), visible.Count == 0 && denial is not null
+            ? CreateAccessDeniedResult(context, denial.Value)
+            : null);
+    }
+
+    /// <summary>
+    /// Resolves the canonical per-operation decision (#1376) once for each supplied resource so
+    /// synchronous layer selection shares it with the async handlers (#4783).
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The resources the request may touch.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The per-resource decisions.</returns>
+    public static Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+        => EvaluateResourceAccessSetAsync(context, resources, service, [operation], cancellationToken);
+
+    /// <summary>
+    /// Resolves one decision per resource that allows the resource when the canonical resolver or
+    /// the coarse policy admits ANY of <paramref name="operations"/> (for example, a replica write
+    /// admitted by an update, insert or delete grant). A denied resource keeps the decision for the
+    /// first operation, which also selects the coarse fallback scope.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The resources the request may touch.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operations">The canonical operations, any of which authorizes a resource.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The per-resource decisions.</returns>
+    public static async Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        IReadOnlyList<AuthorizationOperation> operations,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(operations);
+        if (operations.Count == 0)
+        {
+            throw new ArgumentException("At least one operation is required.", nameof(operations));
+        }
+
+        var decisions = new Dictionary<MetadataV2Resource, AccessDecision>(ReferenceEqualityComparer.Instance);
+        foreach (var resource in resources.Distinct<MetadataV2Resource>(ReferenceEqualityComparer.Instance))
+        {
+            AccessDecision? decision = null;
+            foreach (var operation in operations)
+            {
+                var candidate = await EvaluateResourceAccessAsync(
+                    context, resource, service, operation, cancellationToken).ConfigureAwait(false);
+                if (candidate.IsAllowed)
+                {
+                    decision = candidate;
+                    break;
+                }
+
+                decision ??= candidate;
+            }
+
+            decisions[resource] = decision!.Value;
+        }
+
+        return new ResourceAccessSet(context, service, ScopeForOperation(operations[0]), decisions);
+    }
+
+    /// <summary>
+    /// Operation-aware counterpart of <see cref="RequireAnyResourceAccess"/>: allows the request
+    /// when the canonical resolver or the coarse policy admits any of the resources (#4783).
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The candidate resources.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An error result when every resource is denied, otherwise <see langword="null"/>.</returns>
+    public static async Task<IResult?> RequireAnyResourceAccessAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        IReadOnlyCollection<MetadataV2Resource> candidates = resources as IReadOnlyCollection<MetadataV2Resource> ?? [.. resources];
+        var access = await EvaluateResourceAccessSetAsync(
+            context, candidates, service, operation, cancellationToken).ConfigureAwait(false);
+        return access.RequireAny(candidates);
+    }
+
     public static IResult? RequireAnyResourceAccess(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
+        => RequireAnyDecision(
+            context,
+            resources,
+            resource => EvaluateResourceAccess(context, resource, service, scope));
+
+    internal static IResult? RequireAnyDecision(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        Func<MetadataV2Resource, AccessDecision> evaluate)
     {
         ArgumentNullException.ThrowIfNull(resources);
         var requiresAuth = false;
         var hasDenied = false;
 
+        // codeql[cs/linq/missed-select]: returns on the first allow and accumulates denial flags across the rest
         foreach (var resource in resources)
         {
-            var decision = EvaluateResourceAccess(context, resource, service, scope);
+            var decision = evaluate(resource);
             if (decision.IsAllowed)
             {
                 return null;

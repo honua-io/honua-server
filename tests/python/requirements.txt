@@ -9,6 +9,7 @@ pytest-timeout>=2.3.0
 
 # HTTP client
 httpx>=0.27.0
+aiohttp>=3.12.0  # Complete request populations in the candidate capacity collector
 requests>=2.31.0
 pystac>=1.10.0
 pystac-client>=0.8.0
@@ -22,6 +23,12 @@ psycopg[binary]>=3.1.0
 shapely>=2.0.0
 geopandas>=0.14.0
 pyproj>=3.6.0
+
+# Parquet reader backing the GeoParquet interop lane
+# (feature_server/test_geoparquet_interop.py). GeoPandas only declares pyarrow under
+# its `all` extra, so declare it explicitly. Missing readers fail collection
+# in the required GeoParquet lane (#4396).
+pyarrow>=14.0.0
 
 # Canonical OGC client used by the py-owslib certification lane (#3392). The
 # lane itself runs in its own container, which pins exact versions in

@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
@@ -23,7 +24,8 @@ internal sealed class Wfs20QueryServices(
     Wfs20QueryParameterAdapter queryParameterAdapter,
     IQueryProcessor queryProcessor,
     IOptions<Wfs20Options> wfs20Options,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    FeatureProviderQueryRouter? providerQueryRouter = null)
 {
     internal IFeatureReader FeatureReader { get; } = featureReader;
 
@@ -40,4 +42,6 @@ internal sealed class Wfs20QueryServices(
     internal Wfs20Options Wfs20Options { get; } = wfs20Options?.Value ?? throw new ArgumentNullException(nameof(wfs20Options));
 
     internal string? DataSourceProvider { get; } = configuration?["DataSource:Provider"];
+
+    internal FeatureProviderQueryRouter? ProviderQueryRouter { get; } = providerQueryRouter;
 }

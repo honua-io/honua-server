@@ -445,6 +445,98 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
             name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// honua-server#4415 - <c>RunMigrations_BackupHook_RunsBeforeContractApplyAndSucceeds</c> proves
+    /// only that the backup hook ran (a sentinel file exists); nothing anywhere verified that the
+    /// backup it produces is restorable, or even non-empty. This test's backup command is a real
+    /// <c>pg_dump</c> (run via <c>docker exec</c> against the same container the migration runs
+    /// against, so no PostgreSQL client tools are required on the test-runner host) of a table
+    /// seeded with independently-known rows, taken immediately before the contract script destroys
+    /// the very column being backed up. The assertion is that <c>pg_restore</c>-ing the dump into a
+    /// brand-new database reproduces those exact rows - the shape honua-release's
+    /// <c>e2e/dr-drill/run.sh</c> already uses for its own backup/restore proof.
+    /// </summary>
+    [SkippableFact]
+    public async Task RunMigrations_BackupHook_RealPgDumpRestoresIdenticalPreContractSnapshot()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_backuprestore_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        // Independently-known ground truth, seeded by hand - not captured from a run of the backup.
+        var seededRows = new[] { (Id: 1, LegacyName: "alpha"), (Id: 2, LegacyName: "beta"), (Id: 3, LegacyName: "gamma") };
+        await using (var seedConnection = new NpgsqlConnection(connectionString))
+        {
+            await seedConnection.OpenAsync();
+            foreach (var row in seededRows)
+            {
+                await using var insert = seedConnection.CreateCommand();
+                insert.CommandText = "INSERT INTO honua_ci_demo (id, legacy_name) VALUES (@id, @name)";
+                insert.Parameters.AddWithValue("id", row.Id);
+                insert.Parameters.AddWithValue("name", row.LegacyName);
+                await insert.ExecuteNonQueryAsync();
+            }
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        var dumpPath = $"/tmp/honua-ci-backup-{Guid.NewGuid():N}.dump";
+        // docker exec (not psql/pg_dump on the test-runner host) runs the real client tools already
+        // bundled in the postgis/postgis image, over the container's internal loopback so the exact
+        // same credentials Npgsql used to seed the rows authenticate the dump.
+        var backupCommand =
+            $"docker exec -e PGPASSWORD={builder.Password} {_postgres.ContainerId} " +
+            $"pg_dump -U {builder.Username} -h 127.0.0.1 -d {builder.Database} -Fc -f {dumpPath}";
+
+        var runner = CreateRunner(new MigrationSafetyOptions
+        {
+            Enforce = true,
+            ContractApplyPolicy = ContractApplyPolicy.Auto,
+            BackupCommand = backupCommand,
+        });
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, upgrade);
+
+        result.Successful.Should().BeTrue($"the backup hook succeeded so the contract migration applies. Error: {result.ErrorMessage}");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
+            .Should().BeFalse("the contract script dropped legacy_name on the live database after the backup ran");
+
+        var dumpExists = await _postgres.ExecInContainerAsync(["test", "-s", dumpPath]);
+        dumpExists.ExitCode.Should().Be(0, "the backup command must have produced a non-empty dump file");
+
+        // Restore into a brand-new, otherwise-empty database and prove the dump is a genuine,
+        // independently-readable point-in-time snapshot rather than an empty or corrupt artifact.
+        var restoreConnectionString = await _postgres.CreateFreshDatabaseAsync();
+        var restoreBuilder = new NpgsqlConnectionStringBuilder(restoreConnectionString);
+        var restore = await _postgres.ExecInContainerAsync([
+            "sh", "-c",
+            $"PGPASSWORD={builder.Password} pg_restore -U {builder.Username} -h 127.0.0.1 " +
+            $"-d {restoreBuilder.Database} --no-owner --exit-on-error {dumpPath}"
+        ]);
+        restore.ExitCode.Should().Be(0, $"pg_restore must succeed against the dump the backup hook produced. stderr: {restore.Stderr}");
+
+        await using var verifyConnection = new NpgsqlConnection(restoreConnectionString);
+        await verifyConnection.OpenAsync();
+        await using var query = verifyConnection.CreateCommand();
+        query.CommandText = "SELECT id, legacy_name FROM honua_ci_demo ORDER BY id";
+        await using var reader = await query.ExecuteReaderAsync();
+        var restoredRows = new List<(int Id, string LegacyName)>();
+        while (await reader.ReadAsync())
+        {
+            restoredRows.Add((reader.GetInt32(0), reader.GetString(1)));
+        }
+
+        restoredRows.Should().Equal(
+            seededRows,
+            "the restored table must contain exactly the rows seeded before the backup, including the legacy_name "
+                + "column the live database no longer has after the contract script applied");
+    }
+
     [SkippableFact]
     public async Task RunMigrations_BackupHook_SkippedWhenNoPendingContractScripts()
     {
@@ -484,6 +576,125 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         var result = await CreateRunner(new MigrationSafetyOptions { Enforce = true })
             .RunMigrationsAsync(connectionString, baseline);
         result.Successful.Should().BeTrue($"the expand baseline must apply. Error: {result.ErrorMessage}");
+    }
+
+    [SkippableFact]
+    public async Task RollbackReader_AgainstNewerDeclaredExpandOnlyJournal_StartsAndKeepsNewerData()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        // #6477: a reader built at baseline N (001-002) starts against a journal at N+2 whose extra
+        // scripts are expand-only and were declared by the newer server that applied them.
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var runner = CreateEnforcingRunner();
+        var assemblyName = $"honua_synthetic_rollback_{Guid.NewGuid():N}";
+        (string, string)[] baseline = [("001_expand.sql", ExpandScript), ("002_reader_compatibility.sql", ReaderCompatibilityJournalScript())];
+        var older = SyntheticMigrationsCompiler.Compile(assemblyName, baseline);
+        var newer = SyntheticMigrationsCompiler.Compile(assemblyName,
+            [.. baseline, ("003_add_note.sql", SecondExpandScript), ("004_create_audit.sql", "CREATE TABLE honua_ci_audit (id INTEGER PRIMARY KEY);")]);
+
+        (await runner.RunMigrationsAsync(connectionString, older)).Successful.Should().BeTrue();
+        var upgrade = await runner.RunMigrationsAsync(connectionString, newer);
+        upgrade.Successful.Should().BeTrue(upgrade.ErrorMessage);
+        upgrade.AppliedScripts.Should().HaveCount(2);
+        await ExecuteAsync(connectionString, "INSERT INTO honua_ci_demo (id, legacy_name, note) VALUES (7, 'retained', 'written by N+2')");
+        (await DeclarationsAsync(connectionString)).Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            [GetEmbeddedScriptName(assemblyName, "001_expand.sql")] = "expand",
+            [GetEmbeddedScriptName(assemblyName, "002_reader_compatibility.sql")] = "expand",
+            [GetEmbeddedScriptName(assemblyName, "003_add_note.sql")] = "expand",
+            [GetEmbeddedScriptName(assemblyName, "004_create_audit.sql")] = "expand",
+        });
+
+        var rollback = await runner.RunMigrationsAsync(connectionString, older);
+        rollback.Successful.Should().BeTrue($"declared expand-only scripts are rollback-safe. Error: {rollback.ErrorMessage}");
+        rollback.AppliedScripts.Should().BeEmpty("rollback never reverses or replays migrations");
+        var plan = await runner.PlanMigrationsAsync(connectionString, older);
+        plan.Successful.Should().BeTrue(plan.ErrorMessage);
+        plan.ExecutedButNotDiscoveredScripts.Should().BeEquivalentTo(
+            GetEmbeddedScriptName(assemblyName, "003_add_note.sql"), GetEmbeddedScriptName(assemblyName, "004_create_audit.sql"));
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "note")).Should().BeTrue();
+        (await TableExistsAsync(connectionString, "honua_ci_audit")).Should().BeTrue();
+        (await ScalarAsync(connectionString, "SELECT note FROM honua_ci_demo WHERE id = 7")).Should().Be("written by N+2");
+
+        // The rolled-back reader declares only what it ships and never rewrites the newer declarations.
+        (await DeclarationsAsync(connectionString)).Should().HaveCount(4);
+    }
+
+    [SkippableTheory]
+    [InlineData("opt-out")]
+    [InlineData("contract")]
+    public async Task RollbackReader_WhenNewerJournalAddsContractOrOptedOutScript_StillRefuses(string kind)
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_rollback_refused_{Guid.NewGuid():N}";
+        (string, string)[] baseline = [("001_expand.sql", ExpandScript), ("002_reader_compatibility.sql", ReaderCompatibilityJournalScript())];
+        var (script, sql, reason) = kind == "opt-out"
+            ? ("003_opt_out.sql",
+                "-- honua:reader-incompatible reason=older readers insert rows the new default contradicts\n" + SecondExpandScript,
+                "declared reader-incompatible, not expand")
+            : ("003_drop_legacy.sql", AnnotatedContractScript, "declared contract, not expand");
+        var older = SyntheticMigrationsCompiler.Compile(assemblyName, baseline);
+        var newer = SyntheticMigrationsCompiler.Compile(assemblyName, [.. baseline, (script, sql)]);
+        // Auto policy lets the newer server apply its reviewed contract phase unattended here.
+        var runner = CreateRunner(new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Auto });
+        (await runner.RunMigrationsAsync(connectionString, older)).Successful.Should().BeTrue();
+        var upgrade = await runner.RunMigrationsAsync(connectionString, newer);
+        upgrade.Successful.Should().BeTrue(upgrade.ErrorMessage);
+
+        var rollback = await runner.RunMigrationsAsync(connectionString, older);
+
+        rollback.Successful.Should().BeFalse();
+        var refusal = rollback.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>().Which;
+        refusal.UnknownMigrations.Should().Equal(GetEmbeddedScriptName(assemblyName, script));
+        refusal.DeclarationRefusals.Should().ContainKey(GetEmbeddedScriptName(assemblyName, script))
+            .WhoseValue.Should().Be(reason);
+        rollback.ErrorMessage.Should().Contain(DatabaseSchemaCompatibilityException.ErrorCode);
+        (await runner.PlanMigrationsAsync(connectionString, older)).Error.Should().BeOfType<DatabaseSchemaCompatibilityException>();
+    }
+
+    private static string ReaderCompatibilityJournalScript()
+    {
+        // The production expand migration, so the synthetic reader proves the shipped DDL.
+        using var stream = typeof(ServerCoreSchemaMigrations).Assembly.GetManifestResourceStream(
+            "Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql")
+            ?? throw new InvalidOperationException("Migration 135 is not embedded in the server assembly.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    private static async Task<Dictionary<string, string>> DeclarationsAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT script_name, classification FROM public.schema_version_reader_compatibility", connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        var declarations = new Dictionary<string, string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync())
+        {
+            declarations[reader.GetString(0)] = reader.GetString(1);
+        }
+
+        return declarations;
+    }
+
+    private static async Task ExecuteAsync(string connectionString, string sql)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<object?> ScalarAsync(string connectionString, string sql)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        return await command.ExecuteScalarAsync();
     }
 
     private static PostgresDatabaseMigrationRunner CreateEnforcingRunner()

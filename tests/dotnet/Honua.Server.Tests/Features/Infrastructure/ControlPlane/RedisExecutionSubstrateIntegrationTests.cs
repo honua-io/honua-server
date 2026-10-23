@@ -24,6 +24,57 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
     [IntegrationTest]
+    public async Task JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var queued = CreateQueuedJob($"interrupted-admission-{Guid.NewGuid():N}");
+        queued = queued with { Spec = queued.Spec with { Backend = "local" }, Priority = OperationPriority.High };
+        await harness.JobStore.TryCreateAsync(queued);
+        // Simulate process loss after durable creation: no progress or pending membership.
+        using var sweep = new JobReconciliationService(harness.JobStore, harness.Queue, harness.Queue,
+            new ExecutionJobCancellationTokens(), [], harness.LogStore, NullLogger<JobReconciliationService>.Instance);
+        await sweep.SweepActiveJobsAsync(CancellationToken.None);
+        await sweep.SweepActiveJobsAsync(CancellationToken.None);
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(1);
+        var executions = 0;
+        var callback = new RecordingTerminalCallback();
+        var executor = new DelegatingJobExecutor(ExecutionJobKind.Geoprocessing, (_, _, _) =>
+        {
+            Interlocked.Increment(ref executions);
+            return Task.FromResult(JobExecutionResult.Succeeded());
+        });
+        using var replacement = new JobExecutionService(harness.Queue, harness.JobStore, [executor],
+            new ExecutionJobCancellationTokens(), [callback], harness.LogStore, NullLogger<JobExecutionService>.Instance);
+        await replacement.StartAsync(CancellationToken.None);
+        try
+        {
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(15));
+            terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            terminal.AttemptCount.Should().Be(1);
+            executions.Should().Be(1);
+            (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        }
+        finally
+        {
+            await replacement.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task JobQueue_RepeatedAdmissionRepair_DoesNotRepublishAnAlreadyClaimedDelivery()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var job = CreateQueuedJob($"dispatch-repair-{Guid.NewGuid():N}");
+        await harness.JobStore.TryCreateAsync(job);
+        await harness.Queue.EnqueueAsync(job.OperationId);
+        (await harness.Queue.TryClaimAsync("worker-first")).Should().Be(job.OperationId);
+        await harness.Queue.EnqueueAsync(job.OperationId);
+
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        (await harness.Queue.TryClaimAsync("worker-second")).Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task ExecutionJobStore_TenantScope_FiltersBeforePaginationAndCursorCreation()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
@@ -402,6 +453,76 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
         filteredPage.Items.Should().ContainSingle(job => job.OperationId == targetId);
         filteredPage.NextCursor.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_UpdateKeepsJobVisibleInIndexesItStillBelongsTo()
+    {
+        // An update writes the payload first and the secondary indexes after it. A job must
+        // never drop out of an index it belongs to both before and after the update (the
+        // created-order index behind an unfiltered query, the requested-by index), or a reader
+        // racing the update cannot list a job whose status it can already read (#4965).
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var owner = $"index-owner-{Guid.NewGuid():N}";
+        var operationId = $"job-index-{Guid.NewGuid():N}";
+        (await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId) with
+        {
+            Audit = new OperationAuditInfo { RequestedBy = owner }
+        })).Should().BeTrue();
+
+        const int updates = 300;
+        var writerFinished = 0;
+        var writer = Task.Run(async () =>
+        {
+            try
+            {
+                for (var i = 0; i < updates; i++)
+                {
+                    var current = (await harness.JobStore.GetAsync(operationId))!;
+                    await harness.JobStore.SetAsync(current with
+                    {
+                        Status = i % 2 == 0 ? ExecutionJobStatus.Running : ExecutionJobStatus.Provisioning,
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                        CurrentPhase = $"update-{i}"
+                    });
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref writerFinished, 1);
+            }
+        });
+
+        var reads = 0;
+        var misses = new List<string>();
+        while (Volatile.Read(ref writerFinished) == 0)
+        {
+            reads++;
+            var all = await harness.JobStore.QueryAsync(new ExecutionJobQuery { Limit = 10 });
+            if (!all.Items.Any(job => job.OperationId == operationId))
+            {
+                misses.Add($"read {reads}: unfiltered query");
+            }
+
+            var mine = await harness.JobStore.QueryAsync(new ExecutionJobQuery { RequestedBy = owner, Limit = 10 });
+            if (!mine.Items.Any(job => job.OperationId == operationId))
+            {
+                misses.Add($"read {reads}: requested-by query");
+            }
+        }
+
+        await writer;
+        reads.Should().BePositive("the reader must overlap the writer for this proof to mean anything");
+        misses.Should().BeEmpty(
+            $"the job existed for all {reads} reads, so no read may miss it; missed: {string.Join(", ", misses.Take(10))}");
+
+        // The status index still tracks the final state and releases the previous one.
+        var final = (await harness.JobStore.GetAsync(operationId))!;
+        final.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery { Statuses = [ExecutionJobStatus.Provisioning] }))
+            .Items.Should().ContainSingle(job => job.OperationId == operationId);
+        (await harness.Database.SortedSetScoreAsync("controlplane:job:index:created:status:running", operationId))
+            .Should().BeNull("a job leaves the index of a status it no longer has");
     }
 
     [IntegrationTest]

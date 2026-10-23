@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -30,6 +31,27 @@ public sealed class GdalWorkerExecutorTests
         """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"a"}}]}""";
 
     private static string Base64(string text) => GdalCli.Base64(text);
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(GdalWorkerParameterKeys.GPServerWorkspace, "scratch")]
+    [InlineData(GdalWorkerParameterKeys.GPServerOverwriteOutput, "true")]
+    [InlineData(GdalWorkerParameterKeys.GPServerOverwriteOutput, "false")]
+    public async Task Dispatcher_RejectsUnsupportedWorkspaceControlsBeforeExecution(string key, string value)
+    {
+        var handler = new CapturingProcessExecutor("test.native-workspace");
+        var dispatcher = new GdalDispatchJobExecutor([handler], NullLogger<GdalDispatchJobExecutor>.Instance);
+        var job = GdalJobFactory.Job("test.native-workspace");
+        job = job with { Spec = job.Spec with { Parameters = new Dictionary<string, string>(job.Spec.Parameters) { [key] = value } } };
+        var context = new RecordingJobExecutionContext(job.OperationId);
+        var result = await dispatcher.ExecuteAsync(job, context, default);
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("not supported by the native GDAL worker");
+        handler.Calls.Should().Be(0);
+        context.Artifacts.Should().BeEmpty();
+    }
 
     // -------------------------------------------------------------------------
     // Runtime-profile routing contract
@@ -66,9 +88,9 @@ public sealed class GdalWorkerExecutorTests
         dispatcher.SupportedProcessIds.Should().Contain(new[] { "gdal.ogr2ogr", "gdal.gdalwarp" });
 
         // The raster analysis & terrain GP tool packs (#2141, #2239, #2240) must all be
-        // routable by the worker dispatcher, including the flagged-but-routed ids
-        // (interpolate-kriging, euclidean-allocation) that fail fast with a clear
-        // message inside the executor.
+        // routable by the worker dispatcher, including the ids served by a custom worker
+        // step rather than a stock GDAL CLI (interpolate-kriging's own solver,
+        // euclidean-allocation's Python step).
         dispatcher.SupportedProcessIds.Should().Contain(new[]
         {
             "raster.resample",
@@ -421,7 +443,7 @@ public sealed class GdalWorkerExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("sourceSrs", "EPSG:4326"),
                 ("targetSrs", "3857"));
             var context = new RecordingJobExecutionContext(job.OperationId);
@@ -451,7 +473,7 @@ public sealed class GdalWorkerExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetSrs", "4326; rm -rf /"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

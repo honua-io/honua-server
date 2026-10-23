@@ -78,6 +78,13 @@ internal static class ScheduledTickEndpoints
             return Problem(statusCode, "scheduled_tick_token_invalid", "A valid control-plane token is required.");
         }
 
+        // A degraded start (database unreachable, or schema behind this build) answers a typed 503
+        // so Scheduler retries the tick (honua-server#5916).
+        if (ControlPlaneNotReadyGuard.TryRefuse(context) is { } notReady)
+        {
+            return notReady;
+        }
+
         ScheduledTickRequest? request;
         try
         {

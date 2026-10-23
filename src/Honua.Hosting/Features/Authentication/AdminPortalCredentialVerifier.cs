@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -42,38 +43,19 @@ internal sealed class AdminPortalCredentialVerifier(
             return null;
         }
 
+        var storedKey = await TryValidateStoredKeyAsync(password, cancellationToken).ConfigureAwait(false);
+        if (storedKey is not null)
+        {
+            return CreateManagedKeyPrincipal(storedKey.Record);
+        }
+
         if (!string.Equals(username, AdminUsername, StringComparison.OrdinalIgnoreCase))
         {
             // Allow operators to authenticate with an admin API key while supplying
             // the API key as the password under any username so existing clients can
-            // pass through without code changes.
-            if (_adminApiKeyStore is not null)
-            {
-                var apiKeyResult = await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
-                if (apiKeyResult is not null)
-                {
-                    return new PortalCredentialPrincipal(
-                        PrincipalId: AdminUsername,
-                        DisplayName: apiKeyResult.Record.Name,
-                        TenantId: _tenantContext?.TenantId,
-                        Roles: AdminRoles);
-                }
-            }
-
+            // pass through without code changes. A store outage returns no principal
+            // rather than throwing; only the admin username has a break-glass password.
             return null;
-        }
-
-        if (_adminApiKeyStore is not null)
-        {
-            var apiKeyResult = await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
-            if (apiKeyResult is not null)
-            {
-                return new PortalCredentialPrincipal(
-                    PrincipalId: AdminUsername,
-                    DisplayName: apiKeyResult.Record.Name,
-                    TenantId: _tenantContext?.TenantId,
-                    Roles: AdminRoles);
-            }
         }
 
         string? configuredPassword;
@@ -107,30 +89,71 @@ internal sealed class AdminPortalCredentialVerifier(
             PrincipalId: AdminUsername,
             DisplayName: AdminUsername,
             TenantId: _tenantContext?.TenantId,
-            Roles: AdminRoles);
+            Roles: AdminRoles,
+            // Bind the token to the password value it was minted from, so rotating the
+            // password (or the secret it resolves from) stops the tokens issued from the
+            // previous one instead of leaving them valid for their whole lifetime (SEC-9).
+            Source: new PortalCredentialSource(
+                PortalCredentialSourceKind.AdminPassword,
+                Reference: null,
+                Version: PortalCredentialSourceVersion.ForAdminPassword(configuredPassword)));
     }
 
-    private async Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
+    private PortalCredentialPrincipal? CreateManagedKeyPrincipal(AdminApiKeyRecord record)
     {
-        var configuredPassword = _apiKeyOptions.AdminPassword;
-        if (string.IsNullOrWhiteSpace(configuredPassword))
+        // This bridge mints token roles, not API-key permission, layer-write, or
+        // approved-operation claims. Refuse credentials whose authority it cannot
+        // preserve rather than widening scoped keys (#4577).
+        var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record.Permissions);
+        if (roles is null)
         {
             return null;
         }
 
-        var resolvedPassword = configuredPassword;
-        if (_secretResolver is not null)
+        return new PortalCredentialPrincipal(
+            PrincipalId: AdminUsername,
+            DisplayName: record.Name,
+            TenantId: _tenantContext?.TenantId,
+            Roles: roles,
+            // Record the key the token derives from, plus its expiry, so the issued token is
+            // clamped to the key's own lifetime and stops the moment the key is revoked,
+            // expires or is rotated (SEC-9).
+            Source: new PortalCredentialSource(
+                PortalCredentialSourceKind.ManagedApiKey,
+                Reference: record.Id.ToString("D"),
+                Version: PortalCredentialSourceVersion.ForManagedKey(record),
+                ExpiresAt: record.ExpiresAt));
+    }
+
+    private async Task<AdminApiKeyValidationResult?> TryValidateStoredKeyAsync(
+        string password,
+        CancellationToken cancellationToken)
+    {
+        if (_adminApiKeyStore is null)
         {
-            var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
-            if (canResolve)
-            {
-                resolvedPassword = await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
-            }
+            return null;
         }
 
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, _apiKeyOptions.EnvironmentName);
-        return resolvedPassword;
+        try
+        {
+            return await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is RedisException or TimeoutException or System.Data.Common.DbException && ex is not OperationCanceledException)
+        {
+            if (_logger is not null)
+            {
+                AuthenticationLog.AdminApiKeyStoreUnavailable(_logger, ex);
+            }
+
+            return null;
+        }
     }
+
+    private Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
+        => PortalCredentialSourceVersion.ResolveAdminPasswordAsync(
+            _apiKeyOptions,
+            _secretResolver,
+            cancellationToken);
 
     private static bool ConstantTimeEquals(string provided, string configured)
     {

@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -17,11 +20,12 @@ namespace Honua.Ai.Protocols.Mcp;
 /// and JSON-RPC 2.0 batches on <c>POST /mcp</c>, enforces the MCP request-id
 /// rules (string or integer only), and manages <c>Mcp-Session-Id</c> sessions:
 /// a session id is issued on <c>initialize</c> and validated on every subsequent
-/// request. By default a well-formed but unknown id on POST is served
-/// statelessly (<see cref="McpOptions.StatelessSessionFallback"/>;
-/// honua-server#3027) so multi-instance deployments without sticky routing keep
-/// working; with the fallback disabled — and always for malformed ids — the
-/// strict spec answer is HTTP 404. The transport negotiates the
+/// request. When a shared session store is composed (Redis connected) a session
+/// minted on any instance is honoured by every instance; an id no instance holds
+/// answers the strict spec HTTP 404 so the client re-initializes. Serving a
+/// well-formed unknown id session-less instead is an explicit development
+/// convenience (<see cref="McpOptions.StatelessSessionFallback"/>, on by default
+/// only in Development); malformed ids always 404. The transport negotiates the
 /// response content type from the client's <c>Accept</c> header — emitting a
 /// single Server-Sent-Events <c>message</c> frame when the client accepts
 /// <c>text/event-stream</c>, and plain JSON otherwise. <c>GET /mcp</c> opens an
@@ -30,6 +34,8 @@ namespace Honua.Ai.Protocols.Mcp;
 /// Note that <c>initialize</c> is single-request-only per MCP 2025-03-26
 /// lifecycle — any batch containing an <c>initialize</c> element is rejected
 /// wholesale because the server cannot negotiate a protocol version mid-batch.
+/// The body size and batch length are bounded (<see cref="McpOptions.MaxRequestBodyBytes"/>,
+/// <see cref="McpOptions.MaxBatchSize"/>; SEC-18) before any element is dispatched.
 /// </summary>
 internal static class McpEndpointExtensions
 {
@@ -121,18 +127,56 @@ internal static class McpEndpointExtensions
         return next(context);
     }
 
-    private static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
+    /// <summary>
+    /// Token-replay continuation id for an MCP session (honua-server#4909).
+    /// </summary>
+    internal static string TokenReplayContinuationId(string sessionId) => $"mcp-session:{sessionId}";
+
+    /// <summary>
+    /// Binds the bearer token admitted on this request to <paramref name="sessionId"/> so
+    /// token replay protection admits that token's reuse on this session and nowhere else
+    /// (honua-server#4909). A no-op for API-key and anonymous callers, when replay
+    /// protection is disabled, and for a token already bound to another session.
+    /// </summary>
+    private static Task<bool> BindTokenReplayContinuationAsync(HttpContext context, string sessionId) =>
+        OidcAuthenticationExtensions.TryBindTokenReplayContinuationAsync(context, TokenReplayContinuationId(sessionId));
+
+    internal static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
     {
+        // One platform budget covers body reading and the entire batch, not a fresh
+        // budget per tool. Keep an explicitly supplied cancellation token as well.
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context));
+        cancellationToken = requestCancellation.Token;
+        cancellationToken.ThrowIfCancellationRequested();
+
         var surface = context.RequestServices.GetRequiredService<McpDataAccessSurface>();
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
+        var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
+
+        // SEC-18: bound the body before parsing so an oversized request is refused
+        // without buffering it whole.
+        var maxBodyBytes = ResolveMaxRequestBodyBytes(options);
+        var body = await ReadBoundedBodyAsync(context.Request, maxBodyBytes, cancellationToken).ConfigureAwait(false);
+        if (body is null)
+        {
+            McpLog.RequestBodyTooLarge(logger, maxBodyBytes);
+            await WriteSingleAsync(
+                context,
+                ErrorResponse(
+                    JsonNullId,
+                    McpErrorMapper.InvalidRequest(
+                        $"Request body exceeds the {maxBodyBytes.ToString(CultureInfo.InvariantCulture)}-byte limit for this endpoint.")),
+                cancellationToken,
+                StatusCodes.Status413PayloadTooLarge).ConfigureAwait(false);
+            return;
+        }
 
         JsonDocument? document;
         try
         {
-            document = await JsonDocument
-                .ParseAsync(context.Request.Body, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            document = JsonDocument.Parse(body.Value);
         }
         catch (JsonException ex)
         {
@@ -174,21 +218,21 @@ internal static class McpEndpointExtensions
                 && context.Request.Headers.TryGetValue(McpSessionManager.SessionHeaderName, out var presented)
                 && !string.IsNullOrEmpty(presented.ToString()))
             {
-                switch (sessions.ValidateAccess(presented.ToString(), principalKey))
+                switch (await sessions.ValidateAccessAsync(presented.ToString(), principalKey, cancellationToken).ConfigureAwait(false))
                 {
                     case McpSessionValidation.Unknown:
                         {
-                            // Session state is per instance, so on a multi-instance
-                            // deployment without sticky routing an id minted by one
-                            // container is unknown to its peers and a strict 404 would
-                            // break every spec-compliant client (honua-server#3027).
-                            // Every POST is independently authenticated, so by default
-                            // a well-formed unknown id is served statelessly: strip
-                            // the header so downstream session consumers (elicitation
-                            // capability lookup, SSE progress routing) observe the
-                            // request as session-less, and do not echo a session id.
-                            var options = context.RequestServices
-                                .GetRequiredService<IOptions<McpOptions>>().Value;
+                            // The id is unknown to this instance AND to the shared
+                            // session store when one is composed, so no instance can
+                            // honour the session it names. The spec answer is 404 so
+                            // the client re-initializes; serving it session-less would
+                            // silently drop the negotiated state (workflow view,
+                            // elicitation) and change what tools/list returns mid-
+                            // session. The stateless fallback (honua-server#3027) is
+                            // kept only as an explicit development convenience: when
+                            // enabled, strip the header so downstream session
+                            // consumers observe the request as session-less, and do
+                            // not echo a session id.
                             if (options.StatelessSessionFallback
                                 && IsWellFormedSessionId(presented.ToString()))
                             {
@@ -206,10 +250,14 @@ internal static class McpEndpointExtensions
                         McpLog.SessionRejected(logger, "principal-mismatch");
                         await WriteSingleAsync(
                             context,
-                            ErrorResponse(JsonNullId, McpErrorMapper.SessionPrincipalMismatch()),
+                            ErrorResponse(ResponseIdForEarlyError(root), McpErrorMapper.SessionPrincipalMismatch()),
                             cancellationToken).ConfigureAwait(false);
                         return;
                 }
+
+                // The session accepted this principal (or serves it statelessly), so a
+                // freshly admitted — e.g. refreshed — bearer token may continue it.
+                await BindTokenReplayContinuationAsync(context, presented.ToString()).ConfigureAwait(false);
             }
 
             // honua-server#3428: rehydrate the session-negotiated workflow view onto
@@ -222,7 +270,7 @@ internal static class McpEndpointExtensions
 
             if (root.ValueKind == JsonValueKind.Array)
             {
-                await HandleBatchAsync(context, surface, root, cancellationToken).ConfigureAwait(false);
+                await HandleBatchAsync(context, surface, root, options, logger, principalKey, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -238,7 +286,7 @@ internal static class McpEndpointExtensions
                 return;
             }
 
-            var response = await ProcessMessageAsync(context, surface, root, cancellationToken).ConfigureAwait(false);
+            var response = await ProcessMessageAsync(context, surface, root, principalKey, cancellationToken).ConfigureAwait(false);
             if (response is null)
             {
                 context.Response.StatusCode = NotificationAcceptedStatusCode;
@@ -248,10 +296,11 @@ internal static class McpEndpointExtensions
             // A successful initialize establishes a session bound to the calling
             // principal (anonymous where the endpoint allows it). Issue the id on
             // the Mcp-Session-Id response header so the client echoes it on every
-            // subsequent request. Under the session cap the registry either evicts
-            // the least-recently-used session or, in reject mode, refuses the new
-            // session — in which case the initialize is answered with a retryable
-            // structured error instead of a session header (A3 hardening; #2537).
+            // subsequent request. Under the per-principal quota the registry evicts
+            // that principal's own least-recently-used session, or refuses in
+            // reject mode. Global pressure evicts anonymous sessions only and never
+            // another principal. A refusal is a retryable structured error instead
+            // of a session header (A3 hardening; #2537, #5629).
             if (isInitialize && response.Error is null)
             {
                 // honua-server#2484: bind the client's advertised elicitation
@@ -271,15 +320,17 @@ internal static class McpEndpointExtensions
                     context.Items.TryGetValue(Views.McpWorkflowViewNegotiation.HttpContextItemKey, out var view)
                         ? view as string
                         : null;
-                if (sessions.TryCreateSession(principalKey, elicitationSupported, negotiatedView, out var sessionId))
+                var sessionId = await sessions.TryCreateSessionAsync(
+                    principalKey, elicitationSupported, negotiatedView, cancellationToken).ConfigureAwait(false);
+                if (sessionId is not null)
                 {
                     context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+                    await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
                     McpLog.SessionIssued(logger, sessionId);
                 }
                 else
                 {
                     McpLog.SessionRejected(logger, "capacity-reached");
-                    var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
                     context.Response.Headers["Retry-After"] =
                         options.SessionCapacityRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
                     context.Response.Headers["Honua-Retryable"] = "true";
@@ -342,7 +393,7 @@ internal static class McpEndpointExtensions
 
         var validation = string.IsNullOrEmpty(sessionId)
             ? McpSessionValidation.Unknown
-            : sessions.ValidateAccess(sessionId, principalKey);
+            : await sessions.ValidateAccessAsync(sessionId, principalKey, cancellationToken).ConfigureAwait(false);
         if (validation == McpSessionValidation.PrincipalMismatch)
         {
             // A live session bound to another identity: refuse the stream rather
@@ -359,6 +410,7 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
         // Flush the response head so the client (and proxies) see the open SSE
         // stream immediately, before the first server-initiated frame is available.
@@ -404,7 +456,7 @@ internal static class McpEndpointExtensions
     /// <c>Mcp-Session-Id</c> header. Returns 204 when a session was removed and
     /// 404 when the id is unknown, per the Streamable-HTTP transport.
     /// </summary>
-    private static Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
+    private static async Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
@@ -413,7 +465,7 @@ internal static class McpEndpointExtensions
         if (string.IsNullOrEmpty(sessionId))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            return Task.CompletedTask;
+            return;
         }
 
         // Only the principal that owns the session may terminate it (A3 binding;
@@ -423,28 +475,44 @@ internal static class McpEndpointExtensions
         {
             McpLog.SessionRejected(logger, "durable-actor-required");
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            return Task.CompletedTask;
+            return;
         }
 
-        switch (sessions.ValidateAccess(sessionId, principalKey))
+        switch (await sessions.ValidateAccessAsync(sessionId, principalKey, cancellationToken).ConfigureAwait(false))
         {
             case McpSessionValidation.PrincipalMismatch:
                 McpLog.SessionRejected(logger, "principal-mismatch");
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return Task.CompletedTask;
+                return;
 
             case McpSessionValidation.Unknown:
                 McpLog.SessionTerminated(logger, sessionId, found: false);
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return Task.CompletedTask;
+                return;
         }
 
-        var found = sessions.Terminate(sessionId);
-        McpLog.SessionTerminated(logger, sessionId, found);
-        context.Response.StatusCode = found
-            ? StatusCodes.Status204NoContent
-            : StatusCodes.Status404NotFound;
-        return Task.CompletedTask;
+        // Removes the session from the shared store too, so DELETE on any instance
+        // ends the session on every instance. A 204 is only returned once the shared
+        // record is gone; otherwise other replicas could still honour the session.
+        // A stateless session (no shared store on a multi-instance host) cannot be
+        // revoked on other instances, so the server answers the spec's 405: "this
+        // server does not allow clients to terminate sessions". Clients treat that
+        // as a completed close; the id simply expires at the end of its lifetime.
+        var termination = await sessions.TerminateAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        McpLog.SessionTerminated(logger, sessionId, termination == McpSessionTermination.Terminated);
+        if (termination == McpSessionTermination.NotRevocable)
+        {
+            context.Response.Headers[HeaderNames.Allow] = "GET, POST";
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        context.Response.StatusCode = termination switch
+        {
+            McpSessionTermination.Terminated => StatusCodes.Status204NoContent,
+            McpSessionTermination.StoreUnavailable => StatusCodes.Status503ServiceUnavailable,
+            _ => StatusCodes.Status404NotFound
+        };
     }
 
     /// <summary>
@@ -458,10 +526,82 @@ internal static class McpEndpointExtensions
         context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
     }
 
+    /// <summary>
+    /// Reads the request body into memory, refusing it once it exceeds
+    /// <paramref name="maxBytes"/>. Returns <see langword="null"/> when a declared
+    /// <c>Content-Length</c> or the bytes actually read exceed the limit, so chunked
+    /// bodies are bounded as well; reading stops at the first byte past the limit. A
+    /// leading UTF-8 byte-order mark is skipped, as the stream parser did.
+    /// </summary>
+    internal static async Task<ReadOnlyMemory<byte>?> ReadBoundedBodyAsync(
+        HttpRequest request,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        if (request.ContentLength is { } declared && declared > maxBytes)
+        {
+            return null;
+        }
+
+        var initialCapacity = BoundedBodyInitialCapacity(maxBytes);
+        byte[] bytes;
+        int length;
+        using (var buffer = new MemoryStream(initialCapacity))
+        {
+            var chunk = ArrayPool<byte>.Shared.Rent(16 * 1024);
+            try
+            {
+                int read;
+                while ((read = await request.Body.ReadAsync(chunk.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    if (buffer.Length + read > maxBytes)
+                    {
+                        return null;
+                    }
+
+                    buffer.Write(chunk, 0, read);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(chunk);
+            }
+
+            bytes = buffer.GetBuffer();
+            length = (int)buffer.Length;
+        }
+
+        var body = new ReadOnlyMemory<byte>(bytes, 0, length);
+        return body.Span.StartsWith(Utf8ByteOrderMark) ? body[Utf8ByteOrderMark.Length..] : body;
+    }
+
+    /// <summary>
+    /// Initial buffer size for <see cref="ReadBoundedBodyAsync"/>. Ignores
+    /// Content-Length so a declared 10 MB body does not allocate up front.
+    /// </summary>
+    internal static int BoundedBodyInitialCapacity(long maxBytes)
+    {
+        const int smallCapacity = 16 * 1024;
+        if (maxBytes <= 0)
+        {
+            return 0;
+        }
+
+        return (int)Math.Min(smallCapacity, maxBytes);
+    }
+
+    private static ReadOnlySpan<byte> Utf8ByteOrderMark => [0xEF, 0xBB, 0xBF];
+
+    private static long ResolveMaxRequestBodyBytes(McpOptions options) =>
+        Math.Clamp(options.MaxRequestBodyBytes, 1, Array.MaxLength);
+
     private static async Task HandleBatchAsync(
         HttpContext context,
         McpDataAccessSurface surface,
         JsonElement batch,
+        McpOptions options,
+        ILogger logger,
+        string principalKey,
         CancellationToken cancellationToken)
     {
         // JSON-RPC 2.0 §6 specifies that an empty array is itself an invalid
@@ -471,6 +611,24 @@ internal static class McpEndpointExtensions
             await WriteSingleAsync(
                 context,
                 ErrorResponse(JsonNullId, McpErrorMapper.InvalidRequest("Batch must contain at least one request.")),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // SEC-18: bound the batch before dispatching any element, so one request
+        // cannot fan out into an unbounded run of serial dispatches. The batch as a
+        // whole is refused, so no element's id is echoed.
+        var maxBatchSize = Math.Max(1, options.MaxBatchSize);
+        var batchLength = batch.GetArrayLength();
+        if (batchLength > maxBatchSize)
+        {
+            McpLog.BatchTooLarge(logger, batchLength, maxBatchSize);
+            await WriteSingleAsync(
+                context,
+                ErrorResponse(
+                    JsonNullId,
+                    McpErrorMapper.InvalidRequest(
+                        $"Batch must contain at most {maxBatchSize.ToString(CultureInfo.InvariantCulture)} requests.")),
                 cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -496,6 +654,7 @@ internal static class McpEndpointExtensions
         var responses = new List<McpJsonRpcResponse>();
         foreach (var element in batch.EnumerateArray())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (element.ValueKind != JsonValueKind.Object)
             {
                 responses.Add(ErrorResponse(
@@ -504,7 +663,7 @@ internal static class McpEndpointExtensions
                 continue;
             }
 
-            var response = await ProcessMessageAsync(context, surface, element, cancellationToken).ConfigureAwait(false);
+            var response = await ProcessMessageAsync(context, surface, element, principalKey, cancellationToken).ConfigureAwait(false);
             if (response is not null)
             {
                 responses.Add(response);
@@ -530,6 +689,7 @@ internal static class McpEndpointExtensions
         HttpContext context,
         McpDataAccessSurface surface,
         JsonElement message,
+        string principalKey,
         CancellationToken cancellationToken)
     {
         var idState = ClassifyRequestId(message);
@@ -574,15 +734,71 @@ internal static class McpEndpointExtensions
         // same way regardless of how JsonElement? surfaced missing fields.
         request.Id = idState.Kind == RequestIdKind.Notification ? null : idState.Element;
 
-        return await surface.DispatchAsync(context, request, cancellationToken).ConfigureAwait(false);
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
+        var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
+        if (request.Id is null || request.Method is null
+            || request.Method.StartsWith("notifications/", StringComparison.Ordinal)
+            || request.Method == "initialize" || request.JsonRpc != "2.0")
+        {
+            var notificationResponse = await surface.DispatchAsync(context, request, cancellationToken).ConfigureAwait(false);
+            if (notificationResponse is null && request.Method == "notifications/cancelled"
+                && request.Params is { ValueKind: JsonValueKind.Object } parameters
+                && parameters.TryGetProperty("requestId", out var targetId))
+            {
+                // Invalid cancellation parameters and unknown ids have no effect;
+                // notifications never produce JSON-RPC responses or create work.
+                await sessions.CancelRequestAsync(sessionId, principalKey, targetId, cancellationToken).ConfigureAwait(false);
+            }
+
+            return notificationResponse;
+        }
+
+        McpSessionManager.McpRequestLease? lease;
+        try
+        {
+            var admission = await sessions.StartRequestAsync(sessionId, principalKey, request.Id.Value, cancellationToken).ConfigureAwait(false);
+            lease = admission.Lease;
+            if (admission.State != McpRequestState.Active)
+            {
+                return ErrorResponse(request.Id.Value, McpErrorMapper.InvalidRequest(
+                    admission.State == McpRequestState.Duplicate
+                        ? "A request with this id is already active in this session."
+                        : "The session cannot admit another active request."));
+            }
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested
+            && ex is (StackExchange.Redis.RedisException or TimeoutException or OperationCanceledException or JsonException or ObjectDisposedException))
+        {
+            return ErrorResponse(request.Id.Value, McpErrorMapper.RequestRegistryUnavailable());
+        }
+
+        await using (lease)
+        {
+            try
+            {
+                var response = await surface.DispatchAsync(context, request, lease?.Token ?? cancellationToken).ConfigureAwait(false);
+                if (lease is not null && !await lease.CompleteAsync().ConfigureAwait(false))
+                {
+                    return ErrorResponse(request.Id.Value, McpErrorMapper.RequestCancelled());
+                }
+
+                return response;
+            }
+            catch (OperationCanceledException) when (lease is not null && lease.Token.IsCancellationRequested
+                && !cancellationToken.IsCancellationRequested)
+            {
+                return ErrorResponse(request.Id.Value, McpErrorMapper.RequestCancelled());
+            }
+        }
     }
 
     private static async Task WriteSingleAsync(
         HttpContext context,
         McpJsonRpcResponse response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int statusCode = StatusCodes.Status200OK)
     {
-        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.StatusCode = statusCode;
 
         if (AcceptsEventStream(context))
         {
@@ -724,11 +940,12 @@ internal static class McpEndpointExtensions
     /// <summary>
     /// Maximum length accepted for a presented <c>Mcp-Session-Id</c> before the
     /// stateless fallback refuses to treat it as well-formed. Server-minted ids
-    /// are 64 lowercase-hex characters; 128 leaves headroom for other
-    /// spec-compliant issuers while bounding what a hostile client can push
-    /// through the fallback path.
+    /// are 64 lowercase-hex characters, or a signed stateless token of at most
+    /// 172 characters (<see cref="McpStatelessSessionTokens"/>); 256 leaves
+    /// headroom while bounding what a hostile client can push through the
+    /// fallback path.
     /// </summary>
-    private const int MaxWellFormedSessionIdLength = 128;
+    private const int MaxWellFormedSessionIdLength = 256;
 
     /// <summary>
     /// Returns <c>true</c> when a presented session id satisfies the
@@ -738,7 +955,7 @@ internal static class McpEndpointExtensions
     /// a spec-compliant server are served statelessly; garbage keeps the strict
     /// 404.
     /// </summary>
-    private static bool IsWellFormedSessionId(string sessionId) =>
+    internal static bool IsWellFormedSessionId(string sessionId) =>
         sessionId.Length > 0
         && sessionId.Length <= MaxWellFormedSessionIdLength
         && sessionId.All(static c => c is >= '!' and <= '~');
@@ -808,13 +1025,32 @@ internal static class McpEndpointExtensions
     }
 
     /// <summary>
+    /// Preserves a valid request id when transport-level validation rejects a
+    /// request before normal JSON-RPC dispatch. Without the original id, clients
+    /// cannot correlate the error to their pending request and may wait forever.
+    /// </summary>
+    internal static JsonElement ResponseIdForEarlyError(JsonElement message)
+    {
+        if (message.ValueKind == JsonValueKind.Object)
+        {
+            var idState = ClassifyRequestId(message);
+            if (idState.Kind == RequestIdKind.Valid)
+            {
+                return idState.Element!.Value;
+            }
+        }
+
+        return JsonNullId;
+    }
+
+    /// <summary>
     /// Returns <c>true</c> when the supplied numeric JSON element is a plain
     /// integer literal (no fractional or exponent part). Used to accept any
     /// JSON-integer id — including values outside <see cref="long"/> range —
     /// without coercing to a CLR numeric type, since the id is preserved and
     /// echoed back as the original <see cref="JsonElement"/>.
     /// </summary>
-    private static bool IsIntegerNumberToken(JsonElement element)
+    internal static bool IsIntegerNumberToken(JsonElement element)
     {
         var raw = element.GetRawText().AsSpan();
         if (raw.Length == 0)

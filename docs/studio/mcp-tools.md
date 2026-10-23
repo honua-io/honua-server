@@ -1,15 +1,25 @@
+---
+type: guide
+title: "Studio MCP tools"
+description: "The server publishes 20 typed Studio tools through /mcp."
+resource: "honua://capability/ai.mcp-discovery"
+---
 # Studio MCP tools
 
-The server publishes 17 typed Studio tools through `/mcp`.
+The server publishes 20 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
+The `configure` and `setup` workflow views both include these tools. The
+`setup_and_publish` and `dashboard_scaffolding` prompts select `configure`
+because that view also carries the closed admin roster. `setup` (`setup.v3`)
+is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 
 | Tool | Semantics |
 |---|---|
 | `honua_studio_create_draft` | Create a map, app, or dashboard draft. |
 | `honua_studio_get_draft` | Read the current draft and generation. |
 | `honua_studio_update_draft` | Replace a draft envelope at an expected generation. |
-| `honua_studio_validate_draft` | Validate without mutating the draft. |
-| `honua_studio_preview_draft` | Return a preview plan without publishing. |
+| `honua_studio_validate_draft` | Check envelope structure without mutating the draft, querying sources or rendering. |
+| `honua_studio_preview_draft` | Return a plan without querying sources, rendering a canvas or publishing. |
 | `honua_studio_add_layer` | Add one layer. |
 | `honua_studio_remove_layer` | Remove one layer. |
 | `honua_studio_set_layer_style` | Replace a layer's typed style. |
@@ -21,7 +31,10 @@ This tool plane is executable independently of the browser Studio preview.
 | `honua_studio_remove_interaction` | Remove an interaction binding. |
 | `honua_studio_add_control` | Add a map control. |
 | `honua_studio_remove_control` | Remove a map control. |
-| `honua_studio_propose_publication` | Record publication intent for governance. |
+| `honua_studio_save_version` | Save the draft as an immutable version. `versionId` and `contentHash` stay nested under `version`. |
+| `honua_studio_get_version` | Read a saved version by `itemId` and `versionId`. Returns top-level `versionId` and `contentHash`. A missing version is `not_found`. Does not advance the draft generation. |
+| `honua_studio_reopen_version` | Branch a new draft from a saved version. |
+| `honua_studio_propose_publication` | Publish the current saved version directly for an authorized admin, or return an approval proposal for another caller. Bind the exact item, version, hash, route, and visibility. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale
 generation returns `failed_precondition` with the owner-authorized snapshot's
@@ -29,6 +42,54 @@ generation returns `failed_precondition` with the owner-authorized snapshot's
 retry only when it remains valid and non-conflicting. A conflict requires explicit
 resolution; the server never blindly replays a mutation. Dashboard drafts use
 the same composition editor, whole-document validation, and durable lifecycle
-as map/app drafts. Publication is not a
-canvas mutation, and the end-to-end approval/public URL journey remains
-blocked by [#3304](https://github.com/honua-io/honua-server/issues/3304).
+as map/app drafts.
+
+Publication is not a canvas mutation. Save the draft as an immutable version, then read it
+back with `honua_studio_get_version` when a capture needs the top-level `versionId` and
+`contentHash`. Pass the saved version's `itemId`, `versionId`, and `contentHash` together
+with the requested `route` and `visibility` to `honua_studio_propose_publication`.
+The configure prompts tell an admin to finish that call in the same session and to
+read the share URL from the result. A caller who is not an admin receives a proposal
+and does not get a share URL.
+
+## Layer identity and observed rendering
+
+Discover readable published layers through `honua_list_layers` or `honua_describe_layer`.
+Copy the returned `studioSourceId` into a catalog-backed composition layer's `sourceId`.
+Choose a separate `layer.id` for that drawing element. The source identity follows the
+existing Studio catalog contract; it grants no data or publication permission.
+Catalog-backed editing does not require portable `sourceBindings` or a `mapSpec`
+export. Supported portable bindings and `metadata.honua.source` overrides remain
+separate mechanisms with their existing contracts.
+
+Validation reports structure. Preview reports a plan for every package family.
+A successful result from either tool leaves source resolution, current data access
+and rendering unverified. `honua_render_map` can produce an image of the requested
+published data; that image does not verify a saved Studio composition. Open that
+exact composition in the actual Studio canvas or a supported consumer before
+claiming its layers, styles and viewport rendered correctly. Saving and publication
+also require their own receipts and audience checks.
+
+## Composition policy
+
+Realtime draft editing is the intended Studio authoring experience. The current
+server guardrail executes draft composition directly under Community/Pro defaults
+and under `Licensing:Mode=Disabled`. With licensing enabled, the Enterprise default
+still requires approval for `StudioDraftMutation`; an operator override can also
+require approval or block it. This is a current runtime limitation relative to the
+realtime product direction, not a reason for clients to invent approval steps for
+every design turn. Respect the actual operation outcome and report the mismatch.
+Do not change deployment policy as an implicit part of a creative edit.
+
+Publication has a separate branch: an authorized admin receives `Published`,
+`humanConfirmationRequired: false`, and the server-issued `shareUrl` only after
+completion. A non-admin receives `AwaitingApproval`,
+`humanConfirmationRequired: true`, and the proposal identity with no share URL.
+Follow that proposal to its decision and activation; never have the proposer
+approve itself. Neither path changes the requested audience implicitly.
+
+A browser client can support fewer result branches than the server. In particular,
+the Studio Preview sharing adapter currently models the non-admin proposal path;
+its fixture evidence does not establish support for the admin direct-publication
+response. Use the installed client/server contracts, not a shared product name,
+to determine which journey is supported.

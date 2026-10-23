@@ -283,7 +283,7 @@ internal static partial class OidcProviderEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<OidcProviderResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    internal static async Task<Results<Ok<ApiResponse<OidcProviderResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateProvider(
             Guid id,
             UpdateOidcProviderRequest request,
@@ -293,6 +293,13 @@ internal static partial class OidcProviderEndpoints
     {
         try
         {
+            var validationResults = new List<ValidationResult>();
+            if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+            {
+                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+            }
+
             var existing = await store.GetProviderAsync(id, context.RequestAborted);
             if (existing == null)
             {

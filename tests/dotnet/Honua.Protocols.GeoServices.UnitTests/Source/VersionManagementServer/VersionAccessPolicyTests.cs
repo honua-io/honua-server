@@ -1,0 +1,231 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Protocols.GeoServices.VersionManagementServer;
+using Honua.TestKit.Attributes;
+
+namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
+
+/// <summary>
+/// Unit tests for <see cref="VersionAccessPolicy"/> — the centralized visibility and lifecycle
+/// authorization helpers that fix BH3-002 (list/info), BH3-003 (inspectConflicts), and
+/// BH3-004 (delete/alter/reconcile/post/session) version-access gaps.
+/// </summary>
+public sealed class VersionAccessPolicyTests
+{
+    // ---- Test data helpers -----------------------------------------------------------------
+
+    private static GdbVersion MakeVersion(string owner, VersionAccess access) => new()
+    {
+        VersionId = Guid.NewGuid(),
+        VersionName = $"{owner}.test",
+        Owner = owner,
+        Access = access,
+        State = VersionState.Active,
+        CommonAncestorGeneration = 0,
+        BranchGeneration = 1,
+        CreatedAt = DateTimeOffset.UtcNow,
+        ModifiedAt = DateTimeOffset.UtcNow,
+    };
+
+    // ---- Create policy --------------------------------------------------------------------
+
+    [UnitTest]
+    public void CanCreateVersion_AnonymousPrivate_IsDenied()
+    {
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Private, callerName: null, isAuthenticated: false)
+            .Should().BeFalse("a private version must have a real owner");
+
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Private, callerName: "admin", isAuthenticated: false)
+            .Should().BeFalse("the fallback owner does not make an anonymous caller authenticated");
+    }
+
+    [UnitTest]
+    public void CanCreateVersion_AnonymousPublicOrProtected_IsAllowed()
+    {
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Public, callerName: null, isAuthenticated: false)
+            .Should().BeTrue();
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Protected, callerName: null, isAuthenticated: false)
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void CanCreateVersion_AuthenticatedPrivate_IsAllowed()
+    {
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Private, callerName: "alice", isAuthenticated: true)
+            .Should().BeTrue();
+    }
+
+    // ---- IsVersionVisible — Public / Protected visibility ----------------------------------
+
+    [UnitTest]
+    public void IsVersionVisible_PublicVersion_AllCallersCanSee()
+    {
+        var version = MakeVersion("alice", VersionAccess.Public);
+
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "bob", isAdmin: false).Should().BeTrue(
+            "Public versions are visible to any query-access caller");
+        VersionAccessPolicy.IsVersionVisible(version, callerName: null, isAdmin: false).Should().BeTrue(
+            "Public versions are visible to anonymous callers with service query access");
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+            "Public versions are visible to their owner");
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "admin", isAdmin: true).Should().BeTrue(
+            "Public versions are visible to administrators");
+    }
+
+    [UnitTest]
+    public void IsVersionVisible_ProtectedVersion_AllCallersCanSee()
+    {
+        var version = MakeVersion("alice", VersionAccess.Protected);
+
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "bob", isAdmin: false).Should().BeTrue(
+            "Protected versions are read-visible to any query-access caller");
+        VersionAccessPolicy.IsVersionVisible(version, callerName: null, isAdmin: false).Should().BeTrue(
+            "Protected versions are read-visible to anonymous callers with service query access");
+    }
+
+    // ---- IsVersionVisible — Private visibility (BH3-002) -----------------------------------
+
+    [UnitTest]
+    public void IsVersionVisible_PrivateVersion_OwnerCanSee()
+    {
+        var version = MakeVersion("alice", VersionAccess.Private);
+
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+            "a Private version owner must be able to see their own version");
+    }
+
+    [UnitTest]
+    public void IsVersionVisible_PrivateVersion_OwnerMatchIsCaseInsensitive()
+    {
+        var version = MakeVersion("Alice", VersionAccess.Private);
+
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+            "owner name comparison must be case-insensitive");
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "ALICE", isAdmin: false).Should().BeTrue(
+            "owner name comparison must be case-insensitive");
+    }
+
+    [UnitTest]
+    public void IsVersionVisible_PrivateVersion_AdminCanSee()
+    {
+        var version = MakeVersion("alice", VersionAccess.Private);
+
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "admin", isAdmin: true).Should().BeTrue(
+            "service administrators must be able to see all Private versions");
+    }
+
+    [UnitTest]
+    public void IsVersionVisible_PrivateVersion_NonOwnerNonAdminCannotSee()
+    {
+        // BH3-002 core regression: before the fix, HandleListVersions returned all Private
+        // versions to any query-access caller. This test pins the corrected behavior.
+        var version = MakeVersion("alice", VersionAccess.Private);
+
+        VersionAccessPolicy.IsVersionVisible(version, callerName: "bob", isAdmin: false).Should().BeFalse(
+            "a non-owner non-admin must not see a Private version");
+        VersionAccessPolicy.IsVersionVisible(version, callerName: null, isAdmin: false).Should().BeFalse(
+            "anonymous callers must not see a Private version");
+    }
+
+    // ---- CanManageVersion — owner-only lifecycle ops (BH3-003 / BH3-004) ------------------
+
+    [UnitTest]
+    public void CanManageVersion_Owner_CanManageRegardlessOfAccessLevel()
+    {
+        foreach (var access in Enum.GetValues<VersionAccess>())
+        {
+            var version = MakeVersion("alice", access);
+            VersionAccessPolicy.CanManageVersion(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+                $"version owner must be able to manage their own {access} version");
+        }
+    }
+
+    [UnitTest]
+    public void CanManageVersion_Admin_CanManageRegardlessOfAccessLevel()
+    {
+        foreach (var access in Enum.GetValues<VersionAccess>())
+        {
+            var version = MakeVersion("alice", access);
+            VersionAccessPolicy.CanManageVersion(version, callerName: "admin", isAdmin: true).Should().BeTrue(
+                $"admin must be able to manage any {access} version");
+        }
+    }
+
+    [UnitTest]
+    public void CanManageVersion_NonOwnerNonAdmin_CannotManage_PrivateVersion()
+    {
+        // BH3-003 / BH3-004 core regression: before the fix any write-access principal
+        // could call delete/alter/reconcile/post/inspectConflicts on any version.
+        var version = MakeVersion("alice", VersionAccess.Private);
+
+        VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
+            "a non-owner must not perform lifecycle operations on a Private version");
+        VersionAccessPolicy.CanManageVersion(version, callerName: null, isAdmin: false).Should().BeFalse(
+            "an anonymous principal must not perform lifecycle operations on a Private version");
+    }
+
+    [UnitTest]
+    public void CanManageVersion_NonOwnerNonAdmin_CannotManage_PublicVersion()
+    {
+        // BH3-004: even a Public version's lifecycle operations are owner-or-admin-only.
+        // Read access is public, but delete/alter/reconcile/post are not.
+        var version = MakeVersion("alice", VersionAccess.Public);
+
+        VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
+            "a non-owner must not perform lifecycle operations on a Public version, " +
+            "even though they can read it");
+    }
+
+    [UnitTest]
+    public void CanManageVersion_NonOwnerNonAdmin_CannotManage_ProtectedVersion()
+    {
+        // BH3-004: same restriction applies to Protected versions.
+        var version = MakeVersion("alice", VersionAccess.Protected);
+
+        VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
+            "a non-owner must not perform lifecycle operations on a Protected version");
+    }
+
+    [UnitTest]
+    public void CanManageVersion_OwnerMatchIsCaseInsensitive()
+    {
+        var version = MakeVersion("Alice", VersionAccess.Private);
+
+        VersionAccessPolicy.CanManageVersion(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+            "owner name comparison must be case-insensitive for lifecycle operations");
+        VersionAccessPolicy.CanManageVersion(version, callerName: "ALICE", isAdmin: false).Should().BeTrue(
+            "owner name comparison must be case-insensitive for lifecycle operations");
+    }
+
+    // ---- BH6-001 regression: HandleInspectConflicts Protected-version access leak ----------
+
+    [UnitTest]
+    public void CanManageVersion_ProtectedVersion_NonOwnerNonAdmin_CannotInspectConflicts()
+    {
+        // BH6-001 regression: HandleInspectConflicts previously only gated CanManageVersion on
+        // Private versions; Protected versions bypassed the check, exposing full conflict
+        // before/after attribute and geometry payloads to any query-authorized caller. The fix
+        // widens the condition to `Private or Protected`. This test pins the policy the fixed
+        // endpoint now applies for Protected versions: a non-owner, non-admin must be blocked.
+        var version = MakeVersion("alice", VersionAccess.Protected);
+
+        VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
+            "BH6-001: a non-owner non-admin must not inspect conflicts on a Protected version");
+        VersionAccessPolicy.CanManageVersion(version, callerName: null, isAdmin: false).Should().BeFalse(
+            "BH6-001: an anonymous principal must not inspect conflicts on a Protected version");
+
+        // Only the owner and admins may inspect Protected version conflicts.
+        VersionAccessPolicy.CanManageVersion(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+            "the version owner can always inspect their own version's conflicts");
+        VersionAccessPolicy.CanManageVersion(version, callerName: "admin", isAdmin: true).Should().BeTrue(
+            "an administrator can inspect conflicts on any version");
+    }
+}

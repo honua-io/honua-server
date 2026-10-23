@@ -1,0 +1,85 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal-ogr/ogc-api-features/serve.ogc-api-features",
+  "canonical_client": "GDAL/OGR",
+  "client_lane": "gdal",
+  "client_version": "3.8.4",
+  "client_version_detail": "GDAL 3.8.4, released 2024/02/08",
+  "surface": "ogc-api-features",
+  "operation": "serve.ogc-api-features",
+  "protocol_version": "OGC API - Features 1.0",
+  "protocol_profile": "core+geojson+crs+paging",
+  "started_at": "2026-09-16T21:42:19.698807Z",
+  "finished_at": "2026-09-16T21:42:20.208031Z",
+  "duration_ms": 509,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "pagination",
+    "limit",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 7 checks passed across 7 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/features/collections/0/items",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "read the collection through the driver",
+      "outcome": "pass",
+      "detail": "10 features match the fixture; fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', 'http://honua:5000/ogc/features/collections/0/items?limit=1000&crs=http://www.opengis.net/def/crs/EPSG/0/4326', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
+      "request_url": null,
+      "duration_ms": 45
+    },
+    {
+      "facet": "pagination",
+      "name": "driver follows next links across pages",
+      "outcome": "pass",
+      "detail": "10 unique features over item requests ['http://honua:5000/ogc/features/collections/0/items?limit=3', 'http://honua:5000/ogc/features/collections/0/items?limit=3&crs=http://www.opengis.net/def/crs/EPSG/0/4326', 'http://honua:5000/ogc/features/collections/0/items?crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F4326&limit=3&offset=3&f=geojson', 'http://honua:5000/ogc/features/collections/0/items?crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F4326&limit=3&offset=6&f=geojson', 'http://honua:5000/ogc/features/collections/0/items?crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F4326&limit=3&offset=9&f=geojson']",
+      "request_url": null,
+      "duration_ms": 120
+    },
+    {
+      "facet": "limit",
+      "name": "page size is sent as limit and honoured",
+      "outcome": "pass",
+      "detail": "limit=4 requests ['http://honua:5000/ogc/features/collections/0/items?limit=4', 'http://honua:5000/ogc/features/collections/0/items?limit=4&crs=http://www.opengis.net/def/crs/EPSG/0/4326']; first page ids [1, 2, 3, 4]; server returned 4 features",
+      "request_url": null,
+      "duration_ms": 67
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown collection is a 404 problem",
+      "outcome": "pass",
+      "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
+      "request_url": null,
+      "duration_ms": 8
+    },
+    {
+      "facet": "auth",
+      "name": "protected collection is challenged, then admitted for API key and OIDC bearer",
+      "outcome": "pass",
+      "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
+      "request_url": null,
+      "duration_ms": 144
+    },
+    {
+      "facet": "crs-axis",
+      "name": "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
+      "outcome": "pass",
+      "detail": "lon/lat features match the fixture; lat-first EPSG:4326 bbox limit=1000&bbox=37.7150000000000034,-122.469999999999999,37.7449999999999974,-122.439999999999998&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326&crs=http://www.opengis.net/def/crs/EPSG/0/4326 -> features [3, 4]; crs=EPSG:3857 feature 1 (-13635524.427268, 4538539.153413)",
+      "request_url": null,
+      "duration_ms": 83
+    },
+    {
+      "facet": "media-schema",
+      "name": "GeoJSON items decode to the typed fixture schema",
+      "outcome": "pass",
+      "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/items served application/geo+json with 6 links; GDAL fetched 4 documents",
+      "request_url": null,
+      "duration_ms": 41
+    }
+  ]
+}

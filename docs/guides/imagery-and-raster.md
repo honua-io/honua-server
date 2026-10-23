@@ -1,6 +1,12 @@
+---
+type: guide
+title: "Imagery and raster: shipped state"
+description: "What ships for imagery, raster and multidimensional coverage in 2026.1: the serving paths that work, the registrations that only record metadata, and what needs a worker."
+resource: "honua://capability/serve.geoservices-imageserver"
+---
 # Imagery and raster: shipped state
 
-This page is the 2026.1 truth map for imagery, raster, and multidimensional
+This page is the 2026.1 status map for imagery, raster, and multidimensional
 coverage. It distinguishes working serving paths from registrations and
 optional worker paths. The detailed workflow is in
 [Publish rasters](publish/publish-rasters.md).
@@ -10,7 +16,7 @@ optional worker paths. The detailed workflow is in
 | Surface | Shipped behavior | Edition and deployment limits |
 |---|---|---|
 | PostGIS raster import | GeoTIFF/COG import; PNG/JPEG with world-file georeferencing; ImageServer, WCS, and OGC API Coverages reads | Direct import is synchronous and bounded by the lower of `Limits:Imports:MaxSyncImportSize` and 50 MiB. Larger files require the configured staged-import/job infrastructure. |
-| Cloud COG registration | S3 and Azure Blob registrations can serve range-readable, JPEG-compressed COG tiles over the ImageServer tile route | Direct cloud COG serving is Pro (`raster.cloud-cog-serving`) and requires the matching range reader. The public tile route accepts `png`, `jpg`/`jpeg`, `tiff`/`tif`, and `cog`, so only JPEG-compressed tiles are returned today: DEFLATE, LZW, ZSTD, and uncompressed tiles decode to raw pixel buffers (`application/octet-stream`) that no accepted format request can serve, and those requests currently `404`. Unsupported codecs fail explicitly. |
+| Cloud COG registration | S3 and Azure Blob registrations can serve range-readable COG tiles over the ImageServer tile route | Direct cloud COG serving is Pro (`raster.cloud-cog-serving`) and requires the matching range reader. JPEG tiles serve as `jpg`, with shared JPEGTables assembled into each tile; DEFLATE, LZW, ZSTD and uncompressed tiles serve as lossless PNG or single-tile GeoTIFF. Supported layouts are listed in [Cloud-native formats](../reference/protocols/cloud-native-formats.md). Unsupported codecs fail explicitly. |
 | Raster protocols | ImageServer export/identify/tiles and selected analysis operations; WCS 2.0.1; OGC API Coverages; raster discovery through catalog/STAC paths | Each protocol exposes only its documented subset. WCS is not a complete implementation of every WCS extension. |
 | Zarr v2/v3 | Register cloud stores, read metadata and supported little-endian chunks, and serve bounded subsets/tiles | The registration catalog is currently `InMemoryZarrStore`: it is process-local, not restart-durable or shared across replicas. Blosc, Zstd, sharding, CRC32C, and big-endian chunks are rejected. |
 | NetCDF4/HDF5/GRIB | Register a multidimensional source; `POST /api/v1/admin/multidim-coverages/{id}/refresh` enqueues a GDAL metadata scan job and returns `202` with a `statusUrl` to poll. When a worker claims and completes the job, the scan extracts metadata and registers a derived Zarr store. | Refresh and scan status are Pro (`raster.multidim-coverage`). Registration alone does not make pixels readable. Both paths return `503` when the job store/queue is not configured; without a worker able to claim the job the scan stays `queued`, and worker failures surface as a `failed` status with an error on the status URL rather than as a synchronous error. Durable Zarr registration and broader worker coverage are 2026.2 work. |
@@ -29,6 +35,31 @@ or select them in the [API explorer](../reference/openapi-and-explorer.md):
 - `GET /ogc/coverages/collections`
 - `GET /rest/services/1/ImageServer/WCS?service=WCS&request=GetCapabilities`
 
+PostGIS-backed ImageServer exports also return raw pixel blocks of the stored
+samples: `format=bsq`, `format=bip`, or `format=lerc`, and `esriImageBSQ`
+through SOAP `ExportImage` (both `esriImageReturnURL` and
+`esriImageReturnMimeData`). None of them quantizes samples for display:
+
+- `bsq` holds little-endian, band-sequential samples. `bip` holds the same
+  samples interleaved by pixel. Both are followed by a packed mask with the
+  first pixel in the highest bit. A mask bit is valid when any band at that
+  pixel has data; each band's stored NoData sample remains intact.
+- `lerc` holds one lossless LERC2 blob per band, concatenated in band order.
+  Each blob carries that band's own validity mask, so NoData is per band. The
+  samples decode bit for bit.
+
+Band selection, ordering, clipping, mosaicking, reprojection, and the requested
+grid use the shared raster export pipeline. URL downloads retain the exporting
+principal's access restriction.
+
+Raw pixel blocks support byte, 16/32-bit integer, and 32/64-bit float rasters
+with one common sample type across bands. Compression must be omitted or `None`;
+`lerc` also accepts `LERC`. A `pixelType` naming the service's own pixel type
+(for example `U8` on a byte service) is accepted and changes nothing. Any other
+`pixelType` conversion, NoData overrides, and raw exports of multidimensional
+slices are explicitly unsupported.
+See Esri's [export image format specification](https://developers.arcgis.com/rest/services-reference/enterprise/export-image/).
+
 Admin import/registration calls require the configured admin authentication;
 use the authorized [API explorer](../reference/openapi-and-explorer.md) for
 `POST /api/v1/admin/import/raster`, `POST /api/v1/admin/cloud-rasters`,
@@ -37,8 +68,7 @@ use the authorized [API explorer](../reference/openapi-and-explorer.md) for
 
 ## Not a 2026.1 claim
 
-The following remain 2026.2 depth work and are not prerequisites for the
-truthful 2026.1 page:
+The following remain 2026.2 work:
 
 - a restart-durable, multi-replica Zarr registration store;
 - broader file ingestion and compression/codec coverage;

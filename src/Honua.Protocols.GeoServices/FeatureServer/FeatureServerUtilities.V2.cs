@@ -46,8 +46,10 @@ internal static partial class FeatureServerEndpoints
     /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
     /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
+    /// <param name="versionManagementEnabled">Whether the experimental VMS lifecycle surface is enabled.</param>
     /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
-    private static FeatureServerResponse MapServiceToResponseV2(
+    /// <param name="pathBase">Application mount path retained in relative service links.</param>
+    internal static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
@@ -55,7 +57,9 @@ internal static partial class FeatureServerEndpoints
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads,
         bool branchVersioningEnabled,
-        bool offlineSyncEnabled)
+        bool versionManagementEnabled,
+        bool offlineSyncEnabled,
+        PathString pathBase = default)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -79,6 +83,7 @@ internal static partial class FeatureServerEndpoints
             ? SpatialReference.Create(srid.Value).ToSpatialReferenceInfo()
             : SpatialReference.WGS84.ToSpatialReferenceInfo();
         var serviceExtent = ResolveServiceExtentV2(publications, srid ?? SpatialReference.WGS84.Wkid);
+        var relationships = BuildServiceRelationshipResponseV2(publications, snapshot);
 
         return new FeatureServerResponse
         {
@@ -90,7 +95,10 @@ internal static partial class FeatureServerEndpoints
             License = service.Metadata.License,
             Publisher = service.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
-            Layers = [.. publications.Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
+            Layers = [.. publications.Where(pair => pair.Resource.Type != MetadataV2ResourceType.Table)
+                .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
+            Tables = [.. publications.Where(pair => pair.Resource.Type == MetadataV2ResourceType.Table)
+                .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             SpatialReference = spatialReference,
             InitialExtent = serviceExtent,
             FullExtent = serviceExtent,
@@ -98,6 +106,12 @@ internal static partial class FeatureServerEndpoints
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             Capabilities = BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads, offlineSyncEnabled),
             Fields = visibleFields,
+            SupportsRelationshipsResource = true,
+            Relationships = [.. relationships.Select(relationship => new ServiceRelationshipSummary
+            {
+                Id = relationship.Id,
+                Name = relationship.Name
+            })],
             ObjectIdField = objectIdField,
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
@@ -107,9 +121,9 @@ internal static partial class FeatureServerEndpoints
             SyncCapabilities = offlineSyncEnabled && ServiceSupportsSyncV2(service) ? new FeatureServerSyncCapabilities() : null,
             HasVersionedData = branchVersioningEnabled,
             IsDataVersioned = branchVersioningEnabled,
-            SupportsBranchVersioning = branchVersioningEnabled,
-            VersionManagementServerUrl = branchVersioningEnabled
-                ? $"/rest/services/{service.Metadata.Name}/VersionManagementServer"
+            SupportsBranchVersioning = versionManagementEnabled,
+            VersionManagementServerUrl = versionManagementEnabled
+                ? $"{pathBase}/rest/services/{service.Metadata.Name}/VersionManagementServer"
                 : null,
         };
     }
@@ -117,7 +131,7 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Builds a GeoServices layer response from a Metadata V2 resource publication.
     /// </summary>
-    private static LayerResponse MapLayerToResponseV2(
+    internal static LayerResponse MapLayerToResponseV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
         MetadataV2Publication publication,
@@ -129,7 +143,9 @@ internal static partial class FeatureServerEndpoints
         FeatureServerExtrusionInfo? extrusionInfo,
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads,
-        bool offlineSyncEnabled)
+        bool branchVersioningEnabled,
+        bool offlineSyncEnabled,
+        LayerRelationshipInfo[]? authorizedRelationships = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
@@ -138,13 +154,16 @@ internal static partial class FeatureServerEndpoints
 
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayFieldFromResource(resource, objectIdField);
+        var globalIdField = ResolveGlobalIdFieldV2(resource);
         var supportsStatistics = true;
         var supportsAdvancedQueries = ServiceSupportsAdvancedQueriesV2(service);
-        var supportsRelated = resource.Relationships.Count > 0;
+        var relationships = authorizedRelationships ?? BuildRelationshipResponseV2(resource, snapshot, service);
+        var supportsRelated = relationships.Length > 0;
         var supportsOrderBy = supportsAdvancedQueries;
         var supportsDistinct = supportsAdvancedQueries;
         var supportsPagination = supportsAdvancedQueries;
-        var supportsEditing = ServiceSupportsEditingV2(service, publication);
+        var supportsEditing = !MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource) &&
+            ServiceSupportsEditingV2(service, publication);
         var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
         var supportsReturningGeometryCentroid = supportsAdvancedQueries && IsPolygonalGeometryTypeV2(resource.ReadGeometryType());
         // The layer advertises queryAttachments only when it declares attachment
@@ -159,7 +178,8 @@ internal static partial class FeatureServerEndpoints
             supportsDistinct,
             supportsPagination,
             supportsQueryAttachments,
-            supportsReturningGeometryCentroid);
+            supportsReturningGeometryCentroid,
+            hasGeometry: resource.Type != MetadataV2ResourceType.Table);
 
         var srid = resource.ReadSrid();
         var spatialReference = srid.HasValue
@@ -181,21 +201,23 @@ internal static partial class FeatureServerEndpoints
             License = governance.License,
             Publisher = governance.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
-            Type = "Feature Layer",
-            GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
-            SpatialReference = spatialReference,
+            Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
+            GeometryType = resource.Type == MetadataV2ResourceType.Table
+                ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
+            SpatialReference = resource.Type == MetadataV2ResourceType.Table ? null : spatialReference,
             // Advertise hasZ/hasM from the authored Metadata v2 display flags so 3D/measured
             // layers self-describe to Esri clients (#1877 Part C). Both default to false and are
             // omitted from the response when unset to keep 2D documents CITE/byte-stable.
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,
-            Extent = extent,
+            Extent = resource.Type == MetadataV2ResourceType.Table ? null : extent,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
-            Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField))],
+            Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField, globalIdField))],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
+            GlobalIdField = globalIdField,
             UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
             PopupInfo = popupInfo.HasValue ? popupInfo.Value : null,
@@ -207,9 +229,11 @@ internal static partial class FeatureServerEndpoints
             SupportsDistinct = supportsDistinct,
             SupportsPagination = supportsPagination,
             SupportsTrueCurve = false,
-            SupportsReturningQueryExtent = supportsAdvancedQueries,
+            SupportsReturningQueryExtent = supportsAdvancedQueries && resource.Type != MetadataV2ResourceType.Table,
             SupportsRollbackOnFailureParameter = supportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
+            IsDataVersioned = branchVersioningEnabled,
+            IsDataBranchVersioned = branchVersioningEnabled,
             HasAttachments = supportsQueryAttachments,
             // When the layer exposes attachments, advertise the attachment-capability
             // flags Esri clients inspect. The JS SDK gates queryAttachments(where) on
@@ -225,9 +249,9 @@ internal static partial class FeatureServerEndpoints
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             SupportsCoordinatesQuantization = true,
-            Relationships = BuildRelationshipResponseV2(resource, snapshot),
+            Relationships = relationships,
             AllowGeometryUpdates = supportsEditing,
-            EditFieldsInfo = null,
+            EditFieldsInfo = ResolveEditFieldsInfo(resource),
             EditingInfo = supportsEditing ? new EditingInfo() : null,
             // Esri projects a layer's editing types/templates from its subtypes (one type per
             // subtype, each carrying an editing template seeded with the subtype's default
@@ -237,6 +261,7 @@ internal static partial class FeatureServerEndpoints
             // has typed/subtyped templates they live inside each `types[]` entry; it is populated
             // only by layers without subtypes (none authored on the canonical graph today).
             Templates = [],
+            TypeIdField = resource.Subtypes?.SubtypeField,
             Types = GeoServicesTemplateMapper.MapTypes(
                 resource.Subtypes,
                 MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)),
@@ -281,7 +306,9 @@ internal static partial class FeatureServerEndpoints
             SubLayerIds = null,
             MinScale = null,
             MaxScale = null,
-            GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
+            Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
+            GeometryType = resource.Type == MetadataV2ResourceType.Table
+                ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
         };
     }
 
@@ -291,12 +318,13 @@ internal static partial class FeatureServerEndpoints
     /// <c>esriFieldTypeOID</c> regardless of its SQL type so that Esri clients can
     /// locate the OID field by type (see issue #1299).
     /// </summary>
-    internal static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
+    internal static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName, string? globalIdFieldName = null)
     {
         ArgumentNullException.ThrowIfNull(field);
 
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-        var geoServicesType = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServicesV2(field.Type);
+        var isGlobalId = field.Type == MetadataV2FieldType.Uuid && field.Name.Equals(globalIdFieldName, StringComparison.OrdinalIgnoreCase);
+        var geoServicesType = isObjectId ? "esriFieldTypeOID" : isGlobalId ? "esriFieldTypeGlobalID" : GeoServicesFieldConventions.MapFieldType(field.Type);
         var sqlType = MapFieldTypeToSqlV2(field.Type);
         var isGeometry = field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
@@ -314,10 +342,8 @@ internal static partial class FeatureServerEndpoints
                 ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length)
                 : field.Length,
             Nullable = field.Nullable && !isObjectId,
-            Editable = !isGeometry && !isObjectId,
-            // V2 has no default-value slot on the canonical field; the catalog/admin layer
-            // owns insertion defaults.
-            DefaultValue = null,
+            Editable = !isGeometry && !isObjectId && !isGlobalId,
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field),
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden
         };
@@ -691,25 +717,24 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Drops (publication, resource) pairs the caller is not authorised to read using the V2
-    /// access-policy resolver (resource policy composed with service policy under deny-wins).
+    /// Drops (publication, resource) pairs the caller is not authorised to access, using the
+    /// request's canonical per-operation decisions (grants, then resource policy composed with
+    /// service policy under deny-wins).
     /// </summary>
     internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
-        HttpContext context,
+        ResourceAccessSet access,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
         IEnumerable<(MetadataV2Publication Publication, MetadataV2Resource Resource)> layers)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(access);
         ArgumentNullException.ThrowIfNull(snapshot);
-        ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(layers);
 
         return
         [
             ..layers.Where(pair =>
                 snapshot.IsRoutable(pair.Publication) &&
-                AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+                access.IsAccessible(pair.Resource))
         ];
     }
 
@@ -722,10 +747,12 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     internal static LayerRelationshipInfo[] BuildRelationshipResponseV2(
         MetadataV2Resource resource,
-        MetadataV2GraphSnapshot snapshot)
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(service);
 
         if (resource.Relationships.Count == 0)
         {
@@ -744,24 +771,33 @@ internal static partial class FeatureServerEndpoints
             var relatedResource = snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out var found)
                 ? found
                 : null;
-            var relatedLayerId = relatedResource is null
-                ? -1
-                : (snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
-                       .Where(snapshot.IsRoutable)
-                       .Select(pub => (int?)pub.LayerIndex)
-                       .FirstOrDefault(idx => idx is not null)
-                   ?? snapshot.ResolveStorageLayerId(relatedResource)
-                   ?? -1);
+            var relatedPublication = relatedResource is null ? null
+                : snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
+                    .Where(pub => snapshot.IsRoutable(pub) &&
+                        pub.ServiceId.Equals(service.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(pub => pub.IsPrimary)
+                    .ThenBy(pub => pub.LayerIndex ?? snapshot.ResolveStorageLayerId(relatedResource) ?? -1)
+                    .FirstOrDefault();
+            if (relatedPublication is null)
+            {
+                continue;
+            }
+
+            var relatedLayerId = relatedPublication.LayerIndex ?? snapshot.ResolveStorageLayerId(relatedResource!) ?? -1;
+            if (relatedLayerId < 0)
+            {
+                continue;
+            }
 
             result.Add(new LayerRelationshipInfo
             {
                 Id = relationshipId,
                 Name = relationship.Name,
                 RelatedTableId = relatedLayerId,
-                Role = relationship.Role,
+                Role = MapEsriRelationshipRole(relationship.Role),
                 Cardinality = MapEsriCardinality(relationship.Cardinality),
-                Composite = false,
-                KeyField = relationship.DestinationField,
+                Composite = relationship.Composite,
+                KeyField = relationship.OriginField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
                 Description = relationship.Description
@@ -783,6 +819,28 @@ internal static partial class FeatureServerEndpoints
             _ => "esriRelCardinalityOneToMany",
         };
 
+    private static string MapEsriRelationshipRole(string? role)
+    {
+        var value = role?.Trim() ?? string.Empty;
+        if (value.Equals("origin", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("esriRelRoleOrigin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriRelRoleOrigin";
+        }
+
+        if (IsDestinationRelationshipRole(value))
+        {
+            return "esriRelRoleDestination";
+        }
+
+        return role ?? string.Empty;
+    }
+
+    private static bool IsDestinationRelationshipRole(string? role)
+        => role?.Trim() is { } value &&
+           (value.Equals("destination", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("esriRelRoleDestination", StringComparison.OrdinalIgnoreCase));
+
     internal static int StableStringHash(string value)
     {
         // FNV-1a 32-bit hash, then clamped to a non-negative int so the Esri client doesn't
@@ -802,63 +860,13 @@ internal static partial class FeatureServerEndpoints
         return (int)(hash & 0x7FFFFFFFu);
     }
 
-    private static string MapGeometryTypeV2(MetadataV2GeometryType geometryType)
-        => geometryType switch
-        {
-            MetadataV2GeometryType.Point => "esriGeometryPoint",
-            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
-            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection => "esriGeometryNull",
-            MetadataV2GeometryType.Mixed => "esriGeometryNull",
-            MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
-        };
-
-    private static string MapFieldTypeToGeoServicesV2(MetadataV2FieldType type)
-        => type switch
-        {
-            MetadataV2FieldType.String => "esriFieldTypeString",
-            MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
-            MetadataV2FieldType.Double => "esriFieldTypeDouble",
-            MetadataV2FieldType.Float => "esriFieldTypeSingle",
-            MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
-            MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDate",
-            MetadataV2FieldType.Time => "esriFieldTypeString",
-            MetadataV2FieldType.Json => "esriFieldTypeString",
-            MetadataV2FieldType.Binary => "esriFieldTypeBlob",
-            MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
-            MetadataV2FieldType.Geometry => "esriFieldTypeGeometry",
-            MetadataV2FieldType.Geography => "esriFieldTypeGeometry",
-            _ => "esriFieldTypeString"
-        };
+    private static string? MapGeometryTypeV2(MetadataV2GeometryType geometryType)
+        => QueryFormatter.MapGeometryType(geometryType);
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)
-        // Metadata v2 deliberately erases the provider's physical SQL type. Emit only
-        // portable Esri sqlType enumeration members we can prove from the logical type;
-        // sqlTypeOther is the Esri-safe value when that relationship is ambiguous.
-        => type switch
-        {
-            MetadataV2FieldType.String => "sqlTypeNVarchar",
-            MetadataV2FieldType.Integer => "sqlTypeInteger",
-            MetadataV2FieldType.BigInteger => "sqlTypeOther",
-            MetadataV2FieldType.Double => "sqlTypeFloat",
-            MetadataV2FieldType.Float => "sqlTypeFloat",
-            MetadataV2FieldType.Boolean => "sqlTypeOther",
-            MetadataV2FieldType.DateTime => "sqlTypeOther",
-            MetadataV2FieldType.Date => "sqlTypeOther",
-            MetadataV2FieldType.Time => "sqlTypeNVarchar",
-            MetadataV2FieldType.Json => "sqlTypeNVarchar",
-            MetadataV2FieldType.Binary => "sqlTypeOther",
-            MetadataV2FieldType.Uuid => "sqlTypeOther",
-            MetadataV2FieldType.Geometry => "sqlTypeOther",
-            MetadataV2FieldType.Geography => "sqlTypeOther",
-            _ => "sqlTypeOther"
-        };
+        // Shared with the query response so the layer resource and /query cannot
+        // disagree about the same field (honua-server#5197).
+        => GeoServicesFieldConventions.MapSqlType(type);
 
     /// <summary>
     /// Reads the service's declared capability list from <c>service.Options["capabilities"]</c>.
@@ -915,9 +923,8 @@ internal static partial class FeatureServerEndpoints
         => publications.Count == 0
             ? ServiceSupportsEditingV2(service)
             : publications.Any(pair =>
-                ServiceSupportsOperationV2(service, "Create", pair.Publication) ||
-                ServiceSupportsOperationV2(service, "Update", pair.Publication) ||
-                ServiceSupportsOperationV2(service, "Delete", pair.Publication));
+                !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) &&
+                ServiceSupportsEditingV2(service, pair.Publication));
 
     private static bool ServiceSupportsEditingV2(MetadataV2Service service, MetadataV2Publication publication)
         => ServiceSupportsOperationV2(service, "Create", publication) ||
@@ -927,21 +934,13 @@ internal static partial class FeatureServerEndpoints
     internal static bool ServiceSupportsOperationV2(MetadataV2Service service, string operation)
         => ServiceSupportsOperationV2(service, operation, publication: null);
 
+    // Delegates to the shared resolver so the Esri edits surface and the OGC API Features
+    // write surface answer the same question the same way (#4073, #4707).
     internal static bool ServiceSupportsOperationV2(
         MetadataV2Service service,
         string operation,
         MetadataV2Publication? publication)
-    {
-        ArgumentNullException.ThrowIfNull(service);
-        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
-
-        var capabilities = publication?.Capabilities is { Count: > 0 }
-            ? publication.Capabilities
-            : ReadServiceCapabilitiesV2(service);
-        return capabilities.Any(capability =>
-            capability.Equals(operation, StringComparison.OrdinalIgnoreCase) ||
-            capability.Equals("Editing", StringComparison.OrdinalIgnoreCase));
-    }
+        => MetadataV2EditCapabilities.Supports(service, publication, operation);
 
     private static void AddDeclaredEditCapabilities(
         List<string> capabilities,
@@ -950,13 +949,13 @@ internal static partial class FeatureServerEndpoints
     {
         var hasPublications = publications is { Count: > 0 };
         var supportsCreate = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Create", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Create", pair.Publication))
             : ServiceSupportsOperationV2(service, "Create");
         var supportsUpdate = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Update", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Update", pair.Publication))
             : ServiceSupportsOperationV2(service, "Update");
         var supportsDelete = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Delete", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Delete", pair.Publication))
             : ServiceSupportsOperationV2(service, "Delete");
 
         if (supportsCreate)
@@ -993,15 +992,50 @@ internal static partial class FeatureServerEndpoints
             .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// V2 equivalent of <c>layer.SupportsAttachments</c>. V2 doesn't model attachments on the
-    /// canonical resource shape; the resource opts in via <c>resource.Metadata.Annotations</c>
-    /// (<c>honua.io/attachments=true</c>) or the legacy <c>"supportsAttachments"</c> annotation.
+    /// Projects declared editor-tracking fields onto the GeoServices <c>editFieldsInfo</c>
+    /// block. Returns null when the resource declares none, so layers without tracking
+    /// stay byte-stable (#6134).
+    /// </summary>
+    internal static EditFieldsInfo? ResolveEditFieldsInfo(MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var editing = resource.Editing;
+        if (editing is null ||
+            (string.IsNullOrWhiteSpace(editing.CreatorField) &&
+             string.IsNullOrWhiteSpace(editing.CreatedAtField) &&
+             string.IsNullOrWhiteSpace(editing.EditorField) &&
+             string.IsNullOrWhiteSpace(editing.UpdatedAtField)))
+        {
+            return null;
+        }
+
+        return new EditFieldsInfo
+        {
+            CreatorField = BlankToNull(editing.CreatorField),
+            CreationDateField = BlankToNull(editing.CreatedAtField),
+            EditorField = BlankToNull(editing.EditorField),
+            EditDateField = BlankToNull(editing.UpdatedAtField),
+        };
+    }
+
+    private static string? BlankToNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// Resolves only declared, visible UUID fields as the public GlobalID binding.
+    /// </summary>
+    internal static string? ResolveGlobalIdFieldV2(MetadataV2Resource resource)
+        => resource.SchemaFields.FirstOrDefault(field => !field.Hidden && field.Type == MetadataV2FieldType.Uuid &&
+            field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))?.Name;
+
+    /// <summary>
+    /// Reads canonical attachment support. Legacy annotations remain a fallback for
+    /// resources predating the canonical Editing object.
     /// </summary>
     internal static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
     {
-        // Canonical annotation key. Keep the legacy spelling alongside so resources migrated
-        // verbatim from v1 still resolve.
-        return TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
+        return resource.Editing?.SupportsAttachments ??
+               TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
                TryReadBoolAnnotation(resource.Metadata.Annotations, "supportsAttachments") ??
                false;
     }

@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Client template version matrix"
+description: "Which client and template versions each certification template is built and verified against."
+---
 # Client Template Version Matrix
 
 This matrix is the evidence ledger for template compatibility used by the client template runbook.

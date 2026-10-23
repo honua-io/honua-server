@@ -14,9 +14,12 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.GeocodeServer;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.Soap;
 using Honua.ServiceDefaults;
@@ -38,6 +41,7 @@ internal static class GeoservicesCatalogEndpoints
     private const string MapServerProtocolName = "MapServer";
     private const string ImageServerProtocolName = "ImageServer";
     private const string GPServerProtocolName = "GPServer";
+    private const string GeocodeServerProtocolName = "GeocodeServer";
     private const string SceneServerProtocolName = "SceneServer";
     private const string VectorTileServerProtocolName = "VectorTileServer";
     private const string Soap11ContentType = "text/xml; charset=utf-8";
@@ -51,22 +55,76 @@ internal static class GeoservicesCatalogEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapGeoservicesCatalogEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/rest/services", HandleGetServicesDirectory)
+        // ArcGIS Server answers the site root, the /rest prefix, and the /arcgis web-adaptor
+        // prefix by redirecting to the services directory. arcpy's MakeWCSLayer probe is a
+        // HEAD / that 404s when those paths are absent (#5158).
+        // HEAD is rewritten to GET before matching, so a GET mapping also answers arcpy's HEAD probe.
+        // Trailing-slash twins are not registered separately: they match the same candidate and
+        // make the root ambiguous.
+        var siteRootPaths = new[] { "/", "/rest", "/arcgis" };
+        for (var index = 0; index < siteRootPaths.Length; index++)
+        {
+            endpoints.MapGet(siteRootPaths[index], HandleSiteRoot)
+                .WithDisplayName($"GeoServices Site Root {siteRootPaths[index]}")
+                .WithName($"GeoServicesSiteRoot{index}")
+                .WithSummary("Redirect the ArcGIS site root to the services directory")
+                .WithDescription("Returns the same redirect ArcGIS Server uses from the site root, /rest, and /arcgis to /rest/services.")
+                .WithTags("GeoServices Catalog")
+                .AllowAnonymous()
+                .Produces(StatusCodes.Status302Found);
+        }
+
+        // Both roots answer GET or POST. Esri clients POST to /rest/info and /rest/services
+        // during connection and token negotiation, and the Esri REST contract is that a
+        // resource accepts either verb; a GET-only mapping answered those POSTs with a 404
+        // envelope for a resource that plainly exists.
+        endpoints.Map("/rest/services", HandleGetServicesDirectory)
             .WithDisplayName("GeoServices Services Directory")
             .WithName("GeoServicesServicesDirectory")
             .WithSummary("List available GeoServices endpoints")
             .WithDescription("Returns FeatureServer, MapServer, ImageServer, GPServer, VectorTileServer, and (Enterprise) SceneServer service directory entries.")
             .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             .CacheOutput("ServiceDirectory")
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 
-        endpoints.MapGet("/rest/info", HandleGetRestInfo)
+        // Built-in Utilities/PrintingTools node. A two-segment literal so it does not
+        // collide with the single-segment service-name route below.
+        endpoints.Map("/rest/services/Utilities/PrintingTools", HandleGetPrintingToolsServiceNode)
+            .WithDisplayName("PrintingTools Service Node")
+            .WithName("PrintingToolsServiceNode")
+            .WithSummary("List the GPServer entry published for Utilities/PrintingTools")
+            .WithDescription("Returns the folder-shaped catalog node for the built-in Utilities/PrintingTools GPServer.")
+            .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
+            .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        // A service's own node in the catalogue. Esri clients walking a service URL ask for
+        // the parent of "{service}/{ServiceType}" before they will use it: a single
+        // MakeWCSLayer call issues GET /rest/services/{service} and, on receiving a 404
+        // envelope, aborts with the opaque "ERROR 999999 ... Error code: 404" - after the
+        // WCS conversation itself has already succeeded (#5158). This answers with the
+        // folder-shaped document Esri expects, listing the service-type entries published
+        // under that name. The built-in Utilities folder is handled inside the same method.
+        endpoints.Map("/rest/services/{folderName}", HandleGetServiceFolder)
+            .WithDisplayName("GeoServices Service Folder")
+            .WithName("GeoServicesServiceFolder")
+            .WithSummary("List the service-type entries published under one service name")
+            .WithDescription("Esri clients resolve a service URL through its parent node before using it; this answers that node with the same projection the catalogue root uses, filtered to one name.")
+            .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
+            .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        endpoints.Map("/rest/info", HandleGetRestInfo)
             .WithDisplayName("GeoServices REST Info")
             .WithName("GeoServicesRestInfo")
             .WithSummary("Get REST root metadata")
             .WithDescription("Returns root-level GeoServices metadata.")
             .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             .Produces<RestInfoResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 
@@ -101,22 +159,32 @@ internal static class GeoservicesCatalogEndpoints
             .WithDisplayName("ArcGIS SOAP Services Catalog WSDL")
             .WithName("ArcGisSoapServicesCatalogWsdl")
             .WithSummary("Get the ArcGIS SOAP services catalog WSDL")
-            .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract when the wsdl query flag is present.")
+            .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract for both the bare site-root form and the wsdl query flag.")
             .WithTags("GeoServices Catalog")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml")
-            .Produces(StatusCodes.Status404NotFound, contentType: "text/xml")
             .AllowAnonymous();
 
         return endpoints;
     }
 
-    private static IResult HandleGetSoapCatalogWsdl(HttpContext context)
+    internal static IResult HandleSiteRoot(HttpContext context)
     {
-        if (!context.Request.Query.ContainsKey("wsdl"))
+        var pathBase = context.Request.PathBase.Value ?? string.Empty;
+        // The bare /arcgis site-root alias keeps its canonical redirect. UsePathBase
+        // consumes that entire path; a mounted /arcgis/ request retains the slash.
+        // Preserve any external mount while removing only the consumed alias.
+        if (!context.Request.Path.HasValue && pathBase.EndsWith("/arcgis", StringComparison.OrdinalIgnoreCase))
         {
-            return Results.NotFound();
+            pathBase = pathBase[..^"/arcgis".Length];
         }
 
+        return Results.Redirect($"{pathBase}/rest/services");
+    }
+
+    // ArcGIS Pro's site-root connection form probes GET /services before it posts
+    // catalog operations, so the bare form answers with the same contract as ?wsdl.
+    private static IResult HandleGetSoapCatalogWsdl(HttpContext context)
+    {
         XNamespace wsdl = "http://schemas.xmlsoap.org/wsdl/";
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
@@ -358,7 +426,7 @@ internal static class GeoservicesCatalogEndpoints
                 soap);
         }
 
-        var operation = operations[0];
+        var operation = ArcGisSoapProtocol.BindArgumentsByLocalName(operations[0]);
 
         var operationNamespace = operation.Name.Namespace;
         if (!ArcGisSoapNamespaces.IsSupported(operationNamespace))
@@ -405,13 +473,20 @@ internal static class GeoservicesCatalogEndpoints
                     break;
                 case "GetServiceDescriptionsEx":
                     var arguments = operation.Elements().ToArray();
-                    if (arguments.Length > 1 ||
-                        arguments.Any(argument =>
-                            argument.Name.Namespace != operationNamespace ||
-                            !string.Equals(argument.Name.LocalName, "folderName", StringComparison.OrdinalIgnoreCase)))
+                    var unsupportedArgument = arguments.FirstOrDefault(argument =>
+                        !string.Equals(argument.Name.LocalName, "FolderName", StringComparison.OrdinalIgnoreCase));
+                    if (unsupportedArgument is not null)
                     {
                         return CompleteSoapCatalogOperation(scope, CreateSoapFault(
-                            "GetServiceDescriptionsEx accepts only one folderName argument.",
+                            $"GetServiceDescriptionsEx does not accept the '{unsupportedArgument.Name.LocalName}' argument; its only argument is FolderName.",
+                            StatusCodes.Status400BadRequest,
+                            soap));
+                    }
+
+                    if (arguments.Length > 1)
+                    {
+                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                            "GetServiceDescriptionsEx accepts at most one FolderName argument.",
                             StatusCodes.Status400BadRequest,
                             soap));
                     }
@@ -431,7 +506,8 @@ internal static class GeoservicesCatalogEndpoints
                 case "GetFolders":
                     payload = new XElement(
                         "FolderNames",
-                        new XAttribute(xsi + "type", "tns:ArrayOfString"));
+                        new XAttribute(xsi + "type", "tns:ArrayOfString"),
+                        new XElement("String", PrintingToolsServiceCatalog.FolderName));
                     break;
                 case "GetMessageVersion":
                     payload = new XElement("MessageVersion", "esriArcGISVersion108");
@@ -540,6 +616,14 @@ internal static class GeoservicesCatalogEndpoints
         ILogger logger,
         string? folderName)
     {
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        // The built-in Utilities folder is public even when the root directory is denied,
+        // and it must not include denied graph services.
+        if (PrintingToolsServiceCatalog.IsFolder(folderName))
+        {
+            return [CreateSoapServiceDescription(baseUrl, PrintingToolsServiceCatalog.CreateEntry(baseUrl))];
+        }
+
         var projection = await BuildServiceDirectoryProjectionAsync(
             context,
             graphProvider,
@@ -550,22 +634,21 @@ internal static class GeoservicesCatalogEndpoints
         {
             throw new InvalidOperationException("All eligible ImageServer raster catalog probes failed.");
         }
+
         if (projection.AccessError is not null)
         {
             throw new SoapCatalogAccessException(projection.AccessStatusCode!.Value);
         }
 
-        // Honua currently exposes a root-only catalog. IServiceCatalog2 defines
-        // ServiceDescriptionsEx(folderName), so a named folder has no entries.
-        // Apply this only after authorization so a folder argument cannot bypass
-        // the principal-filtered discovery decision.
+        // IServiceCatalog2 defines ServiceDescriptionsEx(folderName). A named folder
+        // other than the built-in Utilities folder has no entries. Apply this only
+        // after authorization so a folder argument cannot bypass the principal-filtered
+        // discovery decision.
         if (!string.IsNullOrWhiteSpace(folderName))
         {
             return [];
         }
 
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
         // Preserve the established ImageServer-first record when one service name
         // publishes several protocol types; protocol-wide discovery adds siblings
         // without changing the existing SOAP catalog's primary description.
@@ -573,23 +656,29 @@ internal static class GeoservicesCatalogEndpoints
             .OrderBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static entry => string.Equals(entry.Type, ImageServerProtocolName, StringComparison.Ordinal) ? 0 : 1)
             .ThenBy(static entry => entry.Type, StringComparer.Ordinal)
-            .Select(entry =>
-        {
-            var escapedName = Uri.EscapeDataString(entry.Name);
-            var soapUrl = string.Equals(entry.Type, ImageServerProtocolName, StringComparison.Ordinal)
-                ? $"{baseUrl}/services/{escapedName}/{ImageServerProtocolName}"
-                : entry.Url;
-            return new XElement(
-                "ServiceDescription",
-                new XAttribute(xsi + "type", "tns:ServiceDescription"),
-                new XElement("Name", entry.Name),
-                new XElement("Type", entry.Type),
-                new XElement("Url", soapUrl),
-                new XElement("RestUrl", entry.Url),
-                new XElement("ParentType", string.Empty),
-                new XElement("Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
-                new XElement("Description", string.Empty));
-        }).ToArray();
+            .Select(entry => CreateSoapServiceDescription(baseUrl, entry))
+            .ToArray();
+    }
+
+    private static XElement CreateSoapServiceDescription(string baseUrl, ServiceDirectoryEntry entry)
+    {
+        XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
+        var escapedName = entry.Name == PrintingToolsServiceCatalog.QualifiedName
+            ? PrintingToolsServiceCatalog.EscapeCatalogName(entry.Name)
+            : Uri.EscapeDataString(entry.Name);
+        var soapUrl = entry.Type is ImageServerProtocolName or GPServerProtocolName
+            ? $"{baseUrl}/services/{escapedName}/{entry.Type}"
+            : entry.Url;
+        return new XElement(
+            "ServiceDescription",
+            new XAttribute(xsi + "type", "tns:ServiceDescription"),
+            new XElement("Name", entry.Name),
+            new XElement("Type", entry.Type),
+            new XElement("Url", soapUrl),
+            new XElement("RestUrl", entry.Url),
+            new XElement("ParentType", string.Empty),
+            new XElement("Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
+            new XElement("Description", string.Empty));
     }
 
     private static string CapabilitiesFor(string serviceType)
@@ -650,16 +739,19 @@ internal static class GeoservicesCatalogEndpoints
     private static string SoapContentTypeFor(XNamespace soap)
         => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;
 
-    private static async Task<ServiceDirectoryProjection> BuildServiceDirectoryProjectionAsync(
+    internal static async Task<ServiceDirectoryProjection> BuildServiceDirectoryProjectionAsync(
         HttpContext context,
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILicenseStatusProvider licenseStatusProvider,
-        ILogger logger)
+        ILogger logger,
+        MetadataV2GraphSnapshot? scopedSnapshot = null,
+        bool featureMapOnly = false,
+        string? serviceName = null)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = scopedSnapshot ?? await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var entries = new List<ServiceDirectoryEntry>();
         var deniedDecisions = new List<AccessDecision>();
         var imageServerServices = new List<ImageServerProbeCandidate>();
@@ -671,12 +763,18 @@ internal static class GeoservicesCatalogEndpoints
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
-            if (!service.IsRoutable())
+            if (!service.IsRoutable()
+                || (serviceName is not null && !string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
 
             var directoryTypes = MapEsriDirectoryTypes(service);
+            if (featureMapOnly)
+            {
+                directoryTypes = directoryTypes.Where(static type =>
+                    type is FeatureServerProtocolName or MapServerProtocolName).ToList();
+            }
             if (directoryTypes.Count == 0)
             {
                 continue;
@@ -785,7 +883,7 @@ internal static class GeoservicesCatalogEndpoints
             entries.Sort(ServiceDirectoryEntryComparer);
         }
 
-        if (await AppendSceneServerEntriesAsync(
+        if (!featureMapOnly && await AppendSceneServerEntriesAsync(
                 context,
                 entries,
                 licenseStatusProvider,
@@ -793,6 +891,27 @@ internal static class GeoservicesCatalogEndpoints
                 cancellationToken).ConfigureAwait(false))
         {
             entries.Sort(ServiceDirectoryEntryComparer);
+        }
+
+        if (!featureMapOnly)
+        {
+            AppendGeocodeServerEntry(context, entries, baseUrl, logger);
+        }
+
+        // A fully denied directory (no visible entry, including a public locator) must
+        // stay an access error. The built-in print service is public, so it is added
+        // only after that decision and before the name filter.
+        var directoryDenied = entries.Count == 0 && deniedDecisions.Count > 0;
+        if (!featureMapOnly && !directoryDenied)
+        {
+            entries.Add(PrintingToolsServiceCatalog.CreateEntry(baseUrl));
+        }
+
+        // Decide folder access from that folder's visible entries and denied resources.
+        // A public locator or scene elsewhere must not suppress its authentication challenge.
+        if (serviceName is not null)
+        {
+            entries.RemoveAll(entry => !string.Equals(entry.Name, serviceName, StringComparison.OrdinalIgnoreCase));
         }
 
         // A graph can contain more than one publication/service record that projects to
@@ -821,6 +940,42 @@ internal static class GeoservicesCatalogEndpoints
             imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0);
     }
 
+    private static void AppendGeocodeServerEntry(
+        HttpContext context, List<ServiceDirectoryEntry> entries, string baseUrl, ILogger logger)
+    {
+        try
+        {
+            var options = context.RequestServices.GetService<IOptions<GeocodingConfiguration>>()?.Value;
+            if (options is not { Enabled: true })
+            {
+                return;
+            }
+
+            var provider = context.RequestServices.GetService<IGeocodeProviderRegistry>()?.GetProvider(options.DefaultProvider);
+            if (provider is null)
+            {
+                return;
+            }
+
+            var capabilities = GeocodeServerCapabilities.ApplyLicense(
+                provider.Capabilities, context.RequestServices.GetRequiredService<ILicenseEntitlementService>());
+            var instanceBase = WithConventionalInstancePath(baseUrl);
+            entries.Add(new ServiceDirectoryEntry
+            {
+                Name = options.LocatorName,
+                Type = GeocodeServerProtocolName,
+                Url = $"{instanceBase}/rest/services/{Uri.EscapeDataString(options.LocatorName)}/{GeocodeServerProtocolName}",
+                SoapCapabilities = GeocodeServerCapabilities.Format(capabilities)
+            });
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+        {
+            // Provider factories are optional dependencies. A broken locator must not
+            // hide otherwise accessible feature, map, raster, or scene services.
+            GeoservicesCatalogEndpointLogging.LogGeocodeProjectionFailed(logger, exception);
+        }
+    }
+
     private static List<ServiceDirectoryEntry> DeduplicateServiceDirectoryEntries(
         IEnumerable<ServiceDirectoryEntry> source)
     {
@@ -841,6 +996,28 @@ internal static class GeoservicesCatalogEndpoints
             : StringComparer.Ordinal.Compare(left.Type, right.Type);
     }
 
+    private static async Task<IResult> HandleGetPrintingToolsServiceNode(HttpContext context, string? f)
+    {
+        f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
+        if (!IsSupportedFormat(f))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
+        }
+
+        return PrintingToolsDirectory(context);
+    }
+
+    private static IResult PrintingToolsDirectory(HttpContext context)
+    {
+        var response = new ServicesDirectoryResponse
+        {
+            Folders = [],
+            Services = [PrintingToolsServiceCatalog.CreateEntry(BaseUrlResolver.GetBaseUrl(context))]
+        };
+        return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
+    }
+
     private static async Task<IResult> HandleGetServicesDirectory(
         HttpContext context,
         string? f,
@@ -849,6 +1026,8 @@ internal static class GeoservicesCatalogEndpoints
         [FromServices] ILicenseStatusProvider licenseStatusProvider,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
+        f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
         if (!IsSupportedFormat(f))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
@@ -867,6 +1046,7 @@ internal static class GeoservicesCatalogEndpoints
 
         var response = new ServicesDirectoryResponse
         {
+            Folders = [PrintingToolsServiceCatalog.FolderName],
             Services = [.. projection.Entries]
         };
 
@@ -875,17 +1055,80 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandleGetRestInfo(
+    /// <summary>
+    /// One service's node in the catalogue: the folder-shaped document an Esri client
+    /// reads when it resolves a service URL.
+    /// </summary>
+    /// <remarks>
+    /// Reuses <see cref="BuildServiceDirectoryProjectionAsync"/> rather than enumerating
+    /// separately, so this node can never disagree with the catalogue root about what is
+    /// published or about who may see it - the projection already applies per-resource
+    /// access filtering scoped to the requested name. Denied folders retain their access
+    /// error; an unknown name answers the GeoServices not-found envelope;
+    /// the defect in #5158 was giving that answer for a service that does.
+    /// </remarks>
+    private static async Task<IResult> HandleGetServiceFolder(
         HttpContext context,
+        string folderName,
         string? f,
-        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions)
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] IRasterStore rasterStore,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
+        [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
+        f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
         if (!IsSupportedFormat(f))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        if (PrintingToolsServiceCatalog.IsFolder(folderName))
+        {
+            return PrintingToolsDirectory(context);
+        }
+
+        var projection = await BuildServiceDirectoryProjectionAsync(
+            context,
+            graphProvider,
+            rasterStore,
+            licenseStatusProvider,
+            logger,
+            serviceName: folderName).ConfigureAwait(false);
+        if (projection.AccessError is not null)
+        {
+            return projection.AccessError;
+        }
+
+        var entries = projection.Entries;
+        if (entries.Count == 0)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context, $"Folder '{folderName}' was not found.");
+        }
+
+        var response = new ServicesDirectoryResponse
+        {
+            Services = [.. entries]
+        };
+
+        return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<IResult> HandleGetRestInfo(
+        HttpContext context,
+        string? f,
+        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions)
+    {
+        f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
+        if (!IsSupportedFormat(f))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
+        }
+
+        var portalBaseUrl = GeoServicesPortalUrlResolver.GetBaseUrl(context);
+        var baseUrl = WithConventionalInstancePath(portalBaseUrl);
         var soapUrl = $"{baseUrl}/services";
 
         // secureSoapUrl must follow the scheme of the SAME resolved public URL that produced
@@ -895,17 +1138,49 @@ internal static class GeoservicesCatalogEndpoints
         // and left a client that selects the secure field unable to find the SOAP endpoint.
         var response = new RestInfoResponse
         {
+            OwningSystemUrl = portalBaseUrl,
             SoapUrl = soapUrl,
             SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null,
             AuthInfo = new RestAuthInfo
             {
                 IsTokenBasedSecurity = tokenOptions.Value.Enabled,
                 TokenServicesUrl = tokenOptions.Value.Enabled
-                    ? $"{baseUrl}/sharing/rest/generateToken"
+                    ? $"{portalBaseUrl}/sharing/rest/generateToken"
                     : null
             }
         };
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
+    }
+
+    /// <summary>
+    /// Advertises the conventional GeoServices instance path (<c>/arcgis</c>) on a base that is
+    /// an origin with an empty path. A base that already ends with <c>/arcgis</c> is unchanged,
+    /// and a base that already has any other path is unchanged: the alias only strips a leading
+    /// <c>/arcgis</c>, so a second prefix would not route.
+    /// </summary>
+    private static string WithConventionalInstancePath(string baseUrl)
+    {
+        if (string.IsNullOrEmpty(baseUrl))
+        {
+            return "/arcgis";
+        }
+
+        var trimmed = baseUrl.TrimEnd('/');
+        if (trimmed.EndsWith("/arcgis", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute))
+        {
+            var path = absolute.AbsolutePath;
+            if (string.IsNullOrEmpty(path) || path == "/")
+            {
+                return trimmed + "/arcgis";
+            }
+        }
+
+        return trimmed;
     }
 
     /// <summary>
@@ -1092,7 +1367,7 @@ internal static class GeoservicesCatalogEndpoints
             || string.Equals(mediaType, "application/soap+xml", StringComparison.OrdinalIgnoreCase);
     }
 
-    private sealed record ServiceDirectoryProjection(
+    internal sealed record ServiceDirectoryProjection(
         IReadOnlyList<ServiceDirectoryEntry> Entries,
         IResult? AccessError,
         int? AccessStatusCode,
@@ -1123,6 +1398,10 @@ internal static partial class GeoservicesCatalogEndpointLogging
     [LoggerMessage(EventId = 9403, Level = LogLevel.Error,
         Message = "ArcGIS SOAP services catalog operation {Operation} failed.")]
     public static partial void LogSoapCatalogOperationFailed(ILogger logger, string operation, Exception exception);
+
+    [LoggerMessage(EventId = 9404, Level = LogLevel.Warning,
+        Message = "Failed to project the configured geocoder into the services catalog.")]
+    public static partial void LogGeocodeProjectionFailed(ILogger logger, Exception exception);
 }
 
 /// <summary>

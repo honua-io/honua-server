@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""Workflow contracts and real-Git no-op/publish/branch-reuse tests (no network/build)."""
+from pathlib import Path
+import os
+import datetime
+import shlex
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+class GeneratedGraphFreshness(unittest.TestCase):
+    def test_graph_callers_declare_the_canonical_yaml_reader(self):
+        for path, name, command in (
+                ('.github/workflows/generated-files-on-trunk.yml', 'Regenerate repository projections',
+                 'bash scripts/ci/regenerate-generated-files.sh'),
+                ('.github/actions/lean-gate/action.yml', 'Regenerate projections and report advisory drift',
+                 'bash scripts/ci/regenerate-generated-files.sh'),
+                ('.github/workflows/ci.yml', 'Regenerate foundation projections and report advisory drift',
+                 'bash scripts/ci/regenerate-generated-files.sh')):
+            with self.subTest(caller=path):
+                source = (ROOT / path).read_text()
+                block = source.split('- name: ' + name, 1)[1].split('- name:', 1)[0]
+                self.assertLess(block.index('python3 -m pip install -r scripts/ci/okf-requirements.txt'),
+                                block.index(command))
+        router = (ROOT / 'scripts/ci/validate-ci-router.sh').read_text()
+        self.assertLess(router.index('"${PYTHON_BIN}" -m pip install -r "${SCRIPT_DIR}/okf-requirements.txt"'),
+                        router.index('"${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-files.py'))
+        self.assertLess(router.index('PYTHON_BIN="$(honua_resolve_python || true)"'),
+                        router.index('-m pip install'))
+
+    def test_graph_is_owned_without_including_authored_evidence(self):
+        paths = subprocess.check_output(
+            ['bash', '-c', 'source scripts/ci/generated-files.sh; printf "%s\\n" "${GENERATED_FILES[@]}"'],
+            cwd=ROOT, text=True).splitlines()
+        self.assertEqual(paths.count('docs/okf/domain-graph.v1.json'), 1)
+        self.assertNotIn('docs/okf', paths)
+        self.assertNotIn('docs/gis/data/public-interface-proof.json', paths)
+
+    def test_actual_pipeline_refreshes_graph_after_capability_page_changes(self):
+        # Isolate unrelated managed emitters, but execute the maintained shell
+        # ordering and real canonical graph generator/checker against real files.
+        # Omitting or moving graph generation before its input change must fail.
+        pipeline = (ROOT / 'scripts/ci/regenerate-generated-files.sh').read_text()
+        graph_command = 'python3 scripts/ci/generate-okf-graph.py\n'
+        self.assertEqual(pipeline.count(graph_command), 1)
+        variants = {
+            'maintained': (pipeline, True),
+            'omitted': (pipeline.replace(graph_command, ''), False),
+            'premature': (pipeline.replace(graph_command, '').replace(
+                'python3 scripts/ci/generate-capability-concepts.py',
+                graph_command + 'python3 scripts/ci/generate-capability-concepts.py'), False),
+        }
+        for label, (source, succeeds) in variants.items():
+            with self.subTest(pipeline=label), tempfile.TemporaryDirectory() as temp:
+                repo = Path(temp)
+                ci = repo / 'scripts/ci'
+                ci.mkdir(parents=True)
+                (repo / 'scripts/examples').mkdir()
+                docs = repo / 'docs/okf/capabilities'
+                docs.mkdir(parents=True)
+                page = docs / 'test.md'
+                page.write_text('---\ntype: capability\ntitle: Test\n---\nInitial facts.\n')
+                (ci / 'okf-bundle.v1.json').write_text(
+                    '{"root":"docs","spec":{"version":"0.2"},"excludedFiles":[],"excludedDirs":[]}')
+                for name in ('generate-okf-graph.py', 'okf_frontmatter.py', 'gis_workflow.py'):
+                    shutil.copy(ROOT / 'scripts/ci' / name, ci / name)
+                for name in ('generate-feature-catalog.sh', 'generate-admin-operation-parity-exports.sh',
+                             'generate-mcp-tool-roster.sh', 'generate-geoservices-parity.sh'):
+                    (repo / 'scripts' / name).write_text('exit 0\n')
+                for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py'):
+                    (ci / name).write_text('pass\n')
+                (repo / 'scripts/examples/generate-manifest.py').write_text('pass\n')
+                (ci / 'generate-capability-concepts.py').write_text(
+                    'from pathlib import Path\n'
+                    'with Path("docs/okf/capabilities/test.md").open("a") as stream:\n'
+                    '    stream.write("Updated generated capability facts.\\n")\n')
+                # A Windows python3 Store alias may be unusable even while the
+                # parent was resolved as python/py. Normalize only interpreter
+                # spelling in this isolated copy; preserve maintained ordering.
+                (ci / 'regenerate-generated-files.sh').write_text(
+                    source.replace('python3 ', shlex.quote(sys.executable) + ' '))
+                tools = repo / 'broken-alias'
+                tools.mkdir()
+                alias = tools / 'python3'
+                alias.write_text('#!/usr/bin/env bash\nexit 97\n')
+                alias.chmod(alias.stat().st_mode | stat.S_IEXEC)
+                environment = {**os.environ, 'PATH': str(tools) + os.pathsep + os.environ['PATH']}
+                broken = subprocess.run(['bash', '-c', 'python3 --version'], cwd=repo,
+                                        env=environment, capture_output=True, text=True)
+                self.assertEqual(broken.returncode, 97, 'The broken-alias control must actually be active')
+
+                def generate(*args):
+                    return subprocess.run([sys.executable, 'scripts/ci/generate-okf-graph.py', *args],
+                                          cwd=repo, env=environment, capture_output=True, text=True)
+
+                initial = generate()
+                self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
+                before = (repo / 'docs/okf/domain-graph.v1.json').read_bytes()
+                execution = subprocess.run(['bash', 'scripts/ci/regenerate-generated-files.sh'],
+                                           cwd=repo, env=environment, capture_output=True, text=True)
+                self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
+                self.assertIn('Updated generated capability facts.', page.read_text())
+                check = generate('--check')
+                self.assertEqual(check.returncode == 0, succeeds, check.stdout + check.stderr)
+                if succeeds:
+                    self.assertNotEqual(before, (repo / 'docs/okf/domain-graph.v1.json').read_bytes())
+                else:
+                    self.assertIn('agent graph is stale', check.stdout)
+
+
+class GeneratedFilesContracts(unittest.TestCase):
+    def test_workflow_runs_nightly_or_on_demand_and_never_writes_trunk_directly(self):
+        workflow = (ROOT / '.github/workflows/generated-files-on-trunk.yml').read_text()
+        # Nightly + on demand, not per trunk push: a per-push PR moved trunk after
+        # every landing and re-gated every open PR. Drift is advisory.
+        self.assertIn('  schedule:\n    - cron:', workflow)
+        self.assertIn('  workflow_dispatch:', workflow)
+        self.assertNotIn('  push:', workflow)
+        self.assertNotIn('pull_request:', workflow)
+        self.assertIn('concurrency:\n  group: generated-files-on-trunk\n  cancel-in-progress: false', workflow)
+        self.assertIn('  contents: read', workflow)
+        self.assertNotIn('  contents: write', workflow)
+        self.assertIn('ref: ${{ github.sha }}', workflow)
+        self.assertIn('persist-credentials: false', workflow)
+        self.assertNotIn('ref: trunk', workflow)
+        self.assertLess(
+            workflow.index('regenerate-generated-files.sh'),
+            workflow.index('publish-generated-files.sh'),
+        )
+        self.assertIn('regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false', workflow)
+        publication = workflow.index('- name: Open or refresh')
+        self.assertNotIn('secrets.', workflow[:publication])
+        self.assertIn('GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}', workflow[publication:])
+        self.assertNotIn('GH_TOKEN: ${{ github.token }}', workflow)
+
+        script = (ROOT / 'scripts/ci/publish-generated-files.sh').read_text()
+        executable_lines = [line for line in script.splitlines() if not line.strip().startswith('#')]
+        self.assertFalse(any('push' in line and 'refs/heads/trunk' in line for line in executable_lines))
+        self.assertIn("branch='automation/regenerate-generated-files'", script)
+        self.assertIn('gh api --method POST "repos/${repo}/pulls"', script)
+        # GraphQL-backed `gh pr` subcommands exhaust the shared PAT user's
+        # GraphQL budget after the branch push (#4732); publication is REST-only.
+        self.assertFalse(any('gh pr ' in line for line in executable_lines))
+        self.assertIn('--force-with-lease', script)
+
+    def test_publish_script_push_target_passes_the_merge_authority_guard(self):
+        # The exact regression this design fixes (#4540/#4653): a workflow
+        # that writes trunk directly, or whose push target is a variable the
+        # guard cannot statically prove safe, fails
+        # scripts/ci/validate-single-merge-authority.sh. Prove the real
+        # repository tree -- including this new script -- still passes both
+        # the guard's offline self-test and its real scan.
+        script = (ROOT / 'scripts/ci/publish-generated-files.sh').read_text()
+        self.assertIn('force-with-lease', script)
+        self.assertIn('automation/regenerate-generated-files', script)
+        result = subprocess.run(
+            ['bash', str(ROOT / 'scripts/ci/validate-single-merge-authority.sh'), '--self-test'],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        result = subprocess.run(
+            ['bash', str(ROOT / 'scripts/ci/validate-single-merge-authority.sh')],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_pr_generation_is_hard_and_precedes_strict_validators(self):
+        action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()
+        generation = action.index('bash scripts/ci/regenerate-generated-files.sh')
+        self.assertLess(generation, action.index('- name: Run .NET Tests (Server Fast Tier)'))
+        self.assertLess(generation, action.index('- name: Run .NET Tests (Architecture)'))
+        self.assertIn('regenerate-generated-files.sh --configuration Release --no-build --no-restore', action)
+        self.assertNotIn('continue-on-error:', action)
+        matrix = (ROOT / '.github/workflows/capability-matrix-aggregation.yml').read_text()
+        self.assertIn('run: python3 scripts/ci/generate-capability-matrix.py', matrix)
+        self.assertIn('report-generated-file-drift.sh docs/gis/data/capability-matrix.v1.json', matrix)
+        self.assertIn('run: python3 scripts/ci/validate-cite-openapi-compliance.py', matrix)
+        self.assertNotIn('exit 1', matrix)
+        self.assertNotIn('continue-on-error:', matrix)
+        ci = (ROOT / '.github/workflows/ci.yml').read_text()
+        refresh = ci.index('- name: Regenerate foundation projections')
+        self.assertLess(ci.index('- name: Consume managed foundation outputs'), ci.index('- name: Build missing foundation outputs'))
+        self.assertLess(ci.index('- name: Build missing foundation outputs'), refresh)
+        source_checks = ci.index('- name: Run source architecture after projection regeneration')
+        self.assertLess(refresh, source_checks)
+        self.assertLess(source_checks, ci.index('- name: Run foundation family tests'))
+        self.assertLess(refresh, ci.index('- name: Run foundation family tests'))
+        self.assertIn("if: matrix.family == 'server'", ci[refresh:ci.index('- name: Run foundation family tests')])
+        generator = (ROOT / 'scripts/ci/regenerate-generated-files.sh').read_text()
+        self.assertIn('set -euo pipefail', generator)
+        self.assertLess(generator.index('generate-feature-catalog.sh'), generator.index('generate-capability-matrix.py'))
+        self.assertLess(generator.index('generate-geoservices-parity.sh'), generator.index('generate-capability-matrix.py'))
+        self.assertIn('verify-admin-operation-parity.py', generator)
+        self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
+        self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
+
+    def test_generator_failure_stops_the_pipeline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            scripts = repo / 'scripts'
+            (scripts / 'ci').mkdir(parents=True)
+            shutil.copy(ROOT / 'scripts/ci/regenerate-generated-files.sh', scripts / 'ci')
+            (scripts / 'generate-feature-catalog.sh').write_text('exit 23\n')
+            (scripts / 'generate-admin-operation-parity-exports.sh').write_text('touch should-not-run\n')
+            result = subprocess.run(['bash', 'scripts/ci/regenerate-generated-files.sh'], cwd=repo)
+            self.assertEqual(result.returncode, 23)
+            self.assertFalse((repo / 'should-not-run').exists())
+
+    def test_stale_nightly_retry_is_bounded_and_never_retries_manual_runs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            calls = base / "dispatches"
+            gh = base / "gh"
+            gh.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$CALLS"\n')
+            gh.chmod(0o755)
+            today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+            defaults = dict(os.environ, PATH=f"{base}:{os.environ['PATH']}",
+                            GH_TOKEN="test", GITHUB_REPOSITORY="honua-io/honua-server",
+                            GITHUB_REF="refs/heads/trunk", GITHUB_RUN_ATTEMPT="1",
+                            GITHUB_EVENT_NAME="workflow_dispatch", CALLS=str(calls),
+                            RETRY_COUNT="0", RETRY_DATE="")
+            def run(**overrides):
+                calls.unlink(missing_ok=True)
+                result = subprocess.run(['bash', str(ROOT / 'scripts/ci/retry-generated-files.sh')],
+                                        env=dict(defaults, **overrides), text=True, capture_output=True)
+                return result, calls.read_text() if calls.exists() else ""
+            result, call = run(GITHUB_EVENT_NAME="schedule")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("-f ref=trunk", call)
+            self.assertIn("inputs[retry_count]=1", call)
+            self.assertIn(f"inputs[retry_date]={today}", call)
+            result, call = run(RETRY_DATE=today, RETRY_COUNT="1")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("inputs[retry_count]=2", call)
+            for overrides in ({}, {"RETRY_DATE": today, "RETRY_COUNT": "2"},
+                              {"RETRY_DATE": "2000-01-01", "RETRY_COUNT": "1"},
+                              {"GITHUB_EVENT_NAME": "schedule", "GITHUB_RUN_ATTEMPT": "2"},
+                              {"GITHUB_EVENT_NAME": "schedule", "GITHUB_REF": "refs/heads/feature"}):
+                with self.subTest(overrides=overrides):
+                    result, call = run(**overrides)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(call, "")
+            result, call = run(RETRY_DATE=today, RETRY_COUNT="invalid")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(call, "")
+
+    def test_real_git_publish_creates_then_reuses_the_branch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / 'repo'
+            remote = base / 'origin.git'
+            repo.mkdir()
+            env = dict(os.environ, GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
+            env.pop('GITHUB_TOKEN', None)
+            env['GH_TOKEN'] = 'test-publication-token'
+            env['GITHUB_REPOSITORY'] = 'honua-io/honua-server'
+
+            gh_calls = base / 'gh-calls.log'
+            gh_state = base / 'gh-pr-number'
+            fake_bin = base / 'bin'
+            fake_bin.mkdir()
+            fake_gh = fake_bin / 'gh'
+            # Only REST pulls calls are answered; any `gh pr` (GraphQL) call fails.
+            fake_gh.write_text(
+                '#!/usr/bin/env bash\n'
+                f'{{ echo "$*"; cat; }} >> {gh_calls}\n'
+                'if [[ "$1" == "api" && "$2" == repos/honua-io/honua-server/pulls\\?* ]]; then\n'
+                f'  cat {gh_state} 2>/dev/null || true\n'
+                '  exit 0\n'
+                'fi\n'
+                'if [[ "$1 $2 $3 $4" == "api --method POST repos/honua-io/honua-server/pulls" ]]; then\n'
+                f'  echo 42 > {gh_state}\n'
+                '  echo "https://example.invalid/pull/42"\n'
+                '  exit 0\n'
+                'fi\n'
+                'echo "unexpected gh invocation: $*" >&2\n'
+                'exit 1\n'
+            )
+            fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IEXEC)
+            env['PATH'] = f'{fake_bin}:{env["PATH"]}'
+
+            def run(*args, ok=True):
+                result = subprocess.run(args, cwd=repo, env=env, text=True, capture_output=True)
+                if ok:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                return result
+
+            run('git', 'init', '--bare', str(remote))
+            run('git', 'init', '-b', 'trunk')
+            # Automatic maintenance may otherwise outlive the Git subprocess
+            # and write into .git while TemporaryDirectory removes it (#6396).
+            # Keep maintenance enabled but synchronous in BOTH repositories:
+            # publisher children use repo; receive-pack children use remote.
+            # Cleanup remains strict so unrelated surviving writers still fail.
+            for directory in (repo, remote):
+                for option in ('gc.autoDetach', 'maintenance.autoDetach'):
+                    run('git', '-C', str(directory), 'config', '--local', option, 'false')
+                    self.assertEqual(run('git', '-C', str(directory), 'config',
+                                         '--bool', '--get', option).stdout.strip(), 'false')
+            scripts = repo / 'scripts/ci'
+            scripts.mkdir(parents=True)
+            for name in ('generated-files.sh', 'publish-generated-files.sh'):
+                shutil.copy(ROOT / 'scripts/ci' / name, scripts / name)
+            paths = run('bash', '-c', 'source scripts/ci/generated-files.sh; printf "%s\\n" "${GENERATED_FILES[@]}"').stdout.splitlines()
+            # Exercise a drift confined to a file inside the generated concept directory.
+            # The publisher must include nested projections through the directory pathspec.
+            paths = ['docs/okf/capabilities/admin.control-plane.md'] + [
+                name for name in paths if name != 'docs/okf/capabilities'
+            ]
+            for name in paths:
+                path = repo / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('{}\n')
+            run('git', 'add', '.')
+            run('git', '-c', 'user.name=Mike McDougall', '-c', 'user.email=mike@honua.io', 'commit', '-m', 'initial')
+            run('git', 'remote', 'add', 'origin', str(remote))
+            run('git', 'push', 'origin', 'trunk')
+            trunk_before = run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip()
+
+            # No diff: no commit, no branch push, no gh call at all.
+            noop = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertIn('up to date', noop.stdout)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+
+            # A real diff: commits on the fixed branch, pushes only that branch
+            # (never trunk), and opens a PR since none is open yet.
+            (repo / paths[0]).write_text('{"fresh": true}\n')
+            first = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertNotIn('Updated existing', first.stdout)
+
+            # The branch push landed, trunk did not move.
+            branch_sha = run('git', '--git-dir', str(remote), 'rev-parse',
+                              'refs/heads/automation/regenerate-generated-files').stdout.strip()
+            self.assertEqual(
+                run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
+                trunk_before,
+            )
+            commit_identity = run('git', 'show', '--format=%an <%ae>|%cn <%ce>', '--no-patch', branch_sha).stdout.strip()
+            bot_identity = 'Mike McDougall <mike@honua.io>'
+            self.assertEqual(commit_identity, f'{bot_identity}|{bot_identity}')
+            self.assertEqual(
+                run('git', 'diff-tree', '--no-commit-id', '--name-only', '-r', branch_sha).stdout.strip(),
+                paths[0],
+            )
+            gh_call_lines = gh_calls.read_text().splitlines()
+            list_call = next(line for line in gh_call_lines if line.startswith('api repos/'))
+            self.assertIn('pulls?state=open&base=trunk&head=honua-io:automation/regenerate-generated-files',
+                          list_call)
+            create_call = next(line for line in gh_call_lines if line.startswith('api --method POST'))
+            self.assertIn('-f base=trunk', create_call)
+            self.assertIn('-f head=automation/regenerate-generated-files', create_call)
+            self.assertIn('Refs #3213', create_call)
+
+            self.assertIn(f'Generated-From: {trunk_before}',
+                          run('git', 'log', '-1', '--format=%B', branch_sha).stdout)
+
+            # A second publish with the same drift (e.g. the automation PR's
+            # own eventual merge re-triggering the workflow with byte-identical
+            # output) finds the already-open PR and updates the branch instead
+            # of creating a duplicate.
+            gh_calls.unlink()
+            # Simulate the next run's fresh `actions/checkout` of trunk, which
+            # never moved: the previous publish advanced only the local branch
+            # this checkout happened to be on, not remote trunk.
+            run('git', 'reset', '--hard', trunk_before)
+            (repo / paths[0]).write_text('{"fresh": true}\n')
+            second = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertIn('Updated existing generated-files PR #42', second.stdout)
+            self.assertNotIn('--method POST', gh_calls.read_text())
+            self.assertEqual(
+                run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
+                trunk_before,
+            )
+
+            # Advance trunk independently, then replay the old triggering SHA.
+            # Its fresh validation may pass, but publication must preserve the
+            # existing automation branch and make no PR calls.
+            run('git', 'reset', '--hard', trunk_before)
+            (repo / 'authored.txt').write_text('new source\n')
+            run('git', 'add', 'authored.txt')
+            run('git', '-c', 'user.name=Mike McDougall', '-c', 'user.email=mike@honua.io',
+                'commit', '-m', 'advance trunk')
+            run('git', 'push', 'origin', 'HEAD:trunk')
+            run('git', 'reset', '--hard', trunk_before)
+            (repo / paths[0]).write_text('{"stale": true}\n')
+            branch_before = run('git', '--git-dir', str(remote), 'rev-parse',
+                                'refs/heads/automation/regenerate-generated-files').stdout
+            gh_calls.unlink()
+            env['GITHUB_OUTPUT'] = str(base / 'publication-output')
+            stale = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertEqual((base / 'publication-output').read_text(), 'stale_source=true\n')
+            self.assertIn('No stale projections published', stale.stdout)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(branch_before, run('git', '--git-dir', str(remote), 'rev-parse',
+                                               'refs/heads/automation/regenerate-generated-files').stdout)
+            self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+
+            # A clean old checkout is still stale: new source may require new
+            # projections even though generation at this old SHA changed none.
+            run('git', 'reset', '--hard', trunk_before)
+            (base / 'publication-output').unlink()
+            stale_clean = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertEqual((base / 'publication-output').read_text(), 'stale_source=true\n')
+            self.assertIn('No stale projections published', stale_clean.stdout)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(branch_before, run('git', '--git-dir', str(remote), 'rev-parse',
+                                               'refs/heads/automation/regenerate-generated-files').stdout)
+            self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+
+            # A newer publisher wins after our trunk observation. The lease
+            # must have been captured before that observation, so this push
+            # fails instead of overwriting the newer automation head.
+            current_trunk = run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip()
+            run('git', 'reset', '--hard', current_trunk)
+            (repo / paths[0]).write_text('{"racing": true}\n')
+            real_git = shutil.which('git')
+            fake_git = fake_bin / 'git'
+            fake_git.write_text(
+                '#!/usr/bin/env bash\n'
+                'if [[ "$*" == "ls-remote --exit-code origin refs/heads/trunk" ]]; then\n'
+                f'  "{real_git}" "$@" || exit $?\n'
+                f'  "{real_git}" push --force origin {current_trunk}:refs/heads/automation/regenerate-generated-files >&2\n'
+                '  exit $?\n'
+                'fi\n'
+                f'exec "{real_git}" "$@"\n'
+            )
+            fake_git.chmod(fake_git.stat().st_mode | stat.S_IEXEC)
+            raced = run('bash', 'scripts/ci/publish-generated-files.sh', ok=False)
+            self.assertNotEqual(raced.returncode, 0, raced.stdout + raced.stderr)
+            self.assertIn('stale info', raced.stderr)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(current_trunk, run('git', '--git-dir', str(remote), 'rev-parse',
+                                               'refs/heads/automation/regenerate-generated-files').stdout.strip())
+            fake_git.unlink()
+            # Restore a working-tree diff for the unreadable-remote case.
+            (repo / paths[0]).write_text('{"unreachable": true}\n')
+
+            # An unreachable origin must fail closed, not look like an absent
+            # branch that permits an unconditional overwrite.
+            run('git', 'remote', 'set-url', 'origin', str(base / 'missing.git'))
+            failed = run('bash', 'scripts/ci/publish-generated-files.sh', ok=False)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(gh_calls.exists())
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

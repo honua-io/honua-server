@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -19,6 +20,34 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// </summary>
 public sealed class CoordinatedReleaseReconcilerTests
 {
+    [UnitTest]
+    public async Task SRV_INF_016_ApproveGate_DuringRollback_IsRejectedWithoutChangingState()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        var rollingBack = operation with
+        {
+            Status = WorkflowOperationStatus.RollbackRequested,
+            CoordinatedRelease = operation.CoordinatedRelease! with
+            {
+                CurrentStep = CoordinatedReleaseStep.RollingBack
+            }
+        };
+        await store.SetAsync(rollingBack);
+        var service = new CoordinatedReleaseControlService([(IWorkflowOperationStore)store]);
+
+        var approve = () => service.ApproveGateAsync(
+            operation.OperationId,
+            CoordinatedReleaseStep.MetadataAndSchema,
+            "operator",
+            "stale approval");
+
+        await approve.Should().ThrowAsync<InvalidOperationException>();
+        var persisted = await store.GetAsync(operation.OperationId);
+        persisted!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        persisted.CoordinatedRelease!.CurrentStep.Should().Be(CoordinatedReleaseStep.RollingBack);
+    }
+
     [Fact]
     public async Task Reconcile_HappyPath_OrdersContainerThenDbMetadataThenPromotes()
     {

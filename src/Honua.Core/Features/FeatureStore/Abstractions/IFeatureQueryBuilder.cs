@@ -39,6 +39,18 @@ internal interface IFeatureQueryBuilder
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 
     /// <summary>
+    /// Builds an object-id query evaluated against the pre-change row images recorded by the given
+    /// change-log entries instead of the live rows (#4879). Providers without a change log with
+    /// pre-change images do not support it.
+    /// </summary>
+    ParameterizedQuery BuildPreChangeObjectIdsQuery(
+        int layerId,
+        FeatureQuery query,
+        IReadOnlyCollection<long> changeIds,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
+        => throw new NotSupportedException("This provider does not record pre-change row images.");
+
+    /// <summary>
     /// Builds a provider-native FlatGeobuf query.
     /// </summary>
     ParameterizedQuery BuildSelectFlatGeobufQuery(

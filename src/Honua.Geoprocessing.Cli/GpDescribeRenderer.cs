@@ -11,7 +11,7 @@ namespace Honua.Geoprocessing.Cli;
 
 /// <summary>
 /// Renders the <c>honua gp describe &lt;id&gt;</c> output (GP Devkit P3, issue #2124):
-/// the typed parameters, declared outputs, an inputs JSON Schema, and a ready-to-paste
+/// the typed parameters, declared outputs, an inputs JSON Schema, and a parameterized
 /// example <c>honua gp run</c> command — so an author can treat a process like a typed
 /// library function rather than a black box. Rendering is split out as pure functions
 /// (no <see cref="Console"/> coupling) so the human and machine views can be unit-tested
@@ -26,7 +26,16 @@ internal static class GpDescribeRenderer
     /// </summary>
     /// <param name="definition">The catalog definition to describe.</param>
     /// <returns>The multi-line description text.</returns>
-    public static string RenderText(ProcessDefinition definition)
+    public static string RenderText(ProcessDefinition definition) => RenderText(definition, null);
+
+    /// <summary>
+    /// Renders the description with the devkit's runnability verdict (execution mode,
+    /// prerequisites, whether it can run here, supported targets) when one is supplied.
+    /// </summary>
+    /// <param name="definition">The catalog definition to describe.</param>
+    /// <param name="runnability">The verdict, or null to omit it.</param>
+    /// <returns>The multi-line description text.</returns>
+    public static string RenderText(ProcessDefinition definition, GpRunnability? runnability)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
@@ -35,6 +44,23 @@ internal static class GpDescribeRenderer
         builder.Append("title       : ").AppendLine(definition.Title);
         builder.Append("category    : ").AppendLine(definition.Category);
         builder.Append("runtime     : ").AppendLine(RuntimeProfiles.Normalize(definition.RuntimeProfile));
+        builder.Append("execution   : ").AppendLine(definition.ExecutionKind.ToString());
+        builder.Append("dependency  : ").AppendLine(definition.ConfigurationDependency ?? "See input requirements; registration does not verify dependencies.");
+        if (definition.ExecutionCapabilityReason is { } reason)
+        {
+            builder.Append("availability: ").AppendLine(reason);
+        }
+        if (runnability is not null)
+        {
+            builder.Append("mode        : ").AppendLine(runnability.ExecutionModeLabel);
+            builder.Append("runnable    : ").AppendLine(runnability.RunnableHere ? "yes" : $"no — blocked by {runnability.BlockedBy}");
+            foreach (var prerequisite in runnability.Prerequisites)
+            {
+                builder.Append("  needs     : ").Append(prerequisite.Name).Append(" [").Append(prerequisite.Status).Append("] ").AppendLine(prerequisite.Detail);
+            }
+
+            builder.Append("targets     : ").AppendLine(string.Join(", ", runnability.SupportedTargets));
+        }
         builder.Append("description : ").AppendLine(definition.Description);
         builder.AppendLine();
 
@@ -68,6 +94,11 @@ internal static class GpDescribeRenderer
                 {
                     builder.Append("      allowed: ").AppendLine(string.Join(", ", allowed));
                 }
+
+                if (runnability is not null && GpRunnabilityAssessor.ExampleValues(definition)[parameter.Name] is { } example)
+                {
+                    builder.Append("      example: ").AppendLine(example.GetValue<string>());
+                }
             }
         }
 
@@ -82,7 +113,7 @@ internal static class GpDescribeRenderer
         builder.AppendLine(BuildInputSchema(definition).ToJsonString(IndentedOptions));
         builder.AppendLine();
 
-        builder.AppendLine("example:");
+        builder.AppendLine("example (replace placeholders using the parameter constraints):");
         builder.Append("  ").AppendLine(BuildExampleCommand(definition));
 
         return builder.ToString();
@@ -96,7 +127,17 @@ internal static class GpDescribeRenderer
     /// </summary>
     /// <param name="definition">The catalog definition to describe.</param>
     /// <returns>The indented JSON descriptor.</returns>
-    public static string RenderJson(ProcessDefinition definition)
+    public static string RenderJson(ProcessDefinition definition) => RenderJson(definition, null);
+
+    /// <summary>
+    /// Renders the descriptor with the devkit's runnability verdict and a valid example value
+    /// per parameter (<c>executionMode</c>, <c>prerequisites</c>, <c>runnableHere</c>,
+    /// <c>blockedBy</c>, <c>supportedTargets</c>, <c>parameterExamples</c>) when one is supplied.
+    /// </summary>
+    /// <param name="definition">The catalog definition to describe.</param>
+    /// <param name="runnability">The verdict, or null to omit it.</param>
+    /// <returns>The indented JSON descriptor.</returns>
+    public static string RenderJson(ProcessDefinition definition, GpRunnability? runnability)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
@@ -113,10 +154,21 @@ internal static class GpDescribeRenderer
             ["description"] = definition.Description,
             ["category"] = definition.Category,
             ["runtimeProfile"] = RuntimeProfiles.Normalize(definition.RuntimeProfile),
+            ["executionKind"] = definition.ExecutionKind.ToString(),
+            ["supportedExecutionModes"] = definition.SupportedExecutionModes.ToString(),
+            ["supportedEntryPoints"] = definition.SupportedEntryPoints.ToString(),
+            ["configurationDependency"] = definition.ConfigurationDependency,
+            ["executionCapabilityReason"] = definition.ExecutionCapabilityReason,
+            ["dependenciesVerified"] = false,
             ["inputs"] = BuildInputSchema(definition),
             ["outputs"] = outputs,
             ["example"] = BuildExampleCommand(definition),
         };
+        if (runnability is not null)
+        {
+            runnability.WriteTo(descriptor);
+            descriptor["parameterExamples"] = GpRunnabilityAssessor.ExampleValues(definition);
+        }
 
         return descriptor.ToJsonString(IndentedOptions);
     }
@@ -222,10 +274,10 @@ internal static class GpDescribeRenderer
 
         return parameter.ValueType switch
         {
-            ProcessParameterValueType.WholeNumber => "0",
-            ProcessParameterValueType.FloatingPoint => "0.0",
+            ProcessParameterValueType.WholeNumber => "<integer>",
+            ProcessParameterValueType.FloatingPoint => "<number>",
             ProcessParameterValueType.Flag => "false",
-            ProcessParameterValueType.Srid => "4326",
+            ProcessParameterValueType.Srid => "<srid>",
             ProcessParameterValueType.Wkb => "<base64-wkb>",
             ProcessParameterValueType.WkbArray => "<base64-wkb,...>",
             ProcessParameterValueType.LayerId => "<layer-id>",

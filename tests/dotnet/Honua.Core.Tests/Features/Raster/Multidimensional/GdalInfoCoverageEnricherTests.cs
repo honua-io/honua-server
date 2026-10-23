@@ -68,6 +68,7 @@ public sealed class GdalInfoCoverageEnricherTests
         enriched.YAxisAscending.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Enrich_PositivePixelHeight_RecordsAscendingYAxis()
     {
@@ -111,5 +112,62 @@ public sealed class GdalInfoCoverageEnricherTests
         var verticalSource = GdalInfoCoverageEnricher.Enrich(baseMetadata, "{}");
         verticalSource.Extent.Should().BeNull();
         verticalSource.Temporal.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void Enrich_ZarrDimensionMetadata_DecodesFixtureGrid()
+    {
+        // gdalinfo -json on the derived Zarr (the container path that does not need
+        // userfaultfd). Two time bands, cell centers half a pixel inside the extent.
+        const string zarrInfo = """
+        {
+          "size": [4, 4],
+          "geoTransform": [-122.525, 0.05, 0, 37.675, 0, 0.05],
+          "cornerCoordinates": {
+            "upperLeft": [-122.525, 37.675],
+            "lowerRight": [-122.325, 37.875]
+          },
+          "bands": [
+            {
+              "type": "Float32",
+              "noDataValue": -9999,
+              "minimum": 11,
+              "maximum": 25,
+              "mean": 18,
+              "stdDev": 4,
+              "metadata": { "": { "DIM_time_VALUE": "0", "DIM_time_UNIT": "hours since 2024-01-01 00:00:00" } }
+            },
+            {
+              "type": "Float32",
+              "noDataValue": -9999,
+              "minimum": 21,
+              "maximum": 35,
+              "mean": 28,
+              "stdDev": 3,
+              "metadata": { "": { "DIM_time_VALUE": "24", "DIM_time_UNIT": "hours since 2024-01-01 00:00:00" } }
+            }
+          ]
+        }
+        """;
+
+        var enriched = GdalInfoCoverageEnricher.Enrich(BaseMetadata(), zarrInfo);
+
+        var extent = enriched.Extent ?? throw new InvalidOperationException("Coverage extent was not enriched.");
+        extent.XMin.Should().BeApproximately(-122.525, 1e-9);
+        extent.YMin.Should().BeApproximately(37.675, 1e-9);
+        extent.XMax.Should().BeApproximately(-122.325, 1e-9);
+        extent.YMax.Should().BeApproximately(37.875, 1e-9);
+        enriched.Resolution.X.Should().BeApproximately(0.05, 1e-9);
+        enriched.Resolution.Y.Should().BeApproximately(0.05, 1e-9);
+        enriched.YAxisAscending.Should().BeTrue();
+        enriched.Temporal.Should().NotBeNull();
+        enriched.Temporal!.Start.Should().Be(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        enriched.Temporal.End.Should().Be(new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero));
+        enriched.Temporal.StepCount.Should().Be(2);
+        enriched.Statistics.Should().NotBeNull();
+        enriched.Statistics!.Minimum.Should().Be(11);
+        enriched.Statistics.Maximum.Should().Be(35);
+        enriched.Statistics.Mean.Should().Be(23);
+        enriched.Statistics.StandardDeviation.Should().BeNull("two bands do not yield one standard deviation");
     }
 }

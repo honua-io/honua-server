@@ -188,8 +188,21 @@ internal sealed record KubernetesJobManifest
     public int? TtlSecondsAfterFinished { get; init; }
 
     /// <summary>
-    /// Optional environment variables to inject into the primary container.
+    /// Optional literal environment variables (<c>env[].value</c>) to inject into the primary container.
     /// </summary>
     public IReadOnlyDictionary<string, string> EnvironmentVariables { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Optional environment variables sourced from a Secret or ConfigMap key
+    /// (<c>env[].valueFrom.secretKeyRef</c> / <c>configMapKeyRef</c>). Carries reference names only.
+    /// </summary>
+    public IReadOnlyDictionary<string, KubernetesEnvKeyReference> EnvironmentReferences { get; init; } =
+        new Dictionary<string, KubernetesEnvKeyReference>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Optional whole-object imports (container <c>envFrom</c>), in precedence order. Carries
+    /// reference names only.
+    /// </summary>
+    public IReadOnlyList<KubernetesEnvFromSource> EnvFrom { get; init; } = Array.Empty<KubernetesEnvFromSource>();
 }

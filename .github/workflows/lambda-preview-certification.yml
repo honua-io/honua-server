@@ -22,6 +22,14 @@ on:
         description: Exact 40-character server revision bound to the image
         required: true
         type: string
+      prepared_manifest:
+        description: Optional prepared execution-manifest projection and operating-envelope digest as JSON
+        required: false
+        type: string
+      use_denied_key_override:
+        description: Use the deprecated scoped-key secret instead of minting a key (one release only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -44,7 +52,9 @@ jobs:
       REALAWS_CERT_LAMBDA_ALIAS: ${{ vars.REALAWS_CERT_LAMBDA_ALIAS }}
       HONUA_LAMBDA_WRITE_BASE_URL: ${{ vars.REALAWS_CERT_LAMBDA_WRITE_BASE_URL }}
       HONUA_DEMO_BASE_URL: ${{ vars.HONUA_DEMO_BASE_URL }}
+      # Optional override for one release: the lane mints its own scoped denial principal per run.
       HONUA_LAMBDA_CERT_DENIED_KEY: ${{ secrets.REALAWS_CERT_DENIED_KEY }}
+      HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE: ${{ inputs.use_denied_key_override }}
       HONUA_LAMBDA_CERT_ADMIN_KEY: ${{ secrets.REALAWS_CERT_ADMIN_KEY }}
       HONUA_LAMBDA_ARCHITECTURE: ${{ inputs.architecture }}
       HONUA_LAMBDA_SOURCE_IMAGE: ${{ inputs.source_image }}
@@ -53,6 +63,7 @@ jobs:
       HONUA_LAMBDA_PREVIEW_REPOSITORY: ${{ vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY }}
       HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN: ${{ vars.REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN }}
       HONUA_LAMBDA_PREVIEW_RECEIPT: evidence/lambda-preview-receipt.json
+      HONUA_LAMBDA_PREPARED_MANIFEST: ${{ inputs.prepared_manifest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -71,7 +82,8 @@ jobs:
           ROLE_ARN: ${{ vars.REALAWS_CERT_ROLE_ARN }}
         run: |
           set -euo pipefail
-          required=(ROLE_ARN HONUA_LAMBDA_PREVIEW_REPOSITORY HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN REALAWS_CERT_LAMBDA_FUNCTION REALAWS_CERT_LAMBDA_ALIAS HONUA_LAMBDA_WRITE_BASE_URL HONUA_DEMO_BASE_URL HONUA_LAMBDA_CERT_ADMIN_KEY HONUA_LAMBDA_CERT_DENIED_KEY)
+          # The optional admin-key override is resolved from Secrets Manager after OIDC when unset.
+          required=(ROLE_ARN HONUA_LAMBDA_PREVIEW_REPOSITORY HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN REALAWS_CERT_LAMBDA_FUNCTION REALAWS_CERT_LAMBDA_ALIAS HONUA_LAMBDA_WRITE_BASE_URL HONUA_DEMO_BASE_URL)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing cert bootstrap variable: ${name}"
@@ -85,6 +97,32 @@ jobs:
           role-to-assume: ${{ vars.REALAWS_CERT_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: honua-lambda-preview-certification
+
+      - name: Install crane (pinned, checksum-verified)
+        shell: bash
+        env:
+          CRANE_VERSION: v0.22.1
+          # go-containerregistry release checksums.txt for CRANE_VERSION.
+          CRANE_SHA256_x86_64: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+          CRANE_SHA256_arm64: 898c0cff975f898a33e8c4580bdafb0e7c02c7faa33374e946762f97c4ab7110
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) asset=x86_64; expected="$CRANE_SHA256_x86_64" ;;
+            aarch64|arm64) asset=arm64; expected="$CRANE_SHA256_arm64" ;;
+            *) echo "::error::unsupported runner architecture: $(uname -m)"; exit 1 ;;
+          esac
+          archive="$RUNNER_TEMP/go-containerregistry.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors -o "$archive" \
+            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${asset}.tar.gz"
+          echo "${expected}  ${archive}" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" crane
+          # Runner steps are unprivileged and /usr/local/bin is root-owned, so stage the binary
+          # under RUNNER_TEMP and put that directory on PATH for the steps that mirror the manifest.
+          mkdir -p "$RUNNER_TEMP/bin"
+          install -m 0755 "$RUNNER_TEMP/crane" "$RUNNER_TEMP/bin/crane"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/crane" version
 
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
@@ -103,7 +141,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: lambda-preview-certification-receipt
-          path: evidence/lambda-preview-receipt.json
+          path: |
+            evidence/lambda-preview-receipt.json
+            evidence/deployment-execution-inputs.json
           if-no-files-found: error
           retention-days: 30
 
@@ -112,7 +152,9 @@ jobs:
         shell: bash
         run: |
           digest="$(jq -er '.artifact.ecrDigest' evidence/lambda-preview-receipt.json)"
+          mirror="$(jq -er '.artifact.mirrorOutcome' evidence/lambda-preview-receipt.json)"
           echo "### Lambda Preview receipt" >> "$GITHUB_STEP_SUMMARY"
           echo "- Result: pass" >> "$GITHUB_STEP_SUMMARY"
           echo "- True ECR artifact digest: \`${digest}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Mirror step (immutable candidate tag): \`${mirror}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Release handoff: replace \`honua-server.awsLambdaEcrDigest\` sentinel with this digest in the platform manifest." >> "$GITHUB_STEP_SUMMARY"

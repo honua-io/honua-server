@@ -146,7 +146,8 @@ internal static partial class OgcTileCacheExportEndpoints
                     DryRun = isDryRun,
                     ApplyMode = isApplyMode,
                     RequestTimeoutSeconds = timeoutSeconds,
-                    AllowUnsafeLocalUrls = allowUnsafeLocalUrls
+                    AllowUnsafeLocalUrls = allowUnsafeLocalUrls,
+                    AllowedServiceHostSuffixes = allowedHostSuffixes
                 },
                 cancellationToken).ConfigureAwait(false);
         }

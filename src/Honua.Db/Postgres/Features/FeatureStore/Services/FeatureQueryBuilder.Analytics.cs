@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -32,15 +33,17 @@ internal sealed partial class FeatureQueryBuilder
     /// <c>ST_ClusterKMeans(geom, k) OVER ()</c>.
     /// </para>
     /// <para>
-    /// When the layer SRID is geographic the geometry is transformed to Web
-    /// Mercator (3857) inside the CTE so DBSCAN <c>eps</c> is interpreted in
-    /// meters. The transform is paid once per row regardless of the number of
-    /// statistics requested. Note that EPSG:3857 distances exceed ground
-    /// distances by the Mercator scale factor (1/cos(lat)), so the effective
-    /// ground <c>eps</c> shrinks at high latitude (~50% at 60N); <c>eps</c>
-    /// cannot be evaluated on the geography type because
-    /// <c>ST_ClusterDBSCAN</c> requires a single planar CRS and a constant
-    /// window argument.
+    /// When the layer SRID is geographic the geometry is projected to an azimuthal
+    /// equidistant plane (WGS 84, metres) centred on the request envelope, or on
+    /// the centroid of the filtered extent when the request has no envelope.
+    /// <c>eps</c> is then ground metres at that centre. Scale error grows with
+    /// distance from the centre. An envelope wider than 180° uses the centre of
+    /// the complementary arc so a dateline-crossing window is not centred on the
+    /// long way around. A filtered extent with no request envelope uses the box
+    /// centroid, which is the long-way centre when the rows themselves straddle
+    /// the antimeridian. <c>ST_ClusterDBSCAN</c> cannot take a geography distance.
+    /// Projected layers keep the Web Mercator planar path, including foot CRS
+    /// values converted by <c>ST_Transform</c> to EPSG:3857.
     /// </para>
     /// <para>
     /// The CTE applies <c>LIMIT (maxInputFeatures + 1)</c> so the handler can
@@ -62,7 +65,15 @@ internal sealed partial class FeatureQueryBuilder
 
             var geometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
-            var metersGeometry = EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
+            var geographic = IsGeographicLayer(query.SpatialReferenceSrid);
+            var metersGeometry = geographic
+                ? "geom_m"
+                : EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
+            // Batch joins must not reorder the cluster's input. Both PostGIS
+            // algorithms operate over the full partition, including later rows.
+            var clusterWindow = geographic
+                ? "OVER (ORDER BY source_ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+                : "OVER ()";
 
             string clusterExpression;
             if (clusterQuery.Algorithm == ClusterAlgorithm.DbScan)
@@ -76,14 +87,14 @@ internal sealed partial class FeatureQueryBuilder
                 parameters.Add(clusterQuery.MinPoints ?? 1);
 
                 clusterExpression = FormattableString.Invariant(
-                    $"ST_ClusterDBSCAN({metersGeometry}, eps => {epsParam}, minpoints => {minPointsParam}) OVER ()");
+                    $"ST_ClusterDBSCAN({metersGeometry}, eps => {epsParam}, minpoints => {minPointsParam}) {clusterWindow}");
             }
             else
             {
                 var kParam = $"${paramIndex++}";
                 parameters.Add(clusterQuery.K ?? 1);
                 clusterExpression = FormattableString.Invariant(
-                    $"ST_ClusterKMeans({metersGeometry}, {kParam}) OVER ()");
+                    $"ST_ClusterKMeans({metersGeometry}, {kParam}) {clusterWindow}");
             }
 
             // Store the decoded, storage-aware geometry under the alias `geom` so the
@@ -91,23 +102,35 @@ internal sealed partial class FeatureQueryBuilder
             // storage mode `ST_AsGeoJSON(bytea)` / `ST_Collect(bytea)` would fail at
             // execution; carrying the typed operand through the CTE keeps the output
             // path correct across Geometry / Geography / Bytea storage modes.
-            sql.Append("WITH src AS (SELECT ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{geometryOperand} AS geom, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id");
-            sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
-            sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");
-            sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.GeometryColumn} IS NOT NULL");
+            // Field masks (#1940) are subtracted where the attributes enter the CTE, so
+            // neither the per-feature "attributes" output nor the per-cluster statistics
+            // can observe a masked value. Without masks this is the bare column.
+            var attributesSource = BuildMaskedAttributesColumn(ResolveMaskedFields(query), ref paramIndex, parameters);
 
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-
-            // LIMIT n+1 so the caller can detect overflow without scanning further.
             var maxInputParam = $"${paramIndex++}";
             parameters.Add(clusterQuery.MaxInputFeatures + 1);
-            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam})");
+
+            if (geographic)
+            {
+                // Filter first so the azimuthal centre can be the extent of the
+                // same rows the cluster sees, then project those rows.
+                sql.Append("WITH filtered AS (SELECT ");
+                AppendClusterSourceColumns(sql, attributesSource, geometryOperand, trailingComma: false);
+                AppendClusterSourceFrom(sql, query, geometryStorageType, ref paramIndex, parameters, maxInputParam);
+                AppendGeographicClusterProjectionCtes(sql,
+                    BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "geom", inverse: false));
+                sql.Append(", src AS (SELECT ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, geom, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id FROM projected)");
+            }
+            else
+            {
+                sql.Append("WITH src AS (SELECT ");
+                AppendClusterSourceColumns(sql, attributesSource, geometryOperand, trailingComma: true);
+                sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id");
+                AppendClusterSourceFrom(sql, query, geometryStorageType, ref paramIndex, parameters, maxInputParam);
+            }
 
             if (clusterQuery.ReturnHullPerCluster)
             {
@@ -284,9 +307,9 @@ internal sealed partial class FeatureQueryBuilder
     /// <remarks>
     /// Uses PostGIS <c>ST_HexagonGrid</c> / <c>ST_SquareGrid</c> against the
     /// extent of the filtered features so the grid only spans the data envelope.
-    /// The cell-side join uses <c>ST_Intersects</c> on the centroid for points
-    /// (the common density use case) which keeps the join cardinality at exactly
-    /// one row per source feature regardless of geometry type.
+    /// Each feature centroid belongs to one intersecting cell, with grid indices
+    /// breaking ties on shared edges and vertices. Distinct source features keep
+    /// their own contributions even when their centroids coincide.
     /// </remarks>
     public CoreParameterizedQuery BuildDensityQuery(
         int layerId,
@@ -306,8 +329,10 @@ internal sealed partial class FeatureQueryBuilder
 
             var geometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
-            var metersGeometry = EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
-            var pointGeometry = $"ST_Centroid({metersGeometry})";
+            var geographic = IsGeographicLayer(query.SpatialReferenceSrid);
+            var pointGeometry = geographic
+                ? $"ST_Centroid({geometryOperand})"
+                : $"ST_Centroid({EnsureMeters(geometryOperand, query.SpatialReferenceSrid)})";
 
             string? weightExpression = null;
             if (!string.IsNullOrWhiteSpace(densityQuery.WeightField))
@@ -323,8 +348,11 @@ internal sealed partial class FeatureQueryBuilder
             }
 
             // Source CTE — pre-project geometry once and apply the input cap.
-            sql.Append("WITH src AS (SELECT ");
-            sql.Append(CultureInfo.InvariantCulture, $"{pointGeometry} AS pt");
+            // Geographic layers keep the degree centroid in `filtered` so the
+            // azimuthal centre is that extent, then project into `src`.
+            sql.Append(geographic ? "WITH filtered AS (SELECT " : "WITH src AS (SELECT ");
+            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn} AS input_id, ");
+            sql.Append(geographic ? pointGeometry + " AS pt_geo" : pointGeometry + " AS pt");
             if (weightExpression != null)
             {
                 sql.Append(CultureInfo.InvariantCulture, $", {weightExpression} AS weight");
@@ -341,11 +369,32 @@ internal sealed partial class FeatureQueryBuilder
             parameters.Add(densityQuery.MaxInputFeatures + 1);
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam}),");
 
-            // Bounding box CTE drives ST_HexagonGrid / ST_SquareGrid extent.
-            // ST_Extent returns BOX2D (SRID-less); cast to geometry and explicitly
-            // stamp SRID 3857 so the generated grid cells match the point SRID in
-            // the outer ST_Intersects join (EnsureMeters always projects to 3857).
-            sql.Append(" bounds AS (SELECT ST_SetSRID(ST_Extent(pt)::geometry, 3857) AS extent FROM src),");
+            string cellGeometrySql;
+            if (geographic)
+            {
+                var forward = BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "pt_geo", inverse: false);
+                var inverse = BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "pt_geo", inverse: true);
+                sql.Append(" src AS (SELECT input_id, ST_TransformPipeline(pt_geo, ");
+                sql.Append(forward);
+                sql.Append(") AS pt");
+                if (weightExpression != null)
+                {
+                    sql.Append(", weight");
+                }
+
+                sql.Append(" FROM filtered),");
+                // The azimuthal plane has no EPSG code. Stamp SRID 0 on the extent
+                // so the grid and the projected points share one planar space.
+                sql.Append(" bounds AS (SELECT ST_SetSRID(ST_Extent(pt)::geometry, 0) AS extent FROM src),");
+                cellGeometrySql = $"ST_TransformPipeline(c.cell, {inverse})";
+            }
+            else
+            {
+                // ST_Extent returns BOX2D (SRID-less); stamp 3857 so the grid matches
+                // the projected points.
+                sql.Append(" bounds AS (SELECT ST_SetSRID(ST_Extent(pt)::geometry, 3857) AS extent FROM src),");
+                cellGeometrySql = "ST_Transform(c.cell, 4326)";
+            }
 
             var gridFunction = densityQuery.Mode == DensityBinningMode.HexGrid
                 ? "ST_HexagonGrid"
@@ -353,7 +402,18 @@ internal sealed partial class FeatureQueryBuilder
 
             // Cells CTE — generate the grid only over the data envelope.
             sql.Append(CultureInfo.InvariantCulture,
-                $" cells AS (SELECT (g).geom AS cell FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g)");
+                $" cells AS (SELECT (g).geom AS cell, (g).i, (g).j FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g),");
+
+            // Intersections include both sides of an edge (and every cell at a
+            // vertex). Assign each input row once, using stable grid coordinates
+            // rather than deduplicating centroids or their weights.
+            sql.Append(" assigned AS (SELECT DISTINCT ON (s.input_id) s.input_id, c.cell");
+            if (weightExpression != null)
+            {
+                sql.Append(", s.weight");
+            }
+            sql.Append(" FROM cells c JOIN src s ON ST_Intersects(c.cell, s.pt)");
+            sql.Append(" ORDER BY s.input_id, c.i, c.j)");
 
             // Outer query — count or weighted sum per cell, emit GeoJSON in WGS 84.
             // _inputCount carries the actual src CTE row count (capped at
@@ -365,10 +425,10 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(", count(*)::bigint AS \"featureCount\"");
             if (weightExpression != null)
             {
-                sql.Append(", COALESCE(SUM(s.weight), 0)::double precision AS \"weight\"");
+                sql.Append(", COALESCE(SUM(c.weight), 0)::double precision AS \"weight\"");
             }
-            sql.Append(", ST_AsGeoJSON(ST_Transform(c.cell, 4326)) AS \"cellGeometry\"");
-            sql.Append(" FROM cells c JOIN src s ON ST_Intersects(c.cell, s.pt)");
+            sql.Append(CultureInfo.InvariantCulture, $", ST_AsGeoJSON({cellGeometrySql}) AS \"cellGeometry\"");
+            sql.Append(" FROM assigned c");
             sql.Append(" GROUP BY c.cell");
 
             // ORDER BY count desc, then LIMIT max+1 so the handler detects overflow.
@@ -400,6 +460,117 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         return $"ST_Transform({geometryOperand}, 3857)";
+    }
+
+    private static bool IsGeographicLayer(int? srid)
+        => srid is int value && GeographicSridClassifier.IsGeographicSrid(value);
+
+    private static void AppendClusterSourceColumns(
+        StringBuilder sql,
+        string attributesSource,
+        string geometryOperand,
+        bool trailingComma)
+    {
+        sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+        sql.Append(attributesSource == DatabaseSchema.AttributesColumn
+            ? $"{DatabaseSchema.AttributesColumn}, "
+            : $"{attributesSource} AS {DatabaseSchema.AttributesColumn}, ");
+        sql.Append(CultureInfo.InvariantCulture, $"{geometryOperand} AS geom");
+        if (trailingComma)
+        {
+            sql.Append(", ");
+        }
+    }
+
+    private void AppendClusterSourceFrom(
+        StringBuilder sql,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        ref int paramIndex,
+        List<object> parameters,
+        string maxInputParam)
+    {
+        sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
+        sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");
+        sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.GeometryColumn} IS NOT NULL");
+        AppendWhereClause(sql, query, ref paramIndex, parameters);
+        AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+        AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+        sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam})");
+    }
+
+    /// <summary>
+    /// SQL expression for an azimuthal-equidistant pipeline. A request envelope
+    /// supplies a constant centre. Otherwise the centre is the centroid of
+    /// <paramref name="extentRelation"/>.<paramref name="geometryColumn"/>.
+    /// </summary>
+    private static string BuildAeqdPipelineSql(
+        FeatureQuery query,
+        int sourceSrid,
+        string extentRelation,
+        string geometryColumn,
+        bool inverse)
+    {
+        if (TryResolveAeqdCenter(query, sourceSrid, out var latitude, out var longitude))
+        {
+            var lat = latitude.ToString("G17", CultureInfo.InvariantCulture);
+            var lon = longitude.ToString("G17", CultureInfo.InvariantCulture);
+            var pipeline = inverse
+                ? $"+proj=pipeline +step +inv +proj=aeqd +lat_0={lat} +lon_0={lon} +ellps=WGS84 +units=m +step +proj=unitconvert +xy_in=rad +xy_out=deg"
+                : $"+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=aeqd +lat_0={lat} +lon_0={lon} +ellps=WGS84 +units=m";
+            return $"'{pipeline}'";
+        }
+
+        var latitudeSql =
+            $"(SELECT to_char(ST_Y(ST_Centroid(ST_Extent({geometryColumn}))), 'FM999990.999999999') FROM {extentRelation})";
+        var longitudeSql =
+            $"(SELECT to_char(ST_X(ST_Centroid(ST_Extent({geometryColumn}))), 'FM999990.999999999') FROM {extentRelation})";
+        return inverse
+            ? $"('+proj=pipeline +step +inv +proj=aeqd +lat_0=' || {latitudeSql} || ' +lon_0=' || {longitudeSql} || ' +ellps=WGS84 +units=m +step +proj=unitconvert +xy_in=rad +xy_out=deg')"
+            : $"('+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=aeqd +lat_0=' || {latitudeSql} || ' +lon_0=' || {longitudeSql} || ' +ellps=WGS84 +units=m')";
+    }
+
+    private static bool TryResolveAeqdCenter(FeatureQuery query, int sourceSrid, out double latitude, out double longitude)
+    {
+        latitude = 0;
+        longitude = 0;
+        if (query.SpatialFilter is not { IsSimpleEnvelope: true } filter
+            || filter.EnvelopeMinX is not double minX
+            || filter.EnvelopeMaxX is not double maxX
+            || filter.EnvelopeMinY is not double minY
+            || filter.EnvelopeMaxY is not double maxY)
+        {
+            return false;
+        }
+
+        if (filter.Srid is int filterSrid
+            && filterSrid != sourceSrid
+            && !GeographicSridClassifier.IsGeographicSrid(filterSrid))
+        {
+            return false;
+        }
+
+        latitude = (minY + maxY) / 2d;
+        var span = maxX - minX;
+        longitude = span > 180d
+            ? NormalizeLongitude((minX + maxX) / 2d + 180d)
+            : (minX + maxX) / 2d;
+        return true;
+    }
+
+    private static double NormalizeLongitude(double longitude)
+    {
+        var wrapped = longitude % 360d;
+        if (wrapped > 180d)
+        {
+            wrapped -= 360d;
+        }
+        else if (wrapped < -180d)
+        {
+            wrapped += 360d;
+        }
+
+        return wrapped;
     }
 
     /// <summary>

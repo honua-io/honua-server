@@ -43,7 +43,7 @@ later (a fixture with documented provenance) without restructuring.
 | NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No distinct Esri WKID — ArcGIS applies no geographic transformation by default for this pair. |
 | NAD83(NSRS2007) (4759) | WGS84 (4326) | NAD_1983_NSRS2007_To_WGS_1984_1 | — | 15931 | 1e-9 deg | EPSG 15931 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
 | NAD83(2011) (6318) | WGS84 (4326) | NAD_1983_2011_To_WGS_1984_1 | — | 9774 | 1e-9 deg | EPSG 9774 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
-| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | Explicit NADCON requires `us_noaa_conus.tif` and uses `ST_TransformPipeline`. SRID-only projection chooses the best installed operation, which is a lower-accuracy fallback in the base image. |
+| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | The no-envelope default is CONUS `us_noaa_conus.tif`. An envelope fully inside one catalog area selects that grid (Alaska `us_noaa_alaska.tif`, Canada `ca_nrc_ntv2_0.tif`). An envelope in none, or in more than one, uses 2-argument `ST_Transform` instead of CONUS. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
@@ -133,9 +133,10 @@ The file/migration **import** reprojection path (`StreamingFileImportService`) n
 the same auditable Esri-default selection as the query path (#1501). When a feature is
 reprojected on import (`sourceSrid → targetSrid`), the service resolves the catalog's
 Esri-default pipeline via `IDatumTransformationCatalog.TryGetDefault` and applies it
-through the explicit 3-argument `ST_Transform(geom, '<pipeline>', toSrid)` form of
-`honua.insert_import_feature` — the same shape `DatumTransformSql.BuildTransformExpression`
-emits for the query path.
+through `ST_TransformPipeline` inside `honua.insert_import_feature` (migration 123).
+The text argument of `ST_Transform` is a source CRS and cannot execute an operation
+pipeline. An exact `+proj=noop` selection is rewritten to `ST_SetSRID`, matching
+`DatumTransformSql`.
 
 Details and guarantees:
 
@@ -149,11 +150,9 @@ Details and guarantees:
   applied per row **only** when the row's source SRID matches that pair. Rows carrying a
   different per-feature SRID (e.g. mixed-CRS FileGDB layers) fall back to PROJ's default
   pipeline; per-feature pipeline selection for heterogeneous-CRS imports is a follow-up.
-- Only **forward** selections are applied. The catalog synthesizes reverse directions with
-  `TransformForward = false` but keeps the forward pipeline; applying that forward pipeline to
-  reverse-direction input (e.g. a NAD27→NAD83 NADCON shift on NAD83 coordinates) would corrupt
-  the result, so reverse-direction imports fall back to PROJ's default path until inverse
-  pipelines are emitted.
+- Reverse selections are oriented with `ProjPipelineInverter` before they are bound,
+  the same direction fix the query path applies. A reverse NADCON import therefore runs
+  the inverse grid shift rather than PROJ's default pipeline.
 - Grid-gated selections (NADCON/NTv2/GEOID) follow the same explicit-failure contract as
   the query path: a missing grid surfaces as a PostGIS error (mapped to the shared problem
   helper) rather than a silent Helmert approximation. Provisioning the grid data in the

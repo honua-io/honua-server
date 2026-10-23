@@ -13,11 +13,13 @@ public interface IAlertPipeline
     /// </summary>
     /// <param name="lastProcessedGeneration">Last processed generation (exclusive)</param>
     /// <param name="batchSize">Maximum number of changes to process</param>
+    /// <param name="evaluatedAt">Shared wall-clock instant stored on evaluator state. Null uses <see cref="DateTimeOffset.UtcNow"/>.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The most recent generation processed, or the input generation if no work was found</returns>
     Task<long> ProcessChangesAsync(
         long lastProcessedGeneration,
         int batchSize,
+        DateTimeOffset? evaluatedAt = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

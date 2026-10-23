@@ -42,6 +42,7 @@ internal static class ConsoleSessionEndpoints
     private static async Task<Results<Ok<ApiResponse<ConsoleSessionContext>>, ProblemHttpResult>> HandleGetSession(
         [FromServices] IConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
+        [FromServices] ConsolePersistenceNotice persistence,
         [FromServices] ILogger<ConsoleSessionEndpointLog> logger,
         HttpContext context,
         [FromQuery] int limit = 25)
@@ -80,6 +81,7 @@ internal static class ConsoleSessionEndpoints
                     NextCursor = listResult.NextCursor,
                 },
                 Degraded = degraded,
+                Persistence = persistence,
             };
 
             ConsoleEndpointsLog.SessionLoaded(logger, response.User.Id, items.Count, entitlements.Count);

@@ -515,6 +515,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // attempted for every expired file, not a pure predicate, so every element must still
         // be visited regardless of its outcome; only the counting is conditional.
         var cleanedCount = 0;
+        // codeql[cs/linq/missed-where]: awaits a delete for every expired file, so the count is not a pure filter
         foreach (var file in expiredFiles)
         {
             if (!string.IsNullOrWhiteSpace(file.ETag))

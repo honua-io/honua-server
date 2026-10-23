@@ -75,7 +75,7 @@ internal sealed class ImageServerMetadataHandler
         {
             // Get layer definition from the Metadata v2 graph
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -97,7 +97,7 @@ internal sealed class ImageServerMetadataHandler
             }
 
             var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
-            var referenceRaster = CreateMosaicReferenceRaster(rasters, aggregateExtent);
+            var referenceRaster = rasters[0];
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
 
             // Discover multidimensional coverage metadata (cubes) registered for the
@@ -145,8 +145,19 @@ internal sealed class ImageServerMetadataHandler
                 context.Response.Headers.CacheControl = "no-store";
             }
 
+            // A registered multidimensional coverage is the raster the slices come from.
+            // Describe that grid instead of a co-registered base raster (#6493).
+            var coverageGrid = await _multidimensionalInfoBuilder
+                .DescribeGridAsync(layerId, cancellationToken)
+                .ConfigureAwait(false);
+            if (coverageGrid is not null)
+            {
+                referenceRaster = ImageServerCoverageRaster.Apply(referenceRaster, coverageGrid);
+                statistics = ImageServerCoverageRaster.Statistics(coverageGrid);
+            }
+
             // Get raster extent
-            var extent = aggregateExtent;
+            var extent = coverageGrid?.Extent ?? aggregateExtent;
             if (extent == null)
             {
                 ImageServerLog.ExtentNotAvailable(_logger, layerId);
@@ -178,7 +189,7 @@ internal sealed class ImageServerMetadataHandler
                 // (notably the ArcGIS Maps SDK for JavaScript, which calls
                 // fields.find(...) during ImageryLayer.load) get a non-null fields
                 // array with the OID field they expect.
-                Fields = ImageServerCatalogQueryHandler.BuildCatalogFields(),
+                Fields = ImageServerCatalogFields.Schema(),
                 ObjectIdField = "OBJECTID",
                 Extent = BuildExtent(extent.Value),
                 // The native .NET ImageServiceRaster.LoadAsync reads fullExtent /
@@ -194,9 +205,12 @@ internal sealed class ImageServerMetadataHandler
                 StorageInfo = null,
                 BlockWidth = null,
                 BlockHeight = null,
-                SpatialReference = CreateSpatialReference(referenceRaster.Srid),
-                PixelSizeX = CalculatePixelSize(extent.Value, referenceRaster.Width),
-                PixelSizeY = CalculatePixelSize(extent.Value, referenceRaster.Height, isHeight: true),
+                SpatialReference = CreateSpatialReference(extent.Value.Srid ?? referenceRaster.Srid),
+                // A coverage grid replaces the base mosaic. Its geotransform is the
+                // cell size; the base rasters' transforms would keep advertising the
+                // co-registered raster (#6493).
+                PixelSizeX = CalculatePixelSize(coverageGrid is null ? rasters : [referenceRaster], extent.Value),
+                PixelSizeY = CalculatePixelSize(coverageGrid is null ? rasters : [referenceRaster], extent.Value, isHeight: true),
                 BandCount = referenceRaster.BandCount,
                 PixelType = MapPixelType(referenceRaster.PixelType),
                 MinPixelSize = MinPixelSize,
@@ -216,6 +230,15 @@ internal sealed class ImageServerMetadataHandler
                 CacheType = null,
                 TileInfo = tileInfo,
                 HasHistograms = true,
+                // Capability fields describe what the request pipeline executes (#4063): raster
+                // functions run through renderingRule, the mosaic methods are exactly those the
+                // mosaic-rule parser executes, and a rule-less request composites newest
+                // acquisition first under the resource merge strategy.
+                AllowRasterFunction = true,
+                AllowedMosaicMethods = ImageServerMosaicRule.AllowedMosaicMethods,
+                DefaultMosaicMethod = ImageServerMosaicRule.DefaultMosaicMethod,
+                SortField = ImageServerMosaicRule.DefaultSortField,
+                MosaicOperator = MapMosaicOperator(mergeStrategy),
                 TimeInfo = BuildTimeInfo(ImageServerV2Lookups.ReadTimeFieldHints(resolved.Resource), rasters),
                 HasMultidimensions = multidimensionalInfo is { Variables.Length: > 0 },
                 MultidimensionalInfo = multidimensionalInfo is { Variables.Length: > 0 } ? multidimensionalInfo : null
@@ -264,8 +287,24 @@ internal sealed class ImageServerMetadataHandler
         SpatialReference = CreateSpatialReference(extent.Srid)
     };
 
-    private static double CalculatePixelSize(Core.Features.Raster.Domain.RasterExtent extent, int pixelCount, bool isHeight = false)
+    private static double CalculatePixelSize(RasterInfo[] rasters, RasterExtent extent, bool isHeight = false)
     {
+        var transformIndex = isHeight ? 5 : 1;
+        var nativePixelSize = rasters
+            .Select(r => r.GeoTransform is { } transform && transform.Length > transformIndex
+                ? Math.Abs(transform[transformIndex])
+                : 0d)
+            .Where(value => double.IsFinite(value) && value > 0)
+            .DefaultIfEmpty(0d)
+            .Min();
+        if (nativePixelSize > 0)
+        {
+            // Service resolution is the finest source resolution, independent of
+            // mosaic alignment and floating-point rounding of aggregate bounds.
+            return nativePixelSize;
+        }
+
+        var pixelCount = isHeight ? rasters[0].Height : rasters[0].Width;
         if (pixelCount <= 0)
             return 0;
 
@@ -273,6 +312,17 @@ internal sealed class ImageServerMetadataHandler
             ? (extent.YMax - extent.YMin) / pixelCount
             : (extent.XMax - extent.XMin) / pixelCount;
     }
+
+    // Esri mosaicOperator for the merge strategy that resolves contested pixels. The default
+    // ordering is newest acquisition first, so Newest keeps the first raster and Oldest the last.
+    private static string MapMosaicOperator(RasterMergeStrategy mergeStrategy) => mergeStrategy switch
+    {
+        RasterMergeStrategy.Oldest => "Last",
+        RasterMergeStrategy.Average => "Mean",
+        RasterMergeStrategy.Max => "Max",
+        RasterMergeStrategy.Min => "Min",
+        _ => "First"
+    };
 
     private static string MapPixelType(string postgisPixelType)
     {
@@ -293,66 +343,25 @@ internal sealed class ImageServerMetadataHandler
 
     /// <summary>
     /// Builds the Esri-conformant <c>timeInfo</c> block when the V2 resource declares
-    /// temporal fields or when the raster catalog carries acquisition timestamps.
+    /// temporal fields that exist in the raster catalog, or when the catalog carries
+    /// acquisition timestamps. Hints naming absent fields are not advertised.
     /// </summary>
     private static ImageServerTimeInfo? BuildTimeInfo(
         (string? StartTimeField, string? EndTimeField, string? TrackIdField) timeHints,
         IReadOnlyList<RasterInfo> rasters)
     {
-        var hasAcquisitionDates = rasters.Any(r => r.AcquisitionDate.HasValue);
-        var timeExtent = hasAcquisitionDates ? ImageServerMosaicHelpers.CreateTimeExtent(rasters) : null;
-        var hasDeclaredFields = !string.IsNullOrWhiteSpace(timeHints.StartTimeField) ||
-                                !string.IsNullOrWhiteSpace(timeHints.EndTimeField) ||
-                                !string.IsNullOrWhiteSpace(timeHints.TrackIdField);
-        if (!hasDeclaredFields && timeExtent is null)
+        if (ImageServerCatalogTime.Resolve(timeHints, rasters) is not { } time)
         {
             return null;
         }
 
         return new ImageServerTimeInfo
         {
-            StartTimeField = timeHints.StartTimeField ?? (timeExtent is null ? null : "AcquisitionDate"),
-            EndTimeField = timeHints.EndTimeField,
-            TrackIdField = timeHints.TrackIdField,
-            TimeExtent = timeExtent,
+            StartTimeField = time.StartTimeField,
+            EndTimeField = time.EndTimeField,
+            TrackIdField = time.TrackIdField,
+            TimeExtent = time.TimeExtent,
             TimeReference = new ImageServerTimeReference()
-        };
-    }
-
-    private static RasterInfo CreateMosaicReferenceRaster(
-        RasterInfo[] rasters,
-        RasterExtent? aggregateExtent)
-    {
-        var primary = rasters[0];
-        if (aggregateExtent is not { } extent)
-        {
-            return primary;
-        }
-
-        var pixelWidth = rasters
-            .Select(r => r.GeoTransform is { Length: >= 2 } ? Math.Abs(r.GeoTransform[1]) : 0d)
-            .Where(v => v > 0)
-            .DefaultIfEmpty(0d)
-            .Min();
-        var pixelHeight = rasters
-            .Select(r => r.GeoTransform is { Length: >= 6 } ? Math.Abs(r.GeoTransform[5]) : 0d)
-            .Where(v => v > 0)
-            .DefaultIfEmpty(0d)
-            .Min();
-
-        var width = pixelWidth > 0
-            ? Math.Max(1, (int)Math.Ceiling((extent.XMax - extent.XMin) / pixelWidth))
-            : primary.Width;
-        var height = pixelHeight > 0
-            ? Math.Max(1, (int)Math.Ceiling((extent.YMax - extent.YMin) / pixelHeight))
-            : primary.Height;
-
-        return primary with
-        {
-            Width = width,
-            Height = height,
-            Srid = extent.Srid ?? primary.Srid,
-            Extent = extent
         };
     }
 

@@ -9,9 +9,12 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Import;
 
@@ -86,6 +89,52 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         using var response = await _client.PostAsync("/api/v1/admin/import/migrations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
+    /// #4600 (AC1): a caller that requires full fidelity gets 422 with the construct accounting that
+    /// refused the selection, and no run is created. The manifest discovers layers 0 and 1; only layer 0 is
+    /// selected, so layer 1 is the blocking unselected resource.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/migrations")]
+    public async Task StartBatch_WhenFullFidelityIsRequiredAndADiscoveredLayerIsUnselected_ReturnsUnprocessableEntity()
+    {
+        const string serviceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer";
+        var body = new
+        {
+            sourceKind = "arcgis-geoservices-rest",
+            sourceUrl = serviceUrl,
+            manifestBody = ManifestBody(serviceUrl, "resource:Inspections:layer:0", "resource:Inspections:layer:1"),
+            requireFullFidelity = true,
+            layers = new[]
+            {
+                new { sourceResourceId = "resource:Inspections:layer:0", serviceUrl, layerId = 0, tableName = "inspections" }
+            }
+        };
+
+        using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync("/api/v1/admin/import/migrations", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("error").GetString().Should().Contain("resource:Inspections:layer:1");
+        var accounting = doc.RootElement.GetProperty("constructAccounting");
+        accounting.GetProperty("matrixVersion").GetString().Should().Be(MigrationConstructMatrix.Version);
+        accounting.GetProperty("executed").GetBoolean().Should().BeTrue();
+        accounting.GetProperty("isBlocking").GetBoolean().Should().BeTrue();
+        accounting.GetProperty("discoveredResourceCount").GetInt32().Should().Be(2);
+        accounting.GetProperty("selectedResourceCount").GetInt32().Should().Be(1);
+        var difference = accounting.GetProperty("differences").EnumerateArray().Should().ContainSingle().Subject;
+        difference.GetProperty("code").GetString().Should().Be("fidelity.service.resource-unselected");
+        difference.GetProperty("severity").GetString().Should().Be("blocking");
+        difference.GetProperty("subject").GetString().Should().Be("resource:Inspections:layer:1");
+        accounting.GetProperty("entries").EnumerateArray().Should().Contain(entry =>
+            entry.GetProperty("sourceId").GetString() == "resource:Inspections:layer:0" &&
+            entry.GetProperty("construct").GetString() == "service.resource" &&
+            entry.GetProperty("disposition").GetString() == "migrated" &&
+            entry.GetProperty("targetTable").GetString() == "inspections");
+        _catalog.BatchCount.Should().Be(0, "a refused selection creates no run");
     }
 
     [Fact]
@@ -183,7 +232,20 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 Status = MigrationBatchRunStatus.Running,
                 StartedAt = now,
                 TotalChildren = 2,
-                SucceededChildren = 1
+                SucceededChildren = 1,
+                FidelityVerdict = MigrationFidelityVerdicts.Unverified,
+                FidelityDifferences =
+                [
+                    new MigrationFidelityDifference
+                    {
+                        Code = MigrationFidelityDifferenceCodes.ServiceLayerUnverified,
+                        Severity = MigrationFidelityDifferenceSeverities.Unverified,
+                        Subject = "resource:x:layer:0",
+                        Expected = MigrationFidelityVerdicts.FullFidelity,
+                        Actual = MigrationFidelityVerdicts.Unverified,
+                        Summary = "Layer 'resource:x:layer:0' completed, but its import did not prove full fidelity."
+                    }
+                ]
             },
             new MigrationBatchChildRecord
             {
@@ -195,6 +257,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 TableName = "origin",
                 Status = MigrationBatchChildStatus.Succeeded,
                 PublishedLayerId = 42,
+                FidelityVerdict = MigrationFidelityVerdicts.Unverified,
                 UpdatedAt = now
             },
             new MigrationBatchChildRecord
@@ -209,6 +272,13 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 Status = MigrationBatchChildStatus.Running,
                 UpdatedAt = now
             });
+        _catalog.SeedManifest(
+            "batch-001",
+            ManifestBody(
+                "https://example.com/arcgis/rest/services/X/FeatureServer",
+                "resource:x:layer:0",
+                "resource:x:layer:1",
+                "resource:x:layer:2"));
 
         using var response = await _client.GetAsync("/api/v1/admin/import/migrations/batch-001");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -220,7 +290,60 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("status").GetString().Should().Be("succeeded");
         children[0].GetProperty("publishedLayerId").GetInt32().Should().Be(42);
         children[1].GetProperty("dependsOn")[0].GetString().Should().Be("resource:x:layer:0");
+
+        // #4600: the service-level verdict and its differences, and each child's verdict, are on the wire.
+        doc.RootElement.GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
+        var difference = doc.RootElement.GetProperty("fidelityDifferences").EnumerateArray().Should().ContainSingle().Subject;
+        difference.GetProperty("code").GetString().Should().Be("fidelity.service.layer-unverified");
+        difference.GetProperty("severity").GetString().Should().Be("unverified");
+        difference.GetProperty("subject").GetString().Should().Be("resource:x:layer:0");
+        children[0].GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
+        children[1].TryGetProperty("fidelityVerdict", out _).Should().BeFalse("a running child has no verdict yet");
+
+        // #4600 (AC1): the construct accounting is replayed from the persisted manifest and child rows. The
+        // manifest discovers layers 0, 1 and 2; the batch selected 0 and 1, so layer 2 blocks.
+        var accounting = doc.RootElement.GetProperty("constructAccounting");
+        accounting.GetProperty("executed").GetBoolean().Should().BeTrue();
+        accounting.GetProperty("discoveredResourceCount").GetInt32().Should().Be(3);
+        accounting.GetProperty("selectedResourceCount").GetInt32().Should().Be(2);
+        accounting.GetProperty("isBlocking").GetBoolean().Should().BeTrue();
+        var unselected = accounting.GetProperty("differences").EnumerateArray().Should().ContainSingle().Subject;
+        unselected.GetProperty("code").GetString().Should().Be("fidelity.service.resource-unselected");
+        unselected.GetProperty("subject").GetString().Should().Be("resource:x:layer:2");
+        accounting.GetProperty("entries").EnumerateArray().Should().Contain(entry =>
+            entry.GetProperty("sourceId").GetString() == "resource:x:layer:0" &&
+            entry.GetProperty("construct").GetString() == "service.resource" &&
+            entry.GetProperty("targetTable").GetString() == "origin" &&
+            entry.GetProperty("targetResourceId").GetString() == "target:resource:x:layer:0");
     }
+
+    private static string ManifestBody(string serviceUrl, params string[] layerIds) => JsonSerializer.Serialize(
+        new MigrationManifestArtifact
+        {
+            SourceKind = "arcgis-geoservices-rest",
+            Source = new MigrationSourceIdentity { DisplayName = "Source", BaseUrl = serviceUrl, ServiceType = "FeatureServer" },
+            Summary = new MigrationManifestSummary(),
+            TargetResources = layerIds
+                .Select(static id => new MigrationManifestTargetResource
+                {
+                    SourceResourceId = id,
+                    SourceKind = "layer",
+                    Action = "publish",
+                    TargetResourceId = "target:" + id,
+                    TargetServiceName = "source",
+                    TargetResourceName = id,
+                    GeometryType = "esriGeometryPoint",
+                    Capabilities = ["Query"],
+                    Compatibility = new MigrationCompatibilityAssessment
+                    {
+                        Level = "compatible",
+                        Code = "COMPATIBLE",
+                        Reason = "Vector resource can be queried through the GeoServices API."
+                    }
+                })
+                .ToArray()
+        },
+        MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
 
     private sealed class RecordingMigrationBatchOrchestrator : IMigrationBatchOrchestrator
     {
@@ -233,6 +356,18 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         public Task<MigrationBatchRunRecord> StartAsync(MigrationBatchStartRequest request, CancellationToken cancellationToken = default)
         {
             LastRequest = request;
+            if (request.RequireFullFidelity)
+            {
+                // The refusal is the real orchestrator's: it runs before the orchestrator touches any
+                // collaborator, so an empty service provider is enough to reach it.
+                var accountingGate = new MigrationBatchOrchestrator(
+                    new Microsoft.Extensions.DependencyInjection.ServiceCollection()
+                        .BuildServiceProvider()
+                        .GetRequiredService<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(),
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<MigrationBatchOrchestrator>.Instance);
+                return accountingGate.StartAsync(request, cancellationToken);
+            }
+
             var batchId = Guid.NewGuid().ToString("N")[..16];
             var record = new MigrationBatchRunRecord
             {
@@ -257,6 +392,12 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     {
         private readonly ConcurrentDictionary<string, MigrationBatchRunRecord> _batches = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, List<MigrationBatchChildRecord>> _children = new(StringComparer.Ordinal);
+
+        private readonly ConcurrentDictionary<string, string> _manifests = new(StringComparer.Ordinal);
+
+        public int BatchCount => _batches.Count;
+
+        public void SeedManifest(string batchId, string manifestBody) => _manifests[batchId] = manifestBody;
 
         public void Seed(MigrationBatchRunRecord record, params MigrationBatchChildRecord[] children)
         {
@@ -286,7 +427,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 _children.TryGetValue(batchId, out var children) ? children : []);
 
         public Task<string?> GetManifestBodyAsync(string batchId, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>(null);
+            => Task.FromResult(_manifests.TryGetValue(batchId, out var body) ? body : null);
 
         public Task<MigrationBatchChildRecord?> UpdateChildAsync(
             string batchId,
@@ -296,6 +437,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
             int? publishedLayerId,
             string? statusNote,
             DateTimeOffset updatedAt,
+            string? fidelityVerdict = null,
             CancellationToken cancellationToken = default)
         {
             if (!_children.TryGetValue(batchId, out var children))
@@ -315,6 +457,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 JobId = jobId ?? children[index].JobId,
                 PublishedLayerId = publishedLayerId ?? children[index].PublishedLayerId,
                 StatusNote = statusNote ?? children[index].StatusNote,
+                FidelityVerdict = fidelityVerdict ?? children[index].FidelityVerdict,
                 UpdatedAt = updatedAt
             };
             children[index] = updated;
@@ -330,6 +473,8 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
             DateTimeOffset? completedAt,
             bool? relationshipsApplied,
             string? statusNote,
+            string? fidelityVerdict = null,
+            MigrationFidelityDifference[]? fidelityDifferences = null,
             CancellationToken cancellationToken = default)
         {
             if (!_batches.TryGetValue(batchId, out var record))
@@ -345,7 +490,9 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 CancelledChildren = cancelledChildren,
                 CompletedAt = completedAt ?? record.CompletedAt,
                 RelationshipsApplied = relationshipsApplied ?? record.RelationshipsApplied,
-                StatusNote = statusNote ?? record.StatusNote
+                StatusNote = statusNote ?? record.StatusNote,
+                FidelityVerdict = fidelityVerdict ?? record.FidelityVerdict,
+                FidelityDifferences = fidelityDifferences ?? record.FidelityDifferences
             };
             _batches[batchId] = updated;
             return Task.FromResult<MigrationBatchRunRecord?>(updated);

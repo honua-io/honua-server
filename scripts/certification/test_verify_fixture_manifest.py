@@ -27,8 +27,10 @@ class DigestAlgorithmTests(unittest.TestCase):
     def test_file_digest_is_sha256_of_raw_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "seed.sql"
-            path.write_text("SELECT 1;\n", encoding="utf-8")
-            self.assertEqual(digest("SELECT 1;\n"), module.file_digest(path))
+            for text in ("SELECT 1;\n", "SELECT 1;\r\n"):
+                with self.subTest(text=text):
+                    path.write_bytes(text.encode("utf-8"))
+                    self.assertEqual(digest(text), module.file_digest(path))
 
     def test_input_set_digest_matches_sha256sum_pipeline(self):
         entries = [("b/second.yaml", digest("second")), ("a/first.sql", digest("first"))]
@@ -229,6 +231,30 @@ class ManifestVerificationTests(unittest.TestCase):
             path.write_text("{ not json", encoding="utf-8")
             self.assertEqual(
                 2, module.main(["--root", str(REPOSITORY_ROOT), "--manifest", str(path)]))
+
+    def test_wfs_unfiltered_extension_is_declared_bound_and_not_core_filtering(self):
+        case_id = "JS-EXT-OL-WFS-GETFEATURE-01"
+        registry = json.loads((REPOSITORY_ROOT / module.MATRIX_RELATIVE_PATH).read_text())
+        self.assertEqual(1, sum(row["id"] == case_id for row in registry["testCases"]))
+        self.assertEqual(1, sum(row["id"] == case_id for row in self.manifest["cases"]))
+        lane = next(row for row in self.manifest["laneBindings"] if row["laneId"] == "js")
+        wfs = next(row for row in lane["protocols"] if row["protocol"] == "wfs")
+        self.assertIn(case_id, wfs["extensionCases"])
+        self.assertIn("CERT-QFLT-01", wfs["applicableCases"])
+        self.assertNotIn(case_id, wfs["applicableCases"])
+        baseline = json.loads((REPOSITORY_ROOT / "tests/baselines/client-compat/openlayers/js-wfs.cert.json").read_text())
+        self.assertEqual(24, len(baseline["results"]))
+        self.assertEqual("skip", next(row["status"] for row in baseline["results"] if row["test_case_id"] == "CERT-QFLT-01"))
+        self.assertEqual("pass", next(row["status"] for row in baseline["extensions"] if row["test_case_id"] == case_id))
+        self.manifest["cases"] = [row for row in self.manifest["cases"] if row["id"] != case_id]
+        self.assertTrue(any(case_id in problem and "unknown case ids" in problem for problem in module.verify_case_graph(self.manifest)))
+
+    def test_wfs_extension_requires_its_fixture_binding(self):
+        case_id = "JS-EXT-OL-WFS-GETFEATURE-01"
+        lane = next(row for row in self.manifest["laneBindings"] if row["laneId"] == "js")
+        wfs = next(row for row in lane["protocols"] if row["protocol"] == "wfs")
+        wfs["extensionCases"].remove(case_id)
+        self.assertTrue(any(case_id in problem and "no lane binding" in problem for problem in module.verify_case_graph(self.manifest)))
 
 
 if __name__ == "__main__":

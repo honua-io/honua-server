@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -16,6 +18,25 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    // Matches QueryLimits.MaxRecordCount. Larger lists are a 400 here so they never
+    // become one SQL parameter per id (Postgres 65535, SQL Server 2100).
+    private const int MaxQueryObjectIds = 10_000;
+
+    private static long[] DeduplicateObjectIds(long[] objectIds)
+    {
+        var seen = new HashSet<long>(objectIds.Length);
+        var unique = new List<long>(objectIds.Length);
+        foreach (var objectId in objectIds)
+        {
+            if (seen.Add(objectId))
+            {
+                unique.Add(objectId);
+            }
+        }
+
+        return unique.Count == objectIds.Length ? objectIds : unique.ToArray();
+    }
+
     private static async Task<IResult> HandleQueryFeaturesGet(
         string serviceId,
         int layerId,
@@ -222,7 +243,13 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, selectedLayers.Select(pair => pair.Resource), service);
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+            context,
+            selectedLayers.Select(pair => pair.Resource),
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
@@ -235,7 +262,7 @@ internal static partial class FeatureServerEndpoints
                 [layerDefsError ?? "Invalid layerDefs parameter."]);
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         var layerResults = new List<ServiceQueryLayerResponse>(accessibleLayers.Length);
 
         foreach (var (publication, resource) in accessibleLayers)
@@ -248,17 +275,14 @@ internal static partial class FeatureServerEndpoints
             }
 
             var layerQueryParams = queryParams;
-            if (layerDefs.TryGetValue(publicLayerId, out var layerDefinitionExpression))
+            if (layerDefs.TryGetValue(publicLayerId, out var layerDefinitionExpression)
+                && !string.IsNullOrWhiteSpace(layerDefinitionExpression))
             {
                 var layerQueryValues = new Dictionary<string, StringValues>(queryValues, StringComparer.OrdinalIgnoreCase);
-                if (string.IsNullOrWhiteSpace(layerDefinitionExpression))
-                {
-                    layerQueryValues.Remove("where");
-                }
-                else
-                {
-                    layerQueryValues["where"] = layerDefinitionExpression;
-                }
+                var requestWhere = GetValueString(layerQueryValues, "where");
+                layerQueryValues["where"] = string.IsNullOrWhiteSpace(requestWhere)
+                    ? layerDefinitionExpression
+                    : $"({requestWhere}) AND ({layerDefinitionExpression})";
 
                 if (!TryParseQueryParameters(layerQueryValues, out layerQueryParams, out parseError))
                 {
@@ -416,6 +440,17 @@ internal static partial class FeatureServerEndpoints
         if (!TryParseLongArray(values, "objectIds", out var objectIds, out error))
         {
             return false;
+        }
+
+        if (objectIds is { Length: > MaxQueryObjectIds })
+        {
+            error = $"objectIds exceeds the maximum of {MaxQueryObjectIds.ToString(CultureInfo.InvariantCulture)} values";
+            return false;
+        }
+
+        if (objectIds is { Length: > 1 })
+        {
+            objectIds = DeduplicateObjectIds(objectIds);
         }
 
         var outFields = GetValueString(values, "outFields");

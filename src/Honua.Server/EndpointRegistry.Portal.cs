@@ -9,15 +9,25 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> PortalSharingEndpoints =>
     [
+        // ArcGIS Server Admin service metadata and its siteless ArcGIS Pro alias.
+        new("GET", "/admin/services/{serviceName}.{serviceType}"),
+        new("POST", "/admin/services/{serviceName}.{serviceType}"),
+        new("GET", "/rest/admin/{serviceName}.{serviceType}"),
+        new("POST", "/rest/admin/{serviceName}.{serviceType}"),
+
         // ArcGIS Portal Sharing token issuance (#1241).
         new("POST", "/sharing/rest/generateToken"),
         new("GET", "/sharing/rest/generateToken"),
 
         // ArcGIS Portal Sharing read surface (#1243).
+        new("GET", "/sharing/rest"),
         new("GET", "/sharing/rest/info"),
         new("GET", "/sharing/rest/portals/self"),
         new("GET", "/sharing/rest/community/self"),
+        new("GET", "/sharing/rest/community/users/{username}"),
+        new("GET", "/sharing/rest/content/users/{username}"),
         new("GET", "/sharing/rest/search"),
+        new("POST", "/sharing/rest/search"),
         new("GET", "/sharing/rest/content/items/{id}"),
         new("GET", "/sharing/rest/content/items/{id}/data"),
 
@@ -38,6 +48,7 @@ public static partial class EndpointRegistry
         // ArcGIS Portal community group + item sharing surface (#1868).
         new("POST", "/sharing/rest/community/createGroup"),
         new("GET", "/sharing/rest/community/groups/{groupId}"),
+        new("GET", "/sharing/rest/content/groups/{groupId}"),
         new("POST", "/sharing/rest/community/groups/{groupId}/delete"),
         new("POST", "/sharing/rest/community/groups/{groupId}/addUsers"),
         new("POST", "/sharing/rest/community/groups/{groupId}/removeUsers"),

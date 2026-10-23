@@ -17,15 +17,21 @@ internal static class JsonContextRegistration
         services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
+#if !HONUA_EXCLUDE_GEOSERVICES
         Honua.Protocols.GeoServices.FeatureServer.Models.FeatureServerJsonContext.Default,
         Honua.Protocols.GeoServices.ImageServer.Models.ImageServerJsonContext.Default,
+#endif
+#if !HONUA_EXCLUDE_ODATA
         Honua.Protocols.OData.Models.ODataJsonContext.Default,
+#endif
+#if !HONUA_EXCLUDE_OGC_API
         Honua.Protocols.Ogc.Api.Coverages.Models.OgcCoveragesJsonContext.Default,
         Honua.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
         Honua.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
         Honua.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
         Honua.Protocols.Ogc.Api.Styles.OgcStylesJsonContext.Default,
         Honua.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
+#endif
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
@@ -33,6 +39,7 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
         Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
+        Honua.Server.Features.Admin.Models.GpProcessReleaseJsonContext.Default,
         Honua.Server.Features.Admin.Models.CoordinatedReleaseJsonContext.Default,
         Honua.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Infrastructure.Monitoring.OpsObservabilityJsonContext.Default,
@@ -48,6 +55,7 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Mobile.Diagnostics.MobileExceptionIngestionJsonContext.Default,
         Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
+        Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerFieldConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerAuthoringJsonContext.Default,
@@ -80,7 +88,9 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneBimIngestJsonContext.Default,
         Honua.Server.Features.Admin.Models.ScenePointCloudIngestJsonContext.Default,
+#if !HONUA_EXCLUDE_SCENE
         Honua.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
+#endif
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
         Honua.Server.Features.Admin.Models.TenantJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
@@ -105,11 +115,17 @@ internal static class JsonContextRegistration
         Honua.Infrastructure.Authentication.ClientCertificates.ClientCertificateInfrastructureJsonContext.Default,
         Honua.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Infrastructure.Security.CspViolationJsonContext.Default,
+#if !HONUA_EXCLUDE_GEOSERVICES
         Honua.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
         Honua.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
+#endif
         Honua.Io.Export.ExportJsonContext.Default,
+#if !HONUA_EXCLUDE_STAC
         Honua.Protocols.Stac.StacJsonContext.Default,
+#endif
+#if !HONUA_EXCLUDE_SENSORTHINGS
         Honua.Protocols.SensorThings.SensorThingsJsonContext.Default,
+#endif
         Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
         Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,
         Honua.Server.Features.Protocols.Zarr.ZarrJsonContext.Default,
@@ -124,7 +140,9 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
         Honua.Server.Features.Admin.InvestigationJsonContext.Default,
         Honua.Server.Features.Admin.Share.ShareAdminJsonContext.Default,
+#if !HONUA_EXCLUDE_OGC_API
         Honua.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default,
+#endif
         // Temporal history slice 2-5 request/response bodies (#1166): registered for [FromBody]
         // deserialization through the HTTP JSON options chain.
         Honua.Server.Features.Temporal.TemporalHistorySlicesJsonContext.Default,

@@ -1,18 +1,46 @@
+---
+type: index
+title: "Operating Honua"
+description: "Honua's day-2 operating model is one loop shared by humans, Console, and MCP agents: observe, diagnose, remediate, learn, and graduate."
+---
 # Operating Honua
 
 Honua's day-2 operating model is one loop shared by humans, Console, and MCP
 agents: observe, diagnose, remediate, learn, and graduate. The server stays the
 source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
-authorized operations. Start with the pre-cut [Operate
+authorized operations. Start with the [protected-update Operate
 scenario](scenario.md), then use the [metric inventory](metrics.md) and [evidence
 posture contract](evidence-posture.md) to decide whether a successful read is
 actually actionable.
 
-This guide describes source contracts, separate from the remaining exact-candidate
-execution receipt. The infrastructure control plane provisions the placement;
+The infrastructure control plane provisions the placement;
 the server control plane configures resources and owns governed operations.
 The terminal client is the model seat, with a separate human approval principal.
+
+## Make a protected change
+
+Review the intended change, the affected service and whether recovery is available,
+then have a separate authorized person approve it. Honua stages and checks a
+supported change before activation, observes it for the declared protection
+window, and either confirms success or restores and verifies the previous version.
+The terminal and optional Console show progress from the same durable server
+operation. Git branches, PRs, telemetry queries and Helm/Argo settings belong in
+advanced deployment details, not the ordinary approval flow.
+
+The [scenario's progress table](scenario.md#progress-and-protection) explains
+**Checking update**, **Updating**, **Confirming service health**, **Update complete**,
+**Previous version restored**, and **Needs attention**. Restoration requires
+functional recovery evidence; traffic routing or a provider acknowledgement
+alone cannot establish it. Show unavailable protection, its expiry and any
+required operator action plainly before approval.
+
+Unknown telemetry blocks a new change. During an already-approved protected
+operation, its bound policy may require deterministic recovery despite missing
+telemetry. That recovery does not authorize another change, broaden scope or
+allow the proposer to approve itself. Unsupported changes stop before mutation;
+unproven recovery requires attention. Fix-forward remains an explicitly approved
+option when appropriate to the failure and schema compatibility.
 
 > **Customer alerting is Preview in 2026.1.** Alert zones, rules, evaluation,
 > delivery channels, and their Console Operate views require an explicit
@@ -28,9 +56,14 @@ guess:
 
 `GET /api/v1/operate/status` returns one `healthy`, `degraded`, or `unhealthy`
 verdict plus rollups for deploys, jobs, alerts, migrations, findings, telemetry
-backends, and the availability SLO when configured. An `ops:read` key can read
+backends, an explicitly sourced platform-SLO posture, and a separately named node-local retained-tail
+diagnostic. An `ops:read` key can read
 this and the read-only observability surfaces without gaining rollback or
 proposal authority.
+
+The retained tail is replica-local and HTTP-5xx-only. It is not platform
+availability or an error budget, and it cannot satisfy a protected update's
+required telemetry. See the [inventory](metrics.md#platform-slo-and-local-diagnostics).
 
 1. Observe: read `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/ops-health`,
    `GET /api/v1/admin/observability/ops-health/history`, and
@@ -42,7 +75,9 @@ proposal authority.
    include evidence references. No server-side model call is involved.
 3. Remediate: when a finding has a real executor, propose its action with
    `POST /api/v1/admin/observability/findings/{findingId}/propose` or call
-   `honua_propose_finding`. The governed path creates an approval proposal.
+   `honua_propose_finding`. The MCP tool creates an approval proposal only;
+   the operator REST route follows gateway policy and can directly execute an
+   auto-safe action. Keep the model workflow on the proposal-only MCP path.
 4. Learn: use the persisted ops-health history and fused operate timeline to
    understand whether the action improved health. This is operational memory,
    not model training.
@@ -71,13 +106,11 @@ The useful split is:
 | Discover routable fixes | Operator action catalogs | `honua_supported_operation_kinds` (read-only, live executor catalog) |
 | Propose a fix | `findings/{id}/propose` and approval inbox actions | `honua_propose_finding` plus the typed deploy/release proposal tools |
 | Approve or reject | Human approval inbox | Not allowed |
-| Mutate source GIS data | Human protocol/API workflows only | Not exposed; ADR-0028 forbids AI-driven source-data editing |
+| Mutate source GIS data | Human protocol/API workflows only | Not exposed; agents never edit source data |
 
 Current MCP status: observability read tools and schema-closed proposal tools are
 present. `honua_supported_operation_kinds` reports the actually routable operation
 classes without requiring write authority; do not assume unsupported kinds.
-Architecture tests enforce the REST/MCP seat-parity map and reject a finding
-action that has no real executor.
 
 ## The autonomy ladder
 
@@ -157,9 +190,7 @@ their eligibility after the incident review.
 Run `PUT /api/v1/admin/observability/autonomy/settings` with `{"killSwitchEnabled":true,"reason":"incident freeze"}`.
 
 Hosts without the durable control plane fail closed: autonomy is inert and
-policy changes are read-only even if configuration asks for AutoApply. See
-[ADR-0062](../../internal/contributor/adr/0062-graduated-ops-autonomy-policy.md)
-for the route-time guardrail contract.
+policy changes are read-only even if configuration asks for AutoApply.
 
 ## Rollback taxonomy
 
@@ -171,10 +202,16 @@ available only with the durable operation store, and `deploy.rollback` is
 available only when at least one configured target backend advertises a real
 rollback implementation.
 
+The documentation registry groups these runtime capabilities under
+[Admin Control Plane](../../okf/capabilities/admin.control-plane.md) and
+[observability](../../okf/capabilities/ops.observability.md). An aggregate capability
+does not prove rollback for the selected target; inspect that target's backend,
+prior revision and protection policy.
+
 | Backend family | `rollbackSupported` | What a rollback request means |
 |---|---:|---|
 | Kubernetes/ECS/Azure Container Apps GitOps hand-off | `false` | Honua cannot revert the workload. The operation becomes `ManualInterventionRequired`; revert the pinned revision in the GitOps repository and verify it out of band. |
-| Argo Rollouts, YARP rolling replace, Azure revision/slot/alias, and direct cloud adapters that implement revert | `true` when registered/configured | Honua calls the backend rollback operation and records the observed provider outcome. Support remains operation- and prior-revision-dependent. |
+| Argo Rollouts, YARP rolling replace, Azure revision/slot/alias, and direct cloud adapters that implement revert | `true` when registered/configured | Honua calls the backend rollback operation and records the observed provider outcome. It reports `RolledBack` only after the prior revision is serving, healthy and passes a configured functional query ([completion proof](../deploy/upgrade-and-rollback.md#rollback-completion-proof)). Support remains operation- and prior-revision-dependent. |
 | Missing/unregistered backend or no prior revision | unavailable | No automatic rollback is claimed; plan/findings surfaces must direct the operator to manual recovery. |
 
 Platform version rollback moves compute back to a known revision. During a
@@ -193,12 +230,21 @@ and its rollback plan. The gateway executor for `MetadataRelease` is create-only
 by design; it does not invent a new rollback payload for an already-submitted
 release operation.
 
+A metadata release stages its change as a separate revision and keeps every
+reader on the current revision until the change passes its smoke check. It then
+switches over in one step, and only if nobody else published in the meantime.
+A concurrent publish is rebased onto, not overwritten. Rolling back removes only
+what that release added, keeps later changes to other services, and never
+restores or rewrites feature data. The operation reports `RolledBack` only after
+the recovered service passes the same checks. Releases that drop or retype
+fields, or run a data job that writes anything other than the new optional
+fields, are refused before anything changes.
+
 Telemetry-gated deploy backends can trigger rollback during a configured rollout
 when their error-rate, latency, or synthetic health-probe gates breach. That is
 deploy-safety behavior for a specific operation. It is not a blanket unattended
-operate floor, and ADR-0059 keeps the default product story honest: fix forward
-through health-gated proposals unless a rollback path is explicitly approved and
-available.
+operate floor. The default story is fix forward through health-gated proposals
+unless a rollback path is explicitly approved and available.
 
 ## Upgrade safety
 
@@ -264,12 +310,9 @@ OTLP, and the one-command monitoring bundle.
 
 ## Honest limits
 
-The #2552 implementation workstream is complete: persisted cluster health,
-realtime fan-out, the Console quickstart/dashboard/cockpit, MCP observability and
-platform tools, real operation executors, graduated autonomy, seat-parity tests,
-dead-letter self-heal proof, and the platform rollback cell are on trunk.
-
-That does not make every operational concern autonomous:
+The operating model ships: persisted cluster health, realtime fan-out, the Console
+Operate views, MCP observability and platform tools, real operation executors and
+graduated autonomy. That does not make every operational concern autonomous:
 
 - The proven L3 path is bounded alert dead-letter redrive. Other rules stay
   ProposeOnly until their deterministic signal, real auto-safe actuator,
@@ -283,12 +326,12 @@ That does not make every operational concern autonomous:
   cross-environment promotion always retain explicit human governance.
 - The bounded built-in history is operational memory, not a TSDB. Use the
   optional OTLP/LGTM integration for long retention and deep correlation.
+- Pool saturation, slow queries, tile-cache seeding, warehouse, raster and 3D
+  performance, hosted-model operation, EKS and Azure are not prerequisites for
+  the bounded protected-update scenario.
 
 ## Related docs
 
 - [Monitor Honua Server](../deploy/monitoring.md)
 - [Upgrade and rollback](../deploy/upgrade-and-rollback.md)
 - [Connect AI agents to Honua over MCP](../connect/ai-agents-mcp.md)
-- [ADR-0060: Two-plane operability architecture](../../internal/contributor/adr/0060-two-plane-operability-architecture.md)
-- [ADR-0028: AI-driven data editing is not allowed](../../internal/contributor/adr/0028-ai-data-editing-not-allowed.md)
-- [ADR-0059: First-release scope and fix-forward operate model](../../internal/contributor/adr/0059-first-release-scope-and-fix-forward-operate-model.md)

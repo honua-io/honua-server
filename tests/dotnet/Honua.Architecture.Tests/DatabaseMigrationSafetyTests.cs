@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Migrations;
@@ -11,6 +14,247 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class DatabaseMigrationSafetyTests
 {
+    [ArchitectureTest]
+    public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        var baselineJson = File.ReadAllText(Path.Join(root, "certification", "schema-reader-baseline.json"));
+        MigrationHash(baselineJson).Should().Be("4534DC4F439A70DCE9A50F2DA0C82EDBB1F0A551BC9BFE1E4AE44EF6F2B8A33B",
+            "the reader baseline is frozen at 977a1c630; new migrations belong in the ongoing ledger, not this review record");
+        var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(baselineJson)!;
+        var scripts = EnumerateMigrationFiles().ToDictionary(
+            path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
+        var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            File.ReadAllText(Path.Join(root, "certification", "schema-migration-hashes.json")))!;
+        RollingUpgradeViolations(scripts, baseline, hashes).Should().BeEmpty(
+            "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
+    }
+
+    [Theory]
+    [InlineData("ALTER TABLE honua.layers DROP COLUMN name;")]
+    [InlineData("-- honua:compatibility-review reason=reviewed\nALTER TABLE honua.layers DROP COLUMN name;")]
+    [InlineData("ALTER TABLE honua.layers ALTER COLUMN name SET NOT NULL;")]
+    [InlineData("DROP VIEW honua.layer_summary;")]
+    [InlineData("DROP TYPE honua.layer_kind;")]
+    [InlineData("DROP MATERIALIZED VIEW honua.cached_layers;")]
+    [InlineData("DROP FUNCTION honua.read_layer(integer);")]
+    [InlineData("DROP TRIGGER track_changes ON honua.features;")]
+    [InlineData("DROP POLICY tenant_scope ON honua.features;")]
+    [InlineData("ALTER VIEW honua.layer_summary RENAME TO renamed;")]
+    [InlineData("DROP INDEX honua.layer_name_idx;")]
+    [InlineData("DROP EXTENSION postgis CASCADE;")]
+    [InlineData("ALTER TABLE honua.features DROP legacy_name;")]
+    [InlineData("TRUNCATE honua.features;")]
+    public void ExpandOnlyGate_SeededContractMigration_IsRejectedEvenWhenReviewed(string sql)
+    {
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new Dictionary<string, string>(),
+            new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+            .Should().ContainSingle().Which.Should().Contain("new.sql");
+    }
+
+    [Fact]
+    public void ExpandOnlyGate_AdditiveMigration_IsAccepted()
+    {
+        const string sql = "ALTER TABLE honua.layers ADD COLUMN note text;";
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql },
+            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+            .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExpandOnlyGate_ChangedOrDeletedBaselineMigration_IsRejected(bool deleted)
+    {
+        const string original = "CREATE TABLE fixture (id integer);";
+        var baseline = new Dictionary<string, string>
+        {
+            ["001.sql"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(original)))
+        };
+        var proposed = new Dictionary<string, string>();
+        if (!deleted)
+        {
+            proposed["001.sql"] = "CREATE TABLE fixture (id text);";
+        }
+
+        RollingUpgradeViolations(proposed, baseline).Should().ContainSingle()
+            .Which.Should().Contain("001.sql");
+    }
+
+    [Fact]
+    public void ExpandOnlyGate_UnpinnedAdditiveMigration_IsRejected()
+    {
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = "CREATE TABLE future (id integer);" },
+            new Dictionary<string, string>()).Should().ContainSingle().Which.Should().Contain("hash-pinned");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExpandOnlyGate_MigrationAddedAfterReaderBaseline_CannotBeChangedOrDeleted(bool deleted)
+    {
+        const string original = "CREATE TABLE future (id integer);";
+        var hashes = new Dictionary<string, string> { ["new.sql"] = MigrationHash(original) };
+        var scripts = new Dictionary<string, string>();
+        if (!deleted)
+        {
+            scripts["new.sql"] = "CREATE TABLE future (id text);";
+        }
+        RollingUpgradeViolations(scripts, new Dictionary<string, string>(), hashes)
+            .Should().ContainSingle().Which.Should().Contain("new.sql");
+    }
+
+    private static string MigrationHash(string sql)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql.Replace("\r\n", "\n", StringComparison.Ordinal))));
+
+    [Fact]
+    public void MigrationClassifier_HistoricalTriggerReplacement_RequiresExactFrozenNameAndHash()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "003_CreateRelationshipsTable.sql";
+        var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
+        MigrationSafetyClassifier.Classify(name, sql).Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
+        MigrationSafetyClassifier.Classify("Honua.Server.Migrations." + name, sql).Classification.Should()
+            .Be(MigrationSafetyClassification.ContractAnnotated);
+        MigrationSafetyClassifier.Classify(name, sql + "\n-- changed").Classification.Should()
+            .Be(MigrationSafetyClassification.ContractUnannotated);
+        MigrationSafetyClassifier.Classify("future.sql", sql).Classification.Should()
+            .Be(MigrationSafetyClassification.ContractUnannotated);
+    }
+
+    [Fact]
+    public void MigrationClassifier_DropNotNull_IsStillExpand()
+        => MigrationSafetyClassifier.Classify("new.sql", "ALTER TABLE honua.features ALTER COLUMN note DROP  NOT NULL;")
+            .Classification.Should().Be(MigrationSafetyClassification.Expand);
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Honua.Server.Migrations.")]
+    [InlineData("src/Honua.Server/Migrations/")]
+    public void MigrationClassifier_ReviewedImportGuardDefinitions_RequireExactNameAndBytes(string prefix)
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "129_ProtectImportTableOwnership.sql";
+        var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-table",
+            "routine body inspection must remain enabled; only the exact reviewed installation is additive");
+        MigrationSafetyClassifier.Classify(prefix + name, sql).Classification.Should()
+            .Be(MigrationSafetyClassification.Expand);
+        MigrationSafetyClassifier.Classify(prefix + "future.sql", sql).IsBreaking.Should().BeTrue();
+        foreach (var suffix in new[]
+        {
+            "\n-- changed",
+            "\nDROP TABLE honua.features;",
+            "\nDO $$ BEGIN EXECUTE 'DROP TABLE honua.features'; END $$;"
+        })
+        {
+            MigrationSafetyClassifier.Classify(prefix + name, sql + suffix).IsBreaking.Should().BeTrue();
+        }
+    }
+
+    private static IEnumerable<string> RollingUpgradeViolations(
+        Dictionary<string, string> scripts, Dictionary<string, string> baseline,
+        Dictionary<string, string>? hashes = null)
+    {
+        hashes ??= baseline;
+        foreach (var (name, hash) in baseline)
+        {
+            if (!scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash)
+            {
+                yield return $"{name}: an existing reader-baseline migration was changed or deleted";
+            }
+        }
+
+        foreach (var (name, hash) in hashes)
+        {
+            if (baseline.TryGetValue(name, out var baselineHash))
+            {
+                if (hash != baselineHash)
+                {
+                    yield return $"{name}: the frozen reader-baseline hash cannot change";
+                }
+            }
+            else if (!scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash)
+            {
+                yield return $"{name}: a hash-pinned migration was changed or deleted";
+            }
+        }
+
+        foreach (var (name, sql) in scripts)
+        {
+            if (!hashes.ContainsKey(name))
+            {
+                yield return $"{name}: every migration must be hash-pinned in schema-migration-hashes.json";
+            }
+            if (!baseline.ContainsKey(name) && MigrationSafetyClassifier.Classify(name, sql).IsBreaking)
+            {
+                yield return $"{name}: contracting migrations cannot ship in a rolling update";
+            }
+        }
+    }
+
+    private static readonly Regex ReaderCompatibilityAnnotation = new(
+        @"^[ \t]*--[ \t]*honua:reader-(?:incompatible|compatible-from)\b[^\n]*",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    private static readonly Regex WellFormedReaderCompatibilityAnnotation = new(
+        @"^[ \t]*--[ \t]*honua:(?:reader-incompatible\b.*\breason[ \t]*=[ \t]*\S.*|reader-compatible-from[ \t]+schema[ \t]*=[ \t]*\d{1,9}[ \t]*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    [ArchitectureTest]
+    public void MigrationScripts_ReaderCompatibilityAnnotations_AreWellFormed()
+    {
+        // #6477: an opt-out must say what an older reader would violate, and a raised floor must parse.
+        // A malformed annotation already fails safe at runtime (reader-incompatible); this keeps it
+        // from shipping by accident.
+        var violations = EnumerateMigrationFiles()
+            .SelectMany(file => ReaderCompatibilityAnnotation.Matches(File.ReadAllText(file).Replace("\r\n", "\n", StringComparison.Ordinal))
+                .Where(match => !WellFormedReaderCompatibilityAnnotation.IsMatch(match.Value))
+                .Select(match => $"{Path.GetFileName(file)}: '{match.Value.Trim()}'"))
+            .ToArray();
+
+        violations.Should().BeEmpty(
+            $"use '{MigrationReaderCompatibility.ReaderIncompatibleMarkerConvention}' or " +
+            $"'{MigrationReaderCompatibility.ReaderCompatibleFromMarkerConvention}'");
+    }
+
+    [ArchitectureTest]
+    public void ReaderCompatibilityJournal_IsAnExpandMigrationPinnedInTheLedger()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string path = "src/Honua.Server/Migrations/135_RecordMigrationReaderCompatibility.sql";
+        var sql = File.ReadAllText(Path.Join(root, path));
+        var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            File.ReadAllText(Path.Join(root, "certification", "schema-migration-hashes.json")))!;
+
+        hashes.Should().ContainKey(path).WhoseValue.Should().Be(MigrationHash(sql));
+        var declaration = MigrationReaderCompatibility.Declare("Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql", sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand,
+            "the journal change must itself be rollback-safe for the previous reader");
+        declaration.MinReaderSchema.Should().Be(0);
+    }
+
+    [ArchitectureTest]
+    public void IssueMigrations126To128_DeclareExpand_SoTheSameEdgeIsRollbackSafeOnceReadersVerify()
+    {
+        // The #6477 rollback (93cad86 against schema 128) refused 126-128. Each declares expand under the
+        // shared classifier, so a reader that implements verification would have accepted them.
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        foreach (var name in new[]
+        {
+            "126_AddStudioContentHashInput.sql",
+            "127_CompleteSensorThingsSensing.sql",
+            "128_AddNetworkTopologyPromotionRequestHash.sql",
+        })
+        {
+            var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
+            var declaration = MigrationReaderCompatibility.Declare("Honua.Server.Migrations." + name, sql);
+            declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand, name);
+            MigrationReaderCompatibility.Verify(declaration, "Honua.Server.Migrations." + name, 125).Accepted
+                .Should().BeTrue(name);
+        }
+    }
+
     private static readonly Regex ConcurrentIndexPattern = new(
         @"\bCREATE\s+INDEX\s+CONCURRENTLY\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -122,6 +366,65 @@ public sealed class DatabaseMigrationSafetyTests
             "migration 080 must retain every terminal autonomy outcome");
         seed.Should().Contain(expectedConstraint,
             "integration hosts skip migrations, so their canonical seed must mirror migration 080");
+    }
+
+    // Raster payload columns whose EXTERNAL storage is a migration-owned effect that the
+    // core schema guard verifies on every boot (migrations 055 and 063).
+    private static readonly (string Table, string Column)[] ExternalStorageRasterColumns =
+    [
+        ("raster_data", "raster"),
+        ("raster_tiles", "tile_data"),
+        ("raster_overviews", "raster"),
+    ];
+
+    [ArchitectureTest]
+    public void TestSeeds_ThatCreateRasterTables_ShouldSetMigrationOwnedExternalStorage()
+    {
+        // A seed that creates these tables with default storage after a first boot has
+        // journaled 055/063 as no-ops leaves the database in a state the schema guard
+        // rejects on the next boot (JournalClaimsMissingSchema), which stops the raster
+        // provider migrations from running (honua-server#4889).
+        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        var seedFiles = Directory
+            .EnumerateFiles(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "seed"), "*.*", SearchOption.AllDirectories)
+            .Where(path => path.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
+            .Append(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "python", "shared", "postgis.py"))
+            .ToArray();
+
+        var checkedCreates = 0;
+        var violations = new List<string>();
+        foreach (var seedFile in seedFiles)
+        {
+            var text = File.ReadAllText(seedFile);
+            foreach (var (table, column) in ExternalStorageRasterColumns)
+            {
+                var creates = new Regex(
+                    $@"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?honua\.{table}\s*\(",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                if (!creates.IsMatch(text))
+                {
+                    continue;
+                }
+
+                checkedCreates++;
+                var setsExternal = new Regex(
+                    $@"\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?honua\.{table}\s+ALTER\s+COLUMN\s+{column}\s+SET\s+STORAGE\s+EXTERNAL\b",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                if (!setsExternal.IsMatch(text))
+                {
+                    violations.Add($"{Path.GetRelativePath(projectRoot, seedFile)}: honua.{table}.{column}");
+                }
+            }
+        }
+
+        checkedCreates.Should().BePositive(
+            "the test seeds create raster tables; zero matches means the scan is broken, not that there is nothing to guard");
+        violations.Should().BeEmpty(
+            "a seed that creates a raster table must also apply the migration-owned EXTERNAL storage policy " +
+            "(migrations 055 and 063), or the core schema guard fails the next boot. Missing: " +
+            string.Join("; ", violations));
     }
 
     // Delegates to the shared runtime classifier so the architecture gate and the runtime

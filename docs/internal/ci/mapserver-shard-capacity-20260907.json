@@ -1,0 +1,214 @@
+{
+  "source_sha": "a6b9a4d552e2fe2d95ab0fb4c523a51023f5df5e",
+  "run_url": "https://github.com/honua-io/honua-server/actions/runs/34163714144",
+  "full_ci_requested": true,
+  "original_timeout": {
+    "run_id": 34150993948,
+    "job_id": 101833882678,
+    "source_sha": "7b762f94896544e772e5ef18dd17996f32e26915",
+    "duration_seconds": 1743,
+    "exit_code": 124,
+    "capacity_status": "capacity_exhausted",
+    "idle_seconds_at_exit": 2,
+    "completed_trx": false,
+    "timing_sha256": "0e10c2e65aca1c25ce426461ef8666efd7edc5e11da47f7662a9c9ed24db6a00"
+  },
+  "preservation": {
+    "methods": 123,
+    "executed_cases": 141,
+    "all_original_methods_and_parameter_case_counts_matched": true,
+    "all_passed": true,
+    "expected_inventory_sha256": "8386fdd29c28e60c928176b2bca4941cf08e6145967324f39c7732ab1fabbe29"
+  },
+  "shards": [
+    {
+      "name": "GeoServices MapServer",
+      "artifact_id": 10033658910,
+      "counters": {
+        "total": "52",
+        "executed": "52",
+        "passed": "52",
+        "failed": "0",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "trx_sha256": "dcf4941908b2e12c426d82418c9315769a3a80ed43a7bc3b661cda03f251af68",
+      "timing_sha256": "a6e2ee9dcdbecc05d520b884b4d624f1a25a1a9a0ee3f72577cd7565c6888f44",
+      "timing": {
+        "shard": "GeoServices MapServer",
+        "log_name": "server-tests-geoservices-mapserver",
+        "status": "passed",
+        "exit_code": 0,
+        "started_at": "2026-09-07T21:42:16Z",
+        "completed_at": "2026-09-07T21:47:16Z",
+        "duration_seconds": 300,
+        "timeout_minutes": 29,
+        "timeout_seconds": 1740,
+        "timed_out": false,
+        "kill_escalated": false,
+        "headroom_ratio": 0.1724,
+        "headroom_warn_ratio": 0.8,
+        "capacity_status": "ok",
+        "idle_seconds_at_exit": 5,
+        "stall_seconds": 300,
+        "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests)&Tier!=Slow)&Tier!=Fast"
+      },
+      "job_timeout_minutes": 39
+    },
+    {
+      "name": "GeoServices MapServer Export",
+      "artifact_id": 10033651614,
+      "counters": {
+        "total": "57",
+        "executed": "57",
+        "passed": "57",
+        "failed": "0",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "trx_sha256": "54284914553fdbf64c918223f3ef361fad418a5cc99fc18c5cd770f2aa8f3d8a",
+      "timing_sha256": "e726e34a79b59fa84f4d573f13bc801feb6b2c5ec40b67529674f4740c939b4e",
+      "timing": {
+        "shard": "GeoServices MapServer Export",
+        "log_name": "server-tests-geoservices-mapserver-export",
+        "status": "passed",
+        "exit_code": 0,
+        "started_at": "2026-09-07T21:41:36Z",
+        "completed_at": "2026-09-07T21:46:51Z",
+        "duration_seconds": 315,
+        "timeout_minutes": 29,
+        "timeout_seconds": 1740,
+        "timed_out": false,
+        "kill_escalated": false,
+        "headroom_ratio": 0.181,
+        "headroom_warn_ratio": 0.8,
+        "capacity_status": "ok",
+        "idle_seconds_at_exit": 5,
+        "stall_seconds": 300,
+        "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests)&Tier!=Slow)&Tier!=Fast"
+      },
+      "job_timeout_minutes": 39
+    },
+    {
+      "name": "GeoServices MapServer Identify",
+      "artifact_id": 10033617604,
+      "counters": {
+        "total": "32",
+        "executed": "32",
+        "passed": "32",
+        "failed": "0",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "trx_sha256": "bcb505698bfcb43d9641f62e087ec88e748e7d3f5e420c7dfd6496a1a6dbb3c4",
+      "timing_sha256": "0975b9327a613b6c8d26567d179966db8002669c1c471d4cf68496edd6776a61",
+      "timing": {
+        "shard": "GeoServices MapServer Identify",
+        "log_name": "server-tests-geoservices-mapserver-identify",
+        "status": "passed",
+        "exit_code": 0,
+        "started_at": "2026-09-07T21:42:21Z",
+        "completed_at": "2026-09-07T21:45:01Z",
+        "duration_seconds": 160,
+        "timeout_minutes": 29,
+        "timeout_seconds": 1740,
+        "timed_out": false,
+        "kill_escalated": false,
+        "headroom_ratio": 0.092,
+        "headroom_warn_ratio": 0.8,
+        "capacity_status": "ok",
+        "idle_seconds_at_exit": 5,
+        "stall_seconds": 300,
+        "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests)&Tier!=Slow)&Tier!=Fast"
+      },
+      "job_timeout_minutes": 39
+    }
+  ],
+  "normalization": {
+    "source": {
+      "base_sha": "9821fd4c73b87ecb43423c05738546dc19c8dc05",
+      "pull_request": 4534,
+      "repository": "honua-io/honua-server",
+      "sha": "a6b9a4d552e2fe2d95ab0fb4c523a51023f5df5e",
+      "tree_sha": "c06d366fa8f2bb460470b235320094f3bbca618e"
+    },
+    "producer": {
+      "event": "pull_request",
+      "run_attempt": 2,
+      "run_id": 34163678976,
+      "workflow_path": ".github/workflows/normalize-derived-artifacts.yml"
+    },
+    "envelope_sha256": "8eeeef9377191376ba87b9fcc77123d74efad9a01f47d4f53aa936babd326dd8",
+    "generator_hashes_verified": 24,
+    "output_count": 5,
+    "total_output_bytes": 1789996,
+    "changed": [
+      {
+        "path": "docs/gis/data/feature-catalog.json",
+        "old_sha256": "bfa1a11d198d2f4869cb4b2415603fcfdb804d051424dcbd9ffb5dbba7e4ae87",
+        "new_sha256": "59e9023be676129c6c8996747fd07f818cf95f0f5106bc3afc4f99c0e504ab42",
+        "length": 1415188,
+        "only_test_class_reference_renames_and_string_list_order": true,
+        "stale_counts_recomputed_from_original_catalog": [],
+        "reviewed_equivalent": true
+      },
+      {
+        "path": "docs/gis/data/capability-matrix.v1.json",
+        "old_sha256": "404292318c7a3f8a9f8e45b925b753b950a505e2c98237ecaba18ef5f65470eb",
+        "new_sha256": "a404dfabc16d911a6a8612a1dfee0d7c81786d53e2a2dd380101db0a9f7a0a28",
+        "length": 70152,
+        "only_test_class_reference_renames_and_string_list_order": false,
+        "stale_counts_recomputed_from_original_catalog": [
+          {
+            "key": "import.file",
+            "committed_count": 219,
+            "already_in_original_catalog": 227
+          },
+          {
+            "key": "serve.geoservices-featureserver",
+            "committed_count": 417,
+            "already_in_original_catalog": 423
+          }
+        ],
+        "reviewed_equivalent": true
+      }
+    ],
+    "adopted": true
+  },
+  "limitations": [
+    "Single full-CI timing sample; not a p90.",
+    "The separate 18-case point-literal repair in PR #4523 is not included in this source.",
+    "Full CI is not green: catalog drift at the original source and separate Studio/export/import failures require final gate verification and attribution.",
+    "Server integration evidence does not replace native desktop receipts or establish full compatibility."
+  ]
+}

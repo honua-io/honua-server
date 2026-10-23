@@ -1,0 +1,24 @@
+# Fixture TLS surface — https://127.0.0.1:18464 verified against the fixture Caddy root
+
+$ openssl x509 -in ca/root.crt -noout -subject -fingerprint -sha256 -dates
+subject=CN = Caddy Local Authority - 2026 ECC Root
+sha256 Fingerprint=09:A5:CE:33:49:7B:E0:CF:8E:4B:63:1E:06:01:0F:80:7F:A2:88:B2:F1:DE:63:5F:19:E6:A2:9B:0E:8D:51:F0
+notBefore=Sep  6 05:08:55 2026 GMT
+notAfter=Jul 15 05:08:55 2036 GMT
+
+$ openssl s_client -connect 127.0.0.1:18464 -servername 127.0.0.1 | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+subject=CN = 127.0.0.1
+issuer=CN = Caddy Local Authority - 2026 ECC Root
+notBefore=Sep 15 08:35:33 2026 GMT
+notAfter=Sep 22 08:35:33 2026 GMT
+X509v3 Subject Alternative Name: 
+    IP Address:127.0.0.1, DNS:localhost
+
+# curl --cacert <fixture root> (no -k anywhere)
+GET  https://127.0.0.1:18464/rest/info?f=json                           -> HTTP 200  232 bytes
+GET  https://127.0.0.1:18464/services?wsdl                              -> HTTP 200  10418 bytes
+GET  https://127.0.0.1:18464/rest/services/desktop_ui_features/GPServer?f=json -> HTTP 200  4540 bytes
+POST https://127.0.0.1:18464/services/desktop_ui_features/GPServer      -> HTTP 401  258 bytes  (unauthenticated GetJobStatus; the route exists and challenges — it is not the 404 of #4614)
+
+# advertised GPServer task count
+tasks: 119

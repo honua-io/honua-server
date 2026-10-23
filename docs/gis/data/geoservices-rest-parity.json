@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "generator": "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
   "trackingIssue": "#2863",
-  "lastReviewed": "2026-09-03",
+  "lastReviewed": "2026-10-12",
   "judgmentSource": "docs/gis/data/geoservices-parity-judgment.json",
   "routeRoster": {
     "derivedFrom": "Honua.Server.EndpointRegistry.All, via the generated feature catalog (tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs).",
@@ -162,7 +162,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Preview/opt-in in 2026.1. Registers offline replica state in distributed cache when available, otherwise in memory; full parity is deferred to release/2026.2."
+            "notes": "Preview/opt-in in 2026.1. Returns the replica data embedded in layers[].features, scoped by geometry/geometryType/inSR, layerQueries (queryOption, where, useGeometry) and projected to replicaSR; the scope is persisted with the replica and applied to every later extract and download. syncModel is perReplica, perLayer or none (none returns the data without registering). esriTransportTypeUrl is answered with the embedded transport, which the response declares. async=true, dataFormat other than json (no runtime geodatabase), returnAttachments=true, includeRelated=true and replicaOptions are rejected with 400. A scope above Limits:Replica:MaxChangesPerLayer per layer returns a bounded first window (exceededTransferLimit) that synchronizeReplica downloads continue. Broader parity is deferred to release/2026.2."
           },
           {
             "name": "Extract Changes",
@@ -176,7 +176,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Preview/opt-in in 2026.1. Full Esri offline-sync parity is deferred to release/2026.2."
+            "notes": "Preview/opt-in in 2026.1. Honors layerServerGens, serverGen and serverGens [min,max], returnInserts/returnUpdates/returnDeletes, returnIdsOnly, geometry and layerQueries, and answers with the Esri layerServerGens/transportType/responseType/edits envelope beside the legacy Honua layerChanges projection. A backlog above Limits:Replica:MaxChangesPerLayer per layer returns a bounded generation window flagged exceededTransferLimit. async=true, dataFormat other than json, returnAttachments=true and returnExtentOnly=true are rejected with 400. Broader Esri offline-sync parity is deferred to release/2026.2."
           },
           {
             "name": "Get Estimates (service)",
@@ -278,7 +278,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions; broader parity is deferred to release/2026.2."
+            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica\u0027s stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). Scoped and visibility-filtered downloads classify each row from its pre-change image and its current state: a row updated into the scope arrives as an add, and a row that left the scope, became hidden or was deleted is delivered as a delete only when the client could hold it. Esri id arrays carry the layer\u0027s protocol-facing object ids. Broader parity is deferred to release/2026.2."
           },
           {
             "name": "Unregister Replica",
@@ -373,7 +373,6 @@
               "/FeatureServer/{layerId}/calculate"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate",
               "POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate"
             ],
             "capabilityMaturity": [
@@ -564,7 +563,8 @@
               "/FeatureServer/{layerId}/{featureId}/attachments"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -578,7 +578,8 @@
               "/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -1004,17 +1005,28 @@
             "status": "implemented"
           },
           {
+            "name": "returnEditMoment",
+            "status": "implemented",
+            "notes": "returnEditMoment=true adds editMoment (epoch milliseconds, server clock when the edits were applied) to the response (#4105)."
+          },
+          {
             "name": "useGlobalIds, gdbVersion",
             "status": "rejected"
           },
           {
-            "name": "returnEditMoment, attachments, assetMaps, trueCurveClient, sessionID, usePreviousEditMoment, timeReferenceUnknownClient, async, returnEditResults, editsUploadId, editsUploadFormat, useUniqueIds",
-            "status": "ignored"
+            "name": "sessionID, trueCurveClient, usePreviousEditMoment, timeReferenceUnknownClient, returnEditResults",
+            "status": "ignored",
+            "notes": "Accepted on the query string or in the request body and have no effect: there are no branch-version edit sessions or true curves, and per-edit results are always returned (#4105)."
+          },
+          {
+            "name": "attachments, assetMaps, async, useUniqueIds, editsUploadId, editsUploadFormat",
+            "status": "rejected",
+            "notes": "A non-empty attachments or assetMaps payload, async=true, useUniqueIds=true, or any editsUploadId or editsUploadFormat value returns HTTP 400 instead of dropping edits; empty or false values are accepted (#4105)."
           },
           {
             "name": "datumTransformation",
             "status": "rejected",
-            "notes": "Geometry must already match the layer SRID."
+            "notes": "Geometry must already match the layer SRID; any datumTransformation value returns HTTP 400."
           }
         ],
         "queryRelatedRecords": [
@@ -1145,7 +1157,8 @@
               "/MapServer/allLayersAndTables"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/allLayersAndTables"
+              "GET /rest/services/{serviceId}/MapServer/allLayersAndTables",
+              "POST /rest/services/{serviceId}/MapServer/allLayersAndTables"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -1252,7 +1265,8 @@
               "/MapServer/layers"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/layers"
+              "GET /rest/services/{serviceId}/MapServer/layers",
+              "POST /rest/services/{serviceId}/MapServer/layers"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -1573,7 +1587,7 @@
         "find",
         "measure (Basic mensuration)",
         "computeStatisticsHistograms",
-        "AOI-clipped computeStatisticsHistograms (envelope-scoped)",
+        "AOI-clipped computeStatisticsHistograms (polygon rings clipped as polygons)",
         "computeHistograms",
         "getSamples",
         "queryBoundary",
@@ -1586,7 +1600,7 @@
         "exportImage Stretch renderingRule (MinMax/StandardDeviation/PercentClip)",
         "exportImage Colormap renderingRule (explicit [value, r, g, b] stops, named ColorrampName, or inline algorithmic/multipart Colorramp object)",
         "colormap resource (returns the active renderer\u0027s colormap resolved from renderingRule; not-available response otherwise)",
-        "exportImage Clip renderingRule (envelope/polygon, including ClippingType=1 keep-outside)",
+        "exportImage Clip renderingRule (envelope/polygon, including ClippingType=1 keep-inside and ClippingType=2 keep-outside)",
         "exportImage ExtractBand renderingRule (0-based BandIds selection/reorder)",
         "renderingRule honoured by identify (Stretch \u002B Colormap \u002B Clip; renders the sampled pixel)",
         "auto display stretch for non-8-bit dynamic tiles",
@@ -1629,7 +1643,6 @@
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
@@ -1644,12 +1657,11 @@
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerParameterValidationTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerErrorHandlingTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerTileHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerTileHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerMosaicIntegrationTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerAnalyzeHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerKmlTests.cs",
           "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20EndpointsTests.cs"
         ]
@@ -1911,7 +1923,8 @@
               "/ImageServer/WCS"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{id}/ImageServer/WCS"
+              "GET /rest/services/{id}/ImageServer/WCS",
+              "GET /rest/services/{serviceId}/ImageServer/WCS"
             ],
             "capabilityMaturity": [
               "preview"
@@ -2002,7 +2015,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (envelope-scoped); renderingRule execution remains deferred."
+            "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (polygon rings are clipped as polygons, not only the bounding envelope); renderingRule execution remains deferred."
           },
           {
             "name": "Compute Pixel Location",
@@ -2036,7 +2049,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (0-based, the same base as exportImage bandIds), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (polygon rings are clipped as polygons, not only the bounding envelope) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
           },
           {
             "name": "Compute Tie Points",
@@ -2318,7 +2331,7 @@
           {
             "name": "format",
             "status": "partial",
-            "notes": "Supports png, jpg, jpeg, tif, and tiff."
+            "notes": "Supports png, png8, png24, png32, jpg, jpeg, jpgpng, tif, and tiff, plus raw pixel blocks of the stored samples: bsq, bip, and lossless lerc (one LERC2 blob per band)."
           },
           {
             "name": "f",
@@ -2333,17 +2346,17 @@
           {
             "name": "pixelType",
             "status": "partial",
-            "notes": "UNKNOWN is accepted as the no-conversion default; every explicit conversion type returns 501 because pixel conversion is not implemented."
+            "notes": "UNKNOWN and the service\u0027s own pixel type are accepted as the no-conversion default; every other explicit conversion type returns 501 because pixel conversion is not implemented."
           },
           {
             "name": "compression",
             "status": "partial",
-            "notes": "Applied to TIFF output only. Supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Ignored for non-TIFF outputs."
+            "notes": "Applied to TIFF output, which supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Raw pixel blocks accept None, and lerc also accepts LERC. Ignored for PNG and JPEG outputs."
           },
           {
             "name": "renderingRule",
             "status": "implemented",
-            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400. Chain planning/validation is internal (there is no computeClass route): the planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise, unless the document overrides outputPixelType."
+            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-inside and ClippingType=2 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400. Chain planning/validation is internal (there is no computeClass route): the planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise, unless the document overrides outputPixelType."
           },
           {
             "name": "bandIds",
@@ -2389,7 +2402,7 @@
           {
             "name": "renderingRule",
             "status": "implemented",
-            "notes": "When supplied, identify returns the rendered pixel value (post clip/stretch/colormap, matching exportImage) instead of the raw source value; omitting it preserves the raw-value contract. Executes the same Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), and Clip (envelope/polygon, including ClippingType=1 keep-outside) support as exportImage; unsupported chains return 400/501."
+            "notes": "When supplied, identify returns the rendered pixel value (post clip/stretch/colormap, matching exportImage) instead of the raw source value; omitting it preserves the raw-value contract. Executes the same Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), and Clip (envelope/polygon, including ClippingType=1 keep-inside and ClippingType=2 keep-outside) support as exportImage; unsupported chains return 400/501."
           },
           {
             "name": "pixelSize, returnGeometry",
@@ -2458,7 +2471,7 @@
           {
             "name": "bandIds",
             "status": "implemented (Honua extension)",
-            "notes": "Accepts CSV or JSON array of 1-based band indices. Forwarded to the raster store as the band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
+            "notes": "Accepts CSV or JSON array of 0-based band indices, the same base as exportImage bandIds (#4068); each index is shifted to the raster store\u0027s 1-based band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
           },
           {
             "name": "histogramParameters.size",
@@ -2524,7 +2537,7 @@
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms clips analysis to the supplied geometry envelope and executes Stretch, Colormap, and Clip renderingRule chains; ExtractBand, BandArithmetic, and pixelSize remain deferred.",
-        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-outside; ExtractBand 0-based BandIds selection superseding the bandIds parameter), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, and extract-band-by-name are not yet honoured.",
+        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-inside and ClippingType=2 keep-outside; ExtractBand 0-based BandIds selection superseding the bandIds parameter), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, and extract-band-by-name are not yet honoured.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
@@ -2556,7 +2569,8 @@
       "knownGaps": [
         "tiles carry only the service\u0027s primary tiled publication, not every layer packed per tile",
         "tilemap availability is grid arithmetic and never consults the tile store",
-        "no sprite or glyph store: sprite and font resources are content-free placeholders",
+        "no sprite store: sprite resources are content-free placeholders",
+        "glyphs come from one bundled sans-serif face substituted for every served fontstack, Basic Latin and Latin-1 only",
         "service metadata hardcodes capabilities/type/exportTilesAllowed and always reports minLOD 0"
       ],
       "evidence": {
@@ -2571,7 +2585,8 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VectorTileServer/VectorTileStyleComposerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VectorTileServer/VectorTileEmbeddedAssetsTests.cs"
         ]
       },
       "operations": {
@@ -2588,7 +2603,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Composes a Mapbox GL v8 style document from the layer\u0027s stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service; falls back to a deterministic default style when the layer has none stored."
+            "notes": "Composes a Mapbox GL v8 style document from the layer\u0027s stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service (each vector source carries the service URL and the tile template); falls back to a deterministic default style when the layer has none stored."
           }
         ],
         "partial": [
@@ -2606,6 +2621,20 @@
               "implemented"
             ],
             "notes": "Emits a real LOD table and a unioned extent for the resolved service, but capabilities (\u0022TilesOnly\u0022), type, the tiles template, and exportTilesAllowed=false are hardcoded; minLOD is always 0 even though the tile route rejects zooms below the configured minimum; the extent unions per-resource bboxes without reprojecting them while labelling the result with the service SR; and only f=json/pjson are accepted."
+          },
+          {
+            "name": "Font (glyph) resources",
+            "status": "partial",
+            "esriPaths": [
+              "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. Only the 0-255 range is bundled; all other ranges return 404."
           },
           {
             "name": "Style sub-resource",
@@ -2654,20 +2683,6 @@
         ],
         "stub": [
           {
-            "name": "Font (glyph) resources",
-            "status": "stub",
-            "esriPaths": [
-              "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
-            ],
-            "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
-            ],
-            "capabilityMaturity": [
-              "implemented"
-            ],
-            "notes": "Route exists and returns a spec-shaped glyph PBF containing one fontstack (\u0022Honua Default\u0022) with zero glyphs. No font store backs it: the requested fontstack is ignored and every name yields the same bytes; only the 0-255 range is served and all other ranges return 404."
-          },
-          {
             "name": "Sprite resources",
             "status": "stub",
             "esriPaths": [
@@ -2685,7 +2700,8 @@
         "notImplemented": []
       },
       "knownLimitations": [
-        "Sprite and glyph resources are deliberately scoped-minimal placeholders (#1780): a client that renders symbols or labels from them gets nothing to draw."
+        "Sprite resources are deliberately scoped-minimal placeholders (#1780): a client that renders icons from them gets nothing to draw.",
+        "Labels draw with one bundled sans-serif face for Basic Latin and Latin-1 text only (#5535)."
       ]
     },
     {
@@ -2727,10 +2743,10 @@
           "src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceHandler.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceBufferTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceBufferTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceProjectTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceSimplifyTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceSimplifyTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
         ]
       },
       "operations": {
@@ -3163,13 +3179,14 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, synchronous execute, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (98 seeded processes across geometry.*, analytics.*, enrichment.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, imagery.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, pcloud.*)",
+        "GPServer API keys may carry execute:{service}/{canonical-process-id} alongside a read:{service} discovery grant. Execution has no wildcard or service-wide fallback, is rechecked against every plan process, and scoped job reads/results/cancel require the persisted GP binding and submitting key identity. Other operator/protocol execution paths and additional mutating/custom-code gates retain their existing authorization. Approval-required scoped GP submissions are rejected without parking a proposal: deferred scoped-key execution is not supported.",
+        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, synchronous execute, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (101 seeded processes across geometry.*, analytics.*, enrichment.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, imagery.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, pcloud.*, routing.*)",
         "Generic synchronous execute route (#1660): the deterministic single-geometry geometry.* / conversion.geometry-format family runs inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages); async-only tasks return a 400 capability message pointing at submitJob",
-        "Esri-conventional task-name alias overlay (#2788): 39 mapped process IDs are also published and addressable by familiar names such as Buffer, while canonical process IDs remain supported; aliases change task discovery/addressing only and deliberately retain the published canonical Honua parameter contract",
+        "Esri-conventional task-name alias overlay (#2788): 40 mapped process IDs are also published and addressable by familiar names such as Buffer, while canonical process IDs remain supported; aliases change task discovery/addressing only and deliberately retain the published canonical Honua parameter contract",
         "Durable per-parameter result retrieval: successful terminal GP jobs advertise named result parameters and jobs/{jobId}/results/{paramName} reads their values from the result-package store"
       ],
       "knownGaps": [
-        "GP environment control coverage is bounded: env:outSR, env:workspace, and env:overwriteOutput are honored on submitJob and execute; env:processSR is validated and preserved on both routes but does not yet change the processing CRS; other env:* controls (for example env:transferDomains) return 400 until engine support is available",
+        "GP environment control coverage is bounded: env:outSR, env:workspace, and env:overwriteOutput are honored on submitJob and execute; nonempty env:processSR or context.processSR are rejected before execution or job submission (GeoServices error.code=400 over HTTP 200) because the engine cannot apply a processing-CRS override; other env:* controls (for example env:transferDomains) return an error with code 400 until engine support is available; the Esri 10.6.1\u002B context parameter maps context.outSR to env:outSR, accepts an empty extent, and rejects any other context property (or a context SR that conflicts with env:*) with code 400",
         "Esri-conventional task aliases do not adapt canonical Honua parameters to the same-named Esri tool\u0027s wire contract; for example Buffer accepts base64 WKB, SRID, and numeric distance rather than Esri JSON feature-record-set, linear-unit, and dissolve-option inputs (#2788)"
       ],
       "evidence": {
@@ -3179,6 +3196,8 @@
         ],
         "code": [
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
+          "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.GpServer.cs",
+          "src/Honua.Protocols.GeoServices/Catalog/PrintingToolsServiceCatalog.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerExecutionPolicy.cs",
@@ -3187,12 +3206,13 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsGpServerService5546Tests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEsriTaskAliasEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerParameterTranslationTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerStatusMappingTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerParameterTranslationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerStatusMappingTests.cs",
+          "tests/dotnet/Honua.Geoprocessing.UnitTests/Source/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
         ]
       },
       "operations": {
@@ -3204,13 +3224,15 @@
               "/GPServer"
             ],
             "honuaEndpoints": [
+              "GET /rest/services/Utilities/PrintingTools/GPServer",
               "GET /rest/services/{serviceId}/GPServer",
+              "POST /rest/services/Utilities/PrintingTools/GPServer",
               "POST /rest/services/{serviceId}/GPServer"
             ],
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723."
+            "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723. Utilities/PrintingTools publishes its own synchronous service resource on this path, listing Export Web Map Task and Get Layout Templates Info Task."
           },
           {
             "name": "Task Metadata",
@@ -3285,6 +3307,20 @@
             "notes": "Asynchronous map export job submission. PrintingTools-specific implementation."
           },
           {
+            "name": "Layout template task metadata",
+            "status": "implemented",
+            "esriPaths": [
+              "/GPServer/Get Layout Templates Info Task"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns the task name, display name, and the single Output_JSON output parameter. Served by the PrintingTools endpoints."
+          },
+          {
             "name": "Template Listing (sync)",
             "status": "implemented",
             "esriPaths": [
@@ -3311,7 +3347,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723."
+            "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723. Every GP service also resolves the NetworkAnalysisUtilities tasks GetTravelModes and GetToolInfo by name (synchronous, anonymous projections of the routing provider, deliberately absent from the task list because they have no SOAP or job form) so ArcGIS Pro and arcpy can bind the NAServer next to it (#5035)."
           },
           {
             "name": "Execute Task (generic, sync)",
@@ -3326,7 +3362,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:workspace, and env:overwriteOutput; env:processSR is accepted and preserved but does not yet change the processing CRS; unsupported env:* controls return 400. Implemented in #1660."
+            "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:workspace, and env:overwriteOutput; nonempty env:processSR or context.processSR are rejected before execution or job submission (GeoServices error.code=400 over HTTP 200); unsupported env:* controls return an error with code 400. context.outSR maps to env:outSR; null or blank processing references request no override. A failed or cancelled run returns the GeoServices error envelope (code 500, job id and failure message in details) instead of an empty results list (#4034). Implemented in #1660."
           },
           {
             "name": "Jobs List",
@@ -3410,7 +3446,7 @@
           {
             "name": "taskName: Esri-conventional aliases (name-level addressing)",
             "status": "implemented",
-            "notes": "39 unambiguous aliases, including Buffer, are published alongside canonical process IDs and resolve through task-info, submitJob, and execute. The alias does not change the task\u0027s published canonical parameters."
+            "notes": "40 unambiguous aliases, including Buffer, FindClosestFacilities, GenerateOriginDestinationCostMatrix and SolveLocationAllocation, are published alongside canonical process IDs and resolve through task-info, submitJob, and execute. Every alias in the contract is published on the task list exactly once; protocol-only processes (data-management.delete-features, data-management.calculate-field) carry no alias because GPServer does not publish them as tasks (#4781). The alias does not change the task\u0027s published canonical parameters."
           },
           {
             "name": "paramName: durable per-parameter result retrieval",
@@ -3421,7 +3457,7 @@
       },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
-        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 98 processes across geometry.*, analytics.*, enrichment.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, imagery.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, and pcloud.* families for plan validation; heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Canonical process IDs remain published, and 39 unambiguous Esri-conventional aliases are published alongside them. The aliases are name-level only: task-info advertises and execution accepts the real canonical Honua parameters, not the same-named Esri tool\u0027s wire contract.",
+        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 101 processes across geometry.*, analytics.*, enrichment.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, imagery.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, pcloud.*, and routing.* families for plan validation; heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Canonical process IDs remain published, and 40 unambiguous Esri-conventional aliases are published alongside them; the alias contract covers only job-callable processes, so protocol-only ids such as delete-features and calculate-field carry no GPServer task or alias (#4781). The aliases are name-level only: task-info advertises and execution accepts the real canonical Honua parameters, not the same-named Esri tool\u0027s wire contract.",
         "Generic synchronous execute route (#1660) is published for the deterministic single-geometry geometry.* / conversion.geometry-format family; those tasks run inline through the canonical job runtime (a protocol projection, not a separate engine). Heavyweight or layer-scoped tasks remain async-only and return a 400 capability message on execute that points at submitJob.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]
@@ -3677,17 +3713,39 @@
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/FindRoutesWebTool.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/GenerateServiceAreasWebTool.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerMetadata.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
           "src/Honua.Routing/Features/Routing/Abstractions/IRoutingProvider.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/NAServer/NAServerTranslationUnitTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerMetadataEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/FindRoutesExecuteTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GenerateServiceAreasExecuteTests.cs"
         ]
       },
       "operations": {
         "implemented": [
+          {
+            "name": "Service resource",
+            "status": "implemented",
+            "esriPaths": [
+              "/NAServer"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer",
+              "POST /rest/services/{serviceId}/NAServer"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST return the Esri network service resource: one analysis layer name per solver the configured IRoutingProvider advertises (routeLayers, serviceAreaLayers, closestFacilityLayers, odCostMatrixLayers, locationAllocationLayers) (#5035)."
+          },
           {
             "name": "ClosestFacility solveClosestFacility",
             "status": "implemented",
@@ -3724,15 +3782,61 @@
               "/NAServer/ServiceArea/solveServiceArea"
             ],
             "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea",
               "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
             ],
             "capabilityMaturity": [
               "implemented"
             ],
             "notes": "Parses facilities, defaultBreaks, inSR/outSR, travelDirection, barriers/polylineBarriers/polygonBarriers, and travelMode, validates provider-advertised travel-direction/barrier/mode support, and returns Esri saPolygons."
+          },
+          {
+            "name": "Analysis layer resource",
+            "status": "implemented",
+            "esriPaths": [
+              "/NAServer/{layerName}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/{layerName}",
+              "POST /rest/services/{serviceId}/NAServer/{layerName}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST return the Esri network analysis layer resource for Route, ServiceArea, ClosestFacility, ODCostMatrix and LocationAllocation: impedance and travel modes projected from the active network dataset\u0027s travel profiles, network attributes and sources, input network classes and the configured service limits. Unknown or unsupported layers answer 404. Together with the GetTravelModes/GetToolInfo utility tasks every GPServer resolves, this is the stand-alone binding surface ArcGIS Pro and arcpy read (#5035); a native Pro replay is still pending."
           }
         ],
         "partial": [
+          {
+            "name": "FindRoutes synchronous subset",
+            "status": "partial",
+            "esriPaths": [
+              "/NAServer/FindRoutes/execute"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/FindRoutes/execute",
+              "POST /rest/services/{serviceId}/NAServer/FindRoutes/execute"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST execute the same bounded adapter as GPServer/FindRoutes/execute: input-order stops, Minutes-only travel time, provider-validated modes and barriers. Unsupported units, stop optimization, unknown options and conflicting aliases return errors before solving. There is no submitJob form; full arcpy.nax binding remains open in #5192."
+          },
+          {
+            "name": "GenerateServiceAreas synchronous subset",
+            "status": "partial",
+            "esriPaths": [
+              "/NAServer/GenerateServiceAreas/execute"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute",
+              "POST /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST execute the same synchronous adapter as GPServer/GenerateServiceAreas/execute: point facilities, Minutes-only breaks, provider-validated travel modes and directions, canonical polygon output, FacilityOID and input names. GP env:outSR/context.outSR and the NAServer outSR alias forward output projection; malformed or conflicting controls are rejected. Unsupported units, nondefault per-facility solve settings, unknown options and other GP environments return errors before solving. There is no submitJob form; stock arcpy.nax binding and native Route/ServiceArea solve evidence remain open in #5192."
+          },
           {
             "name": "LocationAllocation solveLocationAllocation",
             "status": "partial",
@@ -3760,6 +3864,49 @@
               "implemented"
             ],
             "notes": "Computes ranked origin/destination impedance cells through the canonical routing provider. esriNAODOutputNoLines preserves the cost-only fast path; esriNAODOutputStraightLines returns two-vertex polylines in outSR (the pgRouting provider batch-transforms all cells through PostGIS in one query). Providers without straight-line capability and true-shape modes return precise GeoServices 400 responses."
+          },
+          {
+            "name": "Ready-to-use routing job status",
+            "status": "partial",
+            "esriPaths": [
+              "/NAServer/{taskName}/jobs/{jobId}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET reads the shared durable GP job state and advertises named results after successful completion. Direct HTTP tests cover both submission methods and terminal status through the NAServer alias, including queued pgRouting solves on the seeded lattice (#5949, #5950, #5951). Stock arcpy.nax acceptance remains open in #5192."
+          },
+          {
+            "name": "Ready-to-use routing job results",
+            "status": "partial",
+            "esriPaths": [
+              "/NAServer/{taskName}/jobs/{jobId}/results/{paramName}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}/results/{paramName}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET reads the same stored named result packages as the GPServer alias for successful routing jobs. HTTP tests verify the documented output parameter names, identities and canonical feature-set envelopes, including queued pgRouting results on the seeded lattice (#5949, #5950, #5951). Stock arcpy.nax acceptance remains open in #5192."
+          },
+          {
+            "name": "Ready-to-use routing job submission",
+            "status": "partial",
+            "esriPaths": [
+              "/NAServer/{taskName}/submitJob"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/{taskName}/submitJob",
+              "POST /rest/services/{serviceId}/NAServer/{taskName}/submitJob"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST submit FindClosestFacilities, GenerateOriginDestinationCostMatrix and SolveLocationAllocation through the same canonical durable job runtime as their GPServer aliases. Provider capability, input identity, spatial reference, units and supported travel-mode settings are validated before solving. Queued jobs on the seeded pgRouting lattice are proved for closest facilities, OD cost matrix, and location-allocation (#5949, #5950, #5951). Stock arcpy.nax binding and native solves remain open in #5192."
           }
         ],
         "stub": [],
@@ -3780,7 +3927,7 @@
         ]
       },
       "knownLimitations": [
-        "All five NAServer solve operations accept GET query parameters and POST form parameters.",
+        "Route/solve accepts GET query parameters and POST form parameters; ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation solves are served over POST only.",
         "OD cost-matrix output is cost-only; line geometry remains deferred.",
         "Location-allocation implements minimize-impedance and maximize-coverage; other problem types are rejected.",
         "Network-dataset registry CRUD does not edit edges, vertices, turn restrictions, or rebuild topology.",
@@ -3818,7 +3965,7 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/VersionManagementServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/VersionAccessPolicyTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VersionManagementServer/VersionAccessPolicyTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/FeatureServerGdbVersionFlowTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Capabilities/ExperimentalCapabilityGatingIntegrationTests.cs"
         ]
@@ -3826,36 +3973,42 @@
       "operations": {
         "implemented": [
           {
-            "name": "List versions; version info",
-            "status": "implemented",
-            "esriPaths": [
-              "/VersionManagementServer/versions",
-              "/VersionManagementServer/versions/{versionGuid}"
-            ],
-            "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/VersionManagementServer/versions",
-              "GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"
-            ],
-            "capabilityMaturity": [
-              "experimental"
-            ],
-            "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
-          },
-          {
             "name": "Alter version; delete version",
             "status": "implemented",
             "esriPaths": [
+              "/VersionManagementServer/delete",
               "/VersionManagementServer/versions/{versionGuid}/alter",
               "/VersionManagementServer/versions/{versionGuid}/delete"
             ],
             "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/VersionManagementServer/delete",
               "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/alter",
               "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete"
             ],
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Alter updates name/access/description; delete removes the version and returns 409 rather than deleting mid-reconcile/post. Both are owner-or-admin gated. The returned moment is wall-clock time, not a branch generation."
+            "notes": "Alter updates name/access/description; delete removes the version and returns 409 rather than deleting mid-reconcile/post. Both are owner-or-admin gated. The returned moment is wall-clock time, not a branch generation. The service-level delete route resolves an owner-qualified versionName, or an unqualified name only under the authenticated owner, inside the served service; DEFAULT, malformed or ambiguous names and non-owner deletion remain rejected. It delegates to the same transactional GUID delete and overlay cascade; the stateless read/edit session limitation still applies."
+          },
+          {
+            "name": "List versions; version info",
+            "status": "implemented",
+            "esriPaths": [
+              "/VersionManagementServer/versionInfos",
+              "/VersionManagementServer/versions",
+              "/VersionManagementServer/versions/{versionGuid}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/VersionManagementServer/versionInfos",
+              "GET /rest/services/{serviceId}/VersionManagementServer/versions",
+              "GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versionInfos",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"
+            ],
+            "capabilityMaturity": [
+              "experimental"
+            ],
+            "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). versionInfos (GET or POST) lists DEFAULT first, and version info (GET or POST) answers DEFAULT at its fixed GUID; the Honua-named versions route omits DEFAULT. A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
           },
           {
             "name": "Reconcile; post; resolveConflicts; inspectConflicts",
@@ -3900,12 +4053,13 @@
               "/VersionManagementServer"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/VersionManagementServer"
+              "GET /rest/services/{serviceId}/VersionManagementServer",
+              "POST /rest/services/{serviceId}/VersionManagementServer"
             ],
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Returns a hardcoded descriptor (defaultVersionName \u0022sde.DEFAULT\u0022, capabilities \u0022Create,Delete,Alter,Reconcile,Post\u0022) after a service-read check only. It does not consult the provider\u0027s versioning support, so a non-Postgres store advertises five capabilities whose mutations then return 501."
+            "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. It names DEFAULT by the contract\u0027s fixed defaultVersionGuid, which native clients read, then start a read session on, to open the feature service as a versioned workspace; the sibling MapServer lists VersionManagementServer in supportedExtensions even when a map-only service shares the name."
           },
           {
             "name": "Create version",
@@ -3939,7 +4093,7 @@
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post; stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri\u0027s behaviour."
+            "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post. Read sessions follow the read rule (service read access plus version visibility, the same rule as a gdbVersion read), so any reader can open one on DEFAULT or a public or protected version, while another owner\u0027s private version answers 404; edit sessions keep the owner-or-admin rule. stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri\u0027s behaviour."
           }
         ],
         "stub": [],
@@ -3956,20 +4110,23 @@
       "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "service directory (/rest/services)",
+        "Utilities folder and the Utilities/PrintingTools service node",
         "REST info (/rest/info) auth-discovery document"
       ],
       "knownGaps": [
         "/rest/info always reports isTokenBasedSecurity=false and omits tokenServicesUrl",
-        "no folders in the catalog response",
+        "the catalog emits the Utilities folder for PrintingTools; other folder hierarchies are not implemented",
         "currentVersion is emitted only by /rest/info; catalogs and service descriptors omit it"
       ],
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs"
+          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs",
+          "src/Honua.Protocols.GeoServices/Catalog/PrintingToolsServiceCatalog.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsGpServerService5546Tests.cs"
         ]
       },
       "operations": {
@@ -3981,15 +4138,62 @@
               "/rest/services"
             ],
             "honuaEndpoints": [
-              "GET /rest/services"
+              "GET /rest/services",
+              "POST /rest/services"
             ],
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
+            "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Emits the Utilities folder for the built-in PrintingTools GPServer; currentVersion is deliberately omitted (see knownLimitations)."
+          },
+          {
+            "name": "PrintingTools service node",
+            "status": "implemented",
+            "esriPaths": [
+              "/rest/services/Utilities/PrintingTools"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/PrintingTools",
+              "POST /rest/services/Utilities/PrintingTools"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST return the catalog node for the built-in Utilities/PrintingTools GPServer, with an empty folders array and a single GPServer service entry. The node is public even when the graph directory is fully denied, and it does not list denied graph services."
           }
         ],
-        "partial": [],
+        "partial": [
+          {
+            "name": "Service administration metadata",
+            "status": "partial",
+            "esriPaths": [
+              "/rest/admin/{serviceName}.{serviceType}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/admin/{serviceName}.{serviceType}",
+              "POST /rest/admin/{serviceName}.{serviceType}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
+          },
+          {
+            "name": "Service-name catalog node",
+            "status": "partial",
+            "esriPaths": [
+              "/rest/services/{folderName}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{folderName}",
+              "POST /rest/services/{folderName}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST expose the visible service-type entries for one service name using the same RBAC-filtered projection as the root directory. The built-in Utilities folder returns the PrintingTools GPServer entry. Supports client traversal through a service\u0027s parent node; nested folder hierarchies are not implemented."
+          }
+        ],
         "stub": [
           {
             "name": "REST Info",
@@ -3998,7 +4202,8 @@
               "/rest/info"
             ],
             "honuaEndpoints": [
-              "GET /rest/info"
+              "GET /rest/info",
+              "POST /rest/info"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -4030,7 +4235,7 @@
       ],
       "knownGaps": [
         "OAuth2 named-user / authorization-code flow is tracked under a separate ticket",
-        "Portal item, group, and community surfaces (item editing, sharing graph, content listing) are not exposed",
+        "Portal item editing and complete sharing administration are not exposed; current-user/group content reads are partial and everyone/org sharing remains refused",
         "no refresh-token mechanism; clients re-issue tokens on expiry",
         "no per-token revocation API \u00E2\u20AC\u201D invalidation is TTL- and binding-driven"
       ],
@@ -4048,7 +4253,7 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingRestTokenTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/PortalTokenIssuerTests.cs"
+          "tests/dotnet/Honua.Hosting.UnitTests/Source/Infrastructure/Authentication/PortalTokenIssuerTests.cs"
         ]
       },
       "operations": {
@@ -4177,7 +4382,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "In-memory, single-node, non-durable group overlay (lost on restart, not replicated). Group membership is never consulted by any read path, so it does not affect item visibility. createGroup accepts only title/description/access/tags and silently defaults an unknown access to private; snippet, phone, thumbnail, isViewOnly, isInvitationOnly, capabilities, and membershipAccess are ignored. addUsers/removeUsers ignore admins and return {success, groupId, members} rather than Esri\u0027s notAdded/notRemoved arrays. Private-group existence is not leaked; the owner cannot be removed; owner-or-admin gated."
+            "notes": "In-memory, single-node, non-durable group store (lost on restart, not replicated). Creation binds an internal trusted request tenant; group reads and membership mutations enforce that same tenant. Current-user discovery reports actual owned/member groups for the stable subject and exact request tenant. Membership plus an explicit service group share grants canonical service reads only; resource policy and credential scopes remain. createGroup accepts title/description/access/tags and defaults unknown access to private; snippet, phone, thumbnail, isViewOnly, isInvitationOnly, capabilities, and membershipAccess are ignored. addUsers/removeUsers ignore admins and return {success, groupId, members} rather than Esri notAdded/notRemoved arrays. Private-group existence is not leaked; the owner cannot be removed; owner-or-admin gated."
           },
           {
             "name": "Community Self",
@@ -4192,6 +4397,34 @@
               "implemented"
             ],
             "notes": "Returns username and fullName from the caller\u0027s claims; role is hardcoded \u0022org_user\u0022 rather than derived from RBAC, and Esri\u0027s groups array is absent (the group store is never consulted). id/email/orgId/privileges are not emitted. Anonymous callers get 401."
+          },
+          {
+            "name": "Community User",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/community/users/{username}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/community/users/{username}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns id, username and fullName from the authenticated caller\u0027s claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and the groups array contains actual owned/member groups from the in-memory community store; this is a self-profile projection, not a general user directory or a complete organization profile."
+          },
+          {
+            "name": "Group Content",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/content/groups/{groupId}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/content/groups/{groupId}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Authenticated group owner/member only within the trusted request tenant; missing/inaccessible groups return404 and anonymous requests require authentication. Stable item-id ordering with bounded 1-based start/num pagination, total/start/num/nextStart/items, and empty groupCategories because the store has no categories. Canonical group audiences grant service read access while resource/layer policy, publication/resource/service tenant visibility, credential scopes, field masks and row filters still apply. Production group share/unshare changes this shared read authority; membership removal and unshare revoke it immediately. No group grant for writes, approval, execution, unknown operations, or principal-only/background calls without a trusted request context. Stores remain in-memory, single-node and lost on restart."
           },
           {
             "name": "Item; item data",
@@ -4223,7 +4456,21 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Records sharing intent in an in-memory, single-node store that does not survive restart and is not replicated. It is write-only: no read path consults it, so sharing an item to everyone/org/a group does not change what /search or /content/items/{id} return for any caller \u2014 those project from the Metadata v2 graph and RBAC alone. Item existence is not validated, notSharedWith is always empty (group existence is never checked), and confirmItemControl, bulk items, and folder are ignored. Owner-or-admin gated."
+            "notes": "Actual routable FeatureServer/MapServer/ImageServer item IDs are validated; metadata publisher or administrator ownership is mandatory before any state exists. Sharing to a group requires caller owner/member eligibility in the trusted request tenant. The resulting group audience is enforced by canonical service/resource reads and Portal projection; restrictive layer policy and credential/tenant guards remain. Publisher/admin can revoke an existing group association even after leaving or deleting the group. everyone/org audiences remain refused in notSharedWith; group grants never authorize edits or execution. confirmItemControl, bulk items, and folder are unsupported. In-memory single-node state is lost on restart."
+          },
+          {
+            "name": "User Content",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/content/users/{username}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/content/users/{username}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Lists RBAC-visible graph service items for the authenticated caller when the requested username matches case-insensitively. Items with a mapped owner are filtered to that caller; visible services without an owner mapping are also included. Anonymous callers get 401 and other usernames get 404. Folders is always empty, the graph-service projection is not a general portal content store, and pagination and folder traversal are not implemented."
           },
           {
             "name": "Portal Self",
@@ -4237,7 +4484,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Only username and fullName are real (projected from the caller\u0027s claims). The portal id (\u00220123456789ABCDEF\u0022), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
+            "notes": "username and fullName are projected from the caller\u0027s claims. helperServices advertises supported synchronous route, serviceArea, closestFacility and odCostMatrix layers using the public base URL. Unsupported helpers are omitted; provider failure is logged and leaves the helper block empty. The portal id (\u00220123456789ABCDEF\u0022), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
           },
           {
             "name": "Search",
@@ -4246,7 +4493,8 @@
               "/sharing/rest/search"
             ],
             "honuaEndpoints": [
-              "GET /sharing/rest/search"
+              "GET /sharing/rest/search",
+              "POST /sharing/rest/search"
             ],
             "capabilityMaturity": [
               "implemented"

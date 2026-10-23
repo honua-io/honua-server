@@ -14,10 +14,12 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
+using Honua.Server.Features.Portal;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -52,6 +54,9 @@ internal static class InfrastructureCompositionRoot
                     services,
                     configuration,
                     ServerCoreSchemaMigrations.Manifest);
+                // Postgres is the default server provider. Its Portal stores replace
+                // process-local sharing state before the Hosting defaults are added.
+                services.AddPostgresPortalSharing(configuration);
                 break;
             case DataProviderNames.DuckDb:
                 Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
@@ -68,6 +73,14 @@ internal static class InfrastructureCompositionRoot
         // audit events once, at the shared edit-pipeline boundary, for every
         // protocol adapter (FeatureServer, OGC API Features, WFS-T, OData, gRPC).
         services.AddAuditingFeatureWriter();
+
+        // Collaborative-editing lease enforcement at the same shared boundary (#4402). The
+        // protocol handlers check leases too, so each surface can refuse in its own natural
+        // shape; this decorator is the guarantee that a write path which does not ask —
+        // WFS-T, gRPC, the OData atomic change-set, or one added later — still cannot
+        // overwrite a feature another editor holds. Registered after the audit decorator so
+        // a blocked edit never reaches the auditor as an applied write.
+        services.AddFeatureLockEnforcingFeatureWriter();
 
         // Registry-backed geographic-SRID classification seam (#2794). Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the
@@ -105,7 +118,7 @@ internal static class InfrastructureCompositionRoot
         // when ArcGisRest:Enabled is explicitly false.
         if (configuration.GetValue("ArcGisRest:Enabled", true))
         {
-            Honua.ArcGisRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
+            Honua.GeoServicesRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
         }
 
         // Register the Oracle spatial provider as an additional read-only feature backend (#1252).
@@ -311,5 +324,44 @@ internal static class InfrastructureCompositionRoot
             sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
         services.AddHostedService(sp =>
             sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
+
+        ConfigureMetadataGraphCacheInvalidation(services);
+    }
+
+    /// <summary>
+    /// Makes Metadata v2 graph snapshot invalidation cluster-wide when Redis is composed. Each node
+    /// caches the catalog snapshot in-process for <c>Cache:MetadataGraphTtlSeconds</c>; without a
+    /// broadcast, a catalog write on one node is invisible to the others until their TTL expires, so a
+    /// publish followed by an admin call routed to another node 404s. When an
+    /// <see cref="IConnectionMultiplexer"/> is registered, the invalidator publishes every write on a
+    /// Redis channel that every node subscribes to. Without Redis (single-node) the in-process
+    /// invalidator registered by the store composition is left untouched.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    public static void ConfigureMetadataGraphCacheInvalidation(IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        // Correctness, not a licensed capability: keyed on the multiplexer being composed at all,
+        // not on the Redis cache entitlement. Multi-node mode already requires Redis
+        // (ConfigurationValidationService), so a Redis-off deployment is single-node by contract.
+        if (!services.Any(static d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            return;
+        }
+
+        Honua.Core.Features.Metadata.MetadataServiceCollectionExtensions.AddMetadataV2GraphSnapshotCache(services);
+        services.TryAddSingleton(sp => new RedisMetadataV2GraphCacheInvalidator(
+            sp.GetRequiredService<Honua.Core.Features.Metadata.Caching.MetadataV2GraphSnapshotCache>(),
+            sp.GetRequiredService<IConnectionMultiplexer>(),
+            sp.GetRequiredService<ILogger<RedisMetadataV2GraphCacheInvalidator>>(),
+            keyPrefix: sp.GetService<IOptions<CacheOptions>>()?.Value.KeyPrefix));
+
+        // Replace (not TryAdd) so this wins regardless of whether the store composition registered
+        // the in-process invalidator before or after this call.
+        services.RemoveAll<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphCacheInvalidator>();
+        services.AddSingleton<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphCacheInvalidator>(
+            static sp => sp.GetRequiredService<RedisMetadataV2GraphCacheInvalidator>());
+        services.AddHostedService(static sp => sp.GetRequiredService<RedisMetadataV2GraphCacheInvalidator>());
     }
 }

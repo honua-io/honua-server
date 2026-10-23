@@ -49,7 +49,8 @@ public sealed record GeoservicesServiceInfo
     public string[] Capabilities { get; init; } = [];
 
     /// <summary>
-    /// Layers available in this service.
+    /// Spatial layers and standalone tables available in this service.
+    /// Each resource retains its source <see cref="GeoservicesLayerInfo.Type"/>.
     /// </summary>
     public GeoservicesLayerInfo[] Layers { get; init; } = [];
 
@@ -121,6 +122,12 @@ public sealed record GeoservicesLayerInfo
     public GeoservicesFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
+    /// Source relationship declarations, including incomplete records. Importing this
+    /// resource alone does not recreate these cross-resource bindings.
+    /// </summary>
+    public GeoservicesRelationshipInfo?[] Relationships { get; init; } = [];
+
+    /// <summary>
     /// The type of layer (e.g., "Feature Layer", "Table").
     /// </summary>
     public string? Type { get; init; }
@@ -129,6 +136,9 @@ public sealed record GeoservicesLayerInfo
     /// Whether the layer supports attachments.
     /// </summary>
     public bool HasAttachments { get; init; }
+
+    /// <summary>Source field declared as the edit-stable GlobalID binding, when present.</summary>
+    public string? GlobalIdField { get; init; }
 
     /// <summary>
     /// Minimum scale at which the layer is visible.

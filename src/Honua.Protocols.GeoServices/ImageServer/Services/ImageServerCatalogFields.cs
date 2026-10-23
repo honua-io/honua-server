@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 /// <summary>
@@ -33,6 +36,38 @@ internal static class ImageServerCatalogFields
         "AcquisitionDate",
         "CreatedAt",
     ];
+
+    /// <summary>
+    /// The protocol-neutral raster-catalog field schema, in <see cref="CanonicalNames"/>
+    /// order. REST metadata, REST <c>query</c>, SOAP <c>GetFields</c>/<c>AllowedFields</c>
+    /// and attribute-time resolution all project from this one definition.
+    /// </summary>
+    /// <param name="maskedFields">Caller field masks; masked fields are omitted.</param>
+    public static Field[] Schema(ImmutableArray<string> maskedFields = default)
+    {
+        Field[] allFields =
+        [
+            new Field { Name = "OBJECTID", Type = "esriFieldTypeOID", Alias = "OBJECTID" },
+            new Field { Name = "Name", Type = "esriFieldTypeString", Alias = "Name", Nullable = true },
+            new Field { Name = "MinPS", Type = "esriFieldTypeDouble", Alias = "MinPS" },
+            new Field { Name = "MaxPS", Type = "esriFieldTypeDouble", Alias = "MaxPS" },
+            new Field { Name = "LowPS", Type = "esriFieldTypeDouble", Alias = "LowPS" },
+            new Field { Name = "HighPS", Type = "esriFieldTypeDouble", Alias = "HighPS" },
+            new Field { Name = "CenterX", Type = "esriFieldTypeDouble", Alias = "CenterX" },
+            new Field { Name = "CenterY", Type = "esriFieldTypeDouble", Alias = "CenterY" },
+            new Field { Name = "ZOrder", Type = "esriFieldTypeInteger", Alias = "ZOrder" },
+            new Field { Name = "Shape_Length", Type = "esriFieldTypeDouble", Alias = "Shape_Length" },
+            new Field { Name = "Shape_Area", Type = "esriFieldTypeDouble", Alias = "Shape_Area" },
+            new Field { Name = "BandCount", Type = "esriFieldTypeInteger", Alias = "BandCount" },
+            new Field { Name = "PixelType", Type = "esriFieldTypeString", Alias = "PixelType", Nullable = true },
+            new Field { Name = "AcquisitionDate", Type = "esriFieldTypeDate", Alias = "AcquisitionDate", Nullable = true },
+            new Field { Name = "CreatedAt", Type = "esriFieldTypeDate", Alias = "CreatedAt" },
+        ];
+
+        return maskedFields.IsDefaultOrEmpty
+            ? allFields
+            : allFields.Where(field => !maskedFields.Contains(field.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
+    }
 
     /// <summary>
     /// Resolves a catalog field value for WHERE evaluation, accepting the Esri

@@ -1,0 +1,27 @@
+---
+type: capability
+title: "GeocodeServer Discovery"
+description: "Discover GeocodeServer service and layer metadata. Batch geocode execution is gated by the geocoding.batch entitlement key (Enterprise); forward and reverse geocode execution are Community (#2981)."
+resource: "honua://capability/serve.geoservices-geocodeserver"
+tags: [capability, serve, community]
+---
+<!-- GENERATED FILE - DO NOT EDIT. Regenerate with scripts/ci/generate-capability-concepts.py -->
+
+# GeocodeServer Discovery
+
+Discover GeocodeServer service and layer metadata. Batch geocode execution is gated by the geocoding.batch entitlement key (Enterprise); forward and reverse geocode execution are Community (#2981).
+
+| | |
+| --- | --- |
+| Capability key | `serve.geoservices-geocodeserver` |
+| Category | Serve |
+| Edition | Community |
+| Surface maturity | 4 implemented |
+| Registry entries | 4 |
+| Proving tests | 18 |
+
+The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
+
+## Documented in
+
+- [GeocodeServer provider parity matrix](../../reference/geocoding/geocode-server-parity.md)

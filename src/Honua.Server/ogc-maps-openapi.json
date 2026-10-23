@@ -36,6 +36,33 @@
         }
       }
     },
+    "/ogc/maps/collections": {
+      "get": {
+        "summary": "List accessible collections that serve maps",
+        "description": "Returns map collection descriptions filtered by the caller's tenant, access policy and enabled protocols.",
+        "parameters": [
+          { "name": "f", "in": "query", "schema": { "type": "string", "enum": ["json", "html"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accessible map collections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["collections", "links"],
+                  "properties": {
+                    "collections": { "type": "array", "items": { "$ref": "#/components/schemas/MapsCollection" } },
+                    "links": { "type": "array", "items": { "$ref": "#/components/schemas/Link" } }
+                  }
+                }
+              },
+              "text/html": { "schema": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
     "/ogc/maps/conformance": {
       "get": {
         "summary": "Get OGC API Maps conformance declaration",
@@ -157,6 +184,101 @@
           },
           "404": {
             "description": "No renderable collections were found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/maps/collections/{collectionId}": {
+      "get": {
+        "summary": "Get collection description",
+        "description": "Describes a collection that serves maps: its CRS84 extent and the map links (`https://www.opengis.net/def/rel/ogc/1.0/map`, its `[ogc-rel:map]` CURIE and the registered `http://www.opengis.net/def/rel/ogc/1.0/map` form that GDAL reads) that map clients follow to `/map`. Answers for exactly the collections that serve `/map`.",
+        "security": [
+          {},
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection description",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapsCollection"
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -685,6 +807,44 @@
             "items": {
               "$ref": "#/components/schemas/Link"
             }
+          },
+          "extent": {
+            "type": "object",
+            "description": "Extent of the caller-visible dataset, omitted when no bounds can be described.",
+            "properties": {
+              "spatial": {
+                "type": "object",
+                "properties": {
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "minItems": 4,
+                      "maxItems": 6,
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "crs": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "crs": {
+            "type": "array",
+            "description": "CRS identifiers the caller-visible dataset as a whole can be requested in.",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "storageCrs": {
+            "type": "string",
+            "format": "uri",
+            "description": "The common native storage CRS, present only when one non-CRS84 reference system describes every mapped collection."
           }
         }
       },
@@ -705,6 +865,57 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "MapsCollection": {
+        "type": "object",
+        "required": [
+          "id",
+          "links"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "extent": {
+            "type": "object",
+            "properties": {
+              "spatial": {
+                "type": "object",
+                "properties": {
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "minItems": 4,
+                      "maxItems": 6,
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "crs": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "itemType": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
           }
         }
       },

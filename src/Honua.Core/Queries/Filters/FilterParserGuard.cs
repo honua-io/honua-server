@@ -22,13 +22,78 @@ internal static class FilterParserGuard
     // cannot pin down the heap or slow down comparison loops.
     internal const int MaxStringLiteralLength = 64 * 1024;       // 64 KiB per literal
     internal const int MaxIdentifierLength = 256;                // conservative for all backends
-    internal const int MaxInListSize = 10_000;                   // 10k elements per IN(...) list
+
+    // SQL Server rejects a statement above 2100 parameters. objectIds above 2000 are
+    // bound as one JSON parameter; a where IN-list is one parameter per value, so the
+    // same 2000 budget is a client error here instead of a provider 500. The leftover
+    // parameters cover paging and the rest of the statement.
+    internal const int MaxInListSize = 2_000;
+
+    // Cap on the size of a parsed expression tree, counted the way recursive walks visit
+    // it (a subtree shared by several parents counts once per reference). Ten IN-list
+    // budgets; applies to parser output only, never to server-built expressions.
+    // IN values themselves share MaxInListSize across the whole expression.
+    internal const int MaxExpressionNodes = 10 * MaxInListSize;
 
     public static void EnsureExpressionDepth(int depth)
     {
         if (depth > MaxExpressionDepth)
         {
             throw new ArgumentException($"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
+        }
+    }
+
+    // A flat AND/OR sequence folds into a left-deep chain whose depth equals its operand
+    // count, so a sequence longer than MaxExpressionDepth can never pass the tree check
+    // below. Rejecting it while the parser is still folding keeps the produced tree small.
+    public static void EnsureLogicalOperandCount(int count)
+    {
+        if (count > MaxExpressionDepth)
+        {
+            throw new ArgumentException(
+                $"Filter expression combines more than {MaxExpressionDepth} operands in one AND/OR sequence, " +
+                $"which exceeds the maximum nesting depth of {MaxExpressionDepth}.");
+        }
+    }
+
+    // Applied by every parser to the tree it produced, before returning it: parser-side
+    // depth counters track syntactic nesting only, while folded operator sequences
+    // (logical, arithmetic, concatenation) deepen the tree without nesting the input.
+    public static void EnsureExpressionTree(FilterExpression expression)
+    {
+        FilterExpressionNormalizer.EnsureWithinBounds(expression, MaxExpressionNodes);
+        EnsureAggregateInListValues(expression);
+    }
+
+    // Each IN/NOT IN value is its own SQL parameter. A single list is already capped;
+    // several lists in one expression share that budget so the statement stays under
+    // the strictest provider parameter limit.
+    private static void EnsureAggregateInListValues(FilterExpression expression)
+    {
+        var total = 0;
+        var stack = new Stack<FilterExpression>();
+        stack.Push(expression);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (current is BinaryExpression
+                {
+                    Operator: BinaryOperator.In or BinaryOperator.NotIn,
+                    Right: ValueList values
+                })
+            {
+                total += values.Values.Count;
+                if (total > MaxInListSize)
+                {
+                    throw new ArgumentException(
+                        $"Filter IN-lists exceed the maximum of {MaxInListSize} values.");
+                }
+            }
+
+            foreach (var child in FilterExpressionNormalizer.EnumerateChildren(current))
+            {
+                stack.Push(child);
+            }
         }
     }
 
@@ -69,6 +134,17 @@ internal static class FilterParserGuard
         {
             throw new ArgumentException(
                 $"{description} IN-list exceeds the maximum of {MaxInListSize} values.");
+        }
+    }
+
+    // Function-call argument lists and array literals are flat operand lists like an
+    // IN-list, so they share its cap; checked while the parser materializes the list.
+    public static void EnsureValueListSize(int count, string description)
+    {
+        if (count > MaxInListSize)
+        {
+            throw new ArgumentException(
+                $"{description} exceeds the maximum of {MaxInListSize} values.");
         }
     }
 

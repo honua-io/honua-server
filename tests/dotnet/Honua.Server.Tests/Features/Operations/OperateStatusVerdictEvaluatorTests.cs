@@ -20,8 +20,7 @@ public sealed class OperateStatusVerdictEvaluatorTests
             CriticalFindingRules: [],
             ParkedDeploys: 0,
             AlertDeadLettered: 0,
-            AlertDispatchImpaired: false,
-            SloErrorBudgetExhausted: false);
+            AlertDispatchImpaired: false);
 
     [Fact]
     public void Evaluate_AllClear_IsHealthy()
@@ -81,17 +80,6 @@ public sealed class OperateStatusVerdictEvaluatorTests
 
         status.Should().Be(OperateOverallStatus.Degraded);
         reasons.Should().Contain("alert-dead-lettered");
-    }
-
-    [Fact]
-    public void Evaluate_SloErrorBudgetExhausted_IsDegraded()
-    {
-        var signals = Clear() with { SloErrorBudgetExhausted = true };
-
-        var (status, reasons) = OperateStatusVerdictEvaluator.Evaluate(signals);
-
-        status.Should().Be(OperateOverallStatus.Degraded);
-        reasons.Should().Contain("slo-error-budget-exhausted");
     }
 
     [Fact]

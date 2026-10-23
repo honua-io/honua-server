@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -65,7 +67,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -81,8 +84,20 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var estimates = await featureReader.GetEstimatesAsync(storageLayerId.Value, cancellationToken);
+        IFeatureReader featureReader;
+        EstimateResult estimates;
+        try
+        {
+            featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            estimates = await featureReader.GetEstimatesAsync(storageLayerId.Value, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "getEstimates is not supported by the configured feature provider for this layer.");
+        }
 
         var response = new GetEstimatesResponse
         {
@@ -154,35 +169,44 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             selectedLayers.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         var layerEstimates = new List<ServiceLayerEstimateInfo>(accessibleLayers.Length);
 
         foreach (var (publication, resource) in accessibleLayers)
         {
-            // Mirror the V2 metadata builders' resolution order
-            // (FeatureServerUtilities.V2.MapLayerInfoV2): the integer storage
-            // handle for IFeatureReader is publication.LayerIndex when the graph
-            // doesn't carry an explicit storage binding for this publication.
-            var resolvedLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
-            if (resolvedLayerId is null)
+            if (ResolveServiceEstimateLayerIds(snapshot, publication, resource) is not { } layerIds)
             {
                 continue;
             }
 
-            var estimates = await featureReader.GetEstimatesAsync(resolvedLayerId.Value, cancellationToken);
+            EstimateResult estimates;
+            try
+            {
+                var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                    context, snapshot, service, resource, publication, layerIds.StorageLayerId, cancellationToken).ConfigureAwait(false);
+                estimates = await featureReader.GetEstimatesAsync(layerIds.StorageLayerId, cancellationToken);
+            }
+            catch (NotSupportedException)
+            {
+                return StandardErrorHelpers.CreateNotImplemented(
+                    context,
+                    "getEstimates is not supported by the configured feature provider for this layer.");
+            }
             layerEstimates.Add(new ServiceLayerEstimateInfo
             {
-                Id = resolvedLayerId.Value,
+                Id = layerIds.PublicLayerId,
                 Count = estimates.EstimatedCount,
                 Extent = estimates.Extent.HasValue ? estimates.Extent.Value.ToExtentInfo() : null
             });
@@ -198,5 +222,24 @@ internal static partial class FeatureServerEndpoints
             response,
             FeatureServerJsonContext.Default.ServiceGetEstimatesResponse,
             contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Resolves the layer id a service-level estimate is reported under (the publication's
+    /// service-local index) and the storage-layer handle it is read from. The handle comes
+    /// from the shared resolver, so a publication whose index differs from its storage id
+    /// is estimated from its own storage; <see langword="null"/> when it has none.
+    /// </summary>
+    internal static (int PublicLayerId, int StorageLayerId)? ResolveServiceEstimateLayerIds(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource)
+    {
+        if (snapshot.ResolveStorageLayerId(publication, resource) is not int storageLayerId)
+        {
+            return null;
+        }
+
+        return (publication.LayerIndex ?? storageLayerId, storageLayerId);
     }
 }

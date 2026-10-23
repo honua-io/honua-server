@@ -223,12 +223,17 @@ internal static partial class UserManagementEndpoints
     {
         try
         {
+            var existing = await store.GetUserAsync(id, context.RequestAborted).ConfigureAwait(false);
             var deleted = await store.DeprovisionUserAsync(id, context.RequestAborted);
             if (!deleted)
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure("User not found"));
             }
 
+            await PortalOAuthRefreshRevoker.RevokeManagedUserAsync(
+                context.RequestServices.GetService<PortalOAuthStore>(),
+                existing,
+                context.RequestAborted).ConfigureAwait(false);
             UserManagementLog.UserDeprovisioned(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("User deprovisioned"));
         }

@@ -72,7 +72,6 @@ internal static class McpTelemetry
     {
         public const string Ok = "ok";
         public const string Error = "error";
-        public const string NotImplemented = "not_implemented";
     }
 
     /// <summary>
@@ -98,6 +97,7 @@ internal static class McpTelemetry
     /// </summary>
     public static class ResourceFamily
     {
+        public const string TemporaryFiles = "temporary-files";
         public const string Jobs = "jobs";
         public const string JobResults = "job-results";
         public const string JobReports = "job-reports";

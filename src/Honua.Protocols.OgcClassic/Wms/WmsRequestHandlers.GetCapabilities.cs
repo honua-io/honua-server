@@ -147,7 +147,7 @@ internal static partial class WmsRequestHandlers
         // the whole GetCapabilities document — skip its TIME dimension and keep the rest
         // (honua-server#1911).
         var tasks = temporalLayers.Select(layer =>
-            ResolveTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
+            ResolveTemporalRangeSafeAsync(context, layer, featureReader, logger, cancellationToken));
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
@@ -223,6 +223,7 @@ internal static partial class WmsRequestHandlers
     /// rather than failing the whole capabilities document (honua-server#1911).
     /// </summary>
     private static async Task<MetadataV2TemporalRange?> ResolveTemporalRangeSafeAsync(
+        HttpContext context,
         WmsLayer layer,
         IFeatureReader featureReader,
         ILogger logger,
@@ -230,10 +231,12 @@ internal static partial class WmsRequestHandlers
     {
         try
         {
+            var layerReader = await ResolveLayerReaderAsync(context, layer, featureReader, cancellationToken)
+                .ConfigureAwait(false);
             return await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
                 layer.Resource,
                 layer.StorageLayerId,
-                featureReader,
+                layerReader,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -252,6 +255,16 @@ internal static partial class WmsRequestHandlers
             return null;
         }
     }
+
+    /// <summary>
+    /// The WMS 1.3.0 resolution value that declares a temporal interval continuous.
+    /// </summary>
+    /// <remarks>
+    /// Annex C defines a dimension extent as <c>min/max/resolution</c>. A resolution of
+    /// <c>0</c> means the interval is continuous; an ISO 8601 duration would mean the
+    /// values are discrete and spaced by that period.
+    /// </remarks>
+    private const string ContinuousTemporalResolution = "0";
 
     private static void AppendWmsTemporalDimension(
         StringBuilder sb,
@@ -275,7 +288,14 @@ internal static partial class WmsRequestHandlers
 
         var min = FormatWmsTemporalInstant(range.Min.Value);
         var max = FormatWmsTemporalInstant(range.Max.Value);
-        var extent = $"{min}/{max}/PT0S";
+        // WMS 1.3.0 Annex C spells a continuous interval "min/max/0": the third element
+        // is a resolution, and the literal 0 is what declares that every instant in the
+        // interval is available. "PT0S" looks like the same statement in ISO 8601 but is
+        // a zero-length duration, which is not a valid resolution. ArcGIS Pro rejects the
+        // dimension outright and reports the layer as not time-enabled, while QGIS
+        // tolerates it - so the spelling alone decided whether a client saw the time
+        // dimension at all. See honua-server#5172.
+        var extent = $"{min}/{max}/{ContinuousTemporalResolution}";
 
         if (isWms111)
         {
@@ -371,9 +391,11 @@ internal static partial class WmsRequestHandlers
         var responseVersion = isWms111 ? Wms111Version : Wms13Version;
         var crsElementName = isWms111 ? "SRS" : "CRS";
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
-        var wmsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS";
-        var wmsUrlPrefix = $"{wmsEndpoint}?";
-        var metadataUrl = $"{wmsEndpoint}?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
+        var wmsEndpoint = BaseUrlResolver.PreserveToken(
+            context.Request,
+            $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS");
+        var wmsUrlPrefix = $"{wmsEndpoint}{(wmsEndpoint.Contains('?') ? '&' : '?')}";
+        var metadataUrl = $"{wmsUrlPrefix}SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var serviceTitle = service.Metadata.Title ?? service.Metadata.Name ?? serviceId;

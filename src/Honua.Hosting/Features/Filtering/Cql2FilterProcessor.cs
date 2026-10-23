@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Geometries;
+using Honua.Infrastructure.Stac;
 using Honua.Infrastructure.Validation;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
@@ -191,13 +192,11 @@ internal sealed class Cql2FilterProcessor(
         MetadataV2Resource resource,
         string? collectionId)
     {
-        var idField = resource.FindPrimaryIdField();
+        var idField = StacItemIdentity.Resolve(resource).Field;
         var idFieldName = idField?.Name ?? "objectid";
-        var idFieldIsNumeric = idField?.Type is MetadataV2FieldType.Integer
-            or MetadataV2FieldType.BigInteger
-            or MetadataV2FieldType.Double
-            or MetadataV2FieldType.Float
-            or null; // default objectid is integer-keyed
+        // A missing field still means the integer objectid key. A declared string
+        // identity (stac_id, item_id, or an explicit idField) keeps string literals.
+        var idFieldIsNumeric = StacItemIdentity.IsNumericStorage(idField);
         var temporalFieldName = ResolveTemporalFieldName(resource);
         return RewriteNode(expression, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId);
     }

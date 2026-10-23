@@ -51,10 +51,16 @@ internal static partial class AttachmentHandler
         IAttachmentStore attachmentStore,
         ILogger<AttachmentOperations> logger,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<long, long>? storageIdByPublicObjectId = null,
+        int? publicLayerId = null)
     {
         try
         {
+            // Store calls keep the storage layer id. URLs use the route layer id, which is
+            // what download routes resolve (#6136). Omitting it preserves callers that pass
+            // one id for both.
+            var urlLayerId = publicLayerId ?? layerId;
             var uniqueFeatureIds = featureIds
                 .Distinct()
                 .ToArray();
@@ -62,15 +68,20 @@ internal static partial class AttachmentHandler
             var groups = new List<AttachmentGroup>(uniqueFeatureIds.Length);
             foreach (var featureId in uniqueFeatureIds)
             {
+                if (!TryResolveAttachmentStorageId(featureId, storageIdByPublicObjectId, out var storageId))
+                {
+                    continue;
+                }
+
                 LogQueryAttachments(logger, layerId, featureId);
 
-                var attachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+                var attachments = await attachmentStore.ListAsync(layerId, storageId, cancellationToken);
                 if (filter.HasAnyFacet)
                 {
                     attachments = Array.FindAll(attachments, filter.Matches);
                 }
 
-                var infos = MapAttachmentInfos(attachments, context, layerId, featureId, returnUrl);
+                var infos = MapAttachmentInfos(attachments, context, urlLayerId, featureId, returnUrl);
 
                 groups.Add(new AttachmentGroup
                 {
@@ -86,7 +97,12 @@ internal static partial class AttachmentHandler
             var response = new AttachmentQueryResponse
             {
                 AttachmentGroups = groups.ToArray(),
-                AttachmentInfos = groups.Count == 1 ? groups[0].AttachmentInfos : null
+                AttachmentInfos = groups.Count switch
+                {
+                    0 => [],
+                    1 => groups[0].AttachmentInfos,
+                    _ => null
+                }
             };
 
             return Results.Ok(response);
@@ -114,12 +130,14 @@ internal static partial class AttachmentHandler
         long featureId,
         IAttachmentStore attachmentStore,
         ILogger<AttachmentOperations> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? storageFeatureId = null)
     {
+        var storageId = storageFeatureId ?? featureId;
         try
         {
             LogQueryAttachments(logger, layerId, featureId);
-            var attachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+            var attachments = await attachmentStore.ListAsync(layerId, storageId, cancellationToken);
             var response = new AttachmentInfosResponse
             {
                 AttachmentInfos = MapAttachmentInfos(attachments, context, layerId, featureId, returnUrl: false)
@@ -156,8 +174,10 @@ internal static partial class AttachmentHandler
         AttachmentLimits limits,
         FileUploadSecurityOptions securityOptions,
         ILogger<AttachmentOperations> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? storageFeatureId = null)
     {
+        var storageId = storageFeatureId ?? featureId;
         try
         {
             var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
@@ -201,7 +221,7 @@ internal static partial class AttachmentHandler
             }
 
             // Check if feature already has maximum number of attachments
-            var existingAttachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+            var existingAttachments = await attachmentStore.ListAsync(layerId, storageId, cancellationToken);
             if (existingAttachments.Length >= limits.MaxAttachmentsPerFeature)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -220,7 +240,7 @@ internal static partial class AttachmentHandler
             await using var stream = file.OpenReadStream();
             var attachment = await attachmentStore.UploadAsync(
                 layerId,
-                featureId,
+                storageId,
                 safeFileName,
                 file.ContentType,
                 stream,
@@ -238,6 +258,12 @@ internal static partial class AttachmentHandler
 
             LogAddAttachmentSuccess(logger, layerId, featureId, attachment.Id);
             return Results.Ok(response);
+        }
+        catch (ValidationException ex)
+        {
+            // The store re-checks the quota inside the insert transaction. That refusal is a
+            // client error, and the message is the same limit text the pre-check returns.
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -267,13 +293,15 @@ internal static partial class AttachmentHandler
         AttachmentLimits limits,
         FileUploadSecurityOptions securityOptions,
         ILogger<AttachmentOperations> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? storageFeatureId = null)
     {
+        var storageId = storageFeatureId ?? featureId;
         try
         {
             LogUpdateAttachment(logger, layerId, featureId, attachmentId);
 
-            var existingAttachment = await attachmentStore.GetAsync(layerId, featureId, attachmentId, cancellationToken);
+            var existingAttachment = await attachmentStore.GetAsync(layerId, storageId, attachmentId, cancellationToken);
             if (!existingAttachment.HasValue)
             {
                 return StandardErrorHelpers.CreateNotFound(context,
@@ -315,7 +343,7 @@ internal static partial class AttachmentHandler
                         [contentValidation.ErrorMessage ?? "File content validation failed"]);
                 }
 
-                var existingAttachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+                var existingAttachments = await attachmentStore.ListAsync(layerId, storageId, cancellationToken);
                 var totalOtherAttachmentSize = existingAttachments
                     .Where(existing => existing.Id != attachmentId)
                     .Sum(existing => existing.Size);
@@ -328,7 +356,7 @@ internal static partial class AttachmentHandler
                 await using var stream = file.OpenReadStream();
                 await attachmentStore.ReplaceAsync(
                     layerId,
-                    featureId,
+                    storageId,
                     attachmentId,
                     FileUploadSecurity.SanitizeFileName(file.FileName),
                     file.ContentType,
@@ -339,7 +367,7 @@ internal static partial class AttachmentHandler
             else
             {
                 // Only mutate keywords: the file may have been replaced since the existence check.
-                await attachmentStore.UpdateKeywordsAsync(layerId, featureId, attachmentId, keywords, cancellationToken);
+                await attachmentStore.UpdateKeywordsAsync(layerId, storageId, attachmentId, keywords, cancellationToken);
             }
 
             var response = new UpdateAttachmentResponse
@@ -383,8 +411,10 @@ internal static partial class AttachmentHandler
         long[] attachmentIds,
         IAttachmentStore attachmentStore,
         ILogger<AttachmentOperations> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? storageFeatureId = null)
     {
+        var storageId = storageFeatureId ?? featureId;
         try
         {
             LogDeleteAttachments(logger, layerId, featureId, attachmentIds.Length);
@@ -393,19 +423,43 @@ internal static partial class AttachmentHandler
 
             foreach (var attachmentId in attachmentIds)
             {
-                var success = await attachmentStore.DeleteAsync(layerId, featureId, attachmentId, cancellationToken);
-                deleteResults.Add(new DeleteAttachmentResult
+                try
                 {
-                    ObjectId = attachmentId,
-                    Success = success,
-                    Error = success
-                        ? null
-                        : new EditError
+                    var success = await attachmentStore.DeleteAsync(layerId, storageId, attachmentId, cancellationToken);
+                    deleteResults.Add(new DeleteAttachmentResult
+                    {
+                        ObjectId = attachmentId,
+                        Success = success,
+                        Error = success
+                            ? null
+                            : new EditError
+                            {
+                                Code = 1000,
+                                Description = "Attachment not found."
+                            }
+                    });
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                // Each DeleteAsync commits on its own. A later failure must not hide the
+                // ids that already succeeded, and the client message must not include the
+                // provider exception.
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    LogDeleteAttachmentsError(logger, layerId, featureId, ex);
+                    deleteResults.Add(new DeleteAttachmentResult
+                    {
+                        ObjectId = attachmentId,
+                        Success = false,
+                        Error = new EditError
                         {
-                            Code = 1000,
-                            Description = "Attachment not found."
+                            Code = 500,
+                            Description = "Failed to delete attachment."
                         }
-                });
+                    });
+                }
             }
 
             var response = new DeleteAttachmentsResponse
@@ -441,13 +495,15 @@ internal static partial class AttachmentHandler
         long attachmentId,
         IAttachmentStore attachmentStore,
         ILogger<AttachmentOperations> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? storageFeatureId = null)
     {
+        var storageId = storageFeatureId ?? featureId;
         try
         {
             LogDownloadAttachment(logger, layerId, featureId, attachmentId);
 
-            var attachmentContent = await attachmentStore.DownloadAsync(layerId, featureId, attachmentId, cancellationToken);
+            var attachmentContent = await attachmentStore.DownloadAsync(layerId, storageId, attachmentId, cancellationToken);
             if (attachmentContent == null)
             {
                 return StandardErrorHelpers.CreateNotFound(context,
@@ -532,6 +588,20 @@ internal static partial class AttachmentHandler
         return false;
     }
 
+    private static bool TryResolveAttachmentStorageId(
+        long publicObjectId,
+        IReadOnlyDictionary<long, long>? storageIdByPublicObjectId,
+        out long storageId)
+    {
+        if (storageIdByPublicObjectId is null)
+        {
+            storageId = publicObjectId;
+            return true;
+        }
+
+        return storageIdByPublicObjectId.TryGetValue(publicObjectId, out storageId);
+    }
+
     private static AttachmentInfo[] MapAttachmentInfos(
         IReadOnlyList<Attachment> attachments,
         HttpContext context,
@@ -563,14 +633,14 @@ internal static partial class AttachmentHandler
             return null;
         }
 
-        var relativePath = $"{context.Request.PathBase}/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}";
+        var resourcePath = $"/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}";
         if (BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
             !string.IsNullOrWhiteSpace(configuredBaseUrl))
         {
-            return $"{configuredBaseUrl}{relativePath}";
+            return $"{configuredBaseUrl}{resourcePath}";
         }
 
-        return relativePath;
+        return $"{context.Request.PathBase}{resourcePath}";
     }
 
     #region Logging

@@ -88,6 +88,10 @@ internal sealed class McpLayerSummary
     [JsonPropertyName("layerId")]
     public int LayerId { get; set; }
 
+    /// <summary>Existing Studio catalog key for composition layer.sourceId; not a data permission.</summary>
+    [JsonPropertyName("studioSourceId")]
+    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, LayerId);
+
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
@@ -168,6 +172,10 @@ internal sealed class McpDescribeLayerOutput
 
     [JsonPropertyName("layerId")]
     public int LayerId { get; set; }
+
+    /// <summary>Existing Studio catalog key for composition layer.sourceId; not a data permission.</summary>
+    [JsonPropertyName("studioSourceId")]
+    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, LayerId);
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
@@ -480,6 +488,21 @@ internal sealed class McpRenderedLayer
 
     [JsonPropertyName("styleId")]
     public string? StyleId { get; set; }
+
+    /// <summary>
+    /// How the layer's style was rendered: <c>applied</c>, <c>default</c>, or
+    /// <c>unsupported-style-construct</c> (see <see cref="AppliedStyleRenderSupport"/>).
+    /// </summary>
+    [JsonPropertyName("styleRendering")]
+    public string StyleRendering { get; set; } = AppliedStyleRenderSupport.Default;
+
+    /// <summary>
+    /// The applied-style constructs that were not drawn, when
+    /// <see cref="StyleRendering"/> is <c>unsupported-style-construct</c>.
+    /// </summary>
+    [JsonPropertyName("unsupportedStyleConstructs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? UnsupportedStyleConstructs { get; set; }
 }
 
 /// <summary>
@@ -637,6 +660,49 @@ internal sealed class McpApplyStylePresetArgument
 /// </summary>
 internal sealed class McpApplyStylePresetOutput
 {
+    // Canonical style.apply-preset OperationHandle projection, in the same shape
+    // honua_publish_service returns, so a caller can join the style change to its
+    // operation instance, correlation, and durable audit record.
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("operationId")]
+    public string OperationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("operationInstanceId")]
+    public string OperationInstanceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("handleId")]
+    public string HandleId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// <see langword="false"/> when the operation instance record was not durably persisted: a
+    /// direct style.apply-preset on a host started without Redis (owner decisions 3 and 20). The
+    /// identities and audit receipts are real, but the handle cannot be read back through the
+    /// operation status surfaces. Omitted when the record went to the composed instance store.
+    /// </summary>
+    [JsonPropertyName("durable")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Durable { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string CorrelationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("auditId")]
+    public string? AuditId { get; set; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("authorizationOutcome")]
+    public string? AuthorizationOutcome { get; set; }
+
+    [JsonPropertyName("policyOutcome")]
+    public string? PolicyOutcome { get; set; }
+
     [JsonPropertyName("warning")]
     public string? Warning { get; set; }
 

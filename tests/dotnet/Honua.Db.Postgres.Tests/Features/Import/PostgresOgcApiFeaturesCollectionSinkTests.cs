@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
@@ -37,6 +39,27 @@ public sealed class PostgresOgcApiFeaturesCollectionSinkTests : IAsyncLifetime
         }
 
         await _fixture.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTargetAsync_UnownedTable_RefusesWithoutChangingRowsOrOwnership()
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using (var create = new NpgsqlCommand($"CREATE TABLE \"{_schema}\".unrelated (sentinel text); INSERT INTO \"{_schema}\".unrelated VALUES ('keep me')", connection))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+        var target = new OgcApiFeaturesSinkTarget { Schema = _schema!, Table = "unrelated", CollectionId = "roads" };
+
+        await Assert.ThrowsAsync<ImportTableOwnershipException>(
+            () => CreateSink().EnsureTargetAsync(target, CancellationToken.None));
+
+        await using var verify = new NpgsqlCommand($"SELECT sentinel, obj_description('\"{_schema}\".unrelated'::regclass, 'pg_class') FROM \"{_schema}\".unrelated", connection);
+        await using var reader = await verify.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetString(0).Should().Be("keep me");
+        reader.IsDBNull(1).Should().BeTrue();
+        (await reader.ReadAsync()).Should().BeFalse();
     }
 
     [Fact]
@@ -229,8 +252,122 @@ public sealed class PostgresOgcApiFeaturesCollectionSinkTests : IAsyncLifetime
             .ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task EnsureTargetAsync_CaseVariantOfOperationalSchema_UsesConfiguredSpelling()
+    {
+        // Quoted identifiers keep case. A request spelling that only differs by case from a
+        // configured operational schema must write to that schema, not create a second one.
+        const string configuredSchema = "OpSchemaGis5379";
+        const string requestedSchema = "opschemagis5379";
+        const string table = "case_variant_roads";
+
+        var sink = new PostgresOgcApiFeaturesCollectionSink(
+            _fixture.DataSource,
+            NullLogger<PostgresOgcApiFeaturesCollectionSink>.Instance,
+            new PostgresSchemaConfiguration(
+                PostgresSchemaConfiguration.DefaultMetadataSchema,
+                PostgresSchemaConfiguration.DefaultDataSchema,
+                [PostgresSchemaConfiguration.DefaultDataSchema, "public", configuredSchema]));
+        var target = new OgcApiFeaturesSinkTarget
+        {
+            Schema = requestedSchema,
+            Table = table,
+            CollectionId = "roads"
+        };
+
+        try
+        {
+            await sink.EnsureTargetAsync(target, CancellationToken.None);
+            var written = await sink.WriteFeaturesAsync(
+                target,
+                [
+                    new OgcApiFeaturesSinkFeature
+                    {
+                        SourceFeatureId = "road.1",
+                        GeoJsonGeometry = "{\"type\":\"Point\",\"coordinates\":[-157.85,21.30]}",
+                        PropertiesJson = "{\"name\":\"King\"}"
+                    }
+                ],
+                CancellationToken.None);
+            await sink.RecordScopeSignatureAsync(target, "scope-canonical", CancellationToken.None);
+            var scope = await sink.GetLastScopeSignatureAsync(target, CancellationToken.None);
+            var columns = await sink.GetTargetColumnsAsync(target, CancellationToken.None);
+
+            written.Should().Be(1);
+            scope.Should().Be("scope-canonical");
+            columns.Select(column => column.Name).Should().Contain("source_feature_id");
+
+            var schemas = await SchemaNamesHoldingTableAsync(table);
+            schemas.Should().ContainSingle().Which.Should().Be(configuredSchema);
+            (await NamespaceExistsAsync(requestedSchema)).Should().BeFalse();
+
+            var indexSchema = await IndexSchemaAsync(table + "_geometry_gix");
+            indexSchema.Should().Be(configuredSchema);
+        }
+        finally
+        {
+            await _fixture.ExecuteDdlUnderLockAsync(
+                $"""DROP SCHEMA IF EXISTS "{configuredSchema}" CASCADE; DROP SCHEMA IF EXISTS "{requestedSchema}" CASCADE;""");
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> SchemaNamesHoldingTableAsync(string table)
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT n.nspname
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind = 'r'
+               AND c.relname = @table
+             ORDER BY n.nspname
+            """,
+            connection);
+        command.Parameters.AddWithValue("@table", table);
+
+        var schemas = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            schemas.Add(reader.GetString(0));
+        }
+
+        return schemas;
+    }
+
+    private async Task<bool> NamespaceExistsAsync(string schema)
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = @schema)",
+            connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<string?> IndexSchemaAsync(string indexName)
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT n.nspname
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind = 'i'
+               AND c.relname = @index
+            """,
+            connection);
+        command.Parameters.AddWithValue("@index", indexName);
+        var result = await command.ExecuteScalarAsync();
+        return result as string;
+    }
+
     private PostgresOgcApiFeaturesCollectionSink CreateSink()
-        => new(_fixture.DataSource, NullLogger<PostgresOgcApiFeaturesCollectionSink>.Instance);
+        => new(
+            _fixture.DataSource,
+            NullLogger<PostgresOgcApiFeaturesCollectionSink>.Instance,
+            ImportTestSchemaConfiguration.WithOperational(_schema));
 
     private async Task<int> CountRowsAsync(OgcApiFeaturesSinkTarget target)
     {

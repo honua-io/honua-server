@@ -1,0 +1,678 @@
+{
+  "schema": "honua.layer-resource-proof.v1",
+  "outcome": "fail",
+  "startedAt": "2026-09-15T01:36:01.594081+00:00",
+  "image": "ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+  "scenarios": [
+    {
+      "name": "bounded-passthrough",
+      "startedAt": "2026-09-15T01:36:44.269186+00:00",
+      "outcome": "pass",
+      "job": {
+        "processID": "generalization.dissolve",
+        "type": "process",
+        "jobID": "gp-4cdb3eafdfb143368447065bdba41773",
+        "status": "successful",
+        "message": "Completed",
+        "created": "2026-09-15T01:36:44.3316064+00:00",
+        "updated": "2026-09-15T01:36:45.2770161+00:00",
+        "progress": 100,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-4cdb3eafdfb143368447065bdba41773",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          },
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-4cdb3eafdfb143368447065bdba41773/results",
+            "rel": "http://www.opengis.net/def/rel/ogc/1.0/results",
+            "type": "application/json",
+            "title": "Job results"
+          }
+        ]
+      },
+      "outputSha256": "4cf1733be7df319f2dd7cf5a9395fbda3626fce41163376e4465b8913a4218ea",
+      "completedAt": "2026-09-15T01:36:45.432152+00:00"
+    },
+    {
+      "name": "dissolve-work-limit",
+      "startedAt": "2026-09-15T01:36:45.432191+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "generalization.dissolve",
+        "type": "process",
+        "jobID": "gp-f89f5b24f1214d388d64a9aeee56787a",
+        "status": "failed",
+        "message": "Invalid generalization.dissolve inputs: managed topology for 10 by 10 vertices exceeds Geoprocessing:Executors:MaxTopologyWork=99; stopped before computation. Narrow the selection or simplify the input, then resubmit. Raise this limit only after qualifying the worker's memory and execution time.",
+        "created": "2026-09-15T01:36:45.4705573+00:00",
+        "updated": "2026-09-15T01:38:26.2429394+00:00",
+        "progress": 55,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-f89f5b24f1214d388d64a9aeee56787a",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          }
+        ]
+      },
+      "events": [
+        {
+          "at": "2026-09-15T01:36:50.516149866Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:36:50.556541938Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:36:50.742059097Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:36:50.805950474Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:37:20.857032585Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:37:20.877938935Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:37:20.935661840Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:37:20.959737114Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:38:26.025292237Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:38:26.069262192Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:38:26.237597137Z",
+          "event": "Job executor returned failure"
+        }
+      ],
+      "error": "[{'at': '2026-09-15T01:36:50.516149866Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:36:50.556541938Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:36:50.742059097Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:36:50.805950474Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:37:20.857032585Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:37:20.877938935Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:37:20.935661840Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:37:20.959737114Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:38:26.025292237Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:38:26.069262192Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:38:26.237597137Z', 'event': 'Job executor returned failure'}]",
+      "completedAt": "2026-09-15T01:38:28.091050+00:00"
+    },
+    {
+      "name": "join-both-sides",
+      "startedAt": "2026-09-15T01:38:28.091076+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "analytics.spatial-join",
+        "type": "process",
+        "jobID": "gp-10960e8961a543f88e9a2eb90ff3a31d",
+        "status": "failed",
+        "message": "Invalid analytics.spatial-join inputs: managed topology for 10 by 10 vertices exceeds Geoprocessing:Executors:MaxTopologyWork=99; stopped before computation. Narrow the selection or simplify the input, then resubmit. Raise this limit only after qualifying the worker's memory and execution time.",
+        "created": "2026-09-15T01:38:28.1148865+00:00",
+        "updated": "2026-09-15T01:40:02.9314703+00:00",
+        "progress": 55,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-10960e8961a543f88e9a2eb90ff3a31d",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          }
+        ]
+      },
+      "events": [
+        {
+          "at": "2026-09-15T01:38:31.532563265Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:38:31.550844650Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:38:31.626784420Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:38:31.656180718Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:39:01.743044323Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:39:01.784517306Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:39:01.987682243Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:39:02.084490440Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:40:02.566758931Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:40:02.612209912Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:40:02.927657621Z",
+          "event": "Job executor returned failure"
+        }
+      ],
+      "error": "[{'at': '2026-09-15T01:38:31.532563265Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:38:31.550844650Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:38:31.626784420Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:38:31.656180718Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:39:01.743044323Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:39:01.784517306Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:39:01.987682243Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:39:02.084490440Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:40:02.566758931Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:40:02.612209912Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:40:02.927657621Z', 'event': 'Job executor returned failure'}]",
+      "completedAt": "2026-09-15T01:40:06.385593+00:00"
+    },
+    {
+      "name": "buffer-work-limit",
+      "startedAt": "2026-09-15T01:40:06.385633+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "analytics.buffer-aggregate",
+        "type": "process",
+        "jobID": "gp-bf24c05876e9403bae78201ed24ddf53",
+        "status": "failed",
+        "message": "Invalid analytics.buffer-aggregate inputs: managed topology for 74 by 74 vertices exceeds Geoprocessing:Executors:MaxTopologyWork=99; stopped before computation. Narrow the selection or simplify the input, then resubmit. Raise this limit only after qualifying the worker's memory and execution time.",
+        "created": "2026-09-15T01:40:06.5162339+00:00",
+        "updated": "2026-09-15T01:41:48.6076885+00:00",
+        "progress": 55,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-bf24c05876e9403bae78201ed24ddf53",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          }
+        ]
+      },
+      "events": [
+        {
+          "at": "2026-09-15T01:40:13.416355590Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:40:13.498846532Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:40:14.051345042Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:40:14.092832549Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:40:45.598454525Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:40:45.629211434Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:40:45.747161213Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:40:45.779816450Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:41:48.223007280Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:41:48.297781637Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:41:48.600940599Z",
+          "event": "Job executor returned failure"
+        }
+      ],
+      "error": "[{'at': '2026-09-15T01:40:13.416355590Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:40:13.498846532Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:40:14.051345042Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:40:14.092832549Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:40:45.598454525Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:40:45.629211434Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:40:45.747161213Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:40:45.779816450Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:41:48.223007280Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:41:48.297781637Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:41:48.600940599Z', 'event': 'Job executor returned failure'}]",
+      "completedAt": "2026-09-15T01:41:52.758339+00:00"
+    },
+    {
+      "name": "single-geometry",
+      "startedAt": "2026-09-15T01:41:52.758481+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "generalization.dissolve",
+        "type": "process",
+        "jobID": "gp-10354006d4274ac093ad8e2b4b837cbf",
+        "status": "failed",
+        "message": "Invalid generalization.dissolve inputs: layer 946291 contains a geometry with 1001 vertices, exceeding the configured limit of 100; simplify the source geometry or raise the limit.",
+        "created": "2026-09-15T01:41:52.7907066+00:00",
+        "updated": "2026-09-15T01:43:25.2423543+00:00",
+        "progress": 20,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-10354006d4274ac093ad8e2b4b837cbf",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          }
+        ]
+      },
+      "events": [
+        {
+          "at": "2026-09-15T01:41:53.959282999Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:41:54.059474055Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:41:54.178329048Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:41:54.240444974Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:42:24.690442130Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:42:24.714279858Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:42:24.782977698Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:42:24.822087674Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:43:25.126868440Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:43:25.159317052Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:43:25.240000562Z",
+          "event": "Job executor returned failure"
+        }
+      ],
+      "error": "[{'at': '2026-09-15T01:41:53.959282999Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:41:54.059474055Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:41:54.178329048Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:41:54.240444974Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:42:24.690442130Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:42:24.714279858Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:42:24.782977698Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:42:24.822087674Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:43:25.126868440Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:43:25.159317052Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:43:25.240000562Z', 'event': 'Job executor returned failure'}]",
+      "completedAt": "2026-09-15T01:43:29.064308+00:00"
+    },
+    {
+      "name": "elapsed-time-limit",
+      "startedAt": "2026-09-15T01:43:40.611496+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "analytics.spatial-join",
+        "type": "process",
+        "jobID": "gp-9ddbf45bf4e744e996115ab74b6aab80",
+        "status": "failed",
+        "message": "analytics.spatial-join exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds=8; narrow the selection or simplify the input, then resubmit.",
+        "created": "2026-09-15T01:43:40.6931347+00:00",
+        "updated": "2026-09-15T01:45:44.5814726+00:00",
+        "progress": 55,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-9ddbf45bf4e744e996115ab74b6aab80",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          }
+        ]
+      },
+      "events": [
+        {
+          "at": "2026-09-15T01:43:43.799793042Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:43:43.841919183Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:43:51.843521702Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:43:51.878161791Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:44:26.993300449Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:44:27.044383650Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:44:35.045484110Z",
+          "event": "Job executor returned failure"
+        },
+        {
+          "at": "2026-09-15T01:44:35.074941210Z",
+          "event": "Job requeued"
+        },
+        {
+          "at": "2026-09-15T01:45:35.298045705Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:45:35.336401643Z",
+          "event": "Job execution started"
+        },
+        {
+          "at": "2026-09-15T01:45:44.558882267Z",
+          "event": "Job executor returned failure"
+        }
+      ],
+      "error": "[{'at': '2026-09-15T01:43:43.799793042Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:43:43.841919183Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:43:51.843521702Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:43:51.878161791Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:44:26.993300449Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:44:27.044383650Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:44:35.045484110Z', 'event': 'Job executor returned failure'}, {'at': '2026-09-15T01:44:35.074941210Z', 'event': 'Job requeued'}, {'at': '2026-09-15T01:45:35.298045705Z', 'event': 'Job claimed'}, {'at': '2026-09-15T01:45:35.336401643Z', 'event': 'Job execution started'}, {'at': '2026-09-15T01:45:44.558882267Z', 'event': 'Job executor returned failure'}]",
+      "completedAt": "2026-09-15T01:45:45.806207+00:00"
+    },
+    {
+      "name": "dismiss-running-join",
+      "startedAt": "2026-09-15T01:45:55.646510+00:00",
+      "outcome": "pass",
+      "cpuPercent": [
+        {
+          "phase": "running",
+          "value": 98.16
+        },
+        {
+          "phase": "dismissed",
+          "value": 5.9,
+          "secondsAfterDismiss": 2.2754239000059897
+        }
+      ],
+      "jobAtDismiss": {
+        "processID": "analytics.spatial-join",
+        "type": "process",
+        "jobID": "gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+        "status": "running",
+        "message": "Applying analytics.spatial-join",
+        "created": "2026-09-15T01:45:55.6923228+00:00",
+        "updated": "2026-09-15T01:45:58.9257337+00:00",
+        "progress": 55,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          },
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+            "rel": "monitor",
+            "type": "application/json",
+            "title": "Monitor job status"
+          }
+        ]
+      },
+      "dismissRequestSeconds": 0.04661859999760054,
+      "dismissResponse": {
+        "processID": "analytics.spatial-join",
+        "type": "process",
+        "jobID": "gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+        "status": "running",
+        "message": "Queued",
+        "created": "2026-09-15T01:45:55.6923228+00:00",
+        "updated": "2026-09-15T01:46:07.5101230+00:00",
+        "progress": 55,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          },
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+            "rel": "monitor",
+            "type": "application/json",
+            "title": "Monitor job status"
+          }
+        ]
+      },
+      "secondsToDismissed": 0.10150289999728557,
+      "observedSecondsAfterDismiss": 45.000359199999366,
+      "job": {
+        "processID": "analytics.spatial-join",
+        "type": "process",
+        "jobID": "gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+        "status": "dismissed",
+        "message": "Cancelled by operator.",
+        "created": "2026-09-15T01:45:55.6923228+00:00",
+        "updated": "2026-09-15T01:46:07.5462627+00:00",
+        "progress": 55,
+        "links": [
+          {
+            "href": "http://[::ffff:172.28.0.4]:8080/ogc/processes/jobs/gp-65e3ba571f3f44c88e0a1bcb204eeadf",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          }
+        ]
+      },
+      "events": [
+        {
+          "at": "2026-09-15T01:45:58.478119709Z",
+          "event": "Job claimed"
+        },
+        {
+          "at": "2026-09-15T01:45:58.512819057Z",
+          "event": "Job execution started"
+        }
+      ],
+      "completedAt": "2026-09-15T01:46:53.130807+00:00"
+    }
+  ],
+  "harnessSha256": "c4a41df326806869033abc2f1b65c70d0dd3b85c821fbfde07de3e28c01a4fca",
+  "candidate": {
+    "containerId": "702b0d899687150c20c6926d666dbc5beb9a852ded82e2c506b643d8c053f155",
+    "imageId": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "labels": {
+      "description": "Honua Geospatial Feature Server",
+      "honua.runtime.compilation": "native-aot",
+      "honua.runtime.entrypoint": "/app/Honua.Server",
+      "honua.runtime.profile": "web",
+      "maintainer": "Honua Development Team",
+      "org.opencontainers.image.created": "2026-09-14T21:31:50.172Z",
+      "org.opencontainers.image.description": "Cloud-native multi-protocol geospatial server \u2014 GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles, MCP, and gRPC, backed by PostGIS",
+      "org.opencontainers.image.licenses": "NOASSERTION",
+      "org.opencontainers.image.revision": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "org.opencontainers.image.source": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.title": "honua-server",
+      "org.opencontainers.image.url": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.version": "nightly-amd64",
+      "security.capabilities.drop": "ALL",
+      "security.group": "1001",
+      "security.non-root": "true",
+      "security.read-only-root": "true",
+      "security.user": "1001",
+      "version": "1.0"
+    },
+    "memoryLimitBytes": 1073741824,
+    "nanoCpus": 1000000000,
+    "budgets": {
+      "Geoprocessing__Executors__MaxTopologyWork": "99",
+      "Geoprocessing__Executors__MaxLayerVertices": "100",
+      "Geoprocessing__Executors__MaxArtifactBytes": "32768",
+      "Geoprocessing__Executors__MaxLayerExecutionSeconds": "10",
+      "Limits__Analytics__MaxInputFeatures": "100",
+      "Limits__Analytics__MaxInputBytes": "1048576",
+      "Limits__Geometry__MaxVerticesPerGeometry": "100"
+    }
+  },
+  "catalog": {
+    "folders": [],
+    "services": [
+      {
+        "name": "gp-bounds",
+        "type": "FeatureServer",
+        "url": "http://[::ffff:172.28.0.4]:8080/rest/services/gp-bounds/FeatureServer"
+      },
+      {
+        "name": "gp-bounds",
+        "type": "GPServer",
+        "url": "http://[::ffff:172.28.0.4]:8080/rest/services/gp-bounds/GPServer"
+      },
+      {
+        "name": "gp-bounds",
+        "type": "MapServer",
+        "url": "http://[::ffff:172.28.0.4]:8080/rest/services/gp-bounds/MapServer"
+      }
+    ]
+  },
+  "deadlineCandidate": {
+    "containerId": "aee6703cd6a80e0487b6cb479b73abe9ec7473857ab5e8c02a58e93cefbdabb5",
+    "imageId": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "labels": {
+      "description": "Honua Geospatial Feature Server",
+      "honua.runtime.compilation": "native-aot",
+      "honua.runtime.entrypoint": "/app/Honua.Server",
+      "honua.runtime.profile": "web",
+      "maintainer": "Honua Development Team",
+      "org.opencontainers.image.created": "2026-09-14T21:31:50.172Z",
+      "org.opencontainers.image.description": "Cloud-native multi-protocol geospatial server \u2014 GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles, MCP, and gRPC, backed by PostGIS",
+      "org.opencontainers.image.licenses": "NOASSERTION",
+      "org.opencontainers.image.revision": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "org.opencontainers.image.source": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.title": "honua-server",
+      "org.opencontainers.image.url": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.version": "nightly-amd64",
+      "security.capabilities.drop": "ALL",
+      "security.group": "1001",
+      "security.non-root": "true",
+      "security.read-only-root": "true",
+      "security.user": "1001",
+      "version": "1.0"
+    },
+    "memoryLimitBytes": 1073741824,
+    "nanoCpus": 1000000000,
+    "budgets": {
+      "Geoprocessing__Executors__MaxTopologyWork": "1000000000",
+      "Geoprocessing__Executors__MaxLayerVertices": "100000",
+      "Geoprocessing__Executors__MaxArtifactBytes": "16777216",
+      "Geoprocessing__Executors__MaxLayerExecutionSeconds": "8",
+      "Limits__Analytics__MaxInputFeatures": "10000",
+      "Limits__Analytics__MaxInputBytes": "16777216",
+      "Limits__Geometry__MaxVerticesPerGeometry": "100"
+    }
+  },
+  "dismissCandidate": {
+    "containerId": "b562465595d20717127f8f72d7aaee905b01c13bbb6a0a2883f24e32976f6997",
+    "imageId": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "labels": {
+      "description": "Honua Geospatial Feature Server",
+      "honua.runtime.compilation": "native-aot",
+      "honua.runtime.entrypoint": "/app/Honua.Server",
+      "honua.runtime.profile": "web",
+      "maintainer": "Honua Development Team",
+      "org.opencontainers.image.created": "2026-09-14T21:31:50.172Z",
+      "org.opencontainers.image.description": "Cloud-native multi-protocol geospatial server \u2014 GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles, MCP, and gRPC, backed by PostGIS",
+      "org.opencontainers.image.licenses": "NOASSERTION",
+      "org.opencontainers.image.revision": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "org.opencontainers.image.source": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.title": "honua-server",
+      "org.opencontainers.image.url": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.version": "nightly-amd64",
+      "security.capabilities.drop": "ALL",
+      "security.group": "1001",
+      "security.non-root": "true",
+      "security.read-only-root": "true",
+      "security.user": "1001",
+      "version": "1.0"
+    },
+    "memoryLimitBytes": 1073741824,
+    "nanoCpus": 1000000000,
+    "budgets": {
+      "Geoprocessing__Executors__MaxTopologyWork": "1000000000",
+      "Geoprocessing__Executors__MaxLayerVertices": "100000",
+      "Geoprocessing__Executors__MaxArtifactBytes": "16777216",
+      "Geoprocessing__Executors__MaxLayerExecutionSeconds": "300",
+      "Limits__Analytics__MaxInputFeatures": "10000",
+      "Limits__Analytics__MaxInputBytes": "16777216",
+      "Limits__Geometry__MaxVerticesPerGeometry": "100"
+    }
+  },
+  "finalContainerState": {
+    "Status": "running",
+    "Running": true,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 11258,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-15T01:45:49.458204738Z",
+    "FinishedAt": "0001-01-01T00:00:00Z",
+    "Health": {
+      "Status": "healthy",
+      "FailingStreak": 0,
+      "Log": [
+        {
+          "Start": "2026-09-15T01:45:55.506549578Z",
+          "End": "2026-09-15T01:45:55.662867288Z",
+          "ExitCode": 0,
+          "Output": ""
+        },
+        {
+          "Start": "2026-09-15T01:46:25.62512439Z",
+          "End": "2026-09-15T01:46:25.727938627Z",
+          "ExitCode": 0,
+          "Output": ""
+        }
+      ]
+    }
+  },
+  "error": "candidate failed resource-bound qualification",
+  "cleanup": {
+    "outcome": "pass"
+  },
+  "completedAt": "2026-09-15T01:46:58.041342+00:00",
+  "serving": {
+    "samples": 2130,
+    "failures": [],
+    "maxSeconds": 8.231282499997178,
+    "first": {
+      "at": "2026-09-15T01:36:44.267381+00:00",
+      "outcome": "pass",
+      "response": {
+        "count": 2,
+        "exceededTransferLimit": false
+      },
+      "seconds": 0.06722299999091774
+    },
+    "last": {
+      "at": "2026-09-15T01:46:53.006255+00:00",
+      "outcome": "pass",
+      "response": {
+        "count": 2,
+        "exceededTransferLimit": false
+      },
+      "seconds": 0.06954300000506919
+    }
+  }
+}

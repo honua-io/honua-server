@@ -1,10 +1,22 @@
 # Curated Prometheus scrape config for the Honua observability bundle.
 #
 # Scrapes the Honua server's native Prometheus exposition endpoint (/metrics). That
-# endpoint requires admin authorization; the API-key auth handler also accepts HTTP
-# Basic credentials, so Prometheus authenticates with basic_auth using the admin
-# password as the Basic password. Change the target and password below to match your
-# deployment (or point HONUA_METRICS_TARGET at your server before templating).
+# endpoint is served under the Admin authorization policy and a scrape is a GET, so
+# the narrowest credential that can read it is an admin API key minted with the
+# read-only `admin:read` grant. Send it in the `X-API-Key` header, which the API-key
+# authentication handler accepts unconditionally.
+#
+# No credential is stored in this file. The key is read at scrape time from
+# /etc/prometheus/secrets/honua-scrape-key, which compose.yml mounts read-only from
+# the host path in HONUA_METRICS_SCRAPE_KEY_FILE. Mint it once with a full-admin
+# credential — `POST /api/v1/admin/api-keys` with
+# {"name": "prometheus-scrape", "permissions": ["admin:read"]} — and write the
+# returned `data.key` (shown once) into that file. A trailing newline is fine.
+#
+# Do not put HONUA_ADMIN_PASSWORD here: the bootstrap admin credential carries full
+# admin write authority, and a scrape only ever needs to read.
+#
+# Change the target below to match your deployment.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -20,10 +32,11 @@ scrape_configs:
     metrics_path: '/metrics'
     scheme: http
     scrape_interval: 10s
-    basic_auth:
-      # The API-key auth handler accepts the admin key via Basic auth (any username).
-      username: 'prometheus'
-      password: 'quickstart-admin-password'
+    http_headers:
+      # Read-only (admin:read) scrape key, mounted by compose.yml. Never inline it here.
+      X-API-Key:
+        files:
+          - /etc/prometheus/secrets/honua-scrape-key
     static_configs:
       - targets: ['host.docker.internal:8080']
         labels:

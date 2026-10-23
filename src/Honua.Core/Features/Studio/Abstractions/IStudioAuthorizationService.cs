@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.MultiTenancy;
 
 namespace Honua.Core.Features.Studio.Abstractions;
 
@@ -151,6 +152,16 @@ public interface IStudioAuthorizationService
     string? ResolveCallerId(ClaimsPrincipal principal);
 
     /// <summary>
+    /// Builds the tenant scope that keeps a Studio enumeration inside the caller's tenant
+    /// (honua-server#4905), or <see langword="null"/> when no tenant scoping applies -- the host
+    /// resolves no tenant at all, tenant resolution is disabled, or the caller holds a
+    /// configured <c>MultiTenancy:MultiTenantAdminRoles</c> role and legitimately enumerates
+    /// every tenant. Enumeration is scoped server-side from the request's resolved tenant; it is
+    /// never read from a client-supplied parameter.
+    /// </summary>
+    TenantScopeFilter? CreateTenantScopeFilter(ClaimsPrincipal principal);
+
+    /// <summary>
     /// Authorizes a Studio package-lifecycle operation.
     /// </summary>
     /// <param name="principal">The authenticated caller.</param>
@@ -172,6 +183,16 @@ public interface IStudioAuthorizationService
     /// name-based, and <c>&lt;scheme&gt;:authenticated</c> MCP owner values have no unambiguous
     /// provenance marker, so they fail closed and require an explicit admin migration.
     /// </param>
+    /// <param name="resourceTenantId">
+    /// The tenant recorded on the target resource (honua-server#4905), or
+    /// <see langword="null"/> when the resource records no tenant. A resource with no recorded
+    /// tenant belongs to the deployment's configured default tenant, so an upgraded
+    /// single-tenant deployment keeps reading its own content while a tenant-tagged principal
+    /// never inherits it. Callers creating a brand-new resource pass the request's own resolved
+    /// tenant. Enforcement runs ahead of the admin bypass: the platform <c>admin</c> role is
+    /// tenant-scoped, and only the configured <c>MultiTenancy:MultiTenantAdminRoles</c> operate
+    /// across tenants.
+    /// </param>
     /// <param name="isPubliclyReadable">
     /// True when the target resource has a published version, admitting a read-only operation
     /// to any authenticated caller regardless of ownership. Ignored for non-read operations.
@@ -187,6 +208,7 @@ public interface IStudioAuthorizationService
         string? callerId,
         StudioAuthorizationOperation operation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         bool isPubliclyReadable = false,
         string? resourceId = null,
         CancellationToken cancellationToken = default);

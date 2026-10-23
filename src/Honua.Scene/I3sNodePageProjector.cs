@@ -35,7 +35,7 @@ namespace Honua.Scene;
 public static class I3sNodePageProjector
 {
     /// <summary>
-    /// Fixed node-page size advertised on <c>store.nodePages.nodesPerPage</c> and
+    /// Fixed node-page size advertised on <c>nodePages.nodesPerPage</c> and
     /// used to partition the flattened node array. A small page keeps the
     /// synthetic-fixture and small-scene responses single-page while still
     /// exercising multi-page pagination on larger trees.
@@ -44,7 +44,7 @@ public static class I3sNodePageProjector
 
     /// <summary>
     /// LOD selection metric type advertised on
-    /// <c>store.nodePages.lodSelectionMetricType</c>. Honua expresses
+    /// <c>nodePages.lodSelectionMetricType</c>. Honua expresses
     /// <c>lodThreshold</c> as a max-screen-threshold metric derived from the
     /// source geometric error.
     /// </summary>
@@ -131,6 +131,7 @@ public static class I3sNodePageProjector
 
         var node = new I3sNodePageEntry
         {
+            Index = globalIndex,
             // The root selects unconditionally (threshold 0); descendants refine
             // as the source geometric error tightens. I3S expresses finer LODs as
             // larger thresholds, so invert the geometric error (coarse error ->

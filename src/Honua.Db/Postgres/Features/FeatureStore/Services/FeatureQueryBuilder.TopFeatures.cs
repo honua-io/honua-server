@@ -45,7 +45,11 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(", ");
             sql.Append(_geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query));
 
-            sql.Append(CultureInfo.InvariantCulture, $", {DatabaseSchema.AttributesColumn}");
+            // Use the same provider-side projection as every other feature read. This
+            // is security-sensitive: selecting the raw jsonb column here would bypass
+            // both enforced field masks and the requested outFields projection.
+            sql.Append(", ");
+            sql.Append(BuildAttributesSelectExpression(query, ref paramIndex, parameters));
 
             // Add ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)
             sql.Append(", ROW_NUMBER() OVER (PARTITION BY ");
@@ -68,6 +72,15 @@ internal sealed partial class FeatureQueryBuilder
             parameters.Add(topFilter.TopCount);
             sql.Append(CultureInfo.InvariantCulture,
                 $") sub WHERE sub.rn <= ${topCountParameter}");
+
+            // LIMIT/OFFSET without an outer ORDER BY can skip or repeat groups. rn is the
+            // window ordinal and objectid is the first projected column, so both are
+            // addressable on sub.* without changing the reader shape.
+            if (query.Limit.HasValue || query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" ORDER BY sub.rn, sub.{DatabaseSchema.ObjectIdColumn}");
+            }
 
             // resultRecordCount / resultOffset paging. The LIMIT/OFFSET values are bound by
             // AddQueryParameters (AddRegularPaginationParameters / AddOffsetParameterIfEmitted)

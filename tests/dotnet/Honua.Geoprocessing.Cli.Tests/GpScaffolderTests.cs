@@ -13,6 +13,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// id validation + naming derivation, collision detection against the registered set, and
 /// the rendered executor/fixture templates. No I/O, no Redis, no control plane.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpScaffolderTests
 {
     [Theory]

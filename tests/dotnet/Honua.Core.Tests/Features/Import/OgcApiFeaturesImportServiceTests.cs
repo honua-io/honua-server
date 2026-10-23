@@ -13,11 +13,13 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
 public sealed class OgcApiFeaturesImportServiceTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithPagedFixtureSource_WritesAllFeaturesIdempotently()
     {
@@ -51,6 +53,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         second.Success.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithMaxFeaturesCap_StopsImportAndMarksTruncated()
     {
@@ -73,6 +76,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Summary.ToLowerInvariant().Should().Contain("truncated");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithNonJsonItems_ReturnsUnsupportedItemsEncoding()
     {
@@ -89,6 +93,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.InvalidItemsDocument);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithJsonNonFeatureCollection_ReturnsUnsupportedItemsEncoding()
     {
@@ -105,6 +110,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.UnsupportedItemsEncoding);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithSinkFailure_ReturnsSinkFailureCode()
     {
@@ -119,6 +125,23 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SinkFailure);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ImportCollectionAsync_WithUnownedTarget_ReturnsOwnershipConflictBeforeWriting()
+    {
+        using var httpClient = new HttpClient(new FixtureItemsHandler()) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new UnownedSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
+        result.ErrorMessage.Should().Be(ImportTableOwnershipException.CreateSafeMessage("test_schema.roads"));
+        sink.WriteCalls.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithInvalidServiceUrl_FailsBeforeContactingSource()
     {
@@ -135,6 +158,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         handler.RequestUris.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithUnreachableSource_ReturnsSourceUnreachable()
     {
@@ -149,6 +173,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithInvalidIdentifierCharacters_FailsWithInvalidServiceUrlCode()
     {
@@ -164,6 +189,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         sink.EnsureTargetCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithCql2Filter_AppendsFilterAndFilterLangQueryParameters()
     {
@@ -181,6 +207,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         firstItemsQuery.Should().Contain("filter-lang=cql2-text");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithBbox_AppendsBboxQueryParameter()
     {
@@ -197,6 +224,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         firstItemsQuery.Should().Contain("bbox=-158%2C21%2C-157%2C22");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithDatetimeInterval_AppendsDatetimeQueryParameter()
     {
@@ -213,6 +241,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         firstItemsQuery.Should().Contain("datetime=2024-01-01T00%3A00%3A00Z%2F2024-06-30T23%3A59%3A59Z");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithEmptyFilter_ReturnsInvalidFilter()
     {
@@ -229,6 +258,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         sink.EnsureTargetCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(new[] { 1.0, 2.0, 3.0 })]
     [InlineData(new[] { 10.0, 20.0, 5.0, 15.0 })]
@@ -247,6 +277,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         handler.RequestUris.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("not-a-date")]
     [InlineData("../..")]
@@ -266,6 +297,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         handler.RequestUris.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithFilterChangeAcrossRuns_EmitsScopeDriftWarning()
     {
@@ -290,6 +322,7 @@ public sealed class OgcApiFeaturesImportServiceTests
             warning.Contains("scope", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithCyclicPagination_StopsAndWarns()
     {
@@ -305,6 +338,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.Warnings.Should().Contain(warning => warning.Contains("paging cycle", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WhenSourceOmitsNumberMatched_ReportsParityProbeNotApplicable()
     {
@@ -325,6 +359,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Summary.Should().Contain("numberMatched");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WhenSourceCountMismatchesImportedCount_ReportsParityProbeFail()
     {
@@ -348,6 +383,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Observed.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WhenSkippedFeaturesAccountForDifference_ReportsParityProbePass()
     {
@@ -373,6 +409,98 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Expected.Should().Be(2);
         result.FeatureCountParity.Observed.Should().Be(1);
         result.FeatureCountParity.Summary.Should().Contain("skipped");
+    }
+
+    [UnitTest]
+    public async Task ImportCollectionAsync_OversizedContentLength_FailsBeforeWritingFeatures()
+    {
+        var handler = new StubItemsHandler(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/ogcapi/collections/roads")
+            {
+                return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {"id":"roads","links":[{"rel":"items","href":"https://demo.example/ogcapi/collections/roads/items"}]}
+                        """,
+                        System.Text.Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            var oversized = new StringContent("{}", System.Text.Encoding.UTF8, "application/geo+json");
+            oversized.Headers.ContentLength = MigrationHttpContentReader.DefaultMaxResponseBytes + 1;
+            return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK) { Content = oversized };
+        });
+        using var httpClient = new HttpClient(handler);
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
+        sink.WrittenFeatures.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ImportCollectionAsync_NextLinkOffAllowlist_Fails()
+    {
+        var handler = new StubItemsHandler(request =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            var body = path.Contains("/items", StringComparison.Ordinal)
+                ? """
+                  {"type":"FeatureCollection","features":[{"type":"Feature","id":"road.1","geometry":{"type":"Point","coordinates":[-157.85,21.30]},"properties":{"name":"King"}}],"links":[{"rel":"next","href":"https://evil.example/items"}]}
+                  """
+                : """
+                  {"id":"roads","links":[{"rel":"items","href":"https://demo.example/ogcapi/collections/roads/items"}]}
+                  """;
+            return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest() with
+        {
+            AllowedServiceHostSuffixes = ["demo.example"]
+        });
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
+    }
+
+    [UnitTest]
+    public async Task ImportCollectionAsync_HttpNextLink_FailsWhenHttpsIsRequired()
+    {
+        var handler = new StubItemsHandler(request =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            var body = path.Contains("/items", StringComparison.Ordinal)
+                ? """
+                  {"type":"FeatureCollection","features":[],"links":[{"rel":"next","href":"http://demo.example/ogcapi/collections/roads/items?offset=2"}]}
+                  """
+                : """
+                  {"id":"roads","links":[{"rel":"items","href":"https://demo.example/ogcapi/collections/roads/items"}]}
+                  """;
+            return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var service = CreateService(httpClient, new RecordingSink());
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
     }
 
     private static OgcApiFeaturesImportService CreateService(HttpClient httpClient, IOgcApiFeaturesCollectionSink sink)
@@ -431,6 +559,21 @@ public sealed class OgcApiFeaturesImportServiceTests
             var key = $"{target.Schema}.{target.Table}";
             ScopeSignatures[key] = scopeSignature;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class UnownedSink : IOgcApiFeaturesCollectionSink
+    {
+        public int WriteCalls { get; private set; }
+
+        public Task EnsureTargetAsync(OgcApiFeaturesSinkTarget target, CancellationToken cancellationToken)
+            => throw new ImportTableOwnershipException(target.Schema, target.Table);
+
+        public Task<int> WriteFeaturesAsync(OgcApiFeaturesSinkTarget target,
+            IReadOnlyList<OgcApiFeaturesSinkFeature> features, CancellationToken cancellationToken)
+        {
+            WriteCalls++;
+            throw new InvalidOperationException("An unowned target must never receive writes.");
         }
     }
 

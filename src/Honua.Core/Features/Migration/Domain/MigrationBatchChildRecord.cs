@@ -84,6 +84,13 @@ public sealed record MigrationBatchChildRecord
     public string? StatusNote { get; init; }
 
     /// <summary>
+    /// Per-layer migration fidelity verdict reported by the child's import job (issue #4600), one of
+    /// <see cref="MigrationFidelityVerdicts"/>. Null until the child reaches a terminal status, or
+    /// when the job recorded no verdict.
+    /// </summary>
+    public string? FidelityVerdict { get; init; }
+
+    /// <summary>
     /// UTC instant of the last status change.
     /// </summary>
     public DateTimeOffset UpdatedAt { get; init; }

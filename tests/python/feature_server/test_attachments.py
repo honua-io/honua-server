@@ -62,10 +62,25 @@ class TestQueryAttachments:
             params={"objectId": 1, "f": "json"},
         )
 
-        if response.status_code == 200:
-            data = response.json()
-            # Should have attachmentGroups or attachmentInfos
-            assert "attachmentGroups" in data or "attachmentInfos" in data
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert "error" not in data, data
+        assert isinstance(data["attachmentGroups"], list), data
+        assert isinstance(data["attachmentInfos"], list), data
+
+    @pytest.mark.integration
+    @pytest.mark.featureserver
+    def test_attachment_layer_advertises_support(
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+    ):
+        """The attachment fixture must declare the capability it exercises."""
+        response = http_client.get(
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}",
+            params={"f": "json"},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["hasAttachments"] is True, data
 
 
 class TestAddAttachment:

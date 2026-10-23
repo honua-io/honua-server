@@ -67,7 +67,9 @@ public static class MigrationCatalogReconciler
                     input.ExpectedRelationships,
                     input.SourceBbox,
                     input.TargetResourceId,
-                    input.ExpectedSubtypes);
+                    input.ExpectedSubtypes,
+                    input.PlannedTargetSrid,
+                    input.ObservedTargetExtent);
             })
             .OrderBy(static outcome => outcome.SourceResourceId, StringComparer.Ordinal)
             .ToArray();
@@ -104,7 +106,9 @@ public static class MigrationCatalogReconciler
         MigrationManifestRelationshipRecord[] expectedRelationships,
         double[]? sourceBbox,
         string? targetResourceId,
-        MetadataV2Subtypes? expectedSubtypes)
+        MetadataV2Subtypes? expectedSubtypes,
+        int? plannedTargetSrid = null,
+        ExtentBox? observedTargetExtent = null)
     {
         if (published is null)
         {
@@ -129,7 +133,7 @@ public static class MigrationCatalogReconciler
         var findings = new List<MigrationCatalogReconciliationFinding>();
 
         CollectSchemaFindings(resource, published, findings);
-        CollectSpatialFindings(resource, published, sourceBbox, findings);
+        CollectSpatialFindings(resource, published, sourceBbox, findings, plannedTargetSrid, observedTargetExtent);
         CollectIdentifierFindings(resource, published, findings);
         CollectRelationshipFindings(expectedRelationships, published, findings);
         CollectAttachmentFindings(resource, published, findings);
@@ -299,7 +303,9 @@ public static class MigrationCatalogReconciler
         MigrationInventoryResource resource,
         MetadataV2Resource published,
         double[]? sourceBbox,
-        List<MigrationCatalogReconciliationFinding> findings)
+        List<MigrationCatalogReconciliationFinding> findings,
+        int? plannedTargetSrid,
+        ExtentBox? observedTargetExtent)
     {
         var hasInventoryGeometry = !string.IsNullOrWhiteSpace(resource.GeometryType);
         if (hasInventoryGeometry)
@@ -321,9 +327,10 @@ public static class MigrationCatalogReconciler
             }
         }
 
-        var expectedSrid = ResolveInventorySrid(resource.SpatialReferences);
+        var sourceSrid = ResolveInventorySrid(resource.SpatialReferences);
+        var expectedSrid = hasInventoryGeometry ? plannedTargetSrid ?? sourceSrid : sourceSrid;
         var publishedSrid = published.Spatial?.SpatialReference?.ResolveSrid();
-        if (expectedSrid.HasValue && publishedSrid.HasValue && expectedSrid.Value != publishedSrid.Value)
+        if (expectedSrid.HasValue && expectedSrid != publishedSrid)
         {
             findings.Add(new MigrationCatalogReconciliationFinding
             {
@@ -331,12 +338,34 @@ public static class MigrationCatalogReconciler
                 Severity = MigrationCatalogReconciliationSeverities.Fail,
                 Subject = "spatial",
                 Expected = expectedSrid.Value.ToString(CultureInfo.InvariantCulture),
-                Actual = publishedSrid.Value.ToString(CultureInfo.InvariantCulture),
-                Summary = "Published SRID does not match the inventory-declared SRID."
+                Actual = publishedSrid?.ToString(CultureInfo.InvariantCulture) ?? "missing",
+                Summary = "Published SRID does not match the reviewed target or inventory-declared SRID."
             });
+            // Bounds in different coordinate systems are not numerically comparable.
+            return;
         }
 
         var normalizedSourceBbox = NormalizeBbox(sourceBbox);
+        if (normalizedSourceBbox is not null && plannedTargetSrid is not null && sourceSrid != plannedTargetSrid)
+        {
+            // Do not compare meter-valued inventory bounds with degree-valued catalog bounds.
+            // The data gate separately proves source-to-target parity in the source CRS.
+            if (observedTargetExtent is not { } observed || observed.Srid != plannedTargetSrid ||
+                !double.IsFinite(observed.MinX) || !double.IsFinite(observed.MinY) ||
+                !double.IsFinite(observed.MaxX) || !double.IsFinite(observed.MaxY))
+            {
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.ExtentMissing,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = "spatial",
+                    Summary = "Planned reprojection requires an independently observed target extent in the planned CRS."
+                });
+                return;
+            }
+
+            normalizedSourceBbox = NormalizeBbox([observed.MinX, observed.MinY, observed.MaxX, observed.MaxY]);
+        }
         if (normalizedSourceBbox is not null)
         {
             var publishedBbox = published.Spatial?.Bbox;
@@ -363,7 +392,7 @@ public static class MigrationCatalogReconciler
                         Subject = "spatial",
                         Expected = FormatBbox(normalizedSourceBbox),
                         Actual = FormatBbox(publishedAsArray),
-                        Summary = "Published extent is disjoint from the source-declared extent."
+                        Summary = "Published extent is disjoint from the comparison extent in the same CRS."
                     });
                 }
             }
@@ -427,43 +456,178 @@ public static class MigrationCatalogReconciler
             return;
         }
 
-        var publishedIds = published.Relationships
-            .Select(static relationship => relationship.Id)
-            .Where(static id => !string.IsNullOrWhiteSpace(id))
-            .ToHashSet(StringComparer.Ordinal);
-        var publishedNames = published.Relationships
-            .Select(static relationship => relationship.Name)
-            .Where(static name => !string.IsNullOrWhiteSpace(name))
-            .ToHashSet(StringComparer.Ordinal);
-
         foreach (var expected in expectedRelationships)
         {
-            // Only assert persistence for relationships the manifest classified as automated or
-            // assisted. Manual-review and unsupported relationships are intentionally captured but
-            // not persisted by the apply stage.
-            if (!IsRelationshipExpectedToPersist(expected.Classification))
+            // Automated and assisted relationships are expected to be persisted. Manual-review and
+            // unsupported relationships stay on the manifest until an operator applies them, so
+            // their absence is not a missing-relationship finding and this pass does not change
+            // their classification. A published copy that drops composite ownership still fails:
+            // a name match must not turn that receipt into a simple relationship.
+            var expectPersist = IsRelationshipExpectedToPersist(expected.Classification);
+            var composite = IsCompositeRelationshipType(expected.RelationshipType);
+            var matches = FindPublishedRelationships(published, expected);
+            if (matches.Count == 0)
+            {
+                if (!expectPersist)
+                {
+                    continue;
+                }
+
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.RelationshipMissing,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = expected.SourceRelationshipId,
+                    Expected = expected.Name ?? expected.SourceRelationshipId,
+                    Summary = $"Relationship '{expected.SourceRelationshipId}' captured at manifest time is missing from the published catalog entry."
+                });
+                continue;
+            }
+
+            if (!composite)
             {
                 continue;
             }
 
-            var matched = publishedIds.Contains(expected.SourceRelationshipId)
-                || (!string.IsNullOrWhiteSpace(expected.TargetRelationshipRef) && publishedIds.Contains(expected.TargetRelationshipRef))
-                || (!string.IsNullOrWhiteSpace(expected.Name) && publishedNames.Contains(expected.Name));
-
-            if (matched)
+            if (matches.Count > 1 || !PublishedCompositeMatches(expected, matches[0]))
             {
-                continue;
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.RelationshipCompositeDowngraded,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = expected.SourceRelationshipId,
+                    Expected = "composite",
+                    Actual = matches.Count > 1
+                        ? "ambiguous"
+                        : matches[0].Composite ? "composite" : "simple",
+                    Summary = matches.Count > 1
+                        ? $"Relationship '{expected.SourceRelationshipId}' matches more than one published relationship. Composite ownership was not accepted from an ambiguous catalog row."
+                        : $"Relationship '{expected.SourceRelationshipId}' was published without the source composite ownership, role, cardinality, or key fields. It was not accepted as a simple relationship."
+                });
             }
-
-            findings.Add(new MigrationCatalogReconciliationFinding
-            {
-                Code = MigrationCatalogReconciliationCodes.RelationshipMissing,
-                Severity = MigrationCatalogReconciliationSeverities.Fail,
-                Subject = expected.SourceRelationshipId,
-                Expected = expected.Name ?? expected.SourceRelationshipId,
-                Summary = $"Relationship '{expected.SourceRelationshipId}' captured at manifest time is missing from the published catalog entry."
-            });
         }
+    }
+
+    private static List<MetadataV2Relationship> FindPublishedRelationships(
+        MetadataV2Resource published,
+        MigrationManifestRelationshipRecord expected)
+    {
+        var identified = new List<MetadataV2Relationship>();
+        foreach (var relationship in published.Relationships)
+        {
+            if (string.Equals(relationship.Id, expected.SourceRelationshipId, StringComparison.Ordinal)
+                || (!string.IsNullOrWhiteSpace(expected.TargetRelationshipRef)
+                    && string.Equals(relationship.Id, expected.TargetRelationshipRef, StringComparison.Ordinal)))
+            {
+                identified.Add(relationship);
+            }
+        }
+
+        if (identified.Count > 0 || string.IsNullOrWhiteSpace(expected.Name))
+        {
+            return identified;
+        }
+
+        var named = new List<MetadataV2Relationship>();
+        foreach (var relationship in published.Relationships)
+        {
+            if (string.Equals(relationship.Name, expected.Name, StringComparison.Ordinal))
+            {
+                named.Add(relationship);
+            }
+        }
+
+        return named;
+    }
+
+    private static bool IsCompositeRelationshipType(string? relationshipType)
+        => string.Equals(relationshipType, "composite", StringComparison.OrdinalIgnoreCase);
+
+    private static bool PublishedCompositeMatches(
+        MigrationManifestRelationshipRecord expected,
+        MetadataV2Relationship published)
+    {
+        if (!published.Composite)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.Name)
+            && !string.Equals(published.Name, expected.Name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.Role)
+            && !string.Equals(
+                NormalizeReconciledRole(published.Role),
+                NormalizeReconciledRole(expected.Role),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.OriginKeyField)
+            && !string.Equals(published.OriginField, expected.OriginKeyField, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.DestinationKeyField)
+            && !string.Equals(published.DestinationField, expected.DestinationKeyField, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.Cardinality)
+            && !string.Equals(
+                NormalizeReconciledCardinality(published.Cardinality),
+                NormalizeReconciledCardinality(expected.Cardinality),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string NormalizeReconciledRole(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = role.Trim();
+        if (trimmed.Equals("origin", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("esriRelRoleOrigin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "origin";
+        }
+
+        if (trimmed.Equals("destination", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("esriRelRoleDestination", StringComparison.OrdinalIgnoreCase))
+        {
+            return "destination";
+        }
+
+        return trimmed.ToLowerInvariant();
+    }
+
+    private static string NormalizeReconciledCardinality(string? cardinality)
+    {
+        if (string.IsNullOrWhiteSpace(cardinality))
+        {
+            return string.Empty;
+        }
+
+        return cardinality.Trim().ToUpperInvariant() switch
+        {
+            "1:1" or "ONE-TO-ONE" or "ONE_TO_ONE" or "ESRIRELCARDINALITYONETOONE" => "one-to-one",
+            "1:N" or "1:M" or "ONE-TO-MANY" or "ONE_TO_MANY" or "ESRIRELCARDINALITYONETOMANY" => "one-to-many",
+            "M:N" or "MANY-TO-MANY" or "MANY_TO_MANY" or "ESRIRELCARDINALITYMANYTOMANY" => "many-to-many",
+            _ => cardinality.Trim().ToLowerInvariant()
+        };
     }
 
     private static bool IsRelationshipExpectedToPersist(string classification)
@@ -656,6 +820,7 @@ public static class MigrationCatalogReconciler
                 "double" => MetadataV2FieldType.Double,
                 "string" => MetadataV2FieldType.String,
                 "date" => MetadataV2FieldType.DateTime,
+                "dateonly" => MetadataV2FieldType.Date,
                 "blob" or "raster" or "xml" => MetadataV2FieldType.Binary,
                 "guid" or "globalid" => MetadataV2FieldType.Uuid,
                 "geometry" => MetadataV2FieldType.Geometry,

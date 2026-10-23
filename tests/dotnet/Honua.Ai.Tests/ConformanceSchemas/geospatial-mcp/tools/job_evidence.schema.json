@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/job_evidence.schema.json",
+  "title": "job_evidence inputSchema",
+  "description": "Read-only retrieval of sanitized steps, a bounded event tail, and artifact availability for a caller-readable geoprocessing job. Honua extension (#6219), advertised as honua_job_evidence. This reference contract is not a finalized geospatial-mcp standard tool.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": [
+    "jobId"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of a geoprocessing job the caller can read."
+    },
+    "events": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 50,
+      "description": "How many of the most recent recorded events to return."
+    },
+    "eventCursor": {
+      "type": "string",
+      "maxLength": 128
+    }
+  },
+  "additionalProperties": false
+}

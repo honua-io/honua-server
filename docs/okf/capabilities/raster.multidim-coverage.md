@@ -1,0 +1,27 @@
+---
+type: capability
+title: "Multidimensional Coverage (NetCDF/HDF5/Zarr)"
+description: "Register and serve cloud-hosted NetCDF4/HDF5/Zarr datacubes as multidimensional coverages (OGC API Coverages / WCS / ImageServer multidimensional)."
+resource: "honua://capability/raster.multidim-coverage"
+tags: [capability, raster, pro]
+---
+<!-- GENERATED FILE - DO NOT EDIT. Regenerate with scripts/ci/generate-capability-concepts.py -->
+
+# Multidimensional Coverage (NetCDF/HDF5/Zarr)
+
+Register and serve cloud-hosted NetCDF4/HDF5/Zarr datacubes as multidimensional coverages (OGC API Coverages / WCS / ImageServer multidimensional).
+
+| | |
+| --- | --- |
+| Capability key | `raster.multidim-coverage` |
+| Category | Raster |
+| Edition | Pro |
+| Surface maturity | 12 implemented |
+| Registry entries | 12 |
+| Proving tests | 25 |
+
+The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
+
+## Documented in
+
+- [Cloud-native formats](../../reference/protocols/cloud-native-formats.md)

@@ -8,6 +8,7 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpPublishCommandTests : IDisposable
 {
     private readonly string _fixtureRoot = Path.Join(

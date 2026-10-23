@@ -504,7 +504,7 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 
     private static string RenderSeed(bool injectFailure, string schema = "honua")
     {
-        var seedPath = Path.Combine(AppContext.BaseDirectory, "Seed", "demo-stac-imagery-v1.sql");
+        var seedPath = Path.Join(AppContext.BaseDirectory, "Seed", "demo-stac-imagery-v1.sql");
         var source = File.ReadAllText(seedPath);
         var begin = source.IndexOf("\nBEGIN;", StringComparison.Ordinal);
         if (begin < 0)
@@ -1157,7 +1157,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             created_at TIMESTAMPTZ NOT NULL,
             last_sync_time TIMESTAMPTZ NOT NULL,
             last_sync_generation BIGINT NOT NULL DEFAULT 0,
-            upload_base_generation BIGINT NOT NULL DEFAULT 0
+            upload_base_generation BIGINT NOT NULL DEFAULT 0,
+            scope_definition JSONB NULL
         );
         CREATE TABLE honua.feature_changes (
             change_id BIGSERIAL PRIMARY KEY,

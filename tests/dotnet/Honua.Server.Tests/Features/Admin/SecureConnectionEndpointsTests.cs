@@ -18,6 +18,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -159,11 +160,45 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             Port = 5432,
             DatabaseName = "testdb",
             Username = "testuser",
-            SecretReference = "env:TEST_DB_CONNECTION",
+            SecretReference = "env:HONUA_TEST_DB_CONNECTION",
             SecretType = "environment",
             SslRequired = true,
             SslMode = "Require"
         };
+
+        // A value that is not a whole reference, or a reference the operator policy does not
+        // permit, is rejected before anything is stored or probed.
+        var refusedPayloads = new[]
+        {
+            "env:UNLISTED_DB_CONNECTION",
+            "Host=localhost;Database=testdb;Username=testuser;Password={env:HONUA_TEST_DB_CONNECTION}",
+            "Host=localhost;Database=testdb;Username=testuser;Password=inline"
+        }.Select(refusedReference => JsonSerializer.Serialize(
+            new CreateSecureConnectionRequest
+            {
+                Name = $"test-secretref-refused-{Guid.NewGuid():N}",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                SecretReference = refusedReference,
+                SecretType = "environment",
+                SslRequired = true,
+                SslMode = "Require"
+            },
+            _jsonOptions));
+
+        foreach (var refusedJson in refusedPayloads)
+        {
+
+            using var refusedCreate = new StringContent(refusedJson, Encoding.UTF8, "application/json");
+            var refusedCreateResponse = await _client.PostAsync("/api/v1/admin/connections", refusedCreate);
+            Assert.Equal(HttpStatusCode.BadRequest, refusedCreateResponse.StatusCode);
+
+            using var refusedTest = new StringContent(refusedJson, Encoding.UTF8, "application/json");
+            var refusedTestResponse = await _client.PostAsync("/api/v1/admin/connections/test", refusedTest);
+            Assert.Equal(HttpStatusCode.BadRequest, refusedTestResponse.StatusCode);
+        }
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
         using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
@@ -404,6 +439,177 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             capturingDriver.LastSslMode.Should().Be(SslMode.VerifyFull);
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, false, null, 5432, true, false)]
+    [InlineData(false, false, 6432, 6432, true, false)]
+    [InlineData(false, true, null, 0, true, false)]
+    [InlineData(false, true, 6432, 6432, true, false)]
+    [InlineData(true, false, null, 5432, true, false)]
+    [InlineData(true, false, 6432, 6432, true, false)]
+    [InlineData(true, true, null, 0, true, false)]
+    [InlineData(true, true, 6432, 6432, true, false)]
+    [InlineData(true, true, 5432, 5432, false, false)]
+    [InlineData(false, false, 0, 0, false, false)]
+    [InlineData(false, false, -1, -1, false, false)]
+    [InlineData(false, false, 65536, 65536, false, false)]
+    [InlineData(false, true, 0, 0, false, false)]
+    [InlineData(false, true, -1, -1, false, false)]
+    [InlineData(false, true, 65536, 65536, false, false)]
+    [InlineData(true, false, 0, 0, false, false)]
+    [InlineData(true, false, -1, -1, false, false)]
+    [InlineData(true, false, 65536, 65536, false, false)]
+    [InlineData(true, true, 0, 0, false, false)]
+    [InlineData(true, true, -1, -1, false, false)]
+    [InlineData(true, true, 65536, 65536, false, false)]
+    [InlineData(false, false, null, 5432, true, true)]
+    [InlineData(false, true, null, 0, true, true)]
+    [InlineData(true, false, null, 5432, true, true)]
+    [InlineData(true, true, null, 0, true, true)]
+    [Endpoint("POST /api/v1/admin/connections")]
+    [Endpoint("POST /api/v1/admin/connections/test")]
+    public async Task ConnectionPort_OmittedDefaultsAndExplicitAssertions_AreEnforced(
+        bool draft, bool external, int? declaredPort, int storedPort, bool accepted, bool explicitNull)
+    {
+        var driver = new CapturingConnectionDriver();
+        var secrets = Substitute.For<IRequestSecretReferenceResolver>();
+        secrets.Evaluate(Arg.Any<string>()).Returns(RequestSecretReferenceDecision.Permitted());
+        secrets.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Host=localhost;Port=6432;Database=test;Username=test;Password=test;SSL Mode=Require");
+        var localFixture = CreateAllowlistFixture(["localhost"], false, out _)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRequestSecretReferenceResolver>();
+                services.AddSingleton(secrets);
+                services.RemoveAll<IConnectionDriverRegistry>();
+                services.AddSingleton<IConnectionDriverRegistry>(new ConnectionDriverRegistry([driver]));
+            });
+        await localFixture.InitializeAsync();
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            localFixture.Services.GetRequiredService<IConnectionDriverRegistry>()
+                .Find(DataProviderNames.Postgis).Should().BeSameAs(driver);
+            var name = $"port-contract-{Guid.NewGuid():N}";
+            var request = new Dictionary<string, object?>
+            {
+                ["name"] = name,
+                ["host"] = "localhost",
+                ["databaseName"] = "test",
+                ["username"] = "test",
+                ["sslRequired"] = true,
+                ["sslMode"] = "Require"
+            };
+            if (declaredPort.HasValue || explicitNull)
+            {
+                request["port"] = declaredPort;
+            }
+            if (external)
+            {
+                request["secretReference"] = "env:TEST_CONNECTION";
+                request["secretType"] = "environment";
+            }
+            else
+            {
+                request["password"] = "test";
+            }
+            using var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync(
+                draft ? "/api/v1/admin/connections/test" : "/api/v1/admin/connections", content);
+            response.StatusCode.Should().Be(accepted
+                ? (draft ? HttpStatusCode.OK : HttpStatusCode.Created)
+                : HttpStatusCode.BadRequest);
+            driver.ProbeCount.Should().Be(draft && accepted ? 1 : 0);
+            if (draft && accepted)
+            {
+                driver.LastProbedPort.Should().Be(external ? 6432 : storedPort);
+                var result = JsonSerializer.Deserialize<ApiResponse<ConnectionTestResult>>(
+                    await response.Content.ReadAsStringAsync(), _jsonOptions);
+                result!.Data!.IsHealthy.Should().BeTrue();
+            }
+            using var scope = localFixture.Services.CreateScope();
+            var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
+            var connections = await registry.GetAllConnectionsAsync();
+            if (!draft && accepted)
+            {
+                var stored = connections.Single(c => c.Name == name);
+                stored.Port.Should().Be(storedPort);
+                stored.IsEncrypted.Should().Be(!external);
+                stored.Validate().Should().BeTrue();
+                var byId = await registry.GetConnectionAsync(stored.ConnectionId);
+                byId.Should().NotBeNull();
+                byId!.Port.Should().Be(storedPort);
+                byId.IsEncrypted.Should().Be(!external);
+                byId.Validate().Should().BeTrue();
+                if (!external)
+                {
+                    driver.LastPort.Should().Be(storedPort);
+                }
+            }
+            else
+            {
+                connections.Should().NotContain(c => c.Name == name);
+            }
+            if (draft && accepted && !external)
+            {
+                driver.LastPort.Should().Be(storedPort);
+            }
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("Host=localhost;Port=5432;Database=test;Username=test;Password=sensitive-value;SSL Mode=Require;Options=-c statement_timeout=0")]
+    [InlineData("Host=denied.example.com;Port=5432;Database=test;Username=test;Password=sensitive-value;SSL Mode=Require")]
+    [Endpoint("POST /api/v1/admin/connections/test")]
+    public async Task TestDraftConnection_ForbiddenResolvedSecret_ReturnsRedactedDenialWithoutProbing(string resolvedString)
+    {
+        var driver = new CapturingConnectionDriver();
+        var secrets = Substitute.For<IRequestSecretReferenceResolver>();
+        secrets.Evaluate(Arg.Any<string>()).Returns(RequestSecretReferenceDecision.Permitted());
+        secrets.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(resolvedString);
+        var localFixture = CreateAllowlistFixture(["localhost"], false, out var audit)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRequestSecretReferenceResolver>();
+                services.AddSingleton(secrets);
+                services.RemoveAll<IConnectionDriverRegistry>();
+                services.AddSingleton<IConnectionDriverRegistry>(new ConnectionDriverRegistry([driver]));
+            });
+        await localFixture.InitializeAsync();
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = "forbidden-draft",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "test",
+                Username = "test",
+                SecretReference = "env:TEST_CONNECTION",
+                SecretType = "environment",
+                SslRequired = true,
+                SslMode = "Require"
+            };
+            using var content = new StringContent(JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/api/v1/admin/connections/test", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("connection security policy").And.NotContain("sensitive-value").And.NotContain("statement_timeout");
+            driver.ProbeCount.Should().Be(0);
+            var denial = await WaitForEventAsync(audit, e => e.Action == "connection.test" && e.Outcome == AuditOutcome.Denied);
+            denial.Should().NotBeNull();
+            JsonSerializer.Serialize(denial).Should().NotContain("sensitive-value").And.NotContain("statement_timeout");
         }
         finally
         {
@@ -1004,18 +1210,29 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
     {
         public SslMode LastSslMode { get; private set; } = SslMode.Require;
 
+        public int ProbeCount { get; private set; }
+
+        public int LastPort { get; private set; }
+
+        public int LastProbedPort { get; private set; }
+
         public string Provider => DataProviderNames.Postgis;
 
         public string BuildConnectionString(ConnectionTarget target)
         {
             LastSslMode = target.SslMode;
-            return "Host=localhost;Port=5432;Database=test;Username=test;Password=test;SslMode=Require";
+            LastPort = target.Port;
+            return $"Host=localhost;Port={target.Port};Database=test;Username=test;Password=test;SslMode=Require";
         }
 
         public Task<ConnectionHealthStatus> TestConnectionAsync(
             string connectionString,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(ConnectionHealthStatus.Healthy);
+        {
+            ProbeCount++;
+            LastProbedPort = new Npgsql.NpgsqlConnectionStringBuilder(connectionString).Port;
+            return Task.FromResult(ConnectionHealthStatus.Healthy);
+        }
     }
 
     private sealed class AlwaysHealthyConnectionTester : IConnectionHealthTester

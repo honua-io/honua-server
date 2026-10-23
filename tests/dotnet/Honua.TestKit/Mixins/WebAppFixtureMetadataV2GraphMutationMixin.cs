@@ -274,6 +274,49 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     }
 
     /// <summary>
+    /// Sets (or clears) editor-tracking and GlobalID bindings on the resource published
+    /// at <paramref name="layerIndex"/> so applyEdits can stamp those fields (#6134).
+    /// </summary>
+    internal static void UpdateResourceEditing(
+        WebAppFixture fixture,
+        int layerIndex,
+        MetadataV2ResourceEditing? editing)
+    {
+        var provider = RequireProvider(fixture);
+        var snapshot = ReadCurrent(fixture, provider);
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            resources[i] = resources[i] with { Editing = editing };
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceEditing));
+        }
+
+        WriteGraph(fixture, provider, snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        });
+    }
+
+    /// <summary>
     /// Sets (or clears) the Esri subtype set on the resource published at
     /// <paramref name="layerIndex"/> so FeatureServer layer-metadata serving of
     /// <c>subtypeField</c> / <c>subtypes</c> / <c>defaultSubtypeCode</c> can be exercised

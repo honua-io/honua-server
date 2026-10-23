@@ -45,6 +45,15 @@ public sealed class FeatureEditGuard : IFeatureEditGuard
 
         return policy switch
         {
+            // A lease that was handed out is binding; claiming one stays optional.
+            // Only a lease held by a *different* editor blocks the edit, so a caller
+            // that never claimed a lock is unaffected while a caller that did is
+            // protected from being overwritten on any write surface (#4402).
+            FeatureEditConcurrencyPolicy.HonorActiveLock =>
+                lockSatisfied.HeldByOther is null
+                    ? FeatureEditDecision.Allow
+                    : LockConflict(intent, lockSatisfied.HeldByOther),
+
             FeatureEditConcurrencyPolicy.RequireLock =>
                 lockSatisfied.Satisfied
                     ? FeatureEditDecision.Allow
@@ -142,6 +151,18 @@ public sealed class FeatureEditGuard : IFeatureEditGuard
 
     private static bool IsSameHolder(LockHolder existing, LockHolder candidate)
     {
+        // The authenticated principal is the only field on a lease the caller did not
+        // choose, so it is the one that can prove ownership. Every other field —
+        // HolderId, SessionId, TenantId — arrives from the client, and a second editor
+        // that has seen a conflict response knows all of them. When the lease records a
+        // principal, the writer's principal must match it; a lease with none was created
+        // outside an authenticated request and falls back to the caller-supplied fields.
+        if (!string.IsNullOrWhiteSpace(existing.PrincipalName) &&
+            !string.Equals(existing.PrincipalName, candidate.PrincipalName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (!string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal))
         {
             return false;

@@ -1,0 +1,48 @@
+---
+type: guide
+title: "Client packages and registries"
+description: "Every Honua client package is public. Which registry each one is on, and the version the quickstart pins."
+resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
+---
+# Client packages and registries
+
+**Every Honua client package is public and installs with no credentials**, and so
+does the server image. Nothing on this page needs a token.
+
+The quickstart uses the 2026.1 release channel
+`ghcr.io/honua-io/honua-server:2026.1-rc` and the pinned clients below.
+The exact server digest is `server.image` in that release's
+`customer-install-manifest.json`.
+
+| Registry | Manifest pin | Role | Package-read credentials |
+| --- | --- | --- | --- |
+| PyPI | `honua-admin==0.1.12` | Control plane used by this journey | None |
+| PyPI | `honua-sdk==0.1.18` | Data plane used by this journey | None |
+| PyPI | `mcp==2.1.1` | Only if you drive the server over MCP | None |
+| npm | `@honua/sdk-js@0.2.6` | Alternative JS SDK and CLI | None |
+| npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
+| npm | `@honua/mcp-server@0.2.6` | Alternative MCP proxy | None |
+| NuGet | `Honua.Sdk` `1.12.0` | Alternative .NET SDK | None |
+| NuGet | `Honua.Sdk.Admin` `1.12.0` | Dedicated .NET control-plane SDK | None |
+
+Pick the one for your language; you do not need the others. The npm and NuGet
+pins are alternative client selections, not a claim that the Python quickstart
+exercised them. A promoted release publication record identifies its immutable source
+and byte hash.
+
+## Installing the .NET client
+
+`Honua.Sdk` and the rest of the `Honua.Sdk*` family are on nuget.org and install
+anonymously:
+
+```bash
+dotnet new console
+dotnet add package Honua.Sdk --version 1.12.0
+```
+
+No feed to add, no token, no package-source mapping. The same builds are also
+mirrored to GitHub Packages, which does require a classic PAT with `read:packages`
+and may need organization SSO authorization - use it only if you have a specific
+reason to prefer that feed.
+
+Return to the [quickstart](quickstart.md) for the Python installation journey.

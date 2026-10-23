@@ -240,6 +240,7 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
     private static HashSet<string> ParseSeriesNames(string exposition)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-select]: skips blank and comment lines while collecting series names
         foreach (var raw in exposition.Split('\n'))
         {
             var line = raw.Trim();
@@ -273,6 +274,7 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
         var pattern = new Regex(
             "^" + Regex.Escape(series) + @"\{(?<labels>[^}]*)\}", RegexOptions.CultureInvariant);
 
+        // codeql[cs/linq/missed-select]: collects values of one label from each matching exposition line
         foreach (var raw in exposition.Split('\n'))
         {
             var match = pattern.Match(raw.Trim());
@@ -300,6 +302,7 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
         var labels = new HashSet<string>(StringComparer.Ordinal);
         var pattern = new Regex("^" + Regex.Escape(series) + @"\{(?<labels>[^}]*)\}", RegexOptions.CultureInvariant);
 
+        // codeql[cs/linq/missed-select]: parses label names from each matching exposition line
         foreach (var raw in exposition.Split('\n'))
         {
             var match = pattern.Match(raw.Trim());

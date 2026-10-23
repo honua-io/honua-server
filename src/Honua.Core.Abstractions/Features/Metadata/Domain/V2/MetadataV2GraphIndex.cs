@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
@@ -23,6 +25,7 @@ public sealed class MetadataV2GraphIndex
         IReadOnlyDictionary<string, MetadataV2Publication> publicationsById,
         ILookup<string, MetadataV2Publication> publicationsByService,
         ILookup<string, MetadataV2Publication> publicationsByResource,
+        IReadOnlyDictionary<string, ImmutableArray<string>> serviceNamesByResource,
         IReadOnlyDictionary<string, MetadataV2ProjectionProfile> projectionProfilesById,
         ILookup<string, MetadataV2ProjectionProfile> projectionProfilesByTarget,
         IReadOnlyDictionary<string, MetadataV2Policy> policiesById,
@@ -42,6 +45,7 @@ public sealed class MetadataV2GraphIndex
         PublicationsById = publicationsById;
         PublicationsByService = publicationsByService;
         PublicationsByResource = publicationsByResource;
+        ServiceNamesByResource = serviceNamesByResource;
         ProjectionProfilesById = projectionProfilesById;
         ProjectionProfilesByTarget = projectionProfilesByTarget;
         PoliciesById = policiesById;
@@ -98,6 +102,12 @@ public sealed class MetadataV2GraphIndex
 
     /// <summary>Publications grouped by the resource they expose.</summary>
     public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
+
+    /// <summary>Case-insensitively distinct service names for each ordinal resource identifier.
+    /// Uses the same first-wins publication and service IDs as the canonical maps.
+    /// Includes every publication lifecycle, matching read-policy service scoping.
+    /// </summary>
+    public IReadOnlyDictionary<string, ImmutableArray<string>> ServiceNamesByResource { get; }
 
     /// <summary>Projection profiles keyed by their identifier.</summary>
     public IReadOnlyDictionary<string, MetadataV2ProjectionProfile> ProjectionProfilesById { get; }
@@ -185,6 +195,30 @@ public sealed class MetadataV2GraphIndex
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);
 
+        // Security sources previously scanned PublicationsById for every read. Resolve
+        // these immutable names once, retaining first-wins duplicate IDs and all scopes.
+        var serviceNameSets = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var publication in publicationsById.Values)
+        {
+            if (!servicesById.TryGetValue(publication.ServiceId, out var service) ||
+                string.IsNullOrWhiteSpace(service.Metadata.Name))
+            {
+                continue;
+            }
+
+            if (!serviceNameSets.TryGetValue(publication.ResourceId, out var names))
+            {
+                names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                serviceNameSets.Add(publication.ResourceId, names);
+            }
+
+            names.Add(service.Metadata.Name);
+        }
+
+        var serviceNamesByResource = serviceNameSets.ToDictionary(
+            pair => pair.Key, pair => pair.Value.ToImmutableArray(), StringComparer.Ordinal);
+
+
         var projectionProfilesById = new Dictionary<string, MetadataV2ProjectionProfile>(StringComparer.Ordinal);
         foreach (var p in graph.ProjectionProfiles) projectionProfilesById.TryAdd(p.Metadata.Id, p);
 
@@ -218,6 +252,7 @@ public sealed class MetadataV2GraphIndex
             publicationsById,
             publicationsByService,
             publicationsByResource,
+            serviceNamesByResource,
             projectionProfilesById,
             projectionProfilesByTarget,
             policiesById,

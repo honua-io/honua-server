@@ -1,9 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Amazon;
-using Amazon.Runtime;
-using Amazon.S3;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Configuration;
@@ -44,21 +41,7 @@ internal static class AwsCloudRangeReaderServiceCollectionExtensions
             var s3Options = options.Value.AwsS3
                 ?? throw new InvalidOperationException("AWS S3 options not configured for range reader.");
 
-            var config = new AmazonS3Config
-            {
-                RegionEndpoint = RegionEndpoint.GetBySystemName(s3Options.Region),
-                ForcePathStyle = s3Options.ForcePathStyle
-            };
-            if (!string.IsNullOrWhiteSpace(s3Options.ServiceUrl))
-            {
-                config.ServiceURL = s3Options.ServiceUrl;
-            }
-
-            IAmazonS3 client = !string.IsNullOrWhiteSpace(s3Options.AccessKeyId) && !string.IsNullOrWhiteSpace(s3Options.SecretAccessKey)
-                ? new AmazonS3Client(new BasicAWSCredentials(s3Options.AccessKeyId, s3Options.SecretAccessKey), config)
-                : new AmazonS3Client(config);
-
-            return new AwsS3RangeReader(client);
+            return new AwsS3RangeReader(AwsS3FileStorage.CreateClient(s3Options));
         });
 
         return services;

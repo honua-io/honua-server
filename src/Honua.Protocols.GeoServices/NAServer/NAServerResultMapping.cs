@@ -15,6 +15,9 @@ namespace Honua.Protocols.GeoServices.NAServer;
 /// </summary>
 internal static class NAServerResultMapping
 {
+    /// <summary>Name of the single route a Route solve returns; its direction set carries the same name.</summary>
+    internal const string SingleRouteName = "Route 1";
+
     /// <summary>
     /// Maps a route solve result into the NAServer route response. <paramref name="includeDirections"/>
     /// controls whether turn-by-turn directions are emitted.
@@ -31,6 +34,7 @@ internal static class NAServerResultMapping
         var messages = new List<NAServerMessage>();
 
         NAServerRouteFeatureSet routes;
+        double[][][] paths = result.Solved ? GeoJsonToEsri.ToPaths(result.RouteGeometryGeoJson) : [];
         if (!result.Solved)
         {
             messages.Add(new NAServerMessage
@@ -46,7 +50,6 @@ internal static class NAServerResultMapping
         }
         else
         {
-            var paths = GeoJsonToEsri.ToPaths(result.RouteGeometryGeoJson);
             routes = new NAServerRouteFeatureSet
             {
                 GeometryType = "esriGeometryPolyline",
@@ -62,7 +65,7 @@ internal static class NAServerResultMapping
                         },
                         Attributes = new NAServerRouteAttributes
                         {
-                            Name = "Route 1",
+                            Name = SingleRouteName,
                             TotalLength = result.TotalLengthMeters,
                             TotalTravelTime = result.TotalTimeMinutes,
                         },
@@ -71,8 +74,19 @@ internal static class NAServerResultMapping
             };
         }
 
-        var directions = includeDirections && result.Solved
-            ? MapDirections(result.Directions)
+        // The directions name the route they describe even when returnRoutes=false, so a client
+        // that later pairs them with the route feature resolves the same single route (#4035).
+        NAServerDirection[] directions = includeDirections
+            && result.Solved
+            && MapDirections(
+                result.Directions,
+                routeId: 1,
+                SingleRouteName,
+                result.TotalLengthMeters,
+                result.TotalTimeMinutes,
+                paths,
+                spatialReference) is { } direction
+            ? [direction]
             : [];
 
         return new NAServerRouteSolveResponse
@@ -159,6 +173,8 @@ internal static class NAServerResultMapping
         foreach (var route in result.Routes)
         {
             var paths = GeoJsonToEsri.ToPaths(route.RouteGeometryGeoJson);
+            // Esri identifiers are 1-based; canonical ids are 0-based.
+            var routeName = $"Incident {route.IncidentId + 1} - Facility {route.FacilityId + 1}";
             features.Add(new NAServerCfRouteFeature
             {
                 Geometry = paths.Length > 0
@@ -166,8 +182,7 @@ internal static class NAServerResultMapping
                     : null,
                 Attributes = new NAServerCfRouteAttributes
                 {
-                    // Esri identifiers are 1-based; canonical ids are 0-based.
-                    Name = $"Incident {route.IncidentId + 1} - Facility {route.FacilityId + 1}",
+                    Name = routeName,
                     IncidentId = route.IncidentId + 1,
                     FacilityId = route.FacilityId + 1,
                     FacilityRank = route.Rank,
@@ -176,9 +191,19 @@ internal static class NAServerResultMapping
                 },
             });
 
-            if (includeDirections && route.Directions.Count > 0)
+            // One direction set per route, named after the route it describes, rather than
+            // every route's steps merged into a single unnamed set (#4035).
+            if (includeDirections
+                && MapDirections(
+                    route.Directions,
+                    routeId: features.Count,
+                    routeName,
+                    route.TotalLengthMeters,
+                    route.TotalTimeMinutes,
+                    paths,
+                    spatialReference) is { } direction)
             {
-                directions.AddRange(MapDirections(route.Directions));
+                directions.Add(direction);
             }
         }
 
@@ -350,11 +375,24 @@ internal static class NAServerResultMapping
         };
     }
 
-    private static NAServerDirection[] MapDirections(IReadOnlyList<RouteDirectionStep> steps)
+    /// <summary>
+    /// Maps one route's turn-by-turn steps into the Esri direction set for that route:
+    /// <c>routeId</c>/<c>routeName</c> identify the route feature the steps belong to and
+    /// <c>summary</c> carries the route totals and geometry extent. Returns <see langword="null"/>
+    /// when the provider computed no steps for the route.
+    /// </summary>
+    private static NAServerDirection? MapDirections(
+        IReadOnlyList<RouteDirectionStep> steps,
+        int routeId,
+        string routeName,
+        double totalLengthMeters,
+        double totalTimeMinutes,
+        double[][][] paths,
+        NAServerSpatialReference spatialReference)
     {
         if (steps.Count == 0)
         {
-            return [];
+            return null;
         }
 
         var features = new NAServerDirectionFeature[steps.Count];
@@ -373,10 +411,38 @@ internal static class NAServerResultMapping
             };
         }
 
-        return
-        [
-            new NAServerDirection { Features = features },
-        ];
+        return new NAServerDirection
+        {
+            RouteId = routeId,
+            RouteName = routeName,
+            Summary = new NAServerDirectionSummary
+            {
+                TotalLength = totalLengthMeters,
+                TotalTime = totalTimeMinutes,
+                TotalDriveTime = totalTimeMinutes,
+                Envelope = BuildEnvelope(paths, spatialReference),
+            },
+            Features = features,
+        };
+    }
+
+    private static NAServerEnvelope? BuildEnvelope(double[][][] paths, NAServerSpatialReference spatialReference)
+    {
+        var xmin = double.PositiveInfinity;
+        var ymin = double.PositiveInfinity;
+        var xmax = double.NegativeInfinity;
+        var ymax = double.NegativeInfinity;
+        foreach (var vertex in paths.SelectMany(static path => path))
+        {
+            xmin = Math.Min(xmin, vertex[0]);
+            ymin = Math.Min(ymin, vertex[1]);
+            xmax = Math.Max(xmax, vertex[0]);
+            ymax = Math.Max(ymax, vertex[1]);
+        }
+
+        return double.IsPositiveInfinity(xmin)
+            ? null
+            : new NAServerEnvelope { Xmin = xmin, Ymin = ymin, Xmax = xmax, Ymax = ymax, SpatialReference = spatialReference };
     }
 
     private static NAServerSpatialReference BuildSpatialReference(int srid)

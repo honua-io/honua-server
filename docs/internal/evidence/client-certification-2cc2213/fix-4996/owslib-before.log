@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/regressions/coverage_clients.py", line 96, in <module>
+    result = (gdal_checks if args.client == "gdal" else owslib_checks)(args.base_url.rstrip("/"))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/regressions/coverage_clients.py", line 72, in owslib_checks
+    data = client.coverage("2496", subset=subset)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/owslib/ogcapi/coverages.py", line 132, in coverage
+    return BytesIO(self._request(path=path, as_dict=False, kwargs=kwargs_))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/owslib/ogcapi/__init__.py", line 196, in _request
+    raise RuntimeError(response.text)
+RuntimeError: {"type":"about:blank","title":"Bad Request","status":400,"detail":"The subset parameter is not supported by this OGC API Coverages implementation. Use bbox for spatial subsetting.","instance":"/ogc/coverages/collections/2496/coverage","correlationId":"00-1bf290e71615501e54b37fc5175b638d-63b48ba4ac9d64d2-00","timestamp":"2026-09-20T08:32:42.5932090\u002B00:00"}

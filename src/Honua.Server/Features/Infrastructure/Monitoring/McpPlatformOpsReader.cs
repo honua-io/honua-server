@@ -2,11 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Ai.StudioAiProxy;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -19,10 +22,13 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -79,6 +85,10 @@ internal sealed class McpPlatformOpsReader(
         ArgumentNullException.ThrowIfNull(argument);
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
+        // honua-server#4987: same redaction as the REST reads.
+        var redactRecoveryGrantIdentity = DeployControlEndpoints.ShouldRedactRecoveryGrantIdentity(
+            principal, _services.GetService<IOptions<TenantContextOptions>>()?.Value);
+
         var operationId = Clean(argument.OperationId);
         if (operationId is not null)
         {
@@ -87,7 +97,7 @@ internal sealed class McpPlatformOpsReader(
 
             var response = new DeployOperationListResponse
             {
-                Items = [DeployControlEndpoints.MapOperationResponse(operation)],
+                Items = [DeployControlEndpoints.MapOperationResponse(operation, redactRecoveryGrantIdentity)],
                 Page = 1,
                 PageSize = 1,
                 TotalCount = 1,
@@ -109,12 +119,12 @@ internal sealed class McpPlatformOpsReader(
 
         var list = new DeployOperationListResponse
         {
-            Items = result.Items.Select(DeployControlEndpoints.MapOperationResponse).ToArray(),
+            Items = result.Items.Select(item => DeployControlEndpoints.MapOperationResponse(item, redactRecoveryGrantIdentity)).ToArray(),
             Page = result.Page,
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             HasMore = result.HasMore,
-            EvidencePosture = DeployControlEndpoints.BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore),
+            EvidencePosture = DeployControlEndpoints.BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore, result.IsTruncated),
         };
 
         return Serialize(list, DeployControlJsonContext.Default.DeployOperationListResponse);
@@ -144,6 +154,7 @@ internal sealed class McpPlatformOpsReader(
         ArgumentNullException.ThrowIfNull(argument);
 
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Rollback, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Rollback);
 
         var targetId = Clean(argument.TargetId);
         if (targetId is null)
@@ -174,6 +185,7 @@ internal sealed class McpPlatformOpsReader(
     public async Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var findingId = Clean(argument.FindingId) ?? throw new GeoprocessingValidationException("'findingId' is required.");
         var evaluation = await _services.GetRequiredService<IOpsFindingsEvidenceSource>()
             .EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
@@ -182,9 +194,20 @@ internal sealed class McpPlatformOpsReader(
         var action = finding?.RecommendedAction ?? throw new GeoprocessingNotFoundException($"Finding '{findingId}' was not found or has no recommended action.");
         var candidateId = Clean(argument.CandidateId) ?? throw new GeoprocessingValidationException("'candidateId' is required.");
         ValidateFindingCandidateBinding(action.Kind, action.ExecutionPayload, candidateId);
-        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _))
+        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var requiredSources))
             return new McpProposeOperationOutput { Outcome = "Blocked", SupportedKinds = ResolveSupportedKinds(), Message = "evidencePostureNotActionable" };
-        return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId, cancellationToken, action.ActionDiscriminator).ConfigureAwait(false);
+        return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId,
+            cancellationToken, action.ActionDiscriminator, new OperationGatewayAutonomyContext
+            {
+                FindingId = finding.Id,
+                Rule = finding.Rule,
+                ActionDiscriminator = action.ActionDiscriminator,
+                ActionMarkedAutoSafe = action.AutoSafe,
+                BlastRadius = Math.Max(1, action.BlastRadius),
+                EvidenceRefs = finding.EvidenceRefs.Concat(requiredSources
+                    .OrderBy(source => source.SourceId, StringComparer.Ordinal)
+                    .Select(source => $"evidence:{source.SourceId}:{source.ObservedAt:O}:{source.Completeness}")).ToArray(),
+            }).ConfigureAwait(false);
     }
 
     internal static void ValidateFindingCandidateBinding(
@@ -207,6 +230,7 @@ internal sealed class McpPlatformOpsReader(
     public async Task<McpProposeOperationOutput> ProposeDeployPlanAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var targetId = Clean(argument.TargetId) ?? throw new GeoprocessingValidationException("'targetId' is required.");
         var desiredRevision = Clean(argument.DesiredRevision) ?? throw new GeoprocessingValidationException("'desiredRevision' is required.");
         var plan = await _deployWorkflowService.PlanAsync(targetId, desiredRevision, Clean(argument.CurrentRevision), null, principal, cancellationToken).ConfigureAwait(false)
@@ -244,9 +268,29 @@ internal sealed class McpPlatformOpsReader(
     public async Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var options = _controlPlaneOptions.CurrentValue;
         var release = options.PlatformRelease.ToDefinition() ?? throw new GeoprocessingPreconditionFailedException("A platform release is not declared.");
         var desiredRevision = Clean(release.ServingArtifactReference) ?? throw new GeoprocessingPreconditionFailedException("The platform release has no serving artifact.");
+        var targetVersion = Clean(argument.TargetVersion);
+        if (targetVersion is not null && !PlatformReleaseVersion.Matches(release.Version, targetVersion))
+        {
+            // R13 "minimum honest" update path: the server converges only to the release declared in
+            // ControlPlane:PlatformRelease (written from the signed release lock by the provisioning
+            // executor). A different requested release is a typed rejection, never a sealed proposal.
+            return new McpProposeOperationOutput
+            {
+                Outcome = "rejected",
+                Code = PlatformReleaseVersionMismatch.Code,
+                DeclaredVersion = release.Version,
+                TargetVersion = targetVersion,
+                ServingArtifactReference = desiredRevision,
+                IsCoVersioned = PlatformReleaseSkewProjector.Build(options).IsCoVersioned,
+                SupportedKinds = ResolveSupportedKinds(),
+                Message = PlatformReleaseVersionMismatch.Describe(targetVersion, release.Version),
+            };
+        }
+
         var targets = options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)).ToArray();
         if (targets.Length == 0) throw new GeoprocessingPreconditionFailedException("No serving deploy target is configured.");
         var outcomes = new List<McpConvergenceTargetOutput>();
@@ -276,6 +320,7 @@ internal sealed class McpPlatformOpsReader(
     private async Task<McpProposeOperationOutput> ProposeDeployAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, string idempotencyPrefix, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var targetId = Clean(argument.TargetId) ?? throw new GeoprocessingValidationException("'targetId' is required.");
         var desiredRevision = Clean(argument.DesiredRevision) ?? throw new GeoprocessingValidationException("'desiredRevision' is required.");
         var payload = new DeployExecutionPayload { TargetId = targetId, DesiredRevision = desiredRevision, CurrentRevision = Clean(argument.CurrentRevision) }.Serialize();
@@ -284,7 +329,7 @@ internal sealed class McpPlatformOpsReader(
             Clean(argument.IdempotencyKey) ?? $"{idempotencyPrefix}:{targetId}:{desiredRevision}", cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<McpProposeOperationOutput> SealProposalAsync(ClaimsPrincipal principal, OperationClass kind, string? payload, string? reason, string idempotencyKey, CancellationToken cancellationToken, string? actionDiscriminator = null)
+    private async Task<McpProposeOperationOutput> SealProposalAsync(ClaimsPrincipal principal, OperationClass kind, string? payload, string? reason, string idempotencyKey, CancellationToken cancellationToken, string? actionDiscriminator = null, OperationGatewayAutonomyContext? autonomyContext = null)
     {
         var gateway = _services.GetService<IOperationGateway>();
         var envelopeFactory = _services.GetService<IOperationEnvelopeFactory>();
@@ -295,6 +340,57 @@ internal sealed class McpPlatformOpsReader(
         var scopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal);
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray();
         var authorizationOutcome = scopeGoverned ? "admin-policy-and-oauth-scope-authorized" : "admin-policy-authorized";
+        var httpContext = _services.GetService<IHttpContextAccessor>()?.HttpContext;
+        var evidence = httpContext?.Items[ProposalEvidenceVerifier.HttpContextItemKey] as OperationProposalEvidence;
+        if (evidence is not null)
+        {
+            var invokingTool = httpContext!.Items[ProposalEvidenceVerifier.InvokingToolItemKey] as string;
+            if (!string.Equals(evidence.ToolName, invokingTool, StringComparison.Ordinal))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the invoking tool.");
+            }
+
+            if (evidence.OperationId != LegacyOperationIds.For(kind))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the routed operation descriptor.");
+            }
+
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                throw new GeoprocessingValidationException(
+                    "An evidence-bound proposal requires an execution payload.");
+            }
+
+            if (!PayloadTargetMatches(kind, payload, evidence.TargetId))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the proposal target.");
+            }
+
+            await EnsureEvidenceProposerCanBeRevalidatedAsync(actor!, cancellationToken)
+                .ConfigureAwait(false);
+
+            byte[] canonicalPayload;
+            try
+            {
+                canonicalPayload = StudioAiTranscriptSigner.Canonicalize(
+                    Encoding.UTF8.GetBytes(payload));
+            }
+            catch (JsonException)
+            {
+                throw new GeoprocessingValidationException(
+                    "The evidence-bound execution payload is not valid canonicalizable JSON.");
+            }
+
+            evidence = evidence with
+            {
+                AuthorizationDecision = authorizationOutcome,
+                PayloadDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalPayload)),
+                CanonicalPayload = Convert.ToBase64String(canonicalPayload),
+            };
+        }
         var accepted = await envelopeFactory.CreateAcceptedAsync($"control-plane.{kind.ToString().ToLowerInvariant()}", new OperationPolicyContext
         {
             PrincipalId = actor,
@@ -310,8 +406,10 @@ internal sealed class McpPlatformOpsReader(
         {
             OperationInstanceId = accepted.OperationInstanceId,
             CorrelationId = accepted.CorrelationId,
+            OperationId = LegacyOperationIds.For(kind),
             Kind = kind,
             ActionDiscriminator = actionDiscriminator,
+            AutonomyContext = autonomyContext,
             RequestedBy = actor,
             RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
             Reason = reason,
@@ -319,6 +417,7 @@ internal sealed class McpPlatformOpsReader(
             ExecutionPayload = payload,
             ScopeGoverned = scopeGoverned,
             RecognizedScopes = scopes,
+            Evidence = evidence,
         }, cancellationToken).ConfigureAwait(false);
         return new McpProposeOperationOutput
         {
@@ -330,6 +429,40 @@ internal sealed class McpPlatformOpsReader(
             SupportedKinds = ResolveSupportedKinds(),
             Message = result.Message
         };
+    }
+
+    private static bool PayloadTargetMatches(OperationClass kind, string payload, string evidenceTargetId)
+    {
+        var target = kind switch
+        {
+            OperationClass.Deploy => DeployExecutionPayload.Parse(payload)?.TargetId,
+            OperationClass.MetadataRelease => MetadataReleaseExecutionPayload.ParseAndValidate(payload).Payload?.TargetEnvironment,
+            _ => null,
+        };
+
+        return !string.IsNullOrWhiteSpace(target)
+            && string.Equals(target, evidenceTargetId, StringComparison.Ordinal);
+    }
+
+    private async Task EnsureEvidenceProposerCanBeRevalidatedAsync(
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        const string marker = ":api-key:";
+        var markerIndex = actor.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex <= 0
+            || !Guid.TryParse(actor[(markerIndex + marker.Length)..], out var apiKeyId))
+        {
+            throw new GeoprocessingValidationException(
+                "Evidence-bound proposals require a stored API-key proposer that can be revalidated at approval time.");
+        }
+
+        var apiKeys = _services.GetService<IAdminApiKeyStore>();
+        if (apiKeys is null || await apiKeys.GetAsync(apiKeyId, cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new GeoprocessingValidationException(
+                "Evidence-bound proposals require a stored API-key proposer that can be revalidated at approval time.");
+        }
     }
 
     private async Task<RollbackRevisionSelection> ResolveRollbackRevisionAsync(
@@ -429,6 +562,14 @@ internal sealed class McpPlatformOpsReader(
         var scope = _scopeAuthorizer.Evaluate(principal, resourceType, operation);
         if (!scope.IsAllowed)
             throw new GeoprocessingAuthorizationException(false, scope.Reason ?? "The access token scope does not authorize this mutation.");
+    }
+
+    // Deployment targets are platform resources with no owning tenant (#4842).
+    private void EnsurePlatformDeployAuthority(ClaimsPrincipal principal, OperatorOperation operation)
+    {
+        if (!PlatformDeployAuthority.IsAuthorized(principal, _services.GetService<IOptions<TenantContextOptions>>()?.Value))
+            throw new GeoprocessingAuthorizationException(false, PlatformDeployAuthority.DenialMessage,
+                OperatorResourceType.Deployment, operation, policyCode: PlatformDeployAuthority.DenialCode);
     }
 
     private string[]? ResolveSupportedKinds()

@@ -41,7 +41,10 @@ dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 # Integration tests (Testcontainers + PostGIS; Docker required)
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter "Tier=Fast"
 
-# Architecture enforcement tests
+# Source/file architecture guards (no server/provider build closure)
+dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
+
+# Complete architecture enforcement and reflection coverage (also required)
 dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj
 
 # Tier filters: Tier=Fast, Tier!=Slow, Category=Scale (scale stack required)
@@ -49,11 +52,39 @@ dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.cspro
 
 Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Tests`, `Honua.Architecture.Tests`, provider `*.Tests`, `Honua.LoadTests`, `Honua.TestKit`). Do NOT run `dotnet build`/test as part of documentation tasks unless asked.
 
+### Efficient local iteration
+
+Use the admitted PATH tools and inspect the selection before starting a build:
+
+```bash
+# Pure unit feedback; no Docker or full architecture collector
+scripts/ci/pre-pr-check.sh --unit-only --dry-run
+scripts/ci/pre-pr-check.sh --unit-only
+
+# Affected units plus component/integration shards from the shared CI router
+scripts/ci/pre-pr-check.sh --affected-tests --dry-run
+scripts/ci/pre-pr-check.sh --affected-tests
+```
+
+Choose unit feedback for an in-process change and affected-test feedback when
+provider or HTTP behavior needs testing. Both modes build their selected project
+union once and reuse outputs for tests. Do not manually rebuild the solution or
+launch parallel test processes alongside them. Keep source files and HEAD fixed
+until the command exits; coordinate worker edits and commits between runs.
+Shared or unaccounted inputs can
+broaden selection; inspect the dry run rather than removing safety fallbacks.
+These are iteration tools, **not PR validation receipts**: run the normal
+pre-PR gate before publication and retain full architecture, native and hosted
+gates. Affected-test logs, TRX and selection details are retained in unique
+directories under `tests/TestResults/local-feedback/`. See
+[`docs/internal/ci/modular-test-feedback.md`](docs/internal/ci/modular-test-feedback.md)
+for resource ownership and cleanup.
+
 ## OGC CITE Compliance
 
-**Authoritative pass rate: 1137/1138 (99.9%) across 14 OGC CITE conformance suites on `trunk`.**
+**Latest recorded trunk evidence: 1138/1138 (100%) across 14 OGC CITE conformance suites.**
 
-Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-08-28 evidence artifact:
+Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals from the 2026-10-16 trunk run [38904075523](https://github.com/honua-io/honua-server/actions/runs/38904075523), source `2882cf07d8aea72e1684962303555dfc8c8e9c3f`, artifact `cite-conformance-evidence-27`:
 
 | Suite | Profile | Passed / Total | Pass Rate |
 |---|---|---:|---:|
@@ -64,7 +95,7 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 | KML 2.2 | `applicable` | 42 / 42 | 100% |
 | WFS 1.0 | `basic` | 162 / 162 | 100% |
 | WFS 1.1 | `basic` | 39 / 39 | 100% |
-| WFS 2.0 | `basic` | 166 / 167 | 99.4% |
+| WFS 2.0 | `basic` | 167 / 167 | 100% |
 | WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% |
 | WCS 2.0 | `core` | 82 / 82 | 100% |
 | WPS 2.0 | `basic-async` | 21 / 21 | 100% |
@@ -74,9 +105,13 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 
 The CITE result directories (`cite-*-results/`) are gitignored — empty local directories do not imply unimplemented suites. The functional workflows live under `.github/workflows/cite-*.yml`, runners under `scripts/conformance/cite/`, and Docker compositions under `docker/cite/`.
 
-**Current WFS 2.0 gap:** The latest `basic` run is 166/167. Multi-layer
-`rollbackOnFailure=true` transactions are rejected because cross-layer atomicity
-is not yet guaranteed. See `docs/cite-status.md` and its linked run receipt.
+**WFS 2.0 evidence history:** The August 28 snapshot recorded 166/167.
+[PR #3817](https://github.com/honua-io/honua-server/pull/3817) subsequently added
+atomic multi-layer `rollbackOnFailure=true` transactions in trunk commit
+`dd7d14506c27faea5ce22c338d76353c7eaa34f4`, an ancestor of the October 16
+evidence source. That bundle records `basic` at 167/167. These are the recorded
+run results, not a new conformance execution for every later trunk commit.
+See `docs/cite-status.md` and its linked run receipt.
 
 ## Honua Repository Map
 
@@ -87,7 +122,7 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `honua-server` | Public | Server runtime, protocol adapters, canonical pipelines, API governance, conformance/test infrastructure. |
 | `Honua.Server` | Private | Archived legacy server/reference implementation only. It is not an active development target; do not open issues or PRs there and do not copy code from it. Use it only to understand historical behavior. |
 | `honua-server-admin` | Private (archived) | **Archived/dead — not an active target.** Former Blazor WebAssembly + MudBlazor admin UI. All admin/console UI work has moved to `honua-console`. Do not open issues/PRs or route new work here. |
-| `honua-console` | Public | **Active admin/console UI home.** Hosts the Studio map builder and the styleId-keyed style editor (dual-mode: MapLibre/Maputnik + Esri-renderer `drawingInfo` authoring over `/ogc/styles`; ADR-0007/ADR-0048). |
+| `honua-console` | Public | Active administration UI: Catalog, Operate, Share, and retained package/style editors. The former approval-first Studio builders are legacy and targeted for retirement. Current realtime authoring lives in `honua-studio`. |
 | `honua-sdk-js` | Public | JavaScript/TypeScript SDKs for Honua, including the MCP server package. |
 | `honua-sdk-dotnet` | Public | .NET SDKs for Honua. |
 | `honua-sdk-python` | Public | Python SDK for Honua. |
@@ -108,7 +143,7 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `honua-release` | Private | Platform release engineering: platform manifest, compatibility matrix, automated release train, cross-repo certification + E2E, BOM/release notes. **Release gates live here** — carry the `first-release-gate` label for anything that must block the first platform RC. |
 | `honua-evidence` | Public | Capability evidence aggregation ("every claim has a receipt"): joins tests, CITE, interop, benchmarks, and samples into `capability-matrix.v1.json` + the evidence index. |
 | `honua-samples` | Public | Runnable samples as executable evidence — capability-keyed manifests run in CI against a real server, published at samples.honua.io. |
-| `honua-studio` | Public | Natural-language-to-map-app BYOM builder (composed, versioned, reversible map applications). Distinct from the Studio map builder UI hosted in `honua-console`. |
+| `honua-studio` | Public | Realtime conversational map/app builder over the JavaScript SDK: typed composition updates the canvas as tools execute, with undo/redo and durable versions. This is the current Studio authoring model; do not revive the legacy Console builders. |
 | `honua-migrate` | Public | Unified migration CLI: assessment, planning, code migration, service import, reconciliation. Owns the arcpy/toolbox translation CLI surface. |
 | `honua-collect` | Public | Offline-first mobile field data collection (ELv2 open core). |
 | `honua-esri-compat` | Private | Automated Esri client compatibility verification (ArcGIS Pro/arcpy, ArcGIS API for Python, ArcGIS Maps SDK for .NET). Home for anything needing a licensed Esri environment. |
@@ -216,6 +251,7 @@ The sections below are therefore a **human contract, not a gate**. Fill them bec
   - **Useful flags:** `--dry-run` prints the whole resolved selection — build set, targeted shards, format scope — and exits without restoring, building or testing anything, at zero Docker/dotnet cost. It is the fastest way to see what a run would actually do. `--fast` skips the heavy `Honua.Server.Tests` shards and the AOT publish (what the pre-push hook uses); `--base <ref>` overrides the diff base. The script requires `jq`.
 - The compliance check triggers on **push / `labeled` / `ready_for_review`**, **not** on PR-body edits. Editing the body to add the box will *not* re-run it — push a commit, toggle a label, or mark the PR ready-for-review to re-trigger CI.
 - **Known flake, not a break:** integration shards (e.g. `DbUpMigrations.MobileOfflineDemoSeed`, `OGC API Maps and Tiles`) intermittently fail with a transient Postgres `40P01: deadlock detected` under concurrent host load. This is environmental — re-run the failed shard (`gh run rerun <run-id> --failed`) rather than treating it as a code failure. Root-cause serialization lives in `PostgresFixture`/`SeedRunner` (honua-server#1568).
+- **Root-caused, not a flake:** `Server Tests (Core and Cloud Contracts)` used to fail intermittently with `Unable to resolve service for type 'Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider' while attempting to activate 'Honua.Core.Features.Validation.ResourceValidator'` on a FeatureServer request. The host had booted in the `Test` environment without the provider composition: `WebApplicationFactory` builds its web host builder, which snapshots every `ASPNETCORE_*` variable, before `ConfiguredWebApplicationFactory` takes its environment gate, so a host that did not pin its environment inherited the `ASPNETCORE_ENVIRONMENT=Test` a concurrent host held inside `StartInEnvironment`, and a Test host skips `InfrastructureCompositionRoot` unless it opts in. `ConfiguredWebApplicationFactory` now pins the requested environment on the builder, and a host that needs the production composition in Test sets `HONUA_REGISTER_TEST_INFRASTRUCTURE=true` via `UseSetting`. (The `GeoprocessingSeedHostedService` warning about `IMetadataV2GraphStore` is expected on Test hosts that wire their own providers and is not this failure.) If it recurs, check the host's `Application starting ... Environment` line and the `PostGIS preflight check skipped` count before rerunning (honua-server#4640).
 
 ## Merge Train (how PRs actually land)
 
@@ -240,6 +276,22 @@ deterministic trunk red pauses the lander for everything except `fix/`,
 tests to clear it). `.github/workflows/merge-train.yml` remains for manual
 and release-candidate batch validation via explicit `train_apply=true`
 dispatch; it is no longer the routine landing path.
+
+**Batch verification by the lander (shadow, CI velocity plan v2).** The same
+lander also verifies *candidate batches* of landable PRs: it reproduces
+GitHub's sequential squash merges on a private `land/batch/<base7>/<id>` ref
+(never `train/batch/*`), dispatches `ci.yml` there with `selective_base` set
+to the last verified trunk head, and judges the run by a verification receipt
+(see `docs/internal/ci/gate-model.md`, "Verification receipts and batch
+landing"), never by a job count. While it runs in shadow it only records
+would-land / would-quarantine outcomes: per-PR landing is unchanged and no PR
+is merged, labelled or commented on by the batch path. `land/batch/*` branches
+and `CI lander-batch-*` runs belong to the lander — do not push to, rerun or
+delete them, and never read one as a verdict on trunk or on your PR. When
+batch landing goes live (a separate operator decision), a red batch
+quarantines its members until a verified green subset containing them exists;
+a quarantine is keyed to the head it was judged at, so pushing a fix releases
+it.
 
 ### Base every PR on `trunk` — do not stack (#3248)
 
@@ -473,7 +525,8 @@ Query_InvalidSyntax_Returns400WithErrorDetails()
 
 **Scale Tests (Multi-Node + Redis)**:
 - Start the scale stack: `docker compose -f docker/scale-test/compose.yml up --build --scale honua=3`
-- Set env vars (inside the devcontainer): `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`, `HONUA_SCALE_TEST_REDIS=localhost:6379`, `HONUA_SCALE_TEST_ADMIN_API_KEY=scale-test-admin-password`
+- Export the stack credentials first - the scale stack runs the non-relaxed `ScaleTest` environment and has no shipped defaults: `HONUA_ADMIN_PASSWORD`, `HONUA_SCALE_TEST_ENCRYPTION_KEY` (32+ characters), `HONUA_SCALE_TEST_ENCRYPTION_SALT` (base64), and `HONUA_SCALE_TEST_GRAFANA_PASSWORD` for the `monitoring` profile
+- Set env vars: `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`, `HONUA_SCALE_TEST_REDIS=localhost:6379`, `HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD"`
 - Set `HONUA_SCALE_TEST_SERVICE_ID=<service-name>` to run replica-state scale tests (create/extract/sync/unregister).
 - Optional host-port overrides when defaults are busy: `HONUA_SCALE_TEST_HTTP_PORT=18080`, `HONUA_SCALE_TEST_REDIS_PORT=6380`, `HONUA_SCALE_TEST_POSTGRES_PORT=55434`
 - Run scale tests only: `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`
@@ -681,7 +734,8 @@ tests/dotnet/
 ├── Honua.Server.Tests/    # Integration tests
 ├── Honua.Db.DuckDB.Tests/ # DuckDB provider tests
 ├── Honua.Db.MySql.Tests/  # MySQL/MariaDB provider tests (Testcontainers gated)
-└── Honua.Architecture.Tests/  # Architecture enforcement
+├── Honua.Architecture.SourceTests/ # Source/file architecture guards
+└── Honua.Architecture.Tests/  # Complete architecture and reflection coverage
 ```
 
 ### Follow-ups
@@ -705,3 +759,7 @@ This machine runs many agents concurrently (**Codex + Claude**, often via agentf
 3. **Commit and push when you finish a task** so your worktree can be reclaimed. An hourly job (`honua-clean`) removes a worktree ONLY when it is clean AND fully pushed (merged, remote-gone, or idle >=2d). Dirty or unpushed worktrees are NEVER touched — but uncommitted/unpushed work blocks reclamation and is at risk if the instance is reset. Build artifacts (bin/obj and untracked node_modules) are reclaimed automatically and safely.
 
 4. **Commit hygiene — no agent attribution.** Author every commit as the repo owner only (git identity: Mike McDougall <mike@honua.io>). Do **NOT** add any agent/tool attribution to commits: no `Co-Authored-By: Claude ...`, no `Co-Authored-By: Codex ...` (or other bot co-authors), and no "Generated with Claude Code" / "Generated with Codex" / "🤖" lines in the message or PR body. Write a plain, descriptive commit message and stop.
+
+## Release component versions
+
+`release/component-versions.json` declares this repository's contract versions (and schema versions; the `database` schema version is derived by the resolver from the migrations). The honua-release nightly resolver reads it at the exact selected commit and refuses `honua-server` when it is missing or invalid, so any contract version bump, or any bump of a schema version declared here (not the derived `database` version — adding a migration needs no edit), must update this file in the same PR. The server embeds this file at build and advertises its maps at `GET /api/v1/admin/capabilities` (`data.compatibility.contractVersions` / `schemaVersions`), which the release-train contract-live gate (R27) reads from the candidate image. `ContractVersionsStartupCheck` refuses to start when `contractVersions` differs from what the server serves (`AdminInfoEndpoints.AdminApiMajor`, `MetadataV2Constants.ApiVersion`, `GeoServicesContract`/`OgcContract`/`StacContract.Version`, the gRPC proto package major), so a stale declaration fails the tests and the boot (#5378).

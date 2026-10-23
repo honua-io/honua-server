@@ -16,6 +16,7 @@ public sealed class SpecParserTests
 {
     private static SpecParseResult Parse(string text) => new SpecParser().Parse(text);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_MinimalHappyPath_ReturnsCompleteDocument()
     {
@@ -47,6 +48,7 @@ public sealed class SpecParserTests
         result.Document.Outputs.Should().HaveCount(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_AcceptsTrailingCommasInObjectAndArray()
     {
@@ -65,6 +67,7 @@ public sealed class SpecParserTests
         result.Document.Map.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnitLiteralBecomesDistanceLiteralNode()
     {
@@ -89,6 +92,7 @@ public sealed class SpecParserTests
         literal.Number.Should().Be(500);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnknownUnitSuffix_ReportsSyntaxError()
     {
@@ -105,6 +109,7 @@ public sealed class SpecParserTests
             d.Message.Contains("unit", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ReferenceWithCallSuffix_Preserves()
     {
@@ -127,6 +132,7 @@ public sealed class SpecParserTests
         reference.Canonical.Should().Be("@compute.nearby.count()");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_Cql2CallCapturesEmbeddedExpression()
     {
@@ -147,6 +153,7 @@ public sealed class SpecParserTests
         cql.Cql2Text.Should().Be("state = 'CA' AND pop > 10000");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeometryLiteralRoundTripsThroughNtsWkt()
     {
@@ -169,6 +176,7 @@ public sealed class SpecParserTests
 
     // ──────────────────────────── Diagnostics surface line AND column ────────────────────────────
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_MissingEqualsSign_EmitsDiagnosticWithLineAndColumn()
     {
@@ -188,6 +196,7 @@ public sealed class SpecParserTests
         diag.Span.Column.Should().BeGreaterThan(0, "diagnostics must carry a 1-based column number");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GarbageAtTopLevel_RecoversAtNextSectionKeyword()
     {
@@ -206,6 +215,7 @@ public sealed class SpecParserTests
         result.Document.Sources.Select(s => s.Id).Should().BeEquivalentTo(["a", "b"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnclosedObject_EmitsMissingBraceDiagnostic()
     {
@@ -221,6 +231,7 @@ public sealed class SpecParserTests
             d.Message.Contains('}'));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ComputeMissingOp_EmitsMissingRequiredParameter()
     {
@@ -235,6 +246,7 @@ public sealed class SpecParserTests
         result.Diagnostics.Should().Contain(d => d.Code == SpecDiagnosticCode.MissingRequiredParameter);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ScopeMissingTarget_EmitsMissingRequiredParameter()
     {
@@ -249,6 +261,7 @@ public sealed class SpecParserTests
         result.Diagnostics.Should().Contain(d => d.Code == SpecDiagnosticCode.MissingRequiredParameter);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ArrayLiteralPreservesOrder()
     {
@@ -268,6 +281,7 @@ public sealed class SpecParserTests
             .Should().ContainInConsecutiveOrder("alpha", "beta", "gamma");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CommentsAreStrippedFromBodyButPreservedOnDocument()
     {

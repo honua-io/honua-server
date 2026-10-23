@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -16,7 +17,9 @@ namespace Honua.Ai.Protocols.Mcp;
 /// progress notification whenever the reported <c>PercentComplete</c> or current
 /// phase changes, replacing client-side polling of <c>honua://jobs/{id}</c> with
 /// a server push. The bridge stops when the job reaches a terminal status, the
-/// session is terminated, or a safety cap elapses.
+/// session is terminated, or a safety cap elapses. It does not start a poll while
+/// <see cref="McpOptions.ServerInitiatedStreamEnabled"/> is off, because that is
+/// the only channel that can deliver the frames (honua-server#5629).
 /// </summary>
 internal sealed class McpJobProgressBridge
 {
@@ -36,18 +39,28 @@ internal sealed class McpJobProgressBridge
     private readonly McpSessionManager _sessions;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<McpJobProgressBridge> _logger;
+    private readonly IOptions<McpOptions>? _options;
+    private int _startedPolls;
 
     public McpJobProgressBridge(
         IMcpNotificationPublisher publisher,
         McpSessionManager sessions,
         IServiceScopeFactory scopeFactory,
-        ILogger<McpJobProgressBridge> logger)
+        ILogger<McpJobProgressBridge> logger,
+        IOptions<McpOptions>? options = null)
     {
         _publisher = publisher;
         _sessions = sessions;
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _options = options;
     }
+
+    /// <summary>
+    /// Background job-store polls <see cref="Track"/> has started. Stays zero
+    /// while the server-initiated stream is off.
+    /// </summary>
+    internal int StartedPollCount => Volatile.Read(ref _startedPolls);
 
     /// <summary>
     /// Starts a detached background poll that streams the job's progress to the
@@ -63,6 +76,14 @@ internal sealed class McpJobProgressBridge
             return;
         }
 
+        // Missing options match the product default: the stream is off, so there
+        // is nowhere for notifications/progress to go.
+        if (_options?.Value.ServerInitiatedStreamEnabled != true)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _startedPolls);
         _ = Task.Run(async () =>
         {
             try

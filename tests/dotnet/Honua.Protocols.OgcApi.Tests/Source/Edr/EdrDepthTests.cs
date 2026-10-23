@@ -28,10 +28,12 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr;
 public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
 {
     private readonly WebAppFixture _fixture;
+    private readonly IRasterStore _rasterStore;
 
     public EdrDepthTests(EdrDepthTestsFixture fixture)
     {
         _fixture = fixture.App;
+        _rasterStore = fixture.RasterStore;
     }
 
     private static string CollectionPath => $"/edr/collections/{WebAppFixture.TestLayerId}";
@@ -121,8 +123,10 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
         var ranges = doc.RootElement.GetProperty("ranges");
         ranges.EnumerateObject().Select(property => property.Name)
             .Should().BeEquivalentTo("band_2", "band_3");
-        ranges.GetProperty("band_2").GetProperty("values")[0].GetDouble().Should().Be(12.0);
-        ranges.GetProperty("band_3").GetProperty("values")[0].GetDouble().Should().Be(13.0);
+        ranges.GetProperty("band_2").GetProperty("values")[0].GetDouble()
+            .Should().BeApproximately(EdrDepthTestsFixture.ExpectedBandValue(2, -122.4, 37.8), 1e-6);
+        ranges.GetProperty("band_3").GetProperty("values")[0].GetDouble()
+            .Should().BeApproximately(EdrDepthTestsFixture.ExpectedBandValue(3, -122.4, 37.8), 1e-6);
 
         doc.RootElement.GetProperty("parameters").EnumerateObject().Select(property => property.Name)
             .Should().BeEquivalentTo("band_2", "band_3");
@@ -156,6 +160,116 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
             .ToArray();
 
         timeValues.Should().Equal(EdrDepthTestsFixture.RasterCreatedAtIso);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /edr/collections/{collectionId}")]
+    public async Task Edr_Collection_AdvertisesRasterInstantAsTemporalExtent()
+    {
+        using var doc = await GetJsonAsync(CollectionPath);
+
+        var temporal = doc.RootElement.GetProperty("extent").GetProperty("temporal");
+        temporal.GetProperty("interval")[0].EnumerateArray()
+            .Select(value => value.GetString())
+            .Should().Equal(EdrDepthTestsFixture.RasterCreatedAtIso, EdrDepthTestsFixture.RasterCreatedAtIso);
+    }
+
+    // #4151: the raster's only temporal geometry is 2026-01-05T00:00:00Z. Each datetime below
+    // intersects that instant, so the pixel values are returned and the t-axis carries the
+    // raster's own time — never the requested instant or interval start.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_DatetimeIntersectingRasterTime_ReturnsValuesStampedWithRasterTime()
+    {
+        var intersecting = new[]
+        {
+            "2026-01-05T00:00:00Z",
+            "2026-01-05T00:00:00.000Z",
+            "2025-12-01T00:00:00Z/2026-02-01T00:00:00Z",
+            "2026-01-05T00:00:00Z/2026-01-05T00:00:00Z",
+            "../2026-01-05T00:00:00Z",
+            "2026-01-05T00:00:00Z/..",
+            "2026-01-05T09:00:00+09:00"
+        };
+
+        foreach (var datetime in intersecting)
+        {
+            using var doc = await GetJsonAsync(
+                $"{CollectionPath}/position?coords={Uri.EscapeDataString("POINT(-122.4 37.8)")}&datetime={Uri.EscapeDataString(datetime)}");
+
+            doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("t").GetProperty("values")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .Should().Equal([EdrDepthTestsFixture.RasterCreatedAtIso], $"datetime '{datetime}' intersects the raster instant");
+
+            var ranges = doc.RootElement.GetProperty("ranges");
+            foreach (var band in new[] { 1, 2, 3 })
+            {
+                ranges.GetProperty($"band_{band}").GetProperty("values").EnumerateArray()
+                    .Select(value => value.GetDouble())
+                    .Should().ContainSingle().Which
+                    .Should().BeApproximately(
+                        EdrDepthTestsFixture.ExpectedBandValue(band, -122.4, 37.8),
+                        1e-6,
+                        $"datetime '{datetime}' must return the pixel function at the requested coordinate");
+            }
+        }
+    }
+
+    // #4151 repro: a datetime disjoint from the raster instant selects no data. The handler must
+    // not sample the raster and stamp the requested time on its values; it answers 204.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_DatetimeDisjointFromRasterTime_ReturnsNoContentWithoutSampling()
+    {
+        var disjoint = new[]
+        {
+            "1999-01-01T00:00:00Z",
+            "1999-01-01T00:00:00Z/2000-01-01T00:00:00Z",
+            "2026-01-05T00:00:01Z",
+            "2026-01-05T00:00:01Z/..",
+            "../2026-01-04T23:59:59Z",
+            // The intersection is exact: a millisecond either side of the instant misses it.
+            "2026-01-05T00:00:00.001Z",
+            "../2026-01-04T23:59:59.999Z"
+        };
+
+        foreach (var datetime in disjoint)
+        {
+            _rasterStore.ClearReceivedCalls();
+
+            var response = await _fixture.Client.GetAsync(
+                $"{CollectionPath}/position?coords={Uri.EscapeDataString("POINT(-122.4 37.8)")}&datetime={Uri.EscapeDataString(datetime)}");
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent, $"datetime '{datetime}' is disjoint from the raster instant: {content}");
+            content.Should().BeEmpty();
+            await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
+                default, default, default, default, default, default, default);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_MalformedDatetime_ReturnsBadRequest()
+    {
+        foreach (var datetime in MalformedDatetimes)
+        {
+            _rasterStore.ClearReceivedCalls();
+
+            var response = await _fixture.Client.GetAsync(
+                $"{CollectionPath}/position?coords={Uri.EscapeDataString("POINT(-122.4 37.8)")}&datetime={Uri.EscapeDataString(datetime)}");
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"datetime '{datetime}' is malformed: {content}");
+            content.Should().Contain("datetime");
+            await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
+                default, default, default, default, default, default, default);
+        }
     }
 
     [IntegrationTest]
@@ -241,9 +355,7 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
 
         var ranges = doc.RootElement.GetProperty("ranges");
         ranges.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo("band_3");
-        ranges.GetProperty("band_3").GetProperty("values").EnumerateArray()
-            .Select(value => value.GetDouble())
-            .Should().AllSatisfy(value => value.Should().BeApproximately(13.0, 1e-9));
+        EdrDepthTestsFixture.AssertCubeValuesDerivedFromDomain(doc.RootElement, band: 3, "band_3");
     }
 
     [IntegrationTest]
@@ -279,6 +391,61 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_DatetimeSelectsOnlyIntersectingRasterTime()
+    {
+        using (var doc = await GetJsonAsync(
+            $"{CollectionPath}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=2&datetime={Uri.EscapeDataString("2025-06-01T00:00:00Z/..")}"))
+        {
+            doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("t").GetProperty("values")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .Should().Equal(EdrDepthTestsFixture.RasterCreatedAtIso);
+            EdrDepthTestsFixture.AssertCubeValuesDerivedFromDomain(doc.RootElement, band: 2, "band_2");
+        }
+
+        _rasterStore.ClearReceivedCalls();
+        var disjoint = await _fixture.Client.GetAsync(
+            $"{CollectionPath}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=2&datetime={Uri.EscapeDataString("1999-01-01T00:00:00Z/2000-01-01T00:00:00Z")}");
+        var disjointContent = await disjoint.Content.ReadAsStringAsync();
+
+        disjoint.StatusCode.Should().Be(HttpStatusCode.NoContent, disjointContent);
+        disjointContent.Should().BeEmpty();
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
+            default, default, default, default, default, default, default);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_MalformedDatetime_ReturnsBadRequest()
+    {
+        foreach (var datetime in MalformedDatetimes)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"{CollectionPath}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=2&datetime={Uri.EscapeDataString(datetime)}");
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"datetime '{datetime}' is malformed: {content}");
+            content.Should().Contain("datetime");
+        }
+    }
+
+    private static readonly string[] MalformedDatetimes =
+    [
+        "not-a-date",
+        "2026-02-01T00:00:00Z/2026-01-01T00:00:00Z", // start after end
+        "../..",
+        "2026-01-01T00:00:00Z/garbage",
+        "2026-01-01T00:00:00Z/2026-01-02T00:00:00Z/2026-01-03T00:00:00Z",
+        // Not RFC 3339 date-times, although DateTimeOffset.TryParse would accept them.
+        "2026-01-05",
+        "2026-01-05T00:00:00",
+        "01/05/2026 00:00:00 +00:00"
+    ];
+
     private async Task<JsonDocument> GetJsonAsync(string uri)
     {
         var response = await _fixture.Client.GetAsync(uri);
@@ -305,15 +472,18 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
 
     public EdrDepthTestsFixture()
     {
-        var rasterStore = Substitute.For<IRasterStore>();
-        ConfigureRasterStore(rasterStore);
+        RasterStore = Substitute.For<IRasterStore>();
+        ConfigureRasterStore(RasterStore);
         App = new WebAppFixture()
             .ConfigureWebHost(builder => builder.UseSetting(
                 "Capabilities:Experimental:serve.ogc-api-edr:Enabled", "true"))
-            .ReplaceService(rasterStore);
+            .ReplaceService(RasterStore);
     }
 
     public WebAppFixture App { get; }
+
+    /// <summary>The mocked raster store, exposed so tests can assert no sample was read.</summary>
+    public IRasterStore RasterStore { get; }
 
     public Task InitializeAsync() => App.InitializeAsync();
 
@@ -331,8 +501,9 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
         rasterStore.GetExtentAsync(WebAppFixture.TestLayerId, TestRasterId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterExtent?>(raster.Extent));
 
-        // Deterministic point-sample: band_n returns 10 + n at every coordinate, except the
-        // designated nodata longitude which reports no band values at all.
+        // #4424: the sample is a function of the requested coordinate, not a constant, so a
+        // coordinate-transposition, datum or off-by-one-pixel defect changes the answer. The
+        // designated nodata longitude still reports no band values at all.
         rasterStore.IdentifyAsync(
                 WebAppFixture.TestLayerId,
                 TestRasterId,
@@ -354,9 +525,67 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
                     HasData = !isNoData,
                     BandValues = isNoData
                         ? new Dictionary<int, object?>()
-                        : new Dictionary<int, object?> { [1] = 11.0, [2] = 12.0, [3] = 13.0 }
+                        : new Dictionary<int, object?>
+                        {
+                            [1] = ExpectedBandValue(1, x, y),
+                            [2] = ExpectedBandValue(2, x, y),
+                            [3] = ExpectedBandValue(3, x, y)
+                        }
                 });
             });
+    }
+
+    /// <summary>
+    /// The fixture raster's synthetic pixel function. Band index, longitude and latitude each
+    /// carry different weights, so the tested coordinates distinguish band selection and axis swaps.
+    /// </summary>
+    public static double ExpectedBandValue(int band, double x, double y)
+        => (band * 1000.0) + (Math.Round(x, 6) * 10.0) + Math.Round(y, 6);
+
+    /// <summary>
+    /// Asserts that every value of <paramref name="parameterName"/> in a cube response is the
+    /// pixel function evaluated at the corresponding advertised grid coordinate in row-major order. A handler that sampled the wrong
+    /// coordinates, transposed the axes or reused one sample for the whole cube fails here.
+    /// </summary>
+    public static void AssertCubeValuesDerivedFromDomain(
+        JsonElement root,
+        int band,
+        string parameterName)
+    {
+        var axes = root.GetProperty("domain").GetProperty("axes");
+        var xValues = axes.GetProperty("x").GetProperty("values").EnumerateArray()
+            .Select(value => value.GetDouble()).ToArray();
+        var yValues = axes.GetProperty("y").GetProperty("values").EnumerateArray()
+            .Select(value => value.GetDouble()).ToArray();
+
+        var expected = (from y in yValues
+                        from x in xValues
+                        select ExpectedBandValue(band, x, y))
+            .ToArray();
+
+        var range = root.GetProperty("ranges").GetProperty(parameterName);
+        range.GetProperty("axisNames").EnumerateArray().Select(value => value.GetString())
+            .Should().Equal("y", "x");
+        range.GetProperty("shape").EnumerateArray().Select(value => value.GetInt32())
+            .Should().Equal(yValues.Length, xValues.Length);
+
+        // Preserve row-major order: sorting hides a transposed or permuted grid.
+        var actual = range.GetProperty("values")
+            .EnumerateArray()
+            .Select(value => value.GetDouble())
+            .ToArray();
+
+        actual.Should().HaveCount(
+            expected.Length,
+            $"'{parameterName}' must carry one sample per advertised grid cell");
+
+        for (var i = 0; i < expected.Length; i++)
+        {
+            actual[i].Should().BeApproximately(
+                expected[i],
+                1e-6,
+                $"'{parameterName}' cell {i} must be the pixel function at its advertised grid coordinate");
+        }
     }
 
     private static RasterInfo CreateRasterInfo()

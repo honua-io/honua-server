@@ -33,7 +33,7 @@ internal sealed class ClientCertificateAuthenticationHandler(
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (_clientCertificateOptions.CurrentValue.Mode == ClientCertificateAuthenticationMode.Disabled)
+        if (ScopedJobAuthentication.HasCandidate(Context) || _clientCertificateOptions.CurrentValue.Mode == ClientCertificateAuthenticationMode.Disabled)
         {
             return AuthenticateResult.NoResult();
         }

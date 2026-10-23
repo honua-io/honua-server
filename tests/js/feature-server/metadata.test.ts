@@ -16,7 +16,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { FeatureServerClient, assertGeoServicesError } from '../shared/client';
-import { VALID_ESRI_GEOMETRY_TYPES } from '../shared/constants';
+import { VALID_ESRI_FIELD_TYPES, VALID_ESRI_GEOMETRY_TYPES } from '../shared/constants';
 
 // =============================================================================
 // Test Setup
@@ -199,29 +199,23 @@ describe('Layer Metadata', () => {
     });
 
     it('should use valid Esri field types', async () => {
-      const validFieldTypes = [
-        'esriFieldTypeSmallInteger',
-        'esriFieldTypeInteger',
-        'esriFieldTypeSingle',
-        'esriFieldTypeDouble',
-        'esriFieldTypeString',
-        'esriFieldTypeDate',
-        'esriFieldTypeOID',
-        'esriFieldTypeGeometry',
-        'esriFieldTypeBlob',
-        'esriFieldTypeRaster',
-        'esriFieldTypeGUID',
-        'esriFieldTypeGlobalID',
-        'esriFieldTypeXML',
-      ];
-
       const response = await client.getLayerMetadata();
       expect(response.status).toBe(200);
 
       const fields = response.data.fields || [];
       for (const field of fields) {
-        expect(validFieldTypes).toContain(field.type);
+        expect(VALID_ESRI_FIELD_TYPES).toContain(field.type);
       }
+    });
+
+    it('should advertise calendar dates as esriFieldTypeDateOnly and timestamps as esriFieldTypeDate', async () => {
+      const response = await client.getLayerMetadata();
+      expect(response.status).toBe(200);
+
+      const fields = response.data.fields || [];
+      // Seeded layer 0: event_date is a canonical Date, created_at a canonical DateTime.
+      expect(fields.find((f) => f.name === 'event_date')?.type).toBe('esriFieldTypeDateOnly');
+      expect(fields.find((f) => f.name === 'created_at')?.type).toBe('esriFieldTypeDate');
     });
 
     it('should include field aliases if present', async () => {

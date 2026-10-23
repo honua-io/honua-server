@@ -6,16 +6,19 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Publishing;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Studio;
 
-internal sealed class PostgresStudioPackageStore : IStudioPackageStore
+internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
 {
     private const int MinListLimit = 1;
     private const int DefaultListLimit = 25;
@@ -29,6 +32,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
     private readonly string _dependenciesTable;
     private readonly string _publicationRequestsTable;
     private readonly string _rollbackRequestsTable;
+    private readonly string? _promotionSchema;
 
     public PostgresStudioPackageStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
@@ -41,6 +45,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         _dependenciesTable = SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
         _publicationRequestsTable = SchemaSearchPath.QualifyTable("studio_publication_requests", schemaName);
         _rollbackRequestsTable = SchemaSearchPath.QualifyTable("studio_rollback_requests", schemaName);
+        _promotionSchema = schemaName;
     }
 
     public StudioPackagePersistenceMode PersistenceMode => StudioPackagePersistenceMode.Durable;
@@ -70,6 +75,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 currentVersionId: null,
                 publishedVersionId: null,
                 draft.OwnerId,
+                draft.TenantId,
                 draft.CreatedBy,
                 draft.UpdatedBy,
                 draft.CreatedAt,
@@ -81,11 +87,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
             var sql = $"""
                 INSERT INTO {_draftsTable}
-                    (draft_id, item_id, package_key, workspace_id, owner_id, family,
+                    (draft_id, item_id, package_key, workspace_id, owner_id, tenant_id, family,
                      envelope, validation, base_version_id, generation,
                      created_by, updated_by, created_at, updated_at)
                 VALUES
-                    (@draft_id, @item_id, @package_key, @workspace_id, @owner_id, @family,
+                    (@draft_id, @item_id, @package_key, @workspace_id, @owner_id, @tenant_id, @family,
                      @envelope, @validation, @base_version_id, @generation,
                      @created_by, @updated_by, @created_at, @updated_at)
                 """;
@@ -95,6 +101,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             command.Parameters.AddWithValue("@package_key", draft.PackageKey);
             command.Parameters.AddWithValue("@workspace_id", (object?)draft.WorkspaceId ?? DBNull.Value);
             command.Parameters.AddWithValue("@owner_id", (object?)draft.OwnerId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@tenant_id", (object?)draft.TenantId ?? DBNull.Value);
             command.Parameters.AddWithValue("@family", family);
             command.Parameters.Add(new NpgsqlParameter("@envelope", NpgsqlDbType.Jsonb) { Value = envelopeJson });
             command.Parameters.Add(new NpgsqlParameter("@validation", NpgsqlDbType.Jsonb) { Value = validationJson });
@@ -128,7 +135,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var sql = $"""
             SELECT draft_id, item_id, package_key, workspace_id, owner_id, family,
                    envelope, validation, base_version_id, generation,
-                   created_by, updated_by, created_at, updated_at
+                   created_by, updated_by, created_at, updated_at, tenant_id
             FROM {_draftsTable}
             WHERE draft_id = @draft_id
             """;
@@ -166,7 +173,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
               AND generation = @generation
             RETURNING draft_id, item_id, package_key, workspace_id, owner_id, family,
                       envelope, validation, base_version_id, generation,
-                      created_by, updated_by, created_at, updated_at
+                      created_by, updated_by, created_at, updated_at, tenant_id
             """;
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -227,6 +234,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 currentVersionId: null,
                 publishedVersionId: null,
                 updated.OwnerId,
+                updated.TenantId,
                 updated.CreatedBy,
                 updated.UpdatedBy,
                 updated.CreatedAt,
@@ -344,7 +352,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var provenanceJson = JsonSerializer.Serialize(
             provenance.ToArray(),
             StudioJsonContext.Default.StudioProvenanceRefArray);
-        var contentHash = StudioPackageHash.Compute(draft.Envelope);
+        // honua-server#5449: the exact bytes hashed are persisted beside the digest. The envelope
+        // column is jsonb, which reorders object keys, so the input cannot be re-derived on read.
+        var contentHashInput = StudioPackageHash.ComputeInput(draft.Envelope);
+        var contentHash = StudioPackageHash.ComputeFromInput(contentHashInput);
         var versionId = Guid.NewGuid();
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -384,6 +395,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 currentVersionId: null,
                 publishedVersionId: null,
                 draft.OwnerId,
+                draft.TenantId,
                 draft.CreatedBy,
                 actorId,
                 draft.CreatedAt,
@@ -394,12 +406,12 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             var versionNumber = await NextVersionNumberAsync(connection, transaction, draft.ItemId, cancellationToken).ConfigureAwait(false);
             var insertSql = $"""
                 INSERT INTO {_versionsTable}
-                    (version_id, item_id, package_key, workspace_id, owner_id, version_number, content_hash,
-                     envelope, validation, dependencies, provenance,
+                    (version_id, item_id, package_key, workspace_id, owner_id, tenant_id, version_number, content_hash,
+                     content_hash_input, envelope, validation, dependencies, provenance,
                      source_draft_id, base_version_id, change_note, created_by, created_at)
                 VALUES
-                    (@version_id, @item_id, @package_key, @workspace_id, @owner_id, @version_number, @content_hash,
-                     @envelope, @validation, @dependencies, @provenance,
+                    (@version_id, @item_id, @package_key, @workspace_id, @owner_id, @tenant_id, @version_number, @content_hash,
+                     @content_hash_input, @envelope, @validation, @dependencies, @provenance,
                      @source_draft_id, @base_version_id, @change_note, @created_by, @created_at)
                 """;
             await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
@@ -409,8 +421,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@package_key", draft.PackageKey);
                 command.Parameters.AddWithValue("@workspace_id", (object?)draft.WorkspaceId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@owner_id", (object?)draft.OwnerId ?? DBNull.Value);
+                command.Parameters.AddWithValue("@tenant_id", (object?)draft.TenantId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@version_number", versionNumber);
                 command.Parameters.AddWithValue("@content_hash", contentHash);
+                command.Parameters.Add(new NpgsqlParameter("@content_hash_input", NpgsqlDbType.Bytea) { Value = contentHashInput });
                 command.Parameters.Add(new NpgsqlParameter("@envelope", NpgsqlDbType.Jsonb) { Value = envelopeJson });
                 command.Parameters.Add(new NpgsqlParameter("@validation", NpgsqlDbType.Jsonb) { Value = validationJson });
                 command.Parameters.Add(new NpgsqlParameter("@dependencies", NpgsqlDbType.Jsonb) { Value = dependenciesJson });
@@ -444,6 +458,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 createdAt,
                 updateCurrent: true,
                 updatePublished: false,
+                expectedCurrentVersionId: null,
                 cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -483,14 +498,14 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         Guid versionId,
         CancellationToken cancellationToken = default)
     {
-        var sql = VersionSelectSql(_versionsTable) + " WHERE item_id = @item_id AND version_id = @version_id";
+        var sql = VersionSelectSql(_versionsTable, includeHashInput: true) + " WHERE item_id = @item_id AND version_id = @version_id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease.Connection);
         command.Parameters.AddWithValue("@item_id", itemId);
         command.Parameters.AddWithValue("@version_id", versionId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? ReadVersion(reader)
+            ? ReadVersion(reader, includeHashInput: true)
             : null;
     }
 
@@ -513,7 +528,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             SELECT v.version_id, v.item_id, v.package_key, v.workspace_id, v.owner_id,
                    v.version_number, v.content_hash, v.envelope, v.validation, v.dependencies,
                    v.provenance, v.source_draft_id, v.base_version_id, v.change_note,
-                   v.created_by, v.created_at, c.map_id, c.checkpoint_cursor
+                   v.created_by, v.created_at, v.tenant_id, c.map_id, c.checkpoint_cursor
             FROM {_checkpointVersionsTable} AS c
             INNER JOIN {_versionsTable} AS v ON v.version_id = c.version_id
             WHERE c.map_id = @map_id
@@ -540,8 +555,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             Version = ReadVersion(reader),
             Checkpoint = new StudioVersionCheckpoint
             {
-                MapId = reader.GetString(16),
-                OperationCursor = reader.GetInt64(17),
+                MapId = reader.GetString(17),
+                OperationCursor = reader.GetInt64(18),
             },
         };
     }
@@ -569,7 +584,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id, owner_id
+            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -652,7 +667,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         sql.Append("""
             SELECT draft_id, item_id, package_key, workspace_id, owner_id, family,
                    envelope, validation, base_version_id, generation,
-                   created_by, updated_by, created_at, updated_at
+                   created_by, updated_by, created_at, updated_at, tenant_id
             FROM
             """);
         sql.Append(' ').Append(_draftsTable).Append(' ').Append(filter.Sql);
@@ -760,6 +775,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             clauses.Add("(" + string.Join(" OR ", stateClauses) + ")");
         }
 
+        AppendTenantClause(query.Tenant, clauses, parameters);
+
         return new SqlFilter(clauses.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", clauses), parameters);
     }
 
@@ -792,7 +809,38 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{EscapeLike(query.SearchTerm.Trim())}%"));
         }
 
+        AppendTenantClause(query.Tenant, clauses, parameters);
+
         return new SqlFilter(clauses.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", clauses), parameters);
+    }
+
+    /// <summary>
+    /// Restricts an enumeration to the caller's tenant (honua-server#4905). Rows written before
+    /// tenant stamping record no tenant and belong to the deployment's default tenant, so they
+    /// are admitted only when the caller's scope says the request resolved to that default.
+    /// </summary>
+    private static void AppendTenantClause(
+        TenantScopeFilter? tenant,
+        List<string> clauses,
+        List<(string, NpgsqlDbType, object)> parameters)
+    {
+        if (tenant is null)
+        {
+            return;
+        }
+
+        if (tenant.TenantId is null)
+        {
+            clauses.Add(tenant.IncludeUnassigned
+                ? "tenant_id IS NULL"
+                : "FALSE");
+            return;
+        }
+
+        clauses.Add(tenant.IncludeUnassigned
+            ? "(tenant_id = @tenant_id OR tenant_id IS NULL)"
+            : "tenant_id = @tenant_id");
+        parameters.Add(("@tenant_id", NpgsqlDbType.Text, tenant.TenantId));
     }
 
     private static string StateSqlPredicate(StudioContentItemState state) => state switch
@@ -838,32 +886,58 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
     public async Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var intentJson = request.Intent is null
-            ? null
-            : JsonSerializer.Serialize(request.Intent, StudioJsonContext.Default.StudioPublicationIntent);
-        var validationJson = SerializeValidation(request.Validation);
-        var status = ToDbPublicationStatus(request.Status);
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!await VersionExistsAsync(connection, transaction, request.ItemId, request.VersionId, cancellationToken).ConfigureAwait(false))
+            var (existing, payloadMatches) = await GetPublicationRequestForReplayAsync(
+                connection, transaction, request, cancellationToken).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                if (!PublicationRequestMatches(existing, request, payloadMatches))
+                {
+                    throw new InvalidOperationException("The Studio publication request ID is already bound to different content.");
+                }
+
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                return existing;
+            }
+
+            var version = await GetVersionForPublicationAsync(
+                connection, transaction, request.ItemId, request.VersionId, cancellationToken).ConfigureAwait(false);
+            if (version is null)
             {
                 throw new KeyNotFoundException("Studio content version was not found.");
             }
 
+            var item = await GetPointersAsync(
+                connection, transaction, request.ItemId, cancellationToken).ConfigureAwait(false)
+                ?? throw new KeyNotFoundException("Studio content item was not found.");
+            var deployment = CreateHostedDeployment(version, item, request);
+            request = request with { DeploymentId = deployment?.DeploymentId };
+            var intentJson = request.Intent is null
+                ? null
+                : JsonSerializer.Serialize(request.Intent, StudioJsonContext.Default.StudioPublicationIntent);
+            var validationJson = SerializeValidation(request.Validation);
+            var status = ToDbPublicationStatus(request.Status);
+
+            await EnsurePublicationRouteAvailableAsync(connection, transaction, request, cancellationToken).ConfigureAwait(false);
+
             var insertSql = $"""
                 INSERT INTO {_publicationRequestsTable}
                     (request_id, item_id, version_id, intent, status, validation,
-                     warning_acknowledgement, requested_by, created_at)
+                     warning_acknowledgement, requested_by, created_at, deployment_id,
+                     governs_studio_routes)
                 VALUES
                     (@request_id, @item_id, @version_id, @intent, @status, @validation,
-                     @warning_acknowledgement, @requested_by, @created_at)
+                     @warning_acknowledgement, @requested_by, @created_at, @deployment_id,
+                     @governs_studio_routes)
                 """;
             await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
             {
@@ -876,11 +950,20 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@warning_acknowledgement", (object?)request.WarningAcknowledgement ?? DBNull.Value);
                 command.Parameters.AddWithValue("@requested_by", (object?)request.RequestedBy ?? DBNull.Value);
                 command.Parameters.AddWithValue("@created_at", request.CreatedAt);
+                command.Parameters.AddWithValue("@deployment_id", (object?)request.DeploymentId ?? DBNull.Value);
+                command.Parameters.AddWithValue("@governs_studio_routes", request.GovernsStudioRoutes);
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (request.Status == StudioPublicationRequestStatus.Accepted)
             {
+                // honua-server#3980: the published-pointer move carries the approval's
+                // expected current_version_id as a SQL predicate, evaluated in the same
+                // transaction as the request insert. Under Read Committed the UPDATE row lock
+                // makes this a genuine compare-and-set: a draft saved after the proposal was
+                // validated commits a new current_version_id, the predicate then matches zero
+                // rows, and the whole request rolls back as a typed conflict instead of
+                // publishing a version the reviewer never approved as current.
                 await UpdatePointersAsync(
                     connection,
                     transaction,
@@ -891,7 +974,20 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                     request.CreatedAt,
                     updateCurrent: false,
                     updatePublished: true,
-                    cancellationToken).ConfigureAwait(false);
+                    expectedCurrentVersionId,
+                    cancellationToken,
+                    governingPublicationRequestId: request.RequestId).ConfigureAwait(false);
+
+                if (deployment is not null)
+                {
+                    await PersistHostedDeploymentAsync(
+                        connection, transaction, deployment, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await RetireHostedDeploymentForItemAsync(
+                        connection, transaction, item, request, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -904,6 +1000,65 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         }
     }
 
+    private async Task EnsurePublicationRouteAvailableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        StudioPublicationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var route = request.Intent?.Route;
+        if (request.Status != StudioPublicationRequestStatus.Accepted
+            || !request.GovernsStudioRoutes
+            || string.IsNullOrWhiteSpace(route))
+        {
+            return;
+        }
+
+        await using (var lockCommand = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@route, 0));",
+            connection,
+            transaction))
+        {
+            lockCommand.Parameters.AddWithValue("@route", route);
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Match the reader's governing request, including its legacy null-pointer fallback.
+        // A route-less accepted request withdraws the old claim in this same transaction.
+        var sql = $"""
+            SELECT item_id
+            FROM (
+                SELECT DISTINCT ON (publication.item_id)
+                       publication.item_id, publication.intent, publication.created_at,
+                       publication.request_id, publication.governs_studio_routes
+                FROM {_publicationRequestsTable} AS publication
+                JOIN {_itemsTable} AS item ON item.item_id = publication.item_id
+                WHERE publication.status = @status
+                  AND (item.governing_publication_request_id IS NULL
+                       OR publication.request_id = item.governing_publication_request_id)
+                  AND publication.item_id IN (
+                      SELECT item_id
+                      FROM {_publicationRequestsTable}
+                      WHERE status = @status
+                        AND intent ->> 'route' = @route)
+                ORDER BY publication.item_id, publication.created_at DESC,
+                         publication.request_id DESC
+            ) AS governing
+            WHERE governing.intent ->> 'route' = @route
+              AND governing.governs_studio_routes
+            ORDER BY governing.created_at DESC, governing.request_id DESC
+            LIMIT 1
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@status", ToDbPublicationStatus(StudioPublicationRequestStatus.Accepted));
+        command.Parameters.AddWithValue("@route", route);
+        var owner = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (owner is Guid owningItemId && owningItemId != request.ItemId)
+        {
+            throw new StudioPublicationRouteConflictException(route, request.ItemId, owningItemId);
+        }
+    }
+
     public async Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -912,7 +1067,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
     {
         var sql = $"""
             SELECT request_id, item_id, version_id, intent, status, validation,
-                   warning_acknowledgement, requested_by, created_at
+                   warning_acknowledgement, requested_by, created_at, deployment_id,
+                   governs_studio_routes
             FROM {_publicationRequestsTable}
             WHERE request_id = @request_id
               AND item_id = @item_id
@@ -924,12 +1080,83 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@item_id", itemId);
         command.Parameters.AddWithValue("@version_id", versionId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadPublicationRequest(reader)
+            : null;
+    }
 
-        return new StudioPublicationRequest
+    public async Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(route);
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(lease.Connection, _promotionSchema, cancellationToken).ConfigureAwait(false);
+        var deploymentsTable = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
+
+        // The item row records the accepted request that last moved its published pointer.
+        // DISTINCT ON retains timestamp ordering only for legacy items without that pointer;
+        // the outer filter excludes items since republished to another route or no route.
+        // CreatePublicationRequestAsync rejects a claim by another item.
+        var sql = $"""
+            SELECT governing.request_id, governing.item_id, governing.version_id,
+                   governing.intent, governing.status, governing.validation,
+                   governing.warning_acknowledgement, governing.requested_by,
+                   governing.created_at,
+                   governing.deployment_id,
+                   governing.governs_studio_routes,
+                   active.deployment_id AS active_deployment_id
+            FROM (
+                SELECT DISTINCT ON (publication.item_id)
+                       publication.request_id, publication.item_id, publication.version_id,
+                       publication.intent, publication.status, publication.validation,
+                       publication.warning_acknowledgement, publication.requested_by,
+                       publication.created_at, publication.deployment_id,
+                       publication.governs_studio_routes
+                FROM {_publicationRequestsTable} AS publication
+                JOIN {_itemsTable} AS item ON item.item_id = publication.item_id
+                WHERE publication.status = @status
+                  AND (item.governing_publication_request_id IS NULL
+                       OR publication.request_id = item.governing_publication_request_id)
+                  AND publication.item_id IN (
+                      SELECT item_id
+                      FROM {_publicationRequestsTable}
+                      WHERE status = @status
+                        AND intent ->> 'route' = @route)
+                ORDER BY publication.item_id, publication.created_at DESC,
+                         publication.request_id DESC
+            ) AS governing
+            LEFT JOIN LATERAL (
+                SELECT deployment_id
+                FROM {deploymentsTable}
+                WHERE source_kind = @studio_source_kind
+                  AND status = @active_status
+                  AND target_id = @target_id
+                  AND document -> 'source' ->> 'studioItemId' = governing.item_id::text
+                LIMIT 1
+            ) AS active ON TRUE
+            WHERE governing.intent ->> 'route' = @route
+              AND governing.governs_studio_routes
+            ORDER BY governing.created_at DESC, governing.request_id DESC
+            LIMIT 1
+            """;
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@status", ToDbPublicationStatus(StudioPublicationRequestStatus.Accepted));
+        command.Parameters.AddWithValue("@route", route);
+        command.Parameters.AddWithValue("@studio_source_kind", DeploymentSourceKind.StudioPublishedVersion.ToString());
+        command.Parameters.AddWithValue("@active_status", DeploymentStatus.Active.ToString());
+        command.Parameters.AddWithValue("@target_id", DeploymentTarget.ForStudioPublishedRoute(route).TargetId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadPublicationRequest(reader, includeActiveDeployment: true)
+            : null;
+    }
+
+    private static StudioPublicationRequest ReadPublicationRequest(
+        NpgsqlDataReader reader,
+        bool includeActiveDeployment = false)
+        => new()
         {
             RequestId = reader.GetGuid(0),
             ItemId = reader.GetGuid(1),
@@ -943,8 +1170,12 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             WarningAcknowledgement = reader.IsDBNull(6) ? null : reader.GetString(6),
             RequestedBy = reader.IsDBNull(7) ? null : reader.GetString(7),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
+            DeploymentId = reader.IsDBNull(9) ? null : reader.GetString(9),
+            GovernsStudioRoutes = reader.GetBoolean(10),
+            ActiveDeploymentId = includeActiveDeployment && !reader.IsDBNull(11)
+                ? reader.GetString(11)
+                : null,
         };
-    }
 
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
@@ -966,7 +1197,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!await VersionExistsAsync(connection, transaction, itemId, targetVersionId, cancellationToken).ConfigureAwait(false))
+            var targetVersion = await GetVersionForPublicationAsync(
+                connection, transaction, itemId, targetVersionId, cancellationToken).ConfigureAwait(false);
+            if (targetVersion is null)
             {
                 throw new KeyNotFoundException("Studio content version was not found.");
             }
@@ -983,6 +1216,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 now,
                 updateCurrent,
                 updatePublished,
+                expectedCurrentVersionId: null,
                 cancellationToken).ConfigureAwait(false);
 
             var pointers = await GetPointersAsync(connection, transaction, itemId, cancellationToken).ConfigureAwait(false)
@@ -1002,10 +1236,12 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             var insertSql = $"""
                 INSERT INTO {_rollbackRequestsTable}
                     (request_id, item_id, target_version_id, pointer,
-                     current_version_id, published_version_id, requested_by, reason, created_at)
+                     current_version_id, published_version_id, requested_by, reason, created_at,
+                     deployment_id)
                 VALUES
                     (@request_id, @item_id, @target_version_id, @pointer,
-                     @current_version_id, @published_version_id, @requested_by, @reason, @created_at)
+                     @current_version_id, @published_version_id, @requested_by, @reason, @created_at,
+                     @deployment_id)
                 """;
             await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
             {
@@ -1018,7 +1254,25 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@requested_by", (object?)actorId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@reason", (object?)reason ?? DBNull.Value);
                 command.Parameters.AddWithValue("@created_at", now);
+                command.Parameters.Add(new NpgsqlParameter("@deployment_id", NpgsqlDbType.Text)
+                { Value = DBNull.Value });
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (updatePublished)
+            {
+                var successor = await ReconcileHostedRollbackAsync(
+                    connection, transaction, targetVersion, pointers, request.RequestId, actorId,
+                    cancellationToken).ConfigureAwait(false);
+                if (successor is not null)
+                {
+                    var updateSql = $"UPDATE {_rollbackRequestsTable} SET deployment_id = @deployment_id WHERE request_id = @request_id";
+                    await using var update = new NpgsqlCommand(updateSql, connection, transaction);
+                    update.Parameters.AddWithValue("@deployment_id", successor.DeploymentId);
+                    update.Parameters.AddWithValue("@request_id", request.RequestId);
+                    await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    request = request with { DeploymentId = successor.DeploymentId };
+                }
             }
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -1041,6 +1295,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         Guid? currentVersionId,
         Guid? publishedVersionId,
         string? ownerId,
+        string? tenantId,
         string? createdBy,
         string? updatedBy,
         DateTimeOffset createdAt,
@@ -1057,10 +1312,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var sql = $"""
             INSERT INTO {_itemsTable}
                 (item_id, package_key, workspace_id, family, current_version_id, published_version_id,
-                 owner_id, created_by, updated_by, created_at, updated_at)
+                 owner_id, tenant_id, created_by, updated_by, created_at, updated_at)
             VALUES
                 (@item_id, @package_key, @workspace_id, @family, @current_version_id, @published_version_id,
-                 @owner_id, @created_by, @updated_by, @created_at, @updated_at)
+                 @owner_id, @tenant_id, @created_by, @updated_by, @created_at, @updated_at)
             ON CONFLICT (item_id) DO UPDATE
             SET package_key = CASE
                     WHEN NOT @enforce_creation_owner_fence
@@ -1095,6 +1350,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@current_version_id", (object?)currentVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@owner_id", (object?)ownerId ?? DBNull.Value);
+        // tenant_id follows owner_id: recorded once on INSERT and never rewritten by a later
+        // draft/version upsert, so an item cannot be moved between tenants (honua-server#4905).
+        command.Parameters.AddWithValue("@tenant_id", (object?)tenantId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_owner_id", (object?)expectedExistingOwnerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_item_present", expectedExistingItemPresent);
         command.Parameters.AddWithValue("@enforce_creation_owner_fence", enforceCreationOwnerFence);
@@ -1137,17 +1395,28 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         DateTimeOffset updatedAt,
         bool updateCurrent,
         bool updatePublished,
-        CancellationToken cancellationToken)
+        Guid? expectedCurrentVersionId,
+        CancellationToken cancellationToken,
+        Guid? governingPublicationRequestId = null)
     {
         var currentClause = updateCurrent ? "current_version_id = @current_version_id," : string.Empty;
         var publishedClause = updatePublished ? "published_version_id = @published_version_id," : string.Empty;
+        var governingClause = governingPublicationRequestId is null
+            ? string.Empty
+            : "governing_publication_request_id = @governing_publication_request_id,";
+        // Compare-and-set predicate (honua-server#3980). Only appended when the caller supplies an
+        // expectation, so pointer writes with no approved-pointer contract keep their prior SQL.
+        var expectedClause = expectedCurrentVersionId is null
+            ? string.Empty
+            : " AND current_version_id = @expected_current_version_id";
         var sql = $"""
             UPDATE {_itemsTable}
             SET {currentClause}
                 {publishedClause}
+                {governingClause}
                 updated_by = @updated_by,
                 updated_at = @updated_at
-            WHERE item_id = @item_id
+            WHERE item_id = @item_id{expectedClause}
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@item_id", itemId);
@@ -1155,11 +1424,66 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_by", (object?)actorId ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_at", updatedAt);
+        if (expectedCurrentVersionId is { } expectedCurrent)
+        {
+            command.Parameters.AddWithValue("@expected_current_version_id", expectedCurrent);
+        }
+        if (governingPublicationRequestId is { } governingRequest)
+        {
+            command.Parameters.AddWithValue("@governing_publication_request_id", governingRequest);
+        }
+
         var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        if (rows == 0)
+        if (rows != 0)
+        {
+            return;
+        }
+
+        if (expectedCurrentVersionId is null)
         {
             throw new KeyNotFoundException("Studio content item was not found.");
         }
+
+        // Zero rows with a CAS predicate is ambiguous: either the item vanished or its pointer
+        // moved. Re-read inside the same transaction so the caller gets the right typed failure.
+        var actualCurrentVersionId = await ReadCurrentVersionIdAsync(
+            connection, transaction, itemId, cancellationToken).ConfigureAwait(false);
+        if (actualCurrentVersionId is null && !await ItemExistsAsync(
+                connection, transaction, itemId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new KeyNotFoundException("Studio content item was not found.");
+        }
+
+        throw new StudioPublicationPointerConflictException(itemId, expectedCurrentVersionId, actualCurrentVersionId);
+    }
+
+    private async Task<Guid?> ReadCurrentVersionIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"SELECT current_version_id FROM {_itemsTable} WHERE item_id = @item_id",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("@item_id", itemId);
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return value is Guid current ? current : null;
+    }
+
+    private async Task<bool> ItemExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"SELECT 1 FROM {_itemsTable} WHERE item_id = @item_id",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("@item_id", itemId);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
     private async Task InsertCheckpointVersionAsync(
@@ -1279,7 +1603,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id, owner_id
+            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -1318,10 +1642,13 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             UpdatedBy = reader.IsDBNull(11) ? null : reader.GetString(11),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(12),
             UpdatedAt = reader.GetFieldValue<DateTimeOffset>(13),
+            TenantId = reader.IsDBNull(14) ? null : reader.GetString(14),
         };
     }
 
-    private static StudioContentVersion ReadVersion(NpgsqlDataReader reader)
+    // The canonical hash input is read only by the single-version read (honua-server#5449); list
+    // and checkpoint reads leave it out so enumerations do not ship every envelope twice.
+    private static StudioContentVersion ReadVersion(NpgsqlDataReader reader, bool includeHashInput = false)
     {
         var envelope = JsonSerializer.Deserialize(
                 reader.GetString(7),
@@ -1339,6 +1666,16 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 reader.GetString(10),
                 StudioJsonContext.Default.StudioProvenanceRefArray)
             ?? Array.Empty<StudioProvenanceRef>();
+        var contentHash = reader.GetString(6);
+        string? contentHashInput = null;
+        if (includeHashInput)
+        {
+            // A version saved before the input was persisted (migration 126) has none; rebuild
+            // it only when the re-serialized envelope still hashes to the stored digest.
+            contentHashInput = reader.IsDBNull(17)
+                ? StudioPackageHash.TryRebuildInput(envelope, contentHash)
+                : Convert.ToBase64String(reader.GetFieldValue<byte[]>(17));
+        }
 
         return new StudioContentVersion
         {
@@ -1348,7 +1685,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             WorkspaceId = reader.IsDBNull(3) ? null : reader.GetString(3),
             OwnerId = reader.IsDBNull(4) ? null : reader.GetString(4),
             VersionNumber = reader.GetInt32(5),
-            ContentHash = reader.GetString(6),
+            ContentHash = contentHash,
+            ContentHashInput = contentHashInput,
             Envelope = envelope,
             Validation = validation,
             Dependencies = dependencies,
@@ -1358,6 +1696,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             ChangeNote = reader.IsDBNull(13) ? null : reader.GetString(13),
             CreatedBy = reader.IsDBNull(14) ? null : reader.GetString(14),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(15),
+            TenantId = reader.IsDBNull(16) ? null : reader.GetString(16),
         };
     }
 
@@ -1368,12 +1707,13 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             CurrentVersionId = reader.IsDBNull(1) ? null : reader.GetGuid(1),
             PublishedVersionId = reader.IsDBNull(2) ? null : reader.GetGuid(2),
             OwnerId = reader.IsDBNull(3) ? null : reader.GetString(3),
+            TenantId = reader.IsDBNull(4) ? null : reader.GetString(4),
         };
 
-    private static string VersionSelectSql(string versionsTable) => $"""
+    private static string VersionSelectSql(string versionsTable, bool includeHashInput = false) => $"""
         SELECT version_id, item_id, package_key, workspace_id, owner_id, version_number, content_hash,
                envelope, validation, dependencies, provenance,
-               source_draft_id, base_version_id, change_note, created_by, created_at
+               source_draft_id, base_version_id, change_note, created_by, created_at, tenant_id{(includeHashInput ? ", content_hash_input" : string.Empty)}
         FROM {versionsTable}
         """;
 

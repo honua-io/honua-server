@@ -586,7 +586,7 @@ public sealed class GdalUntrustedInputHardeningTests
         // Regression: a normal (binary) GeoTIFF passes the guard and reaches gdalinfo,
         // which the fake runner answers with a minimal stats document.
         const string gdalinfoJson =
-            "{\"bands\":[{\"band\":1,\"type\":\"Byte\",\"minimum\":0,\"maximum\":255,\"mean\":128,\"stdDev\":10}]}";
+            "{\"bands\":[{\"band\":1,\"type\":\"Byte\",\"minimum\":0,\"maximum\":255,\"mean\":128,\"stdDev\":10,\"validCount\":256}]}";
         var runner = new FakeGdalCommandRunner((_, _, _) =>
             new GdalCommandResult { ExitCode = 0, StandardOutput = gdalinfoJson });
         var scratch = GdalCli.NewScratch(ScratchSuite);
@@ -605,7 +605,7 @@ public sealed class GdalUntrustedInputHardeningTests
             var result = await executor.ExecuteAsync(job, context, default);
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
-            runner.Invocations.Should().ContainSingle().Which.Tool.Should().Be("gdalinfo");
+            runner.Invocations.Select(i => i.Tool).Should().Equal("gdalinfo", "python3");
             context.Artifacts.Should().ContainSingle();
         }
         finally

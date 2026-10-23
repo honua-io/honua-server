@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Deploy on Kubernetes"
+description: "Install the honua-helm chart as one coordinated replica with a persistent volume, then move to the complete multi-node contract with Redis and cloud file storage."
+---
 # Deploy on Kubernetes
 
 > Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation is
@@ -23,6 +28,10 @@ moving branch.
 - A Kubernetes cluster with `kubectl` and Helm 3 access.
 - PostGIS and Redis endpoints reachable from the cluster. Redis is required by
   the chart for non-development deployments, including the single-node path.
+  Any working Redis enables the control plane and jobs. For durable
+  acknowledged state, configure `appendonly yes`, `appendfsync everysec` (or
+  `always`) and `maxmemory-policy noeviction`, or use a managed service's own
+  durability. See [Redis durability](#redis-durability) below.
 - A default StorageClass for the single-node persistent volume.
 - An OpenTelemetry collector reachable at the endpoint used below.
 - An ingress controller and a TLS secret named `honua-tls`.
@@ -265,6 +274,95 @@ Apply the same digest-pinned command used for the single-node install. The
 chart fails closed when more than one replica or HPA is combined with
 `SingleInstance`.
 
+### Pod Identity and IRSA
+
+On EKS, prefer EKS Pod Identity for the server's AWS role. The server's AWS
+credential consumers support it: the built-in
+`aws:secretsmanager:` resolver (settings document, security settings, Redis
+connection string, key-ring certificate) reads the projected token named by
+`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` on each credential refresh and sends it
+to the agent at `AWS_CONTAINER_CREDENTIALS_FULL_URI`, and the S3, Batch, and
+other AWS SDK clients use the SDK's default credential chain. IRSA
+(`AWS_WEB_IDENTITY_TOKEN_FILE` plus `AWS_ROLE_ARN`) works for the AWS SDK
+clients but not for `aws:secretsmanager:` references: the built-in resolver
+has no web-identity provider and refuses the request without querying the node
+role. Use a Pod Identity association for the server's
+service account instead. If the server log shows
+`AwsContainerCredentialsRequestRejected` or
+`AwsContainerAuthorizationTokenFileUnusable`, the pod-identity association or
+its projected token is missing or unusable. The selected provider does not fall
+back to EC2 credentials on token-file, endpoint or response failure. Fix that
+provider's configuration; changing provider type requires restarting the host.
+This applies to the API host and native GDAL worker's built-in secret resolver.
+
+## Geoprocessing on Kubernetes Jobs
+
+The `honua-kubernetes-job` batch backend runs each asynchronous geoprocessing
+job as a `batch/v1` Job that starts the server image as a single-job worker.
+The worker needs the same database, Redis and master key as the server. Give it
+those through Kubernetes Secret references, not through literal values. Literal
+`env.*` and `k8s.env.*` values are written into the Job object.
+
+The server never reads the Secret. It writes only the Secret's name, and for
+single variables the data key, into the Job's container spec. The kubelet
+resolves the values when the pod starts. They do not appear in the Job object,
+the durable job record or the server logs.
+
+| Setting | Renders as | Use |
+|---|---|---|
+| `ControlPlane:Kubernetes:DefaultEnvFromSecrets:<i>` = `<secret>` or `<secret>:<prefix>` | `envFrom[].secretRef` on every Job | The chart's runtime Secret, set once |
+| `ControlPlane:Kubernetes:DefaultEnvFromConfigMaps:<i>` = `<configMap>` or `<configMap>:<prefix>` | `envFrom[].configMapRef` on every Job | Shared non-secret settings |
+| Workload `k8s.envFrom.secret.<n>` = `<secret>` or `<secret>:<prefix>` | `envFrom[].secretRef` | An extra Secret for one workload |
+| Workload `k8s.envFrom.configMap.<n>` = `<configMap>` or `<configMap>:<prefix>` | `envFrom[].configMapRef` | An extra ConfigMap for one workload |
+| Workload `k8s.env.<NAME>.secretKeyRef` = `<secret>:<key>` | `env[].valueFrom.secretKeyRef` | One variable from one Secret key |
+| Workload `k8s.env.<NAME>.configMapKeyRef` = `<configMap>:<key>` | `env[].valueFrom.configMapKeyRef` | One variable from one ConfigMap key |
+| Workload `k8s.env.<NAME>` / `env.<NAME>` = `<value>` | `env[].value` | Non-secret literals only |
+
+The rules:
+
+- Configured defaults come first, then the workload's `k8s.envFrom.*` entries
+  ordered by `<n>` (numerically when `<n>` is a number). On a duplicate key,
+  the later source wins.
+- Explicit `env` entries always win over `envFrom`. That includes the launch
+  variables (`HONUA_OPERATION_ID`, `HONUA_JOB_KIND`, `HONUA_WORKLOAD_NAME`,
+  `HONUA_EXECUTION_ATTEMPT`, `HONUA_CONTRACT_VERSION`), which the backend always
+  writes as literals. A literal `env.*` or `k8s.env.*` passthrough can never set
+  a launch variable. A `secretKeyRef` or `configMapKeyRef` that names one is
+  refused. `HONUA_WORKLOAD_ID` and `HONUA_RUNTIME_PROFILE` are written only
+  when the job has them, so keep them out of an imported Secret.
+- The server refuses malformed references with a typed error that names the
+  parameter key, never its value. At startup it checks the configured defaults
+  and the parameters of every `honua-kubernetes-job` workload. At submission a
+  bad reference fails the job before any Job is created. Secret and ConfigMap
+  names must be DNS-1123 subdomains. Data keys use letters, digits, `-`, `_`
+  and `.`. A misspelled suffix such as `.secretkeyref` is refused rather than
+  treated as a literal variable name.
+- The Secret must live in the Job's namespace. The Job's ServiceAccount needs
+  no Secret access, because the kubelet resolves `envFrom` and `secretKeyRef`.
+  The server's Role does not need Secret access either.
+- Defaults reach every Job this backend launches. Only list Secrets that every
+  Kubernetes worker image may hold. Custom-code workloads cannot use this
+  backend (ADR-0063).
+
+Point every worker at the chart's runtime Secret once, through the server's
+environment:
+
+```yaml
+config:
+  env:
+    ControlPlane__Kubernetes__DefaultEnvFromSecrets__0: "honua-runtime"
+```
+
+To wire a single variable on one workload, use `ParameterEntries`, because
+dotted parameter keys cannot be written as environment variable names:
+
+```yaml
+config:
+  env:
+    ControlPlane__ExecutionWorkloads__2__ParameterEntries__0__Key: "k8s.env.ConnectionStrings__DefaultConnection.secretKeyRef"
+    ControlPlane__ExecutionWorkloads__2__ParameterEntries__0__Value: "honua-db:connection-string"
+```
+
 ## Upgrade and roll back
 
 Back up PostGIS and file storage before every upgrade. The chart's default
@@ -294,6 +392,58 @@ Then run the digest-pinned `helm upgrade --install ... --atomic --wait` command.
 `--atomic` restores Kubernetes resources after a failed upgrade; it does not
 undo a database migration or object-store write.
 
+### Run migrations as a pre-upgrade Job
+
+To keep migrations out of the serving pods, run the target image once as a Job
+with `HONUA_MIGRATE_ONLY=true`, then upgrade the release with
+`HONUA_SKIP_MIGRATIONS=true`. The Job starts no listener and needs only the
+connection string. Every migration safety gate still applies. It exits `0` when
+the journal is current and with a typed non-zero code when it refuses. See
+[Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band).
+
+```bash
+cat > honua-migrate-job.yaml <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: honua-migrate
+  namespace: honua
+spec:
+  backoffLimit: 0   # a refusal is not transient; re-run deliberately
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/honua-io/honua-server@${HONUA_IMAGE_DIGEST}
+          env:
+            - name: HONUA_MIGRATE_ONLY
+              value: "true"
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: honua-runtime
+                  key: ConnectionStrings__DefaultConnection
+EOF
+kubectl -n honua delete job honua-migrate --ignore-not-found
+kubectl -n honua apply -f honua-migrate-job.yaml
+kubectl -n honua wait --for=condition=complete --timeout=30m job/honua-migrate
+kubectl -n honua logs job/honua-migrate | grep '"format":"honua.migrate-only/v1"'
+```
+
+`kubectl logs` interleaves both streams, so the `grep` keeps only the summary
+line. If the Job fails, the pod's exit code and the summary's `code` name the
+reason. A pending contract migration exits `5`: review the scripts in
+`pendingScripts`, then re-create the Job with
+`HONUA_APPROVE_CONTRACT_MIGRATIONS` set to the summary's
+`contractApproval.nonce`. After the Job completes, upgrade with
+`--set-string config.env.HONUA_SKIP_MIGRATIONS=true` added to the digest-pinned
+command. The serving pods then verify the journal at startup instead of
+migrating. `RollingUpdate` still needs the reviewed forward and backward
+compatibility described above, because the old pods keep serving the migrated
+schema until they are replaced.
+
 Capture and verify each revision:
 
 ```bash
@@ -303,14 +453,33 @@ kubectl -n honua get configmap honua-honua-release-info -o yaml
 helm -n honua history honua
 ```
 
-Application rollback comes first when the previous image remains compatible
-with the migrated schema:
+Application rollback comes first only when the previous image can protect
+itself against the schema it will find. Roll back only to images that include
+the schema-reader guard: schema 135 or later for additive migrations, and never
+across a contract-phase migration without a restore. `honua-2026.1` is not a
+safe rollback target across any migration, and the only safe way back to 2026.1
+is restoring the backup taken before the upgrade. It predates the schema-reader
+guard and serves a newer schema with no refusal. There is no release-named
+immutable tag for that image yet
+([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
+See [Rollback target eligibility](upgrade-and-rollback.md#rollback-target-eligibility).
 
 ```bash
 helm -n honua rollback honua <known-good-revision> --wait --timeout 10m
 kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 helm -n honua test honua
 ```
+
+`helm rollback` restores that revision's saved values, including
+`HONUA_SKIP_MIGRATIONS=true` when the revision was installed that way after an
+out-of-band migration Job. With the skip switch the reader still checks the
+journal, but it does not accept forward-compatibility declarations: it must
+ship every applied migration. A newer expand-only entry is refused, and
+`--wait` times out instead of serving. To roll back across additive migrations,
+start the previous image with migrations enabled (leave
+`HONUA_SKIP_MIGRATIONS` unset) so it can verify those declarations. A saved
+skip-migrations revision is a safe rollback only when that image ships every
+applied migration.
 
 Helm cannot downgrade the database schema. If the previous image is not
 compatible, stop writes and restore the matching PostGIS backup and file-store
@@ -324,6 +493,37 @@ cannot checksum data it does not own.
 kubectl -n honua rollout restart deployment/honua-honua
 kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 ```
+
+## Redis durability
+
+Redis holds acknowledged control-plane state: durable jobs, the job queue,
+execution logs and governed proposals. Any working Redis enables all of it. At
+startup the server reads the Redis persistence policy once and publishes the
+outcome as information (`limits.job.redisDurability` on the capability
+manifest). It reports `attested` only when all three of these hold:
+
+| Redis setting | Required value |
+|---|---|
+| `appendonly` | `yes` (`INFO persistence` reports `aof_enabled:1`) |
+| `appendfsync` | `everysec` or `always` |
+| `maxmemory-policy` | `noeviction` |
+
+Otherwise it reports `unverified` (the policy could not be read; managed Redis
+such as AWS ElastiCache and MemoryDB blocks `CONFIG`) or `not-durable` (the
+policy was read and is not durable). A stock `redis:7-alpine` sidecar defaults
+to `appendonly no` and reports `not-durable`.
+
+**The outcome is information, not a gate.** `operations.proposals` and
+`jobs.runner` stay available, pods stay `Ready`, and the `redis` health entry
+stays `Healthy` with the outcome in its data. Durability is a property of the
+Redis you choose. Configure the policy above on self-managed Redis, or rely on
+the managed service's replication, snapshots or transaction log.
+
+If a cluster must not serve at all unless the outcome is `attested`, set
+`Jobs__RequireDurableStore: "true"` in `config.env`. Any other outcome then
+exits with a single typed startup error naming the cause and its remediation.
+Because the readiness probe never passes, the rollout stops. Managed Redis that
+blocks `CONFIG` can never satisfy this setting.
 
 ## Troubleshoot
 
@@ -343,6 +543,10 @@ kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 - **Native gRPC is unreachable** — this chart contract publishes the HTTP and
   gRPC-Web listener on port 8080. Native h2c gRPC on port 8081 needs a
   separately managed Service/Ingress until the chart exposes that listener.
+- **Pods log "Redis durability attestation: not-durable" or "unverified"**: this
+  is information. Pods stay `Ready`, and jobs and governed proposals keep
+  running. See [Redis durability](#redis-durability) to decide whether the
+  cluster's Redis needs a durable policy.
 
 ## Next steps
 

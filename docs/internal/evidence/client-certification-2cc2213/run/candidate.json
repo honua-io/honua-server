@@ -1,0 +1,25 @@
+{
+  "run_id": "roster-20260916T213457Z-2cc2213",
+  "release": "2026.1",
+  "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
+  "tag": "nightly-2cc2213",
+  "image": "ghcr.io/honua-io/honua-server@sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+  "index_digest": "sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+  "platform_image_id": "sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+  "source_sha": "2cc221388ea47d78c29e79eaee62737e4c792351",
+  "image_created": "2026-09-16T10:25:15.432Z",
+  "producer_source_sha": "786b664f916b5c98fb2393555bf55801dc5f16e1",
+  "target": "local-docker",
+  "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-2cc2213/receipts/",
+  "server_version": {
+    "success": true,
+    "data": {
+      "version": "2026.1.1",
+      "metadataApiVersion": "metadata.honua.io/v2alpha1",
+      "metadataSchemaVersion": "2.0.0-alpha.1",
+      "serverTime": "2026-09-16T21:35:25.7136013+00:00"
+    },
+    "message": null,
+    "timestamp": "2026-09-16T21:35:25.7136021+00:00"
+  }
+}

@@ -6,11 +6,21 @@ dispatch-backlog health check, a per-channel notification rate cap, and a second
 deploy/job-event notifications). The customer surface remains OFF by default and requires the canonical
 `Capabilities:Experimental:alerts.geofence:Enabled` opt-in plus `Alerts:Enabled`.
 
+**Worker isolation restriction (#3859):** Enabled alert workers refuse startup when
+tenant resolution (`MultiTenancy:Enabled`, default `true`) or tenant schema routing
+(`MultiTenancy:SchemaRouting:Enabled`) is enabled. Their evaluation, state and delivery
+keys are instance-wide, and HTTP tenant authorization does not apply to those workers.
+Keep `Alerts:Enabled=false` on multi-tenant instances. Preview alert processing requires
+a separate single-tenant instance with both tenancy settings explicitly disabled.
+This is a fail-closed restriction, not certification of two-tenant alert delivery.
+
 > **Upgrade note (#3055):** The binding fix makes `Alerts:Enabled` (or `Alerts__Enabled` as an
 > environment variable) effective with the source-generated configuration binder. Deployments that
 > already set it to `true` will start the alert processing workers after upgrading and restarting
 > when the canonical `alerts.geofence` capability opt-in is also enabled.
 > Remove the setting or set it to `false` before upgrading if activation is not intended.
+
+**Retained Preview security floors (#4426):** Alert rules, zones, incidents and delivery channels are instance-wide; they have no tenant ownership model. Their HTTP administration rejects authenticated tenant claims and tenant override headers, including on channel and incident routes. Use an instance administrator without a tenant scope. List rules/zones requires an explicit nonblank `serviceId`; it never interprets an omitted scope as all services. Zone create/update/delete and rule create/update/enable/disable/delete commit atomically with `honua.audit_log`, including the authenticated actor identity and resource identity. A missing durable audit receipt returns 503 and rolls back the mutation.
 
 **Issue:** honua-server#1169 (2026.1 Preview ruling supersedes the earlier #2427 GA claim)
 **Owner (UI side):** honua-console `/operate/alerts/rules` editor (rule authoring + per-rule delivery-state)

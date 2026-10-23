@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/geoparquet/feature-read",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal-geoparquet",
+  "client_version": "3.13.3",
+  "client_version_detail": "GDAL 3.13.3 \"Iowa City\", released 2026/08/13",
+  "surface": "geoparquet",
+  "operation": "feature-read",
+  "protocol_version": "GeoParquet 1.1",
+  "protocol_profile": "FeatureServer query f=parquet",
+  "started_at": "2026-09-21T09:58:25.581962Z",
+  "finished_at": "2026-09-21T09:58:25.663713Z",
+  "duration_ms": 82,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "media-schema"
+  ],
+  "summary": "all 3 checks passed across 3 governed facets",
+  "primary_request_url": "http://honua:5000/rest/services/cng/FeatureServer/1000/query?where=1%3D1&outFields=*&f=parquet",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "decode GeoParquet using the GDAL Parquet driver",
+      "outcome": "pass",
+      "detail": "six SQL-fixture points and scalar attributes: {'Harbor City': (-122.4194, 37.7749), 'Baytown': (-122.2711, 37.8044), 'Meridian Marker': (0.0, 51.4779), 'Equator Station': (-75.0, 0.0), 'Dateline Post': (179.5, 0.5), 'Polar Outpost': (0.0, 86.0)}",
+      "request_url": null,
+      "duration_ms": 54
+    },
+    {
+      "facet": "metadata",
+      "name": "decode GeoParquet using the GDAL Parquet driver",
+      "outcome": "pass",
+      "detail": "{\"version\":\"1.1.0\",\"primary_column\":\"geometry\",\"columns\":{\"geometry\":{\"encoding\":\"WKB\",\"geometry_types\":[\"Point\"],\"covering\":{\"bbox\":{\"xmin\":[\"bbox\",\"xmin\"],\"ymin\":[\"bbox\",\"ymin\"],\"xmax\":[\"bbox\",\"xmax\"],\"ymax\":[\"bbox\",\"ymax\"]}}}}}",
+      "request_url": null,
+      "duration_ms": 15
+    },
+    {
+      "facet": "media-schema",
+      "name": "decode GeoParquet using the GDAL Parquet driver",
+      "outcome": "pass",
+      "detail": "{'objectid': 'Integer64', 'name': 'String', 'category': 'String', 'population': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'observed_at': 'DateTime'}",
+      "request_url": null,
+      "duration_ms": 13
+    }
+  ]
+}

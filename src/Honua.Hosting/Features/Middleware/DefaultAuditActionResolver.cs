@@ -45,6 +45,8 @@ namespace Honua.Infrastructure.Middleware;
 internal sealed class DefaultAuditActionResolver : IAuditActionResolver
 {
     private const string AdminRoutePrefix = "/api/v{version:apiversion}/admin";
+    private const string ConsoleRoutePrefix = "/api/v{version:apiversion}/console";
+    private const string EnrichRoutePrefix = "/api/enrich/datasets";
 
     // Mutating HTTP methods. GET/HEAD/OPTIONS/TRACE never imply a state change and
     // are only audited via the failure path (401/403) handled by the middleware.
@@ -74,7 +76,9 @@ internal sealed class DefaultAuditActionResolver : IAuditActionResolver
         // prefix is an administrative action. This keeps "all admin API
         // operations emit audit events" true without per-endpoint wiring.
         if (MutatingMethods.Contains(httpMethod) &&
-            normalizedPattern.StartsWith(AdminRoutePrefix, StringComparison.Ordinal))
+            (normalizedPattern.StartsWith(AdminRoutePrefix, StringComparison.Ordinal)
+             || normalizedPattern.StartsWith(ConsoleRoutePrefix, StringComparison.Ordinal)
+             || normalizedPattern.StartsWith(EnrichRoutePrefix, StringComparison.Ordinal)))
         {
             return new AuditActionDescriptor
             {
@@ -137,6 +141,55 @@ internal sealed class DefaultAuditActionResolver : IAuditActionResolver
         Add("POST", "/oauth/token", authToken);
         Add("POST", "/sharing/rest/oauth2/token", authToken);
 
+        // ArcGIS-compatible portal token issuance. Both routes are anonymous and answer an
+        // unusable credential with 400, so neither the admin-prefix fallback nor the
+        // middleware's 401/403 branch would classify them — they need explicit rows.
+        // Only the path is recorded, never the query string that the GET form carries
+        // credentials in.
+        Add("POST", "/sharing/rest/generateToken", authToken);
+        Add("GET", "/sharing/rest/generateToken", authToken);
+
+        // Console and enrichment mutations are outside the /admin prefix. Named
+        // rows keep the action specific (the prefix fallback would only record
+        // admin.{method}) and still emit AuditEventType.AdminAction.
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/access",
+            ControlPlane("console.share.access.update", "console-share"));
+        Add("POST", "/api/v{version:apiVersion}/console/content/{id}/share/link",
+            ControlPlane("console.share.link.mint", "console-share"));
+        Add("DELETE", "/api/v{version:apiVersion}/console/content/{id}/share/link/{tokenId}",
+            ControlPlane("console.share.link.revoke", "console-share"));
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/embed",
+            ControlPlane("console.share.embed.update", "console-share"));
+        Add("POST", "/api/v{version:apiVersion}/console/content/{id}/share/embed",
+            ControlPlane("console.share.embed.mint", "console-share"));
+        Add("POST", "/api/v{version:apiVersion}/console/content",
+            ControlPlane("console.content.create", "console-content"));
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}",
+            ControlPlane("console.content.update", "console-content"));
+        Add("PATCH", "/api/v{version:apiVersion}/console/content/{id}",
+            ControlPlane("console.content.update", "console-content"));
+        Add("DELETE", "/api/v{version:apiVersion}/console/content/{id}",
+            ControlPlane("console.content.delete", "console-content"));
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}/open-data",
+            ControlPlane("console.open-data.update", "console-open-data"));
+        Add("POST", "/api/v{version:apiVersion}/console/content/{id}/open-data/stac/publish",
+            ControlPlane("console.open-data.stac.publish", "console-open-data"));
+        Add("DELETE", "/api/v{version:apiVersion}/console/content/{id}/open-data/stac",
+            ControlPlane("console.open-data.stac.delete", "console-open-data"));
+        Add("POST", "/api/enrich/datasets",
+            ControlPlane("enrich.dataset.create", "enrichment-dataset"));
+        Add("PUT", "/api/enrich/datasets/{id}",
+            ControlPlane("enrich.dataset.update", "enrichment-dataset"));
+        Add("DELETE", "/api/enrich/datasets/{id}",
+            ControlPlane("enrich.dataset.delete", "enrichment-dataset"));
+
         return pairs.ToFrozenDictionary(StringComparer.Ordinal);
     }
+
+    private static AuditActionDescriptor ControlPlane(string action, string resourceType) => new()
+    {
+        EventType = AuditEventType.AdminAction,
+        Action = action,
+        ResourceType = resourceType,
+    };
 }

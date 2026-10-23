@@ -17,6 +17,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -31,6 +32,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     {
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ApplyStylePresetTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetStyleTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RenderMapTool>());
     });
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -145,6 +147,147 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
                 "migration replay compares the explicit source ordinal, including gaps");
             associations.Single(association => association.Ordinal == 0).StyleId.Should().Be(promoted);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task AppliedSolidRedPreset_IsTheStyleRenderMapDraws_AndApplyReturnsOperationHandle()
+    {
+        // Terminal promise journey stage 4: apply a solid-red preset to a published layer whose
+        // stored default style is blue, render it, and decode the centre pixel. Before the fix
+        // render_map named the preset but drew the stored default (rgba(45,105,165)).
+        using var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        using var scope = _fixture.Services.CreateScope();
+        var layerStyles = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
+        (await layerStyles.SetMapLibreStyleAsync(WebAppFixture.TestLayerId, CircleStyle("#0000ff"))).Should().NotBeNull();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var presetId = $"journey-solid-red-{Guid.NewGuid():N}";
+        (await catalog.CreateStyleAsync(presetId, CircleStyle("#ef2020"), title: "Solid red")).Should().NotBeNull();
+
+        // A feature of the published layer alone at the centre of an otherwise empty window.
+        await InsertPointFeatureAsync(WebAppFixture.TestLayerId, CentreX, CentreY);
+
+        var session = await InitializeMcpSessionAsync(client);
+        var applied = await CallMcpStyleAsync(client, session, "honua_apply_style_preset", presetId);
+        applied.GetProperty("applied").GetBoolean().Should().BeTrue();
+        applied.GetProperty("styleId").GetString().Should().Be(presetId);
+        applied.GetProperty("operationId").GetString().Should().Be("style.apply-preset");
+        applied.GetProperty("operationInstanceId").GetString().Should().NotBeNullOrWhiteSpace();
+        applied.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
+        applied.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace(
+            "the canonical operation runtime writes a durable audit record for the style change");
+
+        var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
+            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","layerId":{{WebAppFixture.TestLayerId}}}],
+             "bbox":[{{CentreX - 2}},{{CentreY - 2}},{{CentreX + 2}},{{CentreY + 2}}],"bboxSrid":4326,
+             "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
+            """);
+        var layer = rendered.GetProperty("layers")[0];
+        layer.GetProperty("styleId").GetString().Should().Be(presetId);
+        layer.GetProperty("styleRendering").GetString().Should().Be("applied");
+
+        var png = Convert.FromBase64String(rendered.GetProperty("image").GetProperty("base64").GetString()!);
+        using var bitmap = SKBitmap.Decode(png);
+        bitmap.Should().NotBeNull("render_map must return a decodable PNG");
+        bitmap.GetPixel(64, 64).Should().Be(new SKColor(239, 32, 32, 255),
+            "the centre pixel must carry the applied preset colour, not the layer's stored default style");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task AppliedZeroLayerPreset_DrawsNothingInsteadOfTheStoredDefault()
+    {
+        using var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        using var scope = _fixture.Services.CreateScope();
+        var layerStyles = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
+        (await layerStyles.SetMapLibreStyleAsync(WebAppFixture.TestLayerId, CircleStyle("#0000ff"))).Should().NotBeNull();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var presetId = $"empty-preset-{Guid.NewGuid():N}";
+        (await catalog.CreateStyleAsync(presetId, """{"version":8,"sources":{},"layers":[]}""")).Should().NotBeNull();
+        await InsertPointFeatureAsync(WebAppFixture.TestLayerId, EmptyCentreX, EmptyCentreY);
+
+        var session = await InitializeMcpSessionAsync(client);
+        (await CallMcpStyleAsync(client, session, "honua_apply_style_preset", presetId))
+            .GetProperty("applied").GetBoolean().Should().BeTrue();
+
+        var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
+            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","layerId":{{WebAppFixture.TestLayerId}}}],
+             "bbox":[{{EmptyCentreX - 2}},{{EmptyCentreY - 2}},{{EmptyCentreX + 2}},{{EmptyCentreY + 2}}],"bboxSrid":4326,
+             "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
+            """);
+        var layer = rendered.GetProperty("layers")[0];
+        layer.GetProperty("styleRendering").GetString().Should().Be("unsupported-style-construct");
+        layer.GetProperty("unsupportedStyleConstructs")[0].GetString().Should().Contain("nothing was drawn");
+
+        var png = Convert.FromBase64String(rendered.GetProperty("image").GetProperty("base64").GetString()!);
+        using var bitmap = SKBitmap.Decode(png);
+        bitmap.Should().NotBeNull();
+        bitmap.GetPixel(64, 64).Alpha.Should().Be(0,
+            "an applied style with nothing drawable must not fall back to the stored default or generic paints");
+    }
+
+    private const int EmptyCentreX = -40;
+    private const int EmptyCentreY = 30;
+
+    private const int CentreX = 40;
+    private const int CentreY = -30;
+
+    private async Task InsertPointFeatureAsync(int layerId, int x, int y)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (@layerId, ST_SetSRID(ST_MakePoint(@x, @y), 4326), jsonb_build_object('name', 'style-render-centre'))
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+        command.Parameters.AddWithValue("x", (double)x);
+        command.Parameters.AddWithValue("y", (double)y);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static string CircleStyle(string hexColor) => $$$"""
+        {"version":8,"sources":{},"layers":[{"id":"points","type":"circle","source":"features",
+          "paint":{"circle-radius":8,"circle-color":"{{{hexColor}}}","circle-opacity":1,"circle-stroke-width":0}}]}
+        """;
+
+    private static async Task<string> InitializeMcpSessionAsync(HttpClient client)
+    {
+        using var initializeContent = new StringContent("""
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+              "protocolVersion":"2025-03-26","capabilities":{},
+              "clientInfo":{"name":"style-render-test","version":"1.0"}}}
+            """, Encoding.UTF8, "application/json");
+        using var initialize = await client.PostAsync("/mcp", initializeContent);
+        initialize.EnsureSuccessStatusCode();
+        return initialize.Headers.GetValues("Mcp-Session-Id").Single();
+    }
+
+    private static async Task<JsonElement> CallMcpToolAsync(HttpClient client, string session, string toolName,
+        string argumentsJson)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = new StringContent($$$"""
+                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}
+                """, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("Mcp-Session-Id", session);
+        using var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.TryGetProperty("error", out _).Should().BeFalse(root.ToString());
+        var result = root.GetProperty("result");
+        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.ToString());
+        return result.GetProperty("structuredContent").Clone();
     }
 
     private static async Task<JsonElement> CallMcpStyleAsync(HttpClient client, string session,

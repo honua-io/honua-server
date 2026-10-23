@@ -129,6 +129,94 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         versionedNames.Should().BeEquivalentTo(_expectedVersionedNames);
     }
 
+    [IntegrationTheory]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    [Operation(Operations.ApplyEdits)]
+    public async Task VersionedOwnerGuard_OverlayTransferOrDelete_RejectsStaleBaseOwner(
+        bool deleteOverlay, bool staleDelete, bool ordered)
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+        var original = await store.CreateAsync(PointsLayerId,
+            BuildFeatureWithFields(1, 1, ("name", "base"), ("owner", "alice")), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest($"OwnerGuard{Guid.NewGuid():N}", "alice", VersionAccess.Public),
+            CancellationToken.None);
+        var versionContext = VersionContext.ForVersion(version);
+
+        // Capture the policy-approved edit before an administrator transfers the branch row.
+        // DEFAULT deliberately retains Alice; only the effective branch owner may admit a write.
+        var staleFeature = BuildFeatureWithFields(9, 9, original.Id, ("name", "stale"), ("owner", "alice"));
+        var staleOperation = staleDelete
+            ? FeatureEditOperation.Delete(original.Id)
+            : FeatureEditOperation.Update(staleFeature);
+        var stale = (ordered
+            ? FeatureEditBatch.Create(operations: [staleOperation], rollbackOnFailure: true, versionContext: versionContext)
+            : FeatureEditBatch.Create(
+                updates: staleDelete ? [] : [staleFeature],
+                deletes: staleDelete ? [original.Id] : [],
+                rollbackOnFailure: true, versionContext: versionContext)) with
+        {
+            OwnerGuards = [new OwnerEditGuard(original.Id, "owner", "alice")]
+        };
+
+        var firstTouch = FeatureEditBatch.Create(
+            updates: [BuildFeatureWithFields(2, 2, original.Id, ("name", "alice-branch"), ("owner", "alice"))],
+            versionContext: versionContext) with
+        {
+            OwnerGuards = [new OwnerEditGuard(original.Id, "owner", "alice")]
+        };
+        var firstResult = await store.ApplyEditsAsync(PointsLayerId, firstTouch, CancellationToken.None);
+        firstResult.UpdatedCount.Should().Be(1, "a matching base owner permits first touch");
+
+        var transferred = await store.ApplyEditsAsync(PointsLayerId, FeatureEditBatch.Create(
+            updates: [BuildFeatureWithFields(3, 3, original.Id, ("name", "bob-branch"), ("owner", "bob"))],
+            versionContext: versionContext), CancellationToken.None);
+        transferred.UpdatedCount.Should().Be(1, "an administrator can transfer ownership without an owner guard");
+
+        var currentOwnerBatch = FeatureEditBatch.Create(
+            updates: deleteOverlay ? [] : [BuildFeatureWithFields(4, 4, original.Id, ("name", "bob-current"), ("owner", "bob"))],
+            deletes: deleteOverlay ? [original.Id] : [],
+            versionContext: versionContext) with
+        {
+            OwnerGuards = [new OwnerEditGuard(original.Id, "owner", "bob")]
+        };
+        var currentOwnerResult = await store.ApplyEditsAsync(PointsLayerId, currentOwnerBatch, CancellationToken.None);
+        (currentOwnerResult.UpdatedCount + currentOwnerResult.DeletedCount).Should().Be(1,
+            "the current overlay owner remains authorized even when DEFAULT has another owner");
+
+        var staleResult = await store.ApplyEditsAsync(PointsLayerId, stale, CancellationToken.None);
+        staleResult.WasRolledBack.Should().BeTrue();
+        staleResult.UpdatedCount.Should().Be(0);
+        staleResult.DeletedCount.Should().Be(0);
+
+        var branchRows = await store.QueryAsync(PointsLayerId,
+            new FeatureQuery { ObjectIds = [original.Id], VersionContext = versionContext }, CancellationToken.None);
+        if (deleteOverlay)
+        {
+            branchRows.Items.Should().BeEmpty("a stale owner must not resurrect a branch tombstone");
+        }
+        else
+        {
+            branchRows.Items.Should().ContainSingle();
+            FieldValue(branchRows.Items[0], "owner").Should().Be("bob");
+            NameOf(branchRows.Items[0]).Should().Be("bob-current");
+        }
+
+        var defaultRows = await store.QueryAsync(PointsLayerId,
+            new FeatureQuery { ObjectIds = [original.Id] }, CancellationToken.None);
+        defaultRows.Items.Should().ContainSingle();
+        FieldValue(defaultRows.Items[0], "owner").Should().Be("alice");
+        NameOf(defaultRows.Items[0]).Should().Be("base");
+    }
+
     [Fact]
     public async Task VersionedFirstTouch_CapturesDefaultBaseImage()
     {
@@ -221,6 +309,47 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
 
         (await versionManager.DeleteAsync(created.VersionId, CancellationToken.None)).Should().BeTrue();
         (await versionManager.ResolveAsync("sde.Lifecycle", CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    public async Task ResolveAsync_DottedQualifiedName_MatchesWireIdentity()
+    {
+        var versionManager = CreateVersionManager();
+
+        // alice.x is older, so a bare-name lookup that ignores the caller would bind to it.
+        var alice = await versionManager.CreateAsync(
+            new CreateVersionRequest("x", "alice", VersionAccess.Public), CancellationToken.None);
+        var bobDotted = await versionManager.CreateAsync(
+            new CreateVersionRequest("Q4.edits", "bob", VersionAccess.Public), CancellationToken.None);
+        var bobBare = await versionManager.CreateAsync(
+            new CreateVersionRequest("x", "bob", VersionAccess.Public), CancellationToken.None);
+
+        var dotted = await versionManager.ResolveAsync("bob.Q4.edits", "bob", CancellationToken.None);
+        dotted.Should().NotBeNull();
+        dotted!.Value.VersionId.Should().Be(bobDotted.VersionId);
+
+        (await versionManager.ResolveAsync("bob.Q4.edits", CancellationToken.None))!
+            .Value.VersionId.Should().Be(bobDotted.VersionId);
+
+        var bareForBob = await versionManager.ResolveAsync("x", "bob", CancellationToken.None);
+        bareForBob.Should().NotBeNull();
+        bareForBob!.Value.VersionId.Should().Be(bobBare.VersionId);
+
+        (await versionManager.ResolveAsync("x", CancellationToken.None))!
+            .Value.VersionId.Should().Be(alice.VersionId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    public async Task CreateAsync_InvalidBranchName_ThrowsArgumentException()
+    {
+        var versionManager = CreateVersionManager();
+
+        var act = () => versionManager.CreateAsync(
+            new CreateVersionRequest("Q4..edits", "bob", VersionAccess.Public), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]
@@ -523,6 +652,103 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
 
         var rows = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
         FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("branch");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    public async Task ResolveConflicts_TakeBase_RebasesAndPostsAncestorImage()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.0, 13.0, ("name", "Base"), ("status", "ancestor")), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("TakeBase", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(13.0, 13.0, feature.Id, ("name", "Base"), ("status", "branch"))),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.0, 13.0, feature.Id, ("name", "Base"), ("status", "default")), CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        reconcile.CanPost.Should().BeFalse();
+
+        var resolution = new VersionConflictResolution(PointsLayerId, feature.Id, VersionConflictResolutionChoice.TakeBase);
+        var outcome = await versionManager.ResolveConflictsAsync(
+            version.VersionId, new[] { resolution }, CancellationToken.None);
+        outcome.CanPost.Should().BeTrue();
+
+        // A second reconcile must keep the ancestor image. Replaying DEFAULT here was the bug.
+        var again = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        again.CanPost.Should().BeTrue();
+        again.Conflicts.Should().BeEmpty();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeTrue();
+        post.BlockedByConflicts.Should().BeFalse();
+
+        var rows = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("ancestor");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    public async Task Reconcile_UncommittedDefaultEdit_SurfacesOnPostInsteadOfSkippingGeneration()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeature("ancestor", 14.0, 14.0), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("InFlightDefault", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeature("branch", 14.5, 14.5, feature.Id)),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+
+        await using var held = await OpenSchemaConnectionAsync();
+        await using var heldTransaction = await held.BeginTransactionAsync();
+        await using (var update = new NpgsqlCommand(
+            """
+            UPDATE features
+            SET attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{name}', '"inflight"'::jsonb)
+            WHERE layer_id = @layer AND objectid = @id
+            """,
+            held,
+            heldTransaction))
+        {
+            update.Parameters.AddWithValue("layer", PointsLayerId);
+            update.Parameters.AddWithValue("id", feature.Id);
+            (await update.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var whileOpen = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        whileOpen.CanPost.Should().BeTrue("the uncommitted DEFAULT edit is not visible to reconcile");
+
+        await heldTransaction.CommitAsync();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeFalse();
+        post.BlockedByConflicts.Should().BeTrue();
+
+        var pending = await versionManager.GetPendingConflictsAsync(version.VersionId, CancellationToken.None);
+        pending.Should().Contain(conflict => conflict.ObjectId == feature.Id);
+
+        var again = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        again.CanPost.Should().BeFalse();
+        again.Conflicts.Should().Contain(conflict => conflict.ObjectId == feature.Id);
+
+        var stored = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        NameOf(stored.Items.Single(item => item.Id == feature.Id)).Should().Be("inflight");
     }
 
     private static string NameOf(Feature feature)

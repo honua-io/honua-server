@@ -1,8 +1,8 @@
-name: Load/Soak Nightly
+# Scheduled soak retired by #5314. Qualification uses capacity-soak-candidate.yml
+# at the manifest candidate ref; this manual workflow is diagnostic only.
+name: Load/Soak Diagnostics (manual)
 
 on:
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       profile:
@@ -40,6 +40,46 @@ jobs:
   load-soak:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # Server configuration lives at job level so the start step and the post-seed restart
+    # (#3812) boot the same deployment; a restart with a different configuration would run
+    # the load profile against a server the readiness check never validated.
+    env:
+      # Literals, not ${{ env.* }}: the env context is not available to a job-level env
+      # block. They mirror the workflow-level constants above.
+      ASPNETCORE_URLS: "http://localhost:5000"
+      ASPNETCORE_ENVIRONMENT: Production
+      # Per-run, not a repository literal: production startup validation refuses every
+      # credential literal this repository ships, and a checked-in value is a public one.
+      HONUA_ADMIN_PASSWORD: "Load-Soak-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!"
+      PUBLIC_BASE_URL: "http://localhost:5000"
+      HostValidation__AllowedHosts__0: "localhost"
+      # The soak harness deliberately floods the server from a single host, so the
+      # opt-in app-level rate limiter (activated by #355 / appsettings.Security.json,
+      # GlobalRequestsPerMinute=1000 per tenant/identity/IP partition) would reject
+      # ~94% of requests as 429s and mask real latency/throughput signal. Production
+      # posture is edge rate limiting (ADR-0004); disable the app-level limiter here
+      # so the load/soak run measures the server, not the throttle.
+      RateLimiting__Enabled: "false"
+      Security__DisableHttpsRedirection: "true"
+      Security__ConnectionEncryption__MasterKey: "load-soak-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000"
+      # Production startup requires the canonical operation policy to be active
+      # and fail closed for unmatched operations. The load topology has no
+      # approval operator, so deny is the honest safe default.
+      Operations__Policy__Enabled: "true"
+      Operations__Policy__DefaultDecision: Deny
+      ConnectionStrings__redis: "localhost:6379"
+      # PostgresDataSourceFactory applies Limits:Connections to the data source after
+      # parsing the connection string. Keep both settings aligned: setting only
+      # Maximum Pool Size here is otherwise overridden by the production default
+      # (200), which exceeds the GitHub service container's PostgreSQL client
+      # budget and produces "too many clients already" under the nightly load.
+      # Reserve ample capacity for the health check, migrations, and maintenance
+      # connections while keeping the application below the container limit.
+      Limits__Connections__MaxConcurrentQueries: "40"
+      Limits__Connections__MaxConnectionPoolSize: "40"
+      Limits__Connections__MinConnectionPoolSize: "0"
+      Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=honua_load;Username=honua;Password=honua_password;Maximum Pool Size=40
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -66,7 +106,7 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -90,6 +130,82 @@ jobs:
           print("Seed dependencies ready.")
           PY
 
+      - name: Mint a throwaway key-ring certificate for this run
+        run: |
+          set -euo pipefail
+          # Since #4722 the Production startup policy composes the Redis-backed durable operation
+          # secret channel and refuses to boot unless an operator certificate encrypts the
+          # data-protection key ring (Operations:SecretChannel:KeyRingCertificatePath); without one
+          # the server exits before readiness (#4968). The requirement stays: the run supplies a
+          # certificate instead. It guards only this runner's disposable Redis, so it is generated
+          # here, used for this run, and never leaves the runner or enters the repo.
+          keyring="$RUNNER_TEMP/keyring"
+          install -d -m 0755 "$keyring"
+          SOAK_KEYRING_PASSWORD="$(openssl rand -hex 24)"
+          export SOAK_KEYRING_PASSWORD
+          echo "::add-mask::$SOAK_KEYRING_PASSWORD"
+          (
+            umask 077
+            openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=honua-load-soak-keyring" \
+              -keyout "$keyring/keyring.key" -out "$keyring/keyring.crt" 2>/dev/null
+            openssl pkcs12 -export -in "$keyring/keyring.crt" -inkey "$keyring/keyring.key" \
+              -out "$keyring/operation-keyring.pfx" -passout env:SOAK_KEYRING_PASSWORD
+          )
+          # The PKCS#12 carries the private key the server needs; the loose PEM copy is not kept.
+          rm -f "$keyring/keyring.key" "$keyring/keyring.crt"
+          chmod 0600 "$keyring/operation-keyring.pfx"
+          # The server runs directly on this runner, not in a container, so later steps (the
+          # initial start and the post-seed restart) read these as ordinary job env rather than
+          # through a bind mount.
+          echo "Operations__SecretChannel__KeyRingCertificatePath=$keyring/operation-keyring.pfx" >> "$GITHUB_ENV"
+          echo "Operations__SecretChannel__KeyRingCertificatePassword=$SOAK_KEYRING_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build server
+        run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
+
+      # PROVISION BEFORE THE SERVER STARTS (#4972), mirroring
+      # .github/actions/setup-honua-server's "Provision PostGIS extensions" step. DB_USER is
+      # "honua", and migration 001_CreateHonuaSchema.sql creates a schema also named "honua" —
+      # Postgres's default search_path ("$user", public) then resolves current_schema() to
+      # "honua" for any later connection as that role, once that schema exists. postgis_raster's
+      # own install script requires current_schema() to match the schema postgis is installed in
+      # (public), so creating it after the server has migrated fails with "PostGIS Raster must be
+      # in the same schema as PostGIS (public)". Creating it here, before the schema exists, avoids
+      # the collision entirely; IF NOT EXISTS then makes any later create a no-op regardless of
+      # search_path.
+      - name: Provision PostGIS extensions
+        run: >-
+          PGPASSWORD="$DB_PASSWORD" psql -v ON_ERROR_STOP=1 -h localhost -U "$DB_USER" -d "$DB_NAME"
+          -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent;"
+
+      - name: Start server
+        run: |
+          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
+          echo $! > server.pid
+
+      - name: Wait for readiness
+        run: |
+          # Production cold start runs the PostGIS preflight check, database
+          # migrations, and high-frequency query preparation before /healthz/ready
+          # reports 200, so budget generously (90 iterations x 2s = 180s).
+          for i in {1..90}; do
+            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become ready in time."
+          cat server.log
+          exit 1
+
+      # SEED AFTER THE SERVER HAS MIGRATED (#3812). tests/seed/server.yaml is the
+      # migration-SKIPPING fixture: it creates the migration-owned core schema itself. Applying
+      # it first left tables such as honua.raster_layer_statistics present with no row in
+      # public.schema_versions, so the Production startup policy's PostgresCoreSchemaGuard failed
+      # closed at migration 003 with SchemaExistsWithoutJournal, the server exited, and this lane
+      # died at "Wait for readiness" every night from 2026-09-02. The server owns the core schema;
+      # data is seeded on top of it afterwards, which is the order
+      # .github/actions/setup-honua-server already uses.
       - name: Seed database
         env:
           DB_HOST: localhost
@@ -126,75 +242,40 @@ jobs:
           if conn is None:
               raise SystemExit("Postgres did not become ready")
 
-          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis;")
-          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis_raster;")
-          conn.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
-          conn.commit()
-
+          # Extensions are provisioned by the "Provision PostGIS extensions" step, before the
+          # server (and its schema-named-"honua" migration) exists (#4972). Seed data is written
+          # into that same "honua" schema explicitly, rather than relying on DB_USER happening to
+          # match the schema name via Postgres's default search_path.
           runner = SeedRunner("tests/seed/server.yaml")
-          runner.apply(conn)
+          runner.apply(conn, schema="honua")
           conn.close()
           PY
 
-      - name: Build server
-        run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
-
-      - name: Start server
+      - name: Republish the served catalogue and confirm it is served
         env:
-          ASPNETCORE_URLS: ${{ env.BASE_URL }}
-          ASPNETCORE_ENVIRONMENT: Production
-          HONUA_ADMIN_PASSWORD: "Load-Soak-Admin-Pass1!"
-          PUBLIC_BASE_URL: ${{ env.BASE_URL }}
-          HostValidation__AllowedHosts__0: "localhost"
-          # The soak harness deliberately floods the server from a single host, so the
-          # opt-in app-level rate limiter (activated by #355 / appsettings.Security.json,
-          # GlobalRequestsPerMinute=1000 per tenant/identity/IP partition) would reject
-          # ~94% of requests as 429s and mask real latency/throughput signal. Production
-          # posture is edge rate limiting (ADR-0004); disable the app-level limiter here
-          # so the load/soak run measures the server, not the throttle.
-          RateLimiting__Enabled: "false"
-          Security__DisableHttpsRedirection: "true"
-          Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
-          # Production startup requires the canonical operation policy to be active
-          # and fail closed for unmatched operations. The load topology has no
-          # approval operator, so deny is the honest safe default.
-          Operations__Policy__Enabled: "true"
-          Operations__Policy__DefaultDecision: Deny
-          ConnectionStrings__redis: "localhost:6379"
-          # PostgresDataSourceFactory applies Limits:Connections to the data source after
-          # parsing the connection string. Keep both settings aligned: setting only
-          # Maximum Pool Size here is otherwise overridden by the production default
-          # (200), which exceeds the GitHub service container's PostgreSQL client
-          # budget and produces "too many clients already" under the nightly load.
-          # Reserve ample capacity for the health check, migrations, and maintenance
-          # connections while keeping the application below the container limit.
-          Limits__Connections__MaxConcurrentQueries: "40"
-          Limits__Connections__MaxConnectionPoolSize: "40"
-          Limits__Connections__MinConnectionPoolSize: "0"
-          Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
-          ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=40
+          HONUA_API_KEY: ${{ env.HONUA_ADMIN_PASSWORD }}
         run: |
-          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
+          set -euo pipefail
+          # The server compiles its served metadata-v2 snapshot at startup, so a catalogue seeded
+          # afterwards is invisible until it is recompiled; restarting picks up the snapshot the
+          # seed wrote. Nothing queries the catalogue between startup and the seed, so there is no
+          # negative cache entry to clear.
+          kill "$(cat server.pid)" >/dev/null 2>&1 || true
+          for _ in {1..30}; do kill -0 "$(cat server.pid)" 2>/dev/null || break; sleep 1; done
+          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile >> server.log 2>&1 &
           echo $! > server.pid
-
-      - name: Wait for readiness
-        run: |
-          # Production cold start runs the PostGIS preflight check, database
-          # migrations, and high-frequency query preparation before /healthz/ready
-          # reports 200, so budget generously (90 iterations x 2s = 180s).
-          for i in {1..90}; do
-            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then
-              exit 0
-            fi
+          for _ in {1..90}; do
+            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then break; fi
             sleep 2
           done
-          echo "Server did not become ready in time."
-          cat server.log
-          exit 1
+          # A load run against an empty catalogue measures 404s, not the server. Fail here instead.
+          count="$(curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true")"
+          echo "seeded layer 0: $count"
+          case "$count" in *'"count"'*) ;; *) echo "seeded catalogue is not being served"; cat server.log; exit 1;; esac
 
       - name: Run load/soak tests
         env:
-          HONUA_API_KEY: "Load-Soak-Admin-Pass1!"
+          HONUA_API_KEY: ${{ env.HONUA_ADMIN_PASSWORD }}
         run: |
           PROFILE="${{ github.event.inputs.profile || 'nightly' }}"
           DURATION="${{ github.event.inputs.duration || '' }}"
@@ -214,7 +295,7 @@ jobs:
 
       - name: Upload load test reports
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: load-soak-reports-${{ github.run_number }}
           path: load-test-reports/
@@ -222,7 +303,7 @@ jobs:
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: load-soak-logs-${{ github.run_number }}
           path: server.log

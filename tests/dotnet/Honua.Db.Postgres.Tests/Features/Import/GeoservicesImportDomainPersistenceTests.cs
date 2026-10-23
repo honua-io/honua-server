@@ -144,7 +144,8 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
                 schemaContext: null,
                 schemaConfiguration: schemaConfiguration),
             graphStore,
-            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+            NullLogger<PostgreSqlLayerPublishingService>.Instance,
+            schemaConfiguration: schemaConfiguration);
 
         return new GeoservicesImportService(
             restClient,
@@ -154,7 +155,8 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
-                layerPublishingService: publishingService));
+                layerPublishingService: publishingService),
+            schemaConfiguration: schemaConfiguration);
     }
 
     private async Task EnsureCatalogSchemaAsync()
@@ -237,7 +239,7 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
                       ]
                     }
                     """,
-                "/arcgis/rest/services/Domains/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => """{"count":1}""",
+                "/arcgis/rest/services/Domains/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true" => """{"count":1}""",
                 _ when pathAndQuery.Contains("resultOffset=0", StringComparison.Ordinal) => """
                     {
                       "features": [

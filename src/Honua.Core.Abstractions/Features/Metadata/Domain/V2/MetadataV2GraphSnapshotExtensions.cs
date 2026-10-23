@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Domain;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
@@ -38,11 +40,13 @@ public static class MetadataV2GraphSnapshotExtensions
     /// <summary>
     /// Returns whether a service may expose protocol routes, including service-only
     /// surfaces that do not have a publication to anchor lifecycle evaluation.
+    /// An omitted status is <see cref="MetadataV2LifecycleStatus.Active"/> and stays
+    /// visible. Explicit draft, retired, and archived lifecycles are not routable.
     /// </summary>
     public static bool IsRoutable(this MetadataV2Service service)
     {
         ArgumentNullException.ThrowIfNull(service);
-        return IsServingLifecycle(service.Status.Lifecycle);
+        return IsServingStatus(service.Status);
     }
 
     /// <summary>
@@ -55,9 +59,9 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(publication);
-        return IsServingLifecycle(publication.Status.Lifecycle) &&
+        return IsServingStatus(publication.Status) &&
                resource is not null &&
-               IsServingLifecycle(resource.Status.Lifecycle);
+               IsServingStatus(resource.Status);
     }
 
     /// <summary>
@@ -69,13 +73,16 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        return IsServingLifecycle(binding.Status.Lifecycle) &&
+        return IsServingStatus(binding.Status) &&
                resource is not null &&
-               IsServingLifecycle(resource.Status.Lifecycle);
+               IsServingStatus(resource.Status);
     }
 
-    private static bool IsServingLifecycle(MetadataV2LifecycleStatus lifecycle)
-        => lifecycle is MetadataV2LifecycleStatus.Active or MetadataV2LifecycleStatus.Deprecated;
+    // A missing status object is an omitted caller value, not an explicit draft.
+    // JSON deserialization can leave the non-nullable property null when the
+    // member is absent; that entity stays routable. Explicit draft does not.
+    private static bool IsServingStatus(MetadataV2Status? status)
+        => status is null || status.Lifecycle is MetadataV2LifecycleStatus.Active or MetadataV2LifecycleStatus.Deprecated;
 
     /// <summary>
     /// Finds a service by case-insensitive name.
@@ -159,6 +166,75 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
+    /// Resolves the integer storage-layer handle a protocol adapter must hand to
+    /// <c>IFeatureReader</c> / <c>IFeatureWriter</c> for a publication it has already
+    /// authorized. This is the single entry point for that translation: every adapter
+    /// resolves it in one order — the publication's storage binding, then the canonical
+    /// resource's primary binding, then the service-local
+    /// <see cref="MetadataV2Publication.LayerIndex"/> as the last resort for graphs that
+    /// carry no binding handle at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The order matters. <see cref="MetadataV2Publication.LayerIndex"/> is a
+    /// <em>service-local, protocol-facing</em> index and storage layer ids are global, so
+    /// the two values only coincide for publications whose identifier was assigned from the
+    /// storage id (what the admin publish path produces). Manifest-authored,
+    /// release-authored and imported graphs legitimately diverge (#4065), and when they do,
+    /// preferring <c>LayerIndex</c> makes the adapter read or write whichever resource
+    /// happens to own that number as its storage handle — a different resource than the one
+    /// the request resolved, validated and authorized.
+    /// </para>
+    /// <para>
+    /// This mirrors the order <c>FeatureProviderQueryRouter.ResolveBindingAsync</c> uses for
+    /// binding-scoped provider resolution (<c>IBindableFeatureDataProvider</c>, #5061), so
+    /// the handle and the provider that receives it are resolved from the same binding.
+    /// </para>
+    /// </remarks>
+    /// <param name="snapshot">Current metadata graph snapshot.</param>
+    /// <param name="publication">The authorized publication being served.</param>
+    /// <param name="resource">The publication's canonical resource. Pass <see langword="null"/>
+    /// to have it resolved from the graph.</param>
+    /// <returns>The storage-layer handle, or <see langword="null"/> when the publication is
+    /// not bound to integer-keyed feature storage. Callers fail the request closed rather
+    /// than substituting another id.</returns>
+    public static int? ResolveStorageLayerId(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource? resource)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(publication);
+
+        var fromBinding = snapshot.ResolveStorageLayerId(publication);
+        if (fromBinding.HasValue)
+        {
+            return fromBinding;
+        }
+
+        var canonical = resource ?? snapshot.ResolveResource(publication);
+        var fromResource = canonical is null ? null : snapshot.ResolveStorageLayerId(canonical);
+        if (fromResource.HasValue)
+        {
+            return fromResource;
+        }
+
+        // Last resort for graphs that carry no binding handle. The service-local index is
+        // only usable as a storage handle when no other resource's binding claims that
+        // number; otherwise it names a different resource's storage and the publication
+        // resolves to no handle (SEC-4).
+        var layerIndex = publication.LayerIndex;
+        if (layerIndex is int index
+            && snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(index, out var claimant)
+            && !string.Equals(claimant.ResourceId, canonical?.Metadata.Id, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return layerIndex;
+    }
+
+    /// <summary>
     /// Resolves the integer storage-layer handle for a resource via its primary
     /// storage binding. Use when you have a resource but not a specific publication.
     /// </summary>
@@ -175,6 +251,24 @@ public static class MetadataV2GraphSnapshotExtensions
         }
         var any = snapshot.Index.StorageBindingsByResource[resource.Metadata.Id].FirstOrDefault();
         return any?.StorageLayerId;
+    }
+
+    /// <summary>
+    /// Returns every routable publication whose backing storage binding resolves to the given
+    /// integer storage-layer handle, across all services. Protocol routes that carry a storage
+    /// layer id (rather than a service-local <see cref="MetadataV2Publication.LayerIndex"/>)
+    /// must bind through this lookup: the two values only coincide for publications whose
+    /// identifier was assigned from the storage id, so matching on <c>LayerIndex</c> binds an
+    /// aliased publication to an unrelated one (#4065).
+    /// </summary>
+    public static IEnumerable<MetadataV2Publication> PublicationsForStorageLayer(
+        this MetadataV2GraphSnapshot snapshot,
+        int storageLayerId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return snapshot.Graph.Publications.Where(publication =>
+            snapshot.IsRoutable(publication)
+            && snapshot.ResolveStorageLayerId(publication) == storageLayerId);
     }
 
     /// <summary>
@@ -233,6 +327,34 @@ public static class MetadataV2GraphSnapshotExtensions
             return pub;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Resolves the actual storage CRS (SRID) bound to a catalog layer identified by its
+    /// integer storage-layer handle. This is the SAME lookup <c>source.honua-layer</c> uses
+    /// to constrain the query pipeline's spatial reference (resource → storage binding →
+    /// <see cref="FeatureStorageMapping.FromMetadata"/>), centralized here so every
+    /// layer-sourced geoprocessing consumer that needs the real SRID (not just the query
+    /// pipeline) resolves it identically rather than re-deriving it (#4623). Returns
+    /// <see langword="null"/> when the storage-layer id is unknown to the graph, has no
+    /// resolvable storage binding, or the binding is not relational feature storage.
+    /// </summary>
+    public static int? ResolveStorageSrid(this MetadataV2GraphSnapshot snapshot, int storageLayerId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
+        {
+            return null;
+        }
+
+        var binding = snapshot.Graph.StorageBindings.SingleOrDefault(b =>
+            b.StorageLayerId == storageLayerId && b.ResourceId == resource.Metadata.Id);
+        if (binding is null || binding.StorageType != MetadataV2StorageType.RelationalTable)
+        {
+            return null;
+        }
+
+        return FeatureStorageMapping.FromMetadata(resource, binding).StorageSrid;
     }
 
     /// <summary>

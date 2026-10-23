@@ -26,10 +26,13 @@ services:
 
   honua:
     # The root compose gates startup on a healthy `redis`; without the service
-    # that condition can never be satisfied, so reduce the gate to PostGIS.
+    # that condition can never be satisfied, so retain only the PostGIS and
+    # one-shot storage initialization gates.
     depends_on: !override
       postgres:
         condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
     environment:
       # Unset rather than blank: an empty connection string is still a
       # configured key, and the bootstrap path keys off presence.

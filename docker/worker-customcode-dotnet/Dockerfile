@@ -5,8 +5,8 @@
 # The .NET sibling of docker/worker-customcode-python. This image is the SANDBOXED
 # unit that runs inside a per-job AWS Batch container: it clones a user's GP tool at a
 # PINNED git SHA, builds the user's .csproj against a WARM NuGet cache, runs it under a
-# SCOPED Honua SDK client, and uploads the tool's output artifacts to the job's S3
-# output prefix.
+# SCOPED Honua SDK client, and uploads the tool's output artifacts through the job-scoped
+# Honua artifact broker without cloud credentials.
 #
 # It is SEPARATE from docker/worker-gdal (the .NET native ETL worker, which runs the
 # durable job loop and ships no git). Here we want a .NET SDK (needed to `dotnet build`
@@ -22,7 +22,7 @@
 
 # --- build stage: publish the harness + warm the NuGet cache + sanity-build sample ---
 # Pinned .NET SDK (do NOT use a floating tag).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -97,13 +97,13 @@ RUN cd /tmp/gdalprobe && dotnet run -c Release -p:NuGetAudit=false
 # --- runtime stage: GDAL-full base + the .NET SDK + git + the warm cache --------------
 # Pinned GDAL "ubuntu-full" base (matches the python image's base family). It ships the
 # full GDAL driver set; .NET tools that shell out to gdal* or P/Invoke GDAL get it here.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
 FROM ${GDAL_BASE_IMAGE} AS runtime
 
 ARG DOTNET_SDK_CHANNEL=10.0
 # Pin the geo + SDK package versions so the warm cache matches the harness solution.
 ARG NETTOPOLOGYSUITE_VERSION=2.6.0
-ARG HONUA_SDK_DOTNET_VERSION=0.1.4
+ARG HONUA_SDK_DOTNET_VERSION=1.11.1
 # GDAL C# bindings (in-process raster/vector interop). MaxRev bundles its own
 # self-contained native GDAL (no ABI dependence on the base libgdal); 3.12.4.520
 # bundles native GDAL 3.12.4, matching the GDAL-full base image tag.
@@ -175,7 +175,8 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /work
 
-ENV HONUA_CUSTOMCODE_SOURCE_ROOT=/work/src \
+ENV HONUA_CUSTOMCODE_SDK_ASSEMBLY=/opt/harness/Honua.CustomCode.Sdk.dll \
+    HONUA_CUSTOMCODE_SOURCE_ROOT=/work/src \
     HONUA_CUSTOMCODE_BUILD_OUTPUT=/work/build \
     HONUA_CUSTOMCODE_WORKDIR=/work/out \
     GDAL_NUM_THREADS=ALL_CPUS

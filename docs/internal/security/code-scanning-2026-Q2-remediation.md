@@ -23,23 +23,28 @@ drift.
 <!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->
 | Dockerfile | Build argument | Image reference |
 | --- | --- | --- |
-| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
-| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94` |
-| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1` |
-| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:379b17d7d388a2a1b5330bfc2429a01091f85e255d3bce7981d65927d786c000` |
-| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:851e6e04fff95d33a02c725373dc0ac624734986f2dc9028887077347ecffa96` |
-| `docker/Dockerfile.lambda.aot.simple` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
+| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac` |
+| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490` |
+| `docker/Dockerfile.controlplane-lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490` |
+| `docker/Dockerfile.lambda.aot.simple` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `docker/Dockerfile.odata-tests` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `docker/Dockerfile.protocol-profile-runtime` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac` |
+| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
 <!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->
 
 ### Other pinned serving bases
 
 | Dockerfile | Stage | Image | Digest |
 | --- | --- | --- | --- |
-| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:bf907ae73209e1a72a9b92c7d0c9a2dbc34120916ee948b67c24cf7c456f937b` |
-| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:bf907ae73209e1a72a9b92c7d0c9a2dbc34120916ee948b67c24cf7c456f937b` |
-| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:bba8173c9a05e4b686c834648d1656e0b1b53ef5539484aa738b648240ce31e1` |
+| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.250-1-dotnet-isolated9.0-appservice` | `@sha256:7016df2bb4661dc68697303b395760fa1b2de15181a2f551e9268bf53d4d08b2` |
+| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.250-1-dotnet-isolated9.0-appservice` | `@sha256:7016df2bb4661dc68697303b395760fa1b2de15181a2f551e9268bf53d4d08b2` |
+| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:9b3ad8941296d16bffb52819b30ccc4c9b54db5fafac6f93737e034ba007c618` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
 
 The Functions images were previously the only platform-published Dockerfiles
@@ -49,10 +54,10 @@ upstream contents deterministic so nightly Trivy stops re-uploading the same
 advisories under shifting layers and (b) brings the Functions image in line with
 the existing platform Dockerfile pattern (`Dockerfile`,
 `docker/Dockerfile.aot`, `docker/Dockerfile.lambda{,.aot}`). Refresh cadence:
-explicit PR per published image. The generated .NET inventory also records the
+explicit PR per published image. The 2026-10-19 refresh moves off host 4.1053.200.3 (ASP.NET Core 8.0.30 and worker 9.0.19) to host 4.1055.250.1, whose shared frameworks are ASP.NET Core 8.0.32, the 9.0.21 worker, and Microsoft.NETCore.App 10.0.13. The floating `4-dotnet-isolated9.0-appservice` tag still resolves to ASP.NET Core 8.0.31. The generated .NET inventory also records the
 digest-pinned auxiliary `docker/Dockerfile.lambda.aot.simple`; it remains outside
-the platform publish matrix. Floating developer images such as
-`docker/Dockerfile.dev` are not security inventory pins and are not listed.
+the platform publish matrix. Developer images, including `docker/Dockerfile.dev`, are now digest-pinned
+and included in the generated inventory.
 
 ### Nightly mirror derives from these pins
 
@@ -437,3 +442,166 @@ do not carry a separate .NET shared framework.
   nightly Trivy gate; track Microsoft Patch Tuesday for `azure-functions/base`
   digest bumps and propose follow-up PRs the same way every other Dockerfile
   digest is bumped today.
+
+## 2026-10-08 Security tab pass
+
+This section records the pass tracked by issue
+[honua-io/honua-server#5729](https://github.com/honua-io/honua-server/issues/5729).
+It does not replace the Q2 history above. Base-image digests stay pinned.
+`wget` stays in the runtime images because the AOT `HEALTHCHECK` calls it.
+`libicu` stays because `InvariantGlobalization` is false. `.trivyignore` and
+`.trivyignore-release` are unchanged, and the release allowlist stays empty.
+Unfixed OS packages are left open.
+
+### Dependabot
+
+| Alert | Advisory | Package | Manifest | Fix |
+| --- | --- | --- | --- | --- |
+| #90 | GHSA-6688-9rhm-gjv2 | dompurify | `tests/js-browser/cesium/package-lock.json` | override `3.4.16` |
+| #87 | GHSA-p98j-92pf-mc4p | dompurify | same lock | override `3.4.16` |
+| #86 | GHSA-hrr3-gc8f-f4qj | fast-uri | `scripts/conformance/ogcapi/package-lock.json` | override `3.1.8` |
+
+`tests/js/package.json` also overrides `fast-uri` to `3.1.8`. The locked
+`node_modules/@mapbox/vtvalidate` optional stub in the OGC API lockfile is
+kept. These alerts close when the lockfiles reach `trunk`. A local `npm audit`
+on each tree reported zero vulnerabilities.
+
+Filesystem Trivy reports the same two packages (`dompurify` #3700 and #3696,
+`fast-uri` #3680). They close on the next filesystem scan after the locks land.
+
+### CodeQL false positives
+
+In-source `// codeql[<rule>]` comments sit on the statement CodeQL flags. They
+take effect on the next default-branch CodeQL run. Nothing here changes
+authorization, quoting, or connection encryption.
+
+| Location | Rule | Why it is a false positive |
+| --- | --- | --- |
+| `PostgresObservationStore` catalog helpers (`ExecuteCatalogReaderAsync`, `ExecuteCatalogScalarAsync`, `ExecuteCatalogNonQueryAsync`) | `cs/sql-injection` | The only taint source is `X-Honua-Test-Schema`. The header and `SchemaSearchPath` both allow-list the identifier (`\A[A-Za-z_][A-Za-z0-9_]{0,62}\z`) and quote it before interpolation. Table and sequence names are compile-time literals. `$filter` and `$orderby` values are parameters. The twenty open alerts, plus the two already dismissed at the old line numbers, all land on these three helpers. |
+| `AttachmentEndpoints` `form == null` in add, update, and delete | `cs/user-controlled-bypass` | Alerts #3465, #3466, and #3467. Layer write authorization runs in `TryValidateLayerAccessAsync` before the null check. A missing form fails closed. Supplying a form cannot skip that decision or the owner-edit check below it. |
+| `SqlServerConnectionSecurity.RequireEncryption` | `cs/insecure-sql-connection` | Alert #3488. Every incoming string, including a test value of `Encrypt=false`, is re-parsed and `Encrypt` is forced true before a connection is opened. CodeQL traces the pre-rewrite string into the builder and does not model the object initializer. |
+
+### Image packages that have a fix
+
+`RUNTIME_PACKAGE_REVISION` is echoed inside each `apt-get upgrade` `RUN`. An
+unused `ARG` does not bust the Buildx cache, which is why `libfreetype6` stayed
+on `2.13.2+dfsg-1ubuntu0.1` after the previous revision bump.
+
+| Image | Change | Advisory |
+| --- | --- | --- |
+| Root `Dockerfile` (jit-debian) | revision `20261008` echoed in the existing upgrade | `libfreetype6` CVE-2026-95512, fixed by `2.13.2+dfsg-1ubuntu0.2` (alert #3702) |
+| `docker/Dockerfile.aot` | same cache-bust echo | refresh Ubuntu pocket updates on the pinned `runtime-deps` base |
+| `docker/Dockerfile.lambda.aot` | new `apt-get upgrade` before the runtime packages, revision echoed after the publish `COPY` | `openssl` / `libssl3t64` CVE-2026-84782, fixed by `3.0.13-0ubuntu3.16` (alerts #3698 and #3697) |
+
+`docker/Dockerfile.lambda` already runs `dnf upgrade`, so the Lambda JIT scan
+was clean. These image alerts leave the Security tab only after the next
+nightly or deploy scan rebuilds the images.
+
+### Left open on purpose
+
+Trivy reports these with an empty fixed version. They stay open. They are not
+in either ignore file.
+
+| Package | Advisory | Where |
+| --- | --- | --- |
+| `libpng16-16t64` 1.6.43-5ubuntu0.6 | CVE-2026-46675 | jit-debian #3703 |
+| `libexpat1` 2.6.1-2ubuntu0.6 | CVE-2025-66382 | jit-debian #3393 |
+| `libpcre2-8-0` 10.42-4ubuntu2.1 | CVE-2026-86145, CVE-2026-89161 | aot #3679, #3678 |
+| `libc6` / `libc-bin` 2.39-0ubuntu8.9 | CVE-2026-89092, CVE-2026-18374 | aot #3677, #3676, #3490, #3489 |
+| `zlib1g` 1:1.3.dfsg-3.1ubuntu2.2 | CVE-2026-85091 | aot #3532 |
+| `tar` 1.35+dfsg-3ubuntu0.4 | CVE-2026-18508, CVE-2026-18477 | aot #3412, #3411 |
+| `wget` 1.21.4-1ubuntu4.5 | CVE-2021-31879 | aot #3406 (required for `HEALTHCHECK`) |
+| `passwd` / `login` 1:4.13+dfsg1-4ubuntu3.2 | CVE-2024-56433 | aot #3404, #3402 |
+| `libudev1` / `libsystemd0` 255.4-1ubuntu8.17 | CVE-2026-40228 | aot #3400, #3399 |
+| `libicu74` 74.2-1ubuntu3.1 | CVE-2025-5222 | aot #3395 (required; `InvariantGlobalization=false`) |
+
+### Stranded `container-security-scan` alerts
+
+`security-nightly.yml` now uploads `trivy-container-jit-debian` and
+`trivy-container-aot-alpine`. The old category
+`.github/workflows/security-nightly.yml:container-security-scan` no longer
+receives a SARIF upload, so GitHub cannot auto-close findings that the
+2026-10-08 scans already omit. These eleven were real and are already gone
+from the replacement categories (diffutils, libattr1, the older zlib
+CVE-2026-27171, the util-linux family CVE-2026-27456, and libgcrypt20
+CVE-2024-2236): #3416, #3410, #3407, #3405, #3403, #3401, #3398, #3396, #3394,
+#3392, #3391. They were dismissed with reason `won't fix` and a comment that
+the finding was real and is already fixed. The open no-fix OS advisories above
+were not dismissed.
+
+### Code quality
+
+The same change addresses the 260 open findings on the code-quality view
+(5 errors, 101 warnings, 154 notes). The code-quality API is read-only, so
+these close when a later default-branch scan no longer reports them.
+
+114 were fixed in code: `Path.Join` for relative segments, null guards,
+integer cell indexes before a floating conversion, disposal of method-scoped
+resources, pure LINQ projections, and the Python unused-import and string
+concatenation findings. 146 stay as behavior and carry a
+`// codeql[<rule>]` comment on the flagged statement. That set is exact
+numeric sentinels (a tolerance would change raster or geodesy results), loops
+that return early or mutate outer state, resources whose lifetime is longer
+than the declaring method, `catch (Exception)` handlers that must translate
+any failure, and the `GC.Collect` calls in `GatedBootShutdown` that run
+native-handle finalizers before modules unload. Release builds of the changed
+projects were clean with warnings as errors.
+
+## 2026-10-13 remaining release disposition
+
+Read-only API review for #5729 found zero open Dependabot alerts and 25 open
+code-scanning alerts: six CodeQL and 19 Trivy. This updates the disposition;
+it does not assert that the October source comments automatically cleared
+the findings. The current CodeQL workflow uploads its analysis directly and
+does not apply a source-comment dismissal integration. The comments remain
+review evidence, not proof that GitHub has dismissed an alert. After independent
+source review, the six CodeQL alerts below were individually dismissed as false
+positives with per-alert rationale linked to #5729 and PR #5986. The 19 Trivy
+alerts remain open. No ignore entries were added.
+
+The source reviewed was `3b8fa2e15f99fda592bc600deb635a71f1f16ddb`. The SQL policy,
+attachment handlers and Lambda AOT Dockerfile have no diff from candidate
+`0e03bdd06b3ca3fb1b82388110bb5dfa19b9f8fa` at the time of review.
+
+| Reviewed alerts | Evidence and bounded disposition |
+| --- | --- |
+| #3465, #3466, #3467 (`cs/user-controlled-bypass`) | In attachment add/update/delete, `TryValidateLayerAccessAsync` runs before the form-null check; null returns immediately. A supplied form cannot bypass the earlier authorization. These are supported false-positive dispositions for those specific conditions, not authorization waivers. |
+| #3488 (`cs/insecure-sql-connection`) | `SqlServerConnectionSecurity.RequireEncryption` re-parses input and sets `Encrypt = true` before returning it. `TestConnectionAsync` opens only that returned string. `SqlServerConnectionSecurityTests` covers omitted encryption, explicit false and preservation of certificate validation. |
+| #3730 (`cs/insecure-sql-connection`) | The flagged builder is in `InspectConnectionString`, which only inspects and returns host/encryption metadata. It never opens a connection. The actual probe calls `RequireEncryption` first. Do not change the inspector to force encryption: it must detect the incoming policy honestly. |
+| #3701 (`cs/sensitive-data-transmission`) | The flagged location is the integration test's token transport helper, using `WebAppFixture` clients and test-issued credentials to verify the documented GeoServices token transport. It is not a production response leaking credentials. Keep the regression coverage. |
+| #3731–#3733 (three HIGH Go stdlib CVEs) | Latest instances belong to `trivy-lambda-arm64`, the **Lambda Development JIT Image** built from `docker/Dockerfile.lambda`, at `004e1d203f1977b05a23eb190b0f4f7e5178c4c8`. Their binary is `/usr/local/bin/aws-lambda-rie`, inherited from the Lambda provided base. The release candidate uses `docker/Dockerfile.lambda.aot`, based on .NET runtime-deps with a native server entrypoint and no RIE copy. Keep the JIT alerts open; verify the AOT candidate inventory before concluding they are absent from the shipping digest. |
+| Remaining 16 Trivy alerts | These are the documented OS findings with no fixed version, from scan source `0f663b066900658f035c07e303f47116d99613c5`. They remain visible and are not added to an allowlist. An old empty fixed version is not a substitute for a current scan. |
+
+### Scan the existing candidate without rebuilding or deploying
+
+`Security Nightly` now accepts `existing_image`, `existing_image_platform`,
+and `existing_image_revision`. Supplying the image selects a read-only scan
+and skips the normal rebuild, NuGet and filesystem jobs. Omitting it leaves
+the normal nightly path intact. This path accepts only a digest-qualified
+`ghcr.io/honua-io/honua-server` reference, verifies the pulled platform and
+OCI source revision, then binds the Trivy inventory to its repository digest
+and image configuration ID. It retains all severities and unfixed findings,
+uses a fresh empty ignore file, and fails on fixed HIGH/CRITICAL findings.
+The artifact contains the raw inspection, full inventory, identity and
+verdict with the inventory SHA-256. It does not upload candidate results into
+the default branch's SARIF category or dismiss existing alerts.
+
+For the current Lambda AOT amd64 candidate, the immutable manifest is
+`sha256:3d6a38e38f3fcef66a571be1dddf7855d64bbe60d252221ae3e67404079991ab`
+and the expected revision is `0e03bdd06b3ca3fb1b82388110bb5dfa19b9f8fa`.
+[Read-only scan 38352335588](https://github.com/honua-io/honua-server/actions/runs/38352335588)
+completed successfully for exactly that digest, `linux/amd64`, source revision,
+and image config `sha256:fe2f7293a84c3a07872b089af54d6c3af39433efe3d1ec1df49b77143d185833`.
+Artifact `existing-image-security-38352335588-1` retains 14 findings: nine MEDIUM
+and five LOW, with zero HIGH/CRITICAL findings. Its only scanned target is Ubuntu
+24.04; there is no RIE binary target in the report. The inventory SHA-256 is
+`41d401cde763cfb724a62a9ad9e291d6cf26ccf18dbde6c872d1949d66869f52`.
+This result establishes the finding set for this Lambda AOT candidate only;
+the development JIT RIE alerts and 16 historical no-fix OS alerts remain open.
+The first scan attempt, 38352034509, verified the image identity but stopped
+before scanning because the action rejects `/dev/null` as an ignore file;
+the completed run uses a fresh empty regular file.
+
+A passing generic Security Nightly run does not establish the result for
+another image digest. The general 260-item quality cleanup is not additional
+RC security acceptance.

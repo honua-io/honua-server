@@ -26,7 +26,7 @@ internal static class StudioDraftOperations
     public const string Validate = "studio.draft.validate";
     public const string PreviewPlan = "studio.draft.preview-plan";
     public const string SaveVersion = "studio.draft.save-version";
-    public const string CreatePublicationRequest = "studio.content.create-publication-request";
+    public const string CreatePublicationRequest = StudioDraftMutationContext.PublicationOperationId;
     public const string ReopenVersion = "studio.content.reopen-version";
     public const string Rollback = "studio.content.rollback";
     public const string PayloadParameter = "payload";
@@ -146,8 +146,10 @@ internal sealed record StudioSaveVersionPayload
 
 internal sealed record StudioPublicationRequestPayload
 {
+    public Guid RequestId { get; init; }
     public required Guid ItemId { get; init; }
     public required Guid VersionId { get; init; }
+    public required string ContentHash { get; init; }
     public StudioPublicationIntent? Intent { get; init; }
     public string? WarningAcknowledgement { get; init; }
     public string? ActorId { get; init; }
@@ -187,11 +189,11 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
 
     public abstract string OperationId { get; }
 
-    public Task<OperationValidation> ValidateAsync(
+    public virtual Task<OperationValidation> ValidateAsync(
         OperationRequest request,
         CancellationToken cancellationToken = default)
     {
-        _ = Parse(request);
+        _ = ParsePayload(request);
         return Task.FromResult(new OperationValidation
         {
             IsValid = true,
@@ -216,7 +218,7 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
         TResult result;
         try
         {
-            result = await ActuateAsync(Parse(request), cancellationToken).ConfigureAwait(false);
+            result = await ActuateAsync(ParsePayload(request), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
         {
@@ -295,7 +297,7 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
     protected virtual IReadOnlyDictionary<string, string> ResourceIds(TResult result) =>
         new Dictionary<string, string>(StringComparer.Ordinal);
 
-    private TPayload Parse(OperationRequest request) => JsonSerializer.Deserialize(RequirePayload(request), PayloadType)
+    protected TPayload ParsePayload(OperationRequest request) => JsonSerializer.Deserialize(RequirePayload(request), PayloadType)
         ?? throw new ArgumentException($"The typed payload for '{OperationId}' is invalid.", nameof(request));
 
     private static string RequirePayload(OperationRequest request)
@@ -391,6 +393,14 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
     protected override JsonTypeInfo<StudioSaveVersionPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload;
     protected override JsonTypeInfo<StudioContentVersion> ResultType => StudioDraftOperationJsonContext.Default.StudioContentVersion;
 
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioContentVersion result) =>
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["itemId"] = result.ItemId.ToString("D"),
+            ["versionId"] = result.VersionId.ToString("D"),
+            ["contentHash"] = result.ContentHash,
+        };
+
     protected override async Task<StudioContentVersion> ActuateAsync(
         StudioSaveVersionPayload payload,
         CancellationToken cancellationToken) => await Lifecycle
@@ -404,20 +414,172 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
             ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
 }
 
-internal sealed class StudioCreatePublicationRequestExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
+internal sealed class StudioCreatePublicationRequestExecutor(
+    IStudioPackageLifecycleService lifecycle,
+    TimeProvider clock,
+    IStudioPackageValidator validator)
     : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock)
 {
     public override string OperationId => StudioDraftOperations.CreatePublicationRequest;
     protected override JsonTypeInfo<StudioPublicationRequestPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload;
     protected override JsonTypeInfo<StudioPublicationRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioPublicationRequest;
 
-    protected override async Task<StudioPublicationRequest> ActuateAsync(
-        StudioPublicationRequestPayload payload,
-        CancellationToken cancellationToken) => await Lifecycle
-            .CreatePublicationRequestAsync(payload.ItemId, payload.VersionId, payload.Intent,
-                payload.WarningAcknowledgement, payload.ActorId, cancellationToken)
+    public override async Task<OperationValidation> ValidateAsync(
+        OperationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = ParsePayload(request);
+        var version = await Lifecycle.GetVersionAsync(payload.ItemId, payload.VersionId, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+        var pointers = await Lifecycle.GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content item '{payload.ItemId:D}' was not found.");
+        if (pointers.CurrentVersionId != payload.VersionId)
+        {
+            throw new InvalidOperationException("The publication proposal must bind the current saved Studio version.");
+        }
+
+        if (!string.Equals(version.ContentHash, payload.ContentHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The supplied content hash does not match the saved Studio version.");
+        }
+
+        // honua-server#3980 follow-up: the intent must be rejected HERE, before policy routing.
+        // OperationDispatcher stops after ValidateAsync whenever the decision is not Allow, so an
+        // Enterprise policy rule that puts this operation behind approval never reaches
+        // CreatePublicationRequestAsync -- the downstream authority on intent validity -- and an
+        // invalid intent would be persisted as an approval proposal and answered 202. The
+        // rejection is returned as a blocking verdict rather than thrown because the dispatcher
+        // maps every pre-policy throw onto an unclassified Failed envelope (500); a verdict
+        // carries ErrorKind, which reaches the REST surface as the same errorKind=argument the
+        // actuation path emits, so the caller still gets 400 with the validator diagnostics.
+        // The validator is a required dependency, not an optional one: AddStudioPackageLifecycle
+        // registers IStudioPackageValidator and IStudioPackageLifecycleService together, so any
+        // host that can construct this executor can supply it, and an optional default would
+        // silently drop the guard in precisely the composition that failed to register it.
+        var intentValidation = validator.ValidatePublicationIntent(payload.Intent);
+        if (intentValidation.Status == StudioPackageValidationStatus.Invalid)
+        {
+            return new OperationValidation
+            {
+                IsValid = false,
+                Status = "invalid",
+                ErrorKind = "argument",
+                Messages = [FormatIntentValidationFailure(intentValidation.Diagnostics)],
+            };
+        }
+
+        // A non-null payload intent replaces the envelope intent entirely. Only a null
+        // payload intent falls back to the version envelope, matching actuation.
+        var effectiveIntent = payload.Intent ?? version.Envelope.PublicationIntent;
+        var effectiveRoute = effectiveIntent?.Route;
+        // honua-server#5825: same skip as StudioPackageLifecycleService. The pointer flag is
+        // false only when this item resolved through a bridge. A substitute that returns
+        // ordinary pointers keeps the default and still rejects a second native owner.
+        if (!string.IsNullOrWhiteSpace(effectiveRoute) && pointers.GovernsStudioRoutes)
+        {
+            var governing = await Lifecycle.GetActivePublicationRequestByRouteAsync(
+                effectiveRoute,
+                cancellationToken).ConfigureAwait(false);
+            if (governing is not null && governing.ItemId != payload.ItemId)
+            {
+                return new OperationValidation
+                {
+                    IsValid = false,
+                    Status = "invalid",
+                    ErrorKind = "conflict",
+                    Messages = [$"Route '{effectiveRoute}' is already claimed by another Studio publication."],
+                };
+            }
+        }
+
+        return new OperationValidation
+        {
+            IsValid = true,
+            Status = "valid",
+            ApprovalPlan = new OperationProposalPlan
+            {
+                Summary = $"Publish sealed Studio version {payload.VersionId:D} at {payload.Intent?.Route}.",
+                Diff =
+                [
+                    $"itemId={payload.ItemId:D}",
+                    $"versionId={payload.VersionId:D}",
+                    $"contentHash={payload.ContentHash}",
+                    $"route={payload.Intent?.Route}",
+                    $"visibility={payload.Intent?.Visibility}",
+                ],
+                RiskLevel = ProposalRiskLevel.Medium,
+            },
+        };
+    }
+
+    // Mirrors StudioPackageLifecycleService.FormatValidationFailure so a pre-policy rejection
+    // and the actuation-path ArgumentException carry byte-identical diagnostics.
+    private static string FormatIntentValidationFailure(IReadOnlyList<StudioValidationDiagnostic> diagnostics)
+        => diagnostics.Count == 0
+            ? "Publication intent is invalid."
+            : "Publication intent is invalid: " + string.Join("; ", diagnostics.Select(static diagnostic => diagnostic.Message));
+
+    protected override async Task<StudioPublicationRequest> ActuateAsync(
+        StudioPublicationRequestPayload payload,
+        CancellationToken cancellationToken)
+    {
+        var version = await Lifecycle.GetVersionAsync(payload.ItemId, payload.VersionId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+        if (!string.Equals(version.ContentHash, payload.ContentHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The saved Studio version no longer matches the sealed content hash.");
+        }
+
+        // honua-server#3980: ValidateAsync asserted that the item's current pointer equalled
+        // payload.VersionId, so that is the pointer the approval was granted against. Actuation
+        // reloads the version but cannot re-check the pointer without reintroducing the same
+        // read-then-write window, so the expectation travels into the store, which compares it
+        // atomically with the published-pointer update and raises
+        // StudioPublicationPointerConflictException when a draft was saved in between.
+        var publication = await Lifecycle.CreatePublicationRequestAsync(payload.ItemId, payload.VersionId,
+                expectedCurrentVersionId: payload.VersionId, payload.Intent,
+                payload.WarningAcknowledgement, payload.ActorId,
+                payload.RequestId == Guid.Empty ? Guid.NewGuid() : payload.RequestId,
+                cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+        if (publication.Status == StudioPublicationRequestStatus.Rejected)
+        {
+            throw new InvalidOperationException("The saved Studio version failed publication validation.");
+        }
+
+        return publication;
+    }
+
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioPublicationRequest result)
+    {
+        var resources = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["requestId"] = result.RequestId.ToString("D"),
+            ["publicationId"] = result.RequestId.ToString("D"),
+            ["itemId"] = result.ItemId.ToString("D"),
+            ["versionId"] = result.VersionId.ToString("D"),
+        };
+        if (result.PublicationUrl is { } activeUrl && result.Intent?.Route is { } route)
+        {
+            // honua-server#4907: the intent route is the governed key, not a path the host
+            // serves; activeUrl names the resolver that serves the item's Active version there.
+            // honua-server#5825: a bridge-resolved publication does not govern that resolver,
+            // so PublicationUrl (and therefore these resource ids) stay absent.
+            resources["route"] = route;
+            resources["activeUrl"] = activeUrl;
+        }
+
+        if (result.DeploymentId is { } deploymentId && result.DeploymentResourceUri is { } deploymentResourceUri)
+        {
+            resources["deploymentId"] = deploymentId;
+            resources["deploymentResourceUri"] = deploymentResourceUri;
+        }
+
+        return resources;
+    }
 }
 
 internal sealed class StudioReopenVersionExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
@@ -426,6 +588,13 @@ internal sealed class StudioReopenVersionExecutor(IStudioPackageLifecycleService
     public override string OperationId => StudioDraftOperations.ReopenVersion;
     protected override JsonTypeInfo<StudioReopenVersionPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload;
     protected override JsonTypeInfo<StudioPackageDraft> ResultType => StudioDraftOperationJsonContext.Default.StudioPackageDraft;
+
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioPackageDraft result) =>
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["draftId"] = result.DraftId.ToString("D"),
+            ["generation"] = result.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
 
     protected override async Task<StudioPackageDraft> ActuateAsync(
         StudioReopenVersionPayload payload,
@@ -441,6 +610,23 @@ internal sealed class StudioRollbackExecutor(IStudioPackageLifecycleService life
     public override string OperationId => StudioDraftOperations.Rollback;
     protected override JsonTypeInfo<StudioRollbackPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioRollbackPayload;
     protected override JsonTypeInfo<StudioRollbackRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioRollbackRequest;
+
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioRollbackRequest result)
+    {
+        var resources = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["requestId"] = result.RequestId.ToString("D"),
+            ["itemId"] = result.ItemId.ToString("D"),
+            ["versionId"] = result.TargetVersionId.ToString("D"),
+        };
+        if (result.DeploymentId is { } deploymentId && result.DeploymentResourceUri is { } deploymentResourceUri)
+        {
+            resources["deploymentId"] = deploymentId;
+            resources["deploymentResourceUri"] = deploymentResourceUri;
+        }
+
+        return resources;
+    }
 
     protected override async Task<StudioRollbackRequest> ActuateAsync(
         StudioRollbackPayload payload,
@@ -531,20 +717,43 @@ internal sealed class StudioDraftMutationRuntime(
 
     public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
         Guid itemId, Guid versionId, StudioPublicationIntent? intent, string? warningAcknowledgement, string? actorId,
-        StudioDraftMutationContext context, CancellationToken cancellationToken = default) => InvokeAsync(
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("A sealed Studio content hash is required for publication proposals.");
+
+    public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
+        Guid itemId, Guid versionId, string contentHash, StudioPublicationIntent? intent,
+        string? warningAcknowledgement, string? actorId,
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default)
+    {
+        // A retry of a lost 202 folds onto the proposal the first invocation already sealed.
+        // The dispatcher does not adopt this payload, so the id in the 202 has to be that
+        // sealed id. Deriving it from the scoped idempotency key makes both invocations
+        // agree; without a key each call is its own operation and keeps a fresh id.
+        var requestId = PublicationRequestId(context);
+        return InvokeAsync(
             StudioDraftOperations.CreatePublicationRequest,
             new StudioPublicationRequestPayload
             {
+                RequestId = requestId,
                 ItemId = itemId,
                 VersionId = versionId,
+                ContentHash = contentHash,
                 Intent = intent,
                 WarningAcknowledgement = warningAcknowledgement,
                 ActorId = actorId,
             },
             StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload,
             StudioDraftOperationJsonContext.Default.StudioPublicationRequest,
-            context,
-            cancellationToken);
+            PublicationStep(context),
+            cancellationToken,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["requestId"] = requestId.ToString("D"),
+                ["publicationId"] = requestId.ToString("D"),
+                ["itemId"] = itemId.ToString("D"),
+                ["versionId"] = versionId.ToString("D"),
+            });
+    }
 
     public Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
         Guid itemId, Guid versionId, string? actorId, StudioDraftMutationContext context,
@@ -570,8 +779,28 @@ internal sealed class StudioDraftMutationRuntime(
             },
             StudioDraftOperationJsonContext.Default.StudioRollbackPayload,
             StudioDraftOperationJsonContext.Default.StudioRollbackRequest,
-            context,
+            GovernedStep(context, BuiltInGuardrailActions.StudioRollback),
             cancellationToken);
+
+    // Publication and rollback move content pointers, so they route as governed actions rather
+    // than draft composition (#4758). A caller-supplied action, such as the agent publication
+    // proposal, is kept because its floor is at least as strict.
+    private static StudioDraftMutationContext GovernedStep(StudioDraftMutationContext context, string action)
+        => string.IsNullOrWhiteSpace(context.ActionDiscriminator)
+            ? context with { ActionDiscriminator = action }
+            : context;
+
+    // An admin publication must not take the proposal floor. Replace any caller-supplied
+    // proposal action and mark the invocation so policy allows the publication actuator
+    // before that guardrail is resolved (honua-server#5207).
+    private static StudioDraftMutationContext PublicationStep(StudioDraftMutationContext context)
+        => context.PublishImmediately
+            ? context with
+            {
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationRequest,
+                AuthorizationOutcome = StudioDraftMutationContext.AdminDirectPublicationOutcome,
+            }
+            : GovernedStep(context, BuiltInGuardrailActions.StudioPublicationRequest);
 
     private async Task<StudioDraftMutationReceipt<TResult>> InvokeAsync<TPayload, TResult>(
         string operationId,
@@ -579,7 +808,8 @@ internal sealed class StudioDraftMutationRuntime(
         JsonTypeInfo<TPayload> payloadType,
         JsonTypeInfo<TResult> resultType,
         StudioDraftMutationContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? pendingResourceIds = null)
     {
         var request = new OperationRequest
         {
@@ -592,6 +822,7 @@ internal sealed class StudioDraftMutationRuntime(
             {
                 OperationId = operationId,
                 Kind = OperationClass.StudioDraftMutation,
+                ActionDiscriminator = context.ActionDiscriminator,
                 RequestedBy = context.PrincipalId,
                 CorrelationId = context.CorrelationId,
                 IdempotencyKey = ScopeIdempotencyKey(context),
@@ -612,8 +843,28 @@ internal sealed class StudioDraftMutationRuntime(
             RecognizedScopes = context.RecognizedScopes,
         }, cancellationToken).ConfigureAwait(false);
 
+        // Scope refusal happens before the dispatcher accepts or persists an operation.
+        // Only this explicit unpersisted outcome may bypass durable readback; every
+        // accepted operation, including persisted policy denials, must still be readable.
+        if (handle is
+            {
+                Status: OperationHandleStatus.Denied,
+                PolicyDecision: PolicyDecisionKind.Deny,
+                AuthorizationOutcome: OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
+                Version: 0,
+                AuditId: null,
+                ProposalId: null,
+            })
+        {
+            return new StudioDraftMutationReceipt<TResult> { Operation = handle };
+        }
+
         var durable = await instanceStore.GetAsync(handle.OperationInstanceId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The Studio mutation envelope was not durably readable after routing.");
+        if (durable.Status == OperationHandleStatus.RequiresApproval && pendingResourceIds is not null)
+        {
+            durable = durable with { ResourceIds = pendingResourceIds };
+        }
         TResult? value = default;
         if (durable.Status == OperationHandleStatus.Completed
             && durable.Result?.Details.TryGetValue(StudioDraftOperations.ResultParameter, out var serialized) == true)
@@ -622,6 +873,20 @@ internal sealed class StudioDraftMutationRuntime(
         }
 
         return new StudioDraftMutationReceipt<TResult> { Operation = durable, Value = value };
+    }
+
+    private static Guid PublicationRequestId(StudioDraftMutationContext context)
+    {
+        var scoped = ScopeIdempotencyKey(context);
+        if (scoped is null)
+        {
+            return Guid.NewGuid();
+        }
+
+        var material = Encoding.UTF8.GetBytes(
+            $"{StudioDraftOperations.CreatePublicationRequest}:{scoped}");
+        var hash = SHA256.HashData(material);
+        return new Guid(hash.AsSpan(0, 16));
     }
 
     private static string? ScopeIdempotencyKey(StudioDraftMutationContext context)
@@ -655,6 +920,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             throw new ArgumentException("The Studio approval mapper requires its exact typed payload.", nameof(request));
         }
 
+        var plan = BuildPlan(payload);
         payload = SealScope(payload, context);
         return new OperationGatewayRequest
         {
@@ -666,14 +932,39 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             CorrelationId = context.CorrelationId,
             IdempotencyKey = context.IdempotencyKey,
             ExecutionPayload = payload,
-            Plan = new OperationProposalPlan
+            Plan = plan with { ExecutionPayload = payload },
+        };
+    }
+
+    private OperationProposalPlan BuildPlan(string payload)
+    {
+        if (OperationId != StudioDraftOperations.CreatePublicationRequest)
+        {
+            return new OperationProposalPlan
             {
                 Summary = $"Execute {OperationId} with its accepted typed payload.",
                 RiskLevel = StudioDraftOperations.IsHighRisk(OperationId)
                     ? ProposalRiskLevel.High
                     : ProposalRiskLevel.Medium,
-                ExecutionPayload = payload,
-            },
+            };
+        }
+
+        var publication = JsonSerializer.Deserialize(
+            payload,
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload)
+            ?? throw new ArgumentException("The Studio publication payload is invalid.", nameof(payload));
+        return new OperationProposalPlan
+        {
+            Summary = $"Publish sealed Studio version {publication.VersionId:D} at {publication.Intent?.Route}.",
+            Diff =
+            [
+                $"itemId={publication.ItemId:D}",
+                $"versionId={publication.VersionId:D}",
+                $"contentHash={publication.ContentHash}",
+                $"route={publication.Intent?.Route}",
+                $"visibility={publication.Intent?.Visibility}",
+            ],
+            RiskLevel = ProposalRiskLevel.Medium,
         };
     }
 

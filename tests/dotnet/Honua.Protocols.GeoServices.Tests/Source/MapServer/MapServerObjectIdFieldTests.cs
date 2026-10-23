@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -102,6 +103,7 @@ public sealed class MapServerObjectIdFieldTests
         {
             builder.ConfigureTestServices(services =>
             {
+                services.AddSingleton<ICoordinateTransformService, WellKnownCoordinateTransformService>();
                 services.RemoveAll<ICrsDetectionService>();
                 services.RemoveAll<ICrsRegistry>();
                 services.RemoveAll<IMetadataV2GraphProvider>();

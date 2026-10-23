@@ -538,19 +538,19 @@ internal sealed class McpStudioRemoveControlArgument
 // -----------------------------------------------------------------------
 
 /// <summary>
-/// Arguments for <c>honua_studio_propose_publication</c>. Records publication
-/// intent ON THE DRAFT ONLY — it never calls the publish-request/rollback
-/// lifecycle endpoints and never moves a current/published pointer (REQ-003,
-/// REQ-009: publish/share/embed execution stays a human-confirmed action
-/// outside the agent tool surface).
+/// Arguments for <c>honua_studio_propose_publication</c>. Binds publication
+/// intent to an exact immutable saved version for canonical human approval.
 /// </summary>
 internal sealed class McpStudioProposePublicationArgument
 {
-    [JsonPropertyName("draftId")]
-    public Guid? DraftId { get; set; }
+    [JsonPropertyName("itemId")]
+    public Guid? ItemId { get; set; }
 
-    [JsonPropertyName("generation")]
-    public long? Generation { get; set; }
+    [JsonPropertyName("versionId")]
+    public Guid? VersionId { get; set; }
+
+    [JsonPropertyName("contentHash")]
+    public string? ContentHash { get; set; }
 
     [JsonPropertyName("route")]
     public string? Route { get; set; }
@@ -558,44 +558,95 @@ internal sealed class McpStudioProposePublicationArgument
     [JsonPropertyName("visibility")]
     public string? Visibility { get; set; }
 
-    [JsonPropertyName("embed")]
-    public bool? Embed { get; set; }
-
-    [JsonPropertyName("service")]
-    public string? Service { get; set; }
-
-    [JsonPropertyName("schedule")]
-    public string? Schedule { get; set; }
-
-    [JsonPropertyName("job")]
-    public string? Job { get; set; }
-
     /// <summary>Human-readable rationale recorded alongside the intent for reviewer context.</summary>
     [JsonPropertyName("note")]
     public string? Note { get; set; }
 }
 
 /// <summary>
-/// Output for <c>honua_studio_propose_publication</c>. Carries the updated
-/// draft (with the recorded <see cref="StudioPackageEnvelope.PublicationIntent"/>)
-/// plus an explicit, structural confirmation that only intent was recorded.
+/// Output for <c>honua_studio_propose_publication</c>. Carries canonical
+/// proposal and operation identities for polling and approval.
 /// </summary>
 internal sealed class McpStudioProposePublicationOutput
 {
-    [JsonPropertyName("draft")]
-    public required StudioPackageDraft Draft { get; init; }
+    [JsonPropertyName("operation")]
+    public required OperationHandle Operation { get; init; }
 
-    /// <summary>Always <see langword="true"/> on success: intent was recorded on the draft.</summary>
-    [JsonPropertyName("recorded")]
-    public bool Recorded { get; init; } = true;
+    [JsonPropertyName("operationInstanceId")]
+    public required string OperationInstanceId { get; init; }
 
-    /// <summary>
-    /// Always <see langword="true"/>: publish/share/embed execution requires a
-    /// separate human-confirmed action outside this tool surface.
-    /// </summary>
+    /// <summary>Proposal id when the call waits for a separate principal. Absent after an admin publish.</summary>
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; init; }
+
+    /// <summary>Proposal resource URI when <see cref="ProposalId"/> is present.</summary>
+    [JsonPropertyName("proposalUri")]
+    public string? ProposalUri { get; init; }
+
+    [JsonPropertyName("auditId")]
+    public required string AuditId { get; init; }
+
+    [JsonPropertyName("correlationId")]
+    public required string CorrelationId { get; init; }
+
+    [JsonPropertyName("idempotencyIdentity")]
+    public required string IdempotencyIdentity { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
     [JsonPropertyName("humanConfirmationRequired")]
     public bool HumanConfirmationRequired { get; init; } = true;
 
+    /// <summary>
+    /// Root-relative URL of the Active publication
+    /// (<see cref="StudioPublishedRoutes.BuildActiveUrl"/>). Present only when an admin
+    /// published the saved version in this call.
+    /// </summary>
+    [JsonPropertyName("shareUrl")]
+    public string? ShareUrl { get; init; }
+
+    /// <summary>Canonical deployment identity returned for a hosted map/app publication.</summary>
+    [JsonPropertyName("deploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentId { get; init; }
+
+    /// <summary>Exact resource URI for that deployment, when present.</summary>
+    [JsonPropertyName("deploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentResourceUri { get; init; }
+
     [JsonPropertyName("message")]
     public required string Message { get; init; }
+}
+
+internal sealed record McpStudioSaveVersionArgument
+{
+    [JsonPropertyName("draftId")] public required Guid DraftId { get; init; }
+    [JsonPropertyName("generation")] public required long Generation { get; init; }
+    [JsonPropertyName("changeNote")] public string? ChangeNote { get; init; }
+}
+
+internal sealed record McpStudioReopenVersionArgument
+{
+    [JsonPropertyName("itemId")] public required Guid ItemId { get; init; }
+    [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
+}
+
+internal sealed record McpStudioGetVersionArgument
+{
+    [JsonPropertyName("itemId")] public required Guid ItemId { get; init; }
+    [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
+}
+
+internal sealed record McpStudioGetVersionOutput
+{
+    [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
+    [JsonPropertyName("contentHash")] public required string ContentHash { get; init; }
+}
+
+internal sealed record McpStudioSaveVersionOutput
+{
+    [JsonPropertyName("operation")] public required OperationHandle Operation { get; init; }
+    [JsonPropertyName("version")] public StudioContentVersion? Version { get; init; }
 }

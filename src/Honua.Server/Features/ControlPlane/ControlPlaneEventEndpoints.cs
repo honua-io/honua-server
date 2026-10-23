@@ -88,6 +88,13 @@ internal static class ControlPlaneEventEndpoints
             return authResult;
         }
 
+        // A degraded start (database unreachable, or schema behind this build) answers a typed 503
+        // so the event is retried (honua-server#5916).
+        if (ControlPlaneNotReadyGuard.TryRefuse(httpRequest.HttpContext) is { } notReady)
+        {
+            return notReady;
+        }
+
         await handler
             .HandleExecutionJobEventAsync(providerOperationId ?? string.Empty, cancellationToken)
             .ConfigureAwait(false);
@@ -110,6 +117,13 @@ internal static class ControlPlaneEventEndpoints
         if (authResult is not null)
         {
             return authResult;
+        }
+
+        // A degraded start (database unreachable, or schema behind this build) answers a typed 503
+        // so the event is retried (honua-server#5916).
+        if (ControlPlaneNotReadyGuard.TryRefuse(httpRequest.HttpContext) is { } notReady)
+        {
+            return notReady;
         }
 
         var staleThreshold = options.Value.StaleThreshold > TimeSpan.Zero

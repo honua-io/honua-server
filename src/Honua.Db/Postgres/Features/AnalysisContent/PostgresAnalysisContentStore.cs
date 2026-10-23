@@ -204,6 +204,69 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
             return versions;
         });
 
+    public Task<bool> TryAbandonVersionAsync(
+        string itemId,
+        int version,
+        CancellationToken cancellationToken = default)
+        => TranslateStoreFailuresAsync(async () =>
+        {
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+            var exists = await ItemExistsForUpdateAsync(connection, transaction, itemId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!exists)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+
+            var deleteSql = $"""
+                DELETE FROM {_versionsTable}
+                WHERE item_id = @item_id AND version = @version
+                """;
+            await using (var delete = new NpgsqlCommand(deleteSql, connection, transaction))
+            {
+                delete.Parameters.AddWithValue("@item_id", itemId);
+                delete.Parameters.AddWithValue("@version", version);
+                var deleted = await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                if (deleted == 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return false;
+                }
+            }
+
+            // Rewind only when the deleted row was current. A newer version committed
+            // under the same item lock keeps its pointer.
+            var rewindSql = $"""
+                UPDATE {_itemsTable} AS item
+                SET current_version = latest.version,
+                    current_version_id = latest.version_id,
+                    updated_at = @updated_at
+                FROM (
+                    SELECT version, version_id
+                    FROM {_versionsTable}
+                    WHERE item_id = @item_id
+                    ORDER BY version DESC
+                    LIMIT 1
+                ) AS latest
+                WHERE item.item_id = @item_id
+                  AND item.current_version = @version
+                """;
+            await using (var rewind = new NpgsqlCommand(rewindSql, connection, transaction))
+            {
+                rewind.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
+                rewind.Parameters.AddWithValue("@item_id", itemId);
+                rewind.Parameters.AddWithValue("@version", version);
+                await rewind.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        });
+
     public Task<AnalysisContentItemPage> ListItemsAsync(
         AnalysisContentItemQuery query,
         CancellationToken cancellationToken = default)

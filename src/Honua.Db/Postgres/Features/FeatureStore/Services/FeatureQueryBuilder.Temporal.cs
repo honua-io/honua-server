@@ -88,7 +88,7 @@ internal sealed partial class FeatureQueryBuilder
     private static string WrapTemporalValueExpression(string attributeValue, TemporalPropertyType propertyType)
         => propertyType switch
         {
-            TemporalPropertyType.Date => $"NULLIF({attributeValue}, '')::date",
-            _ => $"NULLIF({attributeValue}, '')::timestamptz"
+            TemporalPropertyType.Date => BuildEpochAwareOrderByCast(attributeValue, "date"),
+            _ => BuildEpochAwareOrderByCast(attributeValue, "timestamptz")
         };
 }

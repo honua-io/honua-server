@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -76,6 +77,14 @@ public sealed class DeployPreflightResponse
     /// </summary>
     [JsonPropertyName("databaseCompatibility")]
     public DeployPreflightDatabaseCompatibility? DatabaseCompatibility { get; init; }
+
+    /// <summary>
+    /// How the database session settings (timeouts, default search_path) are applied
+    /// (<c>Database:SessionSettings:Mode</c>) and, in <c>role-defaults</c> mode, the startup
+    /// verification of the role defaults.
+    /// </summary>
+    [JsonPropertyName("databaseSessionSettings")]
+    public DeployPreflightDatabaseSessionSettings? DatabaseSessionSettings { get; init; }
 
     /// <summary>
     /// Cross-plane platform-release projection: the release version each plane currently projects and
@@ -235,6 +244,15 @@ public sealed class DeployPreflightMigration
     public IReadOnlyList<DeployPreflightMigrationClassification> PendingScriptClassifications { get; init; }
         = Array.Empty<DeployPreflightMigrationClassification>();
 
+    /// <summary>Exact physical binding and resource/rendered SQL identities.</summary>
+    [JsonPropertyName("scriptBindings")]
+    public IReadOnlyList<DatabaseMigrationScriptBinding> ScriptBindings { get; init; }
+        = Array.Empty<DatabaseMigrationScriptBinding>();
+
+    /// <summary>Approval nonce bound to this exact plan and custom rendering context.</summary>
+    [JsonPropertyName("contractApprovalNonce")]
+    public string? ContractApprovalNonce { get; init; }
+
     /// <summary>
     /// Scripts previously executed against the database but no longer discovered by the current binary.
     /// </summary>
@@ -327,6 +345,46 @@ public sealed class DeployPreflightDatabaseCompatibility
 }
 
 /// <summary>
+/// Database session-settings mode and role-default verification embedded in deploy preflight
+/// responses (honua-server#5870).
+/// </summary>
+public sealed class DeployPreflightDatabaseSessionSettings
+{
+    /// <summary>
+    /// The configured mode: <c>connection</c> (the server sets the values on every connection)
+    /// or <c>role-defaults</c> (no session SET; the database role's defaults apply).
+    /// </summary>
+    [JsonPropertyName("mode")]
+    public string Mode { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Verification status: <c>not-applicable</c>, <c>pending</c>, <c>verified</c>,
+    /// <c>mismatch</c> or <c>unavailable</c>.
+    /// </summary>
+    [JsonPropertyName("verification")]
+    public string Verification { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The database role whose defaults were verified, when known.
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string? Role { get; init; }
+
+    /// <summary>
+    /// The <c>ALTER ROLE</c> statements an operator runs to align the role defaults with
+    /// <c>Limits:Connections</c>. Empty when verified or not applicable.
+    /// </summary>
+    [JsonPropertyName("remediation")]
+    public IReadOnlyList<string> Remediation { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Why verification is unavailable, when it is.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+}
+
+/// <summary>
 /// Request payload for planning a deploy workflow operation.
 /// </summary>
 public sealed class DeployPlanRequest
@@ -380,19 +438,113 @@ public sealed class CreateDeployOperationRequest
 /// <summary>
 /// Request payload for a deploy rollback operation.
 /// </summary>
+/// <remarks>
+/// Every property other than <see cref="Reason"/> is part of the optional <b>recovery fence</b>
+/// (honua-server#4958). A body that supplies none of them keeps the pre-#4958 behaviour for existing
+/// callers; a body that supplies any of them is asserting the terms of a declared recovery grant, and
+/// the server refuses the rollback outright when any supplied term does not match what the protected
+/// activation actually recorded. A supplied term is never treated as advisory and never silently
+/// dropped: the type disallows unmapped members, so a property this server does not implement is itself
+/// a refusal and a client that believes it is fencing cannot be wrong about it.
+/// </remarks>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class RollbackDeployOperationRequest
 {
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
+
+    /// <summary>Deploy target the caller believes it is compensating. Must equal the operation's target.</summary>
+    [JsonPropertyName("targetId")]
+    public string? TargetId { get; init; }
+
+    /// <summary>Revision the caller believes is currently activated. Must equal <c>protection.candidateRevision</c>.</summary>
+    [JsonPropertyName("expectedCandidateRevision")]
+    public string? ExpectedCandidateRevision { get; init; }
+
+    /// <summary>Revision the caller believes the compensation restores. Must equal <c>protection.previousRevision</c>.</summary>
+    [JsonPropertyName("expectedPreviousRevision")]
+    public string? ExpectedPreviousRevision { get; init; }
+
+    /// <summary>
+    /// Protection phase the caller believes the operation is in — one of <c>observing</c>,
+    /// <c>protected</c>, <c>recovering</c>, <c>expired</c>, <c>unavailable</c>. Must equal
+    /// <c>protection.phase</c>, which is what makes a rollback outside an observation window refusable.
+    /// </summary>
+    [JsonPropertyName("expectedProtectionPhase")]
+    public string? ExpectedProtectionPhase { get; init; }
+
+    /// <summary>Identity of the recovery grant. Must equal <c>protection.grantId</c>.</summary>
+    [JsonPropertyName("grantId")]
+    public string? GrantId { get; init; }
+
+    /// <summary>Safety-policy digest the grant was minted against. Must equal <c>protection.policyDigest</c>.</summary>
+    [JsonPropertyName("policyDigest")]
+    public string? PolicyDigest { get; init; }
+
+    /// <summary>Principal the grant authorizes. Must equal both the authenticated caller and <c>protection.actor</c>.</summary>
+    [JsonPropertyName("actor")]
+    public string? Actor { get; init; }
+
+    /// <summary>Tenant the grant is bound to. Must equal both the caller's tenant and <c>protection.tenantId</c>.</summary>
+    [JsonPropertyName("tenantId")]
+    public string? TenantId { get; init; }
+
+    /// <summary>Grant expiry. The rollback is refused once the server clock is past it.</summary>
+    [JsonPropertyName("notAfter")]
+    public DateTimeOffset? NotAfter { get; init; }
+
+    /// <summary>
+    /// Compensation the caller is asking for. Must equal <c>protection.permittedCompensation</c>; any
+    /// other value is broader than what the activation preauthorized and is refused.
+    /// </summary>
+    [JsonPropertyName("compensation")]
+    public string? Compensation { get; init; }
+
+    /// <summary>Whether the caller supplied any recovery-fence term at all.</summary>
+    [JsonIgnore]
+    public bool HasFence =>
+        !string.IsNullOrWhiteSpace(TargetId) ||
+        !string.IsNullOrWhiteSpace(ExpectedCandidateRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedPreviousRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedProtectionPhase) ||
+        !string.IsNullOrWhiteSpace(GrantId) ||
+        !string.IsNullOrWhiteSpace(PolicyDigest) ||
+        !string.IsNullOrWhiteSpace(Actor) ||
+        !string.IsNullOrWhiteSpace(TenantId) ||
+        !string.IsNullOrWhiteSpace(Compensation) ||
+        NotAfter.HasValue;
+
+    /// <summary>
+    /// Whether the caller supplied a term that only a protection record can answer. Such a term is a
+    /// refusal, not a no-op, when no protection window exists.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasProtectionBoundFence =>
+        !string.IsNullOrWhiteSpace(ExpectedCandidateRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedPreviousRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedProtectionPhase) ||
+        !string.IsNullOrWhiteSpace(GrantId) ||
+        !string.IsNullOrWhiteSpace(PolicyDigest) ||
+        !string.IsNullOrWhiteSpace(Compensation);
 }
 
 /// <summary>
 /// Request payload for converging the running serving targets onto the declared platform release
-/// (ADR-0060 WS2). The endpoint takes <b>no version argument</b>: it always converges to the release
-/// declared in <c>ControlPlane:PlatformRelease</c>. Only optional operator metadata is accepted.
+/// (ADR-0060 WS2). The endpoint always converges to the release declared in
+/// <c>ControlPlane:PlatformRelease</c>; it never resolves a version to an artifact. An optional
+/// <see cref="TargetVersion"/> lets the caller assert which release it expects, and a mismatch is
+/// rejected with a 409 <c>platform_release_version_mismatch</c> problem.
 /// </summary>
 public sealed class PlatformReleaseConvergeRequest
 {
+    /// <summary>
+    /// Optional release the caller expects to converge to (for example <c>2026.1-rc.3</c>; <c>honua-</c>
+    /// and <c>v</c> prefixes and a zero patch are normalized). When it does not name the declared
+    /// release the converge is rejected with 409 <c>platform_release_version_mismatch</c>.
+    /// </summary>
+    [JsonPropertyName("targetVersion")]
+    public string? TargetVersion { get; init; }
+
     /// <summary>
     /// Optional operator reason recorded on every deploy operation the converge creates.
     /// </summary>
@@ -667,6 +819,13 @@ public sealed class DeployOperationResponse
     [JsonPropertyName("correlationId")]
     public string? CorrelationId { get; init; }
 
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. Canonical field; the nested
+    /// metadata-release context carries the same value when this operation is a release.
+    /// </summary>
+    [JsonPropertyName("rootProvisioningOperationId")]
+    public string? RootProvisioningOperationId { get; init; }
+
     [JsonPropertyName("createdAt")]
     public DateTimeOffset CreatedAt { get; init; }
 
@@ -675,6 +834,68 @@ public sealed class DeployOperationResponse
 
     [JsonPropertyName("completedAt")]
     public DateTimeOffset? CompletedAt { get; init; }
+
+    /// <summary>
+    /// Durable post-activation observation/recovery window (honua-server#4618), present while a
+    /// promoted candidate is being observed, until the window elapses or a triggered recovery finishes.
+    /// </summary>
+    [JsonPropertyName("protection")]
+    public DeployProtectionResponse? Protection { get; init; }
+}
+
+/// <summary>
+/// Post-activation observation/recovery window state for a promoted deploy operation
+/// (honua-server#4618). Exposes stable, bounded reason codes and revision identity so clients can
+/// present outcome-oriented progress without inspecting provider telemetry or Git state directly.
+/// </summary>
+public sealed class DeployProtectionResponse
+{
+    [JsonPropertyName("previousRevision")]
+    public string PreviousRevision { get; init; } = string.Empty;
+
+    [JsonPropertyName("candidateRevision")]
+    public string CandidateRevision { get; init; } = string.Empty;
+
+    [JsonPropertyName("firstExposureAt")]
+    public DateTimeOffset FirstExposureAt { get; init; }
+
+    [JsonPropertyName("observationDeadline")]
+    public DateTimeOffset ObservationDeadline { get; init; }
+
+    [JsonPropertyName("recoveryDeadline")]
+    public DateTimeOffset? RecoveryDeadline { get; init; }
+
+    [JsonPropertyName("policyDigest")]
+    public string PolicyDigest { get; init; } = string.Empty;
+
+    [JsonPropertyName("approvalScope")]
+    public string? ApprovalScope { get; init; }
+
+    /// <summary>One of <c>observing</c>, <c>protected</c>, <c>recovering</c>, <c>expired</c>, or <c>unavailable</c>.</summary>
+    [JsonPropertyName("phase")]
+    public string Phase { get; init; } = string.Empty;
+
+    [JsonPropertyName("reasonCode")]
+    public string? ReasonCode { get; init; }
+
+    /// <summary>
+    /// Identity of the recovery grant sealed when the candidate was activated (honua-server#4958).
+    /// A fenced rollback quotes this back in <c>grantId</c>.
+    /// </summary>
+    [JsonPropertyName("grantId")]
+    public string? GrantId { get; init; }
+
+    /// <summary>Principal that requested the protected activation, and the only one the grant authorizes.</summary>
+    [JsonPropertyName("actor")]
+    public string? Actor { get; init; }
+
+    /// <summary>Tenant binding of <c>actor</c>, or absent on a single-tenant installation.</summary>
+    [JsonPropertyName("tenantId")]
+    public string? TenantId { get; init; }
+
+    /// <summary>The single compensation this window preauthorizes, for example <c>restore-previous-revision</c>.</summary>
+    [JsonPropertyName("permittedCompensation")]
+    public string? PermittedCompensation { get; init; }
 }
 
 /// <summary>
@@ -724,6 +945,13 @@ public sealed class MetadataReleaseContextResponse
 {
     [JsonPropertyName("packageId")]
     public string PackageId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. Matches the top-level
+    /// <c>rootProvisioningOperationId</c> on the operation response.
+    /// </summary>
+    [JsonPropertyName("rootProvisioningOperationId")]
+    public string? RootProvisioningOperationId { get; init; }
 
     [JsonPropertyName("gitOperationId")]
     public string? GitOperationId { get; init; }

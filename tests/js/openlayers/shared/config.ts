@@ -7,6 +7,9 @@ export const config = {
   baseUrl: process.env.HONUA_BASE_URL || 'http://localhost:5555',
   serviceId: process.env.HONUA_SERVICE_ID || 'test_service_gw0',
   layerId: process.env.HONUA_LAYER_ID || '0',
+  // The browser rendering fixture has only2–3 rows. Compose explicitly points
+  // paging at base layer0; local bootstrap can retain its configured layer1000.
+  pagingCollectionId: process.env.HONUA_PAGING_COLLECTION_ID || process.env.HONUA_LAYER_ID || '0',
   apiKey: process.env.HONUA_API_KEY,
   timeout: parseInt(process.env.HONUA_TEST_TIMEOUT || '30000', 10),
 };

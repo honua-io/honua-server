@@ -87,6 +87,17 @@ internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperatio
             if (duplicate is not null)
             {
                 await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                if (!SavedMapOperationIdempotency.Matches(duplicate, request))
+                {
+                    return new SavedMapOperationAppendResult
+                    {
+                        Status = SavedMapOperationAppendStatus.IdempotencyMismatch,
+                        Operation = duplicate,
+                        HeadCursor = new SavedMapOperationCursor(headCursor),
+                        Message = SavedMapOperationIdempotency.MismatchMessage,
+                    };
+                }
+
                 return new SavedMapOperationAppendResult
                 {
                     Status = SavedMapOperationAppendStatus.Accepted,
@@ -165,12 +176,42 @@ internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperatio
                 HeadCursor = operation.ServerCursor,
             };
         }
+        catch (PostgresException exception) when (IsMapWideIdempotencyCollision(exception))
+        {
+            // The durable unique keys are still (map, operation id) and (map, idempotency key).
+            // Another actor already owns that id, so this edit cannot be stored as its own row.
+            // Report a mismatch instead of the other actor's operation or an unhandled 23505.
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            var occupiedHead = await ReadHeadCursorAsync(request.MapId, cancellationToken).ConfigureAwait(false);
+            return new SavedMapOperationAppendResult
+            {
+                Status = SavedMapOperationAppendStatus.IdempotencyMismatch,
+                HeadCursor = new SavedMapOperationCursor(occupiedHead),
+                Message = SavedMapOperationIdempotency.MismatchMessage,
+            };
+        }
         catch
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
     }
+
+    private async Task<long> ReadHeadCursorAsync(SavedMapId mapId, CancellationToken cancellationToken)
+    {
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var sql = $"SELECT head_cursor FROM {_headsTable} WHERE map_id = @map_id";
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@map_id", mapId.Value);
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return value is null or DBNull ? 0 : Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static bool IsMapWideIdempotencyCollision(PostgresException exception) =>
+        exception.SqlState == PostgresErrorCodes.UniqueViolation &&
+        exception.ConstraintName is "uq_saved_map_operations_operation_id"
+            or "uq_saved_map_operations_idempotency_key";
 
     /// <inheritdoc />
     public Task<SavedMapOperationReplayResult> ReplayAsync(
@@ -379,6 +420,7 @@ internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperatio
                    idempotency_key, server_cursor, accepted_at
             FROM {_operationsTable}
             WHERE map_id = @map_id
+              AND actor_id = @actor_id
               AND (operation_id = @operation_id
                    OR (@idempotency_key IS NOT NULL AND idempotency_key = @idempotency_key))
             ORDER BY CASE WHEN operation_id = @operation_id THEN 0 ELSE 1 END
@@ -386,6 +428,7 @@ internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperatio
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@map_id", request.MapId.Value);
+        command.Parameters.AddWithValue("@actor_id", request.ActorId.Value);
         command.Parameters.AddWithValue("@operation_id", request.OperationId.Value);
         command.Parameters.AddWithValue(
             "@idempotency_key",

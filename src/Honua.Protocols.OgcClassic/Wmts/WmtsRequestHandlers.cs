@@ -12,6 +12,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -196,6 +197,11 @@ internal static class WmtsRequestHandlers
             }
 
             var wmtsMaxZoom = ResolveWmtsMaxZoom(context);
+            if (context.Request.Path.Value?.Contains("/MapServer/WMTS", StringComparison.OrdinalIgnoreCase) == true &&
+                !MetadataV2MapServerDrawing.UsesCachedDrawing(svcDef))
+            {
+                return StandardErrorHelpers.CreateNotFound(context, "Dynamic MapServer drawing does not provide a cached WMTS service.");
+            }
 
             if (string.Equals(requestType, "GetTile", StringComparison.OrdinalIgnoreCase))
             {
@@ -340,6 +346,7 @@ internal static class WmtsRequestHandlers
                 .Where(l => ResourceHasGeometry(l.Resource))
                 .ToArray();
             var xml = await BuildWmtsCapabilitiesAsync(
+                context.Request,
                 svcDef,
                 visibleLayers,
                 serviceId,
@@ -558,7 +565,7 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "Style", "Only STYLE=default is supported.");
         }
 
-        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, includeFeatureInfoParameters: false, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, out var dimensionError))
         {
             return dimensionError;
         }
@@ -778,7 +785,7 @@ internal static class WmtsRequestHandlers
                 StatusCodes.Status501NotImplemented);
         }
 
-        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, includeFeatureInfoParameters: true, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, out var dimensionError))
         {
             return dimensionError;
         }
@@ -966,9 +973,9 @@ internal static class WmtsRequestHandlers
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();
-        var jsonText = new StringBuilder();
-        var hasJsonFeature = false;
+        var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
         var layerName = GetWmsLayerName(layer.Resource, layer.Publication);
+        var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
         var featureQuery = new FeatureQuery
         {
@@ -992,60 +999,23 @@ internal static class WmtsRequestHandlers
             }
 
             remaining--;
+            var attributes = BuildVisibleFeatureInfoAttributes(item, hiddenFields);
             if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
             {
-                if (!hasJsonFeature)
+                jsonFeatures.Add(new OgcClassicFeatureInfoFeature
                 {
-                    jsonText.Append("{\"type\":\"FeatureInfoResponse\",\"features\":[");
-                    hasJsonFeature = true;
-                }
-                else
-                {
-                    jsonText.Append(',');
-                }
-
-                jsonText.Append("{\"layer\":");
-                AppendJsonString(jsonText, layerName);
-                jsonText.Append(",\"attributes\":{");
-
-                var isFirstAttribute = true;
-                foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-                {
-                    // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
-                    // and normalize values before serializing.
-                    if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-                    {
-                        continue;
-                    }
-
-                    if (!isFirstAttribute)
-                    {
-                        jsonText.Append(',');
-                    }
-
-                    isFirstAttribute = false;
-                    AppendJsonString(jsonText, attribute.Key);
-                    jsonText.Append(':');
-                    AppendJsonString(jsonText, FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)));
-                }
-
-                jsonText.Append("}}");
+                    Layer = layerName,
+                    Attributes = attributes
+                });
                 continue;
             }
 
             plainText.Append("Layer=").Append(layerName).AppendLine();
-            foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+            foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
             {
-                // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
-                // and normalize values before serializing.
-                if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-                {
-                    continue;
-                }
-
                 plainText.Append(attribute.Key)
                     .Append('=')
-                    .Append(FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)))
+                    .Append(FormatFeatureInfoValue(attribute.Value))
                     .AppendLine();
             }
 
@@ -1054,13 +1024,12 @@ internal static class WmtsRequestHandlers
 
         if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            if (!hasJsonFeature)
+            var payload = new OgcClassicFeatureInfoResponse
             {
-                return Results.Content("{\"type\":\"FeatureInfoResponse\",\"features\":[]}", JsonMimeType);
-            }
+                Features = [.. jsonFeatures]
+            };
 
-            jsonText.Append("]}");
-            return Results.Content(jsonText.ToString(), JsonMimeType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.OgcClassicFeatureInfoResponse, contentType: JsonMimeType);
         }
 
         var body = plainText.Length > 0
@@ -1088,11 +1057,7 @@ internal static class WmtsRequestHandlers
             }
             var routableResource = resource!;
 
-            // Prefer the publication's protocol-facing LayerIndex (legacy GeoServices-style
-            // int handle); fall back to the storage binding's StorageLayerId for graphs
-            // that haven't migrated their bindings. Matches the resolution order used by
-            // the FeatureServer V2 ports.
-            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, routableResource);
             if (!storageLayerId.HasValue)
             {
                 continue;
@@ -1312,6 +1277,7 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<string> BuildWmtsCapabilitiesAsync(
+        HttpRequest request,
         MetadataV2Service service,
         IReadOnlyList<WmtsLayer> visibleLayers,
         string serviceId,
@@ -1334,9 +1300,10 @@ internal static class WmtsRequestHandlers
 
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
         var wmtsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMTS";
-        var wmtsKvpUrlPrefix = $"{wmtsEndpoint}?";
-        var wmtsRestUrlPrefix = $"{wmtsEndpoint}/";
-        var serviceMetadataUrl = $"{wmtsEndpoint}/{WmtsVersion}/WMTSCapabilities.xml";
+        var credentialedWmtsEndpoint = BaseUrlResolver.PreserveToken(request, wmtsEndpoint);
+        var wmtsKvpUrlPrefix = $"{credentialedWmtsEndpoint}{(credentialedWmtsEndpoint.Contains('?') ? '&' : '?')}";
+        var wmtsRestUrlPrefix = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/");
+        var serviceMetadataUrl = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{WmtsVersion}/WMTSCapabilities.xml");
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.AppendLine("<Capabilities xmlns=\"http://www.opengis.net/wmts/1.0\"");
         sb.AppendLine("  xmlns:ows=\"http://www.opengis.net/ows/1.1\"");
@@ -1460,6 +1427,21 @@ internal static class WmtsRequestHandlers
             var wmtsTemporalRanges = await PrefetchWmtsTemporalRangesAsync(
                 visibleLayers, featureReader, logger, cancellationToken).ConfigureAwait(false);
 
+            var legendLayers = new HashSet<int>();
+            var styleCatalog = request.HttpContext.RequestServices.GetService<ILayerStyleCatalog>();
+            if (IsProtocolEnabled(service, "Wms") && styleCatalog is not null)
+            {
+                var supportedLegends = await Task.WhenAll(visibleLayers.Select(layer =>
+                    ResolveWmtsLegendSupportAsync(styleCatalog, layer, logger, cancellationToken))).ConfigureAwait(false);
+                for (var index = 0; index < visibleLayers.Count; index++)
+                {
+                    if (supportedLegends[index])
+                    {
+                        legendLayers.Add(visibleLayers[index].StorageLayerId);
+                    }
+                }
+            }
+
             foreach (var layer in visibleLayers)
             {
                 var layerId = layer.Identifier;
@@ -1481,10 +1463,10 @@ internal static class WmtsRequestHandlers
                 // WebMapTileServiceImageryProvider, so the advertised template was
                 // unusable even though the route itself is positional and
                 // case-insensitive. Only the advertised name changes here.
-                var tileTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}";
-                var featureInfoTextTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}";
-                var featureInfoJsonTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}";
-                var legendHref = $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0{legendDimensionSuffix}";
+                var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
+                var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
+                var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title
@@ -1496,13 +1478,14 @@ internal static class WmtsRequestHandlers
                     .ConfigureAwait(false);
                 sb.AppendLine("      <Style isDefault=\"true\">");
                 sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
-                sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
-                    .Append(EscapeXml(legendHref))
-                    .Append("\" width=\"")
-                    .Append(TileSize.ToString(CultureInfo.InvariantCulture))
-                    .Append("\" height=\"")
-                    .Append(TileSize.ToString(CultureInfo.InvariantCulture))
-                    .AppendLine("\" />");
+                // A legend is a swatch and label, never a world map tile. Reuse the
+                // service's legend surface only when WMS can paint this style's swatches.
+                if (legendLayers.Contains(layer.StorageLayerId))
+                {
+                    sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
+                        .Append(EscapeXml(legendHref))
+                        .AppendLine("\" />");
+                }
                 sb.AppendLine("      </Style>");
                 sb.AppendLine("      <Format>image/png</Format>");
                 if (isQueryable)
@@ -1638,6 +1621,18 @@ internal static class WmtsRequestHandlers
     /// dimension default value from the layer's temporal extent for capabilities
     /// rendering. Non-temporal layers skip the database call entirely.
     /// </summary>
+    /// <summary>
+    /// The resolution value that declares a temporal interval continuous.
+    /// </summary>
+    /// <remarks>
+    /// A time dimension value of <c>min/max/resolution</c> follows the same ISO 8601
+    /// convention WMS 1.3.0 Annex C states: <c>0</c> means every instant in the interval
+    /// is available, while a duration means the values are discrete and spaced by that
+    /// period. <c>PT0S</c> is a zero-length duration and is not a valid resolution -
+    /// ArcGIS Pro rejects a dimension declared that way. See honua-server#5172.
+    /// </remarks>
+    private const string ContinuousTemporalResolution = "0";
+
     private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(
         WmtsLayer layer,
         IFeatureReader? featureReader,
@@ -1668,7 +1663,7 @@ internal static class WmtsRequestHandlers
         var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Max.Value);
         var populated = new WmtsDimensionDefinition(
             Identifier: "time",
-            Values: [$"{min}/{max}/PT0S"],
+            Values: [$"{min}/{max}/{ContinuousTemporalResolution}"],
             DefaultValue: max,
             SupportsCurrent: true,
             CurrentValue: max);
@@ -1725,7 +1720,7 @@ internal static class WmtsRequestHandlers
         var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Max.Value);
         var populated = new WmtsDimensionDefinition(
             Identifier: "time",
-            Values: [$"{min}/{max}/PT0S"],
+            Values: [$"{min}/{max}/{ContinuousTemporalResolution}"],
             DefaultValue: max,
             SupportsCurrent: true,
             CurrentValue: max);
@@ -1754,6 +1749,34 @@ internal static class WmtsRequestHandlers
         }
 
         return resolved;
+    }
+
+    /// <summary>
+    /// Resolves optional legend support without failing capabilities when a style is unavailable.
+    /// </summary>
+    private static async Task<bool> ResolveWmtsLegendSupportAsync(
+        ILayerStyleCatalog styleCatalog,
+        WmtsLayer layer,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var plan = await GetRasterStylePlanAsync(styleCatalog, layer.StorageLayerId, cancellationToken)
+                .ConfigureAwait(false);
+            return LegendImageComposer.SupportsStylePlan(plan);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Legend metadata is optional; an unavailable style must not remove the
+            // layer or prevent clients from discovering otherwise usable map tiles.
+            OgcClassicLog.LegendSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            return false;
+        }
     }
 
     /// <summary>
@@ -1983,7 +2006,6 @@ internal static class WmtsRequestHandlers
         HttpContext context,
         IQueryCollection query,
         MetadataV2Resource resource,
-        bool includeFeatureInfoParameters,
         out IResult errorResult)
     {
         errorResult = Results.Empty;
@@ -1993,30 +2015,10 @@ internal static class WmtsRequestHandlers
         var dummyLayer = new WmtsLayer(resource, new MetadataV2Publication(), 0, string.Empty);
         var dimensions = GetWmtsDimensionDefinitions(dummyLayer);
 
-        // Reject unknown query keys (including dimension identifiers such as
-        // `time` or `elevation` that the layer does not advertise) even when
-        // the layer publishes no dimensions at all. Without this scan a
-        // non-time-aware layer would silently accept and ignore `time=` and
-        // diverge from the docs/contract that says such requests must return
-        // InvalidParameterValue.
-        var dimensionLookup = dimensions.ToDictionary(dimension => dimension.Identifier, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in query.Keys)
-        {
-            if (IsKnownWmtsQueryParameter(key, includeFeatureInfoParameters))
-            {
-                continue;
-            }
-
-            if (!dimensionLookup.ContainsKey(key))
-            {
-                errorResult = CreateWmtsExceptionReport(context,
-                    "InvalidParameterValue",
-                    key,
-                    $"Unsupported parameter '{key}'.");
-                return false;
-            }
-        }
-
+        // WMTS 1.0 sections 7.2.2.2 and 7.3.2.2 require unknown KVP keys,
+        // including unadvertised dimensions, to be ignored. Validate only
+        // dimensions advertised for this layer; known operation parameters
+        // are validated by the request handlers.
         foreach (var dimension in dimensions)
         {
             if (!query.ContainsKey(dimension.Identifier))
@@ -2058,33 +2060,6 @@ internal static class WmtsRequestHandlers
         }
 
         return true;
-    }
-
-    private static bool IsKnownWmtsQueryParameter(string key, bool includeFeatureInfoParameters)
-    {
-        if (string.Equals(key, "SERVICE", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "REQUEST", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "VERSION", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "LAYER", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "STYLE", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "FORMAT", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEMATRIXSET", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEMATRIX", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEROW", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILECOL", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (!includeFeatureInfoParameters)
-        {
-            return false;
-        }
-
-        return string.Equals(key, "I", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "J", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "INFOFORMAT", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "FEATURE_COUNT", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryResolveWmtsDimensionValue(
@@ -2170,8 +2145,8 @@ internal static class WmtsRequestHandlers
     /// matches the dimension that GetCapabilities advertises. CITE Terrain
     /// owns its own non-temporal "time" handling and is bypassed so existing
     /// CITE behavior is preserved. Resources without an opt-in temporal field
-    /// also bypass — those resources do not advertise the dimension and the
-    /// validator would have rejected an unknown parameter.
+    /// also bypass: their unadvertised time parameter is ignored as required
+    /// by the WMTS KVP binding.
     /// </summary>
     private static async Task<(TemporalFilter? Filter, IResult? Error)> TryBuildWmtsLayerTemporalFilterAsync(
         HttpContext context,
@@ -2259,8 +2234,8 @@ internal static class WmtsRequestHandlers
     /// Z-aware vector source yet (the Zarr datacube Z-slice render is the deferred Shape B
     /// follow-up). When the parameter is omitted the dimension's advertised default (100) is
     /// applied, matching the advertised contract. Layers that do not advertise an elevation
-    /// dimension (everything except CITE Terrain) never reach the resolve branch because the
-    /// validator would already have rejected an unknown <c>elevation</c> key.
+    /// dimension (everything except CITE Terrain) return no selection and ignore
+    /// an unknown <c>elevation</c> key as required by the WMTS KVP binding.
     /// </remarks>
     private static VerticalSelection? ResolveWmtsLayerVerticalSelection(WmtsLayer layer, IQueryCollection query)
     {
@@ -2917,55 +2892,6 @@ internal static class WmtsRequestHandlers
             "xml" => "application/xml",
             _ => extension
         };
-    }
-
-    private static void AppendJsonString(StringBuilder sb, string? value)
-    {
-        sb.Append('\"');
-        if (value is not null)
-        {
-            foreach (var ch in value)
-            {
-                switch (ch)
-                {
-                    case '\\':
-                        sb.Append("\\\\");
-                        break;
-                    case '\"':
-                        sb.Append("\\\"");
-                        break;
-                    case '\b':
-                        sb.Append("\\b");
-                        break;
-                    case '\f':
-                        sb.Append("\\f");
-                        break;
-                    case '\n':
-                        sb.Append("\\n");
-                        break;
-                    case '\r':
-                        sb.Append("\\r");
-                        break;
-                    case '\t':
-                        sb.Append("\\t");
-                        break;
-                    default:
-                        if (ch < 32)
-                        {
-                            sb.Append("\\u");
-                            sb.Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
-                        }
-                        else
-                        {
-                            sb.Append(ch);
-                        }
-
-                        break;
-                }
-            }
-        }
-
-        sb.Append('\"');
     }
 
     private readonly record struct WmtsDimensionDefinition(

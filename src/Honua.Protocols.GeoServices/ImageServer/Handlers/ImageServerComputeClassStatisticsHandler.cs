@@ -65,7 +65,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -107,25 +107,25 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                     $"classDescriptions contains {parsedClasses.Count} classes, exceeding the limit of {_options.MaxClasses}.");
             }
 
-            if (!TryParseBandIds(GetString(values, "bandIds"), out var bands, out var bandIdsError))
+            if (!ImageServerCatalogIdParser.TryParseBandIds(GetString(values, "bandIds"), out var bands, out var bandIdsError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, bandIdsError ?? "Invalid bandIds");
                 return StandardErrorHelpers.CreateBadRequest(context, bandIdsError ?? "Invalid bandIds.");
             }
 
-            if (!TryParseRasterIds(GetString(values, "rasterIds"), out var requestedRasterIds, out var rasterIdsError))
+            if (!ImageServerCatalogIdParser.TryParseRasterIds(GetString(values, "rasterIds"), out var requestedRasterIds, out var rasterIdsError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, rasterIdsError ?? "Invalid rasterIds");
                 return StandardErrorHelpers.CreateBadRequest(context, rasterIdsError ?? "Invalid rasterIds.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -153,7 +153,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
             {
                 var selected = await _rasterStore.QueryRastersAsync(
                     layerId,
-                    new RasterSelectionQuery { Timestamp = timestamp },
+                    new RasterSelectionQuery { Timestamp = timestamp, TimeStart = timeStart },
                     cancellationToken).ConfigureAwait(false);
                 if (selected.Length == 0)
                 {
@@ -248,129 +248,6 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         };
     }
 
-    /// <summary>Parses the optional <c>bandIds</c> parameter as 1-based band indices (CSV or JSON array).</summary>
-    private static bool TryParseBandIds(string? raw, out int[]? bands, out string? error)
-    {
-        bands = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return true;
-        }
-
-        var trimmed = raw.Trim();
-        if (trimmed.StartsWith('['))
-        {
-            try
-            {
-                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
-                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
-                {
-                    error = "bandIds must be a JSON array of 1-based band indices.";
-                    return false;
-                }
-
-                var values = new List<int>(doc.RootElement.GetArrayLength());
-                foreach (var element in doc.RootElement.EnumerateArray())
-                {
-                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band <= 0)
-                    {
-                        error = "bandIds entries must be positive integers.";
-                        return false;
-                    }
-
-                    values.Add(band);
-                }
-
-                bands = values.Count == 0 ? null : values.ToArray();
-                return true;
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                error = "bandIds must be valid JSON.";
-                return false;
-            }
-        }
-
-        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var parsed = new List<int>(parts.Length);
-        foreach (var part in parts)
-        {
-            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band <= 0)
-            {
-                error = "bandIds entries must be positive integers.";
-                return false;
-            }
-
-            parsed.Add(band);
-        }
-
-        bands = parsed.Count == 0 ? null : parsed.ToArray();
-        return true;
-    }
-
-    /// <summary>Parses the optional <c>rasterIds</c> parameter as catalog object ids (CSV or JSON array).</summary>
-    private static bool TryParseRasterIds(string? raw, out long[]? rasterIds, out string? error)
-    {
-        rasterIds = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return true;
-        }
-
-        var trimmed = raw.Trim();
-        if (trimmed.StartsWith('['))
-        {
-            try
-            {
-                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
-                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
-                {
-                    error = "rasterIds must be a JSON array of catalog object IDs.";
-                    return false;
-                }
-
-                var values = new List<long>(doc.RootElement.GetArrayLength());
-                foreach (var element in doc.RootElement.EnumerateArray())
-                {
-                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt64(out var id) || id <= 0)
-                    {
-                        error = "rasterIds entries must be positive catalog object IDs.";
-                        return false;
-                    }
-
-                    values.Add(id);
-                }
-
-                rasterIds = values.Count == 0 ? null : values.ToArray();
-                return true;
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                error = "rasterIds must be valid JSON.";
-                return false;
-            }
-        }
-
-        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var parsed = new List<long>(parts.Length);
-        foreach (var part in parts)
-        {
-            if (!long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) || id <= 0)
-            {
-                error = "rasterIds entries must be positive catalog object IDs.";
-                return false;
-            }
-
-            parsed.Add(id);
-        }
-
-        rasterIds = parsed.Count == 0 ? null : parsed.ToArray();
-        return true;
-    }
 
     private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;

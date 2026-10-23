@@ -14,6 +14,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -21,7 +22,7 @@ using Moq;
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
 [Collection("Database")]
-public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixture fixture)
+public sealed partial class GeoservicesImportServiceAttachmentImportTests(PostgresFixture fixture)
 {
     [Fact]
     public async Task ImportLayerAsync_WhenLayerAdvertisesAttachments_CopiesAttachmentsIntoStoreAndReportsCounts()
@@ -31,7 +32,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         var handler = new AttachmentFeatureServerHandler();
         var attachmentStore = new RecordingAttachmentStore();
         var publishingService = new StubLayerPublishingService(publishedLayerId: 42);
-        var service = CreateService(handler, attachmentStore, publishingService);
+        var service = CreateService(handler, attachmentStore, publishingService, targetSchema: schemaName);
 
         try
         {
@@ -80,8 +81,14 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         }
     }
 
+    /// <summary>
+    /// Issue #4600: a lost attachment is lost source data, so the run must not report a successful
+    /// migration. The copy loop still continues past the failure (the rest of the attachments are
+    /// copied), but the fidelity gate routes the run to operator review with an explicit,
+    /// attachment-scoped difference rather than a warning buried in the result.
+    /// </summary>
     [Fact]
-    public async Task ImportLayerAsync_WhenAttachmentDownloadFails_CountsFailureAndContinues()
+    public async Task ImportLayerAsync_WhenAttachmentDownloadFails_CountsFailureAndBlocksSuccess()
     {
         const string tableName = "geoservices_attachment_partial";
         var schemaName = await fixture.CreateIsolatedSchemaAsync(
@@ -89,7 +96,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         var handler = new AttachmentFeatureServerHandler(failAttachmentId: 1001);
         var attachmentStore = new RecordingAttachmentStore();
         var publishingService = new StubLayerPublishingService(publishedLayerId: 7);
-        var service = CreateService(handler, attachmentStore, publishingService);
+        var service = CreateService(handler, attachmentStore, publishingService, targetSchema: schemaName);
 
         try
         {
@@ -107,10 +114,25 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                 ServiceName = "default"
             });
 
-            result.Success.Should().BeTrue();
+            // The copy continued past the failed attachment: the other two still landed.
             result.AttachmentCount.Should().Be(2);
             result.FailedAttachments.Should().Be(1);
             result.Warnings.Should().Contain(static w => w.Contains("failure", StringComparison.OrdinalIgnoreCase));
+
+            // ...but a migration missing one of the source's attachments is not a successful
+            // migration (#4600). Feature counts match here, which is exactly why attachment parity
+            // has to be reconciled on its own evidence.
+            result.Success.Should().BeFalse();
+            result.NeedsReview.Should().BeTrue();
+            result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+
+            var lost = result.FidelityDifferences
+                .Should().ContainSingle(d => d.Code == MigrationFidelityDifferenceCodes.AttachmentsLost)
+                .Subject;
+            lost.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
+            lost.Subject.Should().Be("attachments");
+            lost.Expected.Should().Be("3 attachments in the target store");
+            lost.Actual.Should().Be("2 attachments in the target store");
         }
         finally
         {
@@ -127,7 +149,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         var handler = new AttachmentFeatureServerHandler();
         var attachmentStore = new RecordingAttachmentStore();
         var publishingService = new StubLayerPublishingService(publishedLayerId: 9);
-        var service = CreateService(handler, attachmentStore, publishingService);
+        var service = CreateService(handler, attachmentStore, publishingService, targetSchema: schemaName);
 
         try
         {
@@ -161,7 +183,8 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
     private GeoservicesImportService CreateService(
         HttpMessageHandler handler,
         IAttachmentStore attachmentStore,
-        ILayerPublishingService publishingService)
+        ILayerPublishingService publishingService,
+        string? targetSchema = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -185,11 +208,30 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
                 layerPublishingService: publishingService),
-            attachmentStore: attachmentStore);
+            attachmentStore: attachmentStore,
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
-    private sealed class RecordingAttachmentStore : IAttachmentStore
+    private sealed class RecordingAttachmentStore : IAttachmentStore, IImportedAttachmentStore
     {
+        public Task<bool> HasLegacyAttachmentsAsync(int layerId, CancellationToken cancellationToken)
+            => Task.FromResult(false);
+
+        public Task<Honua.Core.Features.Attachments.Domain.Attachment> UploadImportedAsync(
+            int layerId, long featureId, string source, long sourceParentId, long sourceAttachmentId,
+            Guid generation, string filename, string contentType, Stream content, string? keywords,
+            CancellationToken cancellationToken)
+            => UploadAsync(layerId, featureId, filename, contentType, content, keywords, cancellationToken);
+
+        public Task<bool> CompleteImportAsync(int layerId, Guid generation, CancellationToken cancellationToken)
+            => Task.FromResult(false);
+
+        public Task RemapImportedAttachmentsAsync(
+            int layerId,
+            IReadOnlyDictionary<long, long> sourceObjectIds,
+            CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public List<UploadedAttachment> Uploaded { get; } = [];
         private long _nextId = 1;
 
@@ -354,6 +396,14 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
 
     private sealed class AttachmentFeatureServerHandler(long? failAttachmentId = null) : HttpMessageHandler
     {
+        public long? FailedDownload { get; set; } = failAttachmentId;
+        public bool FailInventory { get; set; }
+        public bool HasAttachments { get; set; } = true;
+        public string? InventoryJson { get; set; }
+        public string? FeaturesJson { get; set; }
+        public int FeatureCount { get; set; } = 2;
+        public string Payload { get; set; } = "binary-payload";
+        public Action? BeforeDownload { get; set; }
         public List<string> AttachmentRequestPaths { get; } = [];
 
         // Ownership of the HttpResponseMessage instances returned below transfers to the HttpClient
@@ -367,14 +417,16 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             if (pathAndQuery.Contains("/attachments/", StringComparison.Ordinal))
             {
                 AttachmentRequestPaths.Add(pathAndQuery);
-                if (failAttachmentId.HasValue && pathAndQuery.EndsWith($"/{failAttachmentId.Value}", StringComparison.Ordinal))
+                BeforeDownload?.Invoke();
+                cancellationToken.ThrowIfCancellationRequested();
+                if (FailedDownload.HasValue && pathAndQuery.EndsWith($"/{FailedDownload.Value}", StringComparison.Ordinal))
                 {
                     return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.InternalServerError));
                 }
 
                 var resp = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes("binary-payload"))
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(Payload))
                 };
                 resp.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                 return Task.FromResult<System.Net.Http.HttpResponseMessage>(resp);
@@ -383,6 +435,16 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             if (pathAndQuery.Contains("/queryAttachments", StringComparison.Ordinal))
             {
                 AttachmentRequestPaths.Add(pathAndQuery);
+                if (FailInventory)
+                {
+                    return Task.FromResult<HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.InternalServerError));
+                }
+
+                if (InventoryJson != null)
+                {
+                    return Task.FromResult(JsonResponse(InventoryJson));
+                }
+
                 return Task.FromResult(JsonResponse("""
                     {
                       "attachmentGroups": [
@@ -404,6 +466,26 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                     """));
             }
 
+            if (pathAndQuery.EndsWith("/0?f=json", StringComparison.Ordinal) && !HasAttachments)
+            {
+                return Task.FromResult(JsonResponse("""{"id":0,"name":"Inspections","geometryType":"esriGeometryPoint","maxRecordCount":10,"hasAttachments":false,"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID","nullable":false},{"name":"Name","type":"esriFieldTypeString","nullable":true}]}"""));
+            }
+
+            if (pathAndQuery.Contains("returnCountOnly=true", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse($"{{\"count\":{FeatureCount}}}"));
+            }
+
+            if (FeaturesJson != null && pathAndQuery.Contains("resultOffset=0&", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(FeaturesJson));
+            }
+
+            if (FeaturesJson != null && pathAndQuery.Contains("resultOffset=1&", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"features":[],"exceededTransferLimit":false,"spatialReference":{"wkid":4326}}"""));
+            }
+
             return pathAndQuery switch
             {
                 "/arcgis/rest/services/Inspections/FeatureServer/0?f=json" => Task.FromResult(JsonResponse("""
@@ -419,9 +501,9 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                       ]
                     }
                     """)),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true" =>
                     Task.FromResult(JsonResponse("""{"count":2}""")),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         {
                           "features": [
@@ -432,7 +514,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                           "spatialReference": { "wkid": 4326 }
                         }
                         """)),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         {
                           "features": [],

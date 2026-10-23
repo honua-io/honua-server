@@ -78,7 +78,7 @@ public sealed class ProcessCatalogTests
         // + 1 delegated imagery/ML inference op (imagery.classify, cloud-backend
         // delegation with no bundled model runtime) added by #2241.
         // + 1 async batch enrichment op (enrichment.enrich) added by #2283.
-        all.Should().HaveCount(98);
+        all.Should().HaveCount(101);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -2259,7 +2259,7 @@ public sealed class ProcessCatalogTests
                         ["cellSize"] = "100",
                         ["geometry"] = "{\"x\":0,\"y\":0}",
                         ["geometryType"] = "esriGeometryPoint",
-                        ["spatialRel"] = "esriSpatialRelWithinDistance"
+                        ["spatialRel"] = "withinDistance"
                     }
                 }
             ]
@@ -2295,7 +2295,7 @@ public sealed class ProcessCatalogTests
                     {
                         ["layerId"] = "100",
                         ["cellSize"] = "100",
-                        ["spatialRel"] = "esriSpatialRelWithinDistance"
+                        ["spatialRel"] = "withinDistance"
                     }
                 }
             ]
@@ -3683,8 +3683,14 @@ public sealed class ProcessCatalogTests
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
             new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions()));
 
+        var terminalService = new GeoprocessingJobTerminalService(
+            jobService,
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobTerminalService>.Instance);
+
         return new HonuaProcessService(
             jobService,
+            terminalService,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
     }
 

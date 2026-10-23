@@ -35,6 +35,7 @@ public sealed class VerticalSliceIsolationTests
         "Orchestration",
         "PackageReview",
         "Plugins", // Plugin/extension SDK host slice (honua-server#1562): maps plugin-contributed ICustomEndpoint routes.
+        "Portal", // Persistent Portal sharing and request-scoped audience hydration.
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
         "NlQuery",
@@ -118,6 +119,13 @@ public sealed class VerticalSliceIsolationTests
                                 // unified capability registry, shared by the protocol
                                 // assemblies and Server so neither owns the gate logic.
             "Caching",          // Lives in Honua.Hosting under the preserved namespace.
+            "Collaboration",    // Hosting-resident FeatureEditLockEnforcement: the single seam
+                                // every feature-write surface consults before mutating a feature
+                                // so a collaborative-editing lease is binding (#4402). Shared by
+                                // three protocol assemblies (GeoServices FeatureServer, OGC API
+                                // Features, OData), so it cannot live in any one of them; the
+                                // /feature-locks endpoints stay in
+                                // Honua.Server/Features/Collaboration.
             "Compression",
             "Configuration",
             "Coordination",
@@ -143,6 +151,10 @@ public sealed class VerticalSliceIsolationTests
             "Resilience",
             "Scene",
             "Security",
+            "Stac",             // Hosting-resident STAC item identity and continuation
+                                // tokens shared by Honua.Protocols.Stac, the Hosting
+                                // CQL2 filter, and the portal-token cursor check, so
+                                // neither the protocol assembly nor Server owns the lookup.
             "Tiles",            // Hosting-resident shared tile-format writer
                                 // (TilePackageWriter: Esri exploded-cache TPK packaging)
                                 // shared by the GeoServices MapServer + ImageServer

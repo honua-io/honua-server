@@ -1,0 +1,58 @@
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-root'
+{
+  "result": "pass",
+  "fixture": "tests/seed/client-compat-v1.sql",
+  "client": "QGIS 3.44.13-Solothurn",
+  "selected_names": [
+    "alpha",
+    "epsilon",
+    "eta",
+    "gamma",
+    "iota"
+  ],
+  "filter_requests": [
+    "http://honua:5000/ogc/features/collections/0/items?limit=100&filter=(status %3D 'active')&filter-lang=cql2-text"
+  ],
+  "exchanges": [
+    {
+      "url": "http://honua:5000/ogc/features",
+      "status": 200
+    },
+    {
+      "url": "http://honua:5000/openapi.json",
+      "status": 200
+    },
+    {
+      "url": "http://honua:5000/ogc/features/collections/0",
+      "status": 200
+    },
+    {
+      "url": "http://honua:5000/ogc/features/conformance",
+      "status": 200
+    },
+    {
+      "url": "http://honua:5000/ogc/features/collections/0/queryables",
+      "status": 200
+    },
+    {
+      "url": "http://honua:5000/ogc/features/collections/0/items?limit=10",
+      "status": 200
+    },
+    {
+      "url": "http://honua:5000/ogc/features/collections/0/schema",
+      "status": 200
+    },
+    {
+      "url": "http://honua:5000/ogc/features/collections/0/items",
+      "status": 405
+    },
+    {
+      "url": "http://honua:5000/ogc/features/collections/0/items/1",
+      "status": 405
+    },
+    {
+      "url": "http://honua:5000/ogc/features/collections/0/items?limit=100&filter=(status %3D 'active')&filter-lang=cql2-text",
+      "status": 200
+    }
+  ]
+}

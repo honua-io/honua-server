@@ -2,6 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -29,7 +34,8 @@ internal sealed partial class TileExportJobExecutor(
     IEnumerable<ITileExportPackageProducer> producers,
     IEnumerable<ITileExportSourceFence> sourceFences,
     TimeProvider timeProvider,
-    ILogger<TileExportJobExecutor> logger) : IJobExecutor
+    ILogger<TileExportJobExecutor> logger,
+    IServiceScopeFactory? scopeFactory = null) : IJobExecutor
 {
     public ExecutionJobKind Kind => ExecutionJobKind.TileExport;
 
@@ -47,6 +53,9 @@ internal sealed partial class TileExportJobExecutor(
         if (!TileExportExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var plan, out var parseError))
             return JobExecutionResult.Failed(parseError ?? "Invalid tile-export job plan.");
 
+        if (job.Audit.SubmitterSecurityContext is not { } submitter)
+            return JobExecutionResult.Failed("Tile-export job has no submitter security context.");
+
         var parsedPlan = plan!;
         var matchingFences = sourceFences.Where(candidate => candidate.SourceKind == parsedPlan.SourceKind).Take(2).ToArray();
         if (matchingFences.Length != 1 ||
@@ -55,9 +64,19 @@ internal sealed partial class TileExportJobExecutor(
             return JobExecutionResult.Failed("Pinned tile-export source is unavailable or has changed.");
         }
 
-        var artifactKey = TileExportArtifactIdentity.BuildObjectKey(parsedPlan);
-        var existing = await storage.GetMetadataAsync(artifactKey, cancellationToken).ConfigureAwait(false);
-        if (IsReusable(existing, parsedPlan))
+        var freshMapRender = await RequiresFreshMapRenderAsync(parsedPlan, cancellationToken).ConfigureAwait(false);
+        var artifactIdentity = TileExportArtifactIdentity.Compute(parsedPlan, submitter);
+        if (freshMapRender)
+        {
+            // Policy-controlled map packages are rendered per job so current read policies
+            // are evaluated, and their object keys retain the submission boundary.
+            artifactIdentity = Convert.ToHexStringLower(SHA256.HashData(
+                Encoding.UTF8.GetBytes($"{artifactIdentity}:{job.OperationId}")));
+        }
+        var artifactKey = $"tile-exports/{artifactIdentity}.{TileExportArtifactIdentity.GetExtension(parsedPlan.PackageFormat)}";
+        var existing = freshMapRender ? null
+            : await storage.GetMetadataAsync(artifactKey, cancellationToken).ConfigureAwait(false);
+        if (!freshMapRender && IsReusable(existing, parsedPlan, submitter))
         {
             await context.ReportProgressAsync(100, "Reused existing tile package", cancellationToken).ConfigureAwait(false);
             await context.PublishArtifactAsync(artifactKey, cancellationToken).ConfigureAwait(false);
@@ -108,7 +127,7 @@ internal sealed partial class TileExportJobExecutor(
                 TimeToLive = TimeSpan.FromSeconds(parsedPlan.RetentionSeconds),
                 ObjectKeyOverride = artifactKey,
                 Metadata = ImmutableDictionary<string, string>.Empty
-                    .Add(TileExportArtifactIdentity.IdentityMetadataKey, TileExportArtifactIdentity.Compute(parsedPlan))
+                    .Add(TileExportArtifactIdentity.IdentityMetadataKey, artifactIdentity)
                     .Add("honua-job-kind", ExecutionJobKind.TileExport.ToString())
             }, cancellationToken).ConfigureAwait(false);
 
@@ -152,7 +171,21 @@ internal sealed partial class TileExportJobExecutor(
         }
     }
 
-    private bool IsReusable(CloudFile? file, TileExportJobPlan plan)
+    private async Task<bool> RequiresFreshMapRenderAsync(TileExportJobPlan plan, CancellationToken cancellationToken)
+    {
+        if (plan.SourceKind != TileExportSourceKind.Map)
+            return false;
+        if (scopeFactory is null)
+            return true;
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var rows = scope.ServiceProvider.GetService<IRlsPolicyStore>();
+        var masks = scope.ServiceProvider.GetService<IFieldMaskPolicyStore>();
+        return rows is null || masks is null
+            || (await rows.ListPoliciesAsync(cancellationToken).ConfigureAwait(false)).Count > 0
+            || (await masks.ListPoliciesAsync(cancellationToken).ConfigureAwait(false)).Count > 0;
+    }
+
+    private bool IsReusable(CloudFile? file, TileExportJobPlan plan, JobSecurityContext submitter)
     {
         var minimumExpiry = timeProvider.GetUtcNow().AddSeconds(plan.RetentionSeconds);
         return file is
@@ -165,7 +198,7 @@ internal sealed partial class TileExportJobExecutor(
         // existing object covers the complete requested horizon; equality is sufficient.
         expiresAt >= minimumExpiry &&
         file.Metadata.TryGetValue(TileExportArtifactIdentity.IdentityMetadataKey, out var identity) &&
-        string.Equals(identity, TileExportArtifactIdentity.Compute(plan), StringComparison.Ordinal);
+        string.Equals(identity, TileExportArtifactIdentity.Compute(plan, submitter), StringComparison.Ordinal);
     }
 
     private sealed class BoundedWriteStream(Stream inner, long maximumBytes, bool leaveOpen) : Stream

@@ -46,10 +46,10 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             throw new ImageServerCatalogFilterException(ex.Message, ex);
         }
 
-        return items.Where(item => Evaluate(expression, item)).ToList();
+        return items.Where(item => Evaluate(expression, item) is true).ToList();
     }
 
-    private static bool Evaluate(FilterExpression expression, ImageServerCatalogItem item)
+    private static bool? Evaluate(FilterExpression expression, ImageServerCatalogItem item)
     {
         return expression switch
         {
@@ -60,37 +60,44 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
         };
     }
 
-    private static bool EvaluateBinary(BinaryExpression expression, ImageServerCatalogItem item)
+    private static bool? EvaluateBinary(BinaryExpression expression, ImageServerCatalogItem item)
     {
         switch (expression.Operator)
         {
             case BinaryOperator.And:
-                return Evaluate(expression.Left, item) && Evaluate(expression.Right, item);
+                var andLeft = Evaluate(expression.Left, item);
+                return andLeft is false ? false : andLeft & Evaluate(expression.Right, item);
             case BinaryOperator.Or:
-                return Evaluate(expression.Left, item) || Evaluate(expression.Right, item);
+                var orLeft = Evaluate(expression.Left, item);
+                return orLeft is true ? true : orLeft | Evaluate(expression.Right, item);
         }
 
         var left = ResolveValue(expression.Left, item);
+        if (expression.Operator is BinaryOperator.In or BinaryOperator.NotIn)
+        {
+            return MatchIn(left, expression.Right, item, negate: expression.Operator == BinaryOperator.NotIn);
+        }
+
         var right = ResolveValue(expression.Right, item);
 
+        // SQL three-valued logic: a comparison with NULL is unknown, so it never
+        // selects a row. IS [NOT] NULL is the unary path and is unchanged.
         return expression.Operator switch
         {
             BinaryOperator.Equal => CompareEquality(left, right),
             BinaryOperator.NotEqual => !CompareEquality(left, right),
-            BinaryOperator.LessThan => Compare(left, right) < 0,
-            BinaryOperator.LessThanOrEqual => Compare(left, right) <= 0,
-            BinaryOperator.GreaterThan => Compare(left, right) > 0,
-            BinaryOperator.GreaterThanOrEqual => Compare(left, right) >= 0,
+            BinaryOperator.LessThan => CompareRelational(left, right, static comparison => comparison < 0),
+            BinaryOperator.LessThanOrEqual => CompareRelational(left, right, static comparison => comparison <= 0),
+            BinaryOperator.GreaterThan => CompareRelational(left, right, static comparison => comparison > 0),
+            BinaryOperator.GreaterThanOrEqual => CompareRelational(left, right, static comparison => comparison >= 0),
             BinaryOperator.Like => MatchLike(left, right, negate: false),
             BinaryOperator.NotLike => MatchLike(left, right, negate: true),
-            BinaryOperator.In => MatchIn(left, expression.Right, item, negate: false),
-            BinaryOperator.NotIn => MatchIn(left, expression.Right, item, negate: true),
             _ => throw new ImageServerCatalogFilterException(
                 $"Unsupported binary operator '{expression.Operator}' in raster catalog WHERE clause.")
         };
     }
 
-    private static bool EvaluateUnary(UnaryExpression expression, ImageServerCatalogItem item)
+    private static bool? EvaluateUnary(UnaryExpression expression, ImageServerCatalogItem item)
     {
         return expression.Operator switch
         {
@@ -119,16 +126,16 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             : throw new ImageServerCatalogFilterException(
                 $"Unknown raster catalog field '{propertyName}'.");
 
-    private static bool CompareEquality(object? left, object? right)
+    private static bool? CompareEquality(object? left, object? right)
     {
-        if (left is null && right is null)
-        {
-            return true;
-        }
-
         if (left is null || right is null)
         {
-            return false;
+            return null;
+        }
+
+        if (TryNormalizeTemporal(left, out var leftDate) && TryNormalizeTemporal(right, out var rightDate))
+        {
+            return leftDate == rightDate;
         }
 
         if (TryCoerceToDouble(left, out var leftDouble) && TryCoerceToDouble(right, out var rightDouble))
@@ -139,53 +146,126 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
         return string.Equals(left.ToString(), right.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static int Compare(object? left, object? right)
-    {
-        if (TryCoerceToDouble(left, out var leftDouble) && TryCoerceToDouble(right, out var rightDouble))
-        {
-            return leftDouble.CompareTo(rightDouble);
-        }
-
-        if (left is DateTime leftDate && right is DateTime rightDate)
-        {
-            return DateTime.Compare(leftDate, rightDate);
-        }
-
-        return string.Compare(left?.ToString(), right?.ToString(), StringComparison.Ordinal);
-    }
-
-    private static bool MatchLike(object? left, object? right, bool negate)
+    private static bool? CompareRelational(object? left, object? right, Func<int, bool> predicate)
     {
         if (left is null || right is null)
         {
-            return negate;
+            return null;
+        }
+
+        if (TryNormalizeTemporal(left, out var leftDate) && TryNormalizeTemporal(right, out var rightDate))
+        {
+            return predicate(DateTime.Compare(leftDate, rightDate));
+        }
+
+        if (TryCoerceToDouble(left, out var leftDouble) && TryCoerceToDouble(right, out var rightDouble))
+        {
+            return predicate(leftDouble.CompareTo(rightDouble));
+        }
+
+        return predicate(string.Compare(left.ToString(), right.ToString(), StringComparison.Ordinal));
+    }
+
+    // Catalog fields are UTC DateTime values. DATE literals parse as DateOnly and
+    // TIMESTAMP literals as DateTimeOffset; compare both on the UTC timeline instead
+    // of culture-formatted strings.
+    private static bool TryNormalizeTemporal(object value, out DateTime utc)
+    {
+        switch (value)
+        {
+            case DateTime dateTime:
+                utc = dateTime.Kind switch
+                {
+                    DateTimeKind.Utc => dateTime,
+                    DateTimeKind.Local => dateTime.ToUniversalTime(),
+                    _ => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc),
+                };
+                return true;
+            case DateTimeOffset offset:
+                utc = offset.UtcDateTime;
+                return true;
+            case DateOnly date:
+                utc = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                return true;
+            default:
+                utc = default;
+                return false;
+        }
+    }
+
+    private static bool? MatchLike(object? left, object? right, bool negate)
+    {
+        if (left is null || right is null)
+        {
+            return null;
         }
 
         var pattern = right.ToString() ?? string.Empty;
         var input = left.ToString() ?? string.Empty;
 
-        // Translate SQL LIKE wildcards into a simple comparison.
+        // Translate SQL LIKE wildcards into a simple comparison. A backtracking
+        // timeout is a client error: the catalog handler maps this exception to 400.
         var regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
             .Replace("%", ".*", StringComparison.Ordinal)
             .Replace("_", ".", StringComparison.Ordinal) + "$";
-        var matched = System.Text.RegularExpressions.Regex.IsMatch(
-            input,
-            regexPattern,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase,
-            TimeSpan.FromMilliseconds(50));
+        bool matched;
+        try
+        {
+            matched = System.Text.RegularExpressions.Regex.IsMatch(
+                input,
+                regexPattern,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase,
+                TimeSpan.FromMilliseconds(50));
+        }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException ex)
+        {
+            throw new ImageServerCatalogFilterException("Raster catalog LIKE pattern could not be evaluated.", ex);
+        }
+
         return negate ? !matched : matched;
     }
 
-    private static bool MatchIn(object? left, FilterExpression rightExpression, ImageServerCatalogItem item, bool negate)
+    private static bool? MatchIn(object? left, FilterExpression rightExpression, ImageServerCatalogItem item, bool negate)
     {
         if (rightExpression is not ValueList values)
         {
             throw new ImageServerCatalogFilterException("Right operand of IN must be a value list.");
         }
 
-        var matched = values.Values.Any(value => CompareEquality(left, ResolveValue(value, item)));
-        return matched ? !negate : negate;
+        var candidates = values.Values.Select(value => ResolveValue(value, item)).ToArray();
+        if (left is null)
+        {
+            return null;
+        }
+
+        var matched = candidates.Any(candidate => candidate is not null && MembershipEquals(left, candidate));
+        return matched ? !negate : candidates.Any(candidate => candidate is null) ? null : negate;
     }
+
+    private static bool MembershipEquals(object left, object right)
+    {
+        // Catalog OBJECTIDs are Int64: list membership must not round adjacent large IDs.
+        if (left is long leftId)
+        {
+            return right switch
+            {
+                long rightId => leftId == rightId,
+                int rightId => leftId == rightId,
+                decimal number => leftId == number,
+                double number => ExactIntegerEquals(leftId, number),
+                float number => ExactIntegerEquals(leftId, number),
+                string text when decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                    => leftId == number,
+                _ => CompareEquality(left, right) == true
+            };
+        }
+
+        return CompareEquality(left, right) == true;
+    }
+
+    private static bool ExactIntegerEquals(long left, double right)
+        => double.IsFinite(right) && right >= long.MinValue && right < 9223372036854775808d
+            && Math.Truncate(right) == right && left == (long)right;
 
     private static bool TryCoerceToDouble(object? value, out double result)
     {

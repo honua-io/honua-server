@@ -5,8 +5,10 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -23,9 +25,11 @@ using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Classic;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SkiaSharp;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
@@ -47,10 +51,8 @@ internal static partial class WmsRequestHandlers
     private const string WmsXmlExceptionMimeType = "text/xml";
     private const string WmsSeXmlExceptionMimeType = "application/vnd.ogc.se_xml";
     private const string WmsGmlFeatureInfoSchemaRequest = "GetFeatureInfoSchema";
-    private const string WmsExceptionSchemaLocation = "http://www.opengis.net/ogc http://schemas.opengis.net/wms/1.3.0/exceptions_1_3_0.xsd";
     private const string WmsCapabilitiesSchemaLocation = "http://www.opengis.net/wms http://schemas.opengis.net/wms/1.3.0/capabilities_1_3_0.xsd";
     private const string Wms111CapabilitiesDtd = "http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd";
-    private const string Wms111ExceptionDtd = "http://schemas.opengis.net/wms/1.1.1/exception_1_1_1.dtd";
     private const double WmsWebMercatorMax = SpatialConstants.WebMercatorExtent;
     private const string WmsWarningHeaderName = "Warning";
     private const string CiteLakesLayerTitle = "cite:Lakes";
@@ -113,7 +115,8 @@ internal static partial class WmsRequestHandlers
         MetadataV2Resource Resource,
         MetadataV2Publication Publication,
         int StorageLayerId,
-        string Identifier);
+        string Identifier,
+        MetadataV2GraphSnapshot Snapshot);
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
@@ -300,11 +303,7 @@ internal static partial class WmsRequestHandlers
             }
             var routableResource = resource!;
 
-            // Prefer the publication's protocol-facing LayerIndex (legacy GeoServices-style
-            // int handle); fall back to the storage binding's StorageLayerId for graphs
-            // that haven't migrated their bindings. Matches the resolution order used by
-            // the WCS/WMTS V2 ports.
-            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, routableResource);
             if (!storageLayerId.HasValue)
             {
                 continue;
@@ -314,7 +313,7 @@ internal static partial class WmsRequestHandlers
                 ? publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture)
                 : publication.ServiceLocalId ?? publication.Metadata.Name ?? routableResource.Metadata.Name;
 
-            var candidate = new WmsLayer(routableResource, publication, storageLayerId.Value, identifier);
+            var candidate = new WmsLayer(routableResource, publication, storageLayerId.Value, identifier, snapshot);
             if (!byResource.TryGetValue(routableResource.Metadata.Id, out var existing) ||
                 (publication.IsPrimary && !existing.Publication.IsPrimary))
             {
@@ -325,6 +324,43 @@ internal static partial class WmsRequestHandlers
         return byResource.Values
             .OrderBy(static l => l.StorageLayerId)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Selects the reader for one WMS layer. Publications with a storage binding resolve
+    /// through <see cref="FeatureProviderQueryRouter"/>; the injected reader remains the
+    /// fallback when that router is unwired or the binding is the managed features table.
+    /// </summary>
+    private static async Task<IFeatureReader> ResolveLayerReaderAsync(
+        HttpContext context,
+        WmsLayer layer,
+        IFeatureReader fallback,
+        CancellationToken cancellationToken)
+    {
+        var router = context.RequestServices.GetService<FeatureProviderQueryRouter>();
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (router is null || graphProvider is null)
+        {
+            return fallback;
+        }
+
+        if (!layer.Snapshot.Index.ServicesById.TryGetValue(layer.Publication.ServiceId, out var service))
+        {
+            return fallback;
+        }
+
+        var read = await StorageBoundFeatureReader.ResolveAsync(
+                fallback,
+                router,
+                layer.Snapshot,
+                service,
+                layer.Resource,
+                layer.Publication,
+                layer.StorageLayerId,
+                FeatureProviderReadOperation.Query,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return read.UseInjectedReader ? fallback : read.Reader;
     }
 
     /// <summary>
@@ -378,6 +414,68 @@ internal static partial class WmsRequestHandlers
         var title = layer.Resource.Metadata.Title ?? string.Empty;
         return string.Equals(name, citeName, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(title, citeName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Maximum number of tokens accepted in a WMS <c>LAYERS</c> / <c>QUERY_LAYERS</c> list
+    /// (<see cref="QueryLimits.MaxMapLayersPerRequest"/>). Each distinct layer costs a bounded
+    /// feature scan and render under one shared render-capacity lease (#6097).
+    /// </summary>
+    private static int GetWmsMaxLayersPerRequest(HttpContext context)
+    {
+        var configured = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value?.Query?.MaxMapLayersPerRequest;
+        return configured is > 0 ? configured.Value : QueryLimits.DefaultMaxMapLayersPerRequest;
+    }
+
+    private static IResult? ValidateWmsLayerTokenCount(
+        HttpContext context,
+        string parameterName,
+        int tokenCount,
+        int maxLayers)
+    {
+        if (tokenCount <= maxLayers)
+        {
+            return null;
+        }
+
+        return CreateWmsServiceException(
+            context,
+            "InvalidParameterValue",
+            $"{parameterName} must name at most {maxLayers.ToString(CultureInfo.InvariantCulture)} layers.");
+    }
+
+    /// <summary>
+    /// Collapses repeated requests for the same storage layer to its first occurrence, keeping
+    /// positional per-layer values (FILTER) aligned with the surviving layers. STYLES is
+    /// validated positionally against the original LAYERS list before this runs (#6097).
+    /// </summary>
+    private static (WmsLayer[] Layers, SqlFragment?[]? Filters) DeduplicateWmsLayers(
+        WmsLayer[] layers,
+        SqlFragment?[]? filters)
+    {
+        var seen = new HashSet<int>();
+        var kept = new List<int>(layers.Length);
+        for (var i = 0; i < layers.Length; i++)
+        {
+            if (seen.Add(layers[i].StorageLayerId))
+            {
+                kept.Add(i);
+            }
+        }
+
+        if (kept.Count == layers.Length)
+        {
+            return (layers, filters);
+        }
+
+        WmsLayer[] keptLayers = [.. kept.Select(index => layers[index])];
+        if (filters is null)
+        {
+            return (keptLayers, null);
+        }
+
+        SqlFragment?[] keptFilters = [.. kept.Select(index => filters[index])];
+        return (keptLayers, keptFilters);
     }
 
     private static bool TryResolveWmsRequestedLayers(
@@ -485,6 +583,7 @@ internal static partial class WmsRequestHandlers
                 // (for example, SQL Server/MySQL temporal pushdown) do not expose a
                 // TIME dimension and must therefore ignore TIME for this layer.
                 var range = await ResolveTemporalRangeSafeAsync(
+                    context,
                     layers[i],
                     featureReader,
                     logger,
@@ -562,8 +661,13 @@ internal static partial class WmsRequestHandlers
 
             if (hasExplicitTime && effectiveStart is DateTimeOffset instant && effectiveEnd == instant)
             {
-                var nearest = await FindNearestWmsTemporalValueAsync(
+                var nearestReader = await ResolveLayerReaderAsync(
+                    context,
+                    layer,
                     featureReader,
+                    cancellationToken).ConfigureAwait(false);
+                var nearest = await FindNearestWmsTemporalValueAsync(
+                    nearestReader,
                     layer,
                     startFieldName,
                     selection.EndFieldName,
@@ -784,35 +888,76 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            FilterExpression expression;
-            try
+            var (filter, error) = TranslateWmsLayerFilter(
+                context,
+                filterExpressionService,
+                layers[i].Resource,
+                token);
+            if (error is not null)
             {
-                expression = Fes20Parser.ParseFilter(token);
-            }
-            catch (Fes20ParseException ex)
-            {
-                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                    $"Invalid FILTER XML: {ex.Message}"));
-            }
-
-            expression = filterExpressionService.Normalize(expression, layers[i].Resource);
-            if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
-            {
-                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                    "FILTER expression must be a boolean predicate."));
+                return (null, error);
             }
 
-            var translation = filterExpressionService.Translate(expression, layers[i].Resource);
-            if (!translation.IsSuccess)
-            {
-                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                    translation.ErrorMessage ?? "Invalid filter expression."));
-            }
-
-            layerFilters[i] = translation.SqlFilter;
+            layerFilters[i] = filter;
         }
 
         return (layerFilters, null);
+    }
+
+    /// <summary>
+    /// Parses one WMS FILTER token against the layer's public schema. Unknown properties,
+    /// namespaced ValueReferences, and literals the field cannot hold are client errors
+    /// (<c>InvalidParameterValue</c>), matching WFS (#6183). Publisher-hidden fields are
+    /// not part of that schema (#6098). A geometry literal with no <c>srsName</c> uses
+    /// this layer's storage CRS rather than EPSG:4326 (#6184).
+    /// </summary>
+    internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerFilter(
+        HttpContext context,
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Resource resource,
+        string token)
+    {
+        FilterExpression expression;
+        try
+        {
+            // Per layer: one FILTER token can apply to several layers with different CRSs.
+            var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+            expression = Fes20Parser.ParseFilter(token, defaultSrid);
+        }
+        catch (Fes20ParseException ex)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                $"Invalid FILTER XML: {ex.Message}"));
+        }
+
+        var publicResource = resource.WithoutHiddenSchemaFields();
+        try
+        {
+            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
+                expression,
+                publicResource,
+                propertyName => WfsPropertyNameResolver.Resolve(publicResource, propertyName, allowGeometryAlias: true));
+            expression = filterExpressionService.Normalize(expression, publicResource);
+        }
+        catch (ArgumentException ex)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue", ex.Message));
+        }
+
+        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                "FILTER expression must be a boolean predicate."));
+        }
+
+        var translation = filterExpressionService.Translate(expression, publicResource);
+        if (!translation.IsSuccess)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                translation.ErrorMessage ?? "Invalid filter expression."));
+        }
+
+        return (translation.SqlFilter, null);
     }
 
     private static bool TryParseWmsBbox(
@@ -1083,12 +1228,7 @@ internal static partial class WmsRequestHandlers
         => IsWms111Version(version) ? Wms111CapabilitiesMimeType : WmsCapabilitiesMimeType;
 
     private static string GetWmsExceptionMimeType(string? exceptionsValue, string? version)
-    {
-        return string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase) ||
-               (string.IsNullOrWhiteSpace(exceptionsValue) && IsWms111Version(version))
-            ? WmsSeXmlExceptionMimeType
-            : WmsXmlExceptionMimeType;
-    }
+        => WmsServiceExceptionReport.GetMimeType(exceptionsValue, version);
 
     private static bool TryParseWmsTransparent(string? value, out bool transparent)
     {
@@ -1228,22 +1368,6 @@ internal static partial class WmsRequestHandlers
 
         return pixelX >= 0 && pixelX < imageWidth &&
                pixelY >= 0 && pixelY < imageHeight;
-    }
-
-    private static Dictionary<string, object?> BuildVisibleFeatureInfoAttributes(Feature feature)
-    {
-        var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var attribute in feature.Attributes)
-        {
-            if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-            {
-                continue;
-            }
-
-            attributes[attribute.Key] = FeatureAttributeValueNormalizer.Normalize(attribute.Value);
-        }
-
-        return attributes;
     }
 
     /// <summary>
@@ -1488,46 +1612,7 @@ internal static partial class WmsRequestHandlers
     }
 
     private static string BuildWmsServiceExceptionReport(string code, string message, string? version)
-    {
-        if (IsWms111Version(version))
-        {
-            // WMS 1.1.1 (OGC 01-068r3 Annex A.4) names this exception code InvalidSRS;
-            // InvalidCRS is the WMS 1.3.0 equivalent.
-            if (string.Equals(code, "InvalidCRS", StringComparison.OrdinalIgnoreCase))
-            {
-                code = "InvalidSRS";
-            }
-
-            var legacy = new StringBuilder(512);
-            legacy.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-            legacy.Append("<!DOCTYPE ServiceExceptionReport SYSTEM \"")
-                .Append(Wms111ExceptionDtd)
-                .AppendLine("\">");
-            legacy.AppendLine("<ServiceExceptionReport version=\"1.1.1\">");
-            legacy.Append("  <ServiceException code=\"")
-                .Append(EscapeXml(code))
-                .Append("\">")
-                .Append(EscapeXml(message))
-                .AppendLine("</ServiceException>");
-            legacy.AppendLine("</ServiceExceptionReport>");
-            return legacy.ToString();
-        }
-
-        var sb = new StringBuilder(512);
-        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        sb.Append("<ServiceExceptionReport xmlns=\"http://www.opengis.net/ogc\" ")
-            .Append("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" ")
-            .Append("version=\"1.3.0\" xsi:schemaLocation=\"")
-            .Append(WmsExceptionSchemaLocation)
-            .AppendLine("\">");
-        sb.Append("  <ServiceException code=\"")
-            .Append(EscapeXml(code))
-            .Append("\">")
-            .Append(EscapeXml(message))
-            .AppendLine("</ServiceException>");
-        sb.AppendLine("</ServiceExceptionReport>");
-        return sb.ToString();
-    }
+        => WmsServiceExceptionReport.Build(code, message, version);
 
     private static bool TryHandleCiteWmsGetMap(
         HttpContext context,

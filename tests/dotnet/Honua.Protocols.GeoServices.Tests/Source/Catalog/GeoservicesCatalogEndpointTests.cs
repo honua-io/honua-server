@@ -36,6 +36,32 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     public GeoservicesCatalogEndpointTests(WebAppFixture fixture) => _fixture = fixture;
 
+    [IntegrationTheory]
+    [InlineData("GET")]
+    [InlineData("POST")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}")]
+    [Endpoint("POST /rest/services/{folderName}")]
+    public async Task ServiceFolder_ReturnsOnlyTheRequestedServicesCatalogEntries(string method)
+    {
+        using var rootResponse = await _fixture.Client.GetAsync("/rest/services?f=json");
+        rootResponse.Be200Ok();
+        using var root = JsonDocument.Parse(await rootResponse.Content.ReadAsStringAsync());
+        var entries = root.RootElement.GetProperty("services").EnumerateArray().ToArray();
+        entries.Should().NotBeEmpty();
+        var name = entries[0].GetProperty("name").GetString()!;
+        var expected = entries.Where(entry => entry.GetProperty("name").GetString() == name)
+            .Select(entry => entry.GetRawText()).ToArray();
+
+        using var request = new HttpRequestMessage(new HttpMethod(method),
+            $"/rest/services/{Uri.EscapeDataString(name)}?f=json");
+        using var response = await _fixture.Client.SendAsync(request);
+        response.Be200Ok();
+        using var folder = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        folder.RootElement.GetProperty("services").EnumerateArray()
+            .Select(entry => entry.GetRawText()).Should().BeEquivalentTo(expected);
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
@@ -92,10 +118,65 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         // selector before it will execute any image operation (honua-server#3375).
         payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
         payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
-        payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/services");
+        payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/arcgis/services");
+        payload.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be("http://localhost");
         payload.RootElement.GetProperty("secureSoapUrl").ValueKind.Should().Be(JsonValueKind.Null);
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
         authInfo.TryGetProperty("isTokenBasedSecurity", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /rest/services")]
+    public async Task PostServicesDirectory_WithFormBody_ReturnsCatalogPayload()
+    {
+        // honua-server#5012: Esri clients POST to the catalog roots during connection and token
+        // negotiation, and the GeoServices REST contract is that a resource answers either verb.
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var response = await _fixture.Client.PostAsync("/rest/services", form);
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        payload.RootElement.GetProperty("folders").ValueKind.Should().Be(JsonValueKind.Array);
+        payload.RootElement.GetProperty("services").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTheory]
+    [InlineData("/rest/services")]
+    [InlineData("/rest/info")]
+    [InlineData("/rest/services?f=json")]
+    [InlineData("/rest/info?f=json")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /rest/services")]
+    [Endpoint("POST /rest/info")]
+    public async Task PostCatalog_WithUnsupportedFormFormat_ReturnsValidationError(string route)
+    {
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "xml")]);
+        using var response = await _fixture.Client.PostAsync(route, form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /rest/info")]
+    public async Task PostRestInfo_WithFormBody_ReturnsRootInfo()
+    {
+        // honua-server#5012: see PostServicesDirectory_WithFormBody_ReturnsCatalogPayload.
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var response = await _fixture.Client.PostAsync("/rest/info", form);
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
+        payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/arcgis/services");
+        payload.RootElement.TryGetProperty("authInfo", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -120,7 +201,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
             response.Be200Ok();
             var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var expected = $"{publicBaseUrl}/services";
+            var expected = $"{publicBaseUrl}/arcgis/services";
             payload.RootElement.GetProperty("soapUrl").GetString().Should().Be(expected);
             payload.RootElement.GetProperty("secureSoapUrl").GetString().Should().Be(
                 expected,
@@ -345,6 +426,41 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
             payload.Descendants().Single(element => element.Name.LocalName == "faultcode")
                 .Value.Should().Be("soap:Server");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_UtilitiesWithFailedRasterStore_ReturnsOnlyPrintingToolsWithoutProbing()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("raster store unavailable")));
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            rasterStore.ClearReceivedCalls();
+            using var response = await PostSoapOperationAsync(fixture.Client, "/services",
+                """
+                <GetServiceDescriptionsEx xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  <FolderName>Utilities</FolderName>
+                </GetServiceDescriptionsEx>
+                """);
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var description = payload.Descendants().Single(element => element.Name.LocalName == "ServiceDescription");
+            description.Elements().Single(element => element.Name.LocalName == "Name").Value
+                .Should().Be("Utilities/PrintingTools");
+            description.Elements().Single(element => element.Name.LocalName == "Type").Value.Should().Be("GPServer");
+            await rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -1100,9 +1216,11 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
                 .Value.Should().Be("None");
             result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")
-                .Value.Should().Be("NorthWest,LockRaster,None");
+                .Value.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
+            result.Elements().Single(element => element.Name.LocalName == "DefaultMosaicMethod")
+                .Value.Should().Be("esriMosaicAttribute");
             result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
-                .Value.Should().Be("false");
+                .Value.Should().Be("true");
             result.Descendants().Single(element => element.Name.LocalName == "WKID")
                 .Value.Should().Be("4326");
 
@@ -1313,6 +1431,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
                 payload.Descendants().Single(element => element.Name.LocalName == "PixelType")
                     .Value.Should().Be(esriPixelType);
+                payload.Descendants().Single(element => element.Name.LocalName == "SupportBSQ")
+                    .Value.Should().Be("false");
             }
             finally
             {
@@ -1515,6 +1635,156 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             await rasterStore.DidNotReceive().ListRastersAsync(
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("esriImageReturnURL")]
+    [InlineData("esriImageReturnMimeData")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_ExportImage_BsqPreservesFloatSamples(string returnType)
+    {
+        var samples = new[] { -17.25f, 0f, 33.5f, 200f, 210f, 220f };
+        var pixels = samples.SelectMany(BitConverter.GetBytes).ToArray();
+        var rasterStore = CreateSoapRasterStore(bandCount: 2, pixelType: "32BF");
+        rasterStore.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = pixels,
+                ContentType = "application/octet-stream",
+                Width = 3,
+                Height = 1,
+                BandCount = 2,
+                PixelType = "32BF",
+                Srid = 4326
+            });
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            var operation = $$"""
+                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  <ImageDescription>
+                    <Extent><XMin>-122.44</XMin><YMin>37.76</YMin><XMax>-122.40</XMax><YMax>37.79</YMax>
+                      <SpatialReference><WKID>4326</WKID></SpatialReference></Extent>
+                    <Width>3</Width><Height>1</Height><PixelType>F32</PixelType>
+                    <Interpolation>RSP_NearestNeighbor</Interpolation><Compression>None</Compression>
+                    <MosaicRule><MosaicMethod>esriMosaicNone</MosaicMethod><MosaicOperation>MT_FIRST</MosaicOperation></MosaicRule>
+                    <BSQ>false</BSQ><NoDataInterpretation>esriNoDataMatchAny</NoDataInterpretation>
+                  </ImageDescription>
+                  <ImageType><ImageFormat>esriImageBSQ</ImageFormat><ImageReturnType>{{returnType}}</ImageReturnType></ImageType>
+                </ExportImage>
+                """;
+            using var metadata = await PostSoapAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer", "GetServiceInfo");
+            metadata.Be200Ok();
+            XDocument.Parse(await metadata.Content.ReadAsStringAsync()).Descendants()
+                .Single(element => element.Name.LocalName == "SupportBSQ").Value.Should().Be("true");
+            using var response = await PostSoapOperationAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer", operation);
+            response.Be200Ok();
+            var result = XDocument.Parse(await response.Content.ReadAsStringAsync()).Descendants()
+                .Single(element => element.Name.LocalName == "Result");
+            result.Elements().Single(element => element.Name.LocalName == "ImageType").Value.Should().Be("esriImageBSQ");
+            byte[] data;
+            if (returnType == "esriImageReturnMimeData")
+            {
+                data = Convert.FromBase64String(result.Elements().Single(element => element.Name.LocalName == "ImageData").Value);
+            }
+            else
+            {
+                using var image = await fixture.Client.GetAsync(result.Elements().Single(element => element.Name.LocalName == "ImageURL").Value);
+                image.Be200Ok();
+                data = await image.Content.ReadAsByteArrayAsync();
+            }
+            data.Should().Equal(pixels.Concat(new byte[] { 0xe0 }));
+            using var compressed = await PostSoapOperationAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation.Replace("<Compression>None</Compression>", "<Compression>JPEG</Compression>", StringComparison.Ordinal));
+            compressed.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+            using var overrideResponse = await PostSoapOperationAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation.Replace("<PixelType>F32</PixelType>", "<PixelType>F32</PixelType><NoData>0</NoData>", StringComparison.Ordinal));
+            overrideResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotImplemented);
+            await rasterStore.Received(1).ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(),
+                Arg.Is<RasterQuery>(query => query.OutputFormat == RasterFormat.Raw && query.ResamplingAlgorithm == ResamplingAlgorithm.NearestNeighbor),
+                Arg.Any<CancellationToken>());
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
+    // #4063: SOAP GetServiceInfo advertises the same AllowedMosaicMethods as REST, so every advertised
+    // method must be accepted by SOAP ExportImage; Center is not advertised and stays a fault.
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_ExportImage_AcceptsEveryAdvertisedMosaicMethod()
+    {
+        var rasterStore = CreateSoapRasterStore();
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            static string Operation(string mosaicRule) => $"""
+                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+                             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <ImageDescription xsi:type="GeoImageDescription">
+                    <Extent xsi:type="EnvelopeN">
+                      <XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax>
+                      <SpatialReference xsi:type="GeographicCoordinateSystem"><WKID>4326</WKID></SpatialReference>
+                    </Extent>
+                    <Width>128</Width><Height>64</Height>
+                  </ImageDescription>
+                  <MosaicRule xsi:type="MosaicRule">{mosaicRule}</MosaicRule>
+                  <ImageType xsi:type="ImageType">
+                    <ImageFormat>esriImagePNG</ImageFormat>
+                    <ImageReturnType>esriImageReturnURL</ImageReturnType>
+                  </ImageType>
+                </ExportImage>
+                """;
+
+            foreach (var mosaicRule in new[]
+                     {
+                         "<MosaicMethod>None</MosaicMethod>",
+                         "<MosaicMethod>NorthWest</MosaicMethod>",
+                         "<MosaicMethod>esriMosaicNadir</MosaicMethod>",
+                         "<MosaicMethod>Seamline</MosaicMethod>",
+                         "<MosaicMethod>esriMosaicAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>true</Ascending>",
+                         "<MosaicMethod>ByAttribute</MosaicMethod><SortField>OBJECTID</SortField>",
+                         "<MosaicMethod>ByAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>1</Ascending>"
+                     })
+            {
+                using var response = await PostSoapOperationAsync(
+                    fixture.Client,
+                    $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                    Operation(mosaicRule));
+
+                var content = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, $"{mosaicRule}: {content}");
+                XDocument.Parse(content).Descendants()
+                    .Single(element => element.Name.LocalName == "ImageURL")
+                    .Value.Should().StartWith("http://localhost/temp/");
+            }
+
+            using var center = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                Operation("<MosaicMethod>esriMosaicCenter</MosaicMethod>"));
+            center.IsSuccessStatusCode.Should().BeFalse();
+            (await center.Content.ReadAsStringAsync()).Should().Contain("esriMosaicCenter is not supported");
+
+            using var badAscending = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                Operation("<MosaicMethod>ByAttribute</MosaicMethod><Ascending>sometimes</Ascending>"));
+            badAscending.IsSuccessStatusCode.Should().BeFalse();
         }
         finally
         {

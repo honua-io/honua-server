@@ -4,6 +4,8 @@
 using System.Reflection;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Helpers;
@@ -65,6 +67,7 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             try
             {
                 await TryRecoverAsync(stoppingToken);
+                _context.MarkRecovered();
                 MonitoringLog.DatabaseRecoverySucceeded(_logger, attempt);
                 return;
             }
@@ -79,17 +82,25 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             // so retries/backoff and the terminal "give up" path both stay reachable.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                if (!StartupDatabaseResilience.IsTransientConnectivityError(ex))
+                if (IsSchemaBehindBinary(ex, out var schemaFloorReason))
+                {
+                    // The database is reachable but a required migration is not applied yet (a cold
+                    // start before the migration task ran): keep waiting, and say so on readiness.
+                    _context.UpdateReason(ReadinessReasonCodes.SchemaFloor, schemaFloorReason);
+                }
+                else if (!IsTransient(ex))
                 {
                     // A non-transient failure surfaced during recovery (e.g. the database is now
                     // reachable but a migration script is invalid). Stop retrying; this needs an
                     // operator, not another connection attempt.
+                    _context.MarkRecoveryAbandoned(DescribeFailure(ex));
                     MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
                     return;
                 }
 
                 if (_options.MaxRetryAttempts > 0 && attempt >= _options.MaxRetryAttempts)
                 {
+                    _context.MarkRecoveryAbandoned(DescribeFailure(ex));
                     MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
                     return;
                 }
@@ -128,34 +139,110 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         {
             var compatibility = await checker.CheckCompatibilityAsync(connectionString, cancellationToken);
             _compatibilityState.SetResult(compatibility);
+            if (compatibility.IsTransientFailure)
+            {
+                // Still unreachable (slot exhaustion, timeout): keep retrying.
+                throw new TransientRecoveryFailureException(
+                    compatibility.FailureClass ?? "database unavailable",
+                    compatibility.Error);
+            }
+
             if (!compatibility.IsCompatible)
             {
                 // Reaching the server but failing compatibility is a non-transient condition.
-                throw new InvalidOperationException(
+                throw new IncompatibleDatabaseException(
                     compatibility.ErrorMessage ?? "Database compatibility check failed.");
             }
         }
 
-        // Rerun migrations if they were pending at degraded start.
-        if (_context.MigrationsPending
-            && _options.RetryMigrationsInBackground
-            && _services.GetService(typeof(IDatabaseMigrationRunner)) is IDatabaseMigrationRunner runner)
+        // Migrations skipped by configuration: degraded start deferred the journal/schema guard,
+        // it did not waive it.
+        if (_context.SchemaGuardPending || (_context.MigrationsPending && !_options.RetryMigrationsInBackground))
         {
-            var assembly = _context.MigrationsAssembly ?? Assembly.GetEntryAssembly();
-            if (assembly is not null)
+            var schemaGuard = _services.GetService(typeof(IDatabaseSchemaGuard)) as IDatabaseSchemaGuard
+                ?? throw new InvalidOperationException("Database recovery requires the deferred schema guard.");
+            if (_context.SchemaGuardPending)
             {
-                _migrationState.MarkRunning("Re-applying database migrations after recovery.");
-                var result = await runner.RunMigrationsAsync(connectionString, assembly, cancellationToken);
-                if (!result.Successful)
+                var adoptedBaseline = schemaGuard.TryAdoptMatchingRasterBaselineAsync(connectionString, cancellationToken);
+                if (adoptedBaseline is not null)
                 {
-                    var error = result.Error
-                        ?? new InvalidOperationException(result.ErrorMessage ?? "Database migration failed.");
-                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
-                    return; // unreachable; satisfies the compiler
+                    var adoptedScript = await adoptedBaseline.ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(adoptedScript))
+                    {
+                        MonitoringLog.RasterProviderBaselineAdopted(_logger, adoptedScript);
+                    }
                 }
+            }
+
+            await schemaGuard.VerifyAsync(connectionString, cancellationToken);
+            _migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified after recovery.");
+            return;
+        }
+
+        // Rerun migrations if they were pending at degraded start.
+        if (_context.MigrationsPending)
+        {
+            var runner = _services.GetService(typeof(IDatabaseMigrationRunner)) as IDatabaseMigrationRunner
+                ?? throw new InvalidOperationException("Database recovery requires the deferred migration runner.");
+            var assembly = _context.MigrationsAssembly ?? Assembly.GetEntryAssembly()
+                ?? throw new InvalidOperationException("Database recovery requires the migration assembly.");
+            _migrationState.MarkRunning("Re-applying database migrations after recovery.");
+            var result = await runner.RunMigrationsAsync(connectionString, assembly, cancellationToken);
+            if (!result.Successful)
+            {
+                var error = result.Error
+                    ?? new InvalidOperationException(result.ErrorMessage ?? "Database migration failed.");
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+                return; // unreachable; satisfies the compiler
             }
         }
 
         _migrationState.MarkSucceeded("Database recovered; migrations are up to date.");
     }
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> says the schema is behind this binary: a required
+    /// numbered migration is not journaled as applied. A schema that diverges from its journal, or a
+    /// database newer than this binary (<see cref="DatabaseSchemaCompatibilityException"/>), is not.
+    /// </summary>
+    internal static bool IsSchemaBehindBinary(Exception exception, out string reason)
+    {
+        if (exception is DatabaseSchemaFloorException
+            {
+                FailureKind: DatabaseSchemaFloorFailureKind.MigrationNotApplied,
+            } floor)
+        {
+            reason = BuildSchemaFloorReason(floor.MigrationScript);
+            return true;
+        }
+
+        reason = string.Empty;
+        return false;
+    }
+
+    /// <summary>Sanitized schema-floor reason (the migration script name only).</summary>
+    internal static string BuildSchemaFloorReason(string migrationScript)
+        => "schema guard: migration '" + migrationScript + "' not applied";
+
+    private static bool IsTransient(Exception exception)
+        => exception is TransientRecoveryFailureException
+            || StartupDatabaseResilience.IsTransientConnectivityError(exception);
+
+    private static string DescribeFailure(Exception exception)
+        => exception switch
+        {
+            TransientRecoveryFailureException transient => transient.FailureClass,
+            IncompatibleDatabaseException incompatible => incompatible.Message,
+            _ => StartupDatabaseResilience.DescribeFailureClass(exception),
+        };
+
+    /// <summary>The compatibility probe still could not reach the database.</summary>
+    private sealed class TransientRecoveryFailureException(string failureClass, Exception? innerException)
+        : Exception("Database still unavailable: " + failureClass + ".", innerException)
+    {
+        public string FailureClass { get; } = failureClass;
+    }
+
+    /// <summary>The database is reachable but failed the compatibility check.</summary>
+    private sealed class IncompatibleDatabaseException(string message) : InvalidOperationException(message);
 }

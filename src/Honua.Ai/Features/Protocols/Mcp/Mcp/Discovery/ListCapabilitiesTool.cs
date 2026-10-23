@@ -193,15 +193,10 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         var catalog = entries.Select(e =>
             (Views.McpWorkflowViewDescriptorClassifier.Describe(e.Tool), e.IsDynamic)).ToArray();
 
-        var summaries = new List<Views.McpWorkflowViewSummary>(Views.McpWorkflowViewCatalog.Names.Count);
-        foreach (var name in Views.McpWorkflowViewCatalog.Names)
-        {
-            var definition = Views.McpWorkflowViewCatalog.All[name];
-            summaries.Add(Views.McpWorkflowViewWire.BuildSummary(
-                Views.McpWorkflowViewProjector.Project(definition, catalog)));
-        }
-
-        return summaries;
+        return Views.McpWorkflowViewCatalog.Names
+            .Select(name => Views.McpWorkflowViewWire.BuildSummary(
+                Views.McpWorkflowViewProjector.Project(Views.McpWorkflowViewCatalog.All[name], catalog)))
+            .ToList();
     }
 
     private static async Task<List<McpCapabilityTool>> BuildToolManifestAsync(
@@ -222,8 +217,13 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             // Only advertise tools with capability-registry provenance. The startup
             // composition check (Capabilities:RegistryBinding) fails fast if the
             // served surface ever contains a tool the registry does not describe,
-            // so in a conformant host this filter drops nothing.
-            if (registryToolNames is not null && !registryToolNames.Contains(tool.Name))
+            // so in a conformant host this filter drops nothing. A tool projected
+            // from the canonical operation catalog is bound through its operation
+            // descriptor (the same rule McpRegistryCompositionValidator applies), so
+            // the published set is reported rather than silently dropped (#3363).
+            if (registryToolNames is not null
+                && !registryToolNames.Contains(tool.Name)
+                && tool is not PublishedOperationTool)
             {
                 continue;
             }

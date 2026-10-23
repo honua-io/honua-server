@@ -5,10 +5,12 @@ using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Infrastructure.Middleware;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -24,6 +26,22 @@ public sealed class EndpointResponseMetadataTests : IDisposable
         new(@"\{([^{}:]+):[^{}]+\}", RegexOptions.Compiled);
 
     private readonly TestWebApplicationFactory _factory = new();
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void PortalUriDiscovery_IsTenantIndependentLikeSharingInfo()
+    {
+        using var _ = _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>().ToArray();
+
+        foreach (var path in new[] { "/arcgisuris.xml", "/sharing/rest/info" })
+        {
+            var endpoint = endpoints.Single(endpoint => endpoint.RoutePattern.RawText == path);
+            endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>().Should().NotBeNull(
+                "deployment-wide discovery must accept authenticated callers without a tenant claim");
+        }
+    }
 
     [Fact]
     [Trait("Category", "Architecture")]
@@ -77,7 +95,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
 
         foreach (var (method, path, expectedType) in new[]
                  {
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ServiceApplyEditsResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ServiceLayerEditResult[])),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
@@ -89,7 +107,6 @@ public sealed class EndpointResponseMetadataTests : IDisposable
                      ("POST", "/rest/services/{serviceId}/FeatureServer/unRegisterReplica", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.SuccessResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/append", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.AppendResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.AppendResponse)),
-                     ("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.CalculateResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.CalculateResponse))
                  })
         {
@@ -104,6 +121,33 @@ public sealed class EndpointResponseMetadataTests : IDisposable
 
         GetResponseMetadata("POST", "/rest/services/{serviceId}/FeatureServer/createReplica", StatusCodes.Status503ServiceUnavailable)
             .Should().NotBeEmpty();
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void ImageServerExportImageEndpoints_DeclareNoOutputCachePolicy()
+    {
+        using var _ = _factory.CreateClient();
+
+        // honua-server#4980: exportImage answers provider faults with an HTTP 200 error
+        // envelope and is keyed by an ad hoc bbox, so it must stay outside the output cache;
+        // with no named policy only the base policy applies, and that never stores a route.
+        var exportImageEndpoints = _factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => (endpoint.RoutePattern.RawText ?? string.Empty)
+                .EndsWith("/ImageServer/exportImage", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        exportImageEndpoints.Should().NotBeEmpty();
+        foreach (var endpoint in exportImageEndpoints)
+        {
+            endpoint.Metadata.GetMetadata<OutputCacheAttribute>().Should().BeNull(
+                $"{endpoint.RoutePattern.RawText} must not opt into a named output-cache policy");
+            endpoint.Metadata.GetMetadata<IOutputCachePolicy>().Should().BeNull(
+                $"{endpoint.RoutePattern.RawText} must not declare an inline output-cache policy");
+        }
     }
 
     [Fact]
@@ -124,6 +168,10 @@ public sealed class EndpointResponseMetadataTests : IDisposable
             .Select(process => $"{process.ProcessId}:{string.Join(',', process.OutputArtifactKinds)}")
             .Should().Equal(
             [
+                // conversion.geometry-format became an executable sync/async job in #3936;
+                // it publishes a Scalar GeometryFormatResult document, so it joins the
+                // reachable raw-output set without adding a new media type.
+                "conversion.geometry-format:Scalar",
                 "geometry.area:Scalar",
                 "geometry.buffer:FeatureLayer",
                 "geometry.centroid:FeatureLayer",
@@ -154,7 +202,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
             "execute metadata must advertise document mode and only reachable raw representations");
 
         var environment = _factory.Services.GetRequiredService<IHostEnvironment>();
-        using var openApi = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+        using var openApi = JsonDocument.Parse(File.ReadAllText(Path.Join(
             environment.ContentRootPath,
             "ogc-processes-openapi.json")));
         var staticSuccessContentTypes = openApi.RootElement

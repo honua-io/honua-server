@@ -16,6 +16,7 @@ namespace Honua.ControlPlane.Lambda;
 [JsonSerializable(typeof(BatchJobStateChangeEvent))]
 [JsonSerializable(typeof(BatchJobStateChangeDetail))]
 [JsonSerializable(typeof(BackstopTickEvent))]
+[JsonSerializable(typeof(ScheduledTickEvent))]
 internal sealed partial class ControlPlaneLambdaJsonContext : JsonSerializerContext
 {
 }
@@ -27,4 +28,15 @@ internal sealed partial class ControlPlaneLambdaJsonContext : JsonSerializerCont
 /// </summary>
 internal sealed class BackstopTickEvent
 {
+}
+
+/// <summary>
+/// EventBridge Scheduler payload for a periodic control-plane tick. honua-iac sets it per schedule
+/// to <c>{"kind": "&lt;ScheduledTickKind&gt;"}</c>; one function serves every kind.
+/// </summary>
+internal sealed class ScheduledTickEvent
+{
+    /// <summary>The <c>ScheduledTickKind</c> name to run once (case-insensitive on the server).</summary>
+    [JsonPropertyName("kind")]
+    public string? Kind { get; set; }
 }

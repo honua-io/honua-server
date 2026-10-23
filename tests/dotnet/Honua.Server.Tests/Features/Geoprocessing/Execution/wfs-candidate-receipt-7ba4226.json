@@ -1,0 +1,218 @@
+{
+  "schema": "honua.wfs-candidate-proof.v1",
+  "startedAt": "2026-09-12T21:52:03.397005+00:00",
+  "outcome": "fail",
+  "requestedImage": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "scenarios": [
+    {
+      "numberMatched": false,
+      "packageId": "wfs-proof-a5fd61ed3929",
+      "startedAt": "2026-09-12T21:52:03.996178+00:00",
+      "states": [
+        "Queued",
+        "Running",
+        "Succeeded"
+      ],
+      "workflowRunId": "wf-1cb7d17b37974bc78552c0bb5f411f1d",
+      "job": {
+        "jobId": "gp-533c07fc535518ae85c6f3df",
+        "kind": "Geoprocessing",
+        "queue": "local",
+        "backend": "local",
+        "targetKind": "KubernetesJob",
+        "workloadName": "Geoprocessing (local baseline)",
+        "definitionId": "workflow-package:wfs-proof-a5fd61ed3929:v1:wfs",
+        "status": "Succeeded",
+        "priority": "Normal",
+        "requestedBy": "admin",
+        "createdAt": "2026-09-12T21:52:06.0330579+00:00",
+        "updatedAt": "2026-09-12T21:52:12.4776872+00:00",
+        "completedAt": "2026-09-12T21:52:12.4776872+00:00",
+        "durationMs": 6444,
+        "percentComplete": 100,
+        "currentPhase": "Completed",
+        "attemptCount": 1,
+        "maxAttempts": 3,
+        "resourceRefs": [],
+        "artifactCount": 1,
+        "latestEvent": {
+          "type": "job.completed",
+          "occurredAt": "2026-09-12T21:52:12.4776872+00:00",
+          "status": "Succeeded",
+          "phase": "Completed"
+        },
+        "links": {
+          "self": "/api/v1/admin/jobs/gp-533c07fc535518ae85c6f3df",
+          "logs": "/api/v1/admin/jobs/gp-533c07fc535518ae85c6f3df/logs",
+          "artifacts": "/api/v1/admin/jobs/gp-533c07fc535518ae85c6f3df/artifacts",
+          "actions": "/api/v1/admin/jobs/gp-533c07fc535518ae85c6f3df/actions",
+          "steps": "/api/v1/admin/jobs/gp-533c07fc535518ae85c6f3df/steps",
+          "cancel": "/api/v1/admin/jobs/gp-533c07fc535518ae85c6f3df/cancel",
+          "retry": "/api/v1/admin/jobs/gp-533c07fc535518ae85c6f3df/retry",
+          "eventsByJob": "/api/v1/admin/observability/events?kind=job&operationId=gp-533c07fc535518ae85c6f3df"
+        }
+      },
+      "artifacts": {
+        "jobId": "gp-533c07fc535518ae85c6f3df",
+        "items": [
+          {
+            "artifactId": "data:application/geo+json;base64,eyJ0eXBlIjoiRmVhdHVyZUNvbGxlY3Rpb24iLCJwcm9jZXNzSWQiOiJzb3VyY2Uud2ZzIiwiZmVhdHVyZUNvdW50IjozLCJmZWF0dXJlcyI6W3sidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzEuMCwyLjAsMy4yNV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTEsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNCwibmFtZSI6IktcdTAxMkJsYXVlYSBcdTY1RTVcdTY3MkMiLCJhY3RpdmUiOnRydWV9fSx7InR5cGUiOiJGZWF0dXJlIiwiZ2VvbWV0cnkiOnsidHlwZSI6IlBvaW50IiwiY29vcmRpbmF0ZXMiOlszLjAsNC4wLC0xLjVdfSwicHJvcGVydGllcyI6eyJrZXkiOjEyLCJzZXJpYWwiOjkwMDcxOTkyNTQ3NDEwMDUsIm5hbWUiOm51bGwsImFjdGl2ZSI6dHJ1ZX19LHsidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzUuMCw2LjAsOS43NV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTMsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNiwibmFtZSI6Imxhc3QiLCJhY3RpdmUiOnRydWV9fV19",
+            "availability": "Redacted",
+            "message": "Artifact reference is not safe to expose."
+          }
+        ]
+      },
+      "duplicatePageRejected": true,
+      "outcome": "pass",
+      "starts": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "outputBytes": 564,
+      "outputSha256": "c8224a9711980f20c6ec3d5978263284a1eaf7c206bfb55d45920902b9e258ef",
+      "completedAt": "2026-09-12T21:52:13.491260+00:00",
+      "workflow": {
+        "OperationId": "wf-1cb7d17b37974bc78552c0bb5f411f1d",
+        "WorkflowId": "workflow-package:wfs-proof-a5fd61ed3929:v1",
+        "RunStatus": 1,
+        "StepsCompleted": 0,
+        "TotalSteps": 1,
+        "PercentComplete": 0,
+        "StartedAt": "2026-09-12T21:52:04.421121+00:00",
+        "CompletedAt": null,
+        "Duration": "00:00:44.0968047",
+        "ErrorMessage": null,
+        "Warnings": [
+          "wfs: transient observation failure for job 'gp-533c07fc535518ae85c6f3df': Job state could not be observed."
+        ],
+        "CurrentPhase": "Running",
+        "Status": 1
+      },
+      "workflowOutcome": "fail"
+    },
+    {
+      "numberMatched": true,
+      "packageId": "wfs-proof-23c187870956",
+      "startedAt": "2026-09-12T21:52:13.491388+00:00",
+      "states": [
+        "Succeeded"
+      ],
+      "workflowRunId": "wf-762e2f80d2194142a7c8662cf5415a9f",
+      "job": {
+        "jobId": "gp-7d9e96173719e4b2f7112694",
+        "kind": "Geoprocessing",
+        "queue": "local",
+        "backend": "local",
+        "targetKind": "KubernetesJob",
+        "workloadName": "Geoprocessing (local baseline)",
+        "definitionId": "workflow-package:wfs-proof-23c187870956:v1:wfs",
+        "status": "Succeeded",
+        "priority": "Normal",
+        "requestedBy": "admin",
+        "createdAt": "2026-09-12T21:52:17.4632975+00:00",
+        "updatedAt": "2026-09-12T21:52:17.7348453+00:00",
+        "completedAt": "2026-09-12T21:52:17.7348453+00:00",
+        "durationMs": 271,
+        "percentComplete": 100,
+        "currentPhase": "Completed",
+        "attemptCount": 1,
+        "maxAttempts": 3,
+        "resourceRefs": [],
+        "artifactCount": 1,
+        "latestEvent": {
+          "type": "job.completed",
+          "occurredAt": "2026-09-12T21:52:17.7348453+00:00",
+          "status": "Succeeded",
+          "phase": "Completed"
+        },
+        "links": {
+          "self": "/api/v1/admin/jobs/gp-7d9e96173719e4b2f7112694",
+          "logs": "/api/v1/admin/jobs/gp-7d9e96173719e4b2f7112694/logs",
+          "artifacts": "/api/v1/admin/jobs/gp-7d9e96173719e4b2f7112694/artifacts",
+          "actions": "/api/v1/admin/jobs/gp-7d9e96173719e4b2f7112694/actions",
+          "steps": "/api/v1/admin/jobs/gp-7d9e96173719e4b2f7112694/steps",
+          "cancel": "/api/v1/admin/jobs/gp-7d9e96173719e4b2f7112694/cancel",
+          "retry": "/api/v1/admin/jobs/gp-7d9e96173719e4b2f7112694/retry",
+          "eventsByJob": "/api/v1/admin/observability/events?kind=job&operationId=gp-7d9e96173719e4b2f7112694"
+        }
+      },
+      "artifacts": {
+        "jobId": "gp-7d9e96173719e4b2f7112694",
+        "items": [
+          {
+            "artifactId": "data:application/geo+json;base64,eyJ0eXBlIjoiRmVhdHVyZUNvbGxlY3Rpb24iLCJwcm9jZXNzSWQiOiJzb3VyY2Uud2ZzIiwiZmVhdHVyZUNvdW50IjozLCJmZWF0dXJlcyI6W3sidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzEuMCwyLjAsMy4yNV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTEsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNCwibmFtZSI6IktcdTAxMkJsYXVlYSBcdTY1RTVcdTY3MkMiLCJhY3RpdmUiOnRydWV9fSx7InR5cGUiOiJGZWF0dXJlIiwiZ2VvbWV0cnkiOnsidHlwZSI6IlBvaW50IiwiY29vcmRpbmF0ZXMiOlszLjAsNC4wLC0xLjVdfSwicHJvcGVydGllcyI6eyJrZXkiOjEyLCJzZXJpYWwiOjkwMDcxOTkyNTQ3NDEwMDUsIm5hbWUiOm51bGwsImFjdGl2ZSI6dHJ1ZX19LHsidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzUuMCw2LjAsOS43NV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTMsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNiwibmFtZSI6Imxhc3QiLCJhY3RpdmUiOnRydWV9fV19",
+            "availability": "Redacted",
+            "message": "Artifact reference is not safe to expose."
+          }
+        ]
+      },
+      "duplicatePageRejected": true,
+      "outcome": "pass",
+      "starts": [
+        0,
+        1,
+        2
+      ],
+      "outputBytes": 564,
+      "outputSha256": "c8224a9711980f20c6ec3d5978263284a1eaf7c206bfb55d45920902b9e258ef",
+      "completedAt": "2026-09-12T21:52:17.929361+00:00",
+      "workflow": {
+        "OperationId": "wf-762e2f80d2194142a7c8662cf5415a9f",
+        "WorkflowId": "workflow-package:wfs-proof-23c187870956:v1",
+        "RunStatus": 1,
+        "StepsCompleted": 0,
+        "TotalSteps": 1,
+        "PercentComplete": 0,
+        "StartedAt": "2026-09-12T21:52:13.6902475+00:00",
+        "CompletedAt": null,
+        "Duration": "00:01:06.2060538",
+        "ErrorMessage": null,
+        "Warnings": [
+          "wfs: transient observation failure for job 'gp-7d9e96173719e4b2f7112694': Job state could not be observed."
+        ],
+        "CurrentPhase": "Running",
+        "Status": 1
+      },
+      "workflowOutcome": "fail"
+    }
+  ],
+  "harnessSha256": "82f9c167922f12cc63d6b9ee04851d8f54a495ed48ec94bf755de1eb2d34ec0c",
+  "candidate": {
+    "containerId": "0f7373d6b2ea96fd01f0e2f08a9a9e9973475df1a0ad81df266e7528583d1815",
+    "imageId": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "repoDigests": [
+      "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd"
+    ],
+    "labels": {
+      "description": "Honua Geospatial Feature Server",
+      "honua.runtime.compilation": "native-aot",
+      "honua.runtime.entrypoint": "/app/Honua.Server",
+      "honua.runtime.profile": "web",
+      "maintainer": "Honua Development Team",
+      "org.opencontainers.image.created": "2026-09-11T10:08:22.453Z",
+      "org.opencontainers.image.description": "Cloud-native multi-protocol geospatial server — GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles, MCP, and gRPC, backed by PostGIS",
+      "org.opencontainers.image.licenses": "NOASSERTION",
+      "org.opencontainers.image.revision": "7ba422672e0c751843b17beb36e954a019cc19fb",
+      "org.opencontainers.image.source": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.title": "honua-server",
+      "org.opencontainers.image.url": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.version": "nightly-amd64",
+      "security.capabilities.drop": "ALL",
+      "security.group": "1001",
+      "security.non-root": "true",
+      "security.read-only-root": "true",
+      "security.user": "1001",
+      "version": "1.0"
+    },
+    "memoryLimitBytes": 1073741824,
+    "nanoCpus": 1000000000
+  },
+  "semanticOutcome": "pass",
+  "error": "Child content passed, but parent workflow did not succeed",
+  "completedAt": "2026-09-12T21:53:19.900892+00:00",
+  "cleanup": {
+    "outcome": "pass"
+  }
+}

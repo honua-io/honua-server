@@ -2,6 +2,12 @@
 
 This matrix defines the shared certification vocabulary for cross-client interoperability testing. It establishes a common core of test cases that all client lanes must address, plus lane-specific extensions.
 
+For QGIS UI, PyQGIS, ArcGIS Pro UI and ArcPy scope and completion, use the
+[four-client certification checklist](CLIENT_CERTIFICATION_CHECKLIST.md).
+This document supplies shared evidence IDs across clients; it is not a second
+desktop completion denominator. Server parity inventories and platform release
+requirements retain their separate roles.
+
 **Scope boundary**: this matrix tracks _client interoperability_ — whether a given client can successfully consume Honua Server APIs. It does not replace the [FeatureServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), [MapServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), or OGC coverage docs, which track _server API parity_.
 
 ## Certification Categories
@@ -55,7 +61,7 @@ These test cases form the shared certification baseline. Every client lane must 
 
 The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs above are the visual / style certification slice that ticket [`#478`](https://github.com/honua-io/honua-server/issues/478) introduces. They are append-only additions to the matrix — `CERT-RNDR-01` and `CERT-RNDR-02` are unchanged. The slice spec at [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md) defines per-scenario fixtures, expected colors, pass criteria, and lane substantiation.
 
-§ **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is exercised as a rendering-only connection (e.g., ArcGIS Pro smoke test), the query-focused categories — CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 — are recorded as `not-applicable` in the `mapserver` evidence file. If the client also exercises MapServer's layer query endpoint (`/{layer-id}/query`), record those results normally. See the [runbook per-protocol evidence section](CLIENT_TEMPLATE_RUNBOOK.md#per-protocol-evidence-files) for the exact split.
+§ **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is a rendering-only connection, for example a `desktop-arcgis` mapserver envelope, CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 are `not-applicable` unless that evidence identifier says the layer query was exercised. See [ArcGIS Pro](CLIENT_TEMPLATE_RUNBOOK.md#arcgis-pro).
 
 ### Geometry Tolerance (CERT-GEOM-01)
 
@@ -106,7 +112,7 @@ Canonical-client lanes converge on one versioned logical fixture and server-conf
 
 The contract is **frozen-2026.1**. The machine-readable manifest is [`client-certification-fixture.v1.json`](data/client-certification-fixture.v1.json), paired with the prose [`CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md`](CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md). It content-addresses six inputs (`client-compat-v1.sql`, `browser-compat.yaml`, `portal-compat.yaml`, `apply-yaml-seed.sh`, the seed runner, and the server config) into `fixtureRevision` / `serverConfigRevision`, plus a declaration-digested `authPolicyRevision`. `CanonicalFixtureManifestTests` recomputes every digest from the real files, and `scripts/certification/verify-fixture-manifest.py` is the PR-tier verifier.
 
-Frozen does not mean complete: the manifest records **21 governed gaps** with tracking issues rather than claiming coverage the seed does not have — notably absent multipart and hole geometry, no non-ASCII attribute values, an uncertified edit path, and four unrealized auth profiles (expired credential, insufficient role, cross-tenant denial, separate proposer/approver). Depth remains [#3435](https://github.com/honua-io/honua-server/issues/3435).
+Frozen does not mean complete: the manifest records **20 governed gaps** with tracking issues rather than claiming coverage the seed does not have — notably absent multipart and hole geometry, no non-ASCII attribute values, an uncertified edit path, and four unrealized auth profiles (expired credential, insufficient role, cross-tenant denial, separate proposer/approver). Depth remains [#3435](https://github.com/honua-io/honua-server/issues/3435).
 
 Two active lanes do **not** yet bind the canonical vector fixture: `js` and `arcgis-stub` run against `browser_compat` layer 2000 (3 point features, `objectid`/`name`/`shape` only), so they exercise none of the canonical attribute spread, null geometry, or ten-feature pagination. That is recorded as a gap against [#3392](https://github.com/honua-io/honua-server/issues/3392), not as equivalence.
 
@@ -139,7 +145,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
-| **Desktop — ArcGIS Pro** | Stub (REST) + manual/scheduled licensed runner scaffold | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*); licensed `desktop-arcgis` workflow emits FeatureServer + MapServer envelopes when an explicitly enabled self-hosted Windows ArcGIS Pro runner is available | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
+| **Desktop — ArcGIS Pro** | `arcgis-stub` is REST-only. Desktop certification is evidence identifier `desktop-arcgis` in honua-esri-compat | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*). FeatureServer and MapServer envelopes are `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`. No successful desktop run is linked | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual) |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -174,6 +180,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | JS-EXT-OL-ITEMS-01 | Feature items list and count | OGC Features | pass/fail+count |
 | JS-EXT-OL-GEOJSON-01 | ol/format/GeoJSON feature parsing | OGC Features | pass/fail |
 | JS-EXT-OL-GEOJSON-02 | ol/format/GeoJSON single-item parsing | OGC Features | pass/fail |
+| JS-EXT-OL-WFS-GETFEATURE-01 | OpenLayers WFS parses populated unfiltered GetFeature; no core query-filtering credit | WFS | pass/fail |
 | JS-EXT-TILES-DISC-01 | OGC Tiles landing page | MVT | pass/fail |
 | JS-EXT-TILES-DISC-02 | Collection tilesets listing | MVT | pass/fail |
 | JS-EXT-TILES-SCHM-01 | Tileset metadata introspection | MVT | pass/fail |
@@ -218,7 +225,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 
 #### ArcGIS Portal Facade Lane (`arcgis-stub` `portal` protocol)
 
-The Portal/Sharing facade (epic #1240) lets packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) bind through Portal items + ArcGIS tokens instead of raw `/rest/services` URLs. The `arcgis-stub` lane emits a third `portal`-protocol envelope exercising the request sequence those clients issue, keyed on the following append-only IDs. The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers); the licensed ArcGIS Pro / Field Maps runs substantiate the same IDs against the real clients.
+The Portal/Sharing facade (epic #1240) lets packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) bind through Portal items and ArcGIS tokens. The `arcgis-stub` lane emits a `portal`-protocol envelope for the append-only IDs below. Real-client substantiation is evidence identifier `desktop-arcgis` in honua-esri-compat. No desktop receipt is linked (#1372, #1096). The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers).
 
 | Extension ID | Description | Protocol(s) | Evidence |
 |---|---|---|---|
@@ -486,7 +493,7 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | NB-STAC-ITEM-06 | NB-STAC | Catalog: validated against the published STAC JSON Schemas; Collection: validated against the published STAC JSON Schemas; Item: validated against the published STAC JSON Schemas | stac | pass/fail |
 | NB-STAC-PAGE-01 | NB-STAC | pages() walked to exhaustion in page sizes [3, 3, 3, 1], collecting all 10 seeded items with no duplicates and terminating without a next link | stac | pass/fail |
 | NB-STAC-PAGE-02 | NB-STAC | ItemSearch.matched()=10 agrees with numberMatched=10 and numberReturned=3 equals the actual feature count on the page | stac | pass/fail |
-| NB-STAC-PAGE-03 | NB-STAC | GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page | stac | pass/fail |
+| NB-STAC-PAGE-03 | NB-STAC | GET next uses a next cursor query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page | stac | pass/fail |
 | NB-STAC-PAGE-04 | NB-STAC | limit=1000000 clamped to the server maximum and still answered 200; limit=0 was rejected with status=400 title='Bad Request' detail='limit must be greater than or equal to 1.'. Raw httpx... | stac | pass/fail |
 | NB-STAC-PAGE-05 | NB-STAC | A token past the end returned an empty FeatureCollection with no next link; a malformed token was rejected with status=400 title='Bad Request' detail='Invalid pagination token.' | stac | pass/fail |
 | NB-STAC-SEARCH-01 | NB-STAC | intersects(Polygon) and the equivalent bbox both returned ['1', '2', '3'] | stac | pass/fail |
@@ -531,7 +538,7 @@ All certification results must follow the standardized evidence specification in
 | 1.1.1 | 2026-04-07 | Update the `§§` Esri Leaflet sub-lane footnote to the post-#478 24-case common-core shape; document slice-ID `not-applicable` rationale on the mapserver envelope |
 | 1.1.2 | 2026-04-08 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification (#464) |
 | 1.1.3 | 2026-04-25 | Add OGC API Maps JS/OpenLayers evidence protocol and MapLibre image-source smoke coverage |
-| 1.2.0 | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; document ArcGIS Pro stub lane via `docker/client-compat/arcgis-stub` (#806) |
-| 1.2.1 | 2026-05-18 | Add the licensed `desktop-arcgis` runner scaffold and clarify that ordinary PR gates validate the fixture/envelope contract without requiring ArcGIS Pro (#1019) |
+| 1.2.0 | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; name the REST-only `arcgis-stub` lane (#806) |
+| 1.2.1 | 2026-05-18 | Name `desktop-arcgis` as an evidence identifier distinct from `arcgis-stub`. Ordinary PR gates do not require ArcGIS Pro (#1019) |
 | 1.3.0 | 2026-07-09 | Register the ArcGIS Portal/Sharing facade lane: add the `portal` protocol abbreviation and the CERT-PRTL-\* extension slice exercised by the `arcgis-stub` `portal` envelope against the `portal-compat` fixture (epic #1240 / #1372) |
 | 1.4.0 | 2026-07-27 | Extend the Portal facade slice with the identity + auth-failure shapes packaged Esri clients depend on (CERT-PRTL-SELF-02, -COMM-01/-02, -TOKN-02, -OAUTH-02: `community/self`, authenticated `portals/self` user block, generateToken bad-credential envelope, `refresh_token` `invalid_grant`); promote the token/OAuth2 baselines to `pass` from the first containerized-lane capture (#1372) |

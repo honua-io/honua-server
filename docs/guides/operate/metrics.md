@@ -1,10 +1,14 @@
+---
+type: reference
+title: "Operate metric and evidence inventory"
+description: "Which signals the Operate loop reads, what makes a source actionable, and which Prometheus series back each concern."
+resource: "honua://capability/ops.observability"
+---
 # Operate metric and evidence inventory
 
-This inventory separates the signals required by the bounded 2026.1 Operate
-loop from the deeper performance work tracked by #3300. This is a source
-inventory, not an exact-candidate scrape receipt. Instruments that need traffic
-appear only after the corresponding event occurs. Use it with the
-[Operate scenario](scenario.md).
+This inventory lists the signals the 2026.1 Operate loop reads and what makes each
+source actionable. Instruments that need traffic appear only after the
+corresponding event occurs. Use it with the [Operate scenario](scenario.md).
 
 ## Required evidence fields
 
@@ -22,11 +26,32 @@ appear only after the corresponding event occurs. Use it with the
 
 See [Ops evidence posture](evidence-posture.md) for the complete vocabularies.
 
+### Deployment-source provenance
+
+Read the source's provenance as well as its field values. The current findings
+producer has these distinct sources:
+
+| Source suffix under `honua_ops_findings` | Producer and qualification limit |
+|---|---|
+| `control_plane` | `configProjection`, `control-plane-options`: describes configuration evaluated now; it does not observe the serving revision at a provider. |
+| `deploy_preflight` | `inProcess`, `deploy-preflight-probe`: describes the in-process preflight; it is not a provider rollback receipt. |
+| `workflow_operations` | `durableStore`, `workflow-operation-store`: derived from the store reads the deployment rules make in that evaluation, not from store registration. Those reads are the active deploy operations and, when a platform release is declared, the last succeeded deploy of each unpinned target. `complete` means every read returned, and `observedAt`/`lastSuccessfulAt` are when the store first answered. If a read fails after an earlier one returned, the source is `partial`: `coverage.expectedComponentIds` lists every intended read and `coverage.includedComponentIds` the ones that returned. If no read returns, the source is `unavailable`, and both clocks keep the last successful collection on that replica (absent if there was none). A later failed evaluation never refreshes them. |
+
+For the deployment source, require the independently observed provider revision
+and collection/coverage evidence described in the [scenario](scenario.md).
+A `complete` store source proves the workflow store answered. It does not observe
+the serving revision at the provider.
+
+For alert backlog evidence, `backlogObservedAt` is the successful collection
+time used by the source envelope. Legacy `lastPollAt` is only a dispatcher
+attempt heartbeat and may advance during a storage outage; a new response or poll
+attempt cannot refresh the observation, only a successful collection can.
+
 ## 2026.1 scenario signals
 
 | Concern | REST/MCP evidence | Prometheus series to verify on the candidate |
 |---|---|---|
-| Request availability and latency | ops-health `health` and `servingLatency` | `honua_http_request_total`, `honua_http_request_duration_ms_bucket`, `honua_http_request_duration_ms_count`, `honua_http_request_duration_ms_sum`, `honua_http_active_requests` |
+| Request diagnostics and latency | ops-health `health` and replica-local `servingLatency`; not platform availability | `honua_http_request_total`, `honua_http_request_duration_ms_bucket`, `honua_http_request_duration_ms_count`, `honua_http_request_duration_ms_sum`, `honua_http_active_requests` |
 | Alert dispatch backlog | `alertDispatch`; `honua_alert_events` | `honua_alerts_dispatch_backlog_count`, `honua_alerts_dispatch_dead_lettered_count` |
 | Alert evaluator leadership | alert health source | `honua_alerts_evaluation_no_leader` |
 | Alert delivery outcomes | alert events and timeline | `honua_alerts_events_emitted_total`, `honua_alerts_dispatches_enqueued_total`, `honua_alerts_deliveries_succeeded_total`, `honua_alerts_deliveries_failed_total`, `honua_alerts_deliveries_dead_lettered_total`, `honua_alerts_deliveries_rate_capped_total`, `honua_alerts_deliveries_suppressed_total`, `honua_alerts_deliveries_circuit_deferred_total`, `honua_alerts_delivery_latency_bucket`, `honua_alerts_delivery_latency_count`, `honua_alerts_delivery_latency_sum` |
@@ -34,31 +59,56 @@ See [Ops evidence posture](evidence-posture.md) for the complete vocabularies.
 | GP queue | ops-health `geoprocessing` and findings | durable queue buckets; no Prometheus series is required to authorize the scenario |
 | Deploy/release readiness | ops-health `deploy`, platform-release/deploy-operation reads | evidence envelope and typed operation receipt, not a free-form metric |
 
-The enabled alerting qualification lane is configured to run Postgres webhook E2E with
-`Alerts__Enabled=true` against an exact candidate SHA. The load/soak lane now
-starts the server under Production policy and drives the real request histograms.
-The existence of those lanes does not prove their latest run passed or make an
-unconfigured local alert source complete. Customer alerting remains Preview in
-2026.1: these qualification receipts prove behavior but do not promote the
-capability to GA or create an availability/performance commitment.
+## Platform SLO and local diagnostics
 
-## Not required for the 2026.1 claim
+The corrected `schemaVersion=1.1` contract for `GET /api/v1/operate/status`
+separates `slo.nodeLocalRetainedTail` from a
+platform SLI. Until a distributed, all-request, in-band-aware source exists,
+`slo.configured=false` and `slo.availability=null`, even when an intended
+availability target is configured. No platform burn rate or error budget is
+derived from the tail.
 
-For this deployment/readiness scenario, the required sources are exactly the
-selected finding's `requiredSourceIds`; do not enable Preview alerting merely
-to make an unrelated composite health envelope complete. If the selected rule
-requires an unconfigured source, stop rather than remove that source from the
-denominator. Prometheus counters inform diagnosis; the server-authored envelope
-and typed receipt decide actionability.
+The diagnostic reports `scope=replica-local`, `isPlatformSli=false`, retained
+population/capacity, overwritten samples and oldest/newest retained ages. Its
+HTTP-5xx-only success ratio excludes HTTP-2xx protocol error envelopes. Unequal
+replica traffic, overflow and replica replacement change that population;
+averaging these ratios does not produce platform availability. It cannot
+replace the selected update policy's candidate-scoped telemetry or functional
+checks.
 
-Retain `coverage.requestedFrom`/`requestedTo`, `returnedFrom`/`returnedTo`,
-expected/included component IDs and replica coverage when present. A composite
-observation is no fresher than its oldest component. Page cursors, truncation,
-partial results and missing components must remain visible in the receipt.
-Missing metrics are not numeric zero; a new `generatedAt` does not refresh
-their source. Scrape timestamps do not replace source timestamps.
+## Protected-update evidence
 
-Pool saturation diagnosis, slow-query remediation, tile-cache/cache-seed
-optimization, warehouse depth, raster/3D performance, broad autonomous tuning,
-and hosted-model metrics belong to #3300 or later qualification. They may be
-useful capacity signals, but they must not gate or widen this bounded scenario.
+Keep these fields with the [scenario transcript](scenario.md); observation
+envelopes and operation records have different jobs and clocks.
+
+| Evidence | What to retain and assert |
+|---|---|
+| Identity and authority | Release/manifest digest, server image/revision, target/backend, finding, proposal, canonical operation, separate proposer/approver and audit/correlation IDs. Never substitute a client-generated success message for the typed actuator receipt. |
+| Source clocks and coverage | Each required source's observation/last-success time, completeness, backend identity, validity, requested/returned window, components and replicas. Response generation and scrape time do not refresh a failed collection. |
+| Protection policy | `protection.policyDigest`, `previousRevision`, `candidateRevision`, `phase`, `reasonCode`, `firstExposureAt`, `observationDeadline` and `recoveryDeadline` where reported. Preserve the bound policy and declared sample cadence with the receipt. |
+| Completion | Expected/observed revision and configuration, readiness samples across the full observation window, functional result values, authorization denials and committed-data preservation. An activation timestamp is not a successful completion timestamp. |
+| Recovery | Recovery trigger, previous-revision identity, provider observation, functional verification results and measured detection/recovery duration. A timeout, failed verification or absent proof must remain visible as needing attention. |
+
+Missing evidence forbids new changes. An already-approved operation's bound
+policy may require deterministic recovery after missing telemetry exceeds its
+grace period; retain that trigger and the original approval instead of creating
+a new change. Unknown recovery health never establishes successful restoration.
+
+## Outside this scenario
+
+The required sources are exactly the selected finding's `requiredSourceIds`.
+Do not enable Preview alerting only to complete an unrelated health envelope.
+If a selected rule requires a source that is not configured, stop; do not drop
+that source from the denominator. Prometheus series inform diagnosis. The
+server-authored envelope and the typed operation receipt decide whether a
+change is allowed.
+
+A composite observation is no fresher than its oldest component. Keep the
+requested and returned windows, component coverage and replica coverage when
+the source reports them. A missing metric is not numeric zero, and a new
+`generatedAt` or scrape time does not refresh a failed collection.
+
+Pool saturation, slow-query remediation, tile-cache seeding, warehouse depth,
+raster and 3D performance, broad autonomous tuning and hosted-model metrics
+are later performance-depth work. They are not signals this scenario requires,
+and they do not gate the bounded deployment and readiness loop.

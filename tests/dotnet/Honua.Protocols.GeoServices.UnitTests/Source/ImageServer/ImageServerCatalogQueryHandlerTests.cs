@@ -1,0 +1,1177 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Services;
+using Honua.Protocols.GeoServices.ImageServer.Handlers;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Primitives;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
+
+/// <summary>
+/// Tests for <see cref="ImageServerCatalogQueryHandler"/>. The handler exposes
+/// the raster catalog as Esri-compatible features through the <c>query</c>
+/// endpoint, mirroring the FeatureServer envelope.
+/// </summary>
+[Protocol(TestProtocols.ImageServer)]
+public class ImageServerCatalogQueryHandlerTests
+{
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
+    private readonly ImageServerCatalogQueryHandler _handler;
+
+    public ImageServerCatalogQueryHandlerTests()
+    {
+        _handler = BuildHandler(transformService: null);
+    }
+
+    private ImageServerCatalogQueryHandler BuildHandler(ICoordinateTransformService? transformService)
+    {
+        var catalogReader = new ImageServerCatalogReader(
+            _rasterStore,
+            new ImageServerCatalogFilterEvaluator(),
+            transformService);
+        // No field-mask policies apply in these tests, so the source returns an empty
+        // set and attribute output is byte-for-byte the pre-#2159 behavior.
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource
+            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<string>.Empty);
+
+        return new ImageServerCatalogQueryHandler(
+            _graphProvider,
+            catalogReader,
+            fieldMaskSource,
+            NullLogger<ImageServerCatalogQueryHandler>.Instance);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_LayerNotFound_ReturnsNotFound()
+    {
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 99, EmptyValues(), CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_NoRasters_ReturnsEmptyFeatureSet()
+    {
+        SetupLayerWithRasters(Array.Empty<RasterInfo>());
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().BeEmpty();
+        jsonResult.Value.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnsAllCatalogFields()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Fields.Select(f => f.Name).Should().Contain([
+            "OBJECTID",
+            "Name",
+            "MinPS",
+            "MaxPS",
+            "LowPS",
+            "HighPS",
+            "CenterX",
+            "CenterY",
+            "ZOrder",
+            "Shape_Length",
+            "Shape_Area",
+            "BandCount",
+            "PixelType",
+            "AcquisitionDate",
+            "CreatedAt",
+        ]);
+        jsonResult.Value.GeometryType.Should().Be("esriGeometryPolygon");
+        jsonResult.Value.ObjectIdFieldName.Should().Be("OBJECTID");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_FeatureAttributesContainProjectedValues()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(1);
+
+        var feature = jsonResult.Value.Features[0];
+        feature.Attributes["OBJECTID"].Should().Be(100L);
+        feature.Attributes["Name"].Should().Be("scene-a");
+        feature.Attributes["CenterX"].Should().Be(0.0);
+        feature.Attributes["CenterY"].Should().Be(0.0);
+        feature.Attributes["BandCount"].Should().Be(1);
+        feature.Attributes["PixelType"].Should().Be("8BUI");
+        feature.Attributes["CreatedAt"].Should().Be(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
+        feature.Geometry.Should().NotBeNull();
+        feature.Geometry!.Rings.Should().HaveCount(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WithFieldMask_DropsMaskedAttributesAndFields()
+    {
+        // RBAC field-level masking on the ImageServer read path (#2159): masked
+        // attributes must be absent from both the feature attributes AND the field
+        // schema, even though no outFields restriction was requested (fail-secure,
+        // matching the FeatureServer masking semantics from #2108).
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+        var handler = BuildHandlerWithMaskedFields("AcquisitionDate", "PixelType");
+
+        var context = CreateImageServerContext();
+        var result = await handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+
+        var feature = jsonResult.Value!.Features[0];
+        feature.Attributes.Should().NotContainKey("AcquisitionDate");
+        feature.Attributes.Should().NotContainKey("PixelType");
+        feature.Attributes.Should().ContainKey("OBJECTID");
+        feature.Attributes.Should().ContainKey("Name");
+
+        var fieldNames = jsonResult.Value.Fields.Select(f => f.Name).ToList();
+        fieldNames.Should().NotContain("AcquisitionDate");
+        fieldNames.Should().NotContain("PixelType");
+        fieldNames.Should().Contain("OBJECTID");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WithFieldMask_DropsMaskedFieldEvenWhenExplicitlyRequested()
+    {
+        // Fail-secure: a masked field requested via outFields is still dropped (#2159).
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+        var handler = BuildHandlerWithMaskedFields("PixelType");
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "Name,PixelType",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features[0].Attributes.Should().NotContainKey("PixelType");
+        jsonResult.Value.Features[0].Attributes.Should().ContainKey("Name");
+        jsonResult.Value.Fields.Select(f => f.Name).Should().NotContain("PixelType");
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Query)]
+    [InlineData("where", "Name = 'scene-a'", "returnCountOnly")]
+    [InlineData("where", "AcquisitionDate IS NOT NULL", "returnIdsOnly")]
+    [InlineData("orderByFields", "Name DESC", "returnExtentOnly")]
+    [InlineData("time", "1767225600000", "returnCountOnly")]
+    public async Task QueryCatalogAsync_MaskedPredicateOrOrdering_RefusesBeforeCatalogRead(
+        string parameter, string value, string responseMode)
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+        var reader = Substitute.For<IImageServerCatalogReader>();
+        reader.ReadAsync(Arg.Any<int>(), Arg.Any<ImageServerCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ImageServerCatalogPage
+            {
+                Items = [],
+                TotalCount = 0,
+                ExceededTransferLimit = false,
+                AggregateExtent = null
+            });
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("nAmE", "acquisitionDATE"));
+        var handler = new ImageServerCatalogQueryHandler(_graphProvider, reader, masks,
+            NullLogger<ImageServerCatalogQueryHandler>.Instance);
+        var context = CreateImageServerContext();
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            [parameter] = value,
+            [responseMode] = "true"
+        };
+
+        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        await reader.DidNotReceive().ReadAsync(Arg.Any<int>(), Arg.Any<ImageServerCatalogQuery>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    private ImageServerCatalogQueryHandler BuildHandlerWithMaskedFields(params string[] maskedFields)
+    {
+        var catalogReader = new ImageServerCatalogReader(
+            _rasterStore,
+            new ImageServerCatalogFilterEvaluator(),
+            transformService: null);
+
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource
+            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(maskedFields.ToImmutableArray());
+
+        return new ImageServerCatalogQueryHandler(
+            _graphProvider,
+            catalogReader,
+            fieldMaskSource,
+            NullLogger<ImageServerCatalogQueryHandler>.Instance);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnGeometryFalse_OmitsFootprint()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["returnGeometry"] = "false",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features[0].Geometry.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnIdsOnly_ReturnsObjectIdsResponse()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first"),
+            CreateRaster(200, "second"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["returnIdsOnly"] = "true",
+            ["resultOffset"] = "1",
+            ["resultRecordCount"] = "1",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogObjectIdsResponse>>().Which;
+        jsonResult.Value!.ObjectIds.Should().Equal(100L, 200L);
+        jsonResult.Value.ObjectIdFieldName.Should().Be("OBJECTID");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnCountOnly_ReturnsCountResponse()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first"),
+            CreateRaster(200, "second"),
+            CreateRaster(300, "third"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["returnCountOnly"] = "true",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogCountResponse>>().Which;
+        jsonResult.Value!.Count.Should().Be(3);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnExtentOnly_ReturnsAggregateExtent()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: 0, yMax: 5),
+            CreateRaster(200, "east", xMin: 0, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["returnExtentOnly"] = "true",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
+        jsonResult.Value!.Extent.XMin.Should().Be(-10);
+        jsonResult.Value.Extent.YMin.Should().Be(-5);
+        jsonResult.Value.Extent.XMax.Should().Be(10);
+        jsonResult.Value.Extent.YMax.Should().Be(5);
+        jsonResult.Value.Extent.SpatialReference.Wkid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ObjectIdsFilter_OnlyReturnsMatching()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first"),
+            CreateRaster(200, "second"),
+            CreateRaster(300, "third"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["objectIds"] = "100,300",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([100L, 300L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ObjectIdsJsonArray_OnlyReturnsMatching()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first"),
+            CreateRaster(200, "second"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["objectIds"] = "[200]",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(1);
+        jsonResult.Value.Features[0].Attributes["OBJECTID"].Should().Be(200L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WhereClause_FiltersByObjectId()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first"),
+            CreateRaster(200, "second"),
+            CreateRaster(300, "third"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["where"] = "OBJECTID >= 200",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(2);
+        jsonResult.Value.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L, 300L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WhereClause_FiltersByBandCountAndPixelType()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "single-band"),
+            CreateRaster(200, "multi-band", bandCount: 3, pixelType: "16BUI"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["where"] = "BandCount = 3 AND PixelType = '16BUI'",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(1);
+        jsonResult.Value.Features[0].Attributes["OBJECTID"].Should().Be(200L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WhereClauseUnknownField_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["where"] = "BogusField = 1",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WhereClauseTooLong_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["where"] = new string('x', 2001),
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_NegativeOffset_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["resultOffset"] = "-1",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Operation(Operations.Pagination)]
+    public async Task QueryCatalogAsync_PaginationLimitsResults()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first"),
+            CreateRaster(200, "second"),
+            CreateRaster(300, "third"),
+            CreateRaster(400, "fourth"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["resultOffset"] = "1",
+            ["resultRecordCount"] = "2",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(2);
+        jsonResult.Value.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L, 300L]);
+        jsonResult.Value.ExceededTransferLimit.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_UnsupportedFormat_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["f"] = "html",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_FeatureGeometrySpatialReference_MatchesRasterNativeSrid()
+    {
+        // Regression: previously the geometry SR was stamped with outSR even though the
+        // MVP does not reproject. The geometry SR must match the actual ring coordinates,
+        // which come straight from the raster's native SRID (3857 here).
+        SetupLayerWithRasters([CreateRaster(100, "first", srid: 3857)]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        var feature = jsonResult.Value!.Features[0];
+        feature.Geometry.Should().NotBeNull();
+        feature.Geometry!.SpatialReference.Wkid.Should().Be(3857);
+        feature.Geometry.SpatialReference.LatestWkid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnExtentOnly_IgnoresOutSrWhenNoReprojectionOccurs()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first", xMin: -10, yMin: -5, xMax: 10, yMax: 5, srid: 3857),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["returnExtentOnly"] = "true",
+            ["outSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
+        jsonResult.Value!.Extent.SpatialReference.Wkid.Should().Be(3857);
+        jsonResult.Value.Extent.SpatialReference.LatestWkid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnExtentOnlyWithObjectIdsFilter_ShrinksAggregateExtent()
+    {
+        // Regression: aggregate extent previously iterated the unfiltered raster set,
+        // returning the full layer extent regardless of objectIds/where filters.
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: 0, yMax: 5),
+            CreateRaster(200, "east", xMin: 0, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["objectIds"] = "200",
+            ["returnExtentOnly"] = "true",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
+        // Only the eastern raster should contribute - aggregate XMin must be 0, not -10.
+        jsonResult.Value!.Extent.XMin.Should().Be(0);
+        jsonResult.Value.Extent.XMax.Should().Be(10);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnExtentOnlyWithWhereFilter_ShrinksAggregateExtent()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: 0, yMax: 5),
+            CreateRaster(200, "east", xMin: 0, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["where"] = "OBJECTID = 100",
+            ["returnExtentOnly"] = "true",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
+        jsonResult.Value!.Extent.XMin.Should().Be(-10);
+        jsonResult.Value.Extent.XMax.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsAscending_SortsByField()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(300, "c-scene"),
+            CreateRaster(100, "a-scene"),
+            CreateRaster(200, "b-scene"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "Name ASC",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(100L, 200L, 300L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsDescending_SortsByFieldDescending()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "a-scene"),
+            CreateRaster(300, "c-scene"),
+            CreateRaster(200, "b-scene"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "OBJECTID DESC",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(300L, 200L, 100L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsMultiKey_BreaksTiesWithSecondaryField()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "shared", bandCount: 3),
+            CreateRaster(300, "shared", bandCount: 1),
+            CreateRaster(200, "shared", bandCount: 1),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Primary key (Name) is identical for all rows, so the secondary key
+            // (OBJECTID ascending) determines the order.
+            ["orderByFields"] = "Name ASC, OBJECTID ASC",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(100L, 200L, 300L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsAppliesBeforePagination()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "a-scene"),
+            CreateRaster(400, "d-scene"),
+            CreateRaster(200, "b-scene"),
+            CreateRaster(300, "c-scene"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "OBJECTID DESC",
+            ["resultOffset"] = "1",
+            ["resultRecordCount"] = "2",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        // Sorted desc => 400,300,200,100; offset 1, count 2 => 300,200.
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(300L, 200L);
+        jsonResult.Value.ExceededTransferLimit.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsUnknownField_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "BogusField",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsInvalidDirection_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "OBJECTID SIDEWAYS",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutFields_ProjectsAttributesAndSchema()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "Name,BandCount",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+
+        // OBJECTID is always retained alongside the requested fields.
+        jsonResult.Value!.Fields.Select(f => f.Name)
+            .Should().BeEquivalentTo(["OBJECTID", "Name", "BandCount"]);
+
+        var attributes = jsonResult.Value.Features[0].Attributes;
+        attributes.Keys.Should().BeEquivalentTo(["OBJECTID", "Name", "BandCount"]);
+        attributes.Should().NotContainKey("PixelType");
+        attributes.Should().NotContainKey("CenterX");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutFieldsWildcard_ReturnsAllFields()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "*",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Fields.Should().HaveCount(15);
+        jsonResult.Value.Features[0].Attributes.Should().ContainKey("PixelType");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutFieldsUnknownField_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "BogusField",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_RasterStoreThrows_ReturnsServerError()
+    {
+        _rasterStore.QueryCatalogAsync(1, Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns<Task<RasterCatalogPage>>(_ => throw new InvalidOperationException("boom"));
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_GeometryEnvelopeFilter_ReturnsOnlyIntersectingFootprints()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Envelope covering only the eastern footprint.
+            ["geometry"] = "{\"xmin\":2,\"ymin\":-1,\"xmax\":8,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_GeometryBboxShorthandFilter_ReturnsIntersectingFootprints()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // xmin,ymin,xmax,ymax shorthand covering only the western footprint.
+            ["geometry"] = "-9,-1,-2,1",
+            ["geometryType"] = "esriGeometryEnvelope",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([100L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_UnsupportedSpatialRel_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":0,\"ymin\":0,\"xmax\":1,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["spatialRel"] = "esriSpatialRelTouches",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_InvalidInSr_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":0,\"ymin\":0,\"xmax\":1,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["inSR"] = "not-a-srid",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutSr_ReprojectsFootprintRingsViaTransformService()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "scene", xMin: 0, yMin: 0, xMax: 100, yMax: 100, srid: 3857),
+        ]);
+
+        var transform = Substitute.For<ICoordinateTransformService>();
+        transform.TransformExtentAsync(
+                Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(),
+                3857, 4326, Arg.Any<CancellationToken>())
+            .Returns(((double MinX, double MinY, double MaxX, double MaxY)?)(1.0, 2.0, 3.0, 4.0));
+
+        var handler = BuildHandler(transform);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        var feature = jsonResult.Value!.Features[0];
+        feature.Geometry.Should().NotBeNull();
+        // Reprojected rings carry the target SRID, not the native 3857.
+        feature.Geometry!.SpatialReference.Wkid.Should().Be(4326);
+        // The rebuilt rectangle uses the transformed extent corners. Compare with a tight
+        // tolerance rather than exact equality since these are floating-point coordinates.
+        const double CornerTolerance = 1e-9;
+        feature.Geometry.Rings[0].Should().Contain(
+            r => Math.Abs(r[0] - 1.0) < CornerTolerance && Math.Abs(r[1] - 2.0) < CornerTolerance);
+        feature.Geometry.Rings[0].Should().Contain(
+            r => Math.Abs(r[0] - 3.0) < CornerTolerance && Math.Abs(r[1] - 4.0) < CornerTolerance);
+        jsonResult.Value.SpatialReference.Wkid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_GeometryFilterCrossSrid_TransformsFilterBox()
+    {
+        // Footprint is in 3857; the filter box is supplied in 4326 and must be transformed
+        // into 3857 before the intersect test. The transform (a provider concern under the
+        // pushdown contract — PostGIS does this in SQL via ST_Transform) maps the 4326 box onto
+        // the footprint so the raster is kept.
+        var transform = Substitute.For<ICoordinateTransformService>();
+        transform.TransformExtentAsync(
+                Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(),
+                4326, 3857, Arg.Any<CancellationToken>())
+            .Returns(((double MinX, double MinY, double MaxX, double MaxY)?)(10.0, 10.0, 50.0, 50.0));
+
+        SetupLayerWithRasters(
+            [CreateRaster(100, "scene", xMin: 0, yMin: 0, xMax: 100, yMax: 100, srid: 3857)],
+            filterTransform: transform);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":-1,\"ymin\":-1,\"xmax\":1,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["inSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([100L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_IntersectsPolygonGeometry_PushesExactPredicateToProvider()
+    {
+        // An explicit (non-envelope) geometry with the default intersects relationship must be
+        // translated into an exact provider-side predicate: the neutral query carries the WKB
+        // geometry and an Intersects relation, not merely the envelope box (#2839).
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Polygon (rings) covering only the eastern footprint's envelope.
+            ["geometry"] = "{\"rings\":[[[2,-1],[8,-1],[8,1],[2,1],[2,-1]]]}",
+            ["geometryType"] = "esriGeometryPolygon",
+            ["spatialRel"] = "esriSpatialRelIntersects",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L]);
+
+        await _rasterStore.Received(1).QueryCatalogAsync(
+            1,
+            Arg.Is<RasterCatalogQuery>(q =>
+                q.SpatialPredicate.HasValue &&
+                q.SpatialPredicate.Value.Geometry != null &&
+                q.SpatialPredicate.Value.Geometry!.Length > 0 &&
+                q.SpatialPredicate.Value.Relation == RasterCatalogSpatialRelation.Intersects),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_EnvelopeGeometry_UsesEnvelopeOnlyPredicate()
+    {
+        // A bbox/envelope geometry is a windowing request and must stay envelope-only: the neutral
+        // query carries no exact geometry and the envelope-intersects relation (#2839, bbox rule).
+        SetupLayerWithRasters([CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5)]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":2,\"ymin\":-1,\"xmax\":8,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["spatialRel"] = "esriSpatialRelIntersects",
+        };
+
+        var context = CreateImageServerContext();
+        _ = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        await _rasterStore.Received(1).QueryCatalogAsync(
+            1,
+            Arg.Is<RasterCatalogQuery>(q =>
+                q.SpatialPredicate.HasValue &&
+                q.SpatialPredicate.Value.Geometry == null &&
+                q.SpatialPredicate.Value.Relation == RasterCatalogSpatialRelation.EnvelopeIntersects),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_IntersectsGeometryWithWhere_CombinesSpatialAndAttributeFilter()
+    {
+        // A spatial geometry combined with a non-spatial where must apply both filters: the spatial
+        // predicate is pushed to the provider and the attribute where is evaluated over the bounded set.
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east-a", xMin: 1, yMin: -5, xMax: 5, yMax: 5, bandCount: 1),
+            CreateRaster(300, "east-b", xMin: 4, yMin: -5, xMax: 9, yMax: 5, bandCount: 3),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Polygon covering both eastern footprints; where narrows to the multi-band one.
+            ["geometry"] = "{\"rings\":[[[2,-2],[8,-2],[8,2],[2,2],[2,-2]]]}",
+            ["geometryType"] = "esriGeometryPolygon",
+            ["where"] = "BandCount = 3",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([300L]);
+
+        await _rasterStore.Received(1).QueryCatalogAsync(
+            1,
+            Arg.Is<RasterCatalogQuery>(q =>
+                q.SpatialPredicate.HasValue &&
+                q.SpatialPredicate.Value.Geometry != null &&
+                q.SpatialPredicate.Value.Relation == RasterCatalogSpatialRelation.Intersects),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Operation(Operations.Pagination)]
+    public async Task QueryCatalogAsync_SpatialFilterWithPaging_ReturnsBoundedWindow()
+    {
+        // Paging over a spatially-filtered result: the polygon selects all four footprints, then the
+        // offset/limit window is applied over the filtered set.
+        SetupLayerWithRasters([
+            CreateRaster(100, "a", xMin: 0, yMin: -1, xMax: 2, yMax: 1),
+            CreateRaster(200, "b", xMin: 2, yMin: -1, xMax: 4, yMax: 1),
+            CreateRaster(300, "c", xMin: 4, yMin: -1, xMax: 6, yMax: 1),
+            CreateRaster(400, "d", xMin: 6, yMin: -1, xMax: 8, yMax: 1),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"rings\":[[[-1,-2],[9,-2],[9,2],[-1,2],[-1,-2]]]}",
+            ["geometryType"] = "esriGeometryPolygon",
+            ["resultOffset"] = "1",
+            ["resultRecordCount"] = "2",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L, 300L]);
+        jsonResult.Value.ExceededTransferLimit.Should().BeTrue();
+    }
+
+    private void SetupLayerWithRasters(RasterInfo[] rasters, ICoordinateTransformService? filterTransform = null)
+    {
+        // The reader now drives the neutral IRasterStore.QueryCatalogAsync pushdown contract. The
+        // provider is exercised for real (indexed SQL) in Honua.Postgres.Tests; here we back it with
+        // the shared reference evaluator so the handler-level count/extent/paging/ordering/masking and
+        // envelope-intersects assertions run against the exact semantics a provider must preserve.
+        _rasterStore.QueryCatalogAsync(1, Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ci => RasterCatalogQueryEvaluator.EvaluateAsync(
+                rasters,
+                ci.ArgAt<RasterCatalogQuery>(1),
+                filterTransform,
+                ci.ArgAt<CancellationToken>(2)));
+        _rasterStore.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>());
+    }
+
+    private static Dictionary<string, StringValues> EmptyValues()
+        => new(StringComparer.OrdinalIgnoreCase);
+
+    private static DefaultHttpContext CreateImageServerContext()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+
+        var context = new DefaultHttpContext();
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Path = "/rest/services/1/ImageServer/query";
+        context.Response.Body = new MemoryStream();
+        return context;
+    }
+
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+
+    private static RasterInfo CreateRaster(
+        long id,
+        string name,
+        double xMin = -1,
+        double yMin = -1,
+        double xMax = 1,
+        double yMax = 1,
+        int srid = 4326,
+        int bandCount = 1,
+        string pixelType = "8BUI") => new()
+        {
+            Id = id,
+            LayerId = 1,
+            Name = name,
+            Width = 256,
+            Height = 256,
+            BandCount = bandCount,
+            PixelType = pixelType,
+            Srid = srid,
+            GeoTransform = [xMin, (xMax - xMin) / 256, 0, yMax, 0, -(yMax - yMin) / 256],
+            Extent = new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
+            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        };
+}

@@ -1,0 +1,85 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/raster-multidim-coverage/raster.multidim-coverage",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal",
+  "client_version": "3.13.3",
+  "client_version_detail": "GDAL 3.13.3 \"Iowa City\", released 2026/08/13",
+  "surface": "raster-multidim-coverage",
+  "operation": "raster.multidim-coverage",
+  "protocol_version": "OGC API - Coverages 1.0",
+  "protocol_profile": "registered Zarr datacube",
+  "started_at": "2026-09-16T21:46:38.698724Z",
+  "finished_at": "2026-09-16T21:46:38.755433Z",
+  "duration_ms": 57,
+  "status": "fail",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "metadata",
+    "boundary",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "failed checks positive:open the registered Zarr datacube as a coverage and read the t0 slice, auth:the protected datacube requires a credential, metadata:variables, dimensions and CF units are described, boundary:an edge subset reads the boundary cells, crs-axis:latitude/longitude axes map to the lon/lat extent, media-schema:coverage payloads decode as GeoTIFF",
+  "primary_request_url": "http://honua:5000/ogc/coverages/collections/5200/coverage",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "open the registered Zarr datacube as a coverage and read the t0 slice",
+      "outcome": "fail",
+      "detail": "CheckFailed: GDAL OGCAPI could not open http://honua:5000/ogc/coverages/collections/5200: HTTP error code : 404, {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u00275200\\u0027 does not expose a raster coverage.\",\"instance\":\"/ogc/coverages/collections/5200\",\"correlationId\":\"00-9fc27b220e3ab08f9352a17efd77ec14-e832a8541eaadda2-01\",\"timestamp\":\"2026-09-16T21:46:38.7075160\\u002B00:00\"}\nMay be caused by: HTTP error code : 404; requests ['http://honua:5000/ogc/coverages/collections/5200']",
+      "request_url": null,
+      "duration_ms": 10
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown datacube collection is a 404",
+      "outcome": "pass",
+      "detail": "HTTP error code : 404, {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027999999\\u0027 not found.\",\"instance\":\"/ogc/coverages/collections/999999\",\"correlationId\":\"00-d83",
+      "request_url": null,
+      "duration_ms": 7
+    },
+    {
+      "facet": "auth",
+      "name": "the protected datacube requires a credential",
+      "outcome": "fail",
+      "detail": "CheckFailed: denials {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401}, but no credential can be shown to admit a datacube that is not served",
+      "request_url": null,
+      "duration_ms": 39
+    },
+    {
+      "facet": "metadata",
+      "name": "variables, dimensions and CF units are described",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "boundary",
+      "name": "an edge subset reads the boundary cells",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "crs-axis",
+      "name": "latitude/longitude axes map to the lon/lat extent",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "media-schema",
+      "name": "coverage payloads decode as GeoTIFF",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    }
+  ]
+}

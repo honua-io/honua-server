@@ -13,6 +13,9 @@ namespace Honua.Core.Features.Capabilities;
 /// </summary>
 public enum CapabilityMaturity
 {
+    /// <summary>Used only by Honua-operated infrastructure; not a product lifecycle claim.</summary>
+    Internal = -1,
+
     /// <summary>Planned but not yet built; declared for roadmap visibility only.</summary>
     Planned = 0,
 

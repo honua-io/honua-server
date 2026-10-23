@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://honua.io/schemas/templates/gp-summary/inputs.schema.json",
+  "title": "summary process inputs",
+  "description": "Parameters (params.json) and named file inputs the process accepts. The harness binds inputs by name (--input features=<path>); params are a JSON object (--params <file>).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["params", "inputs"],
+  "properties": {
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "type": "string",
+          "description": "Name of the numeric feature property to summarize.",
+          "default": "value",
+          "minLength": 1
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["features"],
+      "properties": {
+        "features": {
+          "type": "string",
+          "description": "Path to a GeoJSON FeatureCollection whose features carry the summarized property.",
+          "contentMediaType": "application/geo+json"
+        }
+      }
+    }
+  }
+}

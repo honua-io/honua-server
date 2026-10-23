@@ -115,28 +115,28 @@ describe('Spatial Relationship Matrix', () => {
       });
     });
 
-    it('should return 400 when distance parameter is missing for esriSpatialRelWithinDistance', async () => {
+    it('should return 400 when distance parameter is missing for withinDistance', async () => {
       const point = geometryGenerator.point();
 
       const response = await client.query({
         where: '1=1',
         geometry: JSON.stringify(point.esriJson),
         geometryType: 'esriGeometryPoint',
-        spatialRel: 'esriSpatialRelWithinDistance',
+        spatialRel: 'withinDistance',
         // No distance parameter
       });
 
       assertGeoServicesError(response, { bodyCodes: [400] });
     });
 
-    it('should return 400 when distance parameter is missing for esriSpatialRelBeyondDistance', async () => {
+    it('should return 400 when distance parameter is missing for beyondDistance', async () => {
       const point = geometryGenerator.point();
 
       const response = await client.query({
         where: '1=1',
         geometry: JSON.stringify(point.esriJson),
         geometryType: 'esriGeometryPoint',
-        spatialRel: 'esriSpatialRelBeyondDistance',
+        spatialRel: 'beyondDistance',
         // No distance parameter
       });
 

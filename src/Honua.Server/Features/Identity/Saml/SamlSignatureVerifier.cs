@@ -86,7 +86,11 @@ internal static class SamlSignatureVerifier
         var inclusivePrefixesForReference = ReadInclusiveNamespacePrefixes(reference);
 
         // Build a detached copy of the assertion with its own Signature removed (enveloped).
+        // new XElement drops ancestor namespace declarations. Exclusive C14N then renders a
+        // prefixed assertion (Keycloak / SimpleSAMLphp, where xmlns:saml and xmlns:xs live
+        // only on the Response) as if those prefixes were undeclared, and the digest fails.
         var assertionCopy = new XElement(assertion);
+        CopyInScopeNamespaceDeclarations(assertion, assertionCopy);
         assertionCopy.Element(XName.Get("Signature", DsigNs))?.Remove();
 
         var canonicalAssertion = ExclusiveCanonicalizer.Canonicalize(assertionCopy, inclusivePrefixesForReference);
@@ -136,6 +140,41 @@ internal static class SamlSignatureVerifier
         return verified
             ? VerificationResult.Ok()
             : VerificationResult.Fail("SAML SignedInfo signature is invalid.");
+    }
+
+    /// <summary>
+    /// Copies namespace declarations that are in scope on <paramref name="source"/> but not
+    /// already present on <paramref name="copy"/>. Nearer ancestors win. Exclusive C14N emits
+    /// only visibly utilized prefixes and InclusiveNamespaces entries, so unused declarations
+    /// seeded here do not change the digest.
+    /// </summary>
+    private static void CopyInScopeNamespaceDeclarations(XElement source, XElement copy)
+    {
+        for (var ancestor = source.Parent; ancestor is not null; ancestor = ancestor.Parent)
+        {
+            foreach (var attribute in ancestor.Attributes())
+            {
+                if (!attribute.IsNamespaceDeclaration)
+                {
+                    continue;
+                }
+
+                var alreadyDeclared = false;
+                foreach (var existing in copy.Attributes())
+                {
+                    if (existing.IsNamespaceDeclaration && existing.Name == attribute.Name)
+                    {
+                        alreadyDeclared = true;
+                        break;
+                    }
+                }
+
+                if (!alreadyDeclared)
+                {
+                    copy.Add(new XAttribute(attribute));
+                }
+            }
+        }
     }
 
     private static byte[]? ComputeDigest(string algorithm, byte[] data)

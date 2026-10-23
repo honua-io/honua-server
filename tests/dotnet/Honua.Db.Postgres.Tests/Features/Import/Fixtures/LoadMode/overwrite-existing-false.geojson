@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [11.25, -22.5] },
+      "properties": { "name": "import-alpha", "code": 4002 }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-33.75, 44.125] },
+      "properties": { "name": "import-beta", "code": 4003 }
+    }
+  ]
+}

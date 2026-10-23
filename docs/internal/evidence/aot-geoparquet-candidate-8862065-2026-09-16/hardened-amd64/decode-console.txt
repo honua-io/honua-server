@@ -1,0 +1,213 @@
+== gpq v0.24.0 validate ==
+╭────────────────────┬─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────┬──────────────┬──────────┬────────────────┬────────┬────────╮
+│ COLUMN             │ TYPE    │ ANNOTATION                                                                                                           │ REPETITION │ COMPRESSION  │ ENCODING │ GEOMETRY TYPES │ BOUNDS │ DETAIL │
+├────────────────────┼─────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────┼──────────────┼──────────┼────────────────┼────────┼────────┤
+│ objectid           │ int64   │                                                                                                                      │ 1          │ uncompressed │          │                │        │        │
+│ [1mgeometry[0m           │ binary  │                                                                                                                      │ 0..1       │ uncompressed │ WKB      │ Point          │        │        │
+│ name               │ binary  │ string                                                                                                               │ 0..1       │ uncompressed │          │                │        │        │
+│ category           │ binary  │ string                                                                                                               │ 0..1       │ uncompressed │          │                │        │        │
+│ population         │ int32   │                                                                                                                      │ 0..1       │ uncompressed │          │                │        │        │
+│ ratio              │ double  │                                                                                                                      │ 0..1       │ uncompressed │          │                │        │        │
+│ active             │ boolean │                                                                                                                      │ 0..1       │ uncompressed │          │                │        │        │
+│ observed_at        │ int64   │ timestamp(isadjustedtoutc=true, timeunit=milliseconds, is_from_converted_type=false, force_set_converted_type=false) │ 0..1       │ uncompressed │          │                │        │        │
+│ bbox               │         │ group                                                                                                                │ 0..1       │              │          │                │        │        │
+├────────────────────┼─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────┴──────────────┴──────────┴────────────────┴────────┴────────┤
+│ Rows               │ 6                                                                                                                                                                                                        │
+│ Row Groups         │ 1                                                                                                                                                                                                        │
+│ GeoParquet Version │ 1.1.0                                                                                                                                                                                                    │
+╰────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Summary: Passed 20 checks.
+
+ ✓ file must include a "geo" metadata key
+ ✓ metadata must be a JSON object
+ ✓ metadata must include a "version" string
+ ✓ metadata must include a "primary_column" string
+ ✓ metadata must include a "columns" object
+ ✓ column metadata must include the "primary_column" name
+ ✓ column metadata must include a valid "encoding" string
+ ✓ column metadata must include a "geometry_types" list
+ ✓ optional "crs" must be null or a PROJJSON object
+ ✓ optional "orientation" must be a valid string
+ ✓ optional "edges" must be a valid string
+ ✓ optional "bbox" must be an array of 4 or 6 numbers
+ ✓ optional "epoch" must be a number
+ ✓ geometry columns must not be grouped
+ ✓ geometry columns must be stored using the BYTE_ARRAY parquet type
+ ✓ geometry columns must be required or optional, not repeated
+ ✓ all geometry values match the "encoding" metadata
+ ✓ all geometry types must be included in the "geometry_types" metadata (if not empty)
+ ✓ all polygon geometries must follow the "orientation" metadata (if present)
+ ✓ all geometries must fall within the "bbox" metadata (if present)
+
+== PyArrow 25.0.1 + GeoPandas 1.1.4 fixture assertion ==
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+PASS  pyarrow/row-count: 6 rows (expected 6)
+PASS  metadata/geo-present: `geo` key in the Parquet schema metadata
+PASS  metadata/geo-exact: matches the expected document
+PASS  metadata/geometry-types-non-empty: geometry_types=['Point'] (must be the concrete non-empty branch #4747 could not serialize)
+PASS  metadata/geo-is-valid-json: the `geo` value round-trips as UTF-8 JSON (escaping preserved)
+PASS  pyarrow/names: decoded names ['Baytown', 'Dateline Post', 'Equator Station', 'Harbor City', 'Meridian Marker', 'Polar Outpost']
+PASS  row[Harbor City]/ordinates: WKB point (-122.4194, 37.7749) vs seeded (-122.4194, 37.7749)
+PASS  row[Harbor City]/category: 'city' vs 'city'
+PASS  row[Harbor City]/population: 1000000 vs 1000000
+PASS  row[Harbor City]/ratio: 0.91 vs 0.91
+PASS  row[Harbor City]/active: True vs True
+PASS  row[Harbor City]/observed_at: datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc)
+PASS  row[Harbor City]/covering-bbox: {'xmin': -122.4194, 'ymin': 37.7749, 'xmax': -122.4194, 'ymax': 37.7749} vs point (-122.4194, 37.7749)
+PASS  row[Baytown]/ordinates: WKB point (-122.2711, 37.8044) vs seeded (-122.2711, 37.8044)
+PASS  row[Baytown]/category: 'city' vs 'city'
+PASS  row[Baytown]/population: 430000 vs 430000
+PASS  row[Baytown]/ratio: 0.42 vs 0.42
+PASS  row[Baytown]/active: True vs True
+PASS  row[Baytown]/observed_at: datetime.datetime(2026, 2, 11, 12, 0, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 2, 11, 12, 0, tzinfo=datetime.timezone.utc)
+PASS  row[Baytown]/covering-bbox: {'xmin': -122.2711, 'ymin': 37.8044, 'xmax': -122.2711, 'ymax': 37.8044} vs point (-122.2711, 37.8044)
+PASS  row[Meridian Marker]/ordinates: WKB point (0.0, 51.4779) vs seeded (0.0, 51.4779)
+PASS  row[Meridian Marker]/category: 'reference' vs 'reference'
+PASS  row[Meridian Marker]/population: 0 vs 0
+PASS  row[Meridian Marker]/ratio: 0.0 vs 0.0
+PASS  row[Meridian Marker]/active: False vs False
+PASS  row[Meridian Marker]/observed_at: datetime.datetime(2026, 3, 21, 0, 0, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 3, 21, 0, 0, tzinfo=datetime.timezone.utc)
+PASS  row[Meridian Marker]/covering-bbox: {'xmin': 0.0, 'ymin': 51.4779, 'xmax': 0.0, 'ymax': 51.4779} vs point (0.0, 51.4779)
+PASS  row[Equator Station]/ordinates: WKB point (-75.0, 0.0) vs seeded (-75.0, 0.0)
+PASS  row[Equator Station]/category: 'reference' vs 'reference'
+PASS  row[Equator Station]/population: 0 vs 0
+PASS  row[Equator Station]/ratio: 0.5 vs 0.5
+PASS  row[Equator Station]/active: True vs True
+PASS  row[Equator Station]/observed_at: datetime.datetime(2026, 4, 1, 6, 30, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 4, 1, 6, 30, tzinfo=datetime.timezone.utc)
+PASS  row[Equator Station]/covering-bbox: {'xmin': -75.0, 'ymin': 0.0, 'xmax': -75.0, 'ymax': 0.0} vs point (-75.0, 0.0)
+PASS  row[Dateline Post]/ordinates: WKB point (179.5, 0.5) vs seeded (179.5, 0.5)
+PASS  row[Dateline Post]/category: 'reference' vs 'reference'
+PASS  row[Dateline Post]/population: 0 vs 0
+PASS  row[Dateline Post]/ratio: 0.75 vs 0.75
+PASS  row[Dateline Post]/active: False vs False
+PASS  row[Dateline Post]/observed_at: datetime.datetime(2026, 5, 9, 18, 45, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 5, 9, 18, 45, tzinfo=datetime.timezone.utc)
+PASS  row[Dateline Post]/covering-bbox: {'xmin': 179.5, 'ymin': 0.5, 'xmax': 179.5, 'ymax': 0.5} vs point (179.5, 0.5)
+PASS  row[Polar Outpost]/ordinates: WKB point (0.0, 86.0) vs seeded (0.0, 86.0)
+PASS  row[Polar Outpost]/category: 'reference' vs 'reference'
+PASS  row[Polar Outpost]/population: 0 vs 0
+PASS  row[Polar Outpost]/ratio: 0.1 vs 0.1
+PASS  row[Polar Outpost]/active: True vs True
+PASS  row[Polar Outpost]/observed_at: datetime.datetime(2026, 6, 15, 9, 15, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 6, 15, 9, 15, tzinfo=datetime.timezone.utc)
+PASS  row[Polar Outpost]/covering-bbox: {'xmin': 0.0, 'ymin': 86.0, 'xmax': 0.0, 'ymax': 86.0} vs point (0.0, 86.0)
+PASS  geopandas/row-count: 6 rows
+PASS  geopandas[Harbor City]: <POINT (-122.419 37.775)> vs seeded (-122.4194, 37.7749)
+PASS  geopandas[Baytown]: <POINT (-122.271 37.804)> vs seeded (-122.2711, 37.8044)
+PASS  geopandas[Meridian Marker]: <POINT (0 51.478)> vs seeded (0.0, 51.4779)
+PASS  geopandas[Equator Station]: <POINT (-75 0)> vs seeded (-75.0, 0.0)
+PASS  geopandas[Dateline Post]: <POINT (179.5 0.5)> vs seeded (179.5, 0.5)
+PASS  geopandas[Polar Outpost]: <POINT (0 86)> vs seeded (0.0, 86.0)
+PASS  geopandas/total-bounds: [np.float64(-122.4194), np.float64(0.0), np.float64(179.5), np.float64(86.0)] vs [-122.4194, 0.0, 179.5, 86.0]
+PASS  geopandas/crs: crs=OGC:CRS84 (GeoParquet default for an omitted `crs`)
+
+57/57 checks passed
+== GDAL ogrinfo -al read-back ==
+INFO: Open of `/data/cng.parquet'
+      using driver `Parquet' successful.
+
+Layer name: cng
+Geometry: Point
+Feature Count: 6
+Extent: (-122.419400, -0.000000) - (179.500000, 86.000000)
+Layer SRS WKT:
+GEOGCRS["WGS 84",
+    ENSEMBLE["World Geodetic System 1984 ensemble",
+        MEMBER["World Geodetic System 1984 (Transit)"],
+        MEMBER["World Geodetic System 1984 (G730)"],
+        MEMBER["World Geodetic System 1984 (G873)"],
+        MEMBER["World Geodetic System 1984 (G1150)"],
+        MEMBER["World Geodetic System 1984 (G1674)"],
+        MEMBER["World Geodetic System 1984 (G1762)"],
+        MEMBER["World Geodetic System 1984 (G2139)"],
+        MEMBER["World Geodetic System 1984 (G2296)"],
+        ELLIPSOID["WGS 84",6378137,298.257223563,
+            LENGTHUNIT["metre",1]],
+        ENSEMBLEACCURACY[2.0]],
+    PRIMEM["Greenwich",0,
+        ANGLEUNIT["degree",0.0174532925199433]],
+    CS[ellipsoidal,2],
+        AXIS["geodetic latitude (Lat)",north,
+            ORDER[1],
+            ANGLEUNIT["degree",0.0174532925199433]],
+        AXIS["geodetic longitude (Lon)",east,
+            ORDER[2],
+            ANGLEUNIT["degree",0.0174532925199433]],
+    USAGE[
+        SCOPE["Horizontal component of 3D system."],
+        AREA["World."],
+        BBOX[-90,-180,90,180]],
+    ID["EPSG",4326]]
+Data axis to CRS axis mapping: 2,1
+Geometry Column = geometry
+objectid: Integer64 (0.0) NOT NULL
+name: String (0.0)
+category: String (0.0)
+population: Integer (0.0)
+ratio: Real (0.0)
+active: Integer(Boolean) (0.0)
+observed_at: DateTime (UTC)
+OGRFeature(cng):0
+  objectid (Integer64) = 1
+  name (String) = Harbor City
+  category (String) = city
+  population (Integer) = 1000000
+  ratio (Real) = 0.91
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/01/02 03:04:05+00
+  POINT (-122.4194 37.7749)
+
+OGRFeature(cng):1
+  objectid (Integer64) = 2
+  name (String) = Baytown
+  category (String) = city
+  population (Integer) = 430000
+  ratio (Real) = 0.42
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/02/11 12:00:00+00
+  POINT (-122.2711 37.8044)
+
+OGRFeature(cng):2
+  objectid (Integer64) = 3
+  name (String) = Meridian Marker
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0
+  active (Integer(Boolean)) = 0
+  observed_at (DateTime) = 2026/03/21 00:00:00+00
+  POINT (0.0 51.4779)
+
+OGRFeature(cng):3
+  objectid (Integer64) = 4
+  name (String) = Equator Station
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0.5
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/04/01 06:30:00+00
+  POINT (-75 0)
+
+OGRFeature(cng):4
+  objectid (Integer64) = 5
+  name (String) = Dateline Post
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0.75
+  active (Integer(Boolean)) = 0
+  observed_at (DateTime) = 2026/05/09 18:45:00+00
+  POINT (179.5 0.5)
+
+OGRFeature(cng):5
+  objectid (Integer64) = 6
+  name (String) = Polar Outpost
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0.1
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/06/15 09:15:00+00
+  POINT (0 86)
+
+
+all four consumers decoded /home/mike/honua-io/wt-4912-repin-8862065/docs/internal/evidence/aot-geoparquet-candidate-8862065-2026-09-16/hardened-amd64/cng.parquet

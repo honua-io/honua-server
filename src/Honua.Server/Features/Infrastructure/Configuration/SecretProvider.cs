@@ -18,6 +18,7 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
     private readonly IConnectionSecretResolver _secretResolver;
     private readonly SecretProviderOptions _options;
     private readonly ILogger<SecretProvider> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
     private readonly Timer? _cacheCleanupTimer;
@@ -29,11 +30,13 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
     public SecretProvider(
         IConnectionSecretResolver secretResolver,
         IOptions<SecretProviderOptions> options,
-        ILogger<SecretProvider> logger)
+        ILogger<SecretProvider> logger,
+        TimeProvider? timeProvider = null)
     {
         _secretResolver = secretResolver ?? throw new ArgumentNullException(nameof(secretResolver));
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _timeProvider = timeProvider ?? TimeProvider.System;
 
         if (_options.EnableCaching)
         {
@@ -174,7 +177,7 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
             return false;
         }
 
-        if (entry.ExpiresAt <= DateTimeOffset.UtcNow)
+        if (entry.ExpiresAt <= _timeProvider.GetUtcNow())
         {
             // Remove expired entry
             _cache.TryRemove(secretRef, out _);
@@ -217,7 +220,8 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
             }
         }
 
-        var entry = new CacheEntry(value, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.Add(_options.CacheDuration));
+        var now = _timeProvider.GetUtcNow();
+        var entry = new CacheEntry(value, now, now.Add(_options.CacheDuration));
         _cache[secretRef] = entry;
     }
 
@@ -231,7 +235,7 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var expiredKeys = _cache
             .Where(kvp => kvp.Value.ExpiresAt <= now)
             .Select(kvp => kvp.Key)

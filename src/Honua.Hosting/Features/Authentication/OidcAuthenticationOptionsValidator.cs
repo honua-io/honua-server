@@ -354,7 +354,8 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
                 else if (OidcClaimsTransformation.IsReservedProvenanceClaimType(mapping.Value))
                 {
                     errors.Add(
-                        $"ClaimsMapping.CustomMappings['{mapping.Key}'] cannot target reserved Honua provenance claim '{mapping.Value}'");
+                        $"ClaimsMapping.CustomMappings['{mapping.Key}'] cannot target reserved Honua provenance claim '{mapping.Value}'. " +
+                        "Map identity provider claims to role claim types instead.");
                 }
             }
         }

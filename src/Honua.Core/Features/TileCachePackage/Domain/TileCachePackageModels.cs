@@ -84,6 +84,12 @@ public sealed record TileCachePackageDescriptor
     /// <c>_alllayers</c>.
     /// </summary>
     public required string TileBundlesPath { get; init; }
+
+    /// <summary>
+    /// Operator-visible assumption made while binding the tiling scheme, such as a
+    /// missing WKID that still matched WebMercatorQuad.
+    /// </summary>
+    public string? Assumption { get; init; }
 }
 
 /// <summary>

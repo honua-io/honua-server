@@ -47,9 +47,10 @@ public sealed class CapabilityFlagOptions
     /// <summary>
     /// Per-capability overrides keyed by <see cref="CapabilityDescriptor.Id"/>. A
     /// missing entry is treated as disabled (default <c>false</c>).
+    /// Keys follow the case-insensitive application configuration contract.
     /// </summary>
     public IDictionary<string, ExperimentalCapabilityFlag> Capabilities { get; } =
-        new Dictionary<string, ExperimentalCapabilityFlag>(StringComparer.Ordinal);
+        new Dictionary<string, ExperimentalCapabilityFlag>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether the experimental capability with the given id is enabled: <c>true</c>

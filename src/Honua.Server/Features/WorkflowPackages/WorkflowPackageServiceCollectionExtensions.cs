@@ -21,9 +21,14 @@ internal static class WorkflowPackageServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<InMemoryWorkflowPackageStore>();
-        services.TryAddSingleton<IWorkflowPackageStore>(sp =>
-            sp.GetRequiredService<InMemoryWorkflowPackageStore>());
+        // PostGIS registers PostgresWorkflowPackageStore before this call. Keep that
+        // durable store. The in-memory store is only for tests and non-PostGIS ephemeral hosts.
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(IWorkflowPackageStore)))
+        {
+            services.AddSingleton<InMemoryWorkflowPackageStore>();
+            services.AddSingleton<IWorkflowPackageStore>(sp =>
+                sp.GetRequiredService<InMemoryWorkflowPackageStore>());
+        }
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IWorkflowNodeProvider, ProcessCatalogWorkflowNodeProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IWorkflowNodeProvider, AuthoringWorkflowNodeProvider>());
         services.TryAddSingleton<IWorkflowNodeRegistry, WorkflowNodeRegistry>();

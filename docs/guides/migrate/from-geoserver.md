@@ -1,8 +1,16 @@
+---
+type: guide
+title: "Migrate from GeoServer"
+description: "Use honua-migrate to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job."
+resource: "honua://capability/import.geoserver"
+---
 # Migrate from GeoServer
 
 Use `honua-migrate` to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job.
 
-**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the [`honua-migrate`](https://github.com/honua-io/honua-migrate) CLI, Redis-backed jobs, and GeoServer REST credentials.
+**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
+which avoids the [console-script collision](https://github.com/honua-io/honua-migrate/blob/trunk/docs/console-script-collision.md)
+with `honua-sdk`'s legacy launcher), Redis-backed jobs, and GeoServer REST credentials.
 
 Set the local Honua credential and source details:
 
@@ -12,7 +20,7 @@ export HONUA_API_KEY=your-admin-api-key
 export GEOSERVER_URL=https://geoserver.example.com/geoserver/rest
 ```
 
-The CLI resolves `env:HONUA_API_KEY` locally for Honua authentication. The GeoServer password reference is interpreted by Honua, so its environment must contain the referenced variable.
+The CLI resolves `env:HONUA_API_KEY` locally for Honua authentication. The GeoServer password reference is interpreted by Honua, so its environment must contain the referenced variable and the operator must permit it under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)); nothing is permitted by default.
 
 ## 1. Assess with a read-only catalog scan
 
@@ -91,7 +99,13 @@ honua-migrate services geoserver resume \
 
 ## 5. Reconcile and repoint clients
 
-Verify the published target through the supported Honua CLI:
+Verify the published target with the JavaScript SDK's `honua` CLI:
+
+> `honua` here is the JavaScript SDK's CLI, which is the one with `query`. Install it with
+> `npm i -g @honua/sdk-js`, or run it ad hoc as `npx -p @honua/sdk-js honua …` — the `-p`
+> matters, because npx otherwise looks for a binary named `sdk-js`. The PyPI `honua-sdk`
+> distribution installs an executable with the same name and no `query` subcommand, so on a
+> machine with both, prefer the `npx -p` form.
 
 ```bash
 export HONUA_BASE_URL="$HONUA_URL"
@@ -107,7 +121,7 @@ The runtime-neutral `honua-migrate reconcile compare` command requires a durable
 
 ## Troubleshoot
 
-- **A secret reference is rejected** — local Honua authentication requires `env:VARIABLE_NAME`; the GeoServer reference must also use supported server-side secret-reference syntax.
+- **A secret reference is rejected** — local Honua authentication requires `env:VARIABLE_NAME`; the GeoServer reference must be a whole `provider:identifier` value that the Honua operator has permitted under `Security__RequestSecretReferences__*`.
 - **The dry run does not complete** — inspect the existing job with `status` or bounded `resume`; do not start another plan until its outcome is understood.
 - **Apply refuses the plan** — the plan must contain completed dry-run evidence and an intact canonical digest.
 - **Apply reports `manual-review` for a layer** — copy the backing table into target PostGIS, then create and review a new dry-run plan.

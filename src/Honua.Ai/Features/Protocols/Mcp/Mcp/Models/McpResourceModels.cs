@@ -18,6 +18,15 @@ internal sealed class McpProposalResource
     [JsonPropertyName("proposalId")]
     public string ProposalId { get; set; } = string.Empty;
 
+    [JsonPropertyName("operationInstanceId")]
+    public string? OperationInstanceId { get; set; }
+
+    [JsonPropertyName("auditId")]
+    public string? AuditId { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; set; }
+
     [JsonPropertyName("kind")]
     public string Kind { get; set; } = string.Empty;
 
@@ -50,6 +59,15 @@ internal sealed class McpProposalResource
 
     [JsonPropertyName("executionOperationId")]
     public string? ExecutionOperationId { get; set; }
+
+    [JsonPropertyName("resourceIds")]
+    public IReadOnlyDictionary<string, string>? ResourceIds { get; set; }
+
+    [JsonPropertyName("publicationId")]
+    public string? PublicationId { get; set; }
+
+    [JsonPropertyName("activeUrl")]
+    public string? ActiveUrl { get; set; }
 
     [JsonPropertyName("createdAt")]
     public DateTimeOffset CreatedAt { get; set; }
@@ -347,6 +365,15 @@ internal sealed class McpProcessEntry
     [JsonPropertyName("executionKind")]
     public string ExecutionKind { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Entry points this operation is callable through — any of <c>job</c>,
+    /// <c>protocol</c> and <c>workflow</c>. GA is defined per entry point, so an agent
+    /// reads this to know whether it may submit the operation as a process job, must
+    /// call its owning protocol endpoint instead, or may only compose it in a workflow.
+    /// </summary>
+    [JsonPropertyName("entryPoints")]
+    public IReadOnlyList<string> EntryPoints { get; set; } = [];
+
     [JsonPropertyName("supportedExecutionModes")]
     public IReadOnlyList<string> SupportedExecutionModes { get; set; } = [];
 
@@ -428,6 +455,21 @@ internal sealed class McpPublishedServiceView
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
+    [JsonPropertyName("metadataServiceId")]
+    public string? MetadataServiceId { get; set; }
+
+    [JsonPropertyName("layerIds")]
+    public IReadOnlyList<int>? LayerIds { get; set; }
+
+    [JsonPropertyName("servingLayerIds")]
+    public IReadOnlyList<int>? ServingLayerIds { get; set; }
+
+    [JsonPropertyName("featureServerEnabled")]
+    public bool? FeatureServerEnabled { get; set; }
+
+    [JsonPropertyName("serving")]
+    public bool? Serving { get; set; }
+
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
@@ -444,13 +486,13 @@ internal sealed class McpPublishedServiceView
     public string? Endpoint { get; set; }
 
     [JsonPropertyName("publishedAt")]
-    public DateTimeOffset PublishedAt { get; set; }
+    public DateTimeOffset? PublishedAt { get; set; }
 
     [JsonPropertyName("lastRefreshedAt")]
     public DateTimeOffset? LastRefreshedAt { get; set; }
 
     [JsonPropertyName("updatedAt")]
-    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
 
     [JsonPropertyName("etag")]
     public string Etag { get; set; } = string.Empty;
@@ -489,7 +531,7 @@ internal sealed class McpPublishedServiceSummary
     public string TargetKind { get; set; } = string.Empty;
 
     [JsonPropertyName("updatedAt")]
-    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
 
     [JsonPropertyName("etag")]
     public string Etag { get; set; } = string.Empty;
@@ -562,6 +604,27 @@ internal sealed class McpDeploymentView
 
     [JsonPropertyName("sourceResourceUri")]
     public string? SourceResourceUri { get; set; }
+
+    [JsonPropertyName("studioItemId")]
+    public Guid? StudioItemId { get; set; }
+
+    [JsonPropertyName("studioVersionId")]
+    public Guid? StudioVersionId { get; set; }
+
+    [JsonPropertyName("studioContentHash")]
+    public string? StudioContentHash { get; set; }
+
+    [JsonPropertyName("studioOwnerId")]
+    public string? StudioOwnerId { get; set; }
+
+    [JsonPropertyName("studioPublicationRequestId")]
+    public Guid? StudioPublicationRequestId { get; set; }
+
+    [JsonPropertyName("studioRollbackRequestId")]
+    public Guid? StudioRollbackRequestId { get; set; }
+
+    [JsonPropertyName("studioFamily")]
+    public string? StudioFamily { get; set; }
 
     [JsonPropertyName("targetId")]
     public string TargetId { get; set; } = string.Empty;

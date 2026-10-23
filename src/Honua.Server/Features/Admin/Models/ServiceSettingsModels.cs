@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Domain.V2;
+
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
@@ -110,6 +112,9 @@ internal sealed class UpdateTimeInfoRequest
 /// </summary>
 internal sealed class LayerMetadataResponse
 {
+    /// <summary>Persisted editing and attachment bindings for the canonical resource.</summary>
+    public MetadataV2ResourceEditing? Editing { get; init; }
+
     /// <summary>The layer identifier.</summary>
     public required int LayerId { get; init; }
 
@@ -146,6 +151,12 @@ internal sealed class LayerMetadataResponse
 /// </summary>
 internal sealed class UpdateLayerMetadataRequest
 {
+    /// <summary>
+    /// Partial resource binding repair and explicit edit policy for this service's
+    /// FeatureServer publication. Omitted fields preserve existing values.
+    /// </summary>
+    public MetadataV2EditingPatch? Editing { get; init; }
+
     /// <summary>
     /// SPDX license expression or <c>proprietary</c>. Null preserves the current value;
     /// an empty string clears it.
@@ -228,7 +239,23 @@ internal sealed class MapServerSettingsResponse
 internal sealed class UpdateProtocolsRequest
 {
     /// <summary>
-    /// Protocols to enable. Valid values: "FeatureServer", "MapServer", "OgcFeatures", "OData", "Grpc".
+    /// Protocols to enable. Replaces the service's protocol set rather than adding to it,
+    /// so send every protocol the service should expose, not only the ones being turned on.
+    /// <para>
+    /// Valid values are the identifiers in <c>ServiceProtocols.All</c>:
+    /// "FeatureServer", "MapServer", "ImageServer", "GPServer", "VectorTileServer",
+    /// "OgcFeatures", "OGC-API-Maps", "OGC-API-Coverages", "OGC-API-Tiles", "Wfs20",
+    /// "Wms", "Wmts", "Wcs", "OData", "Grpc", "Stac", "SensorThings", "Terrain", "Elevation".
+    /// </para>
+    /// <para>
+    /// These are the protocols a <em>service</em> toggles, which is fewer than the protocols
+    /// Honua speaks. Instance-level surfaces are not listed here and cannot be set through
+    /// this endpoint: the Geometry Service, geocoding locators, OGC API Processes, OGC API
+    /// Records, OGC API Styles, EDR, WPS, MCP, PMTiles and hosted 3D scenes are reached on
+    /// their own routes regardless of any service's protocol set. NAServer and
+    /// VersionManagementServer are likewise absent because they are licence-gated rather
+    /// than per-service toggles. See docs/concepts/protocols.md for the full matrix.
+    /// </para>
     /// </summary>
     public required string[] EnabledProtocols { get; init; }
 }

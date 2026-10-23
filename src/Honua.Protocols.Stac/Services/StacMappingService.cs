@@ -11,9 +11,12 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Stac;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using NetTopologySuite.IO;
+
+using Honua.Core.Abstractions.Features.Rasters.Abstractions;
 
 namespace Honua.Protocols.Stac.Services;
 
@@ -41,18 +44,19 @@ internal sealed class StacMappingService
     /// Builds a STAC Collection directly from a Metadata v2 resource/publication.
     /// </summary>
     /// <remarks>
-    /// The feature reader still operates on the integer service-local layer index resolved
-    /// from the V2 publication, because the feature-store contract has not yet been ported
-    /// (see cutover plan step 2). The mapped collection metadata — license, keywords,
-    /// declared extensions — is read from the V2 resource via
-    /// <see cref="StacResourceExtensions"/>; spatial/temporal extents come from the V2
-    /// resource's spatial/temporal extensions plus the feature store probe.
+    /// <paramref name="layerIndex"/> is the collection's protocol-facing identifier; the
+    /// feature store probe reads <paramref name="storageLayerId"/>, the publication's
+    /// storage-layer handle, and is skipped when the publication has none. The mapped
+    /// collection metadata — license, keywords, declared extensions — is read from the V2
+    /// resource via <see cref="StacResourceExtensions"/>; spatial/temporal extents come from
+    /// the V2 resource's spatial/temporal extensions plus the feature store probe.
     /// </remarks>
     public static async Task<StacCollection> MapResourceToCollectionAsync(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
         MetadataV2Service service,
         int layerIndex,
+        int? storageLayerId,
         IFeatureReader featureReader,
         string baseUrl,
         ICoordinateTransformService? coordinateTransformService,
@@ -125,7 +129,7 @@ internal sealed class StacMappingService
 
         var extent = await BuildStacExtentV2Async(
             resource,
-            layerIndex,
+            storageLayerId,
             featureReader,
             coordinateTransformService,
             cancellationToken).ConfigureAwait(false);
@@ -249,7 +253,8 @@ internal sealed class StacMappingService
         int layerIndex,
         string baseUrl,
         IReadOnlySet<string>? selectedProperties = null,
-        int? geometrySrid = null)
+        int? geometrySrid = null,
+        CogArtifactReference? cogArtifact = null)
     {
         var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
         var itemId = ResolveItemId(feature, resource);
@@ -345,6 +350,26 @@ internal sealed class StacMappingService
             }
         };
 
+        // A layer with a published COG gets it alongside the GeoJSON. This is what
+        // makes the catalogue usable to a raster client: a STAC reader picks an asset
+        // by media type, and the cloud-optimized profile is the token it keys on -
+        // QGIS resolves an asset to a loadable layer URI only when it is present, and
+        // a catalogue that advertises only application/geo+json gives a raster client
+        // nothing to open even when the raster is published and range-readable.
+        // Null whenever nothing is published, which is every vector layer.
+        if (cogArtifact is not null)
+        {
+            assets["cog"] = new StacAsset
+            {
+                Href = cogArtifact.Href.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                    ? cogArtifact.Href
+                    : $"{baseUrl}{cogArtifact.Href}",
+                Title = "Cloud Optimized GeoTIFF",
+                Type = cogArtifact.ContentType,
+                Roles = ImmutableArray.Create("data", "cloud-optimized"),
+            };
+        }
+
         return new StacItem
         {
             Id = itemId,
@@ -435,23 +460,50 @@ internal sealed class StacMappingService
 
     internal static string ResolveItemId(Feature feature, MetadataV2Resource? resource = null)
     {
-        foreach (var key in new[] { "stac_id", "item_id", "id" })
+        var source = StacItemIdentity.Resolve(resource);
+        if (source.IsDeclaredIdentity && source.Field is { } declared &&
+            TryReadItemIdValue(feature, declared.Name, out var declaredId))
         {
-            var actualName = resource?.SchemaFields.FirstOrDefault(field =>
-                string.Equals(field.Name, key, StringComparison.OrdinalIgnoreCase))?.Name ?? key;
-            if (!TryGetAttribute(feature.Attributes, actualName, out var value) || value is null)
-            {
-                continue;
-            }
+            return declaredId;
+        }
 
-            var resolved = Convert.ToString(value, CultureInfo.InvariantCulture);
-            if (!string.IsNullOrWhiteSpace(resolved))
+        if (!source.IsDeclaredIdentity)
+        {
+            foreach (var key in StacItemIdentity.CanonicalNames)
             {
-                return resolved;
+                // A schema column that failed the uniqueness check is not an item id,
+                // even when every row stores the same attribute value.
+                if (resource is not null && StacItemIdentity.FindSchemaField(resource, key) is not null)
+                {
+                    continue;
+                }
+
+                if (TryReadItemIdValue(feature, key, out var attributeId))
+                {
+                    return attributeId;
+                }
             }
         }
 
         return feature.ObjectId?.ToString(CultureInfo.InvariantCulture) ?? "0";
+    }
+
+    private static bool TryReadItemIdValue(Feature feature, string name, out string itemId)
+    {
+        itemId = string.Empty;
+        if (!TryGetAttribute(feature.Attributes, name, out var value) || value is null)
+        {
+            return false;
+        }
+
+        var resolved = Convert.ToString(value, CultureInfo.InvariantCulture);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            return false;
+        }
+
+        itemId = resolved;
+        return true;
     }
 
     private static bool TryGetAttribute(
@@ -487,7 +539,7 @@ internal sealed class StacMappingService
     /// </summary>
     private static async Task<StacExtent> BuildStacExtentV2Async(
         MetadataV2Resource resource,
-        int layerIndex,
+        int? storageLayerId,
         IFeatureReader featureReader,
         ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken)
@@ -523,8 +575,10 @@ internal sealed class StacMappingService
                 EndTimeField = temporalEndField
             }
         };
-        var temporalExtent = await OgcQueryablesUtilities.BuildTemporalExtentAsync(
-            temporalResource, layerIndex, featureReader, cancellationToken).ConfigureAwait(false);
+        var temporalExtent = storageLayerId is int storageLayer
+            ? await OgcQueryablesUtilities.BuildTemporalExtentAsync(
+                temporalResource, storageLayer, featureReader, cancellationToken).ConfigureAwait(false)
+            : null;
         if (temporalExtent is not null)
         {
             temporalInterval = temporalExtent.Interval;

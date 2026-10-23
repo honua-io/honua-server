@@ -78,6 +78,18 @@ jobs:
       - name: Install Python test dependencies
         run: pip install -r tests/python/requirements.txt
 
+      # test_cog_client_compat.py reads an artifact that only the running server can
+      # produce: LocalFileStorage indexes its objects at construction, so a COG written
+      # to disk afterwards is invisible to the range proxy. The compose fixture publishes
+      # it from seed/run.sh, but this workflow seeds SQL directly and never did - so the
+      # COG cases would reach their documented 404 path here. They fail rather than skip
+      # on purpose, so provision the prerequisite instead of weakening the assertion.
+      - name: Publish the COG artifact the range-read cases read
+        env:
+          HONUA_BASE_URL: http://localhost:5000
+          HONUA_ADMIN_PASSWORD: ci-admin-password
+        run: python3 docker/client-compat/seed/publish-cog.py
+
       - name: Run PyQGIS compatibility suite
         env:
           HONUA_PYQGIS_BASE_URL: http://localhost:5000

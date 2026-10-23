@@ -1,0 +1,24 @@
+---
+type: capability
+title: "Amazon Redshift Provider"
+description: "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider."
+resource: "honua://capability/provider.redshift"
+tags: [capability, dataproviders, enterprise]
+---
+<!-- GENERATED FILE - DO NOT EDIT. Regenerate with scripts/ci/generate-capability-concepts.py -->
+
+# Amazon Redshift Provider
+
+Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.
+
+| | |
+| --- | --- |
+| Capability key | `provider.redshift` |
+| Category | DataProviders |
+| Edition | Enterprise |
+
+The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
+
+## Documented in
+
+- [Amazon Redshift provider](../../reference/configuration/data-sources/redshift.md)

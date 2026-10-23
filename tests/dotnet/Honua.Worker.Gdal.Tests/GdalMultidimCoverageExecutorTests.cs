@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -62,6 +63,258 @@ public sealed class GdalMultidimCoverageExecutorTests
 
         context.Artifacts.Should().ContainSingle()
             .Which.Should().StartWith("data:application/json");
+    }
+
+    [UnitTest]
+    public async Task Execute_CoordinateEndpoints_PreserveAscendingAndDescendingStorageOrder()
+    {
+        foreach (var ascending in new[] { true, false })
+        {
+            // netCDF reports HORIZONTAL_Y; HDF5 over S3 only preserves CF
+            // attributes on the indexing variable. Neither axis names nor
+            // classic raster geotransforms establish storage direction.
+            foreach (var dimension in new[]
+            {
+                "\"type\":\"HORIZONTAL_Y\",\"indexing_variable\":\"/latitude\"",
+                "\"type\":\"HORIZONTAL_Y\",\"indexing_variable\":{\"latitude\":{\"full_name\":\"/latitude\"}}",
+                "\"indexing_variable\":{\"latitude\":{\"full_name\":\"/latitude\",\"attributes\":{\"axis\":\"Y\"}}}",
+                "\"indexing_variable\":{\"latitude\":{\"full_name\":\"/latitude\",\"attributes\":{\"standard_name\":\"latitude\"}}}",
+            })
+            {
+                var structure = "{\"type\":\"group\",\"dimensions\":[{" + dimension +
+                    "},{\"indexing_variable\":{\"longitude\":{\"full_name\":\"/longitude\",\"attributes\":{\"axis\":\"X\"}}}}],\"arrays\":{\"sst\":{\"datatype\":\"Float32\"}}}";
+                var coordinates = ascending
+                    ? "{\"values\":[37.70,\"[...]\",37.85]}"
+                    : "{\"values\":[37.85,\"[...]\",37.70]}";
+                var runner = new FakeGdalCommandRunner((tool, args, _) => new GdalCommandResult
+                {
+                    ExitCode = 0,
+                    StandardOutput = tool == "gdalmdiminfo"
+                        ? args.Contains("-array") ? coordinates : structure
+                        : "{}",
+                });
+                var executor = NewExecutor(runner, out _);
+                var job = GdalJobFactory.Job(GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+                    ("provider", "AwsS3"), ("bucket", "cubes"), ("objectKey", "sst.nc"));
+                var context = new RecordingJobExecutionContext(job.OperationId);
+
+                var result = await executor.ExecuteAsync(job, context, default);
+
+                result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+                var read = runner.Invocations.Should().ContainSingle(invocation =>
+                    invocation.Tool == "gdalmdiminfo" && invocation.Arguments.Contains("-array")).Subject;
+                read.Arguments.Should().Equal("-array", "/latitude", "-detailed", "-limit", "2", "/vsis3/cubes/sst.nc");
+                using var artifact = JsonDocument.Parse(DecodeDataUriJson(context.Artifacts.Should().ContainSingle().Subject));
+                artifact.RootElement.GetProperty("yAxisAscending").GetBoolean().Should().Be(ascending);
+            }
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_VsiNetCdfWithoutUserfaultfd_EnrichesFromDerivedZarr()
+    {
+        const string zarrInfo =
+            """{"size":[4,4],"geoTransform":[-122.525,0.05,0,37.675,0,0.05],"bands":[{"metadata":{"":{"DIM_time_VALUE":"0","DIM_time_UNIT":"hours since 2024-01-01 00:00:00"}}}]}""";
+        var runner = new FakeGdalCommandRunner((tool, args, _) =>
+        {
+            if (tool == "gdalinfo" && args.Any(argument => argument.EndsWith(".nc", StringComparison.Ordinal)))
+            {
+                return new GdalCommandResult
+                {
+                    ExitCode = 1,
+                    StandardError = "ERROR 1: Opening a /vsi file with the netCDF driver requires Linux userfaultfd to be available.",
+                };
+            }
+
+            if (tool == "gdalinfo")
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = zarrInfo };
+            }
+
+            return new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson };
+        });
+        var executor = NewExecutor(runner, out _);
+        var job = GdalJobFactory.Job(
+            GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+            ("provider", "AwsS3"),
+            ("bucket", "honua-multidim-fixtures"),
+            ("objectKey", "imageserver/sea-surface-temperature.nc"));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+
+        var result = await executor.ExecuteAsync(job, context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        result.Warnings.Should().BeEmpty();
+        runner.Invocations.Should().NotContain(invocation =>
+            invocation.Tool == "gdalinfo" &&
+            invocation.Arguments.Any(argument => argument.EndsWith(".nc", StringComparison.Ordinal)));
+        runner.Invocations.Should().Contain(invocation =>
+            invocation.Tool == "gdalinfo" &&
+            invocation.Arguments.Contains("/vsis3/honua-multidim-fixtures/imageserver/sea-surface-temperature.zarr"));
+        runner.Invocations.Should().NotContain(invocation => invocation.Tool == "gdalmanage");
+        DecodeDataUriJson(context.Artifacts.Should().ContainSingle().Subject).Should().Contain("DIM_time_VALUE");
+        var coordinateInfo = runner.Invocations.Find(invocation => invocation.Tool == "gdalinfo");
+        coordinateInfo.Tool.Should().Be("gdalinfo");
+        coordinateInfo.Arguments.Should().NotContain("-stats");
+    }
+
+    [UnitTest]
+    public async Task Execute_VsiNetCdfZarrRootListsSubdatasets_ReadsTheDataArray()
+    {
+        const string zarrRoot = "/vsis3/honua-multidim-fixtures/imageserver/sea-surface-temperature.zarr";
+        const string dataArray = "ZARR:\"" + zarrRoot + "\":/sea_surface_temperature";
+        const string latitude = "ZARR:\"" + zarrRoot + "\":/latitude";
+        const string rootInfo = """
+            {"metadata":{"SUBDATASETS":{"SUBDATASET_1_NAME":"ZARR:\"/vsis3/honua-multidim-fixtures/imageserver/sea-surface-temperature.zarr\":/latitude","SUBDATASET_1_DESC":"[4] latitude (Float64)","SUBDATASET_2_NAME":"ZARR:\"/vsis3/honua-multidim-fixtures/imageserver/sea-surface-temperature.zarr\":/sea_surface_temperature","SUBDATASET_2_DESC":"[2x4x4] sea_surface_temperature (Float32)"}}}
+            """;
+        const string arrayInfo =
+            """{"geoTransform":[-122.525,0.05,0,37.675,0,0.05],"bands":[{"metadata":{"":{"DIM_time_VALUE":"0","DIM_time_UNIT":"hours since 2024-01-01 00:00:00"}}}]}""";
+        const string structure =
+            """{"arrays":{"sea_surface_temperature":{"datatype":"Float32"},"latitude":{"full_name":"/latitude"}},"dimensions":[{"indexing_variable":"/latitude"}]}""";
+        var runner = new FakeGdalCommandRunner((tool, args, _) =>
+        {
+            if (tool == "gdalinfo" && args.Contains(dataArray))
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = arrayInfo };
+            }
+
+            if (tool == "gdalinfo")
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = rootInfo };
+            }
+
+            return new GdalCommandResult { ExitCode = 0, StandardOutput = structure };
+        });
+        var executor = NewExecutor(runner, out _);
+        var job = GdalJobFactory.Job(
+            GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+            ("provider", "AwsS3"),
+            ("bucket", "honua-multidim-fixtures"),
+            ("objectKey", "imageserver/sea-surface-temperature.nc"));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+
+        var result = await executor.ExecuteAsync(job, context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        result.Warnings.Should().BeEmpty();
+        runner.Invocations.Should().Contain(invocation => invocation.Tool == "gdalinfo" && invocation.Arguments.Contains(dataArray));
+        runner.Invocations.Should().NotContain(invocation => invocation.Tool == "gdalinfo" && invocation.Arguments.Contains(latitude));
+        runner.Invocations.Should().NotContain(invocation => invocation.Tool == "gdalmanage");
+        DecodeDataUriJson(context.Artifacts.Should().ContainSingle().Subject).Should().Contain("DIM_time_VALUE");
+    }
+
+    [UnitTest]
+    public async Task Execute_VsiNetCdfStatsTimeout_KeepsCoordinates()
+    {
+        const string coordinates =
+            """{"geoTransform":[-122.525,0.05,0,37.675,0,0.05],"bands":[{"metadata":{"":{"DIM_time_VALUE":"0"}}}]}""";
+        var runner = new FakeGdalCommandRunner((tool, args, _) =>
+        {
+            if (tool == "gdalinfo" && args.Contains("-stats"))
+            {
+                throw new OperationCanceledException("statistics budget");
+            }
+
+            if (tool == "gdalinfo")
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = coordinates };
+            }
+
+            return new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson };
+        });
+        var executor = NewExecutor(runner, out _);
+        var job = GdalJobFactory.Job(
+            GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+            ("provider", "AwsS3"),
+            ("bucket", "cubes"),
+            ("objectKey", "sst.nc"));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+
+        var result = await executor.ExecuteAsync(job, context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        result.Warnings.Should().BeEmpty();
+        var infoCalls = runner.Invocations.Where(invocation => invocation.Tool == "gdalinfo").ToList();
+        infoCalls.Should().NotBeEmpty();
+        infoCalls[0].Arguments.Should().NotContain("-stats");
+        infoCalls.Should().Contain(invocation => invocation.Arguments.Contains("-stats"));
+        runner.Invocations.Should().NotContain(invocation => invocation.Tool == "gdalmanage");
+        var artifact = DecodeDataUriJson(context.Artifacts.Should().ContainSingle().Subject);
+        artifact.Should().Contain("geoTransform");
+        artifact.Should().Contain("DIM_time_VALUE");
+    }
+
+    [UnitTest]
+    public async Task Execute_VsiNetCdfZarrInfoUnavailable_EnrichesFromLocalScratchCopy()
+    {
+        const string localInfo =
+            """{"geoTransform":[-122.525,0.05,0,37.675,0,0.05],"metadata":{"":{"NETCDF_DIM_EXTRA":"{time}","time#units":"hours since 2024-01-01 00:00:00","NETCDF_DIM_time_VALUES":"{0,24}"}}}""";
+        var runner = new FakeGdalCommandRunner((tool, args, _) =>
+        {
+            if (tool == "gdalmdimtranslate")
+            {
+                return new GdalCommandResult { ExitCode = 1, StandardError = "convert failed" };
+            }
+
+            if (tool == "gdalinfo" && args.Any(argument => argument.EndsWith("coverage-source.bin", StringComparison.Ordinal)))
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = localInfo };
+            }
+
+            if (tool == "gdalinfo")
+            {
+                return new GdalCommandResult
+                {
+                    ExitCode = 1,
+                    StandardError = "ERROR 1: Opening a /vsi file with the netCDF driver requires Linux userfaultfd to be available.",
+                };
+            }
+
+            return new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson };
+        });
+        var executor = NewExecutor(runner, out _);
+        var job = GdalJobFactory.Job(
+            GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+            ("provider", "AwsS3"),
+            ("bucket", "cubes"),
+            ("objectKey", "sst.nc"));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+
+        var result = await executor.ExecuteAsync(job, context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        result.Warnings.Should().BeEmpty();
+        runner.Invocations.Should().Contain(invocation => invocation.Tool == "gdalmanage" && invocation.Arguments[0] == "copy");
+        runner.Invocations.Should().NotContain(invocation =>
+            invocation.Tool == "gdalinfo" &&
+            invocation.Arguments.Any(argument => argument.EndsWith(".nc", StringComparison.Ordinal)));
+        DecodeDataUriJson(context.Artifacts.Should().ContainSingle().Subject).Should().Contain("NETCDF_DIM_time_VALUES");
+    }
+
+    [UnitTest]
+    public async Task Execute_VsiNetCdfEnrichmentFailure_IsVisibleOnTheJob()
+    {
+        var runner = new FakeGdalCommandRunner((tool, _, _) =>
+            tool is "gdalmdimtranslate" or "gdalmanage" or "gdalinfo"
+                ? new GdalCommandResult { ExitCode = 1, StandardError = "ERROR 1: userfaultfd is unavailable" }
+                : new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson });
+        var executor = NewExecutor(runner, out _);
+        var job = GdalJobFactory.Job(
+            GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+            ("provider", "AwsS3"),
+            ("bucket", "cubes"),
+            ("objectKey", "sst.nc"));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+
+        var result = await executor.ExecuteAsync(job, context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        result.Warnings.Should().ContainSingle().Which.Should().Contain("Coordinate enrichment failed");
+        context.Logs.Should().Contain(entry =>
+            entry.Level == ExecutionLogLevel.Warning && entry.Message.Contains("Coordinate enrichment failed", StringComparison.Ordinal));
+        runner.Invocations.Should().NotContain(invocation =>
+            invocation.Tool == "gdalinfo" &&
+            invocation.Arguments.Any(argument => argument.EndsWith(".nc", StringComparison.Ordinal)));
     }
 
     [UnitTest]

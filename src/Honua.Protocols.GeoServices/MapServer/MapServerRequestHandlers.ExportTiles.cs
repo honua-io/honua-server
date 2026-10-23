@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -24,6 +25,8 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
+
+using Honua.Protocols.GeoServices;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -100,7 +103,11 @@ internal static partial class MapServerEndpoints
             return await SubmitDurableExportAsync(context, preRead.Values, cancellationToken).ConfigureAwait(false);
         }
 
-        var (plan, error) = await TryBuildExportTilesPlanAsync(context, cancellationToken, preRead).ConfigureAwait(false);
+        var (plan, error) = await TryBuildExportTilesPlanAsync(
+            context,
+            cancellationToken,
+            preRead,
+            rejectExceededTransferLimit: true).ConfigureAwait(false);
         if (error is not null)
         {
             return error;
@@ -302,10 +309,21 @@ internal static partial class MapServerEndpoints
         }
     }
 
+    /// <summary>
+    /// Client-facing rejection for a synchronous export whose tile count exceeds
+    /// <paramref name="maxTiles"/>. The estimate operation reports the same counts
+    /// with <c>exceededTransferLimit</c> instead of failing.
+    /// </summary>
+    internal static string DescribeExportTilesTransferLimit(long requestedTileCount, int maxTiles)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"exportTiles requested {requestedTileCount} tiles, which exceeds the permitted maximum of {maxTiles}. Use estimateExportTilesSize to inspect the full count. The package was not created.");
+
     private static async Task<(ExportTilesPlan? Plan, IResult? Error)> TryBuildExportTilesPlanAsync(
         HttpContext context,
         CancellationToken cancellationToken,
-        (Dictionary<string, StringValues>? Values, string? Error)? preReadValues = null)
+        (Dictionary<string, StringValues>? Values, string? Error)? preReadValues = null,
+        bool rejectExceededTransferLimit = false)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
@@ -336,7 +354,7 @@ internal static partial class MapServerEndpoints
         // Esri exportTiles selects the package format via tilePackage=true (TPK)
         // or storageFormat=tpk/compact/zip. compact/tpkx is not implemented; see
         // the parity matrix for the documented deferral.
-        if (!TryResolveExportTilesPackage(
+        if (!ExportTilesRequestParser.TryResolveExportTilesPackage(
                 GetValue(values, "tilePackage"),
                 GetValue(values, "storageFormat") ?? GetValue(values, "exportBy"),
                 out var tilePackage,
@@ -346,7 +364,7 @@ internal static partial class MapServerEndpoints
         }
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
-        if (!TryParseExportTileLevels(
+        if (!ExportTilesRequestParser.TryParseExportTileLevels(
                 GetValue(values, "levels"),
                 GetValue(values, "minZoom"),
                 GetValue(values, "maxZoom"),
@@ -409,10 +427,13 @@ internal static partial class MapServerEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             publishedLayers.Select(static layer => layer.Resource),
-            service);
+            service,
+            AuthorizationOperation.Export,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
         if (accessError != null)
         {
             return (null, accessError);
@@ -423,6 +444,11 @@ internal static partial class MapServerEndpoints
         // materialized every coordinate then .Take(maxTiles)'d, so a whole-world request at a
         // high zoom (e.g. z18 → ~6.9e10 entries) allocated hundreds of GB before any cap was
         // applied — an unauthenticated OOM DoS (#2065).
+        if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide tile exports."));
+        }
+
         var totalTileCount = CountExportTileCoordinates(bounds, requestedZooms);
         var exceededTransferLimit = totalTileCount > maxTiles;
         if (totalTileCount <= 0)
@@ -430,9 +456,17 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
         }
 
-        // Bound the build to maxTiles tiles. When the request exceeds the transfer limit the
-        // estimate path still reports exceededTransferLimit; the export path returns only the
-        // first maxTiles tiles (never the unbounded full grid).
+        // Synchronous export must not cut the package to maxTiles and report success.
+        // estimateExportTilesSize keeps the bounded build so it can report the true count.
+        if (rejectExceededTransferLimit && exceededTransferLimit)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context,
+                DescribeExportTilesTransferLimit(totalTileCount, maxTiles)));
+        }
+
+        // Bound the build to maxTiles tiles so a whole-world estimate cannot allocate the
+        // full grid. The estimate response still reports TotalTileCount and exceededTransferLimit.
         var buildLimit = (int)Math.Min(totalTileCount, maxTiles);
         var selectedTiles = BuildExportTileCoordinates(bounds, requestedZooms, buildLimit);
         if (selectedTiles.Length == 0)
@@ -442,7 +476,7 @@ internal static partial class MapServerEndpoints
 
         var renderSelection = ResolveRenderLayers(
             publishedLayers,
-            service,
+            access,
             GetValue(values, "layers"),
             Array.Empty<DynamicLayerDefinition>(),
             context);
@@ -475,183 +509,6 @@ internal static partial class MapServerEndpoints
             tilePackage), null);
     }
 
-    /// <summary>
-    /// Resolves whether the request asked for an Esri tile package (TPK).
-    /// Accepts <c>tilePackage=true</c> or <c>storageFormat=tpk</c> for the
-    /// exploded-cache package; <c>zip</c>/empty selects the flat ZIP archive.
-    /// The proprietary compact (TPKX) form is rejected with a 400.
-    /// </summary>
-    private static bool TryResolveExportTilesPackage(
-        string? tilePackageValue,
-        string? storageFormatValue,
-        out bool tilePackage,
-        out string? error)
-    {
-        tilePackage = false;
-        error = null;
-
-        if (!string.IsNullOrWhiteSpace(tilePackageValue) &&
-            bool.TryParse(tilePackageValue.Trim(), out var parsedFlag))
-        {
-            tilePackage = parsedFlag;
-        }
-
-        if (string.IsNullOrWhiteSpace(storageFormatValue))
-        {
-            return true;
-        }
-
-        switch (storageFormatValue.Trim().ToLowerInvariant())
-        {
-            case "tpk":
-            case "esritpk":
-            case "exploded":
-                tilePackage = true;
-                return true;
-            case "zip":
-            case "":
-                return true;
-            case "tpkx":
-            case "compact":
-            case "compactv2":
-                error = "storageFormat 'tpkx'/'compact' (Esri compact bundle cache) is not supported. Use storageFormat=tpk for an exploded tile package or storageFormat=zip for a flat archive.";
-                return false;
-            default:
-                error = $"storageFormat '{storageFormatValue}' is not supported. Use tpk or zip.";
-                return false;
-        }
-    }
-
-    private static bool TryParseExportTileLevels(
-        string? levelsValue,
-        string? minZoomValue,
-        string? maxZoomValue,
-        TileLimits limits,
-        out int[] levels,
-        out int minZoom,
-        out int maxZoom,
-        out string? error)
-    {
-        levels = [];
-        minZoom = limits.MinTileZoom;
-        maxZoom = limits.MinTileZoom;
-        error = null;
-
-        var parsed = new SortedSet<int>();
-        if (!string.IsNullOrWhiteSpace(levelsValue))
-        {
-            foreach (var rangeParts in (levelsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).Select(token => token.Split('-', StringSplitOptions.TrimEntries)))
-            {
-                if (rangeParts.Length == 1)
-                {
-                    if (!TryAddExportTilesLevel(rangeParts[0], limits, parsed, out error))
-                    {
-                        return false;
-                    }
-                }
-                else if (rangeParts.Length == 2)
-                {
-                    if (!int.TryParse(rangeParts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var start) ||
-                        !int.TryParse(rangeParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var end) ||
-                        start > end)
-                    {
-                        error = "Invalid levels range.";
-                        return false;
-                    }
-
-                    for (var level = start; level <= end; level++)
-                    {
-                        if (!TryAddExportTilesLevel(level.ToString(CultureInfo.InvariantCulture), limits, parsed, out error))
-                        {
-                            return false;
-                        }
-                    }
-                }
-                else
-                {
-                    error = "Invalid levels parameter.";
-                    return false;
-                }
-            }
-        }
-
-        if (parsed.Count == 0)
-        {
-            if (!TryParseOptionalZoom(minZoomValue, limits.MinTileZoom, limits, out minZoom, out error) ||
-                !TryParseOptionalZoom(maxZoomValue, minZoom, limits, out maxZoom, out error))
-            {
-                return false;
-            }
-
-            if (minZoom > maxZoom)
-            {
-                error = "minZoom must be less than or equal to maxZoom.";
-                return false;
-            }
-
-            for (var level = minZoom; level <= maxZoom; level++)
-            {
-                parsed.Add(level);
-            }
-        }
-
-        levels = parsed.ToArray();
-        minZoom = levels[0];
-        maxZoom = levels[^1];
-        return true;
-    }
-
-    private static bool TryAddExportTilesLevel(
-        string value,
-        TileLimits limits,
-        SortedSet<int> levels,
-        out string? error)
-    {
-        error = null;
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var level))
-        {
-            error = "Invalid levels parameter.";
-            return false;
-        }
-
-        if (level < limits.MinTileZoom || level > limits.MaxTileZoom)
-        {
-            error = $"Tile level {level} is outside supported range ({limits.MinTileZoom}-{limits.MaxTileZoom}).";
-            return false;
-        }
-
-        levels.Add(level);
-        return true;
-    }
-
-    private static bool TryParseOptionalZoom(
-        string? value,
-        int defaultValue,
-        TileLimits limits,
-        out int zoom,
-        out string? error)
-    {
-        zoom = defaultValue;
-        error = null;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return true;
-        }
-
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out zoom))
-        {
-            error = "Invalid zoom parameter.";
-            return false;
-        }
-
-        if (zoom < limits.MinTileZoom || zoom > limits.MaxTileZoom)
-        {
-            error = $"Zoom level {zoom} is outside supported range ({limits.MinTileZoom}-{limits.MaxTileZoom}).";
-            return false;
-        }
-
-        return true;
-    }
 
     private static bool TryParseExportTilesMaxTiles(
         string? value,

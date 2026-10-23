@@ -118,12 +118,17 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
 
     public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
-        => _inner.CreatePublicationRequestAsync(request, cancellationToken);
+        => _inner.CreatePublicationRequestAsync(request, expectedCurrentVersionId, cancellationToken);
 
     public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId, Guid versionId, Guid requestId, CancellationToken cancellationToken = default)
         => _inner.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
+
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route, CancellationToken cancellationToken = default)
+        => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
 
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
@@ -241,12 +246,17 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
 
     public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
-        => _inner.CreatePublicationRequestAsync(request, cancellationToken);
+        => _inner.CreatePublicationRequestAsync(request, expectedCurrentVersionId, cancellationToken);
 
     public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId, Guid versionId, Guid requestId, CancellationToken cancellationToken = default)
         => _inner.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
+
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route, CancellationToken cancellationToken = default)
+        => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
 
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,

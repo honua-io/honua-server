@@ -48,7 +48,9 @@ public static class ServiceCollectionExtensions
         // would be a captive dependency that fails ServiceProvider ValidateOnBuild/ValidateScopes.
         services.AddScoped<ISnowflakeConnectionFactory, SnowflakeConnectionFactory>();
         services.AddScoped<SnowflakeFeatureDataAccess>();
-        services.AddScoped<SnowflakeFeatureStore>();
+        services.AddScoped<SnowflakeFeatureStore>(sp => new SnowflakeFeatureStore(
+            sp.GetRequiredService<SnowflakeFeatureDataAccess>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<SnowflakeFeatureStore>());
 

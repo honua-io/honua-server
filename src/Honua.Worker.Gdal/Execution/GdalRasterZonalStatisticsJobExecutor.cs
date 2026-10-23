@@ -249,7 +249,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 {
                     try
                     {
-                        clipResult = await runner.RunAsync("gdalwarp", clipArgs, workspace, clipLinked.Token).ConfigureAwait(false);
+                        clipResult = await GdalRasterDriverAllowlist.RunAsync(runner, "gdalwarp", clipArgs, opts, workspace, clipLinked.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (clipTimeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                     {

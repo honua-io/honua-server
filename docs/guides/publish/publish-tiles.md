@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Publish tiles"
+description: "You'll have a published layer serving vector tiles, a seeded tile cache, and (optionally) a durable PMTiles artifact in about 10 minutes."
+resource: "honua://capability/serve.vector-tiles"
+---
 # Publish tiles
 
 You'll have a published layer serving vector tiles, a seeded tile cache, and (optionally) a durable PMTiles artifact in about 10 minutes.
@@ -98,4 +104,4 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 
 - [Style maps](../style/style-maps.md) — styles consume the same MVT endpoints.
 - [Publish layers](publish-layers.md) — publish more layers to tile.
-- [Operations](../deploy/backup-and-restore.md) — job orchestration and monitoring.
+- [Monitor Honua Server](../deploy/monitoring.md) — job history and the Operate views.

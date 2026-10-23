@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using Grpc.Core;
 using Honua.Core.Configuration;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -20,6 +22,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
@@ -27,6 +30,7 @@ using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -46,6 +50,7 @@ public sealed class GrpcFeatureServiceTests
     private const string FeatureServerProtocolName = "FeatureServer";
 
     private readonly IResourceValidator _resourceValidator = Substitute.For<IResourceValidator>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = new TestMetadataV2GraphBuilder().BuildProvider();
     private readonly IFeatureReader _featureReader = Substitute.For<IFeatureReader>();
     private readonly IFeatureWriter _featureWriter = Substitute.For<IFeatureWriter>();
     private readonly IStreamingFeatureStore _streamingStore = Substitute.For<IStreamingFeatureStore>();
@@ -103,6 +108,110 @@ public sealed class GrpcFeatureServiceTests
         }
 
         return cases;
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task SRV_GRPC_001_SourceBackedPublication_UsesValidatedSnapshotAndAuthorizesBeforeStorageCheck()
+    {
+        var routedReader = Substitute.For<IFeatureReader>();
+        routedReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(42, null)]));
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        provider.Reader.Returns(routedReader);
+
+        var resource = CreateResource("source") with { StorageBindingIds = ["source-binding"] };
+        var service = CreateService("source");
+        var publication = CreateTriple(service, resource).Publication with
+        {
+            StorageBindingId = "source-binding"
+        };
+        var binding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "source-binding", Name = "source-binding" },
+            ResourceId = resource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "public.source_features",
+            StorageLayerId = 7,
+            Options = new Dictionary<string, JsonElement>
+            {
+                [FeatureStorageMapping.SourceBackedOption] = JsonSerializer.SerializeToElement(true)
+            }
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph
+            {
+                Revision = 1,
+                Environment = "test",
+                Resources = [resource],
+                StorageBindings = [binding],
+                Services = [service],
+                Publications = [publication]
+            },
+            "source-test",
+            DateTimeOffset.UtcNow);
+        var graphProvider = Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
+        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            ValueTask.FromException<MetadataV2GraphSnapshot>(
+                new InvalidOperationException("Metadata changed after validation; use the validated snapshot.")));
+#pragma warning restore CA2012
+        var router = new FeatureProviderQueryRouter(
+            Substitute.For<ISecureConnectionRegistry>(),
+            new FeatureDataProviderRegistry([provider]));
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateServiceLayerV2Async("source", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(new MetadataV2ServiceLayerTriple(service, publication, resource)
+            {
+                StorageLayerId = 7,
+                Snapshot = snapshot
+            }));
+        var sut = new HonuaFeatureService(
+            validator, _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            new FeatureMutationEventService(_featureChangeEventPublisher, outboxCapabilityProvider: _outboxCapabilityProvider),
+            Options.Create(new LimitsOptions()),
+            Options.Create(new GrpcOptions()),
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
+        void AddRouting(IServiceCollection services)
+        {
+            services.AddSingleton(router);
+            services.AddSingleton(graphProvider);
+        }
+
+        var response = await sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "source", LayerId = 0 },
+            CreateCallContext(user: null, tenantId: null, resolverGrants: null, AddRouting));
+
+        response.Features.Should().ContainSingle();
+        await routedReader.Received(1).QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+
+        var editRequest = new Proto.ApplyEditsRequest { ServiceId = "source", LayerId = 0 };
+        editRequest.Adds.Add(new Proto.Feature());
+        foreach (var (user, status) in new[]
+        {
+            (CreateAnonymousUser(), StatusCode.Unauthenticated),
+            (CreateAuthenticatedUser("viewer"), StatusCode.PermissionDenied)
+        })
+        {
+            var denied = async () => await sut.ApplyEdits(editRequest,
+                CreateCallContext(user, tenantId: null, resolverGrants: null, AddRouting));
+            var deniedException = await denied.Should().ThrowAsync<RpcException>();
+            deniedException.Which.StatusCode.Should().Be(status);
+        }
+
+        var edit = async () => await sut.ApplyEdits(editRequest,
+            CreateCallContext(CreateAuthenticatedUser("data-editor"), tenantId: null, resolverGrants: null, AddRouting));
+        var exception = await edit.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
     }
 
     [Theory]
@@ -229,6 +338,110 @@ public sealed class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
+    [UnitTheory]
+    [InlineData(2)]
+    [InlineData(4)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_OwnerPolicy_NonOwnerIsDeniedBeforeWriterAndOutbox(int editKinds)
+    {
+        ArrangeOwnerEditPolicy("another-user");
+        using var context = CreateCallContext(CreateAuthenticatedUser("data-editor"));
+
+        var act = () => _sut.ApplyEdits(CreateApplyEditsRequest(editKinds), context);
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        exception.Which.Status.Detail.Should().NotContain("another-user");
+        _featureWriter.ReceivedCalls().Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+        _outboxCapabilityProvider.ReceivedCalls().Should().BeEmpty();
+        _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData(2, 1L)]
+    [InlineData(4, 2L)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_OwnerPolicy_OwnerWriteCarriesAtomicOwnerGuard(int editKinds, long objectId)
+    {
+        ArrangeOwnerEditPolicy("test-user");
+        _featureWriter.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                createdCount: 0, updatedCount: editKinds == 2 ? 1 : 0, deletedCount: editKinds == 4 ? 1 : 0)));
+        using var context = CreateCallContext(CreateAuthenticatedUser("data-editor"));
+
+        await _sut.ApplyEdits(CreateApplyEditsRequest(editKinds), context);
+
+        var writes = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync)).ToArray();
+        writes.Should().ContainSingle();
+        var batch = (FeatureEditBatch)writes[0].GetArguments()[1]!;
+        batch.OwnerGuards.Should().ContainSingle()
+            .Which.Should().Be(new OwnerEditGuard(objectId, "owner", "test-user"));
+        if (editKinds == 2)
+        {
+            batch.Updates.Should().ContainSingle();
+            batch.Updates[0].Attributes["owner"].Should().Be("test-user");
+            batch.Updates[0].Attributes["name"].Should().Be("updated");
+        }
+        else
+        {
+            batch.Deletes.Should().Equal(objectId);
+        }
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_OwnerPolicy_InsertStampsAuthenticatedOwner()
+    {
+        ArrangeOwnerEditPolicy("another-user");
+        _featureWriter.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                createdCount: 1, updatedCount: 0, deletedCount: 0)));
+        using var context = CreateCallContext(CreateAuthenticatedUser("data-editor"));
+
+        await _sut.ApplyEdits(CreateApplyEditsRequest(editKinds: 1), context);
+
+        var writes = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync)).ToArray();
+        writes.Should().ContainSingle();
+        var batch = (FeatureEditBatch)writes[0].GetArguments()[1]!;
+        batch.Creates.Should().ContainSingle();
+        batch.Creates[0].Attributes["owner"].Should().Be("test-user");
+        batch.Creates[0].Attributes["name"].Should().Be("created");
+        _featureReader.ReceivedCalls().Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.QueryAsync));
+    }
+
+    private void ArrangeOwnerEditPolicy(string storedOwner)
+    {
+        var resource = _testResource with
+        {
+            OwnerEditPolicy = new MetadataV2OwnerEditPolicy
+            {
+                Enabled = true,
+                OwnerField = "owner",
+                StampOwnerOnInsert = true
+            },
+            SchemaFields =
+            [
+                .. _testResource.SchemaFields,
+                new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String, Nullable = true }
+            ]
+        };
+        _resourceValidator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(_testService, resource)));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(2,
+            [
+                Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("owner", storedOwner)),
+                Feature.Create(2, null, ImmutableDictionary<string, object?>.Empty.Add("owner", storedOwner))
+            ]));
+    }
+
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
@@ -286,6 +499,182 @@ public sealed class GrpcFeatureServiceTests
         batch.Creates.Length.Should().Be(1);
         batch.Updates.Length.Should().Be(1);
         batch.Deletes.SequenceEqual(new long[] { 12 }).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PointIntoPolygonLayer_IsRejected()
+    {
+        var polygon = CreateResource() with
+        {
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Polygon,
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+            },
+        };
+        _resourceValidator
+            .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(_testService, polygon)));
+
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "point" } },
+            Geometry = new Proto.Geometry
+            {
+                Point = new Proto.PointGeometry { X = -157.85, Y = 21.30 },
+            },
+        });
+
+        var act = () => _sut.ApplyEdits(request, CreateCallContext());
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        exception.Which.Status.Detail.Should().Contain("Polygon");
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_UnknownOrInvalidAttribute_IsRejected()
+    {
+        var unknown = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        unknown.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["not_a_field"] = new Proto.AttributeValue { StringValue = "nope" } },
+        });
+
+        var unknownAct = () => _sut.ApplyEdits(unknown, CreateCallContext());
+        var unknownException = await unknownAct.Should().ThrowAsync<RpcException>();
+        unknownException.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        unknownException.Which.Status.Detail.Should().Contain("not_a_field");
+
+        var invalid = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        invalid.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { Int32Value = 7 } },
+        });
+
+        var invalidAct = () => _sut.ApplyEdits(invalid, CreateCallContext());
+        var invalidException = await invalidAct.Should().ThrowAsync<RpcException>();
+        invalidException.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        invalidException.Which.Status.Detail.Should().Contain("name");
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PartialUpdate_KeepsStoredGeometryAndOmittedAttributes()
+    {
+        var storedGeometry = new byte[] { 1, 2, 3, 4 };
+        var stored = Feature.Create(
+            11,
+            storedGeometry,
+            ImmutableDictionary<string, object?>.Empty
+                .Add("name", "original")
+                .Add("code", "kept"));
+        _featureReader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<Feature?>(
+                call.ArgAt<long>(1) == 11
+                    ? stored
+                    : Feature.Create(call.ArgAt<long>(1), geometry: null)));
+
+        FeatureEditBatch? captured = null;
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(call =>
+            {
+                captured = call.ArgAt<FeatureEditBatch>(1);
+                return Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0,
+                    updatedCount: 1,
+                    deletedCount: 0,
+                    updateResults: ImmutableArray.Create(EditOperationResult.Success(11))));
+            });
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 11,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "renamed" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+        captured.Should().NotBeNull();
+        var update = captured!.Value.Updates.Should().ContainSingle().Subject;
+        update.Geometry.Should().Equal(storedGeometry);
+        update.Attributes["name"].Should().Be("renamed");
+        // Omitted keys stay out of the payload. The writer merges them from the
+        // locked row when this flag is set, including fields the caller cannot see.
+        update.Attributes.ContainsKey("code").Should().BeFalse();
+        update.PreserveOmittedMaskedAttributes.Should().BeTrue();
+        captured.Value.Preconditions.IsDefaultOrEmpty.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PartialUpdate_UsesTheFullRowTokenAsAPrecondition()
+    {
+        var stored = Feature.Create(
+            11,
+            new byte[] { 9 },
+            ImmutableDictionary<string, object?>.Empty.Add("name", "visible")) with
+        {
+            ReadStateToken = "full-row-token"
+        };
+        _featureReader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Feature?>(stored));
+
+        FeatureEditBatch? captured = null;
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(call =>
+            {
+                captured = call.ArgAt<FeatureEditBatch>(1);
+                return Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0,
+                    updatedCount: 1,
+                    deletedCount: 0,
+                    updateResults: ImmutableArray.Create(EditOperationResult.Success(11))));
+            });
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 11,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "renamed" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+        var update = captured!.Value.Updates.Should().ContainSingle().Subject;
+        update.PreserveOmittedMaskedAttributes.Should().BeTrue();
+        update.Attributes.ContainsKey("name").Should().BeTrue();
+        var precondition = captured.Value.Preconditions.Should().ContainSingle().Subject;
+        precondition.ObjectId.Should().Be(11);
+        precondition.ExpectedStateToken.Should().Be("full-row-token");
     }
 
     [UnitTest]
@@ -683,6 +1072,80 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_DoesNotRepeatTheObjectIdAsAnAttribute()
+    {
+        // honua-server#5330: the id travels in Feature.id; the storage primary-key
+        // attribute is not repeated in the attribute map, in any casing.
+        var features = ImmutableArray.Create(
+            Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+                .Add("OBJECTID", 7L)
+                .Add("name", "A")));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var response = await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" },
+            CreateCallContext());
+
+        response.ObjectIdFieldName.Should().Be("objectid");
+        response.Features[0].Id.Should().Be(7);
+        response.Features[0].Attributes.Keys.Should().BeEquivalentTo(["name"]);
+        response.Fields.Single(field => field.Name == "name").Alias.Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_ReturnDistinctObjectIds_KeepsTheIdAttribute()
+    {
+        // Distinct projections carry the requested values only in the attribute map
+        // (Feature.Id is 0), so nothing is stripped.
+        var features = ImmutableArray.Create(
+            Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("objectid", 7L)));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            Where = "1=1",
+            ReturnDistinct = true,
+            ReturnGeometry = false
+        };
+        request.OutFields.Add("objectid");
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.Features[0].Attributes.Keys.Should().BeEquivalentTo(["objectid"]);
+        response.Features[0].Attributes["objectid"].Int64Value.Should().Be(7);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_DoesNotRepeatTheObjectIdAsAnAttribute()
+    {
+        var features = new[]
+        {
+            Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 7L)
+                .Add("name", "A")),
+        }.ToAsyncEnumerable();
+        _streamingStore.StreamFeaturesAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(features);
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        await _sut.QueryFeaturesStream(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" },
+            writer,
+            CreateCallContext());
+
+        var feature = writer.Pages.SelectMany(page => page.Features).Single();
+        feature.Id.Should().Be(7);
+        feature.Attributes.Keys.Should().BeEquivalentTo(["name"]);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ReturnsSpatialReferenceGeometryTypeAndFieldsFromMetadata()
     {
         // REST-parity contract (#2252): a standard feature query response carries the
@@ -757,6 +1220,52 @@ public sealed class GrpcFeatureServiceTests
         response.Features.Should().BeEmpty();
         await _featureReader.Received(1).QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         _ = _featureReader.DidNotReceive().QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithoutRecordCount_DoesNotTruncateAtDefaultPageSize()
+    {
+        FeatureQuery? captured = null;
+        var allIds = Enumerable.Range(1, 1500).Select(i => (long)i).ToImmutableArray();
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var limit = call.ArgAt<FeatureQuery>(1).Limit;
+                return limit.HasValue ? allIds.Take(limit.Value).ToImmutableArray() : allIds;
+            });
+
+        var response = await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Value.Limit.Should().BeNull("ids-only has no exceeded_transfer_limit signal, so it must match FeatureServer returnIdsOnly and stay unbounded");
+        response.ObjectIds.Should().HaveCount(1500);
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithRecordCount_KeepsRequestedLimit()
+    {
+        FeatureQuery? captured = null;
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create<long>(1, 2));
+
+        await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true,
+            ResultRecordCountLong = 2
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Value.Limit.Should().Be(2);
     }
 
     [UnitTest]
@@ -1039,6 +1548,112 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithOutStatistics_IsRefusedWithoutReadingFeatures()
+    {
+        // #5465: the geospatial.v1 response carries layer fields and feature rows only, so
+        // an aggregate request must be refused rather than answered with ordinary features.
+        var request = new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" };
+        request.OutStatistics.Add(new Proto.StatisticDefinition
+        {
+            OnStatisticField = "population",
+            StatisticType = Proto.StatisticType.Sum,
+            OutStatisticFieldName = "total_pop"
+        });
+        request.GroupBy.Add("state");
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("out_statistics").And.Contain("group_by");
+        _featureReader.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_WithGroupBy_IsRefusedWithoutStreamingFeatures()
+    {
+        var request = new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" };
+        request.GroupBy.Add("name");
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        var act = async () => await _sut.QueryFeaturesStream(request, writer, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        writer.Pages.Should().BeEmpty();
+        _streamingStore.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_OrderBy_CarriesSchemaFieldTypes()
+    {
+        // #5466: managed JSONB attributes only sort numerically when the clause carries the
+        // declared field type; untyped, population 20 sorts before 3.
+        UseOrderingLayer();
+        FeatureQuery? captured = null;
+        _featureReader.QueryAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
+
+        await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            CreateCallContext());
+
+        AssertTypedOrdering(captured);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_OrderBy_CarriesSchemaFieldTypes()
+    {
+        UseOrderingLayer();
+        FeatureQuery? captured = null;
+        _streamingStore.StreamFeaturesAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<Feature>());
+
+        await _sut.QueryFeaturesStream(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            new TestServerStreamWriter<Proto.FeaturePage>(),
+            CreateCallContext());
+
+        AssertTypedOrdering(captured);
+    }
+
+    private const int OrderingLayerId = 7;
+
+    private void UseOrderingLayer()
+    {
+        var resource = _testResource with
+        {
+            SchemaFields =
+            [
+                .. _testResource.SchemaFields,
+                new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer, Nullable = true }
+            ]
+        };
+        _resourceValidator
+            .ValidateServiceLayerV2Async("test", OrderingLayerId, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(_testService, resource)));
+    }
+
+    private static void AssertTypedOrdering(FeatureQuery? query)
+    {
+        query.Should().NotBeNull();
+        var orderBy = query!.Value.OrderBy!.Value;
+        orderBy.Should().HaveCount(3);
+        orderBy[0].Field.Should().Be("population", "the clause resolves to the declared field name");
+        orderBy[0].FieldType.Should().Be(MetadataV2FieldType.Integer);
+        orderBy[0].Ascending.Should().BeFalse();
+        orderBy[1].Field.Should().Be("name");
+        orderBy[1].FieldType.Should().Be(MetadataV2FieldType.String);
+        orderBy[1].Ascending.Should().BeTrue();
+        orderBy[2].Field.Should().Be("unknown_field");
+        orderBy[2].FieldType.Should().BeNull("a field the schema does not declare keeps the untyped path");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_LimitAboveConfiguredMaximum_ThrowsInvalidArgument()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -1226,13 +1841,39 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task SRV_GRPC_002_QueryFeaturesStream_WithoutRequestedCount_HasNoQueryLimit()
+    {
+        FeatureQuery? capturedQuery = null;
+        _streamingStore
+            .StreamFeaturesAsync(0, Arg.Do<FeatureQuery>(query => capturedQuery = query), Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<Feature>());
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+
+        await _sut.QueryFeaturesStream(
+            request,
+            new TestServerStreamWriter<Proto.FeaturePage>(),
+            CreateCallContext());
+
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.Limit.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_WithBatchSizeOne_WritesOneFeaturePerPage()
     {
         var streamBatchSizeOneSut = new HonuaFeatureService(
             _resourceValidator, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
-            _featureChangeEventPublisher,
+            new FeatureMutationEventService(
+                _featureChangeEventPublisher,
+                outboxCapabilityProvider: _outboxCapabilityProvider),
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
             NullLogger<HonuaFeatureService>.Instance,
@@ -1309,11 +1950,9 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     [Operation(Operations.Query)]
-    public async Task QueryFeatures_PerOperationQueryGrant_OverridesCoarseDeny()
+    public async Task QueryFeatures_PerOperationQueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the user lacks (would deny), but the
-        // principal's role carries a per-operation "query" grant on the service,
-        // which the resolver must honor across the gRPC read seam (#1376).
+        // Coarse policy requires a role the user lacks. A query grant must not skip it (#6358).
         var protectedService = CreateService(
             "protected",
             accessPolicy: new AccessPolicy { AllowedRoles = ["coarse-only"] });
@@ -1321,18 +1960,16 @@ public sealed class GrpcFeatureServiceTests
         _resourceValidator
             .ValidateServiceLayerV2Async("protected", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
-        _featureReader
-            .QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
 
         var request = new Proto.QueryFeaturesRequest { ServiceId = "protected", LayerId = 0 };
 
         var grant = new PermissionGrant { Service = "protected", Layer = "*", Operation = "query" };
-        var response = await _sut.QueryFeatures(
+        var act = async () => await _sut.QueryFeatures(
             request,
             CreateCallContext(CreateAuthenticatedUser("granted-role"), grant));
 
-        response.Should().NotBeNull();
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
     [UnitTest]
@@ -1508,7 +2145,10 @@ public sealed class GrpcFeatureServiceTests
                 },
                 IsPrimary = true
             },
-            resource);
+            resource)
+        {
+            StorageLayerId = 0
+        };
 
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
         => CreateCallContext(user, resolverGrants: null);
@@ -1527,7 +2167,8 @@ public sealed class GrpcFeatureServiceTests
     private static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         string? tenantId,
-        PermissionGrant[]? resolverGrants)
+        PermissionGrant[]? resolverGrants,
+        Action<IServiceCollection>? configureServices = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
@@ -1539,6 +2180,15 @@ public sealed class GrpcFeatureServiceTests
             opts.DataEditorRoles = ["data-editor"];
         });
 
+        // gRPC binds where clauses to the shared filter parser and translator (SEC-11);
+        // the provider-specific SQL is not under test here.
+        var sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
+        sqlFilterTranslator
+            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(new SqlFragment("TRUE", []));
+        services.AddSingleton<IFilterExpressionService>(
+            new FilterExpressionService(new FilterExpressionTranslator(sqlFilterTranslator)));
+
         // Register the per-operation resolver (#1376) so the gRPC read/write seams
         // consult grants first; when no grant matches they fall back to the coarse
         // AccessPolicy exactly as before. Omitting grants exercises that fallback.
@@ -1549,6 +2199,7 @@ public sealed class GrpcFeatureServiceTests
                 new PermissionResolver(sp.GetRequiredService<IRoleStore>()));
         }
 
+        configureServices?.Invoke(services);
         var serviceProvider = services.BuildServiceProvider();
 
         var httpContext = new DefaultHttpContext
@@ -1674,6 +2325,232 @@ public sealed class GrpcFeatureServiceTests
 
         public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
             => Task.FromResult(permissions);
+    }
+
+    // ---- Aliased publication: service-local index vs storage handle ------
+
+    private const string AliasedServiceName = "aliased";
+
+    /// <summary>Service-local index the request addresses; also the storage handle of a different resource.</summary>
+    private const int AliasedLayerIndex = 3;
+
+    /// <summary>Storage handle the addressed publication is actually bound to.</summary>
+    private const int AliasedStorageLayerId = 7;
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_AliasedPublication_ReadsTheBoundStorageLayer()
+    {
+        var (service, publication, resource) = ArrangeAliasedLayer();
+        _ = service;
+        _ = publication;
+        _ = resource;
+        _featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
+
+        await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = AliasedServiceName, LayerId = AliasedLayerIndex, Where = "1=1" },
+            CreateCallContext());
+
+        await _featureReader.Received(1).QueryAsync(
+            AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().QueryAsync(
+            AliasedLayerIndex, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_AliasedPublication_CountsTheBoundStorageLayer()
+    {
+        ArrangeAliasedLayer();
+        _featureReader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(4L);
+
+        var response = await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex,
+                ReturnCountOnly = true
+            },
+            CreateCallContext());
+
+        response.Count.Should().Be(4);
+        await _featureReader.Received(1).CountAsync(
+            AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().CountAsync(
+            AliasedLayerIndex, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_AliasedPublication_StreamsTheBoundStorageLayer()
+    {
+        ArrangeAliasedLayer();
+        _streamingStore.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Feature>().ToAsyncEnumerable());
+
+        await _sut.QueryFeaturesStream(
+            new Proto.QueryFeaturesRequest { ServiceId = AliasedServiceName, LayerId = AliasedLayerIndex },
+            new TestServerStreamWriter<Proto.FeaturePage>(),
+            CreateCallContext());
+
+        _streamingStore.Received(1).StreamFeaturesAsync(
+            AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        _streamingStore.DidNotReceive().StreamFeaturesAsync(
+            AliasedLayerIndex, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_AliasedPublication_WritesTheBoundStorageLayer()
+    {
+        ArrangeAliasedLayer();
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                createdCount: 0, updatedCount: 1, deletedCount: 0)));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = AliasedServiceName,
+            LayerId = AliasedLayerIndex
+        };
+        request.Updates.Add(new Proto.Feature { Id = 42 });
+
+        await _sut.ApplyEdits(request, CreateCallContext());
+
+        var write = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .Should().ContainSingle().Subject;
+        write.GetArguments()[0].Should().Be(AliasedStorageLayerId);
+        // The pre-write visibility read must resolve the same storage layer as the write.
+        await _featureReader.Received().GetAsync(
+            AliasedStorageLayerId, 42, Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().GetAsync(
+            AliasedLayerIndex, 42, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task Request_WhenStorageBindingChangesAfterValidation_UsesValidatedStorage(bool edit)
+    {
+        ArrangeAliasedLayer();
+        var graph = (await _graphProvider.GetCurrentAsync()).Graph;
+        const int reboundStorageLayerId = 99;
+        _graphProvider.ActivateAfterNextRead(graph with
+        {
+            Revision = graph.Revision + 1,
+            StorageBindings = graph.StorageBindings.Select(binding => binding with
+            {
+                StorageLayerId = reboundStorageLayerId
+            }).ToArray()
+        });
+        var sut = new HonuaFeatureService(
+            new ResourceValidator(_graphProvider), _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            new FeatureMutationEventService(
+                _featureChangeEventPublisher,
+                outboxCapabilityProvider: _outboxCapabilityProvider),
+            Options.Create(new LimitsOptions()),
+            Options.Create(new GrpcOptions()),
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
+
+        if (edit)
+        {
+            _featureWriter.ApplyEditsAsync(default, default, default)
+                .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0, updatedCount: 1, deletedCount: 0)));
+            var request = new Proto.ApplyEditsRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex
+            };
+            request.Updates.Add(new Proto.Feature { Id = 42 });
+
+            await sut.ApplyEdits(request, CreateCallContext());
+
+            var write = _featureWriter.ReceivedCalls()
+                .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+                .Should().ContainSingle().Subject;
+            write.GetArguments()[0].Should().Be(AliasedStorageLayerId);
+        }
+        else
+        {
+            await sut.QueryFeatures(new Proto.QueryFeaturesRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex,
+                ReturnCountOnly = true
+            }, CreateCallContext());
+
+            await _featureReader.Received(1).CountAsync(
+                AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+            await _featureReader.DidNotReceive().CountAsync(
+                reboundStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        }
+
+        var current = await _graphProvider.GetCurrentAsync();
+        current.Graph.Revision.Should().Be(graph.Revision + 1);
+        current.Graph.StorageBindings.Should().OnlyContain(binding => binding.StorageLayerId == reboundStorageLayerId);
+    }
+
+    /// <summary>
+    /// Publishes <c>resource.aliased</c> at the service-local index
+    /// <see cref="AliasedLayerIndex"/> while binding it to storage handle
+    /// <see cref="AliasedStorageLayerId"/>, and gives a second resource
+    /// <see cref="AliasedLayerIndex"/> as its own storage handle. Reading the index as a
+    /// storage handle therefore lands on the neighbouring resource.
+    /// </summary>
+    private (MetadataV2Service Service, MetadataV2Publication Publication, MetadataV2Resource Resource) ArrangeAliasedLayer()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource.aliased", "aliased")
+            .AddResource("resource.neighbour", "neighbour")
+            .AddStorageBinding("storage.aliased", "resource.aliased", "public.aliased", storageLayerId: AliasedStorageLayerId)
+            .AddStorageBinding("storage.neighbour", "resource.neighbour", "public.neighbour", storageLayerId: AliasedLayerIndex)
+            .AddService("service-aliased", AliasedServiceName, protocols: [GrpcProtocolName])
+            .AddPublication(
+                "pub.aliased",
+                "service-aliased",
+                "resource.aliased",
+                layerIndex: AliasedLayerIndex,
+                storageBindingId: "storage.aliased",
+                isPrimary: true)
+            .AddPublication(
+                "pub.neighbour",
+                "service-aliased",
+                "resource.neighbour",
+                layerIndex: 9,
+                storageBindingId: "storage.neighbour",
+                isPrimary: true)
+            .Build();
+        _graphProvider.SetGraph(graph);
+
+        var service = CreateService(AliasedServiceName);
+        var resource = CreateResource("aliased") with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource.aliased", Name = "aliased" }
+        };
+        var publication = graph.Publications.Single(p => p.Metadata.Id == "pub.aliased");
+
+        _resourceValidator
+            .ValidateServiceLayerV2Async(AliasedServiceName, AliasedLayerIndex, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(
+                new MetadataV2ServiceLayerTriple(service, publication, resource)
+                {
+                    StorageLayerId = AliasedStorageLayerId
+                }));
+
+        return (service, publication, resource);
     }
 }
 

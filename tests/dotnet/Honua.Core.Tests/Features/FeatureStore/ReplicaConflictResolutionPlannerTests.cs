@@ -47,6 +47,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
                 StringComparer.Ordinal),
             GeometrySource: null);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_AcceptClientWhenClientEditNotApplied_WritesClientState()
     {
@@ -59,6 +60,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.FeatureStateJson.Should().Contain("client");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_AcceptClientWhenClientEditAlreadyApplied_IsANoOp()
     {
@@ -71,6 +73,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
             "last-write-wins already committed the client edit, so accepting it creates no new state");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_KeepServerWhenClientEditApplied_RestoresCapturedServerState()
     {
@@ -83,6 +86,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.ReplaceAttributes.Should().BeTrue("the captured server envelope is a complete snapshot");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_KeepServerWhenClientEditNotApplied_IsANoOp()
     {
@@ -93,6 +97,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.CommittedNewServerState.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_RejectClientMatchesKeepServer()
     {
@@ -104,6 +109,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         rejectClient.Should().Be(keepServer);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_AcceptClientOnWithheldDeleteUpdate_DeletesTheFeature()
     {
@@ -114,6 +120,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.CommittedNewServerState.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_KeepServerAfterCommittedClientDelete_IsRejectedAsNotApplicable()
     {
@@ -127,6 +134,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.RejectionMessage.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_AcceptClientOnServerDeletedFeature_IsRejectedAsNotApplicable()
     {
@@ -136,6 +144,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_KeepServerOnServerDeletedFeature_IsANoOp()
     {
@@ -148,6 +157,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_DeferNeverWrites()
     {
@@ -158,6 +168,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.CommittedNewServerState.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_MergeFieldsWithoutValues_IsRejectedAsInvalidRequest()
     {
@@ -167,6 +178,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.InvalidRequest);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(ReplicaConflictResolutionAction.MergeFields)]
     [InlineData(ReplicaConflictResolutionAction.ChooseGeometry)]
@@ -187,6 +199,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(ReplicaConflictResolutionAction.MergeFields)]
     [InlineData(ReplicaConflictResolutionAction.ChooseGeometry)]
@@ -207,6 +220,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(ReplicaConflictResolutionAction.AcceptClient)]
     [InlineData(ReplicaConflictResolutionAction.KeepServer)]
@@ -229,6 +243,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.CommittedNewServerState.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_KeepServerOnASupersededClientEdit_RestoresTheServerStateInsteadOfNoOp()
     {
@@ -250,6 +265,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.CommittedNewServerState.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_KeepServerWithUnknownCommitOutcome_RestoresTheServerStateInsteadOfNoOp()
     {
@@ -270,6 +286,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.CommittedNewServerState.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_AcceptClientWithUnknownCommitOutcome_WritesTheClientStateInsteadOfNoOp()
     {
@@ -290,6 +307,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.CommittedNewServerState.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_MergeFieldsWithCaseInsensitiveDuplicateNames_IsRejectedAsInvalidRequest()
     {
@@ -306,6 +324,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.RejectionMessage.Should().Contain("case-insensitive");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_MergeFieldsOverridesFieldsCaseInsensitivelyAndKeepsGeometry()
     {
@@ -331,6 +350,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
             "the merge base is the committed state, which under last-write-wins is the client's");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_MergeFieldsAddsUnknownFields()
     {
@@ -341,6 +361,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         document.RootElement.GetProperty("attributes").GetProperty("status").GetString().Should().Be("reviewed");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_MergeFieldsOnDeleteConflict_IsRejectedAsNotApplicable()
     {
@@ -352,6 +373,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_ChooseGeometryWithoutSource_IsRejectedAsInvalidRequest()
     {
@@ -361,6 +383,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.InvalidRequest);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_ChooseGeometryServer_TakesServerGeometryAndCommittedAttributes()
     {
@@ -375,6 +398,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         document.RootElement.GetProperty("attributes").GetProperty("name").GetString().Should().Be("client");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_ChooseGeometryWithoutCapturedGeometry_IsRejectedAsNotApplicable()
     {
@@ -386,6 +410,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_ChooseGeometryWithExplicitNull_WritesTheGeometryClearIntent()
     {
@@ -402,6 +427,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         document.RootElement.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(ReplicaConflictType.Attachment)]
     [InlineData(ReplicaConflictType.Relationship)]
@@ -413,6 +439,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_AcceptClientWithoutCapturedClientState_IsRejectedAsNotApplicable()
     {
@@ -422,6 +449,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Plan_KeepServerWithoutCapturedServerState_IsRejectedAsNotApplicable()
     {

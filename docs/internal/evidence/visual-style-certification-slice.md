@@ -189,7 +189,7 @@ utility is introduced.
 | Lane | Collector | Substantiated | Pending-fixture |
 |---|---|---|---|
 | **JS — OpenLayers** | [`tests/js/openlayers/shared/evidence.ts`](../../../tests/js/openlayers/shared/evidence.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
-| **JS — Esri Leaflet** | [`tests/js-browser/esri-leaflet/support/cert-reporter.ts`](../../../tests/js-browser/esri-leaflet/support/cert-reporter.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
+| **JS — Esri Leaflet** | [`tests/js-browser/leaflet-client/support/cert-reporter.ts`](../../../tests/js-browser/leaflet-client/support/cert-reporter.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
 | **Desktop — PyQGIS** | [`tests/python/pyqgis/conftest.py`](../../../tests/python/pyqgis/conftest.py) | `CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01` | `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01`, `CERT-RNDR-URL-01` |
 
 The pixel-color sampling assertions in the JS lanes use the same RGB
@@ -267,7 +267,7 @@ For tests that use snapshot diffing (Esri Leaflet
 ```bash
 cd tests/js-browser
 npx playwright test --update-snapshots
-git add esri-leaflet/rendering.spec.ts-snapshots/
+git add leaflet-client/rendering.spec.ts-snapshots/
 ```
 
 For tests that use pixel-color sampling (the SYM/LIN/FIL/URL
@@ -293,9 +293,11 @@ a `Cache-Control: no-cache` override.
   `Honua.Db.Postgres.Features.Styling.PostgresLayerStyleCatalog`
   drawingInfo generation gap noted in the design brief is a separate
   ticket and not closed by this slice.
-- **Licensed client lanes.** ArcGIS Pro, Power BI, and Excel remain
-  manual per [`CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md)
-  and are out of scope for slice automation.
+- **Desktop and BI client lanes.** ArcGIS Pro certification detail stays in
+  private `honua-esri-compat` (evidence identifier `desktop-arcgis`). Power BI
+  and Excel remain on the manual lanes in
+  [`CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md). None of
+  them are in scope for this slice.
 - **No new server endpoints.** The slice consumes only existing
   routes (`/rest/services/.../FeatureServer`, `/ogc/features/...`,
   `/ogc/tiles/collections/.../tiles/WebMercatorQuad`).

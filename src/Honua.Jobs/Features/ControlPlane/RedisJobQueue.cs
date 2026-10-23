@@ -37,6 +37,19 @@ internal sealed partial class RedisJobQueue(
     private const int MaxTraverseEntries = 5000;
 
     /// <summary>
+    /// Admits a pending delivery unless a worker already owns its claim, preserving
+    /// the score of an existing pending delivery during admission repair.
+    /// KEYS[1] = pending set, KEYS[2] = claimed set.
+    /// ARGV[1] = operationId, ARGV[2] = priority score.
+    /// </summary>
+    private const string AtomicEnqueueScript = """
+        if redis.call('ZSCORE', KEYS[2], ARGV[1]) then
+            return 0
+        end
+        return redis.call('ZADD', KEYS[1], 'NX', ARGV[2], ARGV[1])
+        """;
+
+    /// <summary>
     /// Lua script that atomically removes a job from the pending set and adds it
     /// to the claimed set. Returns 1 on success, 0 if another worker claimed first.
     /// KEYS[1] = pending set, KEYS[2] = claimed set.
@@ -79,7 +92,10 @@ internal sealed partial class RedisJobQueue(
         cancellationToken.ThrowIfCancellationRequested();
 
         var score = ComputeScore(priority, DateTimeOffset.UtcNow);
-        await _database.SortedSetAddAsync(QueueKey, operationId, score).ConfigureAwait(false);
+        // Admission replay and reconciliation may repeat enqueue. Preserve the original
+        // score and never add a second pending delivery while a worker owns the claim.
+        await _database.ScriptEvaluateAsync(AtomicEnqueueScript,
+            [QueueKey, ClaimedSetKey], [operationId, score]).ConfigureAwait(false);
 
         Log.JobEnqueued(logger, operationId, priority.ToString());
     }

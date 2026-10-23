@@ -11,6 +11,7 @@ using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -54,7 +55,7 @@ public sealed class GdalRasterExecutorTests
 
             var job = GdalJobFactory.Job(
                 GdalRasterClipJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("boundary", Convert.ToBase64String(wkb)));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -91,7 +92,7 @@ public sealed class GdalRasterExecutorTests
             var oversized = new byte[60L * 1024L * 1024L];
             var job = GdalJobFactory.Job(
                 GdalRasterClipJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("boundary", Convert.ToBase64String(oversized)));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -115,7 +116,7 @@ public sealed class GdalRasterExecutorTests
             var wkb = new WKBWriter().Write(point);
             var job = GdalJobFactory.Job(
                 GdalRasterClipJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("boundary", Convert.ToBase64String(wkb)));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -177,7 +178,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectCatalogJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetSrid", "3857"));
 
             var context = new RecordingJobExecutionContext(job.OperationId);
@@ -204,7 +205,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectCatalogJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetSrid", "4326"),
                 ("resampling", "nearestneighbor"));
 
@@ -226,7 +227,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectCatalogJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetSrid", "4326"),
                 ("resampling", "nope"));
 
@@ -248,7 +249,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectCatalogJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetSrid", "0"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -281,7 +282,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterStatisticsJobExecutor.StatisticsProcessId,
-                ("source", Base64("fake-input-raster")));
+                ("source", GdalCli.RasterBase64("fake-input-raster")));
 
             var context = new RecordingJobExecutionContext(job.OperationId);
             var result = await executor.ExecuteAsync(job, context, default);
@@ -296,6 +297,7 @@ public sealed class GdalRasterExecutorTests
             band.GetProperty("max").GetDouble().Should().Be(100d);
             band.GetProperty("mean").GetDouble().Should().Be(50d);
             band.GetProperty("stddev").GetDouble().Should().Be(15d);
+            band.GetProperty("validCount").GetInt64().Should().Be(256);
         }
         finally
         {
@@ -307,7 +309,7 @@ public sealed class GdalRasterExecutorTests
     public async Task RasterStatistics_FiltersBands_WhenBandsParameterSupplied()
     {
         const string fakeGdalinfo =
-            """{"bands":[{"band":1,"mean":10},{"band":2,"mean":20},{"band":3,"mean":30}]}""";
+            """{"bands":[{"band":1,"mean":10,"validCount":4},{"band":2,"mean":20,"validCount":4},{"band":3,"mean":30,"validCount":4}]}""";
 
         var runner = new FakeGdalCommandRunner((_, _, _) => new GdalCommandResult
         {
@@ -319,7 +321,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterStatisticsJobExecutor.StatisticsProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("bands", "1,3"));
 
             var context = new RecordingJobExecutionContext(job.OperationId);
@@ -358,7 +360,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterStatisticsJobExecutor.HistogramProcessId,
-                ("source", Base64("fake-input-raster")));
+                ("source", GdalCli.RasterBase64("fake-input-raster")));
 
             var context = new RecordingJobExecutionContext(job.OperationId);
             var result = await executor.ExecuteAsync(job, context, default);
@@ -381,9 +383,9 @@ public sealed class GdalRasterExecutorTests
     }
 
     [UnitTest]
-    public async Task RasterStatistics_OmitsHistFlag()
+    public async Task RasterStatistics_ReadsMetadataWithoutScanningBeforeSharedStatistics()
     {
-        const string fakeGdalinfo = """{"bands":[{"band":1,"mean":1}]}""";
+        const string fakeGdalinfo = """{"bands":[{"band":1,"mean":1,"validCount":4}]}""";
         var runner = new FakeGdalCommandRunner((_, _, _) => new GdalCommandResult
         {
             ExitCode = 0,
@@ -394,10 +396,35 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterStatisticsJobExecutor.StatisticsProcessId,
-                ("source", Base64("fake-input-raster")));
+                ("source", GdalCli.RasterBase64("fake-input-raster")));
 
             await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
-            runner.Invocations.Single().Arguments.Should().NotContain("-hist");
+            runner.Invocations.Select(i => i.Tool).Should().Equal("gdalinfo", "python3");
+            runner.Invocations.Single(i => i.Tool == "gdalinfo").Arguments.Should().NotContain("-hist").And.NotContain("-stats");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [Theory]
+    [InlineData(1, "")]
+    [InlineData(0, "{}")]
+    [InlineData(0, "{\"bands\":[{\"band\":1,\"validCount\":null}]}")]
+    public async Task RasterStatistics_MissingOrInvalidExactCounts_FailsWithoutPublishing(int exitCode, string counts)
+    {
+        var runner = new FakeGdalCommandRunner((tool, _, _) => tool == "gdalinfo"
+            ? new GdalCommandResult { ExitCode = 0, StandardOutput = """{"bands":[{"band":1,"mean":2}]}""" }
+            : new GdalCommandResult { ExitCode = exitCode, StandardOutput = counts });
+        var executor = NewStatsExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job("raster.statistics", ("source", GdalCli.RasterBase64("fake-input-raster")));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+            var result = await executor.ExecuteAsync(job, context, default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            context.Artifacts.Should().BeEmpty();
         }
         finally
         {
@@ -409,8 +436,20 @@ public sealed class GdalRasterExecutorTests
     // raster.zonal-statistics
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Proves the <c>gdalinfo</c> aggregate <em>parser</em>, not the statistic
+    /// (honua-server#4400).
+    /// </summary>
+    /// <remarks>
+    /// The count/mean/min/max/sum asserted below are parsed out of
+    /// <c>ZonalGdalinfoFixture</c>, a hand-authored <c>gdalinfo</c> stdout string this test
+    /// itself provides through <c>FakeGdalCommandRunner</c>. Nothing computes a zonal statistic
+    /// here. The executed receipt for <c>raster.zonal-statistics</c> is
+    /// <c>RasterExecutionProofTests</c>, which runs the production executor against the pinned
+    /// GDAL image with hand-derived aggregates.
+    /// </remarks>
     [UnitTest]
-    public async Task ZonalStatistics_OneZone_PublishesScalarWithAggregatesPerZone()
+    public async Task ZonalStatistics_OneZone_ParsesGdalinfoAggregatesIntoPerZoneScalar()
     {
         // First call is the clip (gdalwarp), second is the stats (gdalinfo).
         // The fake runner needs to be able to write a non-empty clipped file
@@ -434,7 +473,7 @@ public sealed class GdalRasterExecutorTests
 
             var job = GdalJobFactory.Job(
                 GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("zones", Base64(zonesGeoJson)),
                 ("statistics", "count,mean,min,max,sum"));
 
@@ -500,7 +539,7 @@ public sealed class GdalRasterExecutorTests
 
             var job = GdalJobFactory.Job(
                 GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("zones", Base64(zonesGeoJson)),
                 ("band", "2"),
                 ("statistics", "count,mean,min,max"));
@@ -540,7 +579,7 @@ public sealed class GdalRasterExecutorTests
             var oversized = new byte[60L * 1024L * 1024L];
             var job = GdalJobFactory.Job(
                 GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("zones", Convert.ToBase64String(oversized)));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -566,7 +605,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterStatisticsJobExecutor.StatisticsProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("bands", ","));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -591,7 +630,7 @@ public sealed class GdalRasterExecutorTests
                 """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}}]}""";
             var job = GdalJobFactory.Job(
                 GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("zones", Base64(zonesGeoJson)),
                 ("statistics", " , ,"));
 
@@ -616,7 +655,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")));
+                ("source", GdalCli.RasterBase64("fake-input-raster")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
             result.Status.Should().Be(ExecutionJobStatus.Failed);
@@ -642,7 +681,7 @@ public sealed class GdalRasterExecutorTests
 
             var job = GdalJobFactory.Job(
                 GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("zones", Base64(zonesGeoJson)),
                 ("statistics", "p95"));
 

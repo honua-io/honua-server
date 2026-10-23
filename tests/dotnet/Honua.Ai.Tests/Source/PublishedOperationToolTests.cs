@@ -108,6 +108,7 @@ public sealed class PublishedOperationToolTests
             "evidenceRefs"
         };
 
+        // codeql[cs/linq/missed-select]: asserts every schema carries the canonical envelope fields
         foreach (var schema in schemas)
         {
             var properties = schema.GetProperty("properties");
@@ -204,6 +205,63 @@ public sealed class PublishedOperationToolTests
         var structuredContent = result.StructuredContent!.Value;
         structuredContent.GetProperty("status").GetString().Should().Be("Completed");
         structuredContent.GetProperty("deterministic").GetBoolean().Should().BeFalse();
+        invoker.SubmitCount.Should().Be(1);
+    }
+
+    [UnitTheory]
+    [InlineData("password")]
+    [InlineData("Password")]
+    [InlineData("apiKey")]
+    [InlineData("token")]
+    public async Task Invoke_ConnectionCreateWithInlineSecret_RejectsBeforeDispatch(string field)
+    {
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
+            operation => operation.OperationId == "admin.connections.create");
+        var tool = new PublishedOperationTool(descriptor, "cat-v1", NullLogger.Instance);
+        tool.Describe().InputSchema.GetProperty("properties").TryGetProperty(field, out _).Should().BeFalse();
+        var invoker = new CountingInvoker(_ => CompletedHandle(descriptor.OperationId));
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+        var arguments = Args(JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["name"] = "inline-secret-must-not-dispatch",
+            ["secretReference"] = "env:HONUA_TEST_CONNECTION",
+            ["secretType"] = "env",
+            [field] = "sensitive-value-must-not-be-echoed",
+        }));
+
+        var invoke = () => tool.InvokeAsync(
+            Context(invoker, authorization: authorization, roles: ["admin"]), arguments, CancellationToken.None);
+
+        var error = await invoke.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().NotContain("sensitive-value-must-not-be-echoed");
+        invoker.SubmitCount.Should().Be(0, "unadvertised inline credentials must never enter the operation runtime");
+    }
+
+    [UnitTest]
+    public async Task Invoke_ConnectionCreateWithSecretReference_PreservesReferenceAndType()
+    {
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
+            operation => operation.OperationId == "admin.connections.create");
+        var tool = new PublishedOperationTool(descriptor, "cat-v1", NullLogger.Instance);
+        var invoker = new CountingInvoker(request =>
+        {
+            request.Parameters["secretReference"].Should().Be("env:HONUA_TEST_CONNECTION");
+            request.Parameters["secretType"].Should().Be("env");
+            request.Parameters.Should().NotContainKey("password");
+            return CompletedHandle(descriptor.OperationId);
+        });
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+
+        var result = await tool.InvokeAsync(
+            Context(invoker, authorization: authorization, roles: ["admin"]),
+            Args("""{"name":"reference-only","secretReference":"env:HONUA_TEST_CONNECTION","secretType":"env"}"""),
+            CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
         invoker.SubmitCount.Should().Be(1);
     }
 
@@ -469,6 +527,61 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public async Task Invoke_NarrowedScope_DoesNotReceiveCachedAllow()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle("studio.draft.validate"));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(
+            DeterministicReadOnlyDescriptor() with { OperationId = "studio.draft.validate" },
+            "cat-v1",
+            NullLogger.Instance);
+
+        var first = await tool.InvokeAsync(
+            Context(invoker, cache, scopes: [OperatorScopeCatalog.Read], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        first.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Completed");
+        first.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        invoker.SubmitCount.Should().Be(1);
+
+        var second = await tool.InvokeAsync(
+            Context(invoker, cache, scopes: [OperatorScopeCatalog.Discover], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        var body = second.StructuredContent!.Value;
+        body.GetProperty("status").GetString().Should().Be("Denied");
+        body.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        invoker.SubmitCount.Should().Be(1, "a narrowed token must not be served the cached allow");
+
+        var third = await tool.InvokeAsync(
+            Context(invoker, cache, scopes: [OperatorScopeCatalog.Read], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        third.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        invoker.SubmitCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task Invoke_DifferentConnection_MissesCache()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        await tool.InvokeAsync(
+            Context(invoker, cache),
+            Args("""{"layerId":"7","connectionId":"conn-a"}"""),
+            CancellationToken.None);
+        var second = await tool.InvokeAsync(
+            Context(invoker, cache),
+            Args("""{"layerId":"7","connectionId":"conn-b","serviceName":"roads"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2, "connection and service are part of the cache key");
+        second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+    }
+
+    [UnitTest]
     public void BuildKey_DelimiterBearingComponents_AreCollisionFree()
     {
         // The pre-image is assembled from caller-influenced values (tenant, schema,
@@ -616,6 +729,63 @@ public sealed class PublishedOperationToolTests
             "the mutating operation is AI-assisted and excluded from deterministic mode");
     }
 
+    [UnitTest]
+    public async Task Source_RepeatedCalls_ReuseProjectionUntilCatalogVersionChanges()
+    {
+        // SEC-18: the projection is rebuilt only when the catalog version changes, so
+        // repeated tools/list calls do not resolve executors or rebuild tool schemas.
+        var executorResolutions = 0;
+        var scopeFactory = new ServiceCollection()
+            .AddScoped<IOperationExecutor>(_ =>
+            {
+                executorResolutions++;
+                return new RecordingExecutor(DeterministicReadOnlyOpId);
+            })
+            .BuildServiceProvider()
+            .GetRequiredService<IServiceScopeFactory>();
+        var catalog = Catalog(DeterministicReadOnlyDescriptor());
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            scopeFactory);
+
+        var first = await source.GetToolsAsync(CancellationToken.None);
+        var second = await source.GetToolsAsync(CancellationToken.None);
+
+        second.Should().BeSameAs(first);
+        executorResolutions.Should().Be(1);
+
+        catalog.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(new OperationCatalogSnapshot
+        {
+            CatalogVersion = "cat-v2",
+            GeneratedAt = DateTimeOffset.UnixEpoch,
+            ProviderIds = ["test"],
+            Operations = [DeterministicReadOnlyDescriptor()],
+        });
+
+        var third = await source.GetToolsAsync(CancellationToken.None);
+
+        third.Should().NotBeSameAs(first);
+        third.Select(t => t.Name).Should().Equal(first.Select(t => t.Name));
+        executorResolutions.Should().Be(2);
+
+        // The version hashes ids only, so a replaced descriptor under the same
+        // version still rebuilds the projection.
+        catalog.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(new OperationCatalogSnapshot
+        {
+            CatalogVersion = "cat-v2",
+            GeneratedAt = DateTimeOffset.UnixEpoch,
+            ProviderIds = ["test"],
+            Operations = [DeterministicReadOnlyDescriptor()],
+        });
+
+        var fourth = await source.GetToolsAsync(CancellationToken.None);
+
+        fourth.Should().NotBeSameAs(third);
+        executorResolutions.Should().Be(3);
+    }
+
     // ---- Surface merge: published tools appear in tools/list and are callable ---
 
     [UnitTest]
@@ -724,7 +894,8 @@ public sealed class PublishedOperationToolTests
         string[]? roles = null,
         string principalName = "agent-x",
         string? tenantId = null,
-        ApprovalRequirement? gateApproval = null)
+        ApprovalRequirement? gateApproval = null,
+        string[]? scopes = null)
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -769,6 +940,10 @@ public sealed class PublishedOperationToolTests
             new(ClaimTypes.NameIdentifier, $"subject-{principalName}"),
         };
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
+        if (scopes is { Length: > 0 })
+        {
+            claims.Add(new Claim(OperatorScopeCatalog.ScopeClaimType, string.Join(' ', scopes)));
+        }
 
         return new DefaultHttpContext
         {

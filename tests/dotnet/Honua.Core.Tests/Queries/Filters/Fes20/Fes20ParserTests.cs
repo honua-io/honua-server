@@ -67,6 +67,126 @@ public sealed class Fes20ParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("And")]
+    [InlineData("Or")]
+    public void ParseFilter_FlatLogicalOperatorBeyondOperandLimit_ThrowsParseException(string element)
+    {
+        var act = () => Fes20Parser.ParseFilter(FlatLogicalFilter(element, FilterParserGuard.MaxExpressionDepth + 1));
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_FlatLogicalOperatorWithinDepthLimit_ReturnsLeftDeepChain()
+    {
+        // N comparison operands fold into a tree of depth N + 1.
+        var result = Fes20Parser.ParseFilter(FlatLogicalFilter("And", FilterParserGuard.MaxExpressionDepth - 1));
+
+        result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [UnitTest]
+    public void ParseFilter_FlatLogicalOperatorUnderNegationsBeyondDepthLimit_ThrowsParseException()
+    {
+        // Operand count and XML nesting are each within their limits; the folded tree is not.
+        const int negations = 10;
+        var inner = FlatLogicalBody("And", FilterParserGuard.MaxExpressionDepth - negations);
+        var filterXml = @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" +
+            string.Concat(Enumerable.Repeat("<fes:Not>", negations)) +
+            inner +
+            string.Concat(Enumerable.Repeat("</fes:Not>", negations)) +
+            "</fes:Filter>";
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    public static TheoryData<string> ValueReferencesBeyondLengthLimit
+    {
+        get
+        {
+            var name = new string('a', FilterParserGuard.MaxIdentifierLength + 1);
+            return new TheoryData<string>
+            {
+                $"<fes:PropertyIsEqualTo><fes:ValueReference>{name}</fes:ValueReference><fes:Literal>a</fes:Literal></fes:PropertyIsEqualTo>",
+                $"<fes:BBOX><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}</fes:BBOX>",
+                $"<fes:Intersects><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}</fes:Intersects>",
+                $"<fes:DWithin><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}<fes:Distance uom=\"m\">1</fes:Distance></fes:DWithin>",
+                $"<fes:Beyond><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}<fes:Distance uom=\"m\">1</fes:Distance></fes:Beyond>",
+                $"<fes:After><fes:ValueReference>{name}</fes:ValueReference><gml:TimeInstant xmlns:gml=\"http://www.opengis.net/gml/3.2\"><gml:timePosition>2024-01-01T00:00:00Z</gml:timePosition></gml:TimeInstant></fes:After>"
+            };
+        }
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(ValueReferencesBeyondLengthLimit))]
+    public void ParseFilter_ValueReferenceBeyondLengthLimit_ThrowsParseException(string predicate)
+    {
+        var act = () => Fes20Parser.ParseFilter(WrapFilter(predicate));
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum identifier length of {FilterParserGuard.MaxIdentifierLength}*");
+    }
+
+    public static TheoryData<string> TextValuesBeyondLengthLimit
+    {
+        get
+        {
+            var text = new string('a', FilterParserGuard.MaxStringLiteralLength + 1);
+            return new TheoryData<string>
+            {
+                $"<fes:PropertyIsEqualTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>{text}</fes:Literal></fes:PropertyIsEqualTo>",
+                $"<fes:PropertyIsLike wildCard=\"*\" singleChar=\"?\" escapeChar=\"!\"><fes:ValueReference>name</fes:ValueReference><fes:Literal>{text}</fes:Literal></fes:PropertyIsLike>",
+                $"<fes:ResourceId rid=\"{text}\"/>"
+            };
+        }
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(TextValuesBeyondLengthLimit))]
+    public void ParseFilter_TextValueBeyondLengthLimit_ThrowsParseException(string predicate)
+    {
+        var act = () => Fes20Parser.ParseFilter(WrapFilter(predicate));
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum string literal length of {FilterParserGuard.MaxStringLiteralLength}*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_ValueReferenceAndLiteralAtLengthLimits_Parses()
+    {
+        var name = new string('a', FilterParserGuard.MaxIdentifierLength);
+        var text = new string('b', FilterParserGuard.MaxStringLiteralLength);
+
+        var result = Fes20Parser.ParseFilter(WrapFilter(
+            $"<fes:PropertyIsEqualTo><fes:ValueReference>{name}</fes:ValueReference><fes:Literal>{text}</fes:Literal></fes:PropertyIsEqualTo>"));
+
+        var comparison = result.Should().BeOfType<BinaryExpression>().Subject;
+        comparison.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be(name);
+        comparison.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(text);
+    }
+
+    private const string GmlEnvelope =
+        @"<gml:Envelope xmlns:gml=""http://www.opengis.net/gml/3.2"" srsName=""EPSG:4326""><gml:lowerCorner>0 0</gml:lowerCorner><gml:upperCorner>1 1</gml:upperCorner></gml:Envelope>";
+
+    private static string WrapFilter(string predicate)
+        => @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" + predicate + "</fes:Filter>";
+
+    private static string FlatLogicalFilter(string element, int operandCount)
+        => @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" + FlatLogicalBody(element, operandCount) + "</fes:Filter>";
+
+    private static string FlatLogicalBody(string element, int operandCount)
+        => $"<fes:{element}>" +
+           string.Concat(Enumerable.Repeat(
+               "<fes:PropertyIsEqualTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>a</fes:Literal></fes:PropertyIsEqualTo>",
+               operandCount)) +
+           $"</fes:{element}>";
+
     [UnitTest]
     public void ParseFilter_PropertyIsLikeWithEscapeCharAndMatchCaseFalse_ReturnsLowerLikeExpression()
     {
@@ -423,5 +543,294 @@ public sealed class Fes20ParserTests
         literal.Type.Should().Be(LiteralType.DateTime);
         literal.Value.Should().BeOfType<DateTimeOffset>()
             .Which.Should().Be(new DateTimeOffset(2024, 2, 16, 10, 0, 0, TimeSpan.FromHours(-5)));
+    }
+
+    [UnitTest]
+    public void ParseFilter_UnsupportedOperator_ClientReasonNamesTheOperator()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsSimilarTo>
+                <fes:ValueReference>name</fes:ValueReference>
+                <fes:Literal>value-not-reported</fes:Literal>
+              </fes:PropertyIsSimilarTo>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .Which.ClientReason.Should().Be("Unsupported filter operator 'PropertyIsSimilarTo'.");
+    }
+
+    [UnitTest]
+    public void ParseFilter_UnexpectedRootNamespace_ClientReasonNamesExpectedNamespaceOnly()
+    {
+        const string filterXml = """
+            <Filter xmlns="http://example.invalid/root-namespace-not-reported">
+              <PropertyIsEqualTo><ValueReference>name</ValueReference><Literal>A</Literal></PropertyIsEqualTo>
+            </Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var reason = act.Should().Throw<Fes20ParseException>().Which.ClientReason;
+        reason.Should().Contain("http://www.opengis.net/fes/2.0");
+        reason.Should().NotContain("root-namespace-not-reported");
+    }
+
+    [UnitTest]
+    public void ParseFilter_MalformedXml_ClientReasonDoesNotQuoteTheInput()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0"><fes:PropertyIsEqualTo>value-not-reported
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var exception = act.Should().Throw<Fes20ParseException>().Which;
+        exception.ClientReason.Should().Be("Filter is not well-formed XML.");
+        exception.Message.Should().StartWith("Invalid filter XML:");
+    }
+
+    [UnitTest]
+    public void ParseFilter_OverlongOperatorName_ClientReasonIsBounded()
+    {
+        var operatorName = "Op" + new string('x', 500);
+        var filterXml =
+            $"<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:{operatorName}/></fes:Filter>";
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var reason = act.Should().Throw<Fes20ParseException>().Which.ClientReason;
+        reason.Should().NotBeNull();
+        reason!.Should().NotContain(operatorName);
+        reason.Length.Should().BeLessThan(Fes20Parser.MaxReportedNameLength + 40);
+    }
+
+    [UnitTest]
+    public void ParseFilter_UnrecognisedSrsName_ClientReasonDoesNotQuoteTheValue()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Envelope srsName="urn:value-not-reported">
+                  <gml:lowerCorner>0 0</gml:lowerCorner>
+                  <gml:upperCorner>1 1</gml:upperCorner>
+                </gml:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var exception = act.Should().Throw<Fes20ParseException>().Which;
+        exception.ClientReason.Should().NotBeNull();
+        exception.ClientReason.Should().NotContain("value-not-reported");
+    }
+
+    [UnitTest]
+    public void ParseFilter_NestingBeyondDepthLimit_ClientReasonNamesTheLimit()
+    {
+        var nested = string.Concat(Enumerable.Repeat("<fes:Not>", FilterParserGuard.MaxExpressionDepth + 1)) +
+            "<fes:PropertyIsNull><fes:ValueReference>name</fes:ValueReference></fes:PropertyIsNull>" +
+            string.Concat(Enumerable.Repeat("</fes:Not>", FilterParserGuard.MaxExpressionDepth + 1));
+        var filterXml = $"<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\">{nested}</fes:Filter>";
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .Which.ClientReason.Should().Contain($"maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}");
+    }
+
+    [UnitTest]
+    public void ParseFilter_UnparseableTypedLiteral_HasNoClientReason()
+    {
+        // Literal conversion failures quote the value, so they stay in diagnostics only.
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsEqualTo>
+                <fes:ValueReference>count</fes:ValueReference>
+                <fes:Literal type="xs:int">value-not-reported</fes:Literal>
+              </fes:PropertyIsEqualTo>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().Which.ClientReason.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseFilter_DistanceWithUom_FlagsTheNormalisedMetres()
+    {
+        // honua-server#5462: 20 m must reach a projected-foot layer as metres, not as a bare
+        // number that a planar translator reads as 20 native feet.
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Beyond>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Point srsName="urn:ogc:def:crs:EPSG::2264"><gml:pos>2000000 700000</gml:pos></gml:Point>
+                <fes:Distance uom="ft">65.6</fes:Distance>
+              </fes:Beyond>
+            </fes:Filter>
+            """;
+
+        var spatial = Fes20Parser.ParseFilter(filterXml, 2264).Should().BeOfType<SpatialDistancePredicate>().Subject;
+
+        spatial.DistanceInMeters.Should().BeTrue();
+        ((double)spatial.Distance.Should().BeOfType<Literal>().Subject.Value!).Should().BeApproximately(65.6 * 0.3048, 1e-9);
+    }
+
+    [UnitTest]
+    public void ParseFilter_DistanceWithoutUom_KeepsTheRawNativeValue()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:DWithin>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Point srsName="urn:ogc:def:crs:EPSG::2264"><gml:pos>2000000 700000</gml:pos></gml:Point>
+                <fes:Distance>20</fes:Distance>
+              </fes:DWithin>
+            </fes:Filter>
+            """;
+
+        var spatial = Fes20Parser.ParseFilter(filterXml, 2264).Should().BeOfType<SpatialDistancePredicate>().Subject;
+
+        spatial.DistanceInMeters.Should().BeFalse();
+        spatial.Distance.Should().BeOfType<Literal>().Which.Value.Should().Be(20d);
+    }
+
+    [UnitTest]
+    public void ParseFilter_ThreeDimensionalPosList_HonoursTheStrideAndKeepsXy()
+    {
+        // honua-server#5463: srsDimension=3 lat/lon/h triples (0 0 5) and (0 10 5) describe the
+        // equator from lon 0 to lon 10. Reading them as pairs yields (0,0) (0,5) (5,10), a line
+        // that misses the point (5, 0).
+        var posList = ParseLine("""
+            <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3">
+              <gml:posList srsDimension="3">0 0 5 0 10 5</gml:posList>
+            </gml:LineString>
+            """);
+        var positions = ParseLine("""
+            <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3">
+              <gml:pos>0 0 5</gml:pos>
+              <gml:pos>0 10 5</gml:pos>
+            </gml:LineString>
+            """);
+
+        posList.Coordinates.Select(c => (c.X, c.Y)).Should().Equal((0d, 0d), (10d, 0d));
+        positions.Coordinates.Select(c => (c.X, c.Y)).Should().Equal((0d, 0d), (10d, 0d));
+        posList.Intersects(new Point(5, 0)).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ParseFilter_SrsDimensionOnTheGeometry_AppliesToNestedPosLists()
+    {
+        var line = ParseLine("""
+            <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3">
+              <gml:posList>0 0 5 0 10 5</gml:posList>
+            </gml:LineString>
+            """);
+
+        line.Coordinates.Select(c => (c.X, c.Y)).Should().Equal((0d, 0d), (10d, 0d));
+    }
+
+    [UnitTest]
+    public void ParseFilter_PolygonWithThreeDimensionalRing_HonoursTheStride()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Polygon srsName="urn:ogc:def:crs:EPSG::4979">
+                  <gml:exterior><gml:LinearRing>
+                    <gml:posList srsDimension="3">0 0 1 0 10 1 10 10 1 10 0 1 0 0 1</gml:posList>
+                  </gml:LinearRing></gml:exterior>
+                </gml:Polygon>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var polygon = ParseGeometry(filterXml).Should().BeOfType<Polygon>().Subject;
+
+        polygon.ExteriorRing.Coordinates.Select(c => (c.X, c.Y))
+            .Should().Equal((0d, 0d), (10d, 0d), (10d, 10d), (0d, 10d), (0d, 0d));
+    }
+
+    [UnitTheory]
+    [InlineData("1", "0 0 0 10")]
+    [InlineData("4", "0 0 5 7 0 10 5 7")]
+    [InlineData("abc", "0 0 0 10")]
+    public void ParseFilter_UnsupportedSrsDimension_ThrowsParseException(string dimension, string ordinates)
+    {
+        var filterXml = $"""
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:LineString srsName="urn:ogc:def:crs:EPSG::4326">
+                  <gml:posList srsDimension="{dimension}">{ordinates}</gml:posList>
+                </gml:LineString>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().WithMessage("*srsDimension*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_PosListNotAMultipleOfTheDimension_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979">
+                  <gml:posList srsDimension="3">0 0 5 0 10 5 1 1</gml:posList>
+                </gml:LineString>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().WithMessage("*multiple of srsDimension*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_PosOrdinateCountDisagreesWithSrsDimension_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Point srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3"><gml:pos>0 5</gml:pos></gml:Point>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().WithMessage("*srsDimension*");
+    }
+
+    private static LineString ParseLine(string gmlLineString)
+        => ParseGeometry($"""
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                {gmlLineString}
+              </fes:Intersects>
+            </fes:Filter>
+            """).Should().BeOfType<LineString>().Subject;
+
+    private static Geometry ParseGeometry(string filterXml)
+    {
+        var spatial = Fes20Parser.ParseFilter(filterXml).Should().BeOfType<SpatialPredicate>().Subject;
+        var literal = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+        return new WKBReader().Read(literal.Wkb);
     }
 }

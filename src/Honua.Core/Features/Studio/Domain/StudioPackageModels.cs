@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.MultiTenancy;
 
 namespace Honua.Core.Features.Studio.Domain;
 
@@ -267,6 +268,14 @@ public sealed record StudioPackageFamilyDescriptor
     /// <summary>True when publication requests are available.</summary>
     [JsonPropertyName("publishSupported")]
     public bool PublishSupported { get; init; }
+
+    /// <summary>
+    /// True when an accepted publication for this family owns its Studio route.
+    /// Bridged families publish through their native store, so a native Studio item
+    /// on the same route must not block them (honua-server#5825). Server-side only.
+    /// </summary>
+    [JsonIgnore]
+    public bool GovernsStudioRoutes { get; init; } = true;
 }
 
 /// <summary>
@@ -311,6 +320,14 @@ public sealed record StudioPackageDraft
     /// <summary>Owner principal identifier.</summary>
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
+
+    /// <summary>
+    /// Tenant that owns this record (honua-server#4905). Stamped from the request's resolved
+    /// tenant when the record is created and never rewritten. Server-side isolation key, not
+    /// part of the wire contract, so it is deliberately excluded from serialization.
+    /// </summary>
+    [JsonIgnore]
+    public string? TenantId { get; init; }
 
     /// <summary>
     /// Owner observed during the authorization preflight when attaching this
@@ -382,6 +399,14 @@ public sealed record StudioContentVersion
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
 
+    /// <summary>
+    /// Tenant that owns this record (honua-server#4905). Stamped from the request's resolved
+    /// tenant when the record is created and never rewritten. Server-side isolation key, not
+    /// part of the wire contract, so it is deliberately excluded from serialization.
+    /// </summary>
+    [JsonIgnore]
+    public string? TenantId { get; init; }
+
     /// <summary>Version identifier.</summary>
     [JsonPropertyName("versionId")]
     public required Guid VersionId { get; init; }
@@ -393,6 +418,18 @@ public sealed record StudioContentVersion
     /// <summary>SHA-256 hash of the immutable package envelope with volatile validation timestamps excluded.</summary>
     [JsonPropertyName("contentHash")]
     public required string ContentHash { get; init; }
+
+    /// <summary>
+    /// Canonical hash input (honua-server#5449): base64 of the exact UTF-8 bytes the server
+    /// hashed, so a client recomputes <see cref="ContentHash"/> as the lower-case hex SHA-256 of
+    /// the decoded bytes without reproducing the server's envelope serialization. Absent when the
+    /// server cannot supply bytes that hash to <see cref="ContentHash"/> (bridged Form/Analysis
+    /// versions, whose hash is owned by the native store, or a legacy version whose stored
+    /// envelope no longer reproduces it).
+    /// </summary>
+    [JsonPropertyName("contentHashInput")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentHashInput { get; init; }
 
     /// <summary>Immutable package envelope.</summary>
     [JsonPropertyName("envelope")]
@@ -476,6 +513,23 @@ public sealed record StudioContentItemPointers
     /// <summary>Owner principal identifier (honua-server#3001). See <see cref="StudioContentItemQuery.OwnerId"/>.</summary>
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
+
+    /// <summary>
+    /// Tenant that owns this record (honua-server#4905). Stamped from the request's resolved
+    /// tenant when the record is created and never rewritten. Server-side isolation key, not
+    /// part of the wire contract, so it is deliberately excluded from serialization.
+    /// </summary>
+    [JsonIgnore]
+    public string? TenantId { get; init; }
+
+    /// <summary>
+    /// True when a publication of this item owns a Studio route. False only when the item's
+    /// pointers resolved through a native family bridge (honua-server#5825). An item that
+    /// still lives in the inner Studio store keeps the default, even if a bridge is registered
+    /// for its family. Server-side only.
+    /// </summary>
+    [JsonIgnore]
+    public bool GovernsStudioRoutes { get; init; } = true;
 }
 
 /// <summary>
@@ -486,6 +540,38 @@ public sealed record StudioPublicationRequest
     /// <summary>Publication request identifier.</summary>
     [JsonPropertyName("requestId")]
     public required Guid RequestId { get; init; }
+
+    /// <summary>
+    /// Canonical deployment created atomically with an accepted hosted map/app publication.
+    /// Null for proposals, rejections, non-hosted families, and native bridged publications.
+    /// This is the identity behind <c>honua://deployments/{deploymentId}</c>, distinct from
+    /// this publication request and from any control-plane workflow operation.
+    /// </summary>
+    [JsonPropertyName("deploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentId { get; init; }
+
+    /// <summary>Canonical resource for the deployment created by this immutable request.</summary>
+    [JsonPropertyName("deploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentResourceUri => DeploymentId is { Length: > 0 }
+        ? $"honua://deployments/{Uri.EscapeDataString(DeploymentId)}"
+        : null;
+
+    /// <summary>
+    /// Current deployment on the route when read through the active-route projection.
+    /// This may differ after rollback; <see cref="DeploymentId"/> remains the original receipt.
+    /// </summary>
+    [JsonPropertyName("activeDeploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActiveDeploymentId { get; init; }
+
+    /// <summary>Canonical resource for the current route deployment, when projected.</summary>
+    [JsonPropertyName("activeDeploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActiveDeploymentResourceUri => ActiveDeploymentId is { Length: > 0 }
+        ? $"honua://deployments/{Uri.EscapeDataString(ActiveDeploymentId)}"
+        : null;
 
     /// <summary>Content item identifier.</summary>
     [JsonPropertyName("itemId")]
@@ -518,6 +604,32 @@ public sealed record StudioPublicationRequest
     /// <summary>Timestamp when the request was created.</summary>
     [JsonPropertyName("createdAt")]
     public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>
+    /// True when this publication owns its Studio route and may advertise
+    /// <see cref="PublicationUrl"/>. A request whose item resolved through a native family
+    /// bridge sets this false (honua-server#5825). Defaults to true so a request read back
+    /// from the Studio store still advertises its route. Server-side only.
+    /// </summary>
+    [JsonIgnore]
+    public bool GovernsStudioRoutes { get; init; } = true;
+
+    /// <summary>
+    /// Final publication URL (honua-server#5788): the root-relative published-route URL that
+    /// serves the item's Active version, the same value as the <c>activeUrl</c> the publication
+    /// operation handle reports. Present only once the request is accepted (Active), names a
+    /// route, and <see cref="GovernsStudioRoutes"/> is true. Absent while pending, on a rejected
+    /// request, and when the publication resolved through a native family store. Derived, so it
+    /// is never stored and never read back on deserialization.
+    /// </summary>
+    [JsonPropertyName("publicationUrl")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PublicationUrl
+        => GovernsStudioRoutes
+            && Status == StudioPublicationRequestStatus.Accepted
+            && !string.IsNullOrWhiteSpace(Intent?.Route)
+            ? StudioPublishedRoutes.BuildActiveUrl(Intent.Route)
+            : null;
 }
 
 /// <summary>
@@ -604,6 +716,14 @@ public sealed record StudioContentItemQuery
     /// value (server-side scoping, not client parameter trust).
     /// </summary>
     public string? OwnerId { get; init; }
+
+    /// <summary>
+    /// Tenant scoping applied by the caller (honua-server#4905), or <see langword="null"/> to
+    /// enumerate every tenant. The endpoint layer forces this from the request's resolved
+    /// tenant for tenant-scoped principals regardless of any client-supplied value; it is
+    /// never read from the query string.
+    /// </summary>
+    public TenantScopeFilter? Tenant { get; init; }
 
     /// <summary>Restrict results to one or more derived lifecycle states.</summary>
     public IReadOnlyList<StudioContentItemState>? States { get; init; }
@@ -702,6 +822,14 @@ public sealed record StudioPackageDraftQuery
     /// <summary>Restrict results to a specific owner principal (<c>studio_package_drafts.owner_id</c>).</summary>
     public string? OwnerId { get; init; }
 
+    /// <summary>
+    /// Tenant scoping applied by the caller (honua-server#4905), or <see langword="null"/> to
+    /// enumerate every tenant. The endpoint layer forces this from the request's resolved
+    /// tenant for tenant-scoped principals regardless of any client-supplied value; it is
+    /// never read from the query string.
+    /// </summary>
+    public TenantScopeFilter? Tenant { get; init; }
+
     /// <summary>Optional case-insensitive substring match against the package key.</summary>
     public string? SearchTerm { get; init; }
 
@@ -736,6 +864,18 @@ public sealed record StudioRollbackRequest
     /// <summary>Rollback request identifier.</summary>
     [JsonPropertyName("requestId")]
     public required Guid RequestId { get; init; }
+
+    /// <summary>Successor deployment created by a published-pointer rollback, if hosted.</summary>
+    [JsonPropertyName("deploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentId { get; init; }
+
+    /// <summary>Canonical resource for the successor deployment, if hosted.</summary>
+    [JsonPropertyName("deploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentResourceUri => DeploymentId is { Length: > 0 }
+        ? $"honua://deployments/{Uri.EscapeDataString(DeploymentId)}"
+        : null;
 
     /// <summary>Content item identifier.</summary>
     [JsonPropertyName("itemId")]

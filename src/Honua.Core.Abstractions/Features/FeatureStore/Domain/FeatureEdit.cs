@@ -7,6 +7,39 @@ using System.Text.Json.Serialization;
 namespace Honua.Core.Features.FeatureStore.Domain;
 
 /// <summary>
+/// Owner value that an update or delete must still match in the same write statement.
+/// This is the authorized snapshot for one row. It is not a
+/// <see cref="FeatureStateToken"/> and it is not a client precondition.
+/// </summary>
+/// <param name="ObjectId">Storage object id the guard covers.</param>
+/// <param name="Field">Owner attribute name. Matching is case-insensitive.</param>
+/// <param name="Expected">Owner text authorized for the edit. An absent owner is empty.</param>
+public readonly record struct OwnerEditGuard(long ObjectId, string Field, string Expected)
+{
+    /// <summary>The guard for <paramref name="objectId"/>, or null when the batch has none.</summary>
+    /// <param name="guards">Guards stamped by the owner policy. Default or empty matches nothing.</param>
+    /// <param name="objectId">Storage object id being written.</param>
+    /// <returns>The matching guard, or null.</returns>
+    public static OwnerEditGuard? Find(ImmutableArray<OwnerEditGuard> guards, long objectId)
+    {
+        if (guards.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        foreach (var guard in guards)
+        {
+            if (guard.ObjectId == objectId)
+            {
+                return guard;
+            }
+        }
+
+        return null;
+    }
+}
+
+/// <summary>
 /// Represents a batch of feature edits to apply
 /// </summary>
 public readonly record struct FeatureEditBatch
@@ -65,6 +98,29 @@ public readonly record struct FeatureEditBatch
     public ImmutableArray<FeatureEditPrecondition> Preconditions { get; init; }
 
     /// <summary>
+    /// Caller-scoped row-level security predicate every created or updated row must satisfy
+    /// after the write (the <c>WITH CHECK</c> half of row-level security, honua-server#6103).
+    /// Stamped by the feature store from the same request-scoped RLS source its readers apply;
+    /// protocol adapters never set it. Writers that honour it re-select each written row with
+    /// this predicate inside the write transaction and fail the operation with
+    /// <see cref="EditOperationResult.NotPermittedErrorCode"/> (undoing that row) when the row
+    /// would fall outside the caller's visible partition. Null means no row-level security
+    /// policy applies to the caller.
+    /// </summary>
+    [JsonIgnore]
+    public Honua.Core.Queries.Filters.SqlFragment? RowSecurityWriteCheck { get; init; }
+
+    /// <summary>
+    /// Owner predicates for updates and deletes. The shared owner policy stamps one guard
+    /// per existing row when a non-administrator must keep the authorized owner. Writers
+    /// apply the predicate in the same statement that mutates the row, so a concurrent
+    /// ownership transfer is not overwritten or deleted. Empty when the policy is off or
+    /// the caller may edit any owner. Only trusted server-side policy code sets this.
+    /// </summary>
+    [JsonIgnore]
+    public ImmutableArray<OwnerEditGuard> OwnerGuards { get; init; }
+
+    /// <summary>
     /// Initializes a new FeatureEditBatch with default values
     /// </summary>
     public FeatureEditBatch()
@@ -74,6 +130,7 @@ public readonly record struct FeatureEditBatch
         Updates = ImmutableArray<Feature>.Empty;
         Deletes = ImmutableArray<long>.Empty;
         Preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
+        OwnerGuards = ImmutableArray<OwnerEditGuard>.Empty;
     }
 
     /// <summary>
@@ -387,6 +444,13 @@ public readonly record struct EditOperationResult
     /// from a stale partial-update conflict using the rejecting snapshot.
     /// </summary>
     public const int PreconditionFailedErrorCode = 412;
+
+    /// <summary>
+    /// Well-known error code reported when an edit operation is rejected because the written
+    /// row would not satisfy the caller's row-level security predicate (honua-server#6103).
+    /// The operation was not applied.
+    /// </summary>
+    public const int NotPermittedErrorCode = 403;
 
     /// <summary>
     /// Object ID of the affected feature

@@ -140,7 +140,8 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
                   "tileInfo": {
                     "rows": 256, "cols": 256, "format": "PNG",
                     "spatialReference": { "wkid": 3857, "latestWkid": 3857 },
-                    "lods": [ { "level": {{level.ToString(CultureInfo.InvariantCulture)}} } ]
+                    "origin": { "x": -20037508.342789244, "y": 20037508.342789244 },
+                    "lods": [ { "level": {{level.ToString(CultureInfo.InvariantCulture)}}, "resolution": {{MercatorResolution(level)}} } ]
                   }
                 }
                 """));
@@ -178,6 +179,12 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
         ms.Write(index);
         ms.Write(blob.ToArray());
         return ms.ToArray();
+    }
+
+    private static string MercatorResolution(int level)
+    {
+        var resolution0 = (2d * 20037508.342789244) / 256d;
+        return (resolution0 / Math.Pow(2d, level)).ToString("R", CultureInfo.InvariantCulture);
     }
 
     private static void WriteEntry(ZipArchive archive, string name, byte[] content)

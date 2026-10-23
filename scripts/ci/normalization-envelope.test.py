@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import re
 import stat
 import tempfile
 import unittest
@@ -77,6 +78,33 @@ def expected() -> dict:
 
 
 class EnvelopeTests(unittest.TestCase):
+    def test_workflow_and_envelope_enforce_the_same_bounds(self) -> None:
+        workflow = (SCRIPT.parents[2] / MODULE.WORKFLOW_PATH).read_text()
+        projections = re.findall(r"'(docs/gis/data/[^':]+\.json):(\d+)'", workflow)
+        self.assertEqual(len(MODULE.OUTPUT_LIMITS), len(projections))
+        self.assertEqual(MODULE.OUTPUT_LIMITS, {path: int(limit) for path, limit in projections})
+        aggregate = re.search(r"if \(\( total > (\d+) \)\)", workflow)
+        self.assertIsNotNone(aggregate)
+        self.assertEqual(MODULE.MAX_TOTAL_OUTPUT_BYTES, int(aggregate.group(1)))
+
+    def test_mcp_projection_accepts_128_kib_and_rejects_one_byte_over(self) -> None:
+        path = "docs/gis/data/admin-mcp-projection-manifest.json"
+        prefix, suffix = b'{"payload":"', b'"}'
+        for size in (65537, 131072, 131073):
+            with self.subTest(size=size):
+                content = prefix + b"x" * (size - len(prefix) - len(suffix)) + suffix
+                value = envelope()
+                index = next(i for i, item in enumerate(value["outputs"]) if item["path"] == path)
+                value["outputs"][index] = output(path, content)
+                if size > 131072:
+                    with self.assertRaisesRegex(MODULE.EnvelopeError, "exceeds"):
+                        MODULE.validate_envelope(raw(value), **expected())
+                else:
+                    plan = MODULE.validate_envelope(raw(value), **expected())
+                    item = next(item for item in plan["outputs"] if item["path"] == path)
+                    self.assertEqual(size, item["length"])
+                    self.assertEqual(MODULE.sha256_bytes(content), item["sha256"])
+
     def test_valid_envelope_round_trips(self) -> None:
         plan = MODULE.validate_envelope(raw(envelope()), **expected())
         self.assertEqual(set(MODULE.OUTPUT_LIMITS), {item["path"] for item in plan["outputs"]})
@@ -154,6 +182,7 @@ class EnvelopeTests(unittest.TestCase):
     def test_generator_allowlist_is_exact(self) -> None:
         required_implementations = {
             "Directory.Build.targets",
+            "tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs",
             "scripts/generate-admin-operation-parity-exports.sh",
             "scripts/ci/verify-admin-operation-parity.py",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
@@ -219,6 +248,20 @@ class EnvelopeTests(unittest.TestCase):
             )
             validated = MODULE.validate_envelope(raw(built), **expected())
             self.assertEqual(len(MODULE.OUTPUT_LIMITS), len(validated["outputs"]))
+
+            source_helper = "tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs"
+            original_digest = next(entry["sha256"] for entry in built["generators"] if entry["path"] == source_helper)
+            (root / source_helper).write_text("changed executable helper\n", encoding="utf-8")
+            changed = MODULE.build_envelope(
+                root, root, REPOSITORY, PR, HEAD, TREE, BASE, RUN_ID, ATTEMPT
+            )
+            changed_digest = next(entry["sha256"] for entry in changed["generators"] if entry["path"] == source_helper)
+            self.assertNotEqual(original_digest, changed_digest)
+
+            omitted = envelope()
+            omitted["generators"] = [entry for entry in omitted["generators"] if entry["path"] != source_helper]
+            with self.assertRaisesRegex(MODULE.EnvelopeError, "generator evidence count"):
+                MODULE.validate_envelope(raw(omitted), **expected())
 
 
 if __name__ == "__main__":

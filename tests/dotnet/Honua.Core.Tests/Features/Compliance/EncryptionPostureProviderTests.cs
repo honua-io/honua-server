@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Compliance;
 /// </summary>
 public sealed class EncryptionPostureProviderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void InitialPosture_ReportsVersionOne()
     {
@@ -28,6 +29,7 @@ public sealed class EncryptionPostureProviderTests
         posture.Algorithms.Should().Contain("aes-256-gcm");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Rotate_AppendsVersion_AndRetainsPrevious()
     {
@@ -58,6 +60,7 @@ public sealed class EncryptionPostureProviderTests
         posture.LastRotationAt.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Rotate_IsAuditLogged()
     {
@@ -75,6 +78,7 @@ public sealed class EncryptionPostureProviderTests
         evt.Outcome.Should().Be(AuditOutcome.Success);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Rotate_AuditTokenIsDecoupledFromCallerToken()
     {
@@ -94,6 +98,7 @@ public sealed class EncryptionPostureProviderTests
             "cancelling the caller token after RotateAsync returned must not retroactively cancel the audit token");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Rotate_TwiceQuickly_DoesNotDeadlockOrSkipVersions()
     {
@@ -111,6 +116,7 @@ public sealed class EncryptionPostureProviderTests
         posture.RetainedKeyVersions.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Rotate_Concurrent_AllVersionsUniqueAndContiguous()
     {
@@ -134,6 +140,7 @@ public sealed class EncryptionPostureProviderTests
         posture.RetainedKeyVersions.Should().Be(rotations + 1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Rotate_WhenAuditWriteFails_StillSucceedsButReportsAuditNotRecorded()
     {
@@ -153,6 +160,7 @@ public sealed class EncryptionPostureProviderTests
         posture.ActiveKeyVersion.Should().Be(2, "the posture advances independently of the audit write");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OperatorAttestedFipsMode_IsHonoured()
     {

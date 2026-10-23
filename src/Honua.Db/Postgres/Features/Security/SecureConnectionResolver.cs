@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -17,7 +19,7 @@ namespace Honua.Db.Postgres.Features.Security;
 /// This service provides the primary interface for resolving database connections
 /// while maintaining security. All operations are logged and include comprehensive error handling.
 /// </remarks>
-internal sealed class SecureConnectionResolver : ISecureConnectionResolver
+internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IResolvedConnectionStringValidator
 {
     private static readonly Action<ILogger, string, Exception?> _logConnectionNotFound =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(1001), "Connection configuration '{ConnectionName}' not found");
@@ -72,25 +74,36 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
 
     private readonly ISecureConnectionRegistry _registry;
     private readonly IConnectionEncryptionService _encryptionService;
-    private readonly IConnectionSecretResolver _secretResolver;
+    private readonly IRequestSecretReferenceResolver _secretResolver;
     private readonly ILogger<SecureConnectionResolver> _logger;
     // Optional: when present, health checks route to the per-provider driver so non-PostgreSQL connections
     // (MySQL, SQL Server, Oracle) are tested with the right ADO.NET provider instead of always via Npgsql.
     // Null when no driver registry is registered (e.g. minimal/unit-test composition) — falls back to Npgsql.
     private readonly Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? _connectionDriverRegistry;
+    // Optional: the operator's connection host policy, applied to every host the resolved connection
+    // string names. Null in minimal compositions that register no policy.
+    private readonly IConnectionHostAllowlist? _hostAllowlist;
+    private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
     public SecureConnectionResolver(
         ISecureConnectionRegistry registry,
         IConnectionEncryptionService encryptionService,
-        IConnectionSecretResolver secretResolver,
+        IRequestSecretReferenceResolver secretResolver,
         ILogger<SecureConnectionResolver> logger,
-        Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? connectionDriverRegistry = null)
+        Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? connectionDriverRegistry = null,
+        IConnectionHostAllowlist? hostAllowlist = null,
+        PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         _secretResolver = secretResolver ?? throw new ArgumentNullException(nameof(secretResolver));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _connectionDriverRegistry = connectionDriverRegistry;
+        _hostAllowlist = hostAllowlist;
+        _schemaConfiguration = schemaConfiguration ?? new(
+            PostgresSchemaConfiguration.DefaultMetadataSchema,
+            PostgresSchemaConfiguration.DefaultDataSchema,
+            [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     }
 
     public async Task<string> ResolveConnectionStringAsync(string connectionName, CancellationToken cancellationToken = default)
@@ -208,8 +221,9 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             }
             else if (!string.IsNullOrWhiteSpace(connection.SecretRef))
             {
-                // Resolve from external secret manager
-                connectionString = await _secretResolver.ResolveConnectionStringAsync(connection.SecretRef, cancellationToken);
+                // Resolve from external secret manager. The stored reference originated in a
+                // request, so it is resolved under the operator policy as a whole-string reference.
+                connectionString = await _secretResolver.ResolveAsync(connection.SecretRef, cancellationToken);
 
                 _logConnectionStringResolvedFromSecret(_logger, connection.Name, null);
             }
@@ -224,69 +238,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 throw new InvalidOperationException($"Resolved connection string for '{connection.Name}' is null or empty");
             }
 
-            // Parse and validate connection string format. This validation is Npgsql-specific (it parses the
-            // string with NpgsqlConnectionStringBuilder and reads Npgsql's SslMode/Host/Port), so it only applies
-            // to the PostgreSQL/PostGIS family. MySQL, SQL Server, and Oracle use connection-string formats Npgsql
-            // cannot parse; their per-provider driver validates the string by actually opening the connection.
-            var normalizedProvider = Honua.Core.Features.FeatureStore.Domain.DataProviderNames.Normalize(connection.Provider);
-            var isPostgresFamily =
-                normalizedProvider == Honua.Core.Features.FeatureStore.Domain.DataProviderNames.Postgis
-                || normalizedProvider == Honua.Core.Features.FeatureStore.Domain.DataProviderNames.PostgreSql;
-
-            if (isPostgresFamily)
-            {
-                try
-                {
-                    var builder = new NpgsqlConnectionStringBuilder(connectionString);
-
-                    // Verify SSL requirements are met
-                    if (!DataConnection.IsSslModeCompatibleWithRequirement(MapSslMode(builder.SslMode), connection.SslRequired))
-                    {
-                        throw new InvalidOperationException(
-                            $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
-                    }
-
-                    // Host/port match is a tamper check: when the connection owner declared a host/port,
-                    // the resolved connection string must agree with it. This applies uniformly to managed
-                    // (encrypted) and secret-reference connections. For secret-reference connections the
-                    // declared host/port are optional display metadata (see
-                    // SecureConnectionEndpoints.CreateConnection, which substitutes the neutral
-                    // DataConnection.SecretReferenceMetadataPlaceholder when the caller omits them): when
-                    // the caller leaves them blank — persisted as that same placeholder, not an empty
-                    // string — no host/port assertion was made, so the resolved secret is the uncontested
-                    // source of truth and the check is skipped for that field. Comparing the placeholder
-                    // itself against the resolved secret's real host would reject every secret-reference
-                    // connection created without a declared host (honua-server#2949). When the caller DOES
-                    // declare a real host/port, that declaration is a security assertion, and a disagreeing
-                    // secret is tamper — same as for managed connections, where the check always applies
-                    // because Host/Port are required fields.
-                    var hasDeclaredHost =
-                        !string.IsNullOrWhiteSpace(connection.Host) &&
-                        !string.Equals(connection.Host, DataConnection.SecretReferenceMetadataPlaceholder, StringComparison.Ordinal);
-
-                    if (hasDeclaredHost &&
-                        !string.IsNullOrWhiteSpace(builder.Host) &&
-                        !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
-                        throw new InvalidOperationException(
-                            $"Connection '{connection.Name}' resolved host does not match configured host.");
-                    }
-
-                    if (connection.Port != 0 && builder.Port != 0 && builder.Port != connection.Port)
-                    {
-                        _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
-                        throw new InvalidOperationException(
-                            $"Connection '{connection.Name}' resolved port does not match configured port.");
-                    }
-                }
-                catch (ArgumentException ex)
-                {
-                    throw new InvalidOperationException(
-                        $"Invalid connection string format for '{connection.Name}'.",
-                        ex);
-                }
-            }
+            await ValidateConnectionStringAsync(connection, connectionString, cancellationToken).ConfigureAwait(false);
 
             _logConnectionStringResolved(_logger, connection.Name, null);
             return connectionString;
@@ -305,6 +257,139 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             throw new InvalidOperationException(
                 $"Failed to resolve connection string for '{connection.Name}'.",
                 ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task ValidateConnectionStringAsync(
+        DataConnection connection,
+        string connectionString,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        var normalizedProvider = Honua.Core.Features.FeatureStore.Domain.DataProviderNames.Normalize(connection.Provider);
+        var isPostgresFamily =
+            normalizedProvider == Honua.Core.Features.FeatureStore.Domain.DataProviderNames.Postgis
+            || normalizedProvider == Honua.Core.Features.FeatureStore.Domain.DataProviderNames.PostgreSql
+            || normalizedProvider == Honua.Core.Features.FeatureStore.Domain.DataProviderNames.Redshift;
+
+        if (isPostgresFamily)
+        {
+            try
+            {
+                var builder = new NpgsqlConnectionStringBuilder(connectionString);
+                if (!_schemaConfiguration.IsAllowedSearchPath(builder.SearchPath))
+                {
+                    throw new InvalidOperationException("Connection search path must contain only configured operational schemas.");
+                }
+
+                // Only the endpoint, credential, TLS-mode and tuning keywords are honoured; a
+                // keyword that loads files, relaxes certificate checks or passes startup options
+                // is refused whichever storage path supplied the string (SEC-23).
+                var disallowedKeyword = PostgresConnectionKeywordPolicy.FindDisallowedKeyword(builder);
+                if (disallowedKeyword is not null)
+                {
+                    throw new InvalidOperationException(
+                        $"Connection '{connection.Name}' uses connection string keyword '{disallowedKeyword}', which is not permitted.");
+                }
+
+                // Verify SSL requirements are met
+                if (!DataConnection.IsSslModeCompatibleWithRequirement(MapSslMode(builder.SslMode), connection.SslRequired))
+                {
+                    throw new InvalidOperationException(
+                        $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
+                }
+
+                // Host/port match is a tamper check: when the connection owner declared a host/port,
+                // the resolved connection string must agree with it. This applies uniformly to managed
+                // (encrypted) and secret-reference connections. For secret-reference connections the
+                // declared host/port are optional display metadata (see
+                // SecureConnectionEndpoints.CreateConnection, which substitutes the neutral
+                // DataConnection.SecretReferenceMetadataPlaceholder when the caller omits them): when
+                // the caller leaves them blank — persisted as that same placeholder, not an empty
+                // string — no host/port assertion was made, so the resolved secret is the uncontested
+                // source of truth and the check is skipped for that field. Comparing the placeholder
+                // itself against the resolved secret's real host would reject every secret-reference
+                // connection created without a declared host (honua-server#2949). When the caller DOES
+                // declare a real host/port, that declaration is a security assertion, and a disagreeing
+                // secret is tamper — same as for managed connections, where the check always applies
+                // because Host/Port are required fields.
+                var hasDeclaredHost =
+                    !string.IsNullOrWhiteSpace(connection.Host) &&
+                    !string.Equals(connection.Host, DataConnection.SecretReferenceMetadataPlaceholder, StringComparison.Ordinal);
+
+                if (hasDeclaredHost &&
+                    !string.IsNullOrWhiteSpace(builder.Host) &&
+                    !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
+                    throw new InvalidOperationException(
+                        $"Connection '{connection.Name}' resolved host does not match configured host.");
+                }
+
+                if (connection.Port != 0 && builder.Port != 0 && builder.Port != connection.Port)
+                {
+                    _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
+                    throw new InvalidOperationException(
+                        $"Connection '{connection.Name}' resolved port does not match configured port.");
+                }
+
+                await EnsureResolvedHostsPermittedAsync(builder.Host, connection.Name, cancellationToken);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid connection string format for '{connection.Name}'.",
+                    ex);
+            }
+        }
+        else
+        {
+            var policy = _connectionDriverRegistry?.Find(connection.Provider) as ISecureConnectionStringPolicy
+                ?? throw new InvalidOperationException("The connection provider has no secure connection string policy.");
+            var security = policy.InspectConnectionString(connectionString);
+            if (connection.SslRequired && !security.RequiresTls)
+            {
+                throw new InvalidOperationException("The resolved connection string allows plaintext fallback.");
+            }
+            foreach (var host in security.Hosts)
+            {
+                await EnsureResolvedHostsPermittedAsync(host, connection.Name, cancellationToken).ConfigureAwait(false);
+            }
+            if (security.Hosts.Count == 0)
+            {
+                throw new InvalidOperationException("The resolved connection string names no network host.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies the connection host policy to every host the resolved string names, so a stored
+    /// string cannot reach a destination the policy would refuse at registration (SEC-23).
+    /// </summary>
+    private async Task EnsureResolvedHostsPermittedAsync(string? hostList, string connectionName, CancellationToken cancellationToken)
+    {
+        if (_hostAllowlist is null || !_hostAllowlist.IsEnforced)
+        {
+            return;
+        }
+
+        var hosts = PostgresConnectionKeywordPolicy.SplitHosts(hostList);
+        if (hosts.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Connection '{connectionName}' resolved host is not permitted by the connection host policy.");
+        }
+
+        foreach (var host in hosts)
+        {
+            var decision = await _hostAllowlist.EvaluateAsync(host, cancellationToken).ConfigureAwait(false);
+            if (!decision.IsAllowed)
+            {
+                throw new InvalidOperationException(
+                    $"Connection '{connectionName}' resolved host is not permitted by the connection host policy.");
+            }
         }
     }
 

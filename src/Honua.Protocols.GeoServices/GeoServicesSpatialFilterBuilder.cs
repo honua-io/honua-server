@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices;
@@ -11,9 +12,14 @@ internal static class GeoServicesSpatialFilterBuilder
     public static SpatialFilter BuildSpatialFilter(
         QueryParameters queryParams,
         GeoServicesGeometry geometry,
-        int? inputSrid)
+        int? inputSrid,
+        int? maxCurveVertices = null,
+        double? linearMetersPerUnit = null)
     {
-        var wkbBytes = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, inputSrid);
+        var wkbBytes = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+            geometry,
+            inputSrid,
+            maxCurveVertices);
 
         if (queryParams.NearestCount.HasValue && queryParams.NearestCount.Value > 0)
         {
@@ -32,7 +38,7 @@ internal static class GeoServicesSpatialFilterBuilder
                 throw new ArgumentException("Distance parameter is required for distance-based spatial queries");
             }
 
-            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units);
+            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units, linearMetersPerUnit);
             return SpatialFilter.CreateDistanceFilter(
                 wkbBytes,
                 distance,
@@ -55,7 +61,7 @@ internal static class GeoServicesSpatialFilterBuilder
         // is left to that relationship's exact predicate.
         if (queryParams.Distance is > 0 && relationship == SpatialRelationship.Intersects)
         {
-            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units);
+            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units, linearMetersPerUnit);
             return SpatialFilter.CreateDistanceFilter(
                 wkbBytes,
                 distance,
@@ -74,6 +80,33 @@ internal static class GeoServicesSpatialFilterBuilder
             Xmax: double xmax,
             Ymax: not null
         } && xmin <= xmax;
+        var envelopeMinX = geometry.Xmin;
+        var envelopeMinY = geometry.Ymin;
+        var envelopeMaxX = geometry.Xmax;
+        var envelopeMaxY = geometry.Ymax;
+        var crossesAntimeridian = false;
+        if (inputSrid is int geographicSrid
+            && SpatialReference.Create(geographicSrid).IsGeographic
+            && envelopeMinX.HasValue
+            && envelopeMinY.HasValue
+            && envelopeMaxX.HasValue
+            && envelopeMaxY.HasValue
+            && GeographicEnvelope.TryNormalize(
+                envelopeMinX.Value,
+                envelopeMinY.Value,
+                envelopeMaxX.Value,
+                envelopeMaxY.Value,
+                out var normalized,
+                out _))
+        {
+            crossesAntimeridian = normalized.CrossesAntimeridian;
+            isSimpleEnvelope = !crossesAntimeridian;
+            // The SQL envelope fast path must use the same bounds as the normalized WKB.
+            envelopeMinX = normalized.West;
+            envelopeMinY = normalized.South;
+            envelopeMaxX = normalized.East;
+            envelopeMaxY = normalized.North;
+        }
 
         return new SpatialFilter
         {
@@ -83,10 +116,11 @@ internal static class GeoServicesSpatialFilterBuilder
             ReturnDistance = queryParams.ReturnDistance,
             IsSimpleEnvelope = isSimpleEnvelope,
             AllowEnvelopeOnly = relationship == SpatialRelationship.EnvelopeIntersects && isSimpleEnvelope,
-            EnvelopeMinX = isSimpleEnvelope ? geometry.Xmin : null,
-            EnvelopeMinY = isSimpleEnvelope ? geometry.Ymin : null,
-            EnvelopeMaxX = isSimpleEnvelope ? geometry.Xmax : null,
-            EnvelopeMaxY = isSimpleEnvelope ? geometry.Ymax : null
+            EnvelopeMinX = isSimpleEnvelope ? envelopeMinX : null,
+            EnvelopeMinY = isSimpleEnvelope ? envelopeMinY : null,
+            EnvelopeMaxX = isSimpleEnvelope ? envelopeMaxX : null,
+            EnvelopeMaxY = isSimpleEnvelope ? envelopeMaxY : null,
+            AntimeridianSplit = crossesAntimeridian
         };
     }
 
@@ -107,8 +141,8 @@ internal static class GeoServicesSpatialFilterBuilder
             "esrispatialreloverlaps" => SpatialRelationship.Overlaps,
             "esrispatialreldisjoint" => SpatialRelationship.Disjoint,
             "esrispatialrelequals" => SpatialRelationship.Equals,
-            "esrispatialrelwithindistance" => SpatialRelationship.WithinDistance,
-            "esrispatialrelbeyonddistance" => SpatialRelationship.BeyondDistance,
+            "withindistance" => SpatialRelationship.WithinDistance,
+            "beyonddistance" => SpatialRelationship.BeyondDistance,
             _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")
         };
     }
@@ -129,12 +163,28 @@ internal static class GeoServicesSpatialFilterBuilder
     /// canonical enum member, so they are converted to meters here at the protocol
     /// adapter. Unrecognized unit tokens are rejected (a silent meters fallback would
     /// return wrong answers — e.g. a nautical-mile radius shrunk 1852x).
+    /// When <paramref name="units"/> is omitted, <paramref name="linearMetersPerUnit"/>
+    /// is the linear unit of the query geometry's spatial reference (metres per native
+    /// unit). Geographic or unresolved references stay in metres.
     /// </summary>
-    private static (double Distance, DistanceUnit Unit) NormalizeDistance(double distance, string? units)
+    private static (double Distance, DistanceUnit Unit) NormalizeDistance(
+        double distance,
+        string? units,
+        double? linearMetersPerUnit)
     {
-        return units?.ToLowerInvariant() switch
+        if (string.IsNullOrWhiteSpace(units))
         {
-            "esrisrunit_meter" or null => (distance, DistanceUnit.Meters),
+            if (linearMetersPerUnit is double factor && factor > 0 && double.IsFinite(factor))
+            {
+                return (distance * factor, DistanceUnit.Meters);
+            }
+
+            return (distance, DistanceUnit.Meters);
+        }
+
+        return units.ToLowerInvariant() switch
+        {
+            "esrisrunit_meter" => (distance, DistanceUnit.Meters),
             "esrisrunit_foot" => (distance, DistanceUnit.Feet),
             "esrisrunit_kilometer" => (distance, DistanceUnit.Kilometers),
             "esrisrunit_statutemile" => (distance, DistanceUnit.Miles),

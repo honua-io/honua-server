@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
@@ -386,6 +387,26 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_ArcGisProFullPrecisionBbox_ReturnsImage()
+    {
+        // Exact BBOX serialization observed from ArcGIS Pro 3.7.1 GetMap.
+        const string bbox = "-122.43000000000000682121,37.7599999999999980104803,-122.400000000000005684342,37.7899999999999991473487";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&CRS=CRS:84&BBOX={bbox}&WIDTH=390&HEIGHT=390&LAYERS={WebAppFixture.TestLayerId}&STYLES=&EXCEPTIONS=XML&FORMAT=image/png&BGCOLOR=0xFEFFFF&TRANSPARENT=TRUE");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        using var bitmap = SKBitmap.Decode(content);
+        bitmap.Should().NotBeNull();
+        bitmap.Width.Should().Be(390);
+        bitmap.Height.Should().Be(390);
+    }
+
+    [IntegrationTest]
     [Protocol(TestProtocols.Wms111)]
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms111, "GetMap")]
@@ -701,6 +722,42 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Should().Contain("<?xml");
         content.Should().Contain("msGMLOutput");
 
+        var schemaUri = await AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(content);
+        schemaUri.AbsolutePath.Should().Be($"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS");
+        schemaUri.Query.Should().Contain("VERSION=1.1.1");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task Wms_OgcRoute_GetFeatureInfo_WithGmlFormat_CitesSchemaOnSameMountAndVersion()
+    {
+        // honua-server#5019: the GML schema location must name the endpoint and WMS version that
+        // answered the request. With MapServer disabled the OGC mount is the only WMS endpoint, so
+        // a schema location pinned to the MapServer mount at 1.1.1 cannot even be dereferenced.
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/vnd.ogc.gml&I=41&J=74");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.gml");
+
+        var schemaLocation = ReadGmlSchemaLocation(content);
+        var schemaUri = new Uri(schemaLocation, UriKind.Absolute);
+        schemaUri.AbsolutePath.Should().Be($"/ogc/services/{WebAppFixture.TestServiceId}/wms");
+        schemaUri.Query.Should().Contain("VERSION=1.3.0");
+        schemaUri.Query.Should().Contain("REQUEST=GetFeatureInfoSchema");
+
+        await AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(content);
+    }
+
+    private static string ReadGmlSchemaLocation(string content)
+    {
         var document = System.Xml.Linq.XDocument.Parse(content);
         var schemaLocation = document.Root?.Attribute(
             System.Xml.Linq.XName.Get(
@@ -708,6 +765,16 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
                 System.Xml.Schema.XmlSchema.InstanceNamespace))?.Value
             ?? throw new InvalidOperationException("GML output is missing xsi:noNamespaceSchemaLocation.");
         schemaLocation.Should().NotBeNullOrWhiteSpace();
+        return schemaLocation;
+    }
+
+    /// <summary>
+    /// Dereferences the GML payload's <c>xsi:noNamespaceSchemaLocation</c> through the test client
+    /// and validates the payload against the schema it returns.
+    /// </summary>
+    private async Task<Uri> AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(string content)
+    {
+        var schemaLocation = ReadGmlSchemaLocation(content);
 
         var schemaResponse = await _fixture.Client.GetAsync(schemaLocation);
         var schemaContent = await schemaResponse.Content.ReadAsStringAsync();
@@ -740,6 +807,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         }
 
         validationErrors.Should().BeEmpty();
+        return new Uri(schemaLocation, UriKind.Absolute);
     }
 
     [IntegrationTest]
@@ -771,7 +839,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 UPDATE features
-                SET attributes = COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('__tenant_id', 'hidden')
+                SET attributes = COALESCE(attributes, '{}'::jsonb) || jsonb_build_object(
+                    '__tenant_id', 'hidden', 'nullable_value', NULL, 'boolean_value', true, 'false_value', false)
                 WHERE layer_id = @layerId;
                 """;
             command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
@@ -786,6 +855,47 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Should().Contain("attributes");
         content.Should().NotContain("__tenant_id");
         content.Should().NotContain("hidden");
+
+        // QGIS's native JSON identify reader requires GeoJSON, not the former
+        // FeatureInfoResponse envelope, and reads values from properties.
+        using var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().NotBeEmpty();
+        foreach (var feature in features)
+        {
+            feature.GetProperty("type").GetString().Should().Be("Feature");
+            feature.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
+            var properties = feature.GetProperty("properties");
+            properties.GetProperty("nullable_value").ValueKind.Should().Be(JsonValueKind.Null);
+            properties.GetProperty("boolean_value").GetBoolean().Should().BeTrue();
+            properties.GetProperty("false_value").GetBoolean().Should().BeFalse();
+            properties.GetRawText().Should().Be(feature.GetProperty("attributes").GetRawText());
+        }
+
+        using var textResponse = await _fixture.Client.GetAsync(
+            response.RequestMessage!.RequestUri!.ToString().Replace("INFO_FORMAT=application/json", "INFO_FORMAT=text/plain", StringComparison.Ordinal));
+        var text = await textResponse.Content.ReadAsStringAsync();
+        textResponse.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        text.Should().Contain("boolean_value=1").And.Contain("false_value=0")
+            .And.Contain($"nullable_value={Environment.NewLine}").And.NotContain("hidden");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_JsonWithNoMatches_ReturnsEmptyFeatureCollection()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>does-not-exist</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/json&I=41&J=74&FILTER={Uri.EscapeDataString(filter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        json.RootElement.GetProperty("features").GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]
@@ -802,6 +912,57 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Be("No features found.");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_FilterOnUnknownProperty_ReturnsInvalidParameterValue()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>nosuchfield</fes:ValueReference><fes:Literal>x</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await GetFeatureInfoWithFilterAsync(filter);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue").And.Contain("nosuchfield");
+        content.Should().NotContain("NoApplicableCode");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_FilterOnNamespacedValueReference_ResolvesField()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>cite:category</fes:ValueReference><fes:Literal>does-not-exist</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await GetFeatureInfoWithFilterAsync(filter);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("No features found.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_FilterWithMistypedLiteral_ReturnsInvalidParameterValue()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>population</fes:ValueReference><fes:Literal>abc</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await GetFeatureInfoWithFilterAsync(filter);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue").And.Contain("numeric");
+        content.Should().NotContain("NoApplicableCode");
+    }
+
+    private Task<HttpResponseMessage> GetFeatureInfoWithFilterAsync(string filter)
+        => _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0" +
+            $"&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}" +
+            $"&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74" +
+            $"&FILTER={Uri.EscapeDataString(filter)}");
 
     [IntegrationTest]
     [Operation(Operations.Wms)]

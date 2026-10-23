@@ -19,6 +19,22 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </summary>
 internal static class StudioMcpSchemas
 {
+    public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
+        {"type":"object","required":["draftId","generation"],"additionalProperties":false,"properties":{
+          "draftId":{"type":"string","format":"uuid"},"generation":{"type":"integer","minimum":1},
+          "changeNote":{"type":["string","null"],"maxLength":2000}}}
+        """);
+    public static readonly JsonElement ReopenVersionArgumentSchema = Parse("""
+        {"type":"object","required":["itemId","versionId"],"additionalProperties":false,"properties":{
+          "itemId":{"type":"string","format":"uuid"},"versionId":{"type":"string","format":"uuid"}}}
+        """);
+
+    public static readonly JsonElement GetVersionArgumentSchema = Parse("""
+        {"type":"object","required":["itemId","versionId"],"additionalProperties":false,"properties":{
+          "itemId":{"type":"string","format":"uuid","description":"Studio content item id."},
+          "versionId":{"type":"string","format":"uuid","description":"Saved version id."}}}
+        """);
+
     /// <summary>Maximum accepted length for free-text fields (packageKey, ids, titles, notes).</summary>
     public const int MaxShortTextLength = 200;
 
@@ -55,14 +71,14 @@ internal static class StudioMcpSchemas
         }
         """;
 
-    private const string LayerInputSchemaJson = """
+    private static readonly string LayerInputSchemaJson = $$"""
         {
           "type": "object",
           "required": ["id"],
           "additionalProperties": false,
           "properties": {
             "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Stable layer id, unique within the composition." },
-            "sourceId": { "type": "string", "maxLength": 200, "description": "Bound source identifier." },
+            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "For catalog-backed layers copy studioSourceId from honua_list_layers or honua_describe_layer. Distinct from this composition layer.id. Supported portable bindings and metadata.honua.source overrides remain separate explicit source mechanisms." },
             "type": { "type": "string", "maxLength": 100, "description": "Layer type (e.g. fill, circle, line, raster)." },
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "visible": { "type": "boolean", "default": true, "description": "Layer visibility." },
@@ -364,17 +380,14 @@ internal static class StudioMcpSchemas
     private const string ProposePublicationArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["draftId", "generation"],
+          "required": ["itemId", "versionId", "contentHash", "route", "visibility"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
-            "route": { "type": "string", "maxLength": 200, "description": "Proposed target route key." },
-            "visibility": { "type": "string", "maxLength": 100, "description": "Proposed visibility target." },
-            "embed": { "type": "boolean", "description": "Whether embedding should be enabled if published." },
-            "service": { "type": "string", "maxLength": 200, "description": "Proposed service publication hint." },
-            "schedule": { "type": "string", "maxLength": 200, "description": "Proposed schedule expression or key." },
-            "job": { "type": "string", "maxLength": 200, "description": "Proposed job publication hint." },
+            "itemId": { "type": "string", "format": "uuid", "description": "Studio content item id." },
+            "versionId": { "type": "string", "format": "uuid", "description": "Exact immutable saved version id." },
+            "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Exact content hash returned when the version was saved." },
+            "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Requested target route key." },
+            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Requested visibility target." },
             "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
           }
         }

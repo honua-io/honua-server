@@ -41,7 +41,9 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IRedshiftConnectionFactory, RedshiftConnectionFactory>();
         services.AddScoped<RedshiftFeatureDataAccess>();
-        services.AddScoped<RedshiftFeatureStore>();
+        services.AddScoped<RedshiftFeatureStore>(sp => new RedshiftFeatureStore(
+            sp.GetRequiredService<RedshiftFeatureDataAccess>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<RedshiftFeatureStore>());
 

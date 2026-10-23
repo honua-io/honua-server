@@ -109,6 +109,9 @@ public enum LicenseCapacityBandState
     /// Capacity enforcement is suspended because the coordinated meter is unavailable.
     /// </summary>
     MeteringGap = 8,
+
+    /// <summary>Licensing is disabled and no capacity is measured or enforced.</summary>
+    Disabled = 9,
 }
 
 /// <summary>
@@ -251,6 +254,9 @@ public sealed class LicenseSurgeModeState
 /// </summary>
 public sealed class LicenseCapacityState
 {
+    /// <summary>Whether license capacity metering is enabled for this deployment.</summary>
+    public bool MeteringEnabled { get; init; } = true;
+
     /// <summary>
     /// Capacity-band state.
     /// </summary>

@@ -99,7 +99,7 @@ public sealed class ImageServerMosaicIntegrationTests
 
             json.RootElement.GetProperty("name").GetString().Should().Contain("mosaic");
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
-            json.RootElement.GetProperty("catalogItems").GetArrayLength().Should().Be(2);
+            json.RootElement.GetProperty("catalogItems").GetProperty("features").GetArrayLength().Should().Be(2);
         }
         finally
         {
@@ -127,6 +127,182 @@ public sealed class ImageServerMosaicIntegrationTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    // #4064: (1.5, 1) lies inside both "west" (constant 20) and "overlap-newest" (constant 5). The
+    // unlocked mosaic returns the newest raster's 5; locking "west" must return west's own pixel
+    // and objectId, exactly as exportImage honours lockRasterIds.
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify)]
+    public async Task Identify_WithLockRasterMosaicRule_ReturnsLockedRasterPixelAndObjectId()
+    {
+        var fixture = await CreateFixtureAsync();
+        try
+        {
+            var catalogResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false");
+            catalogResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var catalog = JsonDocument.Parse(await catalogResponse.Content.ReadAsStringAsync());
+            var objectIds = catalog.RootElement.GetProperty("features").EnumerateArray()
+                .Select(feature => feature.GetProperty("attributes"))
+                .ToDictionary(
+                    attributes => attributes.GetProperty("Name").GetString()!,
+                    attributes => attributes.GetProperty("OBJECTID").GetInt64());
+            var westId = objectIds["west"];
+            var eastId = objectIds["east"];
+
+            using (var unlocked = await IdentifyJsonAsync(fixture, "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326"))
+            {
+                unlocked.RootElement.GetProperty("value").GetString().Should().Be("5");
+                // A merged mosaic has no single catalog item, so objectId is null or omitted.
+                (!unlocked.RootElement.TryGetProperty("objectId", out var unlockedObjectId) ||
+                    unlockedObjectId.ValueKind == JsonValueKind.Null).Should().BeTrue();
+            }
+
+            using (var locked = await IdentifyJsonAsync(
+                fixture,
+                "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&mosaicRule=" +
+                Uri.EscapeDataString($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{westId}]}}")))
+            {
+                locked.RootElement.GetProperty("value").GetString().Should().Be("20");
+                locked.RootElement.GetProperty("objectId").GetInt64().Should().Be(westId);
+                locked.RootElement.GetProperty("name").GetString().Should().Be("west");
+                locked.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(20);
+            }
+
+            // "east" covers x in [2, 4], so locking it leaves no raster under (1.5, 1).
+            using (var lockedElsewhere = await IdentifyJsonAsync(
+                fixture,
+                "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&mosaicRule=" +
+                Uri.EscapeDataString($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{eastId}]}}")))
+            {
+                lockedElsewhere.RootElement.GetProperty("value").GetString().Should().Be("NoData");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // #4064: identify resolves the contested pixel at (1.5, 1) with the same ordering exportImage
+    // renders. "west" (constant 20, x in [0, 2], inserted first so it has the lower OBJECTID) and
+    // "overlap-newest" (constant 5, x in [1, 3]) both cover the point with equal YMax.
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify)]
+    public async Task Identify_WithOrderingMosaicMethods_ResolvesContestedPixelLikeExport()
+    {
+        var fixture = await CreateFixtureAsync();
+        try
+        {
+            foreach (var (mosaicRule, expected) in new[]
+                     {
+                         // Northwest: equal YMax, so the lower XMin ("west") wins.
+                         ("{\"mosaicMethod\":\"esriMosaicNorthwest\"}", "20"),
+                         // ByAttribute OBJECTID ascending: the lowest OBJECTID ("west") wins.
+                         ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", "20"),
+                         // ByAttribute OBJECTID descending (Esri default): the highest OBJECTID wins.
+                         ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"OBJECTID\"}", "5")
+                     })
+            {
+                using var json = await IdentifyJsonAsync(
+                    fixture,
+                    "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&mosaicRule=" + Uri.EscapeDataString(mosaicRule));
+
+                json.RootElement.GetProperty("value").GetString().Should().Be(expected, mosaicRule);
+            }
+
+            foreach (var unsupported in new[]
+                     {
+                         "{\"mosaicMethod\":\"esriMosaicCenter\"}",
+                         "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}"
+                     })
+            {
+                var response = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify?geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&f=json&mosaicRule={Uri.EscapeDataString(unsupported)}");
+                var content = await response.Content.ReadAsStringAsync();
+                using var error = JsonDocument.Parse(content);
+                error.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(501, content);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // #4064: a real 4-band PostGIS raster with constant bands 17, 22.5, 39, 45 over lon/lat [0, 2].
+    // Identifying the Web Mercator point for (0.5°, 1.5°) must return the Esri "v1, v2, v3, v4"
+    // value and label the location with the request's spatial reference (3857), not a bare x/y.
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify)]
+    public async Task Identify_MultiBandRasterAtProjectedPoint_ReturnsEsriValueAndLocationSpatialReference()
+    {
+        const double mercatorX = 55659.74539663678; // 6378137 * rad(0.5)
+        const double mercatorY = 166998.3137529217; // 6378137 * ln(tan(pi/4 + rad(1.5)/2))
+        var fixture = await CreateFixtureAsync(seedRasters: false);
+        try
+        {
+            await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+            {
+                await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+                await using (var delete = connection.CreateCommand())
+                {
+                    delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
+                    delete.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+                    await delete.ExecuteNonQueryAsync();
+                }
+
+                await using var insert = connection.CreateCommand();
+                insert.CommandText = """
+                    INSERT INTO honua.raster_data (layer_id, name, raster, acquisition_date, created_at)
+                    SELECT @layerId,
+                           'four-band',
+                           ST_AddBand(ST_AddBand(ST_AddBand(ST_AddBand(
+                               ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                               '32BF'::text, 17, NULL),
+                               '32BF'::text, 22.5, NULL),
+                               '32BF'::text, 39, NULL),
+                               '32BF'::text, 45, NULL),
+                           @acquired,
+                           @acquired;
+                    """;
+                insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+                insert.Parameters.AddWithValue("acquired", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
+                await insert.ExecuteNonQueryAsync();
+
+                // honua.raster_data is shared across fixture schemas. Keep the seed lock
+                // through the read so a parallel fixture cannot replace the four-band raster.
+                var geometry = Uri.EscapeDataString(FormattableString.Invariant(
+                    $"{{\"x\":{mercatorX},\"y\":{mercatorY},\"spatialReference\":{{\"wkid\":3857}}}}"));
+                using var json = await IdentifyJsonAsync(fixture, $"geometry={geometry}&geometryType=esriGeometryPoint");
+
+                json.RootElement.GetProperty("value").GetString().Should().Be("17, 22.5, 39, 45");
+                var location = json.RootElement.GetProperty("location");
+                location.GetProperty("x").GetDouble().Should().BeApproximately(mercatorX, 1e-6);
+                location.GetProperty("y").GetDouble().Should().BeApproximately(mercatorY, 1e-6);
+                location.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<JsonDocument> IdentifyJsonAsync(WebAppFixture fixture, string query)
+    {
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify?{query}&f=json");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        json.RootElement.TryGetProperty("error", out _).Should().BeFalse(content);
+        return json;
     }
 
     [IntegrationTest]
@@ -337,6 +513,305 @@ public sealed class ImageServerMosaicIntegrationTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Operation(Operations.Export)]
+    public async Task ExportImage_WithBboxBeyondRasterFootprint_CoversRequestedBboxWithNoDataOutsideData()
+    {
+        // #4060: Esri clients paint the exported pixels across the requested bbox. The seeded rasters
+        // cover x[0,4] y[0,2] (west 20, overlap-newest 5, east 40); bbox [-4,-2,4,2] at 80x40 is
+        // 0.1-degree pixels, so the data is 40x20 = 800 pixels in the upper-right quarter and every
+        // other pixel must be NoData. Before the fix the 80x40 image was the data alone, stretched.
+        var fixture = await CreateFixtureAsync(seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                const string export = "?bbox=-4,-2,4,2&size=80,40&format=tiff&interpolation=RSP_NearestNeighbor";
+
+                var jsonResponse = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=json");
+                var jsonContent = await jsonResponse.Content.ReadAsStringAsync();
+                jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK, jsonContent);
+                using (var json = JsonDocument.Parse(jsonContent))
+                {
+                    json.RootElement.GetProperty("width").GetInt32().Should().Be(80);
+                    json.RootElement.GetProperty("height").GetInt32().Should().Be(40);
+                    var extent = json.RootElement.GetProperty("extent");
+                    extent.GetProperty("xmin").GetDouble().Should().BeApproximately(-4, 1e-9);
+                    extent.GetProperty("ymin").GetDouble().Should().BeApproximately(-2, 1e-9);
+                    extent.GetProperty("xmax").GetDouble().Should().BeApproximately(4, 1e-9);
+                    extent.GetProperty("ymax").GetDouble().Should().BeApproximately(2, 1e-9);
+                    extent.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+                }
+
+                var imageResponse = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=image");
+                imageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                var image = await imageResponse.Content.ReadAsByteArrayAsync();
+
+                await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    WITH decoded AS (SELECT ST_FromGDALRaster(@data, 4326) AS rast)
+                    SELECT ST_Width(rast), ST_Height(rast),
+                           ST_XMin(ST_Envelope(rast)), ST_YMin(ST_Envelope(rast)),
+                           ST_XMax(ST_Envelope(rast)), ST_YMax(ST_Envelope(rast)),
+                           (ST_SummaryStats(rast, 1, true)).count,
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(0.55, 1.05), 4326)),
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(3.55, 1.05), 4326)),
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(-2.05, 1.05), 4326)),
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(2.05, -1.05), 4326))
+                    FROM decoded;
+                    """;
+                command.Parameters.AddWithValue("data", image);
+                await using var reader = await command.ExecuteReaderAsync();
+                (await reader.ReadAsync()).Should().BeTrue();
+
+                reader.GetInt32(0).Should().Be(80);
+                reader.GetInt32(1).Should().Be(40);
+                reader.GetDouble(2).Should().BeApproximately(-4, 1e-9);
+                reader.GetDouble(3).Should().BeApproximately(-2, 1e-9);
+                reader.GetDouble(4).Should().BeApproximately(4, 1e-9);
+                reader.GetDouble(5).Should().BeApproximately(2, 1e-9);
+                reader.GetInt64(6).Should().Be(800);
+                reader.GetDouble(7).Should().Be(20, "only the west raster covers x=0.55");
+                reader.GetDouble(8).Should().Be(40, "only the east raster covers x=3.55");
+                reader.IsDBNull(9).Should().BeTrue("x=-2.05 is west of every raster");
+                reader.IsDBNull(10).Should().BeTrue("y=-1.05 is south of every raster");
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify)]
+    public async Task Identify_WithEsriEpochMillisecondTime_SelectsSameSliceAsIsoInstant()
+    {
+        // #4061: time-aware Esri clients send epoch milliseconds, the form timeInfo.timeExtent
+        // advertises. 2024-01-20 selects the newest batch at or before it, east (Jan 15), which is
+        // the only raster at x=2.5 in that batch (value 40).
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                var instant = new DateTimeOffset(2024, 1, 20, 0, 0, 0, TimeSpan.Zero);
+
+                (await IdentifyBand1Async(fixture, 2.5, $"{instant.ToUnixTimeMilliseconds()}")).Should().Be(40);
+                (await IdentifyBand1Async(fixture, 2.5, "2024-01-20T00:00:00Z")).Should().Be(40);
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify, Operations.ErrorHandling)]
+    public async Task Identify_WithEsriTimeExtent_SelectsNewestBatchInsideWindow()
+    {
+        // #4061: time=<start>,<end> (epoch ms, either bound may be null) selects the newest batch
+        // inside the window. Batches: west Jan 1 (20, x[0,2]), east Jan 15 (40, x[2,4]),
+        // overlap-newest Feb 1 (5, x[1,3]).
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                var dec31 = Ms(2023, 12, 31);
+                var jan02 = Ms(2024, 1, 2);
+                var jan10 = Ms(2024, 1, 10);
+                var jan16 = Ms(2024, 1, 16);
+                var jan20 = Ms(2024, 1, 20);
+
+                (await IdentifyBand1Async(fixture, 1.5, $"{dec31},{jan10}")).Should().Be(20);
+                (await IdentifyBand1Async(fixture, 2.5, $"{jan10},{jan20}")).Should().Be(40);
+                (await IdentifyBand1Async(fixture, 1.5, $"{jan16},null")).Should().Be(5);
+                (await IdentifyBand1Async(fixture, 1.5, $"{jan02},{jan10}")).Should().BeNull(
+                    "no acquisition falls inside the window, so no raster is selected");
+
+                var reversed = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
+                    $"?geometry=1.5,1&geometryType=esriGeometryPoint&f=json&time={jan20},{jan10}");
+                await reversed.AssertGeoServicesErrorAsync(400);
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/query")]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalog_WithEsriTimeExtent_ReturnsNewestBatchInsideWindow()
+    {
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                foreach (var time in new[] { $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}", $"{Ms(2024, 1, 20)}" })
+                {
+                    var response = await fixture.Client.GetAsync(
+                        $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false&time={time}");
+                    var content = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+                    using var json = JsonDocument.Parse(content);
+                    var features = json.RootElement.GetProperty("features");
+                    features.GetArrayLength().Should().Be(1, $"only the east batch (Jan 15) matches time={time}");
+                    features[0].GetProperty("attributes").GetProperty("AcquisitionDate").GetInt64()
+                        .Should().Be(RasterIntegrationTestData.EastAcquisition.ToUnixTimeMilliseconds());
+                }
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/getSamples")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
+    [Operation(Operations.Export, Operations.Identify)]
+    public async Task ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected()
+    {
+        // #4061: before the fix every ImageServer operation answered 400 to time=<start>,<end>.
+        // The Jan 10 - Jan 20 window selects only east (constant 40).
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                var time = $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}";
+                var root = $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer";
+
+                var export = await fixture.Client.GetAsync($"{root}/exportImage?bbox=2,0,4,2&size=8,8&format=png&f=image&time={time}");
+                export.StatusCode.Should().Be(HttpStatusCode.OK, await export.Content.ReadAsStringAsync());
+                export.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+                var samples = await fixture.Client.GetAsync($"{root}/getSamples?geometry=2.5,1&geometryType=esriGeometryPoint&f=json&time={time}");
+                var samplesContent = await samples.Content.ReadAsStringAsync();
+                samples.StatusCode.Should().Be(HttpStatusCode.OK, samplesContent);
+                samplesContent.Should().Contain("40");
+
+                var statistics = await fixture.Client.GetAsync($"{root}/computeStatisticsHistograms?f=json&time={time}");
+                var statisticsContent = await statistics.Content.ReadAsStringAsync();
+                statistics.StatusCode.Should().Be(HttpStatusCode.OK, statisticsContent);
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // #4792: a layer that mixes native resolutions made every union-backed ImageServer operation
+    // answer 500 (PostGIS rt_raster_from_two_rasters alignment error), starting with the service
+    // root. Fixture: "coarse" is 2x2 at 1.0 over x[0,2] y[0,2] = 20 (older); "fine" is 2x2 at 0.5
+    // over x[1,2] y[1,2] = 5 (newer). Aligned onto the finest grid, the newest-wins mosaic is 16
+    // pixels at 0.5: four of 5 and twelve of 20, so min 5, max 20, mean (4*5 + 12*20) / 16 = 16.25.
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
+    [Operation(Operations.GetServiceInfo, Operations.Export, Operations.Identify)]
+    public async Task ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion()
+    {
+        var fixture = await CreateFixtureAsync(seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.ReplaceLayerRastersAsync(
+                fixture,
+                WebAppFixture.TestLayerId,
+                new RasterSeed("coarse", 2, 2, 0, 2, 1, -1, 20,
+                    RasterIntegrationTestData.WestAcquisition, RasterIntegrationTestData.WestAcquisition),
+                new RasterSeed("fine", 2, 2, 1, 2, 0.5, -0.5, 5,
+                    RasterIntegrationTestData.OverlapAcquisition, RasterIntegrationTestData.OverlapAcquisition));
+            var root = $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer";
+
+            var info = await fixture.Client.GetAsync($"{root}?f=json");
+            var infoContent = await info.Content.ReadAsStringAsync();
+            info.StatusCode.Should().Be(HttpStatusCode.OK, infoContent);
+            using (var json = JsonDocument.Parse(infoContent))
+            {
+                json.RootElement.TryGetProperty("error", out _).Should().BeFalse(infoContent);
+                var extent = json.RootElement.GetProperty("extent");
+                extent.GetProperty("xmin").GetDouble().Should().Be(0);
+                extent.GetProperty("ymin").GetDouble().Should().Be(0);
+                extent.GetProperty("xmax").GetDouble().Should().Be(2);
+                extent.GetProperty("ymax").GetDouble().Should().Be(2);
+                json.RootElement.GetProperty("pixelSizeX").GetDouble().Should().BeApproximately(0.5, 1e-12);
+                json.RootElement.GetProperty("pixelSizeY").GetDouble().Should().BeApproximately(0.5, 1e-12);
+                json.RootElement.GetProperty("minValues")[0].GetDouble().Should().Be(5);
+                json.RootElement.GetProperty("maxValues")[0].GetDouble().Should().Be(20);
+                json.RootElement.GetProperty("meanValues")[0].GetDouble().Should().BeApproximately(16.25, 1e-9);
+            }
+
+            var export = await fixture.Client.GetAsync($"{root}/exportImage?bbox=0,0,2,2&size=4,4&format=tiff&f=image");
+            export.StatusCode.Should().Be(HttpStatusCode.OK);
+            export.Content.Headers.ContentType?.MediaType.Should().Be(
+                "image/tiff", await export.Content.ReadAsStringAsync());
+
+            using (var identify = await IdentifyJsonAsync(fixture, "geometry=1.25,1.75&geometryType=esriGeometryPoint"))
+            {
+                identify.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
+            }
+
+            var envelope = Uri.EscapeDataString(
+                """{"xmin":0,"ymin":0,"xmax":2,"ymax":2,"spatialReference":{"wkid":4326}}""");
+            var statistics = await fixture.Client.GetAsync(
+                $"{root}/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={envelope}");
+            var statisticsContent = await statistics.Content.ReadAsStringAsync();
+            statistics.StatusCode.Should().Be(HttpStatusCode.OK, statisticsContent);
+            using (var json = JsonDocument.Parse(statisticsContent))
+            {
+                json.RootElement.TryGetProperty("error", out _).Should().BeFalse(statisticsContent);
+                var band = json.RootElement.GetProperty("statistics")[0];
+                band.GetProperty("min").GetDouble().Should().Be(5);
+                band.GetProperty("max").GetDouble().Should().Be(20);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static long Ms(int year, int month, int day)
+        => new DateTimeOffset(year, month, day, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+    private static async Task<double?> IdentifyBand1Async(WebAppFixture fixture, double x, string time)
+    {
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
+            $"?geometry={x.ToString(System.Globalization.CultureInfo.InvariantCulture)},1&geometryType=esriGeometryPoint&f=json&time={time}");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var json = JsonDocument.Parse(content);
+        if (json.RootElement.TryGetProperty("value", out var value) &&
+            value.ValueKind == JsonValueKind.String &&
+            value.GetString() == "NoData")
+        {
+            return null;
+        }
+
+        return json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble();
     }
 
     [IntegrationTest]

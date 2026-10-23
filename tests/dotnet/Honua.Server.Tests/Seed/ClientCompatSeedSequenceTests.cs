@@ -3,40 +3,120 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
-using Testcontainers.PostgreSql;
+using Xunit;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.Server.Tests.Seed;
 
+/// <remarks>
+/// Uses the shared <see cref="PostgresFixture"/> sidecar (honua-server#3988) instead of a
+/// dedicated Testcontainer per test: the class writes to the literal, process-global
+/// <c>honua</c> schema via the seed SQL, which per-test <c>search_path</c> isolation does not
+/// protect, so each test still gets its own dedicated database via
+/// <see cref="PostgresFixture.CreateIsolatedDatabaseAsync"/>.
+/// </remarks>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class ClientCompatSeedSequenceTests
+public sealed class ClientCompatSeedSequenceTests : IAsyncLifetime
 {
-    private const string PostgisImage = "postgis/postgis:16-3.4";
-    private const string TestRunIdEnv = "HONUA_TEST_RUN_ID";
+    private readonly PostgresFixture _postgres = new();
+    private string _connectionString = null!;
+    private string _databaseName = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.InitializeAsync();
+        _connectionString = await _postgres.CreateIsolatedDatabaseAsync(nameof(ClientCompatSeedSequenceTests));
+        _databaseName = new NpgsqlConnectionStringBuilder(_connectionString).Database!;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _postgres.DropDatabaseAsync(_databaseName);
+        await _postgres.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void PostgresFixture_WithExternalConnectionString_DoesNotStartTestcontainer()
+    {
+        PostgresFixture.ShouldStartContainer("Host=sidecar;Database=honua_test;Username=test;Password=test")
+            .Should().BeFalse("CI exports a live sidecar connection string that must be reused, not shadowed by a redundant container");
+        PostgresFixture.ShouldStartContainer(null).Should().BeTrue("no sidecar is available, so a local Testcontainer must still start");
+        PostgresFixture.ShouldStartContainer("   ").Should().BeTrue("a blank connection string must not be treated as a usable sidecar");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task McpSeedSequence_WithBaseSeed_PreservesBindingsAndPublishesPolygonOnRepeat()
+    {
+        await using var dataSource = NpgsqlDataSource.Create(_connectionString);
+        for (var iteration = 0; iteration < 2; iteration++)
+        {
+            await ExecuteSqlFileAsync(dataSource, RepositoryPaths.Resolve("tests", "seed", "base-schema.sql"));
+            await ExecuteYamlSqlAsync(dataSource, RepositoryPaths.Resolve("tests", "seed", "mcp.yaml"));
+
+            await using var command = dataSource.CreateCommand("""
+                SELECT service_name, layer_id, layer_order
+                FROM honua.service_layers
+                WHERE service_name IN ('test_service', 'test_service_mcp')
+                ORDER BY service_name, layer_order;
+                """);
+            var bindings = new List<(string Service, int Layer, int Order)>();
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    bindings.Add((reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2)));
+                }
+            }
+            bindings.Should().Equal(
+                ("test_service", 0, 0), ("test_service", 1, 1),
+                ("test_service", 10, 2), ("test_service_mcp", 10, 0));
+
+            command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = 1";
+            (await command.ExecuteScalarAsync()).Should().Be(3L, "the overlay must preserve the base mixed geometry fixture");
+            command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = 10 AND ST_GeometryType(geometry) = 'ST_Polygon'";
+            (await command.ExecuteScalarAsync()).Should().Be(5L, "replaying the overlay must not duplicate polygons");
+
+            var snapshots = await ReadCurrentSnapshotsAsync(dataSource);
+            snapshots.Keys.Should().BeEquivalentTo(["default", "Development", "Test", "Production"]);
+            foreach (var snapshot in snapshots.Values)
+            {
+                var graph = JsonSerializer.Deserialize(snapshot, MetadataV2JsonContext.Default.MetadataV2Graph);
+                graph.Should().NotBeNull();
+                MetadataV2GraphValidator.Validate(graph!).Errors.Should().BeEmpty(
+                    "a layer shared by two services must have unique resource and storage IDs");
+                using var document = JsonDocument.Parse(snapshot);
+                var publications = document.RootElement.GetProperty("publications").EnumerateArray()
+                    .Where(publication => publication.GetProperty("publicationType").GetString() == "esri-feature-layer")
+                    .Select(publication => (
+                        Service: publication.GetProperty("serviceId").GetString(),
+                        Layer: publication.GetProperty("layerIndex").GetInt32(),
+                        Resource: publication.GetProperty("resourceId").GetString()))
+                    .ToArray();
+                publications.Where(publication => publication.Service == "svc-test-service-feature")
+                    .Should().BeEquivalentTo([
+                        ("svc-test-service-feature", 0, "res-layer-0"),
+                        ("svc-test-service-feature", 1, "res-layer-1"),
+                        ("svc-test-service-feature", 10, "res-layer-10")]);
+                publications.Where(publication => publication.Service == "svc-test-service-mcp-feature")
+                    .Should().ContainSingle().Which.Should().Be(("svc-test-service-mcp-feature", 10, "res-layer-10"));
+            }
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ClientCompatSeedSequence_WithBrowserCompatSeed_RefreshesMetadataV2Snapshots()
     {
-        await using var container = new PostgreSqlBuilder()
-            .WithImage(PostgisImage)
-            .WithDatabase("honua_seed_regression")
-            .WithUsername("postgres")
-            .WithPassword("compat_password")
-            .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
-            .WithLabel("honua.test.owner", "honua-server")
-            .WithLabel("honua.test.run_id", Environment.GetEnvironmentVariable(TestRunIdEnv) ?? "manual")
-            .Build();
-
-        await container.StartAsync();
-
-        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        var connectionString = new NpgsqlConnectionStringBuilder(_connectionString)
         {
             Timeout = 60,
             CommandTimeout = 120
@@ -70,19 +150,7 @@ public sealed class ClientCompatSeedSequenceTests
         // options, FeatureStorageMapping.FromMetadata falls back to the `geometry.primary`
         // field name (`shape`) and to bare per-field column projection, producing Postgres
         // 42703 "column \"shape\" does not exist" on every OGC API Features items query.
-        await using var container = new PostgreSqlBuilder()
-            .WithImage(PostgisImage)
-            .WithDatabase("honua_seed_binding_regression")
-            .WithUsername("postgres")
-            .WithPassword("compat_password")
-            .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
-            .WithLabel("honua.test.owner", "honua-server")
-            .WithLabel("honua.test.run_id", Environment.GetEnvironmentVariable(TestRunIdEnv) ?? "manual")
-            .Build();
-
-        await container.StartAsync();
-
-        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        var connectionString = new NpgsqlConnectionStringBuilder(_connectionString)
         {
             Timeout = 60,
             CommandTimeout = 120

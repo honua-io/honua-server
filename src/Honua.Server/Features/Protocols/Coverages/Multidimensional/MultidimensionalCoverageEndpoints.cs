@@ -269,6 +269,7 @@ internal static class MultidimensionalCoverageEndpoints
             Status = ToStatusString(job.Status),
             StatusUrl = statusUrl,
             Error = job.Status == ExecutionJobStatus.Failed ? job.ErrorMessage : null,
+            Warnings = job.Warnings,
         };
 
         if (job.Status == ExecutionJobStatus.Succeeded &&

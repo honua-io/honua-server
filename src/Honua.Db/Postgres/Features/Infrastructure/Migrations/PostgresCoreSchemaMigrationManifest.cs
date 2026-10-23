@@ -20,7 +20,9 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         string rasterFootprintsMigration,
         string configuredSchemaAdoptionMigration,
         string governedLineageMigration,
-        string? initialSchemaMigration = null)
+        string? initialSchemaMigration = null,
+        string? sensorThingsIdSequencesMigration = null,
+        string? sensorThingsSensingMigration = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationMigrationAssemblyName);
         ArgumentException.ThrowIfNullOrWhiteSpace(metadataV2SnapshotMigration);
@@ -42,9 +44,20 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         ConfiguredSchemaAdoptionMigration = configuredSchemaAdoptionMigration;
         GovernedLineageMigration = governedLineageMigration;
         InitialSchemaMigration = initialSchemaMigration;
+        SensorThingsIdSequencesMigration = sensorThingsIdSequencesMigration;
+        SensorThingsSensingMigration = sensorThingsSensingMigration;
     }
 
     public string ApplicationMigrationAssemblyName { get; }
+
+    /// <summary>Application-owned attachment contract; synthetic manifests may omit it.</summary>
+    public PostgresAttachmentMigrationContract? Attachments { get; init; }
+
+    /// <summary>
+    /// Complete reader-qualified migration identities supplied by the application. Synthetic
+    /// manifests may omit this when testing an isolated schema floor.
+    /// </summary>
+    public IReadOnlySet<string>? KnownMigrationNames { get; init; }
 
     public string MetadataV2SnapshotMigration { get; }
 
@@ -67,4 +80,14 @@ internal sealed class PostgresCoreSchemaMigrationManifest
     /// may omit this because they intentionally exercise only provider-owned floors.
     /// </summary>
     public string? InitialSchemaMigration { get; }
+
+    /// <summary>
+    /// Journal identity for the migration that creates the SensorThings identifier
+    /// sequences the ingest path allocates <c>@iot.id</c>s from. Synthetic manifests that
+    /// predate the sequences leave this null and the guard skips the check.
+    /// </summary>
+    public string? SensorThingsIdSequencesMigration { get; }
+
+    /// <summary>Migration owning the full eight-entity sensing schema.</summary>
+    public string? SensorThingsSensingMigration { get; }
 }

@@ -57,7 +57,9 @@ public sealed class Cql2JsonParser
         {
             _expressionDepth = 0;
             using var document = JsonDocument.Parse(cql2Json);
-            return ParseExpression(document.RootElement);
+            var expression = ParseExpression(document.RootElement);
+            FilterParserGuard.EnsureExpressionTree(expression);
+            return expression;
         }
         catch (JsonException ex)
         {
@@ -118,6 +120,7 @@ public sealed class Cql2JsonParser
                 throw new ArgumentException("CQL2-JSON property reference must be a non-empty string");
             }
 
+            FilterParserGuard.EnsureIdentifierLength(propertyName.Length, "CQL2-JSON property name");
             return new PropertyReference(propertyName);
         }
 
@@ -147,10 +150,18 @@ public sealed class Cql2JsonParser
     private FilterExpression ParseOperation(string opValue, JsonElement argsElement)
     {
         var normalized = opValue.Trim();
+        // Unrecognized operators become function calls named by the operator text.
+        FilterParserGuard.EnsureIdentifierLength(normalized.Length, "CQL2-JSON operator");
         var normalizedLower = normalized.ToLowerInvariant();
 
         if (normalizedLower is "and" or "or")
         {
+            if (argsElement.ValueKind == JsonValueKind.Array)
+            {
+                // Checked before the operands are parsed so an over-long list is never materialized.
+                FilterParserGuard.EnsureLogicalOperandCount(argsElement.GetArrayLength());
+            }
+
             var expressions = ParseArguments(argsElement);
             if (expressions.Count < 2)
             {
@@ -379,6 +390,8 @@ public sealed class Cql2JsonParser
             throw new ArgumentException("CQL2-JSON args must be an array");
         }
 
+        // Checked before the arguments are parsed so an over-long list is never materialized.
+        FilterParserGuard.EnsureValueListSize(argsElement.GetArrayLength(), "CQL2-JSON argument list");
         var expressions = new List<FilterExpression>();
         foreach (var arg in argsElement.EnumerateArray())
         {
@@ -390,6 +403,8 @@ public sealed class Cql2JsonParser
 
     private ArrayLiteral ParseArrayLiteral(JsonElement element)
     {
+        // Arrays also carry IN-list values (see ExtractValueList).
+        FilterParserGuard.EnsureValueListSize(element.GetArrayLength(), "CQL2-JSON array");
         var values = new List<FilterExpression>();
         foreach (var item in element.EnumerateArray())
         {
@@ -425,7 +440,9 @@ public sealed class Cql2JsonParser
 
             if (element.TryGetProperty("property", out var propertyElement))
             {
-                return new PropertyReference(propertyElement.GetString() ?? string.Empty);
+                var propertyName = propertyElement.GetString() ?? string.Empty;
+                FilterParserGuard.EnsureIdentifierLength(propertyName.Length, "CQL2-JSON property name");
+                return new PropertyReference(propertyName);
             }
 
             if (element.TryGetProperty("op", out _))
@@ -461,7 +478,7 @@ public sealed class Cql2JsonParser
     {
         return element.ValueKind switch
         {
-            JsonValueKind.String => new Literal(element.GetString(), LiteralType.Text),
+            JsonValueKind.String => ParseTextLiteral(element),
             JsonValueKind.Number => element.TryGetInt64(out var longValue)
                 ? new Literal(longValue, LiteralType.Number)
                 : new Literal(element.GetDouble(), LiteralType.Number),
@@ -470,6 +487,13 @@ public sealed class Cql2JsonParser
             JsonValueKind.Null => new Literal(null, LiteralType.Null),
             _ => throw new ArgumentException($"Unsupported literal type: {element.ValueKind}")
         };
+    }
+
+    private static Literal ParseTextLiteral(JsonElement element)
+    {
+        var value = element.GetString()!;
+        FilterParserGuard.EnsureStringLiteralLength(value.Length, "CQL2-JSON string literal");
+        return new Literal(value, LiteralType.Text);
     }
 
     private static bool TryParseTemporalLiteral(JsonElement element, out Literal? literal)

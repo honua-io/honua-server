@@ -37,6 +37,8 @@ internal static partial class FeatureStreamEndpoints
         var options = deps.Options.Value;
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
+        var initialLiveCursor = cursor.HasValue ? 0
+            : await eventStore.GetCurrentCursorAsync(context.RequestAborted).ConfigureAwait(false);
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
 
         // The default subscription is allocated at session creation and is never replaced
@@ -220,7 +222,7 @@ internal static partial class FeatureStreamEndpoints
         }
         else
         {
-            replayCursor = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
+            replayCursor = initialLiveCursor;
         }
 
         // Activate drain with buffer-sized grace for replay sessions so concurrent
@@ -287,7 +289,12 @@ internal static partial class FeatureStreamEndpoints
         // clears grace so subsequent overflows are genuine slow consumers.
         // For fresh live sessions (no cursor), onFirstRead is null and the first
         // message flows straight to normal delivery.
-        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, sessionManager, logger, linkedCts.Token,
+        // Default-subscription delivery fence (honua-server#6104): replayCursor is the
+        // durable-store sweep floor; live sends are remembered per cursor rather than
+        // raising a high-water mark, so an out-of-order lower cursor is still delivered.
+        var defaultDelivered = new FeatureStreamDeliveredCursorWindow(replayCursor);
+        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, sessionManager, logger,
+            defaultDelivered,
             onFirstRead: hasReplay
                 ? async (cursor, ct) =>
                 {
@@ -313,7 +320,9 @@ internal static partial class FeatureStreamEndpoints
                             subscriptionFilter,
                             FeatureStreamSessionManager.DefaultSubscriptionId,
                             sessionManager,
-                            defaultSubscriptionGeneration).ConfigureAwait(false);
+                            defaultSubscriptionGeneration,
+                            defaultDelivered).ConfigureAwait(false);
+                        defaultDelivered.AdvanceFloor(cursor);
                         if (cursor > prev)
                         {
                             progress = true;
@@ -347,7 +356,9 @@ internal static partial class FeatureStreamEndpoints
                         subscriptionFilter,
                         FeatureStreamSessionManager.DefaultSubscriptionId,
                         sessionManager,
-                        defaultSubscriptionGeneration).ConfigureAwait(false);
+                        defaultSubscriptionGeneration,
+                        defaultDelivered).ConfigureAwait(false);
+                    defaultDelivered.AdvanceFloor(cursor);
                 }
 
                 foreach (var sub in sessionManager.GetActivePollableSubscriptions(session.SessionId))
@@ -377,7 +388,8 @@ internal static partial class FeatureStreamEndpoints
 
                 return cursor;
             },
-            pollInterval: options.CrossNodeSyncInterval);
+            pollInterval: options.CrossNodeSyncInterval,
+            cancellationToken: linkedCts.Token);
 
         // Receive loop keeps the connection alive and detects client close.
         try
@@ -468,10 +480,11 @@ internal static partial class FeatureStreamEndpoints
         long replayCursor,
         FeatureStreamSessionManager sessionManager,
         ILogger logger,
-        CancellationToken cancellationToken,
-        Func<long, CancellationToken, Task<long>>? onFirstRead = null,
-        Func<long, CancellationToken, Task<long>>? onPoll = null,
-        TimeSpan? pollInterval = null)
+        FeatureStreamDeliveredCursorWindow defaultDelivered,
+        Func<long, CancellationToken, Task<long>>? onFirstRead,
+        Func<long, CancellationToken, Task<long>>? onPoll,
+        TimeSpan? pollInterval,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -565,22 +578,20 @@ internal static partial class FeatureStreamEndpoints
                         FeatureStreamSessionManager.DefaultSubscriptionId,
                         StringComparison.Ordinal);
 
-                    // Default-subscription cursor fence. The writer's replayCursor tracks
-                    // the high-water mark already delivered to the default subscription
-                    // through the initial replay, the convergent handoff loop, the
-                    // onFirstRead store sweep, the onPoll cross-node poll, and (post-fix)
-                    // each successful live send. Send-time dedup
-                    // (TryClaimSubscriptionDelivery) keeps the replay-to-live handoff
-                    // exactly-once for small replay windows, but the recent-event LRU is
-                    // bounded at RecentEventIdCapacity (128). On a high-volume final sweep
-                    // a queued copy can arrive after its dedup key has been evicted, and
-                    // the writer would re-send it. SSE has the same fence at the SSE drain.
+                    // Default-subscription delivery fence. replayCursor is the durable-store
+                    // sweep floor (initial replay, convergent handoff, onFirstRead sweep,
+                    // onPoll cross-node poll); every cursor at or below it was swept. Live
+                    // sends do not raise that floor: they are remembered per cursor in
+                    // defaultDelivered, so a queued frame is dropped only when it was swept
+                    // or already sent live. A lower cursor that arrives after a higher one
+                    // (thread-pool or cross-node reordering) is still delivered
+                    // (honua-server#6104). Send-time dedup (TryClaimSubscriptionDelivery)
+                    // alone is not enough: the recent-event LRU is bounded at
+                    // RecentEventIdCapacity (128). SSE applies the same fence at its drain.
                     // Non-default subscriptions are protected by their pause/unpause/post-
                     // unpause-sweep choreography, so broadcast does not queue frames for
                     // them within their own replay range.
-                    if (replayCursor > 0
-                        && isDefaultSubscription
-                        && message.Envelope.Cursor <= replayCursor)
+                    if (isDefaultSubscription && defaultDelivered.IsHandled(message.Envelope.Cursor))
                     {
                         continue;
                     }
@@ -631,22 +642,17 @@ internal static partial class FeatureStreamEndpoints
                         continue;
                     }
 
-                    // Watermark advance after a successful live send. The bounded
-                    // RecentEventIdCapacity dedup LRU only protects the most recent 128
-                    // entries per session; under high-volume live traffic a delivered
-                    // event id can be evicted before the next durable poll runs, which
-                    // would let the per-subscription store sweep re-emit it. Advancing
-                    // the per-subscription poll watermark here scopes the next durable
-                    // sweep to events strictly past the live-delivered cursor, preserving
-                    // the documented at-least-once contract with the effectively
-                    // exactly-once handoff in the small-window case.
+                    // Record the live send. For the default subscription the cursor is
+                    // remembered (not used as a high-water mark) so the next durable sweep,
+                    // which resumes from the swept floor, skips it while still recovering any
+                    // lower cursor whose live broadcast never arrived (honua-server#6104).
+                    // Non-default subscriptions advance their per-subscription poll
+                    // watermark so the next sweep does not re-emit frames whose dedup keys
+                    // were evicted from the bounded RecentEventIdCapacity LRU.
                     var deliveredCursor = message.Envelope.Cursor;
                     if (isDefaultSubscription)
                     {
-                        if (deliveredCursor > replayCursor)
-                        {
-                            replayCursor = deliveredCursor;
-                        }
+                        defaultDelivered.MarkDelivered(deliveredCursor);
                     }
                     else
                     {

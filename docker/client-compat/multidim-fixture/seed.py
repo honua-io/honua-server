@@ -29,7 +29,7 @@ def main() -> None:
             dataset.Conventions = "CF-1.8"
             dataset.setncattr_string("variables", ["sea_surface_temperature"])
             dataset.crs_wkid = np.int32(4326)
-            dataset.extent = np.asarray([-122.50, 37.70, -122.35, 37.85], dtype=np.float64)
+            dataset.extent = np.asarray([-122.525, 37.675, -122.325, 37.875], dtype=np.float64)
             dataset.primary_variable = "sea_surface_temperature"
             dataset.x_dimension = "longitude"
             dataset.y_dimension = "latitude"
@@ -73,8 +73,8 @@ def main() -> None:
             temperature.coordinates = "time latitude longitude"
             temperature[:] = np.asarray(
                 [
-                    [[10, 11, 12, 13], [14, 15, 16, 17], [18, 19, 20, 21], [22, 23, 24, 25]],
-                    [[35, 34, 33, 32], [31, 30, 29, 28], [27, 26, 25, 24], [23, 22, 21, 20]],
+                    [[-9999, 11, 12, 13], [14, 15, 16, 17], [18, 19, 20, 21], [22, 23, 24, 25]],
+                    [[35, 34, 33, 32], [31, 30, 29, 28], [27, 26, 25, 24], [23, 22, 21, -9999]],
                 ],
                 dtype=np.float32,
             )

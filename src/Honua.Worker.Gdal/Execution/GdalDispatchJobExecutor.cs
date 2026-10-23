@@ -92,6 +92,17 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
                 $"Supported ids: {supported}.");
         }
 
+        // The native worker has no workspace lifecycle provider. Reject old queued
+        // or directly authored controls before hydration/execution rather than
+        // reporting success while silently omitting their output/overwrite contract.
+        if (job.Spec.Parameters.ContainsKey(GdalWorkerParameterKeys.GPServerWorkspace)
+            || job.Spec.Parameters.ContainsKey(GdalWorkerParameterKeys.GPServerOverwriteOutput))
+        {
+            return JobExecutionResult.Failed(
+                "env:workspace and env:overwriteOutput are not supported by the native GDAL worker runtime.") with
+            { IsRetryable = false };
+        }
+
         var staging = _stagingOptions?.CurrentValue;
         if (_outputStore is not null && staging is { Enabled: true })
         {

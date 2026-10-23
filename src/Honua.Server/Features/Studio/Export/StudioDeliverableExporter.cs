@@ -22,15 +22,27 @@ internal sealed class StudioDeliverableExporter : IStudioDeliverableExporter
     private readonly IStudioPackageLifecycleService _lifecycle;
     private readonly ICloudFileStorage _storage;
     private readonly ILogger<StudioDeliverableExporter> _logger;
+    private readonly Func<StudioContentVersion, StudioDeliverableFormat, StudioDeliverableArtifact> _compose;
 
     public StudioDeliverableExporter(
         IStudioPackageLifecycleService lifecycle,
         ICloudFileStorage storage,
         ILogger<StudioDeliverableExporter> logger)
+        : this(lifecycle, storage, logger, StudioDeliverableComposer.Compose)
+    {
+    }
+
+    /// <summary>Test seam allowing a fake compose delegate; production always uses the primary constructor.</summary>
+    internal StudioDeliverableExporter(
+        IStudioPackageLifecycleService lifecycle,
+        ICloudFileStorage storage,
+        ILogger<StudioDeliverableExporter> logger,
+        Func<StudioContentVersion, StudioDeliverableFormat, StudioDeliverableArtifact> compose)
     {
         _lifecycle = lifecycle;
         _storage = storage;
         _logger = logger;
+        _compose = compose;
     }
 
     public async Task<StudioDeliverableExportResult> ExportAsync(
@@ -56,7 +68,16 @@ internal sealed class StudioDeliverableExporter : IStudioDeliverableExporter
                 $"The requested item is a '{version.Envelope.Family}' package and cannot be exported as a '{kind}' deliverable.");
         }
 
-        var artifact = StudioDeliverableComposer.Compose(version, format);
+        StudioDeliverableArtifact artifact;
+        try
+        {
+            artifact = _compose(version, format);
+        }
+        catch (StudioDeliverableRenderException ex)
+        {
+            StudioDeliverableExportLog.DeliverableRenderUnavailable(_logger, kind, itemId, ex.Code, ex.Message);
+            return StudioDeliverableExportResult.CreateRenderUnavailable(ex.Message, ex.Code);
+        }
 
         string? artifactUrl = null;
         if (store)
@@ -141,4 +162,10 @@ internal static partial class StudioDeliverableExportLog
         Level = LogLevel.Warning,
         Message = "Failed to persist Studio deliverable {FileName} to share storage: {Reason}")]
     public static partial void DeliverableStoreFailed(ILogger logger, string fileName, string reason);
+
+    [LoggerMessage(
+        EventId = 7403,
+        Level = LogLevel.Error,
+        Message = "Refused to export Studio {Kind} deliverable for item {ItemId}: {Code} — {Reason}")]
+    public static partial void DeliverableRenderUnavailable(ILogger logger, StudioPackageFamily kind, Guid itemId, string code, string reason);
 }

@@ -83,7 +83,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
         sql.Append(CultureInfo.InvariantCulture, $"{_primaryKeyColumn}::bigint AS {ValidateAndQuoteIdentifier(FieldNames.ObjectId)}");
         sql.Append(CultureInfo.InvariantCulture, $", {geometryExpression} AS {ValidateAndQuoteIdentifier(FeatureQueryEncoding.GeometryColumn)}");
         AppendEncodedBinaryAttributeColumns(sql, query);
-        sql.Append(CultureInfo.InvariantCulture, $" FROM {_qualifiedTableName}");
+        sql.Append(CultureInfo.InvariantCulture, $" FROM {BuildFeatureSource(query, sql)}");
         AppendFilter(sql, query);
         AppendOrderBy(sql, query);
         AppendPagination(sql, query);

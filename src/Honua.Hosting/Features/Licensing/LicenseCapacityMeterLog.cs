@@ -42,4 +42,10 @@ internal static partial class LicenseCapacityMeterLog
         Level = LogLevel.Information,
         Message = "License capacity surge mode changed. enabled={Enabled} reason={Reason}")]
     public static partial void SurgeModeChanged(ILogger logger, bool enabled, string? reason);
+
+    [LoggerMessage(
+        EventId = 10025,
+        Level = LogLevel.Warning,
+        Message = "License capacity heartbeat cycle failed; metering continues fail-open and the heartbeat is retried on the next interval. errorType={ErrorType}")]
+    public static partial void HeartbeatCycleFailed(ILogger logger, string errorType);
 }

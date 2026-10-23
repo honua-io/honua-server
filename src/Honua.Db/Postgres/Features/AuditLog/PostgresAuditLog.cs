@@ -13,8 +13,8 @@ namespace Honua.Db.Postgres.Features.AuditLog;
 /// <summary>
 /// PostgreSQL-backed <see cref="IAuditLog"/> writing to <c>honua.audit_log</c>.
 /// Append-only by design (see migration 033): only INSERTs are issued, and
-/// transient failures are swallowed (logged) so that an audit-write hiccup
-/// never blocks the security-relevant action being audited.
+/// failures are logged and return no receipt. Callers requiring durable audit
+/// evidence must reject or roll back their mutation when no receipt is returned.
 /// </summary>
 internal sealed class PostgresAuditLog : IAuditLog
 {
@@ -43,17 +43,20 @@ internal sealed class PostgresAuditLog : IAuditLog
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresAuditLog> _logger;
     private readonly string _table;
+    private readonly byte[] _chainKey;
 
     public PostgresAuditLog(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresAuditLog> logger,
-        string? schemaName = null)
+        string? schemaName = null,
+        ReadOnlyMemory<byte> chainKey = default)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         ArgumentNullException.ThrowIfNull(logger);
         _connectionProvider = connectionProvider;
         _logger = logger;
         _table = SchemaSearchPath.QualifyTable("audit_log", schemaName);
+        _chainKey = chainKey.ToArray();
     }
 
     public async Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
@@ -70,7 +73,10 @@ internal sealed class PostgresAuditLog : IAuditLog
         var correlationId = Truncate(auditEvent.CorrelationId, MaxCorrelationIdLength);
         var remoteIp = auditEvent.RemoteIp is null ? null : Truncate(auditEvent.RemoteIp, MaxRemoteIpLength);
         var userAgent = auditEvent.UserAgent is null ? null : Truncate(auditEvent.UserAgent, MaxUserAgentLength);
-        var details = auditEvent.Details ?? string.Empty;
+        // Details are not length-capped, but NUL and unpaired surrogates still have to
+        // be removed before the hash is computed. Postgres rejects NUL, and Npgsql's
+        // UTF-8 encoder throws on a lone surrogate, which drops the whole row.
+        var details = SanitizeText(auditEvent.Details);
 
         var sql = $"""
             INSERT INTO {_table} (
@@ -96,8 +102,12 @@ internal sealed class PostgresAuditLog : IAuditLog
             // Serialize chain construction so the latest entry_hash we read is the
             // true tail of the chain. The advisory lock is transaction-scoped and
             // released on commit/rollback.
-            await using var transaction = await connection.Connection
-                .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            // Borrow the actual explicit mutation transaction, regardless of the
+            // connection string's auto-enlistment setting. Otherwise own a local one.
+            await using var ownedTransaction = connection.Transaction is null
+                ? await connection.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+            var transaction = connection.Transaction ?? ownedTransaction;
 
             await using (var lockCommand = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
             {
@@ -107,26 +117,48 @@ internal sealed class PostgresAuditLog : IAuditLog
 
             string? previousHash;
             await using (var tailCommand = new NpgsqlCommand(
-                $"SELECT entry_hash FROM {_table} ORDER BY audit_id DESC LIMIT 1", connection, transaction))
+                $"SELECT entry_hash FROM {_table} WHERE entry_hash IS NOT NULL ORDER BY audit_id DESC LIMIT 1",
+                connection,
+                transaction))
             {
                 var tail = await tailCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                previousHash = tail is null or DBNull ? null : (string)tail;
+                previousHash = tail is null or DBNull ? null : ((string)tail).Trim();
+                if (previousHash is { Length: 0 })
+                {
+                    previousHash = null;
+                }
             }
 
-            var entryHash = AuditEntryHasher.ComputeEntryHash(
-                previousHash,
-                auditEvent.Timestamp,
-                auditEvent.EventType,
-                actor,
-                auditEvent.ActorType,
-                resourceType,
-                resourceId,
-                action,
-                auditEvent.Outcome,
-                correlationId,
-                remoteIp,
-                userAgent,
-                details);
+            var entryHash = _chainKey.Length >= AuditChainKeyMaterial.MinimumLength
+                ? AuditEntryHasher.ComputeEntryMac(
+                    _chainKey,
+                    previousHash,
+                    auditEvent.Timestamp,
+                    auditEvent.EventType,
+                    actor,
+                    auditEvent.ActorType,
+                    resourceType,
+                    resourceId,
+                    action,
+                    auditEvent.Outcome,
+                    correlationId,
+                    remoteIp,
+                    userAgent,
+                    details)
+                : AuditEntryHasher.ComputeEntryHash(
+                    previousHash,
+                    auditEvent.Timestamp,
+                    auditEvent.EventType,
+                    actor,
+                    auditEvent.ActorType,
+                    resourceType,
+                    resourceId,
+                    action,
+                    auditEvent.Outcome,
+                    correlationId,
+                    remoteIp,
+                    userAgent,
+                    details);
 
             await using (var command = new NpgsqlCommand(sql, connection, transaction))
             {
@@ -146,7 +178,10 @@ internal sealed class PostgresAuditLog : IAuditLog
                 command.Parameters.AddWithValue("@entry_hash", entryHash);
 
                 var assignedAuditId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                if (ownedTransaction is not null)
+                {
+                    await ownedTransaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                }
                 return Convert.ToString(assignedAuditId, CultureInfo.InvariantCulture);
             }
         }
@@ -164,9 +199,11 @@ internal sealed class PostgresAuditLog : IAuditLog
         }
     }
 
-    // Truncates by UTF-16 char count (not bytes), appending the ellipsis marker
-    // so the truncation is visible. Exposed to the Postgres test assembly for
-    // direct, Docker-free coverage of the marker/encoding contract.
+    // Scrubs text that PostgreSQL or the UTF-8 encoder cannot store, then truncates
+    // by UTF-16 char count (not bytes), appending the ellipsis marker so the
+    // truncation is visible. Exposed to the Postgres test assembly for direct,
+    // Docker-free coverage of the marker/encoding contract. RecordAsync hashes
+    // these same values, so the chain matches the row.
     internal static string Truncate(string value, int max)
     {
         if (string.IsNullOrEmpty(value))
@@ -174,6 +211,7 @@ internal sealed class PostgresAuditLog : IAuditLog
             return string.Empty;
         }
 
+        value = SanitizeText(value);
         if (value.Length <= max)
         {
             return value;
@@ -181,7 +219,69 @@ internal sealed class PostgresAuditLog : IAuditLog
 
         // Keep room for a single-character marker so the truncation is visible
         // to forensic readers without breaking the column width contract.
-        return string.Concat(value.AsSpan(0, max - TruncationMarker.Length), TruncationMarker);
+        var contentLength = max - TruncationMarker.Length;
+        if (contentLength > 0 && char.IsHighSurrogate(value[contentLength - 1]))
+        {
+            contentLength--;
+        }
+
+        return string.Concat(value.AsSpan(0, contentLength), TruncationMarker);
+    }
+
+    /// <summary>
+    /// Drops U+0000 and unpaired UTF-16 surrogates. Valid surrogate pairs are kept.
+    /// Returns the original instance when the value needs no rewrite.
+    /// </summary>
+    internal static string SanitizeText(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || !NeedsSanitize(value))
+        {
+            return value ?? string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder(value.Length);
+        for (var i = 0; i < value.Length; i++)
+        {
+            var current = value[i];
+            if (current == '\0')
+            {
+                continue;
+            }
+
+            if (char.IsHighSurrogate(current))
+            {
+                if (i + 1 < value.Length && char.IsLowSurrogate(value[i + 1]))
+                {
+                    builder.Append(current);
+                    builder.Append(value[i + 1]);
+                    i++;
+                }
+
+                continue;
+            }
+
+            if (char.IsLowSurrogate(current))
+            {
+                continue;
+            }
+
+            builder.Append(current);
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool NeedsSanitize(string value)
+    {
+        foreach (var current in value)
+        {
+            if (current == '\0' || char.IsSurrogate(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

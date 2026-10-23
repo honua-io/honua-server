@@ -118,7 +118,6 @@ internal static partial class SecureConnectionEndpoints
     private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleTestDraftConnection(
             CreateSecureConnectionRequest request,
-            [FromServices] IConnectionSecretResolver secretResolver,
             [FromServices] IConnectionHealthTester connectionTester,
             [FromServices] IConnectionDriverRegistry driverRegistry,
             [FromServices] SecureConnectionGovernance governance,
@@ -155,10 +154,19 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
+            if (!string.IsNullOrWhiteSpace(request.SecretReference))
+            {
+                var secretReferenceDecision = governance.EvaluateSecretReference(request.SecretReference);
+                if (!secretReferenceDecision.IsPermitted)
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure($"SecretReference: {secretReferenceDecision.Reason}"));
+                }
+            }
+
             // Enforce the host policy before issuing an outbound probe so a non-allowlisted
             // (or reserved-address) destination cannot be reached even at draft-test time.
             var draftUsesSecretReference = !string.IsNullOrWhiteSpace(request.SecretReference);
-            if (governance.IsHostEvaluable(request.Host, draftUsesSecretReference))
+            if (governance.IsHostEvaluable())
             {
                 var hostDecision = await governance.EvaluateHostAsync(request.Host, context.RequestAborted);
                 if (!hostDecision.IsAllowed)
@@ -172,7 +180,7 @@ internal static partial class SecureConnectionEndpoints
                         {
                             Name = request.Name,
                             Host = request.Host,
-                            Port = request.Port,
+                            Port = request.GetEffectivePort(),
                             Provider = request.Provider,
                             UsesSecretReference = draftUsesSecretReference,
                             Reason = hostDecision.Reason
@@ -186,15 +194,23 @@ internal static partial class SecureConnectionEndpoints
             // Provider-aware: build + probe with the engine driver for the requested provider so MySQL / SQL
             // Server / Oracle drafts are tested with the right ADO.NET provider. Falls back to the PostgreSQL
             // builder/tester when no driver is registered for the provider (preserves prior behaviour).
-            var driver = driverRegistry.Find(request.Provider);
+            var driver = driverRegistry.Find(DataProviderNames.Normalize(request.Provider));
 
             string connectionString;
 
             if (!string.IsNullOrWhiteSpace(request.SecretReference))
             {
-                connectionString = await secretResolver.ResolveConnectionStringAsync(
-                    request.SecretReference,
-                    context.RequestAborted);
+                try
+                {
+                    connectionString = await governance.ResolveSecretReferenceAsync(
+                        request.SecretReference,
+                        context.RequestAborted);
+                }
+                catch (RequestSecretReferenceException)
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                        $"SecretReference: {RequestSecretReferenceException.ClientSafeMessage}"));
+                }
             }
             else
             {
@@ -206,18 +222,51 @@ internal static partial class SecureConnectionEndpoints
                 connectionString = driver is not null
                     ? driver.BuildConnectionString(new ConnectionTarget(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
                         parsedSslMode);
+            }
+
+            var validator = context.RequestServices.GetRequiredService<IResolvedConnectionStringValidator>();
+            try
+            {
+                await validator.ValidateConnectionStringAsync(new DataConnection
+                {
+                    Name = request.Name,
+                    Provider = request.Provider,
+                    Host = request.Host ?? DataConnection.SecretReferenceMetadataPlaceholder,
+                    Port = request.GetEffectivePort(),
+                    SslRequired = request.SslRequired
+                }, connectionString, context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                const string refusal = "The resolved connection string does not satisfy the connection security policy.";
+                await governance.RecordAsync(
+                    context,
+                    "connection.test",
+                    AuditOutcome.Denied,
+                    resourceId: null,
+                    new SecureConnectionAuditDetails
+                    {
+                        Name = request.Name,
+                        Host = request.Host,
+                        Port = request.GetEffectivePort(),
+                        Provider = request.Provider,
+                        UsesSecretReference = draftUsesSecretReference,
+                        Reason = refusal
+                    },
+                    context.RequestAborted);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(refusal));
             }
 
             var healthStatus = driver is not null
@@ -390,11 +439,20 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
-            // Enforce the outbound connection host policy before persisting. For an inline
-            // password the host is the connection target; for a secret reference the host is
-            // optional display metadata, so only evaluate it when supplied.
+            if (!string.IsNullOrWhiteSpace(request.SecretReference))
+            {
+                var secretReferenceDecision = governance.EvaluateSecretReference(request.SecretReference);
+                if (!secretReferenceDecision.IsPermitted)
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure($"SecretReference: {secretReferenceDecision.Reason}"));
+                }
+            }
+
+            // Enforce the outbound connection host policy before persisting. While a host policy
+            // is enforced the host is required for every connection, including one that uses a
+            // secret reference.
             var usesSecretReference = !string.IsNullOrWhiteSpace(request.SecretReference);
-            if (governance.IsHostEvaluable(request.Host, usesSecretReference))
+            if (governance.IsHostEvaluable())
             {
                 var hostDecision = await governance.EvaluateHostAsync(request.Host, context.RequestAborted);
                 if (!hostDecision.IsAllowed)
@@ -408,7 +466,7 @@ internal static partial class SecureConnectionEndpoints
                         {
                             Name = request.Name,
                             Host = request.Host,
-                            Port = request.Port,
+                            Port = request.GetEffectivePort(),
                             Provider = request.Provider,
                             UsesSecretReference = usesSecretReference,
                             Reason = hostDecision.Reason
@@ -433,7 +491,7 @@ internal static partial class SecureConnectionEndpoints
                 connection = DataConnection.CreateWithSecretReference(
                     request.Name,
                     string.IsNullOrWhiteSpace(request.Host) ? secretMetadataPlaceholder : request.Host,
-                    request.Port,
+                    request.GetEffectivePort(),
                     string.IsNullOrWhiteSpace(request.DatabaseName) ? secretMetadataPlaceholder : request.DatabaseName,
                     string.IsNullOrWhiteSpace(request.Username) ? secretMetadataPlaceholder : request.Username,
                     request.SecretReference,
@@ -455,18 +513,18 @@ internal static partial class SecureConnectionEndpoints
                 // Microsoft.Data.SqlClient / Oracle) so the stored, encrypted string actually works for this
                 // provider and the existing-connection test can re-probe it. Falls back to the PostgreSQL
                 // builder when no driver is registered for the provider.
-                var createDriver = driverRegistry.Find(request.Provider);
+                var createDriver = driverRegistry.Find(DataProviderNames.Normalize(request.Provider));
                 var connectionString = createDriver is not null
                     ? createDriver.BuildConnectionString(new ConnectionTarget(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
@@ -478,7 +536,7 @@ internal static partial class SecureConnectionEndpoints
                 connection = DataConnection.CreateWithEncryptedCredentials(
                     request.Name,
                     request.Host!,
-                    request.Port,
+                    request.GetEffectivePort(),
                     request.DatabaseName!,
                     request.Username!,
                     encryptedData,
@@ -723,7 +781,7 @@ internal static partial class SecureConnectionEndpoints
             // are not retroactively invalidated by a later policy tightening on unrelated edits.
             var usesSecretReference = !string.IsNullOrWhiteSpace(existing.SecretRef);
             if (!string.Equals(host, existing.Host, StringComparison.Ordinal) &&
-                governance.IsHostEvaluable(host, usesSecretReference))
+                governance.IsHostEvaluable())
             {
                 var hostDecision = await governance.EvaluateHostAsync(host, context.RequestAborted);
                 if (!hostDecision.IsAllowed)

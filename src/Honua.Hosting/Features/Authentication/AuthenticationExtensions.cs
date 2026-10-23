@@ -4,6 +4,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
@@ -98,6 +99,10 @@ public static class AuthenticationExtensions
     {
         services.AddScoped<ApiKeyAuthenticationDependencies>();
 
+        // Live managed-user membership when OIDC is off. AddOidcAuthentication registers
+        // its own transformation later and calls the same revalidation itself.
+        services.TryAddScoped<IClaimsTransformation, ManagedMembershipClaimsTransformation>();
+
         // Required by AdminPermissionAuthorizationHandler to read the request method
         // when authorization is evaluated outside the endpoint resource (#1985).
         services.AddHttpContextAccessor();
@@ -116,13 +121,19 @@ public static class AuthenticationExtensions
         // users behind a feature flag (honua-server#3001).
         services.AddSingleton<IAuthorizationHandler, StudioLifecycleAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, StudioAiProxyAuthorizationHandler>();
-        services.AddSingleton<IAuthorizationMiddlewareResultHandler, StudioLifecycleAuthorizationMiddlewareResultHandler>();
+        // Records the 401/403 outcome of every policy the authorization middleware evaluates —
+        // those denials short-circuit above the audit middleware and are observable nowhere else.
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, HonuaAuthorizationMiddlewareResultHandler>();
+
+        services.AddTransient<ScopedJobAuthenticationDependencies>();
 
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
                 ApiKeyScheme,
-                options => { });
+                options => { })
+            .AddScheme<AuthenticationSchemeOptions, ScopedJobTokenAuthenticationHandler>(
+                ScopedJobAuthentication.Scheme, options => { });
 
         // #2958: the client-certificate scheme is only ever a valid policy scheme
         // reference when the security.mtls experimental capability is enabled — resolved

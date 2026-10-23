@@ -46,6 +46,22 @@ internal static class McpErrorMapper
         public const string Internal = "internal";
     }
 
+    /// <summary>A cancelled transport request never claims tool completion or durable job cancellation.</summary>
+    public static McpJsonRpcError RequestCancelled() => new()
+    {
+        Code = -32800,
+        Message = "Request cancelled before completion.",
+        Data = new McpErrorData { Code = "cancelled" }
+    };
+
+    /// <summary>Refuses new session-bound work when cancellation authority cannot be established.</summary>
+    public static McpJsonRpcError RequestRegistryUnavailable() => new()
+    {
+        Code = JsonRpcServerError,
+        Message = "The active request registry is unavailable.",
+        Data = new McpErrorData { Code = Codes.Unavailable, Retryable = true }
+    };
+
     /// <summary>JSON-RPC 2.0 parse error for malformed JSON payloads.</summary>
     public const int JsonRpcParseError = -32700;
 
@@ -167,6 +183,7 @@ internal static class McpErrorMapper
                 Code = Codes.Unavailable,
                 Retryable = false,
                 MissingDependency = capabilityEx.MissingDependency,
+                Capability = capabilityEx.Capability,
                 Remediation = capabilityEx.Remediation,
                 RemediationRef = capabilityEx.RemediationRef,
             }

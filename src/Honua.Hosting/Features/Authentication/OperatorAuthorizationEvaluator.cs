@@ -55,6 +55,23 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.Allowed();
         }
 
+        // A scoped admin API key (role "scoped-admin-key", not "admin") never has an
+        // operator-RBAC role registered in IRoleStore, so without this it always fell
+        // through to "no operator-eligible roles" and lost every operator-gated read —
+        // including admin:read-only and admin:read+admin:approve keys reading durable
+        // jobs (#4981). Its admin:* grant already authorized the read at the shared
+        // AdminPermissionRequirement layer; honour that same grant here for Read so a
+        // scoped read (or approve, which implies read) key is not double-gated by a
+        // second, unrelated authorization model. Mutating operations stay excluded:
+        // only admin:write/admin:manage confer the "admin" role that isAdmin bypasses.
+        if (request.Operation == OperatorOperation.Read
+            && roleNames.Any(role => string.Equals(role, AdminApiKeyPermission.ScopedAdminRole, StringComparison.OrdinalIgnoreCase))
+            && AdminApiKeyPermission.ResolveAccessLevel(principal) >= AdminApiKeyPermission.AdminAccessLevel.Read)
+        {
+            OperatorAuthorizationLog.ScopedAdminReadBypassed(logger, userId, request.ResourceType, request.Operation);
+            return AccessDecision.Allowed();
+        }
+
         if (request.ResourceType == OperatorResourceType.Workspace)
         {
             switch (request.WorkspaceVisibility)

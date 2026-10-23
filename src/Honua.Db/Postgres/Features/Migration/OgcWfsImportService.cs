@@ -87,6 +87,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             throw new ArgumentException("PageSize must be greater than zero.", nameof(request));
         }
 
+        request = request with { PageSize = OgcWfsImportRequest.ClampPageSize(request.PageSize) };
+
         var stopwatch = Stopwatch.StartNew();
         var jobId = string.IsNullOrWhiteSpace(request.JobId)
             ? Guid.NewGuid().ToString("N")[..8]
@@ -106,7 +108,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                     ServiceUrl = request.ServiceUrl,
                     Version = request.Version,
                     TimeoutSeconds = request.RequestTimeoutSeconds,
-                    AllowUnsafeLocalUrls = request.AllowUnsafeLocalUrls
+                    AllowUnsafeLocalUrls = request.AllowUnsafeLocalUrls,
+                    Username = request.Username,
+                    Password = request.Password
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -137,14 +141,26 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         var version = inventory.Source.Version ?? request.Version ?? "2.0.0";
         var serviceUri = new Uri(request.ServiceUrl, UriKind.Absolute);
-        var selectedResources = SelectResources(inventory, request.FeatureTypeNames);
+        var selection = SelectResources(inventory, request.FeatureTypeNames);
+        var selectedResources = selection.Resources;
+        var topLevelWarnings = new List<string>(selection.Warnings);
+        if (selection.NoneMatched)
+        {
+            return CreateFailureResult(
+                request,
+                jobId,
+                "None of the requested feature types were found in the WFS inventory.",
+                stopwatch.Elapsed,
+                inventory: inventory,
+                warnings: topLevelWarnings);
+        }
 
         var perFeatureType = new List<OgcWfsImportedFeatureType>();
-        var topLevelWarnings = new List<string>();
         var featuresCopied = 0;
         var featuresFailed = 0;
         var imported = 0;
         var skipped = 0;
+        string? ownershipFailure = null;
 
         foreach (var resource in selectedResources)
         {
@@ -212,6 +228,10 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                 // failure is recorded as manual-review so the rest of the selected resources continue
                 // importing instead of aborting the whole run.
                 Log.FeatureTypeImportFailed(_logger, resource.Name, ex);
+                if (ex is ImportTableOwnershipException)
+                {
+                    ownershipFailure = ex.Message;
+                }
                 perFeatureType.Add(new OgcWfsImportedFeatureType
                 {
                     SourceName = resource.Name,
@@ -234,7 +254,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         return new OgcWfsImportResult
         {
-            Success = true,
+            Success = ownershipFailure is null,
+            ErrorMessage = ownershipFailure,
+            ErrorCode = ownershipFailure is null ? null : ImportTableOwnershipException.Code,
             WasDryRun = request.DryRun,
             SourceServiceUrl = safeSourceUrl,
             SourceVersion = version,
@@ -297,7 +319,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         var stagingPromoted = false;
         var overwriteLockAcquired = false;
-        var tableIsPartial = true;
+        var tableIsPartial = false;
 
         async Task RemovePartialTableAsync()
         {
@@ -318,6 +340,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             }
 
             await CreateTableAsync(connection, targetSchema, loadTableName, fields, resource.GeometryType, srid, cancellationToken).ConfigureAwait(false);
+            tableIsPartial = true;
 
             var inserted = 0;
             var failed = 0;
@@ -541,11 +564,15 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         using var response = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+        var payload = await MigrationHttpContentReader
+            .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, timeout.Token)
+            .ConfigureAwait(false);
         try
         {
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
-            return ParseFeatureCollection(document);
+            using var document = JsonDocument.Parse(payload);
+            var page = ParseFeatureCollection(document);
+            OgcWfsImportRequest.EnsurePageWithinRequest(page.Features.Count, request.PageSize);
+            return page;
         }
         catch (JsonException)
         {
@@ -719,7 +746,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         CancellationToken cancellationToken)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE IF NOT EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
         sb.AppendLine("    honua_objectid BIGSERIAL PRIMARY KEY");
 
         foreach (var field in fields)
@@ -736,9 +763,11 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         sb.AppendLine(");");
 
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = sb.ToString();
+        cmd.CommandText = sb.ToString() + ImportTableOwnership.MarkSql(schemaName, tableName);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         Log.TableCreated(_logger, schemaName, tableName);
     }
 
@@ -751,9 +780,14 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
     private static async Task DropTableAsync(NpgsqlConnection connection, string schemaName, string tableName, CancellationToken cancellationToken)
     {
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} CASCADE";
-        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        if (await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, tableName, cancellationToken).ConfigureAwait(false))
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}";
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static string BuildStagingTableName(string tableName)
@@ -808,9 +842,11 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         {
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " +
+            var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, targetTableName, cancellationToken).ConfigureAwait(false);
+            await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTableName, cancellationToken).ConfigureAwait(false);
+            command.CommandText = (targetExists ? $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " : string.Empty) +
                                   $"ALTER TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)} RENAME TO {QuoteIdentifier(targetTableName)}; " +
-                                  $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName + "_geom_idx")} RENAME TO {QuoteIdentifier(targetTableName + "_geom_idx")}";
+                                  $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -834,11 +870,27 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private static async Task CreateSpatialIndexAsync(NpgsqlConnection connection, string schemaName, string tableName, CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(tableName + "_geom_idx")} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(BuildSpatialIndexName(tableName))} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static MigrationInventoryResource[] SelectResources(
+    /// <summary>
+    /// The spatial index name. A plain <c>&lt;table&gt;_geom_idx</c> is truncated to 63 bytes, which for a
+    /// long table name collides with another relation in the schema (for a 63-byte table, with the table
+    /// itself), so <c>CREATE INDEX IF NOT EXISTS</c> would silently skip the index. Table names up to 54
+    /// bytes keep <c>&lt;table&gt;_geom_idx</c> unchanged; longer ones are shortened and disambiguated by a
+    /// hash of the full name, so two targets sharing a prefix still get their own index. Staging creation
+    /// and promotion both derive the name this way.
+    /// </summary>
+    internal static string BuildSpatialIndexName(string tableName)
+        => PostgresDerivedRelationNames.BuildUnique(tableName, "geom_idx");
+
+    private readonly record struct ResourceSelection(
+        MigrationInventoryResource[] Resources,
+        IReadOnlyList<string> Warnings,
+        bool NoneMatched);
+
+    private static ResourceSelection SelectResources(
         MigrationSourceInventoryArtifact inventory,
         string[]? requestedFeatureTypes)
     {
@@ -848,11 +900,24 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         if (requestedFeatureTypes == null || requestedFeatureTypes.Length == 0)
         {
-            return allFeatureTypes;
+            return new ResourceSelection(allFeatureTypes, [], false);
         }
 
         var requested = new HashSet<string>(requestedFeatureTypes, StringComparer.OrdinalIgnoreCase);
-        return allFeatureTypes.Where(r => requested.Contains(r.Name)).ToArray();
+        var selected = allFeatureTypes.Where(r => requested.Contains(r.Name)).ToArray();
+        var matched = new HashSet<string>(selected.Select(static resource => resource.Name), StringComparer.OrdinalIgnoreCase);
+        var warnings = new List<string>();
+        foreach (var name in requestedFeatureTypes)
+        {
+            if (string.IsNullOrWhiteSpace(name) || matched.Contains(name))
+            {
+                continue;
+            }
+
+            warnings.Add($"Requested feature type '{name}' was not found in the WFS inventory.");
+        }
+
+        return new ResourceSelection(selected, warnings, selected.Length == 0);
     }
 
     private static bool IsUnsupported(MigrationInventoryResource resource)
@@ -881,18 +946,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     }
 
     private string ResolveTargetSchema(string? requestedSchema)
-    {
-        var schema = string.IsNullOrWhiteSpace(requestedSchema)
-            ? _schemaConfiguration.DefaultOperationalSchema
-            : requestedSchema.Trim();
-
-        if (!SchemaSearchPath.IsValidIdentifier(schema))
-        {
-            throw new ArgumentException("Target schema contains invalid characters.", nameof(requestedSchema));
-        }
-
-        return schema;
-    }
+        => _schemaConfiguration.ResolveImportTargetSchema(requestedSchema);
 
     private static Uri BuildGetFeatureUrl(Uri serviceUri, string version, string featureTypeName, int startIndex, int pageSize)
     {
@@ -1078,6 +1132,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private static string ToSafeFailureReason(Exception ex)
         => ex switch
         {
+            ImportTableOwnershipException => ex.Message,
             HttpRequestException => "WFS endpoint could not be reached or returned an unsupported response.",
             TaskCanceledException => "WFS request timed out.",
             JsonException => "WFS response could not be parsed.",
@@ -1091,7 +1146,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         string jobId,
         string errorMessage,
         TimeSpan duration,
-        MigrationSourceInventoryArtifact? inventory = null)
+        MigrationSourceInventoryArtifact? inventory = null,
+        IReadOnlyList<string>? warnings = null)
     {
         var safeSourceUrl = ToSafeSourceUrl(request.ServiceUrl);
         inventory ??= new MigrationSourceInventoryArtifact
@@ -1129,7 +1185,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             SourceServiceUrl = safeSourceUrl,
             ErrorMessage = errorMessage,
             FeatureTypes = [],
-            Warnings = [errorMessage],
+            Warnings = warnings is { Count: > 0 } ? [errorMessage, .. warnings] : [errorMessage],
             Manifest = manifest,
             ParityEvidence = MigrationParityEvidenceGenerator.Generate(inventory, manifest),
             Duration = duration

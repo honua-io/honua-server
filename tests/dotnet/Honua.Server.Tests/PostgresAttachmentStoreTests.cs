@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using DbUp.ScriptProviders;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
@@ -13,11 +15,14 @@ using Honua.Infrastructure.Security;
 using Honua.Server.Tests.Infrastructure;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Npgsql;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -25,6 +30,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for PostgresAttachmentStore using real PostgreSQL database.
 /// </summary>
+[Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
 public class PostgresAttachmentStoreTests : IAsyncLifetime
 {
@@ -66,25 +72,21 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             connectionProvider,
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
-            _schemaName);
+            _schemaName,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
 
-        // Create test table structure
-        await _fixture.ExecuteAsync($"""
-            CREATE TABLE {_schemaName}.attachments (
-                id BIGSERIAL PRIMARY KEY,
-                feature_id BIGINT NOT NULL,
-                layer_id INT NOT NULL,
-                filename TEXT NOT NULL,
-                content_type TEXT NOT NULL,
-                size BIGINT NOT NULL CHECK (size >= 0),
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                storage_path TEXT NOT NULL,
-                keywords TEXT
-            );
-
-            CREATE INDEX idx_attachments_feature_layer ON {_schemaName}.attachments(layer_id, feature_id);
-            CREATE INDEX idx_attachments_created_at ON {_schemaName}.attachments(created_at);
-            """);
+        // Use the exact production attachment migrations instead of an incomplete
+        // hand-authored import shape. The schema remains isolated per test.
+        var contract = Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!;
+        var assembly = typeof(Program).Assembly;
+        var scripts = new AttachmentSchemaScriptProvider(
+            new EmbeddedScriptProvider(assembly,
+                name => name == contract.CreateMigration || name == contract.ImportMigration),
+            _schemaName, assembly, contract);
+        foreach (var script in scripts.GetScripts(null!))
+        {
+            await _fixture.ExecuteAsync(script.Contents);
+        }
 
         _output.WriteLine($"Created isolated schema: {_schemaName}");
         _output.WriteLine($"Created temp storage: {_tempStoragePath}");
@@ -223,6 +225,21 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Equal(original.Size, result.Size);
         Assert.Equal(original.StoragePath, result.StoragePath);
         Assert.Equal(original.CreatedAt, result.CreatedAt);
+
+        // #4404: asserting only on the returned value proves the method's return path, not
+        // that the row was written. Re-read it.
+        var persisted = await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id);
+        Assert.NotNull(persisted);
+        if (persisted is not { } persistedRow)
+        {
+            throw new InvalidOperationException("GetAsync should have returned the updated attachment.");
+        }
+
+        Assert.Equal(updated.Filename, persistedRow.Filename);
+        Assert.Equal(updated.ContentType, persistedRow.ContentType);
+        Assert.Equal(updated.Keywords, persistedRow.Keywords);
+        Assert.Equal(original.Size, persistedRow.Size);
+        Assert.Equal(original.StoragePath, persistedRow.StoragePath);
     }
 
     [Theory]
@@ -374,8 +391,14 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Null(result);
     }
 
+    /// <summary>
+    /// <c>CreateAsync</c> is the metadata half of the two-step write, so it is expected to
+    /// succeed for a storage path that no object backs. The name now says so: this is not
+    /// evidence that an attachment round-trips, and the assertions below pin the dangling
+    /// state explicitly so nobody reads it as one (honua-server#4404).
+    /// </summary>
     [Fact]
-    public async Task CreateAsync_WithMetadata_CreatesAttachmentRecord()
+    public async Task CreateAsync_WithMetadataOnly_CreatesRowPointingAtNoStoredObject()
     {
         // Arrange
         var attachment = Attachment.CreateForUpload(
@@ -398,6 +421,399 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Equal(attachment.Size, created.Size);
         Assert.Equal(attachment.StoragePath, created.StoragePath);
         Assert.Equal(attachment.Keywords, created.Keywords);
+
+        // The row is deliberately dangling: no object was ever uploaded for it. Pin that,
+        // so this test cannot be miscounted as round-trip evidence.
+        Assert.False(await _fileStorage.ExistsAsync(created.StoragePath));
+        var download = await _attachmentStore.DownloadAsync(TestLayerId, TestFeatureId, created.Id);
+        Assert.Null(download);
+    }
+
+    /// <summary>
+    /// The upload path writes the object first and the metadata row second, with no shared
+    /// transaction. When the insert fails the compensating delete must remove the object it
+    /// already wrote, or the deployment accumulates unreachable blobs nobody can enumerate.
+    /// Before this test every compensating <c>catch</c> block in the store had zero coverage
+    /// (honua-server#4404).
+    /// </summary>
+    [Fact]
+    public async Task UploadAsync_WhenMetadataInsertFails_RemovesTheObjectItAlreadyUploaded()
+    {
+        // Reject the metadata INSERT in the valid owned family after real object upload.
+        // A missing configured schema can legitimately resolve to a legacy family.
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schemaName}.attachments ADD CONSTRAINT ck_test_metadata_insert CHECK (filename <> 'orphan.txt');");
+        var brokenStore = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+
+        var objectsBefore = await ListStoredObjectIdsAsync();
+
+        await using var stream = new MemoryStream("orphan candidate"u8.ToArray());
+        var error = await Assert.ThrowsAsync<PostgresException>(() => brokenStore.UploadAsync(
+            TestLayerId, TestFeatureId, "orphan.txt", "text/plain", stream));
+        Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
+        Assert.Equal("ck_test_metadata_insert", error.ConstraintName);
+
+        var objectsAfter = await ListStoredObjectIdsAsync();
+        Assert.Equal(objectsBefore, objectsAfter);
+
+        // And no row was created in the real table either.
+        var rows = await _attachmentStore.ListAsync(TestLayerId, TestFeatureId);
+        Assert.DoesNotContain(rows, attachment => attachment.Filename == "orphan.txt");
+    }
+
+    /// <summary>
+    /// When the compensating delete fails too, the object is live and no row will ever
+    /// reference it. That divergence must be recorded so an operator can enumerate and
+    /// reconcile it — previously it was swallowed into a warning log line
+    /// (honua-server#4404).
+    /// </summary>
+    [Fact]
+    public async Task UploadAsync_WhenInsertAndCompensatingDeleteBothFail_RecordsAnOrphan()
+    {
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schemaName}.attachments ADD CONSTRAINT ck_test_metadata_insert CHECK (filename <> 'unreachable.txt');");
+        var ledger = new RecordingOrphanLedger();
+        var storage = new DeleteFailingFileStorage(_fileStorage);
+        var brokenStore = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            storage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+
+        await using var stream = new MemoryStream("unreachable object"u8.ToArray());
+        var error = await Assert.ThrowsAsync<PostgresException>(() => brokenStore.UploadAsync(
+            TestLayerId, TestFeatureId, "unreachable.txt", "text/plain", stream));
+        Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
+        Assert.Equal("ck_test_metadata_insert", error.ConstraintName);
+
+        var orphan = Assert.Single(ledger.Orphans);
+        Assert.Equal(AttachmentOrphanKind.ObjectWithoutMetadata, orphan.Kind);
+        Assert.Equal(TestLayerId, orphan.LayerId);
+        Assert.Equal(TestFeatureId, orphan.FeatureId);
+        Assert.NotEmpty(orphan.StoragePath);
+
+        // The record must name the object that actually leaked, so reconciliation is possible.
+        Assert.Contains(orphan.StoragePath, storage.AttemptedDeletes);
+        Assert.True(await _fileStorage.ExistsAsync(orphan.StoragePath));
+
+        // Clean up the object the store could not.
+        await _fileStorage.DeleteAsync(orphan.StoragePath);
+    }
+
+    /// <summary>
+    /// <c>DeleteAsync</c> removes the committed row first and then the object. A storage
+    /// failure after that commit leaves an object nothing references; the caller still gets
+    /// <c>true</c> (the row really is gone), so the leak has to be surfaced through the
+    /// ledger rather than only logged (honua-server#4404).
+    /// </summary>
+    [Fact]
+    public async Task DeleteAsync_WhenStorageDeleteFails_SurfacesTheUndeletedObject()
+    {
+        var attachment = await CreateTestAttachment("delete-failure.txt");
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        var ledger = new RecordingOrphanLedger();
+        var storage = new DeleteFailingFileStorage(_fileStorage);
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            storage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+
+        var deleted = await store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id);
+
+        Assert.True(deleted);
+        Assert.Null(await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, attachment.Id));
+
+        var orphan = Assert.Single(ledger.Orphans);
+        Assert.Equal(AttachmentOrphanKind.UndeletedObject, orphan.Kind);
+        Assert.Equal(attachment.StoragePath, orphan.StoragePath);
+        Assert.Equal(TestLayerId, orphan.LayerId);
+        Assert.Equal(TestFeatureId, orphan.FeatureId);
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        await _fileStorage.DeleteAsync(attachment.StoragePath);
+    }
+
+    /// <summary>
+    /// A successful delete must not report an orphan. Without this the ledger assertions
+    /// above would also pass for an implementation that recorded on every delete.
+    /// </summary>
+    [Fact]
+    public async Task DeleteAsync_WhenStorageDeleteSucceeds_RecordsNoOrphan()
+    {
+        var ledger = new RecordingOrphanLedger();
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+
+        var attachment = await CreateTestAttachment("clean-delete.txt");
+
+        Assert.True(await store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id));
+
+        Assert.Empty(ledger.Orphans);
+        Assert.False(await _fileStorage.ExistsAsync(attachment.StoragePath));
+    }
+
+    /// <summary>
+    /// <c>ICloudFileStorage.DeleteAsync</c> defines <c>false</c> as "file was not found", so a
+    /// row whose object had already been removed is a fully reconciled delete, not an orphan.
+    /// Reporting one here would put a false positive on the counter operators alert on
+    /// (honua-server#4468).
+    /// </summary>
+    [Fact]
+    public async Task DeleteAsync_WhenStorageObjectIsAlreadyGone_RecordsNoOrphan()
+    {
+        var ledger = new RecordingOrphanLedger();
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+
+        var attachment = await CreateTestAttachment("already-gone.txt");
+
+        // Remove the object behind the store's back, so the real storage answers the store's
+        // delete with false rather than a simulated one.
+        Assert.True(await _fileStorage.DeleteAsync(attachment.StoragePath));
+        Assert.False(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        Assert.True(await store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id));
+
+        Assert.Empty(ledger.Orphans);
+        Assert.Null(await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, attachment.Id));
+    }
+
+    /// <summary>
+    /// The metadata row is committed away before storage deletion begins, so a caller
+    /// disconnect or timeout during <c>DeleteAsync</c> leaks the object just as a storage
+    /// outage does. The cancellation must be recorded before it propagates
+    /// (honua-server#4468).
+    /// </summary>
+    [Fact]
+    public async Task DeleteAsync_WhenStorageDeleteIsCanceled_RecordsTheUndeletedObject()
+    {
+        var attachment = await CreateTestAttachment("canceled-delete.txt");
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        var ledger = new RecordingOrphanLedger();
+        using var cancellation = new CancellationTokenSource();
+        var storage = new DeleteFailingFileStorage(
+            _fileStorage,
+            (_, _) =>
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            });
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            storage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            orphanLedger: ledger,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id, cancellation.Token));
+
+        // The row is gone whether or not the caller waited for the answer, so the object is
+        // now unreachable and has to be enumerable for reconciliation.
+        Assert.Null(await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, attachment.Id));
+
+        var orphan = Assert.Single(ledger.Orphans);
+        Assert.Equal(AttachmentOrphanKind.UndeletedObject, orphan.Kind);
+        Assert.Equal(attachment.StoragePath, orphan.StoragePath);
+        Assert.Equal(TestLayerId, orphan.LayerId);
+        Assert.Equal(TestFeatureId, orphan.FeatureId);
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        await _fileStorage.DeleteAsync(attachment.StoragePath);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task UploadAsync_ConcurrentUploadsAtLimitMinusOne_DoesNotExceedCount()
+    {
+        const int limit = 3;
+        const long featureId = 990613;
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            _schemaName,
+            attachmentLimits: new AttachmentLimits
+            {
+                MaxAttachmentsPerFeature = limit,
+                MaxAttachmentSize = 1024 * 1024,
+                MaxTotalAttachmentSize = 50L * 1024 * 1024
+            },
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+
+        for (var index = 0; index < limit - 1; index++)
+        {
+            await using var seed = new MemoryStream("seed"u8.ToArray());
+            await store.UploadAsync(TestLayerId, featureId, $"seed-{index}.txt", "text/plain", seed);
+        }
+
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 10).Select(async index =>
+        {
+            try
+            {
+                await using var stream = new MemoryStream("concurrent"u8.ToArray());
+                await store.UploadAsync(TestLayerId, featureId, $"concurrent-{index}.txt", "text/plain", stream);
+                return true;
+            }
+            catch (ValidationException)
+            {
+                return false;
+            }
+        }));
+
+        Assert.Equal(1, outcomes.Count(succeeded => succeeded));
+        var stored = await store.ListAsync(TestLayerId, featureId);
+        Assert.True(stored.Length <= limit);
+        Assert.Equal(limit, stored.Length);
+    }
+
+    private async Task<HashSet<string>> ListStoredObjectIdsAsync()
+    {
+        var files = await _fileStorage.ListFilesAsync();
+        return files.Select(file => file.FileId).ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>Captures every orphan the store reports, for assertion.</summary>
+    private sealed class RecordingOrphanLedger : IAttachmentOrphanLedger
+    {
+        private readonly List<AttachmentOrphan> _orphans = [];
+
+        public IReadOnlyList<AttachmentOrphan> Orphans
+        {
+            get
+            {
+                lock (_orphans)
+                {
+                    return _orphans.ToArray();
+                }
+            }
+        }
+
+        public ValueTask RecordAsync(AttachmentOrphan orphan, CancellationToken cancellationToken = default)
+        {
+            lock (_orphans)
+            {
+                _orphans.Add(orphan);
+            }
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Passes every call through to the real storage except <c>DeleteAsync</c>, which is
+    /// answered by <paramref name="onDelete"/> — by default a storage outage, the failure
+    /// that turns a compensating delete into a leak.
+    /// </summary>
+    private sealed class DeleteFailingFileStorage(
+        ICloudFileStorage inner,
+        Func<string, CancellationToken, Task<bool>>? onDelete = null) : ICloudFileStorage
+    {
+        private readonly List<string> _attemptedDeletes = [];
+
+        private readonly Func<string, CancellationToken, Task<bool>> _onDelete =
+            onDelete ?? ((fileId, _) => throw new IOException($"Simulated storage outage deleting '{fileId}'."));
+
+        public IReadOnlyList<string> AttemptedDeletes
+        {
+            get
+            {
+                lock (_attemptedDeletes)
+                {
+                    return _attemptedDeletes.ToArray();
+                }
+            }
+        }
+
+        public CloudStorageProvider Provider => inner.Provider;
+
+        public Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
+        {
+            lock (_attemptedDeletes)
+            {
+                _attemptedDeletes.Add(fileId);
+            }
+
+            return _onDelete(fileId, cancellationToken);
+        }
+
+        public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+            => inner.UploadAsync(request, cancellationToken);
+
+        public Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default)
+            => inner.UploadAsync(request, cancellationToken);
+
+        public Task<UploadProgress?> GetUploadProgressAsync(string uploadId, CancellationToken cancellationToken = default)
+            => inner.GetUploadProgressAsync(uploadId, cancellationToken);
+
+        public Task<bool> CancelUploadAsync(string uploadId, CancellationToken cancellationToken = default)
+            => inner.CancelUploadAsync(uploadId, cancellationToken);
+
+        public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
+            => inner.GetActiveUploadsAsync(cancellationToken);
+
+        public Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+            => inner.DownloadAsync(fileId, cancellationToken);
+
+        public Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
+            => inner.DownloadBytesAsync(fileId, cancellationToken);
+
+        public Task<BatchUploadResult> UploadBatchAsync(BatchUploadRequest request, CancellationToken cancellationToken = default)
+            => inner.UploadBatchAsync(request, cancellationToken);
+
+        public Task<int> DeleteBatchAsync(string batchId, CancellationToken cancellationToken = default)
+            => inner.DeleteBatchAsync(batchId, cancellationToken);
+
+        public Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
+            => inner.GetMetadataAsync(fileId, cancellationToken);
+
+        public Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
+            => inner.ExistsAsync(fileId, cancellationToken);
+
+        public Task<IReadOnlyList<CloudFile>> ListFilesAsync(
+            string? folder = null,
+            int maxResults = 1000,
+            bool includeMetadata = true,
+            CancellationToken cancellationToken = default)
+            => inner.ListFilesAsync(folder, maxResults, includeMetadata, cancellationToken);
+
+        public Task<string?> GetPresignedUrlAsync(
+            string fileId,
+            TimeSpan? expiresIn = null,
+            CancellationToken cancellationToken = default)
+            => inner.GetPresignedUrlAsync(fileId, expiresIn, cancellationToken);
+
+        public Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
+            string fileName,
+            string contentType,
+            TimeSpan? expiresIn = null,
+            string? folder = null,
+            CancellationToken cancellationToken = default)
+            => inner.GetPresignedUploadUrlAsync(fileName, contentType, expiresIn, folder, cancellationToken);
+
+        public Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
+            => inner.CleanupExpiredFilesAsync(cancellationToken);
     }
 
     private async Task<Attachment> CreateTestAttachment(string filename = "test.txt", string contentType = "text/plain", long featureId = TestFeatureId)

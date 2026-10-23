@@ -83,6 +83,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         payload.TokenType.Should().Be("Bearer");
         payload.Username.Should().Be("named.user@example.com");
         payload.Ssl.Should().BeTrue();
+
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]
@@ -113,6 +117,58 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("sub").GetString().Should().Be("named.user@example.com");
         doc.RootElement.GetProperty("username").GetString().Should().Be("named.user@example.com");
+    }
+
+    [IntegrationTheory]
+    [InlineData("http://127.0.0.1:7070/", true)]
+    [InlineData("http://[::1]:7070/", true)]
+    [InlineData("honua-native://oauth/callback", true)]
+    [InlineData(RedirectUri, false)]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/token")]
+    [Endpoint("GET /sharing/rest/oauth2/userinfo")]
+    public async Task OAuthTokens_AuthorizationCodeAndRotatedRefresh_PreserveNativeOrBrowserBinding(string redirectUri, bool nativeClient)
+    {
+        const string verifier = "native-client-pkce-verifier-0123456789-abcdefghijklmnopqrstuvwxyz";
+        var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var code = await SeedAuthorizationCodeAsync(challenge, "S256", redirectUri);
+        using var client = _fixture.CreateClient();
+        using var exchange = await PostFormAsync(client,
+            ("grant_type", "authorization_code"), ("code", code), ("redirect_uri", redirectUri),
+            ("client_id", ClientId), ("code_verifier", verifier));
+        exchange.StatusCode.Should().Be(HttpStatusCode.OK, await exchange.Content.ReadAsStringAsync());
+        var tokens = await ReadTokenAsync(exchange);
+        for (var iteration = 0; iteration < 3; iteration++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/sharing/rest/oauth2/userinfo?f=json");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+            using var userInfo = await client.SendAsync(request);
+            userInfo.StatusCode.Should().Be(nativeClient ? HttpStatusCode.OK : HttpStatusCode.Unauthorized,
+                await userInfo.Content.ReadAsStringAsync());
+            if (nativeClient)
+            {
+                using var document = JsonDocument.Parse(await userInfo.Content.ReadAsStringAsync());
+                document.RootElement.GetProperty("sub").GetString().Should().Be("named.user@example.com");
+            }
+            else
+            {
+                using var browserRequest = new HttpRequestMessage(HttpMethod.Get, "/sharing/rest/oauth2/userinfo?f=json");
+                browserRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+                browserRequest.Headers.Referrer = new Uri(redirectUri);
+                using var browserResponse = await client.SendAsync(browserRequest);
+                browserResponse.StatusCode.Should().Be(HttpStatusCode.OK, await browserResponse.Content.ReadAsStringAsync());
+            }
+            if (iteration < 2)
+            {
+                using var refresh = await PostFormAsync(client,
+                    ("grant_type", "refresh_token"), ("refresh_token", tokens.RefreshToken!), ("client_id", ClientId),
+                    ("redirect_uri", "http://127.0.0.1:9876/untrusted-refresh-redirect"));
+                refresh.StatusCode.Should().Be(HttpStatusCode.OK, await refresh.Content.ReadAsStringAsync());
+                var refreshed = await ReadTokenAsync(refresh);
+                refreshed.RefreshToken.Should().NotBe(tokens.RefreshToken);
+                tokens = refreshed;
+            }
+        }
     }
 
     [IntegrationTest]
@@ -179,6 +235,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         var refreshedPayload = await ReadTokenAsync(refreshed);
         refreshedPayload.AccessToken.Should().NotBeNullOrWhiteSpace();
         refreshedPayload.ExpiresIn.Should().BeGreaterThan(0);
+
+        refreshed.Headers.CacheControl.Should().NotBeNull();
+        refreshed.Headers.CacheControl!.NoStore.Should().BeTrue();
+        refreshed.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]
@@ -308,6 +368,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var error = await ReadErrorAsync(response);
         error.Error.Should().Be("unsupported_grant_type");
+
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]
@@ -322,9 +386,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         // does NOT populate Connection.RemoteIpAddress, so the endpoint correctly
         // returns invalid_request here rather than minting an unbound token. This
         // proves the flag is honored and the request reaches the IP-binding step;
-        // the full happy path (valid secret + resolvable IP -> opaque IP-bound token
-        // carrying the key's permissions, no refresh token) is covered without a
-        // TestServer by PortalOAuthClientCredentialsTests.
+        // the full happy path (valid full-admin secret + resolvable IP -> opaque
+        // IP-bound admin token, no refresh token) is covered without a TestServer by
+        // PortalOAuthClientCredentialsTests. Constrained keys are refused before the
+        // binding step (SharingManagedKeyAuthorityTests, #4577).
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -340,7 +405,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
             var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
             var created = await apiKeyStore.CreateAsync(
                 name: "etl-worker",
-                permissions: ["services:read"],
+                permissions: ["admin:*"],
                 expiresAt: null,
                 createdBy: "test",
                 CancellationToken.None);
@@ -738,7 +803,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         return await client.PostAsync("/sharing/rest/oauth2/revoke", content);
     }
 
-    private async Task<string> SeedAuthorizationCodeAsync(string? codeChallenge, string? method)
+    private async Task<string> SeedAuthorizationCodeAsync(string? codeChallenge, string? method, string redirectUri = RedirectUri)
     {
         // PortalOAuthStore is the shared singleton the endpoint resolves, so a code
         // seeded here is the same one the token service consumes.
@@ -747,7 +812,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         var record = new PortalOAuthAuthorizationCode
         {
             ClientId = ClientId,
-            RedirectUri = RedirectUri,
+            RedirectUri = redirectUri,
             CodeChallenge = codeChallenge,
             CodeChallengeMethod = method,
             ExpirationMinutes = null,

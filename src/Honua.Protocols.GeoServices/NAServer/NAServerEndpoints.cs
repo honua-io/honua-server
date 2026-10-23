@@ -3,8 +3,10 @@
 
 using System.Diagnostics;
 using System.Text.Json;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.GPServer;
+using Honua.Routing.Features.Routing.Providers;
 using Honua.Protocols.GeoServices.NAServer.Models;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -38,6 +40,7 @@ internal static class NAServerEndpoints
     public static IEndpointRouteBuilder MapNAServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+        GPServerEndpoints.MapNAServerAsyncRoutingEndpoints(endpoints);
 
         // ANONYMOUS by design (#1144, #1266): NAServer Route/ServiceArea solves are
         // stateless geospatial computations over a fixed routing capability — not a
@@ -65,6 +68,17 @@ internal static class NAServerEndpoints
             .WithDescription("Solves a multi-stop route through the shared routing pipeline and returns an Esri route feature set.")
             .WithTags("NAServer")
             .Produces<NAServerRouteSolveResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{RouteBase}/ServiceArea/solveServiceArea",
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleServiceArea(context, routing, options.Value, ct))
+            .WithDisplayName("NAServer Service Area Solve (GET)")
+            .WithName("NAServerServiceAreaSolveGet")
+            .WithSummary("Solve a NAServer service area from query parameters")
+            .WithDescription("Solves service-area (isochrone) polygons from query-string parameters through the shared routing pipeline and returns an Esri saPolygons feature set.")
+            .WithTags("NAServer")
+            .Produces<NAServerServiceAreaResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/ServiceArea/solveServiceArea",
@@ -113,7 +127,157 @@ internal static class NAServerEndpoints
             .Produces<NAServerLocationAllocationResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
+        // Anonymous stateless computation, matching Route/solve and the GPServer alias.
+        // Both URLs use one adapter, so format, option and provider gates are identical.
+        endpoints.MapMethods($"{RouteBase}/FindRoutes/execute", ["GET", "POST"],
+                static (HttpContext context, CancellationToken ct) => FindRoutesWebTool.ExecuteAsync(context, ct))
+            .WithDisplayName("NAServer FindRoutes Execute")
+            .WithName("NAServerFindRoutesExecute")
+            .WithSummary("Execute the ordered-stop, minutes-only FindRoutes tool")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .AllowAnonymous();
+
+        endpoints.MapMethods($"{RouteBase}/GenerateServiceAreas/execute", ["GET", "POST"],
+                static (HttpContext context, CancellationToken ct) => GenerateServiceAreasWebTool.ExecuteAsync(context, ct))
+            .WithDisplayName("NAServer Generate Service Areas Execute")
+            .WithName("NAServerGenerateServiceAreasExecute")
+            .WithSummary("Execute the synchronous, minutes-only service-area tool")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .AllowAnonymous();
+
+        // Metadata resources (#5035): the service resource and the per-solver analysis
+        // layer resources ArcGIS Pro and arcpy.nax read before they will bind a
+        // stand-alone routing service. They describe the same provider the solves run
+        // on and carry no per-tenant data, so they are anonymous for the same reason.
+        endpoints.MapMethods(RouteBase, ["GET", "POST"],
+                static (HttpContext context, IRoutingProvider routing, CancellationToken ct)
+                    => HandleServiceResource(context, routing, ct))
+            .WithDisplayName("NAServer Service Resource")
+            .WithName("NAServerServiceResource")
+            .WithSummary("Describe the NAServer service")
+            .WithDescription("Lists the analysis layers (Route, ServiceArea, ClosestFacility, ODCostMatrix, LocationAllocation) the configured routing provider supports, in the Esri network service resource shape.")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .AllowAnonymous();
+
+        endpoints.MapMethods($"{RouteBase}/{{layerName}}", ["GET", "POST"],
+                static (HttpContext context, IRoutingProvider routing, INetworkDatasetResolver datasets, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleLayerResource(context, routing, datasets, options.Value, ct))
+            .WithDisplayName("NAServer Analysis Layer Resource")
+            .WithName("NAServerLayerResource")
+            .WithSummary("Describe an NAServer analysis layer")
+            .WithDescription("Returns the Esri network analysis layer resource for a supported solver: impedance, travel modes, network dataset attributes, input classes and service limits.")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .Produces(StatusCodes.Status404NotFound, contentType: JsonContentType)
+            .AllowAnonymous();
+
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleServiceResource(
+        HttpContext context,
+        IRoutingProvider routing,
+        CancellationToken ct)
+    {
+        EnrichActivity("ServiceResource");
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var formatError = ValidateJsonFormat(context, parameters);
+        if (formatError is not null)
+        {
+            return formatError;
+        }
+
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty;
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        var document = NAServerMetadata.BuildServiceResource(serviceId, capabilities);
+        return Results.Text(
+            NAServerMetadata.Serialize(document, IsPrettyJson(context, parameters)),
+            JsonContentType);
+    }
+
+    private static async Task<IResult> HandleLayerResource(
+        HttpContext context,
+        IRoutingProvider routing,
+        INetworkDatasetResolver datasets,
+        RoutingConfiguration configuration,
+        CancellationToken ct)
+    {
+        EnrichActivity("LayerResource");
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var formatError = ValidateJsonFormat(context, parameters);
+        if (formatError is not null)
+        {
+            return formatError;
+        }
+
+        var layerName = context.Request.RouteValues["layerName"]?.ToString() ?? string.Empty;
+
+        // Esri's ready-to-use routing tools are addressed against the NAServer URL, not
+        // the utility GPServer: arcpy.nax composes "{naServerUrl}/FindRoutes" and refuses
+        // the stand-alone binding when it 404s, with "Portal ... is not configured with
+        // the 'Route' web tool". Publishing the task on the GPServer alone was not
+        // enough - measured, the client never asks there for it (#5192). Same document
+        // either way, so the two spellings cannot disagree.
+        if (NAServerMetadata.IsRoutingWebTool(layerName))
+        {
+            if (RoutingAsyncWebTools.IsTask(layerName))
+            {
+                context.Request.RouteValues["taskName"] = layerName;
+                return await GPServerEndpoints.HandleTaskInfo(context, ct).ConfigureAwait(false);
+            }
+            return Results.Text(
+                NAServerMetadata.Serialize(
+                    NAServerMetadata.BuildUtilityTaskInfo(layerName), IsPrettyJson(context, parameters)),
+                JsonContentType);
+        }
+
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        var dataset = await ResolveDatasetAsync(datasets, configuration, ct).ConfigureAwait(false);
+        var document = NAServerMetadata.BuildLayerResource(layerName, capabilities, dataset, configuration);
+        if (document is null)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateNotFound(
+                    context,
+                    NAServerMetadata.IsKnownLayer(layerName)
+                        ? $"The configured routing provider does not support the '{layerName}' analysis layer."
+                        : $"NAServer layer '{layerName}' was not found."),
+                "NAServer layer not found");
+        }
+
+        return Results.Text(
+            NAServerMetadata.Serialize(document, IsPrettyJson(context, parameters)),
+            JsonContentType);
+    }
+
+    /// <summary>
+    /// The active network dataset, falling back to the built-in default so the metadata
+    /// stays describable when the registry has no row for the configured id.
+    /// </summary>
+    internal static async Task<NetworkDataset> ResolveDatasetAsync(
+        INetworkDatasetResolver datasets,
+        RoutingConfiguration configuration,
+        CancellationToken ct)
+    {
+        var datasetId = string.IsNullOrWhiteSpace(configuration.NetworkDatasetId)
+            ? NetworkDataset.DefaultId
+            : configuration.NetworkDatasetId;
+        NetworkDataset? dataset = null;
+        try
+        {
+            dataset = await datasets.ResolveAsync(datasetId, ct).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // A registry that cannot be read (no Postgres, no table yet) must not take
+            // the metadata down with it; the default topology description still holds.
+            Activity.Current?.SetTag("honua.routing.dataset_resolution_failed", exception.GetType().Name);
+        }
+
+        return dataset ?? NetworkDataset.Default;
     }
 
     private static async Task<IResult> HandleRouteSolve(
@@ -122,6 +286,7 @@ internal static class NAServerEndpoints
         RoutingConfiguration configuration,
         CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         EnrichActivity("RouteSolve");
 
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
@@ -174,6 +339,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer route parameters."),
                 "Invalid NAServer route parameters");
         }
+        catch (Exception ex) when (TryMapRoutingSolveGuard(context, ex, "route", out var guard))
+        {
+            return guard!;
+        }
         catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
         {
             return CreateInvalidSpatialReferenceResult(context, "route");
@@ -186,6 +355,7 @@ internal static class NAServerEndpoints
         RoutingConfiguration configuration,
         CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         EnrichActivity("ServiceAreaSolve");
 
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
@@ -246,6 +416,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer service-area parameters."),
                 "Invalid NAServer service-area parameters");
         }
+        catch (Exception ex) when (TryMapRoutingSolveGuard(context, ex, "service-area", out var guard))
+        {
+            return guard!;
+        }
         catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
         {
             return CreateInvalidSpatialReferenceResult(context, "service-area");
@@ -266,38 +440,12 @@ internal static class NAServerEndpoints
         IReadOnlyList<RouteBarrier> barriers,
         string? travelMode)
     {
-        // Barriers: every requested barrier kind must be advertised. If any kind is
-        // unsupported (or barriers are supplied to a provider that supports none),
-        // reject rather than dropping the barrier and returning an unsafe solve.
-        if (barriers.Count > 0)
-        {
-            foreach (var kind in barriers.Select(b => b.Kind).Distinct().Where(kind => !capabilities.SupportedBarrierKinds.Contains(kind)))
-            {
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"{kind} barriers are not supported by the configured routing provider."),
-                    "NAServer barrier kind unsupported by provider");
-            }
-        }
-
-        // Travel mode: an absent mode always uses the provider default. A supplied
-        // mode must be one the provider advertises (case-insensitive).
-        if (!string.IsNullOrWhiteSpace(travelMode))
-        {
-            var supported = capabilities.SupportedTravelModes
-                .Any(m => string.Equals(m, travelMode, StringComparison.OrdinalIgnoreCase));
-            if (!supported)
-            {
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"travelMode '{travelMode}' is not supported by the configured routing provider."),
-                    "NAServer travelMode unsupported by provider");
-            }
-        }
-
-        return null;
+        var error = RoutingRequestValidation.ValidateCapabilities(capabilities, barriers, travelMode);
+        return error is null
+            ? null
+            : SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, error),
+                "NAServer input unsupported by provider");
     }
 
     /// <summary>
@@ -340,6 +488,7 @@ internal static class NAServerEndpoints
         RoutingConfiguration configuration,
         CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         EnrichActivity("ClosestFacilitySolve");
 
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
@@ -387,6 +536,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer closest-facility parameters.", [ex.Message]),
                 "Invalid NAServer closest-facility parameters");
         }
+        catch (Exception ex) when (TryMapRoutingSolveGuard(context, ex, "closest-facility", out var guard))
+        {
+            return guard!;
+        }
         catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
         {
             return CreateInvalidSpatialReferenceResult(context, "closest-facility");
@@ -399,6 +552,7 @@ internal static class NAServerEndpoints
         RoutingConfiguration configuration,
         CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         EnrichActivity("OdCostMatrixSolve");
 
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
@@ -457,6 +611,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer OD cost matrix parameters.", [ex.Message]),
                 "Invalid NAServer OD cost matrix parameters");
         }
+        catch (Exception ex) when (TryMapRoutingSolveGuard(context, ex, "OD cost matrix", out var guard))
+        {
+            return guard!;
+        }
         catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
         {
             return CreateInvalidSpatialReferenceResult(context, "OD cost matrix");
@@ -469,6 +627,7 @@ internal static class NAServerEndpoints
         RoutingConfiguration configuration,
         CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         EnrichActivity("LocationAllocationSolve");
 
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
@@ -525,9 +684,40 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer location-allocation parameters.", [ex.Message]),
                 "Invalid NAServer location-allocation parameters");
         }
+        catch (Exception ex) when (TryMapRoutingSolveGuard(context, ex, "location-allocation", out var guard))
+        {
+            return guard!;
+        }
         catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
         {
             return CreateInvalidSpatialReferenceResult(context, "location-allocation");
+        }
+    }
+
+    private static bool TryMapRoutingSolveGuard(
+        HttpContext context,
+        Exception exception,
+        string operation,
+        out IResult? result)
+    {
+        switch (exception)
+        {
+            case RoutingSolveBudgetExceededException budget:
+                result = SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, budget.Message),
+                    $"NAServer {operation} exceeded the configured pair budget");
+                return true;
+            case RoutingSolveCapacityExceededException capacity:
+                result = SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateServiceUnavailable(
+                        context,
+                        capacity.Message,
+                        RoutingSolveCapacityLimiter.RetryAfterSeconds),
+                    $"NAServer {operation} capacity exhausted");
+                return true;
+            default:
+                result = null;
+                return false;
         }
     }
 

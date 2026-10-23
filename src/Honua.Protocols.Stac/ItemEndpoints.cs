@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Stac;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -15,6 +16,8 @@ using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+
+using Honua.Core.Abstractions.Features.Rasters.Abstractions;
 
 namespace Honua.Protocols.Stac;
 
@@ -59,7 +62,8 @@ internal static class ItemEndpoints
         [FromQuery] string? bbox,
         [FromQuery] string? datetime,
         [FromServices] IFeatureReader featureReader,
-        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
+        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger,
+        [FromServices] ICogArtifactLocator? cogArtifactLocator = null)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.Items,
@@ -80,7 +84,10 @@ internal static class ItemEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context, collectionId, requiredProtocol: StacProtocolConstants.ProtocolName, cancellationToken: cancellationToken);
+                context,
+                collectionId,
+                requiredProtocol: StacProtocolConstants.ProtocolName,
+                cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
@@ -90,19 +97,23 @@ internal static class ItemEndpoints
 
             var resource = validation.Resource!;
             var publication = validation.Publication!;
-            var layerId = publication.LayerIndex
-                ?? throw new InvalidOperationException(
-                    $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC items handler requires one.");
+            var snapshot = validation.Snapshot
+                ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
-                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
+                snapshot,
                 validation.Service,
                 resource,
                 publication,
-                layerId,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC items handler requires a storage layer.");
+
+            // Item collection ids, links and COG artifacts are keyed on the collection's
+            // protocol-facing layer index; reads go to readerResolution.StorageLayerId.
+            var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
 
             // Reject limit < 1 with 400 to match the canonical POST /search surface
             // (SearchEndpoints), which 400s on limit < 1. Previously this path silently
@@ -163,8 +174,13 @@ internal static class ItemEndpoints
                 omitCount,
                 cancellationToken) : PagedQueryResult<Feature>.Create([], totalCount: omitCount ? null : 0);
 
+            var cogArtifact = cogArtifactLocator is null
+                ? null
+                : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken)
+                    .ConfigureAwait(false);
             var items = result.Items
-                .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
+                .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication,
+                    layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact))
                 .ToImmutableArray();
 
             var stacBase = $"{baseUrl}/stac";
@@ -237,7 +253,8 @@ internal static class ItemEndpoints
         string itemId,
         HttpContext context,
         [FromServices] IFeatureReader featureReader,
-        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
+        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger,
+        [FromServices] ICogArtifactLocator? cogArtifactLocator = null)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.Item,
@@ -251,7 +268,10 @@ internal static class ItemEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context, collectionId, requiredProtocol: StacProtocolConstants.ProtocolName, cancellationToken: cancellationToken);
+                context,
+                collectionId,
+                requiredProtocol: StacProtocolConstants.ProtocolName,
+                cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
@@ -261,19 +281,23 @@ internal static class ItemEndpoints
 
             var resource = validation.Resource!;
             var publication = validation.Publication!;
-            var layerId = publication.LayerIndex
-                ?? throw new InvalidOperationException(
-                    $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC item handler requires one.");
+            var snapshot = validation.Snapshot
+                ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
-                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
+                snapshot,
                 validation.Service,
                 resource,
                 publication,
-                layerId,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC item handler requires a storage layer.");
+
+            // Item collection ids, links and COG artifacts are keyed on the collection's
+            // protocol-facing layer index; reads go to readerResolution.StorageLayerId.
+            var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
 
             var isStorageBound = !string.IsNullOrEmpty(publication.StorageBindingId);
             var hasNumericItemId = long.TryParse(
@@ -298,6 +322,7 @@ internal static class ItemEndpoints
                     readerResolution.Reader,
                     readerResolution.StorageLayerId,
                     resourceSrid,
+                    resource,
                     itemId,
                     cancellationToken);
                 if (feature is null && hasNumericItemId)
@@ -323,7 +348,7 @@ internal static class ItemEndpoints
 
             if (feature is { } resolvedFeature &&
                 !string.Equals(
-                    StacMappingService.ResolveItemId(resolvedFeature),
+                    StacMappingService.ResolveItemId(resolvedFeature, resource),
                     itemId,
                     StringComparison.Ordinal))
             {
@@ -338,10 +363,21 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var item = StacMappingService.MapFeatureToItem(feature.Value, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid);
+            var cogArtifact = cogArtifactLocator is null
+                ? null
+                : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken).ConfigureAwait(false);
+            var item = StacMappingService.MapFeatureToItem(feature.Value, resource, publication,
+                layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact);
 
             StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);
+        }
+        catch (StacItemIdConflictException ex)
+        {
+            StacTelemetry.RecordException(activity, ex);
+            StacLog.OperationFailed(logger, ex);
+            return StandardErrorHelpers.CreateConflict(
+                context, "The requested STAC item id is not unique.");
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -373,6 +409,7 @@ internal static class ItemEndpoints
         IFeatureReader featureReader,
         int layerId,
         int layerSrid,
+        MetadataV2Resource resource,
         string itemId,
         CancellationToken cancellationToken)
     {
@@ -382,7 +419,7 @@ internal static class ItemEndpoints
         var query = new FeatureQuery
         {
             SqlFilter = new SqlFragment(
-                "attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0 OR attributes->>'id' = @p0",
+                StacItemIdWhereBuilder.BuildUnboundAttributePredicate(resource),
                 [itemId]),
             Limit = 50
         };
@@ -399,7 +436,7 @@ internal static class ItemEndpoints
                 layerSrid,
                 objectId,
                 cancellationToken);
-            var matchRank = GetCanonicalItemMatchRank(feature, itemId);
+            var matchRank = GetCanonicalItemMatchRank(feature, itemId, resource);
             if (!matchRank.HasValue)
             {
                 continue;
@@ -472,11 +509,11 @@ internal static class ItemEndpoints
         return null;
     }
 
-    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
+    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId, MetadataV2Resource resource)
     {
         if (feature is not { } resolvedFeature ||
             !string.Equals(
-                StacMappingService.ResolveItemId(resolvedFeature),
+                StacMappingService.ResolveItemId(resolvedFeature, resource),
                 itemId,
                 StringComparison.Ordinal))
         {
@@ -484,6 +521,13 @@ internal static class ItemEndpoints
         }
 
         var attributes = resolvedFeature.Attributes;
+        var source = StacItemIdentity.Resolve(resource);
+        if (source.IsDeclaredIdentity &&
+            source.Field is { } declared &&
+            AttributeTextEquals(attributes, declared.Name, itemId))
+        {
+            return 0;
+        }
 
         var keys = ImmutableArray.Create("stac_id", "item_id", "id");
         for (var index = 0; index < keys.Length; index++)
@@ -494,15 +538,30 @@ internal static class ItemEndpoints
                 continue;
             }
 
-            if (string.Equals(
-                    Convert.ToString(value, CultureInfo.InvariantCulture),
-                    itemId,
-                    StringComparison.Ordinal))
+            if (AttributeTextEquals(attributes, key, itemId))
             {
-                return index;
+                return index + 1;
             }
         }
 
-        return null;
+        // ResolveItemId already matched, including an object-id fallback for a blank
+        // declared identity. Keep the row.
+        return keys.Length;
+    }
+
+    private static bool AttributeTextEquals(
+        ImmutableDictionary<string, object?> attributes,
+        string name,
+        string itemId)
+    {
+        if (!attributes.TryGetValue(name, out var value) || value is null)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            Convert.ToString(value, CultureInfo.InvariantCulture),
+            itemId,
+            StringComparison.Ordinal);
     }
 }

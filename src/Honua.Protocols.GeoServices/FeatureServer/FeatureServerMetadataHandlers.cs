@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -84,15 +85,7 @@ internal static partial class FeatureServerEndpoints
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Where(publication =>
-                ServiceProtocols.IsPreferredPublicationType(
-                    ServiceProtocols.FeatureServer,
-                    publication.PublicationType))
-            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => snapshot.IsRoutable(pair.Publication))
-            .Select(pair => (pair.Publication, Resource: pair.Resource!))
-            .ToArray();
+        var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot);
 
         if (RequiresDefaultMetadataAuthenticationV2(
                 context,
@@ -102,16 +95,17 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var (visiblePairs, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
             context,
-            allPairs.Select(pair => pair.Resource),
-            service);
+            allPairs,
+            static pair => pair.Resource,
+            service,
+            AuthorizationOperation.Metadata,
+            cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
         }
-
-        var visiblePairs = FilterAccessibleLayersV2(context, snapshot, service, allPairs);
 
         return await GetServiceMetadataAsync(
             context,
@@ -119,19 +113,21 @@ internal static partial class FeatureServerEndpoints
             visiblePairs,
             snapshot,
             limitsOptions.Value.Query,
-            logger).ConfigureAwait(false);
+            logger,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Gets service metadata asynchronously
     /// </summary>
-    private static Task<IResult> GetServiceMetadataAsync(
+    private static async Task<IResult> GetServiceMetadataAsync(
         HttpContext context,
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits limits,
-        ILogger logger)
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -139,7 +135,8 @@ internal static partial class FeatureServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
-            var branchVersioningEnabled = IsBranchVersioningAvailable(context);
+            var branchVersioningEnabled = await HasBranchVersionedPublicationsAsync(
+                context, service, publications, snapshot, cancellationToken).ConfigureAwait(false);
             var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
                 context.RequestServices.GetRequiredService<IConfiguration>(),
                 "sync.offline");
@@ -151,12 +148,14 @@ internal static partial class FeatureServerEndpoints
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: branchVersioningEnabled,
-                offlineSyncEnabled: offlineSyncEnabled);
+                versionManagementEnabled: IsVersionManagementAvailable(context, branchVersioningEnabled),
+                offlineSyncEnabled: offlineSyncEnabled,
+                pathBase: context.Request.PathBase);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
 
-            return Task.FromResult(Results.Json(response, FeatureServerJsonContext.Default.FeatureServerResponse,
-                contentType: "application/json"));
+            return Results.Json(response, FeatureServerJsonContext.Default.FeatureServerResponse,
+                contentType: "application/json");
         }
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
@@ -164,19 +163,20 @@ internal static partial class FeatureServerEndpoints
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureServerLog.ServiceMetadataFailed(logger, service.Metadata.Name, ex.Message, ex);
-            return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(
+            return StandardErrorHelpers.CreateInternalServerError(
                 context,
-                "Service metadata retrieval failed"));
+                "Service metadata retrieval failed");
         }
     }
 
     /// <summary>
     /// Whether branch versioning is available for the current request: the active feature provider
-    /// supports it (Postgres) and the Pro branch-versioning entitlement is active (#1272,
-    /// ADR-0051). Drives the service-metadata versioning capability flags so the advertised surface
-    /// matches the runtime-registered VersionManagementServer routes.
+    /// supports it (Postgres) and the Pro branch-versioning entitlement is active (#1272, ADR-0051).
+    /// A prerequisite for metadata; the bound publication must also support branch reads (#5047).
+    /// The separate experimental VMS
+    /// gate does not disable FeatureServer gdbVersion queries or replication.
     /// </summary>
-    private static bool IsBranchVersioningAvailable(HttpContext context)
+    internal static bool IsBranchVersioningAvailable(HttpContext context)
     {
         // Resolve defensively: the IVersionManager registration constructs a provider-specific manager
         // (e.g. PostgresVersionManager) that itself depends on IDatabaseConnectionProvider. When that
@@ -201,6 +201,13 @@ internal static partial class FeatureServerEndpoints
         return Honua.Infrastructure.Licensing.LicenseGate.IsEntitlementActive(
             context.RequestServices, FeatureCatalog.BranchVersioningKey);
     }
+
+    /// <summary>
+    /// Whether the companion VMS lifecycle surface is enabled in addition to versioned data access.
+    /// </summary>
+    internal static bool IsVersionManagementAvailable(HttpContext context, bool branchVersioningAvailable)
+        => branchVersioningAvailable && CapabilityFlagOptions.IsExperimentalEnabled(
+            context.RequestServices.GetRequiredService<IConfiguration>(), "versioning.branch");
 
     /// <summary>
     /// Handle layer metadata requests
@@ -266,7 +273,8 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Metadata, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -332,6 +340,19 @@ internal static partial class FeatureServerEndpoints
                     extrusionValidationErrors);
             }
 
+            var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot);
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+                context, allPairs.Select(pair => pair.Resource), service,
+                AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+            var accessibleResources = FilterAccessibleLayersV2(access, snapshot, allPairs)
+                .Select(pair => pair.Resource.Metadata.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var metadataResource = resource with
+            {
+                Relationships = [.. resource.Relationships.Where(relationship =>
+                    accessibleResources.Contains(relationship.RelatedResourceId))]
+            };
+
             LayerResponse response = MapLayerToResponseV2(
                 service,
                 resource,
@@ -344,7 +365,10 @@ internal static partial class FeatureServerEndpoints
                 extrusionInfo: extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads,
-                offlineSyncEnabled: offlineSyncEnabled);
+                branchVersioningEnabled: await IsPublicationBranchVersioningAvailableAsync(
+                    context, service, resource, publication, snapshot, cancellationToken).ConfigureAwait(false),
+                offlineSyncEnabled: offlineSyncEnabled,
+                authorizedRelationships: BuildRelationshipResponseV2(metadataResource, snapshot, service));
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, resolvedLayerId, resource.Metadata.Name);
 

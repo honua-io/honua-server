@@ -15,7 +15,9 @@ namespace Honua.Core.Features.Operations.Policy;
 /// When <see cref="Enabled"/> is <see langword="false"/> (the default) the policy is inert and
 /// behavior is identical to <c>AllowAllPolicyDecisionPoint</c> — every operation is allowed.
 /// Rules are evaluated first-match-wins in declared order; when no rule matches, the
-/// <see cref="DefaultDecision"/> applies.
+/// <see cref="DefaultDecision"/> applies. In the Production environment an enabled policy also
+/// appends the code-declared <see cref="OperationPolicyBuiltInRules.Production"/> rules after the
+/// operator-configured <see cref="Rules"/> (see <see cref="BuiltInProductionRules"/>).
 /// </remarks>
 public sealed class OperationPolicyOptions
 {
@@ -52,6 +54,17 @@ public sealed class OperationPolicyOptions
     /// are not evaluated. Empty by default.
     /// </summary>
     public IList<OperationPolicyRule> Rules { get; set; } = [];
+
+    /// <summary>
+    /// Whether an enabled policy in the Production environment appends the built-in
+    /// administrator rules (<see cref="OperationPolicyBuiltInRules.Production"/>) after the
+    /// operator-configured <see cref="Rules"/>. Defaults to <see langword="true"/> so a Production
+    /// install lets full administrators and administrative keys execute without operator-authored
+    /// rules while everyone else still falls through to the fail-closed <see cref="DefaultDecision"/>.
+    /// Set <c>Operations:Policy:BuiltInProductionRules=false</c> for a pure fail-closed policy in
+    /// which only operator rules can allow an operation. Ignored outside Production.
+    /// </summary>
+    public bool BuiltInProductionRules { get; set; } = true;
 }
 
 /// <summary>

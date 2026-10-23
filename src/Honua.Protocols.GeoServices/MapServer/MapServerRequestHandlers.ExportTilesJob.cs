@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -19,6 +20,8 @@ using Honua.Protocols.GeoServices.MapServer.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
+
+using Honua.Protocols.GeoServices;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -214,7 +217,7 @@ internal static partial class MapServerEndpoints
         }
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
-        if (!TryParseExportTileLevels(
+        if (!ExportTilesRequestParser.TryParseExportTileLevels(
                 GetValue(values, "levels"),
                 GetValue(values, "minZoom"),
                 GetValue(values, "maxZoom"),
@@ -280,10 +283,13 @@ internal static partial class MapServerEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             publishedLayers.Select(static layer => layer.Resource),
-            service);
+            service,
+            AuthorizationOperation.Export,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
         if (accessError is not null)
         {
             return (null, accessError);
@@ -294,9 +300,14 @@ internal static partial class MapServerEndpoints
         // apply. Pinning every published layer here would let a caller who can read one layer receive
         // inaccessible or default-hidden layers in the queued TPKX (the worker renders without an
         // HttpContext and cannot re-check access).
+        if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide tile exports."));
+        }
+
         var renderSelection = ResolveRenderLayers(
             publishedLayers,
-            service,
+            access,
             GetValue(values, "layers"),
             Array.Empty<DynamicLayerDefinition>(),
             context);

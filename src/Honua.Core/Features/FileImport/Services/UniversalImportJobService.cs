@@ -4,11 +4,11 @@
 using Honua.Core.Features.Licensing.Abstractions;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Security.Cryptography;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -37,20 +37,43 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private readonly ILogger<UniversalImportJobService> _logger;
     private readonly ConcurrentDictionary<string, ImportJobState> _jobs = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
-    private bool _disposed;
+    private readonly SemaphoreSlim _backgroundSlots;
+    private readonly int _maxOutstanding;
+    private readonly string? _instanceId;
+    private int _outstanding;
+    private int _disposed;
 
     public UniversalImportJobService(
         IServiceScopeFactory scopeFactory,
         IUniversalProgressStore progressStore,
         IPerformanceMonitor performanceMonitor,
         ILogger<UniversalImportJobService> logger,
-        ILicenseOperationPolicy? licensePolicy = null)
+        ILicenseOperationPolicy? licensePolicy = null,
+        ImportLimits? limits = null,
+        string? instanceId = null)
     {
         _licensePolicy = licensePolicy;
+        _instanceId = instanceId;
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        var maxConcurrent = Math.Max(1, limits?.MaxConcurrentBackgroundJobs ?? 2);
+        var queueDepth = Math.Max(0, limits?.MaxBackgroundJobQueueDepth ?? 16);
+        _backgroundSlots = new SemaphoreSlim(maxConcurrent, maxConcurrent);
+        _maxOutstanding = maxConcurrent + queueDepth;
+    }
+
+    internal bool TryReserveBackgroundSlot()
+    {
+        var next = Interlocked.Increment(ref _outstanding);
+        if (next <= _maxOutstanding)
+        {
+            return true;
+        }
+
+        Interlocked.Decrement(ref _outstanding);
+        return false;
     }
 
     /// <inheritdoc/>
@@ -60,7 +83,31 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         CancellationToken cancellationToken = default)
     {
         request.Validate();
+        if (!TryReserveBackgroundSlot())
+        {
+            throw new ImportJobQueueFullException();
+        }
 
+        var started = false;
+        try
+        {
+            return await QueueReservedImportAsync(request, fileSize, () => started = true, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!started)
+            {
+                Interlocked.Decrement(ref _outstanding);
+            }
+        }
+    }
+
+    private async Task<string> QueueReservedImportAsync(
+        ImportRequest request,
+        long fileSize,
+        Action markStarted,
+        CancellationToken cancellationToken)
+    {
         SupportedFileFormat format;
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -86,7 +133,12 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             operationInstanceId: request.OperationInstanceId,
             correlationId: request.CorrelationId,
             auditId: request.AuditId,
-            proposalId: request.ProposalId);
+            proposalId: request.ProposalId) with
+        {
+            // honua-server#5916: this service is the in-process runner for long-lived hosts.
+            Runner = ImportJobRunners.InProcess,
+            InstanceId = _instanceId
+        };
 
         // Store initial progress in the unified store. The write is retried a bounded number of
         // times for transient store failures; cancellation propagates and an unreachable store
@@ -136,6 +188,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         {
             tempFilePath = request.LocalFilePath;
         }
+        else if (request.UsesObjectStore)
+        {
+            backgroundRequest = request;
+        }
         else if (!request.UsesCloudStorage)
         {
             // Copy stream to a temp file for background processing
@@ -161,6 +217,21 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 {
                     await request.FileStream.CopyToAsync(tempStream, cancellationToken);
                 }
+
+                var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
+                {
+                    Mode = FileMode.Open,
+                    Access = FileAccess.Read,
+                    Share = FileShare.Read,
+                    BufferSize = 64 * 1024,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                });
+
+                backgroundRequest = request with
+                {
+                    FileStream = backgroundStream,
+                    CloudFileId = null
+                };
             }
             catch
             {
@@ -169,29 +240,19 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 // GetActiveJobsAsync for the full TTL with no job behind it.
                 TryDeleteTempFile(tempFilePath);
                 _jobs.TryRemove(jobId, out _);
-                _cancellationTokens.TryRemove(jobId, out _);
-                cts.Dispose();
+                if (_cancellationTokens.TryRemove(jobId, out var registeredCts))
+                {
+                    registeredCts.Dispose();
+                }
                 await TryMarkProgressFailedAsync(jobId);
                 throw;
             }
-
-            var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
-            {
-                Mode = FileMode.Open,
-                Access = FileAccess.Read,
-                Share = FileShare.Read,
-                BufferSize = 64 * 1024,
-                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-            });
-
-            backgroundRequest = request with
-            {
-                FileStream = backgroundStream,
-                CloudFileId = null
-            };
         }
 
-        // Start background processing
+        // Start background processing. The reservation moves to ProcessJobAsync, which
+        // releases it when the job finishes. markStarted runs before the call returns so a
+        // job that completes synchronously is not released twice.
+        markStarted();
         _ = ProcessJobAsync(jobId, backgroundRequest, tempFilePath, cts.Token);
 
         return jobId;
@@ -228,9 +289,13 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         string? errorMessage = null;
         var stream = request.FileStream;
         SerializedImportProgressWriter? progressWriter = null;
+        var slotAcquired = false;
 
         try
         {
+            await _backgroundSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
+            slotAcquired = true;
+
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 activity?.SetTag("honua.import.format", state.Format);
@@ -252,74 +317,103 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 CorrelationId = request.CorrelationId,
                 AuditId = request.AuditId,
                 ProposalId = request.ProposalId,
+                Runner = ImportJobRunners.InProcess,
+                InstanceId = _instanceId,
             }));
 
             using var scope = _scopeFactory.CreateScope();
+            if (request.UsesObjectStore)
+            {
+                var reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>();
+                var cloud = scope.ServiceProvider.GetService<ICloudFileStorage>();
+                var storeOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ImportObjectStoreOptions>>().Value;
+                var materialized = await ImportObjectStoreMaterializer.MaterializeAsync(
+                    request, reader, cloud, storeOptions, cancellationToken).ConfigureAwait(false);
+                request = materialized.Request;
+                if (materialized.DisposeStream)
+                {
+                    stream = request.FileStream;
+                }
+
+                if (materialized.DeleteLocalFile)
+                {
+                    tempFilePath = request.LocalFilePath;
+                }
+            }
+
             var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
             var result = await importService.ImportFileAsync(request, progress, cancellationToken);
 
             // The background path must perform the same canonical snapshot refresh as the
             // synchronous upload path. The importer stores file targets under its physical
             // imported_* name, while callers submit the logical table name (#22).
-            if (result.Success &&
-                scope.ServiceProvider.GetService<ILayerPublishingService>() is { } publishingService &&
-                scope.ServiceProvider.GetService<IDatabaseConnectionProvider>() is { } connectionProvider)
+            // A cancel after the import returned must not skip this refresh or rewrite a
+            // committed result as Cancelled.
+            if (result.Success)
             {
-                try
+                await ImportedSnapshotRefresher.RefreshAsync(
+                    scope.ServiceProvider,
+                    request.TargetSchema,
+                    request.TableName,
+                    ex => UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
+            if (result.Success && cancellationToken.IsCancellationRequested && !licenseCancellation.IsCancellationRequested)
+            {
+                const string committedWarning =
+                    "Import was cancelled after the data was committed. The imported rows were kept.";
+                if (!result.Warnings.Contains(committedWarning, StringComparer.Ordinal))
                 {
-                    var connectionString = connectionProvider.GetConnectionString();
-                    foreach (var physicalTableName in ResolvePhysicalImportedTableNames(request.TableName))
-                    {
-                        try
-                        {
-                            await publishingService.RefreshMaterializedFeaturesForSourceTableAsync(
-                                connectionString,
-                                request.TargetSchema,
-                                physicalTableName,
-                                cancellationToken).ConfigureAwait(false);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            // A legacy 41-63 character physical name may not exist; continue
-                            // to the current hashed name so published snapshots remain fresh.
-                            UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
+                    result = result with { Warnings = [.. result.Warnings, committedWarning] };
                 }
             }
 
             if (_jobs.TryGetValue(jobId, out state))
             {
-                status = result.Success ? "completed" : "failed";
+                var licenseStoppedCommittedImport = result.Success && licenseCancellation.IsCancellationRequested;
+                status = licenseStoppedCommittedImport ? "failed" : result.Success ? "completed" : "failed";
                 featureCount = result.FeatureCount;
-                errorMessage = result.ErrorMessage;
+                errorMessage = licenseStoppedCommittedImport
+                    ? "license expired; imported rows were already committed"
+                    : result.ErrorMessage;
 
                 await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
-                var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken);
+                var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None);
                 failedFeatures = currentProgress?.FailedFeatures ?? 0;
                 if (currentProgress != null)
                 {
-                    var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
-                    cancellationToken.ThrowIfCancellationRequested();
+                    var clientErrorMessage = licenseStoppedCommittedImport
+                        ? errorMessage
+                        : result.Success ? result.ErrorMessage
+                        : result.ErrorCode == ImportTableOwnershipException.Code
+                            ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
+                            : SafeImportFailureMessage;
                     var finalProgress = currentProgress with
                     {
-                        Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
+                        Status = licenseStoppedCommittedImport
+                            ? ImportStatus.Failed
+                            : result.Success ? ImportStatus.Completed : ImportStatus.Failed,
                         FeaturesProcessed = result.FeatureCount,
+                        BatchesCommitted = result.Success ? currentProgress.BatchesCommitted : 0,
                         CompletedAt = DateTimeOffset.UtcNow,
                         ErrorMessage = clientErrorMessage,
+                        ErrorCode = licenseStoppedCommittedImport ? null : result.ErrorCode,
                         Warnings = result.Warnings,
                         DetectedSrid = result.DetectedSrid,
-                        CurrentPhase = result.Success ? "Import completed" : "Import failed"
+                        CurrentPhase = licenseStoppedCommittedImport
+                            ? "Failed: license expired after data was committed"
+                            : result.Success ? "Import completed" : "Import failed"
                     };
-                    await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromDays(1), cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
+                    await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromDays(1), CancellationToken.None);
                 }
 
-                if (result.Success)
+                if (licenseStoppedCommittedImport)
+                {
+                    UniversalImportJobLog.JobFailed(_logger, jobId, state.TableName, state.Format, state.FileSize,
+                        errorMessage ?? "license expired", stopwatch.Elapsed.TotalMilliseconds);
+                }
+                else if (result.Success)
                 {
                     UniversalImportJobLog.JobCompleted(_logger, jobId, state.TableName, state.Format, state.FileSize,
                         result.FeatureCount, failedFeatures ?? 0, stopwatch.Elapsed.TotalMilliseconds);
@@ -384,6 +478,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     {
                         Status = ImportStatus.Failed,
                         CompletedAt = DateTimeOffset.UtcNow,
+                        ErrorCode = ex is ImportObjectStoreException storeFailure ? storeFailure.Code : null,
                         ErrorMessage = licenseCancellation.IsCancellationRequested ? "license expired" : SafeImportFailureMessage
                     };
                     await _progressStore.SetProgressAsync(jobId, failedProgress, TimeSpan.FromDays(1), CancellationToken.None);
@@ -394,10 +489,24 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
         finally
         {
+            if (slotAcquired)
+            {
+                _backgroundSlots.Release();
+            }
+
+            Interlocked.Decrement(ref _outstanding);
             stopwatch.Stop();
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 RecordJobMetrics(status, state.Format, state.FileSize, featureCount, failedFeatures, stopwatch.Elapsed);
+            }
+
+            // Unpublish first, then release the source with a using scoped to this block,
+            // before stream cleanup. A Dispose call after that cleanup is skipped when cleanup
+            // throws, and a disposed source must not stay visible to observers.
+            if (_cancellationTokens.TryRemove(jobId, out var cts))
+            {
+                using var _ = cts;
             }
 
             if (stream != null)
@@ -406,27 +515,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             }
 
             TryDeleteTempFile(tempFilePath);
-            if (_cancellationTokens.TryRemove(jobId, out var cts))
-            {
-                using var _ = cts;
-            }
 
             _jobs.TryRemove(jobId, out _);
         }
-    }
-
-    private static IReadOnlyList<string> ResolvePhysicalImportedTableNames(string tableName)
-    {
-        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, "[^a-zA-Z0-9_]", "_");
-        var physical = "imported_" + sanitized.ToLowerInvariant();
-        if (physical.Length <= 40) return [physical];
-
-        var hash = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(physical)))[..12];
-        var hashed = $"{physical[..(40 - hash.Length - 1)]}_{hash}";
-        // Imports before the length-limit fix used the unsuffixed name through
-        // PostgreSQL's 63-character identifier limit. Refresh both candidates so
-        // those published layers are not stranded after an upgrade.
-        return physical.Length <= 63 ? [physical, hashed] : [hashed];
     }
 
     /// <inheritdoc/>
@@ -525,19 +616,30 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        foreach (var cts in _cancellationTokens.Values)
+        foreach (var entry in _cancellationTokens)
         {
-            cts.Cancel();
+            if (!_cancellationTokens.TryRemove(entry.Key, out var cts))
+            {
+                continue;
+            }
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // A stale source must not prevent the remaining jobs from being torn down.
+            }
+
             cts.Dispose();
         }
 
-        _cancellationTokens.Clear();
         _jobs.Clear();
-
-        _disposed = true;
+        _backgroundSlots.Dispose();
     }
 
     private static partial class UniversalImportJobLog

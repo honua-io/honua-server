@@ -93,7 +93,7 @@ public interface IRasterStore
     /// snapshot filter that <see cref="QueryRastersAsync"/> would otherwise apply.
     /// </param>
     /// <param name="attributeSort">
-    /// Optional non-date attribute ordering for an <c>esriMosaicByAttribute</c> mosaic. When
+    /// Optional non-date attribute ordering for an <c>esriMosaicAttribute</c> mosaic. When
     /// supplied (and <paramref name="ordering"/> is <see cref="RasterMosaicOrdering.Attribute"/>),
     /// the contested pixel is resolved by the allowlisted raster-catalog column it names rather
     /// than by acquisition date. Ignored for the other ordering modes.
@@ -106,6 +106,26 @@ public interface IRasterStore
         RasterQuery query,
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         RasterMosaicAttributeSort? attributeSort = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Renders an all-NoData image covering <paramref name="query"/>'s clip extent for a layer
+    /// whose rasters do not reach that extent.
+    /// </summary>
+    /// <remarks>
+    /// Esri's exportImage answers a request whose extent holds no data with an empty image rather
+    /// than an error, and tiling clients depend on that: they request a grid of adjacent extents
+    /// and treat any non-image body as a failed tile. The canvas takes its band layout and NoData
+    /// values from a raster of the same layer, so an empty image is encoded exactly like a
+    /// populated export of that layer. Requires a clip region and output dimensions; a layer with
+    /// no rasters at all returns an empty result so the caller can still report not-found.
+    /// </remarks>
+    /// <param name="layerId">Layer identifier whose band layout the canvas copies.</param>
+    /// <param name="query">Query supplying the clip extent, output size, SRID and format.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<RasterResult> ExportEmptyExtentAsync(
+        int layerId,
+        RasterQuery query,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -138,6 +158,23 @@ public interface IRasterStore
     /// Identifies pixel values against a composited layer mosaic. When <paramref name="rendering"/>
     /// is supplied, the returned value reflects the rendered pixel instead of the raw source value.
     /// </summary>
+    /// <param name="layerId">Layer identifier containing the rasters.</param>
+    /// <param name="rasterIds">Raster identifiers to composite.</param>
+    /// <param name="mergeStrategy">Pixel-resolution operation applied to overlapping pixels.</param>
+    /// <param name="x">X coordinate of the query point.</param>
+    /// <param name="y">Y coordinate of the query point.</param>
+    /// <param name="srid">Spatial reference system of the coordinates (WGS84 when null).</param>
+    /// <param name="rendering">Optional rendering rule applied to the merged pixel.</param>
+    /// <param name="ordering">
+    /// Ordering that resolves a contested pixel, with the same semantics as
+    /// <see cref="ExportMosaicAsync"/>, so identify samples the pixel exportImage would render for
+    /// the same mosaic rule.
+    /// </param>
+    /// <param name="attributeSort">
+    /// Optional non-date attribute ordering, used only when <paramref name="ordering"/> is
+    /// <see cref="RasterMosaicOrdering.Attribute"/>.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<PixelValueResult> IdentifyMosaicAsync(
         int layerId,
         long[] rasterIds,
@@ -146,6 +183,8 @@ public interface IRasterStore
         double y,
         int? srid = null,
         RasterIdentifyRendering? rendering = null,
+        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
+        RasterMosaicAttributeSort? attributeSort = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -27,9 +27,13 @@ using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Protocols.GeoServices;
+#endif
 using Honua.Protocols.Ogc.Common;
+#if !HONUA_EXCLUDE_STAC
 using Honua.Protocols.Stac.Models;
+#endif
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
@@ -58,10 +62,15 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
+    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
+    internal const string BackgroundImportCapabilityId = "import.background";
+
+    internal const string ObjectStoreImportCapabilityId = "import.objectStore";
+
     private const string AuthorizationNotice =
         "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks.";
 
@@ -103,15 +112,19 @@ internal sealed class CapabilityManifestService(
         var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
             .ConfigureAwait(false);
 
-        // #2335 (B3): the registry-derived composition resolves each descriptor through
-        // the shared gate resolver (edition/experimental precedence). All descriptors
-        // stay Implemented today, so this produces the same wire document as the legacy
-        // hand-curated composition; the gate context is the seam T10 (#2346) flips.
+        // The registry-derived composition resolves protocol capabilities through
+        // the shared edition/experimental gate. File import/export availability is
+        // appended from the same direction descriptors in both composition modes.
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
+        capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
+        capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
+        capabilities = [.. capabilities, BuildObjectStoreImportCapability(policyContext)];
+        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
+        capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -121,8 +134,8 @@ internal sealed class CapabilityManifestService(
             IssuedAt = DateTimeOffset.UtcNow,
             Scope = new CapabilityManifestScope
             {
-                TenantId = request.TenantId,
-                TenantSource = request.TenantSource.ToString(),
+                TenantId = options.TenantContextEnabled ? request.TenantId : null,
+                TenantSource = options.TenantContextEnabled ? request.TenantSource.ToString() : null,
                 Environment = request.Environment,
                 WorkspaceId = request.WorkspaceId,
                 WorkspaceAvailable = workspaceAvailable,
@@ -162,6 +175,39 @@ internal sealed class CapabilityManifestService(
 
         return manifest;
     }
+
+    private IEnumerable<CapabilityManifestCapability> BuildFileFormatCapabilities(
+        CapabilityPolicyContext context, ClaimsPrincipal principal)
+    {
+        var plugins = runtimeInventory.ActiveOutputFormats
+            .ToDictionary(format => "format.write." + format.FormatId.ToLowerInvariant(), StringComparer.Ordinal);
+        var emitted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var descriptor in capabilityRegistry.All.Where(d => d.Category is "format-read" or "format-write"))
+        {
+            var read = descriptor.Category == "format-read";
+            var supported = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served
+                || (!read && plugins.ContainsKey(descriptor.Id));
+            emitted.Add(descriptor.Id);
+            yield return Capability(descriptor.Id, descriptor.Category, context,
+                maturity: supported ? CapabilityMaturity.Implemented : descriptor.Maturity,
+                supported: supported,
+                configured: !read || runtimeInventory.HasFileImportService,
+                entitlementKey: read ? "import.file" : null,
+                requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read),
+                unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable);
+        }
+
+        foreach (var id in plugins.Keys.Order(StringComparer.Ordinal).Where(id => !emitted.Contains(id)))
+        {
+            yield return Capability(id, "format-write", context, requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read: false));
+        }
+    }
+
+    private static bool CanUseFileFormats(ClaimsPrincipal principal, bool read) =>
+        (principal.IsInRole("admin") || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole))
+        && AdminApiKeyPermission.IsAuthorized(principal, read ? HttpMethods.Post : HttpMethods.Get);
 
     private async ValueTask<CapabilityManifestEnvironment> ResolveEnvironmentAsync(
         string? environment,
@@ -431,7 +477,7 @@ internal sealed class CapabilityManifestService(
                 policyCapability: "features.edit",
                 requiresWorkspace: true),
             Capability("admin.multi-tenancy", "control-plane", context,
-                maturity: CapabilityMaturity.Preview,
+                maturity: CapabilityMaturity.Internal,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")
                     && options.TenantSchemaRoutingEnabled,
                 entitlementKey: FeatureCatalog.MultiTenancyKey,
@@ -483,6 +529,26 @@ internal sealed class CapabilityManifestService(
             Capability("publication.metadata-release", "publication", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit"),
+
+            // Collaborative-editing leases (#4402). Enforcement ships on every feature-write
+            // path, so `supported` is true unconditionally; `available` follows whether the
+            // deployment supplied an IFeatureLockAuthorizer, because the shipped one denies
+            // every claim and an "available" lease nobody can take is the exact over-claim
+            // this manifest exists to prevent.
+            Capability("collaboration.feature-locks", "collaboration", context,
+                configured: runtimeInventory.FeatureLockAuthorizerConfigured,
+                requiresAuthentication: true),
+            // The two recorded 2026.1 gaps, published rather than left to the docs page: a
+            // lease is node-local, and GeoServices applyEdits honours no client-supplied
+            // version token. Same wire shape as an unimplemented file-format writer. The
+            // version-token row is scoped to GeoServices because OGC API Features does
+            // enforce If-Match/412 — a global name would under-report the working surfaces.
+            Capability("collaboration.feature-locks.cross-node", "collaboration", context,
+                maturity: CapabilityMaturity.Planned,
+                supported: false),
+            Capability("edit.geoservices-version-tokens", "edit", context,
+                maturity: CapabilityMaturity.Planned,
+                supported: false),
             // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
             // default (#2480 / ADR-0058). Mirrors the registry descriptor order
             // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
@@ -526,7 +592,11 @@ internal sealed class CapabilityManifestService(
 
             var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
             var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
-            var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
+            // A declared implementation gap is not supported, whatever its spec says. Derived
+            // from the descriptor rather than restated in the spec map so this path and the
+            // hand-curated roster cannot disagree about which capabilities are gaps.
+            var served = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served;
+            var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Internal or CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
                 || !IsExperimentalDisabled(resolution);
             var configured = spec.Configured && lifecycleEnabled;
             capabilities.Add(Capability(
@@ -534,7 +604,7 @@ internal sealed class CapabilityManifestService(
                 descriptor.Category,
                 context,
                 maturity: descriptor.Maturity,
-                supported: spec.Supported,
+                supported: spec.Supported && served,
                 configured: configured,
                 unavailableReasonOverride: lifecycleEnabled
                     ? null
@@ -548,6 +618,7 @@ internal sealed class CapabilityManifestService(
                 requiresDurableJobStore: spec.RequiresDurableJobStore));
         }
 
+        // codeql[cs/linq/missed-where]: adds a capability only when that id is not already present
         foreach (var capability in BuildOperationCapabilities(context, operationCapabilities))
         {
             if (capabilities.All(existing => !string.Equals(existing.Id, capability.Id, StringComparison.Ordinal)))
@@ -565,12 +636,24 @@ internal sealed class CapabilityManifestService(
         =>
         [
             Capability("ops.findings", "operate", context, requiresAuthentication: true),
+            // The governed proposal/approval control plane (honua_admin_* approval-gated tools,
+            // /api/v1/admin/proposals, Studio drafts) persists in the Redis-backed durable store.
+            // The tools advertise on every topology; this entry is what tells an agent, before it
+            // calls one, that a Redis-off host refuses with the typed capability-unavailable
+            // receipt (dependency-unavailable; license-required when Redis is unentitled).
+            Capability(OperationsProposalsCapabilityId, "operate", context,
+                requiresAuthentication: true,
+                requiresDurableJobStore: true),
             Capability("ops.autonomy", "operate", context,
                 configured: operationCapabilities.HasAutonomyPolicyStore,
                 requiresAuthentication: true),
             Capability("deploy.rollback", "deploy", context,
                 configured: operationCapabilities.HasDurableOperationStore
-                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                    && operationCapabilities.AnyExecutableRollbackTarget,
+                unavailableReasonOverride: operationCapabilities.HasDurableOperationStore
+                    && !operationCapabilities.AnyExecutableRollbackTarget
+                    ? RollbackNoExecutableTarget
+                    : null,
                 requiresAuthentication: true),
         ];
 
@@ -657,9 +740,15 @@ internal sealed class CapabilityManifestService(
             ["publication.metadata-release"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
             ["upload.file"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
+            ["collaboration.feature-locks"] = new()
+            {
+                Configured = runtimeInventory.FeatureLockAuthorizerConfigured,
+                RequiresAuthentication = true,
+            },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
+            [OperationsProposalsCapabilityId] = new() { RequiresAuthentication = true, RequiresDurableJobStore = true },
             ["ops.autonomy"] = new()
             {
                 Configured = operationCapabilities.HasAutonomyPolicyStore,
@@ -668,7 +757,7 @@ internal sealed class CapabilityManifestService(
             ["deploy.rollback"] = new()
             {
                 Configured = operationCapabilities.HasDurableOperationStore
-                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                    && operationCapabilities.AnyExecutableRollbackTarget,
                 RequiresAuthentication = true,
             },
         };
@@ -733,6 +822,7 @@ internal sealed class CapabilityManifestService(
         string[]? entitlementKeys = null,
         string? policyCapability = null,
         bool requiresAuthentication = false,
+        bool callerAuthorized = true,
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
         bool requiresDurableJobStore = false,
@@ -781,7 +871,7 @@ internal sealed class CapabilityManifestService(
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;
         }
-        else if (requiresAuthentication && !context.Authenticated)
+        else if ((requiresAuthentication && !context.Authenticated) || !callerAuthorized)
         {
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;
@@ -812,7 +902,7 @@ internal sealed class CapabilityManifestService(
             Id = id,
             Category = category,
             Lifecycle = maturity == CapabilityMaturity.Preview ? "preview" : maturity.ToString().ToLowerInvariant(),
-            OptInRequired = (maturity is CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
+            OptInRequired = (maturity is CapabilityMaturity.Internal or CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
                 && (capabilityRegistry.Find(id)?.RequiresOptIn ?? true),
             Supported = supported,
             Available = available,
@@ -824,6 +914,30 @@ internal sealed class CapabilityManifestService(
                 ? $"capabilities.{id}.available"
                 : $"capabilities.{id}.{reasonCode}"
         };
+    }
+
+    private static CapabilityManifestCapability[] ApplyCompiledProtocolProfile(
+        CapabilityManifestCapability[] capabilities)
+    {
+        for (var i = 0; i < capabilities.Length; i++)
+        {
+            var capability = capabilities[i];
+            if (Honua.Infrastructure.Hosting.ProtocolProfile.IsCapabilityCompiled(capability.Id))
+            {
+                continue;
+            }
+
+            var reason = Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded;
+            capabilities[i] = capability with
+            {
+                Supported = false,
+                Available = false,
+                ReasonCode = reason,
+                MessageKey = $"capabilities.{capability.Id}.{reason}",
+            };
+        }
+
+        return capabilities;
     }
 
     private CapabilityManifestTransports BuildTransports()
@@ -842,18 +956,52 @@ internal sealed class CapabilityManifestService(
                 // version (ADR-0058 / honua-release#32). The version constant is owned by
                 // the protocol assembly that owns the surface, so the manifest cannot drift
                 // from the surface it describes.
+#if HONUA_EXCLUDE_GEOSERVICES
+                Transport("geoservices-rest", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("geoservices-rest", supported: true, available: true,
                     contractVersion: GeoServicesContract.Version),
+#endif
+#if HONUA_EXCLUDE_OGC_API && HONUA_EXCLUDE_OGC_CLASSIC
+                Transport("ogc-http", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("ogc-http", supported: true, available: true,
                     contractVersion: OgcContract.Version),
+#endif
+#if HONUA_EXCLUDE_ODATA
+                Transport("odata", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("odata", supported: true, available: true),
+#endif
+#if HONUA_EXCLUDE_STAC
+                Transport("stac", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("stac", supported: true, available: true,
                     contractVersion: StacContract.Version),
+#endif
                 Transport("tiles", supported: true, available: true),
+#if HONUA_EXCLUDE_GRPC
+                Transport("grpc", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+                Transport("grpc-web", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+                Transport("native-grpc", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("grpc", supported: true, available: true),
                 Transport("grpc-web", supported: true, available: true),
                 Transport("native-grpc", supported: true, available: true),
+#endif
+#if HONUA_EXCLUDE_MCP
+                Transport("mcp", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("mcp", supported: true, available: true),
+#endif
                 Transport("qgis", supported: true, available: true),
                 Transport("mtls", supported: true, available: mtlsAvailable,
                     mtlsAvailable ? null : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled)
@@ -935,7 +1083,8 @@ internal sealed class CapabilityManifestService(
                 AvailableBackendCount = batchCapabilities.AvailableBackendCount,
                 SupportsCancellation = batchCapabilities.SupportsCancellation,
                 SupportsProgressPolling = batchCapabilities.SupportsProgressPolling,
-                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable
+                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable,
+                RedisDurability = options.RedisDurability
             },
             Upload = new CapabilityManifestUploadLimits
             {
@@ -1069,13 +1218,11 @@ internal sealed class CapabilityManifestService(
         string? environment,
         CancellationToken cancellationToken)
     {
+        var claims = new List<RollbackTargetClaim>();
         var configuredTargets = options.ControlPlane.DeployTargets;
         if (configuredTargets.Count == 0)
         {
-            return new OperationCapabilitySummary(
-                HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
-                HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
-                AnyConfiguredTargetSupportsRollback: false);
+            return Summary(claims);
         }
 
         var backends = runtimeInventory.DeployBackends.ToDictionary(
@@ -1093,19 +1240,20 @@ internal sealed class CapabilityManifestService(
 
             if (!backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
             {
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "missing-backend",
+                    Executable: false,
+                    RollbackBackendMissing));
                 continue;
             }
 
+            bool supportsRollback;
             try
             {
                 var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
-                if (capabilities.SupportsRollback)
-                {
-                    return new OperationCapabilitySummary(
-                        HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
-                        HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
-                        AnyConfiguredTargetSupportsRollback: true);
-                }
+                supportsRollback = capabilities.SupportsRollback;
             }
             catch (OperationCanceledException)
             {
@@ -1114,13 +1262,180 @@ internal sealed class CapabilityManifestService(
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 CapabilityManifestLog.DeployCapabilityProbeFailed(logger, backend.BackendName, ex);
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "probe-failed",
+                    Executable: false,
+                    RollbackBackendProbeFailed));
+                continue;
+            }
+
+            if (!supportsRollback)
+            {
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "handoff",
+                    Executable: false,
+                    RollbackHandoffOnly));
+                continue;
+            }
+
+            if (!await HasRestorablePriorRevisionAsync(target.TargetId, cancellationToken).ConfigureAwait(false))
+            {
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "no-prior-revision",
+                    Executable: false,
+                    RollbackPriorRevisionMissing));
+                continue;
+            }
+
+            claims.Add(new RollbackTargetClaim(
+                target.TargetId,
+                target.Backend,
+                "executable",
+                Executable: true,
+                RollbackExecutable));
+        }
+
+        return Summary(claims);
+    }
+
+    private OperationCapabilitySummary Summary(List<RollbackTargetClaim> claims)
+        => new(
+            runtimeInventory.HasDurableOperationStore,
+            runtimeInventory.HasAutonomyPolicyStore,
+            claims.Exists(static claim => claim.Executable),
+            claims);
+
+    private async Task<bool> HasRestorablePriorRevisionAsync(string targetId, CancellationToken cancellationToken)
+    {
+        foreach (var store in workflowOperationStores)
+        {
+            WorkflowOperationRecord? deploy;
+            try
+            {
+                deploy = await store.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                CapabilityManifestLog.DeployCapabilityProbeFailed(logger, targetId, ex);
+                return false;
+            }
+
+            if (deploy?.Deploy?.Protection is not { } protection
+                || string.IsNullOrWhiteSpace(protection.PreviousRevision))
+            {
+                continue;
+            }
+
+            if (protection.Phase is DeployProtectionPhase.Observing
+                or DeployProtectionPhase.Protected
+                or DeployProtectionPhase.Recovering)
+            {
+                return true;
             }
         }
 
-        return new OperationCapabilitySummary(
-            HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
-            HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
-            AnyConfiguredTargetSupportsRollback: false);
+        return false;
+    }
+
+    /// <summary>
+    /// <c>import.background</c> (honua-server#5916): whether this host accepts a background file
+    /// import and which runner executes it (<c>batch</c>, <c>in-process</c> or
+    /// <c>unavailable</c>, with the cause in <c>reasonCode</c>). <c>upload.file</c> covers only
+    /// the synchronous path.
+    /// </summary>
+    private CapabilityManifestCapability BuildBackgroundImportCapability(CapabilityPolicyContext context)
+    {
+        var runner = options.BackgroundImportRunner;
+        var capability = Capability(
+            BackgroundImportCapabilityId,
+            "import",
+            context,
+            configured: runner?.AcceptsBackgroundImports ?? false,
+            unavailableReasonOverride: runner is null
+                ? CapabilityReasonCodes.DependencyUnavailable
+                : runner.UnavailableReason,
+            entitlementKey: "import.file",
+            policyCapability: "metadata.write");
+        return capability with
+        {
+            Runner = runner is { AcceptsBackgroundImports: true }
+                ? runner.Runner
+                : Honua.Core.Features.FileImport.Domain.ImportJobRunners.Unavailable,
+        };
+    }
+
+    /// <summary>
+    /// <c>import.objectStore</c> (honua-server#5888): <c>s3://</c> imports that use the host
+    /// identity. Disabled until at least one bucket is allow-listed. <c>schemes</c> stays
+    /// <c>["s3"]</c> either way so callers can see the supported scheme before it is enabled.
+    /// </summary>
+    private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context)
+    {
+        var capability = Capability(
+            ObjectStoreImportCapabilityId,
+            "import",
+            context,
+            configured: options.ObjectStoreConfigured,
+            entitlementKey: "import.file",
+            policyCapability: "metadata.write");
+        return capability with { Schemes = ["s3"] };
+    }
+
+    private static CapabilityManifestCapability[] StampRollbackTargets(
+        CapabilityManifestCapability[] capabilities,
+        OperationCapabilitySummary summary,
+        CapabilityPolicyContext context)
+    {
+        var discloseTargets = context.Authenticated
+            && (context.CallerCapabilities.Contains("deploy.rollback")
+                || context.CallerCapabilities.Contains("admin.rbac.write"));
+        var targets = discloseTargets
+            ? summary.RollbackTargets
+                .Select(static claim => new CapabilityManifestRollbackTarget
+                {
+                    TargetId = claim.TargetId,
+                    Backend = claim.Backend,
+                    State = claim.State,
+                    Executable = claim.Executable,
+                    ReasonCode = claim.ReasonCode
+                })
+                .ToArray()
+            : null;
+
+        for (var index = 0; index < capabilities.Length; index++)
+        {
+            if (!string.Equals(capabilities[index].Id, "deploy.rollback", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var reason = capabilities[index].ReasonCode;
+            if (summary.HasDurableOperationStore
+                && !summary.AnyExecutableRollbackTarget
+                && (reason is null || reason == CapabilityReasonCodes.DisabledByConfiguration))
+            {
+                reason = RollbackNoExecutableTarget;
+            }
+
+            capabilities[index] = capabilities[index] with
+            {
+                RollbackTargets = targets,
+                ReasonCode = reason
+            };
+        }
+
+        return capabilities;
     }
 
     private bool IsFieldCollectionSyncSupported()
@@ -1313,10 +1628,31 @@ internal sealed class CapabilityManifestService(
         bool SupportsCancellation,
         bool SupportsProgressPolling);
 
+    /// <summary>
+    /// Manifest id (and Community capability key) for the governed proposal/approval control
+    /// plane. Unavailable wherever the Redis-backed durable store is not composed.
+    /// </summary>
+    internal const string OperationsProposalsCapabilityId = CapabilityUnavailableCodes.ControlPlaneProposalsCapability;
+
+    private const string RollbackExecutable = "rollback.executable";
+    private const string RollbackHandoffOnly = "rollback.handoff-only";
+    private const string RollbackBackendMissing = "rollback.backend-missing";
+    private const string RollbackBackendProbeFailed = "rollback.backend-probe-failed";
+    private const string RollbackPriorRevisionMissing = "rollback.prior-revision-missing";
+    private const string RollbackNoExecutableTarget = "rollback.no-executable-target";
+
+    private readonly record struct RollbackTargetClaim(
+        string TargetId,
+        string Backend,
+        string State,
+        bool Executable,
+        string ReasonCode);
+
     private readonly record struct OperationCapabilitySummary(
         bool HasDurableOperationStore,
         bool HasAutonomyPolicyStore,
-        bool AnyConfiguredTargetSupportsRollback);
+        bool AnyExecutableRollbackTarget,
+        IReadOnlyList<RollbackTargetClaim> RollbackTargets);
 }
 
 internal static class CapabilityReasonCodes
@@ -1332,7 +1668,7 @@ internal static class CapabilityReasonCodes
     /// <summary>
     /// The capability is supported and configured, but an infrastructure dependency the install
     /// never composed makes it unusable (honua-release#202). Today the only such dependency is
-    /// the Redis-backed durable job store behind <c>jobs.runner</c>: Redis is optional for a
+    /// the Redis-backed durable store behind <c>jobs.runner</c> and <c>operations.proposals</c>: Redis is optional for a
     /// local install, so its absence must read as an honest degraded posture, not as an
     /// available capability whose every operation 503s.
     /// </summary>

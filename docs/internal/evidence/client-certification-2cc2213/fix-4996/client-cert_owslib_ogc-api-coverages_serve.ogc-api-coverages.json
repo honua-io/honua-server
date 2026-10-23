@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/owslib/ogc-api-coverages/serve.ogc-api-coverages",
+  "canonical_client": "OWSLib",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "client_version_detail": "OWSLib==0.36.0",
+  "surface": "ogc-api-coverages",
+  "operation": "serve.ogc-api-coverages",
+  "protocol_version": "OGC API - Coverages 1.0",
+  "protocol_profile": "core+geotiff+png",
+  "started_at": "2026-09-20T09:08:53.407225Z",
+  "finished_at": "2026-09-20T09:08:57.045483Z",
+  "duration_ms": 3638,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "boundary",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 6 checks passed across 6 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/coverages/collections/2000/coverage",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "list coverage collections and fetch the full coverage",
+      "outcome": "pass",
+      "detail": "coverages ['0', '2000', '2496']; collection 2000 decoded TIFF (64, 64) constant 180",
+      "request_url": null,
+      "duration_ms": 1914
+    },
+    {
+      "facet": "boundary",
+      "name": "spatial subset through the client's subset parameter",
+      "outcome": "pass",
+      "detail": "subset returned (19, 19)",
+      "request_url": null,
+      "duration_ms": 205
+    },
+    {
+      "facet": "crs-axis",
+      "name": "collection extent is CRS84 lon/lat and subset axis order is irrelevant",
+      "outcome": "pass",
+      "detail": "extent [-122.45, 37.73, -122.38000000000001, 37.8] in http://www.opengis.net/def/crs/OGC/1.3/CRS84; subset sizes [(19, 19), (19, 19)]",
+      "request_url": null,
+      "duration_ms": 230
+    },
+    {
+      "facet": "negative",
+      "name": "unknown collection and unsupported format are problem responses",
+      "outcome": "pass",
+      "detail": "unknown collection -> 404; unsupported f=json -> 400 application/problem+json",
+      "request_url": null,
+      "duration_ms": 102
+    },
+    {
+      "facet": "auth",
+      "name": "protected coverage collection challenges and authenticates credentials",
+      "outcome": "pass",
+      "detail": "http://honua:5000/ogc/coverages/collections/2010: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 404, 'oidc-bearer': 404} (authenticated principals pass the access policy; the protected mirror carries no raster band, so it resolves past authentication to its catalogue answer)",
+      "request_url": null,
+      "duration_ms": 708
+    },
+    {
+      "facet": "media-schema",
+      "name": "coverage schema and alternate encodings match their media types",
+      "outcome": "pass",
+      "detail": "schema properties ['band_1']; default image/tiff; f=png image/png (64, 64)",
+      "request_url": null,
+      "duration_ms": 478
+    }
+  ]
+}

@@ -9,6 +9,7 @@ namespace Honua.Core.Tests.Features.Geocoding.Providers;
 
 public sealed class AzureMapsGeocodeProviderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_ValidResponse_ReturnsCandidate()
     {
@@ -30,6 +31,7 @@ public sealed class AzureMapsGeocodeProviderTests
         Assert.Equal("azure-forward-1", candidate.ProviderId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReverseGeocodeAsync_ValidResponse_ReturnsMatch()
     {
@@ -51,6 +53,7 @@ public sealed class AzureMapsGeocodeProviderTests
         Assert.Equal("azure-reverse-1", result.ProviderId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SuggestAsync_ValidResponse_ReturnsSuggestions()
     {

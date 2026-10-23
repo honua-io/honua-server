@@ -1,0 +1,438 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Services;
+using Honua.Protocols.Stac.Services;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+
+namespace Honua.Server.Tests.Features.Protocols.Stac;
+
+/// <summary>
+/// Unit tests for STAC filter parsing helpers and metadata-graph publication lookups.
+/// </summary>
+[Protocol(TestProtocols.Stac)]
+public sealed class StacFilterHelpersTests
+{
+    [UnitTest]
+    public void TryCreateIntersectsSpatialFilter_WithGeoJsonContainer_RejectsGeometry()
+    {
+        var geometryService = new GeometryService(Options.Create(new LimitsOptions()));
+        var containers = new[]
+        {
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,2]}}",
+            "{\"type\":\"FeatureCollection\",\"features\":[]}"
+        };
+
+        // codeql[cs/linq/missed-select]: asserts each invalid geometry container is rejected
+        foreach (var geoJson in containers)
+        {
+            var accepted = StacFilterHelpers.TryCreateIntersectsSpatialFilter(
+                geoJson,
+                geometryService,
+                out var spatialFilter,
+                out var error);
+
+            accepted.Should().BeFalse();
+            spatialFilter.Should().BeNull();
+            error.Should().Be("Invalid intersects geometry.");
+        }
+    }
+
+    [UnitTest]
+    public async Task ResolveVisibleStacPublicationsAsync_WithOutOfOrderPublications_IsDeterministic()
+    {
+        var firstGraph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-alpha", "alpha", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-two", "second")
+            .AddResource("res-one", "first")
+            .AddPublication(
+                "pub-two",
+                "svc-alpha",
+                "res-two",
+                layerIndex: 2,
+                serviceLocalId: "second",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-one",
+                "svc-alpha",
+                "res-one",
+                layerIndex: 1,
+                serviceLocalId: "first",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+
+        var secondGraph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-alpha", "alpha", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-one", "first")
+            .AddResource("res-two", "second")
+            .AddPublication(
+                "pub-one",
+                "svc-alpha",
+                "res-one",
+                layerIndex: 1,
+                serviceLocalId: "first",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-two",
+                "svc-alpha",
+                "res-two",
+                layerIndex: 2,
+                serviceLocalId: "second",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+
+        var firstOrder = await ResolveVisiblePublicationsAsync(firstGraph);
+        var secondOrder = await ResolveVisiblePublicationsAsync(secondGraph);
+
+        firstOrder.Select(publication => publication.LayerIndex).Should().Equal(1, 2);
+        secondOrder.Select(publication => publication.LayerIndex).Should().Equal(1, 2);
+    }
+
+    [UnitTest]
+    public async Task ResolveVisibleStacPublicationsAsync_IgnoresResourcesWithoutStacPublication()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-alpha", "alpha", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-unpublished", "unpublished", accessPolicy: AnonymousAccess())
+            .AddResource("res-published", "published")
+            .AddPublication(
+                "pub-published",
+                "svc-alpha",
+                "res-published",
+                layerIndex: 2,
+                serviceLocalId: "published",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+
+        var visible = await ResolveVisiblePublicationsAsync(graph);
+
+        visible.Should().ContainSingle(publication => publication.Resource.Metadata.Id == "res-published");
+        visible.Should().NotContain(publication => publication.Resource.Metadata.Id == "res-unpublished");
+    }
+
+    [UnitTest]
+    public async Task ResolveVisibleStacPublicationsAsync_IgnoresPublicationsOnNonStacService()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-non-stac", "alpha", protocols: ["FeatureServer"], accessPolicy: AnonymousAccess())
+            .AddService("svc-stac", "beta", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-non-stac", "non-stac")
+            .AddResource("res-stac", "stac")
+            .AddPublication(
+                "pub-non-stac",
+                "svc-non-stac",
+                "res-non-stac",
+                layerIndex: 1,
+                serviceLocalId: "non-stac",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-stac",
+                "svc-stac",
+                "res-stac",
+                layerIndex: 2,
+                serviceLocalId: "stac",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+
+        var visible = await ResolveVisiblePublicationsAsync(graph);
+
+        visible.Should().ContainSingle(publication => publication.Resource.Metadata.Id == "res-stac");
+        visible.Should().NotContain(publication => publication.Resource.Metadata.Id == "res-non-stac");
+    }
+
+    [UnitTest]
+    public async Task ResolveVisibleStacPublicationsAsync_RespectsDisabledV2StacProtocol()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-stac",
+                "stac",
+                protocols: ["FeatureServer"])
+            .AddResource("res-stac", "stac-resource")
+            .AddPublication(
+                "pub-stac",
+                "svc-stac",
+                "res-stac",
+                layerIndex: 0,
+                serviceLocalId: "0",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+
+        using var provider = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = provider
+        };
+
+        var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
+        var resolved = await StacV2Lookups.ResolveStacPublicationAsync(context, "0", CancellationToken.None);
+
+        visible.Should().BeEmpty();
+        resolved.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task StacPublicationLookups_ExcludeRetiredPublicationAndResourceLifecycles()
+    {
+        var activeStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var retiredStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var baseGraph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-stac",
+                "stac",
+                protocols: [StacProtocolConstants.ProtocolName],
+                accessPolicy: AnonymousAccess())
+            .AddResource("res-active", "active")
+            .AddResource("res-retired-publication", "retired-publication")
+            .AddResource("res-retired-resource", "retired-resource")
+            .AddPublication(
+                "pub-active",
+                "svc-stac",
+                "res-active",
+                layerIndex: 0,
+                serviceLocalId: "active",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-retired-publication",
+                "svc-stac",
+                "res-retired-publication",
+                layerIndex: 1,
+                serviceLocalId: "retired-publication",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-retired-resource",
+                "svc-stac",
+                "res-retired-resource",
+                layerIndex: 2,
+                serviceLocalId: "retired-resource",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+        var graph = baseGraph with
+        {
+            Resources = baseGraph.Resources
+                .Select(resource => resource with
+                {
+                    Status = resource.Metadata.Id == "res-retired-resource" ? retiredStatus : activeStatus,
+                })
+                .ToArray(),
+            Publications = baseGraph.Publications
+                .Select(publication => publication with
+                {
+                    Status = publication.Metadata.Id == "pub-retired-publication" ? retiredStatus : activeStatus,
+                })
+                .ToArray(),
+        };
+        using var provider = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = provider };
+
+        var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
+        var active = await StacV2Lookups.ResolveStacPublicationAsync(context, "active", CancellationToken.None);
+        var retiredPublication = await StacV2Lookups.ResolveStacPublicationAsync(
+            context,
+            "retired-publication",
+            CancellationToken.None);
+        var retiredResource = await StacV2Lookups.ResolveStacPublicationAsync(
+            context,
+            "retired-resource",
+            CancellationToken.None);
+
+        visible.Should().ContainSingle().Which.Publication.Metadata.Id.Should().Be("pub-active");
+        active.Should().NotBeNull();
+        retiredPublication.Should().BeNull();
+        retiredResource.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithDatelineCrossingBBox_ReturnsMultiPolygonFilter()
+    {
+        var filter = StacFilterHelpers.ParseBbox("170,-10,-170,10");
+
+        filter.Should().NotBeNull();
+
+        var geometry = new WKBReader().Read(filter!.Value.Geometry);
+        geometry.Should().BeOfType<MultiPolygon>();
+
+        var multiPolygon = (MultiPolygon)geometry;
+        multiPolygon.NumGeometries.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithThreeDimensionalBBox_ReturnsSpatialFilter()
+    {
+        var filter = StacFilterHelpers.ParseBbox("100,0,0,105,1,1");
+
+        filter.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithInvalidThreeDimensionalBBox_ReturnsNull()
+    {
+        var filter = StacFilterHelpers.ParseBbox("100,0,2,105,1,1");
+
+        filter.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithOutOfRangeCoordinates_ReturnsNull()
+    {
+        var filter = StacFilterHelpers.ParseBbox("200,95,210,100");
+
+        filter.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithFallbackStringTimestamp_ReturnsNull()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.String }
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", resource);
+
+        filter.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithFallbackTemporalTimestamp_ReturnsTemporalFilter()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", resource);
+
+        filter.Should().NotBeNull();
+        filter!.Value.PropertyName.Should().Be("timestamp");
+    }
+
+    private static async Task<StacV2Lookups.ResolvedStacPublication[]> ResolveVisiblePublicationsAsync(
+        MetadataV2Graph graph)
+    {
+        using var provider = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = provider
+        };
+
+        return await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
+    }
+
+    // A doubly-open / empty datetime interval (datetime=../.., /, /..) is NOT a valid
+    // OGC API-Features / STAC value — an interval must have at least one bounded end. The
+    // STAC API conformance validator requires these to be rejected with 400, so the syntax
+    // check must fail and ParseDatetime must return null. (Reverts BH-S-02 from #2423, which
+    // accepted them as a no-op filter and regressed STAC item-search conformance.)
+
+    [UnitTest]
+    public void IsValidDatetimeSyntax_WithDoublyOpenInterval_ReturnsFalse()
+    {
+        foreach (var datetime in new[] { "../..", "/", "/..", "../" })
+        {
+            StacFilterHelpers.IsValidDatetimeSyntax(datetime)
+                .Should().BeFalse("'{0}' is a doubly-open interval and must be rejected", datetime);
+        }
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithDoublyOpenInterval_ReturnsNull()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        const string openInterval = "../..";
+        var filter = StacFilterHelpers.ParseDatetime(openInterval, resource);
+
+        filter.Should().BeNull();
+    }
+
+    // Boundary complement to the doubly-open rejection: a HALF-bounded (single-open)
+    // interval is valid per OGC API-Features / STAC and must still be accepted. Rejection
+    // is scoped strictly to the doubly-open/empty case; the revert must not over-reject
+    // '../date' or 'date/..'.
+
+    [UnitTest]
+    public void IsValidDatetimeSyntax_WithSingleOpenInterval_ReturnsTrue()
+    {
+        foreach (var datetime in new[] { "../2023-01-02T00:00:00Z", "2023-01-02T00:00:00Z/.." })
+        {
+            StacFilterHelpers.IsValidDatetimeSyntax(datetime)
+                .Should().BeTrue("'{0}' is a valid half-bounded interval", datetime);
+        }
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithOpenStartInterval_ReturnsUpperBoundedFilter()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("../2023-01-02T00:00:00Z", resource);
+
+        filter.Should().NotBeNull();
+        var value = filter!.Value;
+        value.Start.Should().BeNull();
+        value.End.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithOpenEndInterval_ReturnsLowerBoundedFilter()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z/..", resource);
+
+        filter.Should().NotBeNull();
+        var value = filter!.Value;
+        value.Start.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
+        value.End.Should().BeNull();
+    }
+
+    private static MetadataV2Resource CreateResource(MetadataV2Field[] fields)
+    {
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test resource" },
+            SchemaFields = fields,
+        };
+    }
+
+    private static AccessPolicy AnonymousAccess() => new() { AllowAnonymous = true };
+}

@@ -108,3 +108,10 @@ in the change log within each feature transaction. The download feed excludes th
 operations; other replicas still receive those uploads, and a later partial upload cannot hide an
 earlier foreign edit to the same object. Existing history is retained with an unknown (null) origin. This correctness fix does
 not change offline sync's PREVIEW release status.
+
+Set `returnIdsForAdds=true` on an upload or bidirectional synchronization to receive the rows the
+server created: the response carries `editResults: [{id, addResults}]`, where each layer's
+`addResults` is index-aligned with that layer's uploaded adds and holds the server-assigned
+`objectId` (and `globalId` when the layer has one). A bidirectional download never echoes the
+replica's own uploads, so the client maps its local rows through `addResults` instead of receiving
+duplicates.

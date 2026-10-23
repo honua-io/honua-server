@@ -76,6 +76,40 @@ public sealed class InMemoryEmbedStoreTests
     }
 
     [UnitTest]
+    public async Task ValidateRacingRevoke_DoesNotResurrectTheKey()
+    {
+        var store = new InMemoryEmbedKeyStore();
+        var created = await store.CreateAsync("integration", Scope(), null, null, CancellationToken.None);
+
+        var validators = Enumerable.Range(0, 10_000)
+            .Select(_ => Task.Run(() => store.ValidateAsync(created.Key, CancellationToken.None)))
+            .ToArray();
+        var revoke = Task.Run(() => store.RevokeAsync(created.Record.Id, CancellationToken.None));
+        await Task.WhenAll(validators.Cast<Task>().Append(revoke));
+
+        (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull();
+        (await store.GetAsync(created.Record.Id, CancellationToken.None))!.RevokedAt.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public async Task ValidateRacingRotate_RejectsOldSecretAndAcceptsNew()
+    {
+        var store = new InMemoryEmbedKeyStore();
+        var created = await store.CreateAsync("integration", Scope(), null, null, CancellationToken.None);
+
+        var rotate = Task.Run(() => store.RotateAsync(created.Record.Id, CancellationToken.None));
+        var validators = Enumerable.Range(0, 10_000)
+            .Select(_ => Task.Run(() => store.ValidateAsync(created.Key, CancellationToken.None)))
+            .ToArray();
+        await Task.WhenAll(validators.Cast<Task>().Append(rotate));
+
+        var rotated = await rotate;
+        rotated.Should().NotBeNull();
+        (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull();
+        (await store.ValidateAsync(rotated!.Key, CancellationToken.None)).Should().NotBeNull();
+    }
+
+    [UnitTest]
     public async Task RecordRequest_CountsWithinWindowAndResetsAfter()
     {
         var clock = new MutableTimeProvider(new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero));

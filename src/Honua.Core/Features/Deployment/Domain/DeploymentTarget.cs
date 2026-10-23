@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Studio.Domain;
+
 namespace Honua.Core.Features.Deployment.Domain;
 
 /// <summary>
@@ -39,4 +41,18 @@ public sealed record DeploymentTarget
     /// Free-form labels used for filtering, policy, or observability routing.
     /// </summary>
     public IReadOnlyDictionary<string, string> Labels { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Identifies the existing governed Studio route that the publication commits.</summary>
+    public static DeploymentTarget ForStudioPublishedRoute(string route)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+        var key = route[0] == '/' ? route : "/" + route;
+        return new DeploymentTarget
+        {
+            TargetId = "studio-route:" + key,
+            Kind = DeploymentKind.StudioPublishedRoute,
+            HostingMode = HostingMode.ManagedService,
+            RoutePrefix = StudioPublishedRoutes.BuildActiveUrl(key)
+        };
+    }
 }

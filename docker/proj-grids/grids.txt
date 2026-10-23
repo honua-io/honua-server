@@ -18,6 +18,8 @@
 # --- NADCON / NADCON5 horizontal (NAD27 <-> NAD83 and realization chain, CONUS + Alaska) ---
 us_noaa_conus.tif
 us_noaa_alaska.tif
+us_noaa_hawaii.tif
+us_noaa_prvi.tif
 us_noaa_nadcon5_nad27_nad83_1986_conus.tif
 us_noaa_nadcon5_nad83_1986_nad83_harn_conus.tif
 us_noaa_nadcon5_nad83_harn_nad83_fbn_conus.tif

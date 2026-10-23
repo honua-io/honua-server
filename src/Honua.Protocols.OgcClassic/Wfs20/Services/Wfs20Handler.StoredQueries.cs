@@ -10,6 +10,7 @@ using System.Security;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
@@ -100,7 +101,7 @@ internal sealed partial class Wfs20Handler
             bucket.Clear();
             foreach (var definition in values
                          .Where(static value => value.HasValue)
-                         .Select(static value => JsonSerializer.Deserialize<StoredQueryDefinition>((string)value!))
+                         .Select(static value => DeserializeStoredQueryDefinition((string)value!))
                          .OfType<StoredQueryDefinition>())
             {
                 bucket[definition.Id] = definition;
@@ -120,7 +121,7 @@ internal sealed partial class Wfs20Handler
         cancellationToken.ThrowIfCancellationRequested();
         var scope = ResolveStoredQueryScope(context);
         var database = redis.GetDatabase();
-        var serialized = JsonSerializer.Serialize(definition);
+        var serialized = SerializeStoredQueryDefinition(definition);
         cancellationToken.ThrowIfCancellationRequested();
         // Dispatch the bounded mutation pair before awaiting either command. Redis
         // commands cannot be retracted: cancellation must not strand a definition
@@ -195,9 +196,34 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    internal static IResult? RequireStoredQueryEditor(HttpContext context)
+    {
+        var decision = ServiceDataEditorAuthorization.EvaluateGlobalDataEditor(context);
+        if (decision.IsAllowed)
+        {
+            return null;
+        }
+
+        if (decision.RequiresAuthentication)
+        {
+            return Results.Unauthorized();
+        }
+
+        return Wfs20ErrorResults.CreateForbidden(
+            context,
+            "AccessDenied",
+            decision.FailureReason ?? "User does not have the required data editor role.");
+    }
+
     public static async Task<IResult> HandleCreateStoredQueryAsync(
         HttpContext context, CancellationToken cancellationToken = default)
     {
+        var editorError = RequireStoredQueryEditor(context);
+        if (editorError is not null)
+        {
+            return editorError;
+        }
+
         var document = GetParsedStoredQueryRequestDocument(context);
         if (document?.Root is null ||
             !string.Equals(document.Root.Name.LocalName, Wfs20Utilities.Operations.CreateStoredQuery, StringComparison.OrdinalIgnoreCase))
@@ -360,6 +386,12 @@ internal sealed partial class Wfs20Handler
         string? storedQueryId,
         CancellationToken cancellationToken = default)
     {
+        var editorError = RequireStoredQueryEditor(context);
+        if (editorError is not null)
+        {
+            return editorError;
+        }
+
         if (string.IsNullOrWhiteSpace(storedQueryId))
         {
             storedQueryId = GetParsedStoredQueryRequestDocument(context)
@@ -480,20 +512,18 @@ internal sealed partial class Wfs20Handler
             requireResourceIdQualifier: false,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        var result = await _gmlFeatureStore.QueryGmlAsync(
-            descriptor.StorageLayerId,
-            query with { Limit = 1 },
-            cancellationToken).ConfigureAwait(false);
-        if (result.Items.IsDefaultOrEmpty)
+        var reader = await ResolveQueryReaderAsync(descriptor, cancellationToken).ConfigureAwait(false);
+        var limitedQuery = query with { Limit = 1 };
+        var plan = new LayerQueryPlan(descriptor, limitedQuery, 1, Reader: reader);
+        var items = await QueryGmlFeaturesAsync(plan, cancellationToken).ConfigureAwait(false);
+        if (items.IsDefaultOrEmpty)
         {
             return CreateStoredQueryFeatureNotFoundResult(context, featureId);
         }
-
-        var plan = new LayerQueryPlan(descriptor, query with { Limit = 1 }, 1);
         var xml = WriteXmlDocument(writer =>
         {
             writer.WriteStartDocument();
-            WriteFeature(writer, plan, result.Items[0], includeMemberWrapper: false);
+            WriteFeature(writer, plan, items[0], includeMemberWrapper: false);
             writer.WriteEndDocument();
         });
 
@@ -794,7 +824,13 @@ internal sealed partial class Wfs20Handler
             : null;
     }
 
-    private sealed record StoredQueryDefinition(
+    internal static string SerializeStoredQueryDefinition(StoredQueryDefinition definition)
+        => JsonSerializer.Serialize(definition, WfsStoredQueryJsonContext.Default.StoredQueryDefinition);
+
+    internal static StoredQueryDefinition? DeserializeStoredQueryDefinition(string json)
+        => JsonSerializer.Deserialize(json, WfsStoredQueryJsonContext.Default.StoredQueryDefinition);
+
+    internal sealed record StoredQueryDefinition(
         string Id,
         string? Title,
         string? Abstract,
@@ -804,6 +840,17 @@ internal sealed partial class Wfs20Handler
         string? FilterXml,
         IReadOnlyList<StoredQueryParameter> Parameters);
 
-    private sealed record StoredQueryParameter(string Name, string Type);
+    internal sealed record StoredQueryParameter(string Name, string Type);
 
 }
+
+/// <summary>
+/// PascalCase source-generated metadata for Redis stored-query payloads.
+/// The parameterless serializer wrote these property names; a camelCase context would
+/// strand definitions already stored by other replicas.
+/// </summary>
+[JsonSourceGenerationOptions]
+[JsonSerializable(typeof(Wfs20Handler.StoredQueryDefinition))]
+[JsonSerializable(typeof(Wfs20Handler.StoredQueryParameter))]
+[JsonSerializable(typeof(IReadOnlyList<Wfs20Handler.StoredQueryParameter>))]
+internal sealed partial class WfsStoredQueryJsonContext : JsonSerializerContext;

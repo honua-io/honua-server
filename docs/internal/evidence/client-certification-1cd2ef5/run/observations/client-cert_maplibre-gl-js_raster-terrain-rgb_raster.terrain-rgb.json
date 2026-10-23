@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/maplibre-gl-js/raster-terrain-rgb/raster.terrain-rgb",
+  "canonical_client": "MapLibre GL JS",
+  "client_lane": "js-maplibre",
+  "client_version": "6.5.0",
+  "client_version_detail": "maplibre-gl@6.5.0",
+  "surface": "raster-terrain-rgb",
+  "operation": "raster.terrain-rgb",
+  "protocol_version": "TileJSON 3.0 + Terrain-RGB",
+  "protocol_profile": "raster-dem mapbox encoding",
+  "started_at": "2026-09-21T10:00:17.083581Z",
+  "finished_at": "2026-09-21T10:01:48.889874Z",
+  "duration_ms": 91849,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "boundary",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 6 checks passed across 6 governed facets",
+  "primary_request_url": "http://honua:5000/terrain/5100/tile.json",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "setTerrain on the raster-dem source and read the DEM back with queryTerrainElevation",
+      "outcome": "pass",
+      "detail": "MapLibre 6.5.0: elevation at [-122.42, 37.76] = 291.9 m (fixture 289 m)",
+      "request_url": null,
+      "duration_ms": 13355
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown terrain dataset is refused",
+      "outcome": "pass",
+      "detail": "responses [404]; MapLibre errors [404]",
+      "request_url": null,
+      "duration_ms": 5828
+    },
+    {
+      "facet": "auth",
+      "name": "the protected DEM's TileJSON and tiles require transformRequest credentials",
+      "outcome": "pass",
+      "detail": "(elevation, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (291.9057777777198, [200]), 'oidc-bearer': (291.9057777777198, [200])}",
+      "request_url": null,
+      "duration_ms": 53753
+    },
+    {
+      "facet": "boundary",
+      "name": "tiles beyond the DEM extent are served as the -10000 m no-data sentinel",
+      "outcome": "pass",
+      "detail": "elevation west of the DEM -10000; 20 tiles all 200",
+      "request_url": null,
+      "duration_ms": 6654
+    },
+    {
+      "facet": "crs-axis",
+      "name": "the gradient runs east (+1 m/cell) and south (+2 m/cell) as the fixture encodes it",
+      "outcome": "pass",
+      "detail": "measured {'inside': 291.9057777777198, 'north': 195.76286964520295, 'east': 340.0000000000018}; fixture {'inside': 289, 'north': 193, 'east': 337}",
+      "request_url": null,
+      "duration_ms": 5847
+    },
+    {
+      "facet": "media-schema",
+      "name": "TileJSON declares terrain-rgb/mapbox and tiles are PNG",
+      "outcome": "pass",
+      "detail": "TileJSON 3.0.0 format terrain-rgb encoding {'type': 'mapbox-terrain-rgb', 'formula': 'elevationMeters = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1)', 'units': 'meters', 'tileSize': 256}; response types ['application/json', 'image/png']",
+      "request_url": null,
+      "duration_ms": 5869
+    }
+  ]
+}

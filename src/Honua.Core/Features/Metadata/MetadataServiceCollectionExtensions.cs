@@ -35,7 +35,8 @@ public static class MetadataServiceCollectionExtensions
     /// hook. Idempotent — safe to call from every provider registration path. The cache lets the
     /// caching provider decorator reuse one materialized snapshot across request scopes instead of
     /// re-reading the full catalog document on every catalog resolution. Staleness is bounded by
-    /// <c>Cache:MetadataGraphTtlSeconds</c>; catalog writes invalidate the writing node immediately.
+    /// <c>Cache:MetadataGraphTtlSeconds</c>; catalog writes invalidate the writing node immediately,
+    /// and every node when the host composes the Redis broadcast invalidator.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
     public static IServiceCollection AddMetadataV2GraphSnapshotCache(this IServiceCollection services)

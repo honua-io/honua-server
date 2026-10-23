@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Infrastructure.Rendering;
@@ -271,9 +272,11 @@ internal static class CoordinateTransformer
 
     /// <summary>
     /// Adjusts an extent to match a requested scale denominator, keeping the center point fixed.
-    /// This is the inverse of <see cref="CalculateScaleDenominator(SkiaMapRenderer.RenderExtent, int, int, int)"/>: given a target scale,
+    /// This is the inverse of <see cref="CalculateScaleDenominator(SkiaMapRenderer.RenderExtent, int, int, int, double?)"/>: given a target scale,
     /// it computes the extent width/height in map units that corresponds to that scale
-    /// at the given output dimensions and DPI.
+    /// at the given output dimensions and DPI. <paramref name="linearUnitFactor"/> is the
+    /// registry unit: metres per native unit for a projected CRS, radians per native
+    /// angular unit for a geographic CRS. Null uses the static SRID fallback.
     /// </summary>
     public static SkiaMapRenderer.RenderExtent AdjustExtentForScale(
         SkiaMapRenderer.RenderExtent extent,
@@ -281,7 +284,8 @@ internal static class CoordinateTransformer
         int imageWidth,
         int imageHeight,
         int dpi,
-        int srid)
+        int srid,
+        double? linearUnitFactor = null)
     {
         if (scaleDenominator <= 0 || imageWidth <= 0 || imageHeight <= 0 || dpi <= 0)
             return extent;
@@ -299,15 +303,16 @@ internal static class CoordinateTransformer
 
         if (IsGeographicSrid(srid))
         {
+            var radiansPerUnit = linearUnitFactor is > 0 ? linearUnitFactor.Value : Math.PI / 180.0;
             var cosLat = Math.Cos(centerY * Math.PI / 180.0);
-            var metersPerDegreeX = Math.PI / 180.0 * EarthRadius * Math.Max(cosLat, 1e-10);
-            var metersPerDegreeY = Math.PI / 180.0 * EarthRadius;
-            halfWidth = widthMeters / metersPerDegreeX / 2.0;
-            halfHeight = heightMeters / metersPerDegreeY / 2.0;
+            var metersPerUnitX = radiansPerUnit * EarthRadius * Math.Max(cosLat, 1e-10);
+            var metersPerUnitY = radiansPerUnit * EarthRadius;
+            halfWidth = widthMeters / metersPerUnitX / 2.0;
+            halfHeight = heightMeters / metersPerUnitY / 2.0;
         }
         else
         {
-            var unitFactor = LinearUnitToMeters(srid);
+            var unitFactor = linearUnitFactor is > 0 ? linearUnitFactor.Value : LinearUnitToMeters(srid);
             halfWidth = widthMeters / unitFactor / 2.0;
             halfHeight = heightMeters / unitFactor / 2.0;
         }
@@ -330,9 +335,11 @@ internal static class CoordinateTransformer
         int imageWidth,
         int imageHeight,
         int dpi,
-        int srid)
+        int srid,
+        double? linearUnitFactor = null)
     {
-        var adjusted = AdjustExtentForScale(ToRendererExtent(extent), scaleDenominator, imageWidth, imageHeight, dpi, srid);
+        var adjusted = AdjustExtentForScale(
+            ToRendererExtent(extent), scaleDenominator, imageWidth, imageHeight, dpi, srid, linearUnitFactor);
         return ToSharedExtent(adjusted);
     }
 
@@ -343,7 +350,8 @@ internal static class CoordinateTransformer
         SkiaMapRenderer.RenderExtent extent,
         int imageWidth,
         int dpi,
-        int srid)
+        int srid,
+        double? linearUnitFactor = null)
     {
         if (imageWidth <= 0 || dpi <= 0)
         {
@@ -356,12 +364,14 @@ internal static class CoordinateTransformer
         if (IsGeographicSrid(srid))
         {
             var centerLat = (extent.MinY + extent.MaxY) / 2.0;
-            extentWidthMeters = GetEffectiveWidth(extent) * Math.PI / 180.0 * EarthRadius * Math.Cos(centerLat * Math.PI / 180.0);
+            var radiansPerUnit = linearUnitFactor is > 0 ? linearUnitFactor.Value : Math.PI / 180.0;
+            extentWidthMeters = GetEffectiveWidth(extent) * radiansPerUnit * EarthRadius * Math.Cos(centerLat * Math.PI / 180.0);
         }
         else
         {
-            // Convert projected units to meters (handles foot-based CRSs)
-            extentWidthMeters = GetEffectiveWidth(extent) * LinearUnitToMeters(srid);
+            // Registry factor when the caller resolved one; otherwise the static SRID table.
+            var unitFactor = linearUnitFactor is > 0 ? linearUnitFactor.Value : LinearUnitToMeters(srid);
+            extentWidthMeters = GetEffectiveWidth(extent) * unitFactor;
         }
 
         // pixels per meter at the given DPI (1 inch = 0.0254 meters)
@@ -378,8 +388,32 @@ internal static class CoordinateTransformer
         global::Honua.Infrastructure.Rendering.RenderExtent extent,
         int imageWidth,
         int dpi,
-        int srid)
-        => CalculateScaleDenominator(ToRendererExtent(extent), imageWidth, dpi, srid);
+        int srid,
+        double? linearUnitFactor = null)
+        => CalculateScaleDenominator(ToRendererExtent(extent), imageWidth, dpi, srid, linearUnitFactor);
+
+    /// <summary>
+    /// Reads <see cref="CrsDefinition.LinearUnitFactor"/> when the registry has a definition.
+    /// Returns null when the caller should use <see cref="LinearUnitToMeters"/>.
+    /// </summary>
+    public static async ValueTask<double?> TryResolveLinearUnitFactorAsync(
+        ICrsRegistry? registry,
+        int srid,
+        CancellationToken cancellationToken)
+    {
+        if (registry is null)
+        {
+            return null;
+        }
+
+        var definition = await registry.ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false);
+        if (definition?.LinearUnitFactor is double factor && factor > 0 && double.IsFinite(factor))
+        {
+            return factor;
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Converts a pixel tolerance to map units for identify operations.
@@ -411,10 +445,10 @@ internal static class CoordinateTransformer
     /// Falls back to 1.0 (meters) for unrecognized SRIDs.
     /// </summary>
     /// <remarks>
-    /// This is a best-effort static lookup covering common US State Plane foot zones.
-    /// The canonical source is the EPSG registry (<c>spatial_ref_sys</c> in PostGIS).
-    /// A future enhancement could resolve the unit from the database when available;
-    /// this static fallback keeps the rendering path free of I/O.
+    /// No-registry fallback only. Callers that resolved a <see cref="CrsDefinition"/> pass
+    /// <see cref="CrsDefinition.LinearUnitFactor"/> into the scale methods instead. Foot
+    /// zones outside this table, including NAD83(HARN) codes such as EPSG:2866, stay at
+    /// 1.0 here and are corrected by the registry factor.
     /// </remarks>
     internal static double LinearUnitToMeters(int srid)
     {

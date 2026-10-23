@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Configuration;
 
 namespace Honua.Worker.Gdal.Execution;
 
@@ -31,6 +32,38 @@ internal sealed class GdalWorkerOptions
     [Range(1024L * 1024L, 1024L * 1024L * 1024L * 1024L,
         ErrorMessage = "MaxStagedArtifactBytes must be between 1 MiB and 1 TiB")]
     public long MaxStagedArtifactBytes { get; set; } = 10L * 1024L * 1024L * 1024L;
+
+    /// <summary>
+    /// Maximum uncompressed bytes of one entry in a ZIP dataset accepted by
+    /// <c>source.ogr</c>. Matches the managed import budget
+    /// (<see cref="Honua.Core.Features.Import.Domain.ImportLimits.MaxArchiveEntryBytes"/>).
+    /// The compressed-byte ceiling is <see cref="MaxArtifactBytes"/>; this bound
+    /// applies to the decompressed entry.
+    /// </summary>
+    [Range(1024L, FileSizeConstants.OneGB, ErrorMessage = "MaxArchiveEntryBytes must be between 1 KiB and 1 GiB")]
+    public long MaxArchiveEntryBytes { get; set; } = FileSizeConstants.FiveHundredMB;
+
+    /// <summary>
+    /// Maximum total uncompressed bytes written while unpacking one ZIP dataset.
+    /// Matches <see cref="Honua.Core.Features.Import.Domain.ImportLimits.MaxArchiveExtractedBytes"/>.
+    /// </summary>
+    [Range(1024L, 4L * FileSizeConstants.OneGB, ErrorMessage = "MaxArchiveExtractedBytes must be between 1 KiB and 4 GiB")]
+    public long MaxArchiveExtractedBytes { get; set; } = FileSizeConstants.OneGB;
+
+    /// <summary>
+    /// Maximum uncompressed/compressed ratio of one ZIP entry.
+    /// Matches <see cref="Honua.Core.Features.Import.Domain.ImportLimits.MaxArchiveCompressionRatio"/>.
+    /// </summary>
+    [Range(2d, 1_000_000d, ErrorMessage = "MaxArchiveCompressionRatio must be between 2 and 1000000")]
+    public double MaxArchiveCompressionRatio { get; set; } = 200d;
+
+    /// <summary>
+    /// Maximum number of entries in one ZIP dataset, including directory entries.
+    /// A small archive of many names otherwise spends the worker on metadata
+    /// before the tool timeout starts.
+    /// </summary>
+    [Range(1, 1_000_000, ErrorMessage = "MaxArchiveEntries must be between 1 and 1000000")]
+    public int MaxArchiveEntries { get; set; } = 100_000;
 
     /// <summary>
     /// Root directory under which per-job scratch workspaces are created. Each
@@ -110,7 +143,8 @@ internal sealed class GdalWorkerOptions
     /// guard reads dimensions from. A payload whose magic identifies a KNOWN raster
     /// container OUTSIDE this list (JPEG2000, GIF, BMP, NITF, HFA — each can declare an
     /// enormous canvas the guard cannot bound) is refused BEFORE a GDAL tool opens it.
-    /// Unknown / non-raster magic is left to GDAL and the vector paths as before.
+    /// Unknown magic is also refused for raster-role inputs before a GDAL tool is
+    /// spawned. Vector tools do not consult this raster allowlist.
     /// </para>
     ///
     /// <para>
@@ -158,4 +192,37 @@ internal sealed class GdalWorkerOptions
     /// </summary>
     [Range(1L, long.MaxValue, ErrorMessage = "MaxZoneVertices must be a positive vertex count")]
     public long MaxZoneVertices { get; set; } = 2_000_000L;
+
+    /// <summary>
+    /// Maximum number of sample points accepted in a <c>raster.interpolate-kriging</c>
+    /// payload. Ordinary kriging factors an (n+1)×(n+1) system once per job, so the
+    /// solve cost grows as n³ and an unbounded point set is a CPU DoS well inside the
+    /// per-invocation <see cref="ToolTimeout"/>. Default 1 024 points keeps that
+    /// factorization sub-second while covering realistic scattered-observation networks
+    /// (weather stations, soil samples, boreholes); denser inputs should be thinned or
+    /// tiled before submission (#3932).
+    /// </summary>
+    [Range(2, int.MaxValue, ErrorMessage = "MaxKrigingSamples must be at least 2 sample points")]
+    public int MaxKrigingSamples { get; set; } = 1_024;
+
+    /// <summary>
+    /// Maximum output cell count for <c>raster.interpolate-kriging</c>. The predicted
+    /// surface is materialized in managed memory before it is handed to GDAL, so kriging
+    /// carries a tighter bound than the shared <see cref="MaxRasterPixels"/> output-grid
+    /// cap that the <c>gdal_grid</c>-backed IDW path relies on. Default 4 000 000 cells
+    /// (a 2 000 × 2 000 surface ≈ 32 MiB of Double predictions) (#3932).
+    /// </summary>
+    [Range(1L, long.MaxValue, ErrorMessage = "MaxKrigingCells must be a positive cell count")]
+    public long MaxKrigingCells { get; set; } = 4_000_000L;
+
+    /// <summary>
+    /// Maximum sample²-cell evaluations for the managed kriging pass (prediction AND its
+    /// standard-error band), which runs before the GDAL tool timeout. The per-cell
+    /// standard error solves the primal system against the cached factorization — O(n²)
+    /// per cell — and dominates the O(n) prediction cost, so the budget is sample count
+    /// squared, not sample count. Default 250 million; combined with MaxKrigingSamples,
+    /// this bounds the prediction pass and the factorization independently.
+    /// </summary>
+    [Range(1L, long.MaxValue, ErrorMessage = "MaxKrigingPredictionWork must be a positive evaluation count")]
+    public long MaxKrigingPredictionWork { get; set; } = 250_000_000L;
 }

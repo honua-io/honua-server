@@ -162,6 +162,31 @@ internal interface IFeatureDataAccess
     Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Applies a batch and, when this provider can, persists <paramref name="receipt"/> in the
+    /// same transaction as the edit. The default cannot.
+    /// </summary>
+    /// <param name="layerId">Layer identifier for the operations.</param>
+    /// <param name="editBatch">Batch of operations to apply.</param>
+    /// <param name="receipt">Receipt that must commit with a committed edit.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The edit result and whether the receipt committed with it.</returns>
+    Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken)
+    {
+        _ = receipt;
+        return ApplyWithoutDurableReceiptAsync();
+
+        async Task<FeatureEditApplication> ApplyWithoutDurableReceiptAsync()
+        {
+            var result = await ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            return new FeatureEditApplication { Result = result, ReceiptDurable = false };
+        }
+    }
+
+    /// <summary>
     /// Opens a transaction that can apply edit batches across multiple layers atomically.
     /// </summary>
     Task<IFeatureWriterTransaction> BeginTransactionAsync(

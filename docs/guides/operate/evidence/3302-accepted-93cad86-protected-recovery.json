@@ -1,0 +1,3137 @@
+{
+  "schemaVersion": "honua.operate-protected-recovery-replay/v1",
+  "candidate": {
+    "sha": "93cad86ec4fb28fba3ff0b9358059d86aa55dde5",
+    "image": "ghcr.io/honua-io/honua-server:nightly-93cad86",
+    "digest": "sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "reference": "ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "imageId": "sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "manifestSha256": "bf2a63e6c0d6ef09720bde11cac6cdfdd6e211271706d5098921b9111f753fd7",
+    "releaseRepositoryCommit": "8aa2bf63cfe9be4458542d5a0086346091a50dc6"
+  },
+  "qualificationStatus": "accepted-pin-placement-replay",
+  "scope": "Local Docker self-hosted rolling target (honua-yarp-rolling) on Docker Desktop for Windows. The server launches replicas, swaps its embedded proxy, keeps the prior replica through the observation window, runs the telemetry and golden-query gates and the recovery fence. The honua-devops executors run against the same server. Not AWS ECS-small, not the finding-driven proposal and approval path, not Console.",
+  "harness": {
+    "repository": "https://github.com/honua-io/honua-devops",
+    "commit": "28a6419fcc9bbce6ef9503ff2b7ba37f47fbf7ee",
+    "path": "certification/protected-recovery",
+    "upstreamSha256LF": {
+      "journey.py": "aa70ffefec654472498c2869537f5ba1b2642407755ac6736d253f626be4bd3d",
+      "boot.sh": "0b8d09a4f415adc0df281a56bc58fc11304ef70deaf217f0c9c0843ca93dde39"
+    },
+    "replayedSha256": {
+      "journey.py": "82e9883362b9530c1a11df432bffdeeb2f3559d581bf0a48d284374096852594",
+      "boot.sh": "562ceade42af6e8382a6e467e8ba88089e61a8f5cdedae1cc38f47f261224901",
+      "restart.py": "cde7c379a35bc4426ff1919a2a730310a09166196a0674515613566940f7cca2"
+    },
+    "adaptations": [
+      "Windows host: boot.sh takes PROOF_DOCKER_CLI (the Linux docker 27 CLI copied from docker:27-cli) because the host CLI is a Windows binary, and runs with MSYS_NO_PATHCONV=1. Restarts reproduce boot.sh start_server argument for argument from Python (restart.py) instead of a POSIX shell.",
+      "Deploy parameters add rollback.functional_query.path=/golden and rollback.functional_query.expected_contains = \"revision\": \"prior-a\". Since honua-server#3892 (in 93cad86, not in the 80e23be receipt) an automatic rollback completes only after a functional query proves the restored replica. A first run without them (transcript not retained; it was overwritten by the rerun) left every recovery cell at RollbackRequested with reason rollback.awaiting_data_plane and functionalQuery=NotProven.",
+      "Cell wrong-body-regression-satisfiable added. The original wrong-body-regression cell sets telemetry.golden_query.expected_contains and forbidden_contains to the same marker. Those keys also bind the restored-replica proof, so its recovery can never be proven; it settled Failed (rollback.functional_query_failed) after the 300-second window. The added cell uses a satisfiable expectation.",
+      "DevOps tests: the same two parameters and the Python restart in ProtectedRecoveryLiveJourneyTests; no other change."
+    ],
+    "adaptationDiffs": {
+      "journey.py": "diff --git a/upstream/journey.py b/certification/protected-recovery/journey.py\nindex 9693128..fb5fb53 100644\n--- a/upstream/journey.py\n+++ b/certification/protected-recovery/journey.py\n@@ -53,6 +53,11 @@ TELEMETRY_PARAMETERS = {\n     \"telemetry.max_staleness_seconds\": \"60\",\n     \"telemetry.rollback.consecutive_breaches\": \"1\",\n     \"deployment.protection.observation_window_seconds\": \"900\",\n+    # Windows replay on 93cad86 (honua-server#3302): since honua-server#3892 an automatic rollback\n+    # completes only after a functional query proves the restored replica. Without these keys the\n+    # self-hosted backend settles ManualInterventionRequired (rollback.functional_query_unproven).\n+    \"rollback.functional_query.path\": \"/golden\",\n+    \"rollback.functional_query.expected_contains\": \"\\\"revision\\\": \\\"prior-a\\\"\",\n }\n \n \n@@ -478,6 +483,30 @@ class Journey:\n         self.snapshot(\"after wrong-body refusal\")\n         self.check(self.served() == \"prior-a\", \"prior revision kept serving\")\n \n+    def cell_wrong_body_regression_satisfiable(self):\n+        # Windows replay on 93cad86 (honua-server#3302). Since honua-server#3892 the golden-query\n+        # expectation also proves the restored prior replica, so the original cell's contradictory\n+        # markers (expected == forbidden) can never settle RolledBack. Here the expectation is the\n+        # correct answer's marker: the public stand-in answer for the candidate lacks it, and the\n+        # restored prior replica's /golden answer carries it.\n+        self.reset()\n+        self.telemetry(HEALTHY, \"healthy metric evidence\")\n+        extra = {\n+            \"telemetry.golden_query.url\": \"https://example.com/\",\n+            \"telemetry.golden_query.expected_contains\": \"\\\"revision\\\": \\\"prior-a\\\"\",\n+            \"telemetry.exposure_deadline_seconds\": \"60\",\n+        }\n+        operation_id = self.create(\"candidate-b\", unique(\"wrong-body-sat\"), extra)\n+        op = self.watch(operation_id, lambda o: o.get(\"status\") in (\"RolledBack\", \"Failed\", \"ManualInterventionRequired\")\n+                        or phase(o) == \"observing\", 420, \"wrong body refused and recovery proven\")\n+        self.check(phase(op) != \"observing\", \"candidate with a wrong body was never activated\")\n+        self.check(op.get(\"status\") == \"RolledBack\", \"wrong body failed the rollout and the prior was proven\")\n+        verdicts = [e for e in self.cell[\"events\"] if e[\"kind\"] == \"transition\"\n+                    and \"golden\" in (e.get(\"currentPhase\") or \"\").lower()]\n+        self.check(bool(verdicts), \"server attributed the hold/failure to the golden-query body verdict\")\n+        self.snapshot(\"after wrong-body refusal\")\n+        self.check(self.served() == \"prior-a\", \"prior revision kept serving\")\n+\n     def cell_controller_crash(self):\n         operation_id, before = self.activate(\"candidate-b\", unique(\"crash\"))\n         self.note(\"fault\", label=\"controller crash: server container restarted during the observation window\")\n@@ -589,8 +618,28 @@ def docker(*args, check=True):\n \n \n def restart_server(work):\n-    here = __file__.rsplit(\"/\", 1)[0]\n-    subprocess.run([f\"{here}/boot.sh\", \"restart\"], check=True, env={**os.environ, \"PROOF_WORK\": work})\n+    # Windows replay (honua-server#3302): boot.sh start_server, reproduced argument for argument,\n+    # so the controller-crash fault restarts the same recorded image without a POSIX shell.\n+    server = f\"{PREFIX}-server\"\n+    with open(f\"{work}/image\", encoding=\"utf-8\") as handle:\n+        image = handle.read().strip()\n+    docker(\"rm\", \"-f\", server, check=False)\n+    docker(\"run\", \"-d\", \"--name\", server, \"--network\", f\"{PREFIX}-net\", \"-p\", \"127.0.0.1:19191:8080\",\n+           \"--user\", \"root\", \"--add-host\", \"host.docker.internal:host-gateway\",\n+           \"--env-file\", f\"{work}/server.env\",\n+           \"-v\", f\"{work}/appsettings.Production.json:/app/appsettings.Staging.json:ro\",\n+           \"-v\", f\"{work}/keyring.p12:/app/keyring.p12:ro\",\n+           \"-v\", f\"{os.environ['PROOF_DOCKER_CLI']}:/usr/local/bin/docker:ro\",\n+           \"-v\", \"/var/run/docker.sock:/var/run/docker.sock\", image)\n+    for _ in range(60):\n+        try:\n+            with urllib.request.urlopen(\"http://127.0.0.1:19191/healthz/ready\", timeout=10) as response:\n+                if response.status == 200:\n+                    return\n+        except Exception:\n+            pass\n+        time.sleep(2)\n+    raise Failure(\"server did not become ready after restart\")\n \n \n CELLS = {\n@@ -605,6 +654,7 @@ CELLS = {\n     \"failed-recovery\": Journey.cell_failed_recovery,\n     \"wrong-body-regression\": Journey.cell_wrong_body_regression,\n     \"wrong-body-private-probe\": Journey.cell_wrong_body_private_probe,\n+    \"wrong-body-regression-satisfiable\": Journey.cell_wrong_body_regression_satisfiable,\n     \"newer-intent\": Journey.cell_newer_intent,\n }\n \n",
+      "boot.sh": "diff --git a/upstream/boot.sh b/certification/protected-recovery/boot.sh\nindex 47c7bed..cbb7390 100644\n--- a/upstream/boot.sh\n+++ b/certification/protected-recovery/boot.sh\n@@ -14,7 +14,7 @@\n # into $PROOF_WORK (outside the repository) and never written anywhere else.\n set -euo pipefail\n \n-here=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\n+here=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd -W 2>/dev/null || pwd)\"\n work=\"${PROOF_WORK:?set PROOF_WORK to a private directory outside the repository}\"\n # `up` records the image so a `restart` (the controller-crash fault) boots the same candidate.\n image=\"${PROOF_SERVER_IMAGE:-$(cat \"$work/image\" 2>/dev/null || echo ghcr.io/honua-io/honua-server@sha256:9869f044b1c5d0de15aef6c87cc3d60383037ee9a4346d08bb9c83f2c56cc176)}\"\n@@ -27,7 +27,7 @@ pg=\"${prefix}-postgres\"\n redis=\"${prefix}-redis\"\n stub=\"${prefix}-telemetry\"\n server=\"${prefix}-server\"\n-docker_cli=\"$(readlink -f \"$(command -v docker)\")\"\n+docker_cli=\"${PROOF_DOCKER_CLI:-$(readlink -f \"$(command -v docker)\")}\"\n \n down() {\n   docker rm -f \"$server\" \"$stub\" \"$redis\" \"$pg\" >/dev/null 2>&1 || true\n",
+      "restart.py": "\"\"\"Windows replay helper (honua-server#3302): boot.sh restart without a POSIX shell.\"\"\"\nimport importlib.util\nimport sys\n\nspec = importlib.util.spec_from_file_location(\n    \"journey\", \"<scratch>/certification/protected-recovery/journey.py\")\njourney = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(journey)\njourney.restart_server(sys.argv[1])\n",
+      "tests/Honua.DevOps.Agent.Tests/ProtectedRecoveryLiveJourneyTests.cs": "diff --git a/tests/Honua.DevOps.Agent.Tests/ProtectedRecoveryLiveJourneyTests.cs b/tests/Honua.DevOps.Agent.Tests/ProtectedRecoveryLiveJourneyTests.cs\nindex 963254c..23f2102 100644\n--- a/tests/Honua.DevOps.Agent.Tests/ProtectedRecoveryLiveJourneyTests.cs\n+++ b/tests/Honua.DevOps.Agent.Tests/ProtectedRecoveryLiveJourneyTests.cs\n@@ -453,7 +453,7 @@ public sealed class ProtectedRecoveryLiveJourneyTests : IDisposable\n         }\n \n         internal void RestartServer()\n-            => Run(Path.Combine(RepositoryRoot(), \"certification\", \"protected-recovery\", \"boot.sh\"), [\"restart\"],\n+            => Run(\"python\", [\"<scratch>/restart.py\", work],\n                 new Dictionary<string, string> { [\"PROOF_WORK\"] = work });\n \n         private void RunActive(string revision)\n@@ -617,7 +617,9 @@ public sealed class ProtectedRecoveryLiveJourneyTests : IDisposable\n                         [\"telemetry.evidence_grace_seconds\"] = \"20\",\n                         [\"telemetry.max_staleness_seconds\"] = \"60\",\n                         [\"telemetry.rollback.consecutive_breaches\"] = \"1\",\n-                        [\"deployment.protection.observation_window_seconds\"] = \"900\"\n+                        [\"deployment.protection.observation_window_seconds\"] = \"900\",\n+                        [\"rollback.functional_query.path\"] = \"/golden\",\n+                        [\"rollback.functional_query.expected_contains\"] = \"\\\"revision\\\": \\\"prior-a\\\"\"\n                     },\n                     authorizationDryRun: false,\n                     policyGate: \"lower-env-execution\",\n"
+    },
+    "adaptationDiffsNote": "Diffs against the upstream LF files at the harness commit. <scratch> stands for the local scratch directory; replayedSha256 covers the unredacted files."
+  },
+  "server": {
+    "imageReference": "ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "imageId": "sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "repoDigests": [
+      "ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db"
+    ],
+    "revision": "93cad86ec4fb28fba3ff0b9358059d86aa55dde5"
+  },
+  "startedAt": "2026-10-11T11:55:03.242906Z",
+  "finishedAt": "2026-10-11T12:18:15.812433Z",
+  "cells": [
+    {
+      "name": "platform-admin-cross-tenant",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T11:55:03.244188Z",
+      "finishedAt": "2026-10-11T11:56:05.308564Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "grant sealed to ops-a",
+          "held": true
+        },
+        {
+          "assertion": "grant sealed to tenant-a",
+          "held": true
+        },
+        {
+          "assertion": "complete fence quoting tenant-a's grant, declaring tenant-b's own identity: refused 403 recovery_fence_actor_mismatch (observed 403 recovery_fence_actor_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "complete fence quoting tenant-a's grant, declaring tenant-b's own identity: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "unfenced rollback by tenant-b's platform administrator: refused 403 recovery_fence_actor_mismatch (observed 403 recovery_fence_actor_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "unfenced rollback by tenant-b's platform administrator: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "same actor name in another tenant: refused 403 recovery_fence_tenant_mismatch (observed 403 recovery_fence_tenant_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "same actor name in another tenant: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "refused callers did not replace or retire either replica",
+          "held": true
+        },
+        {
+          "assertion": "refused callers left the candidate serving",
+          "held": true
+        },
+        {
+          "assertion": "tenant-bound status reader can read operation status",
+          "held": true
+        },
+        {
+          "assertion": "status response includes the protected operation",
+          "held": true
+        },
+        {
+          "assertion": "status reader cannot read sealed grantId",
+          "held": true
+        },
+        {
+          "assertion": "status reader cannot read sealed actor",
+          "held": true
+        },
+        {
+          "assertion": "status reader cannot read sealed tenantId",
+          "held": true
+        },
+        {
+          "assertion": "redacted status preserves the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "tenant-bound status reader can read operation status",
+          "held": true
+        },
+        {
+          "assertion": "status response includes the protected operation",
+          "held": true
+        },
+        {
+          "assertion": "status reader cannot read sealed grantId",
+          "held": true
+        },
+        {
+          "assertion": "status reader cannot read sealed actor",
+          "held": true
+        },
+        {
+          "assertion": "status reader cannot read sealed tenantId",
+          "held": true
+        },
+        {
+          "assertion": "redacted status preserves the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "sealed principal can still recover after the foreign callers were refused",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T11:55:10.196918Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T11:55:11.613809Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:55:14.656667Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-a",
+            "tenant": "tenant-a",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:55:15.970659Z",
+          "kind": "transition",
+          "operation": "deploy-proof-cross-tenant-1791719703-82d6c09de502",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1798s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T11:55:18.337368Z",
+          "kind": "transition",
+          "operation": "deploy-proof-cross-tenant-1791719703-82d6c09de502",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": "telemetry-evidence-pending",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:55:18.337419Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:55:40.735812Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:55:50.585452Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-b",
+            "tenant": "tenant-b",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-cross-tenant-1791719703-82d6c09de502/rollback",
+          "status": 403,
+          "code": "recovery_fence_actor_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:55:50.844224Z",
+          "kind": "fence-refusal",
+          "label": "complete fence quoting tenant-a's grant, declaring tenant-b's own identity"
+        },
+        {
+          "at": "2026-10-11T11:55:51.117088Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-b",
+            "tenant": "tenant-b",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-cross-tenant-1791719703-82d6c09de502/rollback",
+          "status": 403,
+          "code": "recovery_fence_actor_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:55:51.418686Z",
+          "kind": "fence-refusal",
+          "label": "unfenced rollback by tenant-b's platform administrator"
+        },
+        {
+          "at": "2026-10-11T11:55:51.780173Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-a",
+            "tenant": "tenant-b",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-cross-tenant-1791719703-82d6c09de502/rollback",
+          "status": 403,
+          "code": "recovery_fence_tenant_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:55:52.038406Z",
+          "kind": "fence-refusal",
+          "label": "same actor name in another tenant"
+        },
+        {
+          "at": "2026-10-11T11:55:54.222889Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-c",
+            "tenant": "tenant-c",
+            "roles": [
+              "admin"
+            ]
+          },
+          "method": "GET",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-cross-tenant-1791719703-82d6c09de502",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:55:54.721138Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-c",
+            "tenant": "tenant-c",
+            "roles": [
+              "admin"
+            ]
+          },
+          "method": "GET",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:55:55.563558Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "GET",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-cross-tenant-1791719703-82d6c09de502",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:55:59.228154Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-a",
+            "tenant": "tenant-a",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-cross-tenant-1791719703-82d6c09de502/rollback",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:55:59.473451Z",
+          "kind": "transition",
+          "operation": "deploy-proof-cross-tenant-1791719703-82d6c09de502",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:55:59.473497Z",
+          "kind": "reached",
+          "label": "only the sealed principal restored the prior revision",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:55:59.473513Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T11:56:05.161731Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fenced-recovery",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T11:56:05.524550Z",
+      "finishedAt": "2026-10-11T11:57:38.080948Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "foreign target: refused 409 recovery_fence_target_mismatch (observed 409 recovery_fence_target_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "foreign target: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "wrong candidate revision: refused 409 recovery_fence_candidate_revision_mismatch (observed 409 recovery_fence_candidate_revision_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "wrong candidate revision: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "wrong previous revision: refused 409 recovery_fence_previous_revision_mismatch (observed 409 recovery_fence_previous_revision_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "wrong previous revision: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "unknown grant: refused 409 recovery_fence_grant_mismatch (observed 409 recovery_fence_grant_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "unknown grant: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "mismatched policy digest: refused 409 recovery_fence_policy_digest_mismatch (observed 409 recovery_fence_policy_digest_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "mismatched policy digest: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "wrong protection phase: refused 409 recovery_fence_protection_phase_mismatch (observed 409 recovery_fence_protection_phase_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "wrong protection phase: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "unrecognized protection phase: refused 400 recovery_fence_protection_phase_unrecognized (observed 400 recovery_fence_protection_phase_unrecognized)",
+          "held": true
+        },
+        {
+          "assertion": "unrecognized protection phase: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "foreign actor: refused 403 recovery_fence_actor_mismatch (observed 403 recovery_fence_actor_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "foreign actor: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "foreign tenant: refused 403 recovery_fence_tenant_mismatch (observed 403 recovery_fence_tenant_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "foreign tenant: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "broadened compensation: refused 403 recovery_fence_compensation_not_permitted (observed 403 recovery_fence_compensation_not_permitted)",
+          "held": true
+        },
+        {
+          "assertion": "broadened compensation: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "expired grant: refused 412 recovery_fence_expired (observed 412 recovery_fence_expired)",
+          "held": true
+        },
+        {
+          "assertion": "expired grant: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "unknown property: refused 400 recovery_fence_unknown_property (observed 400 recovery_fence_unknown_property)",
+          "held": true
+        },
+        {
+          "assertion": "unknown property: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "grant expired in flight: refused 412 recovery_fence_expired (observed 412 recovery_fence_expired)",
+          "held": true
+        },
+        {
+          "assertion": "grant expired in flight: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "no refused recovery moved traffic",
+          "held": true
+        },
+        {
+          "assertion": "satisfied fence admitted (observed 200)",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        },
+        {
+          "assertion": "replaying the declared recovery does not issue a second compensation",
+          "held": true
+        },
+        {
+          "assertion": "replay left the prior revision serving",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T11:56:13.667691Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T11:56:15.420006Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:56:22.209440Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:56:22.921241Z",
+          "kind": "transition",
+          "operation": "deploy-proof-fenced-1791719765-5ac04f27e78f",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1797s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T11:56:30.619817Z",
+          "kind": "transition",
+          "operation": "deploy-proof-fenced-1791719765-5ac04f27e78f",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": "telemetry-evidence-pending",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (898s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:56:30.619857Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (898s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:57:06.074913Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:57:09.167385Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 409,
+          "code": "recovery_fence_target_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:09.726487Z",
+          "kind": "fence-refusal",
+          "label": "foreign target"
+        },
+        {
+          "at": "2026-10-11T11:57:10.222374Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 409,
+          "code": "recovery_fence_candidate_revision_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:10.892454Z",
+          "kind": "fence-refusal",
+          "label": "wrong candidate revision"
+        },
+        {
+          "at": "2026-10-11T11:57:11.897124Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 409,
+          "code": "recovery_fence_previous_revision_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:12.810513Z",
+          "kind": "fence-refusal",
+          "label": "wrong previous revision"
+        },
+        {
+          "at": "2026-10-11T11:57:13.625948Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 409,
+          "code": "recovery_fence_grant_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:14.132144Z",
+          "kind": "fence-refusal",
+          "label": "unknown grant"
+        },
+        {
+          "at": "2026-10-11T11:57:14.642659Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 409,
+          "code": "recovery_fence_policy_digest_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:15.166046Z",
+          "kind": "fence-refusal",
+          "label": "mismatched policy digest"
+        },
+        {
+          "at": "2026-10-11T11:57:15.782775Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 409,
+          "code": "recovery_fence_protection_phase_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:16.268203Z",
+          "kind": "fence-refusal",
+          "label": "wrong protection phase"
+        },
+        {
+          "at": "2026-10-11T11:57:16.843232Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 400,
+          "code": "recovery_fence_protection_phase_unrecognized"
+        },
+        {
+          "at": "2026-10-11T11:57:17.428370Z",
+          "kind": "fence-refusal",
+          "label": "unrecognized protection phase"
+        },
+        {
+          "at": "2026-10-11T11:57:18.114094Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 403,
+          "code": "recovery_fence_actor_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:18.462704Z",
+          "kind": "fence-refusal",
+          "label": "foreign actor"
+        },
+        {
+          "at": "2026-10-11T11:57:19.012719Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 403,
+          "code": "recovery_fence_tenant_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:57:19.549978Z",
+          "kind": "fence-refusal",
+          "label": "foreign tenant"
+        },
+        {
+          "at": "2026-10-11T11:57:20.156675Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 403,
+          "code": "recovery_fence_compensation_not_permitted"
+        },
+        {
+          "at": "2026-10-11T11:57:20.627060Z",
+          "kind": "fence-refusal",
+          "label": "broadened compensation"
+        },
+        {
+          "at": "2026-10-11T11:57:21.343782Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 412,
+          "code": "recovery_fence_expired"
+        },
+        {
+          "at": "2026-10-11T11:57:21.898148Z",
+          "kind": "fence-refusal",
+          "label": "expired grant"
+        },
+        {
+          "at": "2026-10-11T11:57:22.588711Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 400,
+          "code": "recovery_fence_unknown_property"
+        },
+        {
+          "at": "2026-10-11T11:57:23.150100Z",
+          "kind": "fence-refusal",
+          "label": "unknown property"
+        },
+        {
+          "at": "2026-10-11T11:57:28.262648Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 412,
+          "code": "recovery_fence_expired"
+        },
+        {
+          "at": "2026-10-11T11:57:28.297613Z",
+          "kind": "fence-refusal",
+          "label": "grant expired in flight"
+        },
+        {
+          "at": "2026-10-11T11:57:30.676239Z",
+          "kind": "replicas",
+          "label": "after every refusal: candidate still serving",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:57:31.395356Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "GET",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:57:34.493787Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:57:34.722705Z",
+          "kind": "transition",
+          "operation": "deploy-proof-fenced-1791719765-5ac04f27e78f",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:57:34.722753Z",
+          "kind": "reached",
+          "label": "declared recovery settled RolledBack",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:57:34.722768Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T11:57:37.048933Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:57:37.081247Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-fenced-1791719765-5ac04f27e78f/rollback",
+          "status": 409,
+          "code": "recovery_fence_protection_window_absent"
+        },
+        {
+          "at": "2026-10-11T11:57:38.046965Z",
+          "kind": "replicas",
+          "label": "after replay",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tenant-bound-recovery",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T11:57:38.126753Z",
+      "finishedAt": "2026-10-11T11:58:24.391139Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "grant sealed to the tenant-bound requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "grant sealed to the requesting principal's tenant",
+          "held": true
+        },
+        {
+          "assertion": "unfenced rollback by a principal that is not the sealed actor: refused 403 recovery_fence_actor_mismatch (observed 403 recovery_fence_actor_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "unfenced rollback by a principal that is not the sealed actor: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "sealed actor declaring a foreign tenant: refused 403 recovery_fence_tenant_mismatch (observed 403 recovery_fence_tenant_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "sealed actor declaring a foreign tenant: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "another tenant's platform administrator quoting the sealed grant: refused 403 recovery_fence_actor_mismatch (observed 403 recovery_fence_actor_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "another tenant's platform administrator quoting the sealed grant: operation did not transition",
+          "held": true
+        },
+        {
+          "assertion": "no refused recovery moved traffic",
+          "held": true
+        },
+        {
+          "assertion": "sealed tenant-bound actor's satisfied fence admitted (observed 200)",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T11:57:43.234651Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T11:57:44.303952Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:57:45.853475Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-a",
+            "tenant": "tenant-a",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:57:46.171694Z",
+          "kind": "transition",
+          "operation": "deploy-proof-tenant-bound-1791719858-e1e6917bc04a",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1799s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T11:57:48.821044Z",
+          "kind": "transition",
+          "operation": "deploy-proof-tenant-bound-1791719858-e1e6917bc04a",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:57:48.821086Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:58:00.434317Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:58:00.493714Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-tenant-bound-1791719858-e1e6917bc04a/rollback",
+          "status": 403,
+          "code": "recovery_fence_actor_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:58:00.703032Z",
+          "kind": "fence-refusal",
+          "label": "unfenced rollback by a principal that is not the sealed actor"
+        },
+        {
+          "at": "2026-10-11T11:58:00.993533Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-a",
+            "tenant": "tenant-a",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-tenant-bound-1791719858-e1e6917bc04a/rollback",
+          "status": 403,
+          "code": "recovery_fence_tenant_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:58:01.231086Z",
+          "kind": "fence-refusal",
+          "label": "sealed actor declaring a foreign tenant"
+        },
+        {
+          "at": "2026-10-11T11:58:01.506536Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-b",
+            "tenant": "tenant-b",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-tenant-bound-1791719858-e1e6917bc04a/rollback",
+          "status": 403,
+          "code": "recovery_fence_actor_mismatch"
+        },
+        {
+          "at": "2026-10-11T11:58:01.793803Z",
+          "kind": "fence-refusal",
+          "label": "another tenant's platform administrator quoting the sealed grant"
+        },
+        {
+          "at": "2026-10-11T11:58:02.202607Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "GET",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-tenant-bound-1791719858-e1e6917bc04a",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:58:05.127831Z",
+          "kind": "http",
+          "caller": {
+            "subject": "ops-a",
+            "tenant": "tenant-a",
+            "roles": [
+              "admin",
+              "platform_admin"
+            ]
+          },
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-tenant-bound-1791719858-e1e6917bc04a/rollback",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:58:05.426462Z",
+          "kind": "transition",
+          "operation": "deploy-proof-tenant-bound-1791719858-e1e6917bc04a",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:58:05.426511Z",
+          "kind": "reached",
+          "label": "tenant-bound declared recovery settled RolledBack",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:58:05.426529Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T11:58:24.339470Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "error-rate-regression",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T11:58:24.703478Z",
+      "finishedAt": "2026-10-11T11:59:18.637198Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        },
+        {
+          "assertion": "driver issued no rollback request",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T11:58:50.392834Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T11:58:51.106149Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:59:03.174516Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T11:59:05.917404Z",
+          "kind": "transition",
+          "operation": "deploy-proof-error-rate-1791719904-6bcb310bf259",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:59:05.917814Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T11:59:11.629524Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T11:59:11.632005Z",
+          "kind": "telemetry-injected",
+          "label": "error-rate regression 0.42 > 0.05"
+        },
+        {
+          "at": "2026-10-11T11:59:15.079424Z",
+          "kind": "transition",
+          "operation": "deploy-proof-error-rate-1791719904-6bcb310bf259",
+          "status": "RollbackRequested",
+          "protectionPhase": "recovering",
+          "reasonCode": "rollback-requested",
+          "currentPhase": "Automatic rollback requested because telemetry detected canary degradation: error rate 0.42 exceeded threshold 0.05."
+        },
+        {
+          "at": "2026-10-11T11:59:17.119605Z",
+          "kind": "transition",
+          "operation": "deploy-proof-error-rate-1791719904-6bcb310bf259",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:59:17.119655Z",
+          "kind": "reached",
+          "label": "server reconciler recovered on error-rate regression 0.42 > 0.05",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T11:59:17.119673Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T11:59:18.560357Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "latency-regression",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T11:59:18.669480Z",
+      "finishedAt": "2026-10-11T12:03:58.245168Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        },
+        {
+          "assertion": "driver issued no rollback request",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T11:59:42.912810Z",
+          "kind": "environment-reset",
+          "label": "server restarted so the proxy re-derives the active replica"
+        },
+        {
+          "at": "2026-10-11T12:01:26.713412Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T12:02:33.506807Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:03:25.233060Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:03:25.666003Z",
+          "kind": "transition",
+          "operation": "deploy-proof-latency-1791719958-e9611e04693b",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1799s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T12:03:28.108957Z",
+          "kind": "transition",
+          "operation": "deploy-proof-latency-1791719958-e9611e04693b",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:03:28.111795Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:03:30.178318Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:03:30.180743Z",
+          "kind": "telemetry-injected",
+          "label": "p95 latency regression 2400 ms > 500 ms"
+        },
+        {
+          "at": "2026-10-11T12:03:30.291199Z",
+          "kind": "transition",
+          "operation": "deploy-proof-latency-1791719958-e9611e04693b",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": "telemetry-evidence-pending",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (898s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:03:38.867958Z",
+          "kind": "transition",
+          "operation": "deploy-proof-latency-1791719958-e9611e04693b",
+          "status": "RollbackRequested",
+          "protectionPhase": "recovering",
+          "reasonCode": "rollback-requested",
+          "currentPhase": "Automatic rollback requested because telemetry detected canary degradation: p95 latency 2400ms exceeded threshold 500ms."
+        },
+        {
+          "at": "2026-10-11T12:03:40.949379Z",
+          "kind": "transition",
+          "operation": "deploy-proof-latency-1791719958-e9611e04693b",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:03:40.949444Z",
+          "kind": "reached",
+          "label": "server reconciler recovered on p95 latency regression 2400 ms > 500 ms",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:03:40.949466Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T12:03:58.208582Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "missing-telemetry",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T12:04:13.971935Z",
+      "finishedAt": "2026-10-11T12:05:00.639338Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        },
+        {
+          "assertion": "driver issued no rollback request",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T12:04:20.582856Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T12:04:21.143989Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:04:23.328176Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:04:24.372946Z",
+          "kind": "transition",
+          "operation": "deploy-proof-missing-1791720253-e7951758b009",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1798s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T12:04:28.569002Z",
+          "kind": "transition",
+          "operation": "deploy-proof-missing-1791720253-e7951758b009",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:04:28.569052Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:04:33.809462Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:04:33.811632Z",
+          "kind": "telemetry-injected",
+          "label": "telemetry missing (empty vectors)"
+        },
+        {
+          "at": "2026-10-11T12:04:33.958730Z",
+          "kind": "transition",
+          "operation": "deploy-proof-missing-1791720253-e7951758b009",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": "telemetry-evidence-pending",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (895s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:04:33.958776Z",
+          "kind": "reached",
+          "label": "window held open on missing evidence",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (895s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:04:34.093646Z",
+          "kind": "transition",
+          "operation": "deploy-proof-missing-1791720253-e7951758b009",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": "telemetry-evidence-pending",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (895s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:04:57.124439Z",
+          "kind": "transition",
+          "operation": "deploy-proof-missing-1791720253-e7951758b009",
+          "status": "RollbackRequested",
+          "protectionPhase": "recovering",
+          "reasonCode": "rollback-requested",
+          "currentPhase": "Automatic rollback requested because telemetry evidence remained unavailable beyond the configured evidence grace window: Waiting for telemetry confirmation because no sample-count signal is available yet."
+        },
+        {
+          "at": "2026-10-11T12:04:59.156607Z",
+          "kind": "transition",
+          "operation": "deploy-proof-missing-1791720253-e7951758b009",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:04:59.156654Z",
+          "kind": "reached",
+          "label": "server reconciler recovered on telemetry missing (empty vectors)",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:04:59.156671Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T12:05:00.550442Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stale-telemetry",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T12:05:00.644673Z",
+      "finishedAt": "2026-10-11T12:09:32.033044Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        },
+        {
+          "assertion": "driver issued no rollback request",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T12:05:09.169139Z",
+          "kind": "environment-reset",
+          "label": "server restarted so the proxy re-derives the active replica"
+        },
+        {
+          "at": "2026-10-11T12:06:31.505646Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T12:07:04.444395Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:07:22.521282Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:07:24.844302Z",
+          "kind": "transition",
+          "operation": "deploy-proof-stale-1791720300-9366f50e456e",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": "telemetry-evidence-pending",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (899s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:07:24.844344Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (899s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:08:14.921305Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:08:17.686556Z",
+          "kind": "telemetry-injected",
+          "label": "telemetry stale (samples 900 s old > 60 s bound)"
+        },
+        {
+          "at": "2026-10-11T12:08:17.973411Z",
+          "kind": "transition",
+          "operation": "deploy-proof-stale-1791720300-9366f50e456e",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (860s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:08:33.170856Z",
+          "kind": "transition",
+          "operation": "deploy-proof-stale-1791720300-9366f50e456e",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:08:33.170910Z",
+          "kind": "reached",
+          "label": "window held open on missing evidence",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:08:40.435630Z",
+          "kind": "transition",
+          "operation": "deploy-proof-stale-1791720300-9366f50e456e",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:08:40.435678Z",
+          "kind": "reached",
+          "label": "server reconciler recovered on telemetry stale (samples 900 s old > 60 s bound)",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:08:40.435698Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T12:09:26.939678Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "controller-crash",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T12:09:32.050461Z",
+      "finishedAt": "2026-10-11T12:11:13.939512Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "restart preserved protection.grantId",
+          "held": true
+        },
+        {
+          "assertion": "restart preserved protection.firstExposureAt",
+          "held": true
+        },
+        {
+          "assertion": "restart preserved protection.observationDeadline",
+          "held": true
+        },
+        {
+          "assertion": "restart preserved protection.policyDigest",
+          "held": true
+        },
+        {
+          "assertion": "restart preserved protection.previousRevision",
+          "held": true
+        },
+        {
+          "assertion": "restart preserved protection.candidateRevision",
+          "held": true
+        },
+        {
+          "assertion": "candidate still serving after the controller restart",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T12:10:19.401915Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T12:10:51.805357Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:10:52.889406Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:10:53.141037Z",
+          "kind": "transition",
+          "operation": "deploy-proof-crash-1791720572-49bf9f814c1a",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1800s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T12:10:55.363000Z",
+          "kind": "transition",
+          "operation": "deploy-proof-crash-1791720572-49bf9f814c1a",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:10:55.363062Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:10:56.341269Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:10:56.341318Z",
+          "kind": "fault",
+          "label": "controller crash: server container restarted during the observation window"
+        },
+        {
+          "at": "2026-10-11T12:11:06.008072Z",
+          "kind": "transition",
+          "operation": "deploy-proof-crash-1791720572-49bf9f814c1a",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (890s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:11:06.008117Z",
+          "kind": "reached",
+          "label": "window survived the controller restart",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (890s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:11:06.785446Z",
+          "kind": "replicas",
+          "label": "after controller restart",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:11:06.803397Z",
+          "kind": "telemetry-injected",
+          "label": "error-rate regression after restart"
+        },
+        {
+          "at": "2026-10-11T12:11:09.644715Z",
+          "kind": "transition",
+          "operation": "deploy-proof-crash-1791720572-49bf9f814c1a",
+          "status": "RollbackRequested",
+          "protectionPhase": "recovering",
+          "reasonCode": "rollback-requested",
+          "currentPhase": "Automatic rollback requested because telemetry detected canary degradation: error rate 0.42 exceeded threshold 0.05."
+        },
+        {
+          "at": "2026-10-11T12:11:11.755474Z",
+          "kind": "transition",
+          "operation": "deploy-proof-crash-1791720572-49bf9f814c1a",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:11:11.755513Z",
+          "kind": "reached",
+          "label": "restarted controller recovered from the persisted window",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:11:11.755524Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T12:11:13.818849Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "failed-recovery",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T12:11:14.016371Z",
+      "finishedAt": "2026-10-11T12:11:30.297346Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "failed recovery retains the window as unavailable",
+          "held": true
+        },
+        {
+          "assertion": "reason code is rollback-failed",
+          "held": true
+        },
+        {
+          "assertion": "retained window still names the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "the rejected candidate is still what serves (nothing was restored)",
+          "held": true
+        },
+        {
+          "assertion": "stale observing-phase grant after the window became unavailable: refused 409 recovery_fence_protection_phase_mismatch (observed 409 recovery_fence_protection_phase_mismatch)",
+          "held": true
+        },
+        {
+          "assertion": "stale observing-phase grant after the window became unavailable: operation did not transition",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T12:11:18.658655Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T12:11:19.240443Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:11:20.407652Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:11:20.611829Z",
+          "kind": "transition",
+          "operation": "deploy-proof-failed-recovery-1791720674-7f1554b82ad1",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1800s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T12:11:22.820671Z",
+          "kind": "transition",
+          "operation": "deploy-proof-failed-recovery-1791720674-7f1554b82ad1",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:11:22.820713Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:11:25.048263Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:11:26.628092Z",
+          "kind": "fault",
+          "label": "concurrent service change: retained prior replica replaced by an unapproved revision"
+        },
+        {
+          "at": "2026-10-11T12:11:27.282941Z",
+          "kind": "replicas",
+          "label": "prior replica replaced out of band",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "candidate-c"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:11:27.284623Z",
+          "kind": "telemetry-injected",
+          "label": "error-rate regression"
+        },
+        {
+          "at": "2026-10-11T12:11:27.430122Z",
+          "kind": "transition",
+          "operation": "deploy-proof-failed-recovery-1791720674-7f1554b82ad1",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": "telemetry-evidence-pending",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (896s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:11:29.632432Z",
+          "kind": "transition",
+          "operation": "deploy-proof-failed-recovery-1791720674-7f1554b82ad1",
+          "status": "ManualInterventionRequired",
+          "protectionPhase": "unavailable",
+          "reasonCode": "rollback-failed",
+          "currentPhase": "Automatic rollback could not be completed and requires manual intervention. Rolling deploy rollback cannot prove the running active replica is the requested prior revision."
+        },
+        {
+          "at": "2026-10-11T12:11:29.632467Z",
+          "kind": "reached",
+          "label": "recovery could not be proven",
+          "status": "ManualInterventionRequired",
+          "currentPhase": "Automatic rollback could not be completed and requires manual intervention. Rolling deploy rollback cannot prove the running active replica is the requested prior revision."
+        },
+        {
+          "at": "2026-10-11T12:11:30.220179Z",
+          "kind": "replicas",
+          "label": "after failed recovery",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "candidate-c"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:11:30.265548Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-failed-recovery-1791720674-7f1554b82ad1/rollback",
+          "status": 409,
+          "code": "recovery_fence_protection_phase_mismatch"
+        },
+        {
+          "at": "2026-10-11T12:11:30.275893Z",
+          "kind": "fence-refusal",
+          "label": "stale observing-phase grant after the window became unavailable"
+        }
+      ]
+    },
+    {
+      "name": "wrong-body-regression",
+      "result": "fail",
+      "failure": "timed out waiting for: wrong body refused",
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T12:11:30.311164Z",
+      "finishedAt": "2026-10-11T12:16:15.767578Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T12:11:36.328663Z",
+          "kind": "environment-reset",
+          "label": "server restarted so the proxy re-derives the active replica"
+        },
+        {
+          "at": "2026-10-11T12:11:42.463031Z",
+          "kind": "telemetry-injected",
+          "label": "healthy metric evidence"
+        },
+        {
+          "at": "2026-10-11T12:11:43.861614Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:11:44.064212Z",
+          "kind": "transition",
+          "operation": "deploy-proof-wrong-body-1791720702-d540cbea6f8a",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (59s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T12:11:48.243999Z",
+          "kind": "transition",
+          "operation": "deploy-proof-wrong-body-1791720702-d540cbea6f8a",
+          "status": "RollbackRequested",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Rollback evidence remains incomplete and will be retried until the 300-second observation timeout. Routing converged, but the restored data plane is not proven yet. reason=rollback.awaiting_data_plane; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=ServedOtherMarker."
+        },
+        {
+          "at": "2026-10-11T12:14:45.502170Z",
+          "kind": "timeout",
+          "label": "wrong body refused",
+          "status": "RollbackRequested",
+          "currentPhase": "Rollback evidence remains incomplete and will be retried until the 300-second observation timeout. Routing converged, but the restored data plane is not proven yet. reason=rollback.awaiting_data_plane; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=ServedOtherMarker."
+        },
+        {
+          "at": "2026-10-11T12:14:45.633322Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-wrong-body-1791720702-d540cbea6f8a/rollback",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:14:45.633387Z",
+          "kind": "cleanup"
+        },
+        {
+          "at": "2026-10-11T12:14:45.892018Z",
+          "kind": "transition",
+          "operation": "deploy-proof-wrong-body-1791720702-d540cbea6f8a",
+          "status": "RollbackRequested",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Rollback evidence remains incomplete and will be retried until the 300-second observation timeout. Routing converged, but the restored data plane is not proven yet. reason=rollback.awaiting_data_plane; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=ServedOtherMarker."
+        },
+        {
+          "at": "2026-10-11T12:16:15.767475Z",
+          "kind": "timeout",
+          "label": "cleanup settled",
+          "status": "RollbackRequested",
+          "currentPhase": "Rollback evidence remains incomplete and will be retried until the 300-second observation timeout. Routing converged, but the restored data plane is not proven yet. reason=rollback.awaiting_data_plane; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=ServedOtherMarker."
+        }
+      ]
+    },
+    {
+      "name": "newer-intent",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": true,
+      "startedAt": "2026-10-11T12:16:15.780685Z",
+      "finishedAt": "2026-10-11T12:16:49.254525Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "window observes the candidate revision",
+          "held": true
+        },
+        {
+          "assertion": "window retains the prior revision",
+          "held": true
+        },
+        {
+          "assertion": "server sealed a recovery grant at exposure",
+          "held": true
+        },
+        {
+          "assertion": "grant permits only restore-previous-revision",
+          "held": true
+        },
+        {
+          "assertion": "grant is bound to the requesting actor",
+          "held": true
+        },
+        {
+          "assertion": "concurrent change left the first window's grantId intact",
+          "held": true
+        },
+        {
+          "assertion": "concurrent change left the first window's candidateRevision intact",
+          "held": true
+        },
+        {
+          "assertion": "concurrent change left the first window's previousRevision intact",
+          "held": true
+        },
+        {
+          "assertion": "concurrent change left the first window's policyDigest intact",
+          "held": true
+        },
+        {
+          "assertion": "first window still observing",
+          "held": true
+        },
+        {
+          "assertion": "declared recovery of the first window still admitted (observed 200)",
+          "held": true
+        },
+        {
+          "assertion": "settled RolledBack does not read as unavailable (phase None)",
+          "held": true
+        },
+        {
+          "assertion": "proxy serves the prior revision after recovery",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T12:16:21.781472Z",
+          "kind": "telemetry-injected",
+          "label": "healthy evidence while the candidate activates"
+        },
+        {
+          "at": "2026-10-11T12:16:22.127190Z",
+          "kind": "replicas",
+          "label": "before activation",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:16:24.069426Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:16:24.613434Z",
+          "kind": "transition",
+          "operation": "deploy-proof-newer-intent-1791720975-3d283df63786",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (1799s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T12:16:26.827146Z",
+          "kind": "transition",
+          "operation": "deploy-proof-newer-intent-1791720975-3d283df63786",
+          "status": "Reconciling",
+          "protectionPhase": "observing",
+          "reasonCode": null,
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:16:26.827199Z",
+          "kind": "reached",
+          "label": "candidate promoted and observation window open",
+          "status": "Reconciling",
+          "currentPhase": "Observing candidate 'sha256:bbace75a2de20332b6ce718ead3dea3929a32d8e9499bb9db8b5937f1ff7612d' (900s remaining before the deploy is fully committed)."
+        },
+        {
+          "at": "2026-10-11T12:16:28.255643Z",
+          "kind": "replicas",
+          "label": "candidate exposed, prior retained",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:16:29.097993Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:16:29.098064Z",
+          "kind": "concurrent-change"
+        },
+        {
+          "at": "2026-10-11T12:16:44.110231Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "GET",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-newer-intent-c-1791720988-472a241a5df9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:16:44.288513Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "GET",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-newer-intent-1791720975-3d283df63786",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:16:44.667320Z",
+          "kind": "replicas",
+          "label": "after a concurrent change was submitted for the target",
+          "proxyServes": "candidate-b",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            },
+            {
+              "name": "devops191-app-19182",
+              "running": true,
+              "role": "standby",
+              "workload": null
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:16:47.275636Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-newer-intent-1791720975-3d283df63786/rollback",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:16:47.438359Z",
+          "kind": "transition",
+          "operation": "deploy-proof-newer-intent-1791720975-3d283df63786",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:16:47.438399Z",
+          "kind": "reached",
+          "label": "first window recovered after the concurrent change",
+          "status": "RolledBack",
+          "currentPhase": "Restored revision identity, readiness, and the functional query are proven. reason=rollback.data_plane_proven; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=MatchedPriorMarker."
+        },
+        {
+          "at": "2026-10-11T12:16:47.438412Z",
+          "kind": "settled-protection"
+        },
+        {
+          "at": "2026-10-11T12:16:48.873268Z",
+          "kind": "replicas",
+          "label": "after recovery",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        },
+        {
+          "at": "2026-10-11T12:16:49.048193Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations/deploy-proof-wrong-body-1791720702-d540cbea6f8a/rollback",
+          "status": 200,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:16:49.048268Z",
+          "kind": "cleanup"
+        },
+        {
+          "at": "2026-10-11T12:16:49.254404Z",
+          "kind": "transition",
+          "operation": "deploy-proof-wrong-body-1791720702-d540cbea6f8a",
+          "status": "Failed",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "The restored endpoint failed the functional query. reason=rollback.functional_query_failed; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=ServedOtherMarker."
+        },
+        {
+          "at": "2026-10-11T12:16:49.254450Z",
+          "kind": "reached",
+          "label": "cleanup settled",
+          "status": "Failed",
+          "currentPhase": "The restored endpoint failed the functional query. reason=rollback.functional_query_failed; servingRevision=sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1; healthy=1; registered=1; functionalQuery=ServedOtherMarker."
+        }
+      ]
+    },
+    {
+      "name": "wrong-body-regression-satisfiable",
+      "result": "pass",
+      "failure": null,
+      "originalHarnessCell": false,
+      "startedAt": "2026-10-11T12:18:05.435113Z",
+      "finishedAt": "2026-10-11T12:18:15.807959Z",
+      "assertions": [
+        {
+          "assertion": "deploy operation created and submitted",
+          "held": true
+        },
+        {
+          "assertion": "candidate with a wrong body was never activated",
+          "held": true
+        },
+        {
+          "assertion": "wrong body failed the rollout and the prior was proven",
+          "held": true
+        },
+        {
+          "assertion": "server attributed the hold/failure to the golden-query body verdict",
+          "held": true
+        },
+        {
+          "assertion": "prior revision kept serving",
+          "held": true
+        }
+      ],
+      "events": [
+        {
+          "at": "2026-10-11T12:18:10.479973Z",
+          "kind": "telemetry-injected",
+          "label": "healthy metric evidence"
+        },
+        {
+          "at": "2026-10-11T12:18:11.735665Z",
+          "kind": "http",
+          "caller": "admin-api-key",
+          "method": "POST",
+          "path": "/api/v1/admin/deploy/operations",
+          "status": 201,
+          "code": null
+        },
+        {
+          "at": "2026-10-11T12:18:11.988068Z",
+          "kind": "transition",
+          "operation": "deploy-proof-wrong-body-sat-1791721090-f24a04f56659",
+          "status": "Reconciling",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Waiting for the staged candidate revision to pass the backend health gate before cutover (60s remaining before the exposure deadline)."
+        },
+        {
+          "at": "2026-10-11T12:18:14.810915Z",
+          "kind": "transition",
+          "operation": "deploy-proof-wrong-body-sat-1791721090-f24a04f56659",
+          "status": "RolledBack",
+          "protectionPhase": null,
+          "reasonCode": null,
+          "currentPhase": "Automatic rollback requested because the release failed the golden-query correctness gate: Golden-query correctness gate failed: response body did not contain the required golden token."
+        },
+        {
+          "at": "2026-10-11T12:18:14.810958Z",
+          "kind": "reached",
+          "label": "wrong body refused and recovery proven",
+          "status": "RolledBack",
+          "currentPhase": "Automatic rollback requested because the release failed the golden-query correctness gate: Golden-query correctness gate failed: response body did not contain the required golden token."
+        },
+        {
+          "at": "2026-10-11T12:18:15.697880Z",
+          "kind": "replicas",
+          "label": "after wrong-body refusal",
+          "proxyServes": "prior-a",
+          "replicas": [
+            {
+              "name": "devops191-app-19181",
+              "running": true,
+              "role": "active",
+              "workload": "prior-a"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "devops": {
+    "testResults": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    "scenarios": [
+      {
+        "scenario": "Live_FailedServerRecovery_QuarantinesWithoutClaimingRestoration",
+        "outcome": "Passed",
+        "steps": [
+          {
+            "step": "watched-sync",
+            "status": "indeterminate",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "protected-recovery-unproven"
+            ]
+          },
+          {
+            "step": "next-reconcile-of-quarantined-candidate",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "desired-revision-quarantined"
+            ]
+          }
+        ],
+        "ledger": [
+          {
+            "kind": "rejected",
+            "version": 2,
+            "desiredRevision": "",
+            "quarantined": 1,
+            "operationId": "deploy-honua-devops-live-recovery-47d25800c8d0490e91d19-c37a1b462954"
+          }
+        ],
+        "mutations": [
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/plan",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations",
+            "status": 201
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations/deploy-honua-devops-live-recovery-47d25800c8d0490e91d19-c37a1b462954/submit",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "scenario": "Live_NewerApprovedIntent_RefusesOlderRecoveryWithoutRequest",
+        "outcome": "Passed",
+        "steps": [
+          {
+            "step": "approved-sync",
+            "status": "in-progress",
+            "journey": "Confirming service health",
+            "blockingReasons": []
+          },
+          {
+            "step": "concurrent-approved-change",
+            "status": "failed",
+            "journey": "Needs attention",
+            "blockingReasons": []
+          },
+          {
+            "step": "older-recovery",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "recovery-intent-superseded"
+            ]
+          }
+        ],
+        "ledger": [
+          {
+            "kind": "approved",
+            "version": 2,
+            "desiredRevision": "sha256:0494ed33f166ce86f2beaef7ec7b59bd3e9e212d6126fb440c979b97a88c929e",
+            "quarantined": 0,
+            "operationId": "deploy-honua-devops-live-recovery-98ec3173be59449eb71f2-e40a776320e5"
+          }
+        ],
+        "mutations": [
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/plan",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations",
+            "status": 201
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations/deploy-honua-devops-live-recovery-3f73d6156ff7475699ff7-300b57037a5a/submit",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/plan",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations",
+            "status": 201
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations/deploy-honua-devops-live-recovery-98ec3173be59449eb71f2-e40a776320e5/submit",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "scenario": "Live_ServerRecoveryOnInjectedRegression_IsFoldedIntoDesiredIntent",
+        "outcome": "Passed",
+        "steps": [
+          {
+            "step": "watched-sync",
+            "status": "rolled-back",
+            "journey": "Previous version restored",
+            "blockingReasons": []
+          },
+          {
+            "step": "next-reconcile-of-quarantined-candidate",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "desired-revision-quarantined"
+            ]
+          }
+        ],
+        "ledger": [
+          {
+            "kind": "restored",
+            "version": 2,
+            "desiredRevision": "sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1",
+            "quarantined": 1,
+            "operationId": "deploy-honua-devops-live-recovery-145cadfa811a4f5689a41-5035e8a52ec0"
+          }
+        ],
+        "mutations": [
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/plan",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations",
+            "status": 201
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations/deploy-honua-devops-live-recovery-145cadfa811a4f5689a41-5035e8a52ec0/submit",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "scenario": "Live_DeclaredRecovery_IsFencedRecordedAndHoldsOnNextReconcile",
+        "outcome": "Passed",
+        "steps": [
+          {
+            "step": "approved-sync",
+            "status": "in-progress",
+            "journey": "Confirming service health",
+            "blockingReasons": []
+          },
+          {
+            "step": "wrong-actor",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "recovery-scope-mismatch"
+            ]
+          },
+          {
+            "step": "wrong-target",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "recovery-scope-mismatch"
+            ]
+          },
+          {
+            "step": "broadened-compensation",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "recovery-scope-mismatch"
+            ]
+          },
+          {
+            "step": "expired-grant",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "recovery-scope-mismatch"
+            ]
+          },
+          {
+            "step": "declared-recovery",
+            "status": "in-progress",
+            "journey": "Updating",
+            "blockingReasons": []
+          },
+          {
+            "step": "restart-observes-recovery",
+            "status": "rolled-back",
+            "journey": "Previous version restored",
+            "blockingReasons": []
+          },
+          {
+            "step": "replay",
+            "status": "rolled-back",
+            "journey": "Previous version restored",
+            "blockingReasons": []
+          },
+          {
+            "step": "next-reconcile-of-quarantined-candidate",
+            "status": "approval-required",
+            "journey": "Needs attention",
+            "blockingReasons": [
+              "desired-revision-quarantined"
+            ]
+          }
+        ],
+        "ledger": [
+          {
+            "kind": "restored",
+            "version": 2,
+            "desiredRevision": "sha256:160254bad9edde2055d723b29a55c311c58976bada8b283167779877abeef3b1",
+            "quarantined": 1,
+            "operationId": "deploy-honua-devops-live-recovery-6f8529c1bd944f0f8e9fe-24a8416d3f39"
+          }
+        ],
+        "mutations": [
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/plan",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations",
+            "status": 201
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations/deploy-honua-devops-live-recovery-6f8529c1bd944f0f8e9fe-24a8416d3f39/submit",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations/deploy-honua-devops-live-recovery-6f8529c1bd944f0f8e9fe-24a8416d3f39/rollback",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "scenario": "Live_GenericRollbackTool_StaysGated",
+        "outcome": "Passed",
+        "steps": [
+          {
+            "step": "generic-rollback-tool",
+            "status": "experimental-disabled",
+            "journey": "Checking update",
+            "blockingReasons": [
+              "rollback-experimental-disabled"
+            ]
+          }
+        ],
+        "ledger": [],
+        "mutations": [
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/plan",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations",
+            "status": 201
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/admin/deploy/operations/deploy-honua-devops-live-recovery-860d27933332413780c72-c2f5c5972161/submit",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "rawTranscriptSha256": {
+    "part1.json": "6cb64ed4e8dc801566f55aeef81c03aa72bbacdec23578b02d0009f096db83d5",
+    "part2.json": "6aa1d42b48b1112efd243fd69ff9f918e74cfed0f45c1520aee4d9c8bfdedd3b",
+    "part3.json": "9cda6d4b42a013253b8104c944969b72e3d2ee6e077488e49c8f5b5c5aa6b1e1",
+    "devops-live.jsonl": "7aafb4624566cc5fa2417077ef5ab4ee9be865b43d1354e78ccca49006717e98",
+    "protected-recovery-live.trx": "fb05b9472156ee86d270d5b2696c4280dde1148b79b5132445a2818a8399909d"
+  },
+  "cleanup": "boot.sh down removed the server, PostGIS, Redis, telemetry stub, replicas and network."
+}

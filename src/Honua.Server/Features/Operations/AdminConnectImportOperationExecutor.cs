@@ -1,13 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net.Http.Headers;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.RateLimiting;
 
 namespace Honua.Server.Features.Operations;
 
@@ -17,7 +20,8 @@ internal sealed class AdminConnectImportOperationExecutor(
     IHttpContextAccessor httpContextAccessor,
     IAdminApiKeyStore adminApiKeyStore,
     TimeProvider clock,
-    OperationLineageAttestationStore lineageAttestationStore) : IOperationExecutor
+    OperationLineageAttestationStore lineageAttestationStore,
+    IImportJobService? importJobs = null) : IOperationExecutor, IOperationDryRunExecutor
 {
     public const string HttpClientName = "admin-connect-import-operation-loopback";
     public string OperationId => definition.OperationId;
@@ -30,9 +34,10 @@ internal sealed class AdminConnectImportOperationExecutor(
             .Where(parameter => !request.Parameters.TryGetValue(parameter.Name, out var value) || string.IsNullOrWhiteSpace(value))
             .Select(parameter => $"Required parameter '{parameter.Name}' is missing.").ToArray();
         var messages = missing.ToList();
-        if (definition.SideEffect != OperationSideEffectClass.ReadOnly &&
-            request.Parameters.TryGetValue("password", out var password) &&
-            !string.IsNullOrEmpty(password))
+        // Read-only connection tests take the same credential body as create/update. An inline
+        // password is rejected there too (#4880); callers pass secretReference instead.
+        // The check is case-insensitive so "Password" cannot bypass the ordinal dictionary lookup.
+        if (AdminConnectImportApprovalPayload.HasInlinePassword(request.Parameters))
         {
             messages.Add("Inline passwords cannot be persisted for approval; use secretReference.");
         }
@@ -65,12 +70,34 @@ internal sealed class AdminConnectImportOperationExecutor(
         }.Uri;
         using var message = new HttpRequestMessage(definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
-        OperationLineageHeaders.Apply(message, context, lineageAttestationStore);
+        var authorizedUrlImport = (OperationId is "admin.import.upload-url" or "admin.import.upload-object") &&
+            current.User.Identity?.IsAuthenticated == true &&
+            !string.IsNullOrWhiteSpace(context.OperationInstanceId) &&
+            !string.IsNullOrWhiteSpace(context.AuditId) &&
+            await ImportAdminAuthorization.IsAuthorizedAsync(current, current.User, cancellationToken).ConfigureAwait(false);
         AdminApiKeyRecord? executionCredential = null;
-        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId) || authorizedUrlImport)
         {
             var issued = await adminApiKeyStore.CreateAsync(
-                $"approved-operation:{context.ApprovedProposalId}",
+                authorizedUrlImport ? $"import-operation:{context.OperationInstanceId}" : $"approved-operation:{context.ApprovedProposalId}",
+                AdminApiKeyPermission.CreateApprovedOperationGrants(definition.Method.Method, uri.AbsolutePath, context.TenantId),
+                clock.GetUtcNow().AddMinutes(5),
+                context.PrincipalId,
+                cancellationToken).ConfigureAwait(false);
+            executionCredential = issued.Record;
+            message.Headers.TryAddWithoutValidation("X-API-Key", issued.Key);
+            if (!string.IsNullOrWhiteSpace(context.TenantId))
+                message.Headers.TryAddWithoutValidation("X-Honua-Tenant", context.TenantId);
+        }
+        else if (definition.SideEffect == OperationSideEffectClass.ReadOnly
+            && !AdminApiKeyPermission.IsSafeMethod(definition.Method.Method)
+            && !AdminApiKeyPermission.IsAuthorized(current.User, definition.Method.Method, uri.AbsolutePath))
+        {
+            // A read-scoped caller is authorized for the semantic read, but the Admin route is POST
+            // and would reject admin:read. Mint a single-use credential for this exact route instead
+            // of forwarding a key that cannot call it, and do not widen that credential to other routes.
+            var issued = await adminApiKeyStore.CreateAsync(
+                $"read-operation:{OperationId}",
                 AdminApiKeyPermission.CreateApprovedOperationGrants(definition.Method.Method, uri.AbsolutePath, context.TenantId),
                 clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
@@ -87,12 +114,16 @@ internal sealed class AdminConnectImportOperationExecutor(
             CopyHeader(current, message, "X-API-Key");
             CopyHeader(current, message, "X-Honua-Tenant");
         }
-        if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
-            message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
-
         HttpResponseMessage response;
         try
         {
+            var admission = authorizedUrlImport && executionCredential is not null &&
+                current.Features.Get<RateLimitAdmission>() is not null
+                ? new OperationLoopbackAdmission(executionCredential.Id, definition.Method.Method, uri.AbsolutePath, context.TenantId)
+                : null;
+            OperationLineageHeaders.Apply(message, context, lineageAttestationStore, admission);
+            if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
+                message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
             response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -129,10 +160,66 @@ internal sealed class AdminConnectImportOperationExecutor(
         }
     }
 
-    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+    public async Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handle);
-        return Task.FromResult(new OperationStatus { OperationInstanceId = handle.OperationInstanceId, OperationId = OperationId, CorrelationId = handle.CorrelationId, AuditId = handle.AuditId, ProposalId = handle.ProposalId, CreatedAt = handle.CreatedAt, UpdatedAt = handle.UpdatedAt, AuthorizationOutcome = handle.AuthorizationOutcome, PolicyDecision = handle.PolicyDecision, Status = handle.Status, Result = handle.Result, JobId = handle.JobId, ApprovalLane = handle.ApprovalLane, MetadataRevision = handle.MetadataRevision, Reason = handle.Reason, ResourceIds = handle.ResourceIds, EvidenceRefs = handle.EvidenceRefs });
+        var status = handle.Status;
+        var reason = handle.Reason;
+        if (handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running &&
+            importJobs is not null)
+        {
+            if (string.IsNullOrWhiteSpace(handle.JobId))
+            {
+                status = OperationHandleStatus.Indeterminate;
+                reason = "Queued import did not record a job id.";
+            }
+            else
+            {
+                var progress = await importJobs.GetProgressAsync(handle.JobId, cancellationToken).ConfigureAwait(false);
+                if (progress is null)
+                {
+                    status = OperationHandleStatus.Indeterminate;
+                    reason = "Queued import job is no longer present.";
+                }
+                else
+                {
+                    status = progress.Status switch
+                    {
+                        ImportStatus.Completed => OperationHandleStatus.Completed,
+                        ImportStatus.Failed => OperationHandleStatus.Failed,
+                        ImportStatus.Cancelled => OperationHandleStatus.Cancelled,
+                        ImportStatus.Processing => OperationHandleStatus.Running,
+                        ImportStatus.Queued => OperationHandleStatus.Queued,
+                        _ => OperationHandleStatus.Indeterminate,
+                    };
+                    if (progress.Status == ImportStatus.Failed)
+                    {
+                        reason = string.IsNullOrWhiteSpace(progress.ErrorMessage) ? "Import failed." : progress.ErrorMessage;
+                    }
+                }
+            }
+        }
+
+        return new OperationStatus
+        {
+            OperationInstanceId = handle.OperationInstanceId,
+            OperationId = OperationId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
+            Status = status,
+            Result = handle.Result,
+            JobId = handle.JobId,
+            ApprovalLane = handle.ApprovalLane,
+            MetadataRevision = handle.MetadataRevision,
+            Reason = reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
+        };
     }
 
     private static string BindPath(OperationRequest request, string path)
@@ -188,6 +275,7 @@ internal sealed class AdminConnectImportOperationExecutor(
     {
         using var document = JsonDocument.Parse(payload);
         var resources = new Dictionary<string, string>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where]: keeps only the string properties present on this payload
         foreach (var name in new[] { "jobId", "statusUrl", "cancelUrl" })
             if (document.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
                 resources[name] = value.GetString()!;

@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Harden a production deployment"
+description: "Work through this checklist before exposing Honua to the internet; each item is enforced or configured by a setting you can verify in .env.production.example."
+---
 # Harden a production deployment
 
 Work through this checklist before exposing Honua to the internet; each item is enforced or configured by a setting you can verify in `.env.production.example`.
@@ -13,6 +18,7 @@ Work through this checklist before exposing Honua to the internet; each item is 
 - [ ] OIDC client secrets and database credentials are injected from your secret manager, never committed; rotate on a schedule.
 - [ ] `Security__ConnectionEncryption__MasterKey` (secure connection registry cipher key) comes from a secret store; rotating it requires a redeploy.
 - [ ] Registered data-source connections reference secrets by provider reference (`provider` + `ref`, e.g. `env` or `azure-key-vault`) in metadata connection secrets instead of inlining credentials; validate with `GET /api/v1/admin/configuration/secrets/validate`.
+- [ ] `Security__RequestSecretReferences__*` lists only the secrets that imports, workflow source steps and registered connections are meant to name. Secret references that arrive in a request (`accessTokenSecretReference`, `passwordSecretReference`, `honuaApiKeySecretReference`, workflow `tokenSecretReference`/`passwordSecretReference`, and a connection's `secretReference`) are refused unless they match an entry, and nothing is permitted when the section is empty. Keep the entries narrow: a dedicated variable prefix such as `HONUA_IMPORT_` or a dedicated secret path such as `aws:secretsmanager:honua/imports/` — never the variables or secrets that hold the server's own credentials ([Secret references](../deploy/configuration.md#secret-references)).
 - [ ] `HONUA_DEV_AUTH` is **unset** — in production it blocks startup, and the only valid use is the in-process `Test` environment.
 
 ### Transport and edge
@@ -21,14 +27,14 @@ Work through this checklist before exposing Honua to the internet; each item is 
 - [ ] `ForwardedHeaders__Enabled=true` with `ForwardedHeaders__KnownProxies__0` listing each trusted hop, and `PUBLIC_BASE_URL=https://gis.example.com` so absolute links and `Location` headers carry the public hostname.
 - [ ] PostgreSQL connection string uses `SSL Mode=VerifyFull` (or at minimum `Require`) with `Trust Server Certificate=false`.
 - [ ] `Cors__AllowedOrigins__0..n` is an explicit allowlist of your apps' origins and `Cors__AllowCredentials=false` unless cookies are truly required.
-- [ ] Rate limiting is enforced at the edge (WAF/ALB/Application Gateway) — application-level rate limiting is deferred for MVP, so the server will not throttle for you.
+- [ ] Rate limiting is enforced at the edge (WAF/ALB/Application Gateway); the application limiter (`RateLimiting__Enabled`) is off by default and only supplements it.
 - [ ] `/api/v1/admin/*`, `/metrics`, and `/monitoring/*` are additionally restricted at the edge (network allowlist or VPN); they require admin auth in-app but should not be internet-reachable.
 - [ ] A CSP for any hosted UI is rolled out at the edge, report-only first — violations land on `POST /csp-violation-report`.
 
 ### Limits and upload/import posture
 
 - [ ] Query and geometry limits are production-tuned (`Limits__Query__MaxRecordCount`, `Limits__Query__QueryTimeout`, `Limits__Geometry__MaxGeometrySize`, …).
-- [ ] Attachment limits fit your use case (`Limits__Attachments__MaxAttachmentSize`, `MaxAttachmentsPerFeature`, `AllowedMimeTypes` — defaults 5 MB / 5 per feature / `image/*,application/pdf`).
+- [ ] Attachment limits fit your use case (`Limits__Attachments__MaxAttachmentSize`, `MaxAttachmentsPerFeature`, `AllowedMimeTypes` — defaults 5 MB / 5 per feature / `image/*,application/pdf,text/plain,text/csv,application/json`).
 - [ ] Import upload limits reviewed via `GET /api/v1/admin/import/limits`.
 - [ ] SSRF posture for remote imports understood: URL-based import sources must be HTTPS, without embedded credentials, resolving to public addresses on recognized S3/Azure object-storage hosts — private and loopback targets are rejected server-side. Outbound webhook URLs get the same validation. Keep network egress policies as defense in depth.
 

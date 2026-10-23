@@ -82,7 +82,7 @@ internal static class KubernetesJobManifestSerializer
                 writer.WriteString("imagePullPolicy", manifest.ImagePullPolicy);
             }
 
-            if (manifest.EnvironmentVariables.Count > 0)
+            if (manifest.EnvironmentVariables.Count > 0 || manifest.EnvironmentReferences.Count > 0)
             {
                 writer.WriteStartArray("env");
                 foreach (var env in manifest.EnvironmentVariables)
@@ -90,6 +90,45 @@ internal static class KubernetesJobManifestSerializer
                     writer.WriteStartObject();
                     writer.WriteString("name", env.Key);
                     writer.WriteString("value", env.Value);
+                    writer.WriteEndObject();
+                }
+
+                // Secret/ConfigMap-backed variables carry only the object name and key; the kubelet
+                // resolves the value at pod start, so it never appears in the Job object.
+                foreach (var env in manifest.EnvironmentReferences.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("name", env.Key);
+                    writer.WriteStartObject("valueFrom");
+                    writer.WriteStartObject(env.Value.Kind == KubernetesEnvSourceKind.Secret
+                        ? "secretKeyRef"
+                        : "configMapKeyRef");
+                    writer.WriteString("name", env.Value.Name);
+                    writer.WriteString("key", env.Value.Key);
+                    writer.WriteEndObject();
+                    writer.WriteEndObject();
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+            }
+
+            if (manifest.EnvFrom.Count > 0)
+            {
+                writer.WriteStartArray("envFrom");
+                foreach (var source in manifest.EnvFrom)
+                {
+                    writer.WriteStartObject();
+                    if (!string.IsNullOrEmpty(source.Prefix))
+                    {
+                        writer.WriteString("prefix", source.Prefix);
+                    }
+
+                    writer.WriteStartObject(source.Kind == KubernetesEnvSourceKind.Secret
+                        ? "secretRef"
+                        : "configMapRef");
+                    writer.WriteString("name", source.Name);
+                    writer.WriteEndObject();
                     writer.WriteEndObject();
                 }
 

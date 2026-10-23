@@ -29,13 +29,15 @@ namespace Honua.Protocols.Ogc.Api.Features;
 /// </summary>
 internal static class OgcFeaturesUtilities
 {
+    private const string TokenQueryParameter = "token";
+
     /// <summary>
     /// Allowed query parameters by operation type
     /// </summary>
     public static class AllowedQueryParameters
     {
         public static readonly FrozenSet<string> Metadata =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Items = new[]
             {
@@ -51,26 +53,29 @@ internal static class OgcFeaturesUtilities
                 "sortby",
                 "filter",
                 "filter-lang",
-                "filter-crs"
+                "filter-crs",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Item = new[]
             {
                 "f",
-                "crs"
+                "crs",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> OpenApi =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Transactions =
-            Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> H3 = new[]
             {
-                "resolution"
+                "resolution",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
@@ -147,7 +152,8 @@ internal static class OgcFeaturesUtilities
     {
         var definitions = await GetSupportedCrsDefinitionsAsync(resource, crsRegistry, cancellationToken).ConfigureAwait(false);
         return definitions.Keys
-            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static uri => string.Equals(uri, Crs84Uri, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
     }
 
@@ -223,7 +229,7 @@ internal static class OgcFeaturesUtilities
     /// Determines whether a Metadata V2 field is queryable for simple parameter filtering.
     /// </summary>
     public static bool IsSimpleQueryableField(MetadataV2Field field)
-        => OgcQueryablesUtilities.IsSimpleQueryableField(field);
+        => !field.Hidden && OgcQueryablesUtilities.IsSimpleQueryableField(field);
 
     /// <summary>
     /// Validates items query parameters against the Metadata V2 queryable field set.

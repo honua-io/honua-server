@@ -13,6 +13,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
+using Honua.Geoprocessing.Release;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -56,6 +58,177 @@ public sealed class CustomCodeSubmitTests
             .Returns(ApprovalRequirement.NotRequired());
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
+    }
+
+    [UnitTest]
+    public async Task SubmitJob_LogicalRelease_RequiresCustomCodePermission()
+    {
+        DenyCustomCodePermission();
+        var sut = CreateService();
+        var metadata = new Dictionary<string, string> { [GpProcessReleaseAdmission.ProcessParam] = "buffer-features" };
+
+        var act = () => sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public Task SubmitJob_LogicalRelease_PreservesPinnedIdentityAcrossDefaultsAndReplay()
+        => VerifyReleaseAdmissionAsync("python");
+
+    [UnitTest]
+    public Task SubmitJob_DotnetRelease_UsesRegisteredProjectAndPreservesPinsOnReplay()
+        => VerifyReleaseAdmissionAsync("dotnet");
+
+    private async Task VerifyReleaseAdmissionAsync(string runtime)
+    {
+        var store = new InMemoryGpProcessReleaseStore();
+        var v1 = await store.PublishAsync(ReleaseLock("1.0.0", "a", runtime), "operator");
+        var v2 = await store.PublishAsync(ReleaseLock("2.0.0", "b", runtime), "operator");
+        var environment = new GpProcessReleaseEnvironment
+        {
+            ServerContractVersion = 1,
+            SupportedTargetKinds = ["aws-batch"],
+            CustomCodeMayUseKubernetes = false,
+            ReadyTargets = new[] { "7", "8" }.Select(revision => new GpProcessBindingTarget
+            {
+                Kind = "aws-batch",
+                Image = v1.Lock.RuntimeImage.Reference,
+                JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:" + revision,
+            }).ToArray(),
+        };
+        GpProcessBindingActivation Activation(string digest, int version, string revision) => new()
+        {
+            Process = "buffer-features",
+            LockDigest = digest,
+            ExpectedBindingVersion = version,
+            Operation = "deploy",
+            Actor = "operator",
+            Targets = [new GpProcessBindingTargetIdentity
+            {
+                Kind = "aws-batch", JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:" + revision,
+            }],
+        };
+        (await store.ActivateAsync(Activation(v1.Digest, 0, "7"), environment)).Activated.Should().BeTrue();
+        var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "unrelated", WorkloadName = "Unrelated", Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = "worker:latest",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["batch.queue"] = "wrong-queue",
+                    [GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = "wrong-workspace",
+                },
+            },
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "custom-code", WorkloadName = "Custom code", Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = v1.Lock.RuntimeImage.Reference,
+                Parameters = new Dictionary<string, string>
+                {
+                    ["batch.queue"] = "release-queue",
+                    [CustomCodeJobContract.DepsManifestParam] = "samples/gp-local-dev/Tool.csproj",
+                    [GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = "release-workspace",
+                    ["batch.job_definition_arn"] = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:7",
+                    ["batch.job_definition_arn.s"] = "arn:aws:batch:us-west-2:123456789012:job-definition/wrong:99",
+                    [CustomCodeJobContract.GitRefParam] = new string('f', 40),
+                },
+            },
+        });
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult { Status = ExecutionJobStatus.Provisioning, ProviderOperationId = "provider-job" });
+        var sut = CreateService(workloadRegistry: registry, backends: [backend],
+            releaseAdmission: new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance));
+        var metadata = CustomCodeMetadata();
+        metadata.Remove(CustomCodeJobContract.RuntimeParam);
+        metadata.Remove(CustomCodeJobContract.RepoUrlParam);
+        metadata.Remove(CustomCodeJobContract.EntrypointParam);
+        metadata.Remove(CustomCodeJobContract.DepsManifestParam);
+        metadata[CustomCodeJobContract.GitRefParam] = new string('a', 40);
+        metadata[GpProcessReleaseAdmission.ProcessParam] = "buffer-features";
+
+        var queued = await sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        queued.Spec.Parameters[CustomCodeJobContract.GitRefParam].Should().Be(new string('a', 40));
+        queued.Spec.Parameters[GpProcessReleaseAdmission.AwsBatchJobDefinitionParam].Should().EndWith(":7");
+        queued.Spec.Parameters.Should().NotContainKey("batch.job_definition_arn.s");
+        queued.Spec.Artifact.Should().Be(v1.Lock.RuntimeImage.Reference);
+        queued.Spec.Parameters[CustomCodeJobContract.DepsManifestParam].Should().Be(runtime == "dotnet"
+            ? "samples/gp-local-dev/Tool.csproj"
+            : v1.Lock.DependencyLock.Path);
+        queued.Spec.WorkloadId.Should().Be("custom-code");
+        queued.Spec.Parameters["batch.queue"].Should().Be("release-queue");
+        queued.Spec.Parameters[GeoprocessingProtocolMetadataKeys.GPServerWorkspace].Should().Be("release-workspace");
+        _jobStore.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(queued);
+
+        (await store.ActivateAsync(Activation(v2.Digest, 1, "8"), environment)).Activated.Should().BeTrue();
+        var replay = await sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        replay.OperationId.Should().Be(queued.OperationId);
+        replay.Spec.Parameters[GpProcessReleaseAdmission.ReleaseLockDigestParam].Should().Be(v1.Digest);
+        await backend.Received(1).StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+
+        metadata[CustomCodeJobContract.ParamsJsonParam] = "{\"distance\":999}";
+        var changedInputs = () => sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        await changedInputs.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+
+        metadata[GpProcessReleaseAdmission.ProcessParam] = "another-process";
+        var conflicting = () => sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        await conflicting.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "unrelated", WorkloadName = "Unrelated", Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = "worker:latest",
+            },
+        });
+        var refusedIssuer = Substitute.For<IScopedJobTokenIssuer>();
+        var unavailable = CreateService(workloadRegistry: registry, backends: [backend],
+            releaseAdmission: new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance),
+            scopedJobTokenIssuer: refusedIssuer);
+        var newMetadata = CustomCodeMetadata();
+        newMetadata[CustomCodeJobContract.RuntimeParam] = runtime;
+        newMetadata[GpProcessReleaseAdmission.ProcessParam] = "buffer-features";
+        newMetadata.Remove(CustomCodeJobContract.GitRefParam);
+        newMetadata.Remove(CustomCodeJobContract.RepoUrlParam);
+        newMetadata.Remove(CustomCodeJobContract.EntrypointParam);
+        newMetadata.Remove(CustomCodeJobContract.DepsManifestParam);
+
+        var missingWorker = () => unavailable.SubmitJobAsync(CustomCodePlan(), "missing-worker", OwnerPrincipal(), newMetadata);
+        await missingWorker.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*pinned image and job-definition revision*");
+        await refusedIssuer.DidNotReceive().IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>());
+
+        if (runtime == "dotnet")
+        {
+            registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+            {
+                new ExecutionJobDefinition
+                {
+                    WorkloadId = "missing-project", WorkloadName = "Missing project", Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                    RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = v2.Lock.RuntimeImage.Reference,
+                    Parameters = new Dictionary<string, string>
+                    {
+                        ["batch.job_definition_arn"] = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:8",
+                    },
+                },
+            });
+            var missingProject = () => unavailable.SubmitJobAsync(CustomCodePlan(), "missing-project", OwnerPrincipal(), newMetadata);
+            await missingProject.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*naming its .csproj*");
+            await refusedIssuer.DidNotReceive().IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>());
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -348,16 +521,28 @@ public sealed class CustomCodeSubmitTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_CustomCode_ServerSetsOutputPrefix_OverridingCaller()
+    public async Task SubmitJob_CustomCode_ServerSetsOutputPrefix_RefusingRequestValue()
     {
         var sut = CreateService();
-        var metadata = CustomCodeMetadata();
-        metadata[CustomCodeJobContract.OutputPrefixParam] = "s3://attacker/loot";
 
-        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+        // The output prefix is server-set: a request that names one is refused...
+        var withPrefix = CustomCodeMetadata();
+        withPrefix[CustomCodeJobContract.OutputPrefixParam] = "s3://other-bucket/prefix";
+        var prefixAct = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), withPrefix);
+        (await prefixAct.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain(CustomCodeJobContract.OutputPrefixParam);
 
-        job.Spec.Parameters[CustomCodeJobContract.OutputPrefixParam].Should().NotContain("attacker");
+        // ...as is one that names a container environment pass-through the gate injects itself.
+        var withEnv = CustomCodeMetadata();
+        withEnv[CustomCodeJobContract.JobTokenEnvParam] = "request-value";
+        var envAct = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), withEnv);
+        (await envAct.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain(CustomCodeJobContract.JobTokenEnvParam);
+
+        // The server-allocated per-job prefix and injected environment still arrive.
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
         job.Spec.Parameters[CustomCodeJobContract.OutputPrefixParam].Should().Contain(job.OperationId);
+        job.Spec.Parameters.Should().ContainKey(CustomCodeJobContract.JobTokenEnvParam);
     }
 
     // -----------------------------------------------------------------------
@@ -798,11 +983,26 @@ public sealed class CustomCodeSubmitTests
     // helpers
     // -----------------------------------------------------------------------
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_WithoutArtifactBrokerStorage_RejectsBeforeMinting()
+    {
+        var issuer = Substitute.For<IScopedJobTokenIssuer>();
+        var service = CreateService(scopedJobTokenIssuer: issuer, hasArtifactStorage: false);
+        var submit = async () => await service.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+        await submit.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*durable cloud storage*");
+        await issuer.DidNotReceiveWithAnyArgs().IssueAsync(default!, default);
+    }
+
     private GeoprocessingJobService CreateService(
         Action<CustomCodeOptions>? configure = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
-        ICustomCodeCommitSignatureVerifier? signatureVerifier = null)
+        ICustomCodeCommitSignatureVerifier? signatureVerifier = null,
+        GpProcessReleaseAdmission? releaseAdmission = null,
+        IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
+        bool hasArtifactStorage = true)
     {
         var options = new CustomCodeOptions
         {
@@ -813,6 +1013,8 @@ public sealed class CustomCodeSubmitTests
         };
         configure?.Invoke(options);
 
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.AwsS3);
         return new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
@@ -822,9 +1024,11 @@ public sealed class CustomCodeSubmitTests
             _jobStore, _jobQueue,
             workloadRegistry: workloadRegistry,
             backends: backends,
-            scopedJobTokenIssuer: _issuer,
+            scopedJobTokenIssuer: scopedJobTokenIssuer ?? _issuer,
             customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(options),
-            customCodeSignatureVerifier: signatureVerifier);
+            customCodeSignatureVerifier: signatureVerifier,
+            releaseAdmission: releaseAdmission,
+            customCodeArtifactStorage: hasArtifactStorage ? storage : null);
     }
 
     /// <summary>
@@ -933,6 +1137,7 @@ public sealed class CustomCodeSubmitTests
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "alice"),
+                new Claim(ClaimTypes.NameIdentifier, "alice"),
                 new Claim(TenantClaimType, "tenant-A"),
                 new Claim("permission", "read:parcels")
             ],
@@ -945,6 +1150,7 @@ public sealed class CustomCodeSubmitTests
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "bob"),
+                new Claim(ClaimTypes.NameIdentifier, "bob"),
                 new Claim(TenantClaimType, "tenant-A"),
                 new Claim(ClaimTypes.Role, "data-editor:parcels")
             ],
@@ -955,6 +1161,7 @@ public sealed class CustomCodeSubmitTests
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "admin-user"),
+                new Claim(ClaimTypes.NameIdentifier, "admin-user"),
                 new Claim(TenantClaimType, "tenant-A"),
                 new Claim(ClaimTypes.Role, "admin"),
                 new Claim("permission", "read:parcels")
@@ -972,4 +1179,26 @@ public sealed class CustomCodeSubmitTests
         public T Get(string? name) => value;
         public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
+    private static GpProcessReleaseLock ReleaseLock(string version, string shaChar, string runtime)
+        => new()
+        {
+            Process = new GpReleaseProcess
+            {
+                Name = "buffer-features",
+                Version = version,
+                Runtime = runtime,
+                Entrypoint = runtime == "dotnet" ? "Tool::Example.BufferTool" : "buffer_features:execute",
+                Contract = new GpReleaseContract { InputSchemaSha256 = "sha256:" + new string('1', 64), OutputSchemaSha256 = "sha256:" + new string('2', 64) },
+            },
+            Source = new GpReleaseSource { Repository = "honua-io/honua-samples", Sha = new string(shaChar[0], 40), DescriptorPath = "samples/gp-local-dev/honua-gp.yaml" },
+            DependencyLock = new GpReleaseFileDigest { Path = runtime == "dotnet" ? "samples/gp-local-dev/packages.lock.json" : "samples/gp-local-dev/requirements.lock", Sha256 = "sha256:" + new string('d', 64) },
+            RuntimeImage = new GpReleaseRuntimeImage { Reference = "ghcr.io/honua-io/honua-gp-worker@sha256:" + new string('b', 64), Digest = "sha256:" + new string('b', 64) },
+            WorkflowVersion = "wf-2026.1-7",
+            ConfigurationReferences = [],
+            Targets = [new GpReleaseTarget { Kind = "aws-batch", WorkerImageDigest = "sha256:" + new string('b', 64), JobDefinitionName = "buffer" }],
+            Compatibility = new GpReleaseCompatibility { ServerContractVersion = new GpReleaseContractWindow { Minimum = 1, Maximum = 2 } },
+            Artifacts = [new GpReleaseArtifact { Name = $"buffer-features-{version}.tar.gz", Sha256 = "sha256:" + new string('e', 64), SizeBytes = 1 }],
+            ValidationReceipts = [new GpReleaseValidationReceipt { Name = "golden-tests.junit.xml", Sha256 = "sha256:" + new string('9', 64), Status = "pass" }],
+            GeneratedAt = "2026-10-15T04:00:00Z",
+        };
 }

@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
@@ -18,18 +17,22 @@ namespace Honua.Infrastructure.Authentication;
 /// (ADR-0049). Honua acts as the OAuth2 authorization server that ArcGIS clients
 /// (Pro "Add Portal", Field Maps) talk to, while delegating <em>identity</em> to
 /// the operator's configured OIDC provider via the existing auth-code+PKCE
-/// machinery (<see cref="OidcProviderCatalog"/> + discovery + the shared
-/// <see cref="IPortalCredentialVerifier"/>). No parallel user store, token store,
+/// machinery (<see cref="OidcProviderCatalog"/> + discovery +
+/// <see cref="OidcPortalCredentialVerifier"/>). The callback validates the IdP
+/// token with that verifier whenever the bridge is configured.
+/// <c>Authentication:PortalCredentialVerifier:UseOidc</c> still selects OIDC only
+/// for password and <c>generateToken</c> checks. No parallel user store, token store,
 /// or group→role mapping is introduced: the verified principal is the same one a
 /// direct OIDC session yields, and access tokens are minted through
-/// <see cref="IPortalTokenIssuer"/>.
+/// <see cref="Honua.Core.Features.Authorization.Abstractions.IPortalTokenIssuer"/>.
 /// </summary>
 internal sealed class PortalOAuthBroker(
     IOptions<OidcAuthenticationOptions> oidcOptions,
-    IPortalCredentialVerifier credentialVerifier,
+    OidcPortalCredentialVerifier oidcCredentialVerifier,
     PortalOAuthStore store,
     IHttpClientFactory httpClientFactory,
-    ILogger<PortalOAuthBroker> logger)
+    ILogger<PortalOAuthBroker> logger,
+    IOidcRuntimeProviderSource? runtimeProviders = null)
 {
     /// <summary>Named HTTP client used for IdP discovery/token/JWKS calls.</summary>
     internal const string HttpClientName = "PortalOAuthOidc";
@@ -38,7 +41,7 @@ internal sealed class PortalOAuthBroker(
     private static readonly TimeSpan AuthorizationCodeLifetime = TimeSpan.FromMinutes(5);
 
     private readonly OidcAuthenticationOptions _oidcOptions = oidcOptions.Value;
-    private readonly IPortalCredentialVerifier _credentialVerifier = credentialVerifier;
+    private readonly OidcPortalCredentialVerifier _oidcCredentialVerifier = oidcCredentialVerifier;
     private readonly PortalOAuthStore _store = store;
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly ILogger<PortalOAuthBroker> _logger = logger;
@@ -46,7 +49,7 @@ internal sealed class PortalOAuthBroker(
     /// <summary>Whether the OIDC core is enabled and at least one valid provider exists.</summary>
     public bool IsConfigured =>
         _oidcOptions.Enabled &&
-        OidcProviderCatalog.GetProviders(_oidcOptions).Any(static p => p.IsValid);
+        OidcProviderCatalog.GetProviders(_oidcOptions, runtimeProviders).Any(static p => p.IsValid);
 
     /// <summary>
     /// Starts the authorization-code flow: resolves the OIDC provider, persists a
@@ -87,7 +90,10 @@ internal sealed class PortalOAuthBroker(
             return null;
         }
 
-        var idpState = GenerateRandomString(32);
+        // State crosses the server's query-input scanner on the callback. Hex retains
+        // all 256 random bits without the SQL-comment punctuation (for example "--")
+        // that the PKCE unreserved alphabet can generate by chance.
+        var idpState = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         var idpVerifier = GenerateRandomString(64);
         var idpChallenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(idpVerifier)));
 
@@ -112,7 +118,7 @@ internal sealed class PortalOAuthBroker(
         // without a cookie (ArcGIS Pro's embedded browser is hostile to cookies).
         //
         // CSRF posture (#1484, see ADR-0049 "CSRF posture"): the cookieless binding
-        // is judged adequate. `idpState` (32 random chars) plus `brokerSessionId`
+        // is judged adequate. `idpState` (256 random bits) plus `brokerSessionId`
         // (256-bit cache-key entropy) are both unguessable; the callback consumes the
         // session single-use by id and constant-time-compares `idpState` before
         // proceeding. The secret lives server-side in the single-use, 15-minute
@@ -146,12 +152,10 @@ internal sealed class PortalOAuthBroker(
             return PortalOAuthCallbackResult.Failure("invalid_request", "Missing authorization response parameters.");
         }
 
-        // Split on the LAST '.' — the idpState half is drawn from the RFC 3986
-        // unreserved alphabet, which INCLUDES '.', so it can legitimately contain
-        // dots. The brokerSessionId half is always lowercase hex (see
-        // PortalOAuthStore.CreateValue) and never contains a '.', so the final dot
-        // is unambiguously the delimiter. Splitting on the first '.' corrupted the
-        // session id whenever the random idpState happened to contain a dot.
+        // Split on the LAST '.' for existing sessions whose idpState used the RFC
+        // 3986 unreserved alphabet, including '.'. Newly minted state and the
+        // brokerSessionId are lowercase hex, but accepting the earlier format
+        // avoids invalidating a login already in progress during an upgrade.
         var separator = combinedState.LastIndexOf('.');
         if (separator <= 0 || separator >= combinedState.Length - 1)
         {
@@ -173,7 +177,7 @@ internal sealed class PortalOAuthBroker(
         if (provider is null)
         {
             PortalOAuthLog.CallbackRejected(_logger, "provider no longer valid");
-            return PortalOAuthCallbackResult.Failure("server_error", "Identity provider is unavailable.");
+            return ClientRedirectFailure(session, "server_error", "Identity provider is unavailable.");
         }
 
         OidcDiscoveryDocument discovery;
@@ -183,7 +187,7 @@ internal sealed class PortalOAuthBroker(
             discovery = await GetDiscoveryDocumentAsync(provider.Authority!, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(discovery.TokenEndpoint))
             {
-                return PortalOAuthCallbackResult.Failure("server_error", "Identity provider is unavailable.");
+                return ClientRedirectFailure(session, "server_error", "Identity provider is unavailable.");
             }
 
             idpTokens = await ExchangeIdpCodeAsync(
@@ -197,32 +201,32 @@ internal sealed class PortalOAuthBroker(
         catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
         {
             PortalOAuthLog.ProviderUnavailable(_logger, provider.Key, ex);
-            return PortalOAuthCallbackResult.Failure("server_error", "Identity provider is unavailable.");
+            return ClientRedirectFailure(session, "server_error", "Identity provider is unavailable.");
         }
 
         if (idpTokens is null)
         {
             PortalOAuthLog.CallbackRejected(_logger, "IdP code exchange failed");
-            return PortalOAuthCallbackResult.Failure("access_denied", "Authentication failed with the identity provider.");
+            return ClientRedirectFailure(session, "access_denied", "Authentication failed with the identity provider.");
         }
 
-        // Relay the IdP id/access token through the shared portal credential
-        // verifier (the OIDC-backed verifier validates issuer/audience/signing and
-        // normalizes roles through OidcClaimsTransformation, exactly like a direct
-        // Bearer session). This is the single identity seam mandated by ADR-0049.
+        // The bridge already exchanged an IdP code. Validate that token with the
+        // OIDC verifier directly. UseOidc selects the verifier only for password
+        // and generateToken checks, and leaving it false must not turn a configured
+        // bridge callback into an admin-password rejection (honua-server#5424).
         var idpToken = idpTokens.IdToken ?? idpTokens.AccessToken;
         if (string.IsNullOrWhiteSpace(idpToken))
         {
-            return PortalOAuthCallbackResult.Failure("access_denied", "Identity provider returned no usable token.");
+            return ClientRedirectFailure(session, "access_denied", "Identity provider returned no usable token.");
         }
 
-        var verified = await _credentialVerifier
-            .VerifyAsync(string.Empty, idpToken, cancellationToken)
+        var verified = await _oidcCredentialVerifier
+            .VerifyForProviderAsync(session.ProviderKey, idpToken, cancellationToken)
             .ConfigureAwait(false);
         if (verified is null)
         {
             PortalOAuthLog.CallbackRejected(_logger, "principal verification failed");
-            return PortalOAuthCallbackResult.Failure("access_denied", "Authentication failed.");
+            return ClientRedirectFailure(session, "access_denied", "Authentication failed.");
         }
 
         var code = new PortalOAuthAuthorizationCode
@@ -255,6 +259,76 @@ internal sealed class PortalOAuthBroker(
         return PortalOAuthCallbackResult.Success(redirect);
     }
 
+    /// <summary>
+    /// Delivers an IdP <c>error</c> callback to the client redirect stored in the
+    /// broker session. The session is consumed only when its state matches, so a
+    /// forged error cannot choose the redirect target.
+    /// </summary>
+    public async Task<PortalOAuthCallbackResult> RedirectIdpErrorAsync(
+        string? combinedState,
+        string? idpError,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(combinedState))
+        {
+            PortalOAuthLog.CallbackRejected(_logger, "missing state or code");
+            return PortalOAuthCallbackResult.Failure("invalid_request", "Missing authorization response parameters.");
+        }
+
+        var separator = combinedState.LastIndexOf('.');
+        if (separator <= 0 || separator >= combinedState.Length - 1)
+        {
+            PortalOAuthLog.CallbackRejected(_logger, "malformed state");
+            return PortalOAuthCallbackResult.Failure("invalid_request", "Authorization state is malformed.");
+        }
+
+        var idpState = combinedState[..separator];
+        var brokerSessionId = combinedState[(separator + 1)..];
+        var session = await _store.ConsumeBrokerSessionAsync(brokerSessionId, cancellationToken).ConfigureAwait(false);
+        if (session is null || !CryptographicEquals(session.IdpState, idpState))
+        {
+            PortalOAuthLog.CallbackRejected(_logger, "unknown or expired broker session");
+            return PortalOAuthCallbackResult.Failure("access_denied", "Authorization session is invalid or expired.");
+        }
+
+        return ClientRedirectFailure(
+            session,
+            NormalizeIdpError(idpError),
+            "Authentication failed with the identity provider.");
+    }
+
+    /// <summary>
+    /// Restricts a reflected IdP error to the OAuth2 error set. Anything else
+    /// becomes <c>access_denied</c>.
+    /// </summary>
+    private static string NormalizeIdpError(string? idpError)
+        => idpError switch
+        {
+            "access_denied" or "invalid_request" or "unauthorized_client"
+                or "server_error" or "temporarily_unavailable" => idpError,
+            _ => "access_denied",
+        };
+
+    /// <summary>
+    /// Sends an OAuth error to the allow-listed client redirect. The session
+    /// redirect was validated at authorize time, so this is not an open redirect.
+    /// </summary>
+    private static PortalOAuthCallbackResult ClientRedirectFailure(
+        PortalOAuthBrokerSession session,
+        string error,
+        string description)
+    {
+        var redirect = QueryHelpers.AddQueryString(
+            session.RedirectUri,
+            new Dictionary<string, string?>
+            {
+                ["error"] = error,
+                ["error_description"] = description,
+                ["state"] = session.ClientState,
+            });
+        return new PortalOAuthCallbackResult(false, redirect, error, description);
+    }
+
     private OidcProviderRegistration? ResolveProvider(string? providerKey)
     {
         if (!_oidcOptions.Enabled)
@@ -262,14 +336,14 @@ internal sealed class PortalOAuthBroker(
             return null;
         }
 
-        var providers = OidcProviderCatalog.GetProviders(_oidcOptions).Where(static p => p.IsValid).ToArray();
+        var providers = OidcProviderCatalog.GetProviders(_oidcOptions, runtimeProviders).Where(static p => p.IsValid).ToArray();
         if (providers.Length == 0)
         {
             return null;
         }
 
         if (!string.IsNullOrWhiteSpace(providerKey) &&
-            OidcProviderCatalog.TryResolveProvider(_oidcOptions, providerKey, out var resolved))
+            OidcProviderCatalog.TryResolveProvider(_oidcOptions, providerKey, out var resolved, runtimeProviders))
         {
             return resolved;
         }

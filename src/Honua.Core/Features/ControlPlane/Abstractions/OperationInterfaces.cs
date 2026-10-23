@@ -158,6 +158,18 @@ public interface IWorkflowOperationStore : IOperationStore
         string targetId,
         CancellationToken cancellationToken = default)
         => Task.FromResult<WorkflowOperationRecord?>(null);
+
+    /// <summary>
+    /// Whether a later deploy was created for the same target. Null means the store cannot prove
+    /// complete history since this operation was created, so callers must withhold stale actions.
+    /// </summary>
+    /// <param name="operation">The deploy being checked.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True for a later deploy, false for proven absence, or null when history is incomplete.</returns>
+    Task<bool?> HasLaterDeployOfTargetAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<bool?>(null);
 }
 
 /// <summary>
@@ -332,6 +344,45 @@ public interface IDeployBackend
     Task<DeployObservation> RollbackAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finalizes a completed post-activation observation window (honua-server#4618): retires any
+    /// retained previous-revision capacity a backend held open purely to serve deterministic recovery
+    /// (for example a co-located standby process) now that the window elapsed without a rollback
+    /// trigger. Backends that do not retain anything beyond their own <see cref="PromoteAsync"/> cutover
+    /// (their provider already owns retention/termination of the prior revision) can accept the default,
+    /// which is a no-op success.
+    /// </summary>
+    /// <param name="operation">Workflow operation record whose protection window just elapsed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Latest observation from the provider; a <see cref="WorkflowOperationStatus.Failed"/> status leaves the operation in <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> rather than silently dropping retained capacity.</returns>
+    Task<DeployObservation> CompleteProtectionAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new DeployObservation
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            ProviderOperationId = operation.ProviderOperationId,
+            ObservedRevision = operation.Deploy?.Protection?.CandidateRevision ?? operation.Deploy?.CurrentRevision,
+            Message = "Post-activation observation window elapsed."
+        });
+}
+
+/// <summary>Prepares durable per-attempt submission parameters before any provider side effect.</summary>
+public interface IBatchComputeSubmissionPreparer
+{
+    /// <summary>Creates server-owned parameters to persist in the dispatch CAS before StartAsync.</summary>
+    /// <param name="job">The next-attempt dispatch intent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Parameters that must be durably merged into the job spec before submission.</returns>
+    Task<IReadOnlyDictionary<string, string>?> PrepareSubmissionAsync(ExecutionJobRecord job, CancellationToken cancellationToken);
+
+    /// <summary>Finalizes preparation after its parameters are durably committed and before provider submission.</summary>
+    /// <param name="previous">Prior attempt snapshot.</param>
+    /// <param name="prepared">Durably prepared next-attempt snapshot.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 /// <summary>

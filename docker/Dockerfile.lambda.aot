@@ -6,8 +6,11 @@
 # docs/internal/security/code-scanning-2026-Q2-remediation.md.
 # These ARG defaults are the single source of truth for the GHCR mirror of these
 # bases (scripts/ci/base-image-mirrors.sh + the nightly `mirror-base-images` job).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:851e6e04fff95d33a02c725373dc0ac624734986f2dc9028887077347ecffa96
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
+# Lambda Web Adapter. The nightly build mirrors this digest to GHCR and passes the mirror here, because
+# anonymous Public ECR pulls are rate limited (429) from shared runners.
+ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490
 
 FROM ${DOTNET_SDK_IMAGE} AS restore
 WORKDIR /src
@@ -41,7 +44,7 @@ COPY src/Honua.Db/MySql/*.csproj src/Honua.Db/MySql/
 COPY src/Honua.Db/Redshift/*.csproj src/Honua.Db/Redshift/
 COPY src/Honua.Snowflake/*.csproj src/Honua.Snowflake/
 COPY src/Honua.Db/Databricks/*.csproj src/Honua.Db/Databricks/
-COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
+COPY src/Honua.GeoServicesRest/*.csproj src/Honua.GeoServicesRest/
 COPY src/Honua.Db/Oracle/*.csproj src/Honua.Db/Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
 COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/
@@ -165,6 +168,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" != "true" ]; then rm -rf /app/wwwroot; else rm -rf /app/wwwroot/admin; fi && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
+FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter
+
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
 # Immutable deployment identity (#3038). Keep the SHA in the runtime stage so revision-only
@@ -173,7 +178,7 @@ ARG HONUA_GIT_SHA=
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4 /lambda-adapter /opt/extensions/lambda-adapter
+COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
 
 WORKDIR /var/task
 COPY --from=build /app /var/task
@@ -187,9 +192,17 @@ COPY --from=build /app /var/task
 # directory font manager still needs real fonts for labels and legends, so ship a
 # deterministic DejaVu baseline. `ldd -r` forces every lazy native relocation now;
 # this catches missing libraries and symbols while the image is built, rather than
-# after a customer requests the first map.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgssapi-krb5-2 fonts-dejavu-core && \
+# after a customer requests the first map. libatomic1 is required by ParquetSharpNative,
+# the GeoParquet f=parquet encoder: without it every export answered 501 (honua-server#4912).
+# The digest-pinned runtime-deps base lags Ubuntu security pockets. Upgrade here so
+# openssl/libssl CVE-2026-84782 (fix 3.0.13-0ubuntu3.16) does not wait on a base refresh.
+# The revision is echoed so a bump invalidates the cached apt layer.
+ARG RUNTIME_PACKAGE_REVISION=20261008
+# hadolint ignore=DL3008,DL3005
+RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
+    apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/* && \
     test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf && \
     chmod +x /var/task/Honua.Server && \
@@ -198,7 +211,18 @@ RUN apt-get update && \
     if printf '%s\n' "$skia_linkage" | grep -Eq 'not found|undefined symbol'; then \
       echo "SkiaSharp native dependency validation failed" >&2; \
       exit 1; \
-    fi
+    fi && \
+    for native in ParquetSharpNative.so libduckdb.so; do \
+      test -f "/var/task/${native}" || { echo "missing native library /var/task/${native}" >&2; exit 1; }; \
+      echo "== ${native}"; \
+      ldd -r "/var/task/${native}" > /tmp/native-linkage.txt 2>&1; \
+      cat /tmp/native-linkage.txt; \
+      if grep -Eq 'not found|undefined symbol|not a dynamic executable' /tmp/native-linkage.txt; then \
+        echo "native dependency validation failed for /var/task/${native}" >&2; \
+        exit 1; \
+      fi; \
+    done && \
+    rm -f /tmp/native-linkage.txt
 
 ENV PORT=8080 \
     AWS_LWA_PORT=8080 \

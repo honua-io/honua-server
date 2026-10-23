@@ -1,0 +1,9 @@
+honua-server-1  |       Request starting "HTTP/1.1" "GET" "http"://"localhost:18757""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - null null
+honua-server-1  |       Query "query_parquet" executed: "cng"/FeatureServer/1000 in 33.7345 ms
+honua-server-1  |       Query failed for "cng"/FeatureServer/1000: "Reflection-based serialization has been disabled for this application. Either use the source generator APIs or explicitly configure the 'JsonSerializerOptions.TypeInfoResolver' property."
+honua-server-1  |       System.InvalidOperationException: Reflection-based serialization has been disabled for this application. Either use the source generator APIs or explicitly configure the 'JsonSerializerOptions.TypeInfoResolver' property.
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.BuildGeoParquetMetadata(MetadataV2Resource, Boolean, Nullable`1, IReadOnlyCollection`1, Boolean) + 0x196
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.BuildSchema(MetadataV2Resource, String, Boolean, String[], Nullable`1, IReadOnlyList`1, IReadOnlyCollection`1, Boolean) + 0x50f
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.FormatAsGeoParquet(QueryResult`1, MetadataV2Resource, String, Boolean, Nullable`1, Boolean, Boolean, GeometryLimits, String[], ILogger) + 0x1cd
+honua-server-1  |       HTTP "GET" "/rest/services/cng/FeatureServer/1000/query" responded 200 in 148.0295 ms
+honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:18757""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - 200 null "application/json; charset=utf-8" 150.1772ms

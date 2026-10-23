@@ -29,6 +29,12 @@ heartbeat_tail_lines="${HONUA_SERVER_TEST_HEARTBEAT_TAIL_LINES:-40}"
 console_verbosity="${HONUA_SERVER_TEST_CONSOLE_VERBOSITY:-normal}"
 exclude_slow="${HONUA_SERVER_TEST_EXCLUDE_SLOW:-true}"
 exclude_fast="${HONUA_SERVER_TEST_EXCLUDE_FAST:-true}"
+# The catalogued unit assembly owns all its cases, including Fast tests.
+# Existing integration shards retain their exclusions.
+project_role="$(python3 "${SCRIPT_DIR}/test-projects.py" role --project "${test_csproj}")"
+if [[ "${project_role}" == unit || "${project_role}" == component ]]; then
+  exclude_fast=false
+fi
 # #3054 headroom monitoring. `poll_seconds` is how often the supervisor samples
 # the child and the log; it is deliberately much smaller than the heartbeat
 # interval so `duration_seconds` is the child's real runtime instead of being
@@ -85,6 +91,8 @@ mkdir -p "${results_dir}"
 log_file="${results_dir%/}/${log_name}.log"
 trx_file="${log_name}.trx"
 timing_file="${results_dir%/}/${log_name}.timing.json"
+# Reused directories must not lend a previous attempt's passing TRX to this run.
+rm -f -- "${results_dir%/}/${trx_file}"
 
 filter="${filter_expression}"
 if [[ "${exclude_slow}" == "true" ]]; then
@@ -99,9 +107,9 @@ if [[ "${exclude_fast}" == "true" ]]; then
   filter="(${filter})&Tier!=Fast"
 fi
 
-extra_args=()
+extra_args=(-- "RunConfiguration.TreatNoTestsAsError=true")
 if [[ -n "${max_cpu_count}" ]]; then
-  extra_args+=(-- "RunConfiguration.MaxCpuCount=${max_cpu_count}")
+  extra_args+=("RunConfiguration.MaxCpuCount=${max_cpu_count}")
 fi
 
 test_command=(
@@ -219,9 +227,22 @@ wait "${test_pid}"
 test_exit_code=$?
 set -e
 
+# Freeze the child exit time before Git/TRX inspection; evidence I/O must not turn
+# an early kill into an apparent timeout or inflate measured shard headroom.
 completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 completed_epoch="$(date +%s)"
 duration_seconds=$((completed_epoch - start_epoch))
+
+# Inspect TRX even when dotnet failed, retaining measured counts for diagnostics. A child
+# failure/timeout keeps its original exit code; successful exit alone cannot pass a shard.
+execution_exit=0
+execution_json="$(python3 "${SCRIPT_DIR}/shard-execution-evidence.py" \
+  --trx "${results_dir%/}/${trx_file}" --label "${shard_name}" --project "${test_csproj}" \
+  2>> "${log_file}")" || execution_exit=$?
+if [[ "${test_exit_code}" -eq 0 && "${execution_exit}" -ne 0 ]]; then
+  test_exit_code=1
+fi
+
 timed_out="false"
 kill_escalated="false"
 status="failed"
@@ -331,6 +352,7 @@ fi
 
 if command -v jq >/dev/null 2>&1; then
   jq -nc \
+    --argjson execution "${execution_json:-null}" \
     --arg shard "${shard_name}" \
     --arg log_name "${log_name}" \
     --arg status "${status}" \
@@ -349,6 +371,7 @@ if command -v jq >/dev/null 2>&1; then
     --arg idle_seconds_at_exit "${idle_seconds_at_exit}" \
     --arg stall_seconds "${stall_seconds}" \
     '{
+      execution: $execution,
       shard: $shard,
       log_name: $log_name,
       status: $status,
@@ -371,6 +394,18 @@ else
   printf '{"shard":"%s","log_name":"%s","status":"%s","exit_code":%s,"started_at":"%s","completed_at":"%s","duration_seconds":%s,"timeout_minutes":%s,"timed_out":%s,"headroom_ratio":%s,"capacity_status":"%s","idle_seconds_at_exit":%s}\n' \
     "${shard_name}" "${log_name}" "${status}" "${test_exit_code}" "${started_at}" "${completed_at}" "${duration_seconds}" \
     "${timeout_minutes:-null}" "${timed_out}" "${headroom_ratio:-null}" "${capacity_status}" "${idle_seconds_at_exit}" > "${timing_file}"
+fi
+# The no-jq timing fallback must retain the same count provenance.
+if ! command -v jq >/dev/null 2>&1; then
+  python3 - "${timing_file}" "${execution_json:-null}" <<'PYJSON'
+import json
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+value = json.loads(path.read_text())
+value['execution'] = json.loads(sys.argv[2])
+path.write_text(json.dumps(value) + '\n')
+PYJSON
 fi
 
 {

@@ -56,6 +56,12 @@ public sealed record CreateCoordinatedReleaseOperationRequest
     public string? DataPopulateWorkloadId { get; init; }
 
     /// <summary>
+    /// Fields the data-populate workload writes. Required with <see cref="DataPopulateWorkloadId"/>;
+    /// the release is rejected before mutation unless every field is the new nullable field.
+    /// </summary>
+    public IReadOnlyList<string>? DataPopulateFields { get; init; }
+
+    /// <summary>
     /// Optional explicit schema script id; defaults to <c>add-{newFieldName}</c>.
     /// </summary>
     public string? ScriptId { get; init; }

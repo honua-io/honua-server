@@ -234,6 +234,14 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Completion is not a poll. The 30-second retry throttle must not leave a
+        // finished job in the processing list, or in-flight recovery redelivers it
+        // and repeats catalog mutations (#4877).
+        if (!_useRedis && _redisDb != null)
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (_useRedis && _redisDb != null)
         {
             try
@@ -852,7 +860,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 /// <summary>
 /// Redis-based progress store using IDistributedCache.
 /// </summary>
-internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<T> where T : class
+internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<T>, IProgressStoreRecovery where T : class
 {
     private const string ActiveIdsKeySuffix = "__active";
     private readonly IDistributedCache? _cache;
@@ -897,6 +905,15 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     }
 
     internal bool IsUsingFallback => _isUsingFallback;
+
+    public async Task ProbeRecoveryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     public async Task SetProgressAsync(string jobId, T progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {

@@ -14,6 +14,7 @@ public class ValidationExtensionsTests
         public string Value { get; set; } = "default";
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNull_WithValidValue_ReturnsValue()
     {
@@ -27,6 +28,7 @@ public class ValidationExtensionsTests
         Assert.Equal(testValue, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNull_WithNullValue_ThrowsArgumentNullException()
     {
@@ -38,6 +40,7 @@ public class ValidationExtensionsTests
         Assert.Equal("testValue", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNull_WithNullableStruct_ValidValue_ReturnsValue()
     {
@@ -51,6 +54,7 @@ public class ValidationExtensionsTests
         Assert.Equal(42, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNull_WithNullableStruct_NullValue_ThrowsArgumentNullException()
     {
@@ -62,6 +66,7 @@ public class ValidationExtensionsTests
         Assert.Equal("testValue", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateAndGetValue_WithValidOptions_ReturnsValue()
     {
@@ -77,6 +82,7 @@ public class ValidationExtensionsTests
         Assert.Equal("test", result.Value);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateAndGetValue_WithNullOptions_ThrowsArgumentNullException()
     {
@@ -88,6 +94,7 @@ public class ValidationExtensionsTests
         Assert.Equal("options", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNullOrEmpty_WithValidCollection_ReturnsCollection()
     {
@@ -101,6 +108,7 @@ public class ValidationExtensionsTests
         Assert.Equal(collection, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNullOrEmpty_WithNullCollection_ThrowsArgumentNullException()
     {
@@ -112,6 +120,7 @@ public class ValidationExtensionsTests
         Assert.Equal("collection", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNullOrEmpty_WithEmptyCollection_ThrowsArgumentException()
     {
@@ -124,6 +133,7 @@ public class ValidationExtensionsTests
         Assert.Contains("cannot be empty", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNullOrEmpty_String_WithValidString_ReturnsString()
     {
@@ -137,6 +147,7 @@ public class ValidationExtensionsTests
         Assert.Equal(testValue, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNullOrEmpty_String_WithNullString_ThrowsArgumentNullException()
     {
@@ -148,6 +159,7 @@ public class ValidationExtensionsTests
         Assert.Equal("testValue", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ThrowIfNullOrEmpty_String_WithEmptyString_ThrowsArgumentException()
     {
@@ -160,6 +172,7 @@ public class ValidationExtensionsTests
         Assert.Contains("cannot be empty or whitespace", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateConstructorParameters_TwoParams_WithValidValues_ReturnsValidatedTuple()
     {
@@ -175,6 +188,7 @@ public class ValidationExtensionsTests
         Assert.Equal(param2, result.Item2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateConstructorParameters_TwoParams_WithNullValue_ThrowsArgumentNullException()
     {
@@ -188,6 +202,7 @@ public class ValidationExtensionsTests
         Assert.Equal("param2", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateConstructorParameters_ThreeParams_WithValidValues_ReturnsValidatedTuple()
     {
@@ -205,6 +220,7 @@ public class ValidationExtensionsTests
         Assert.Equal(param3, result.Item3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateConstructorParameters_FourParams_WithValidValues_ReturnsValidatedTuple()
     {
@@ -224,6 +240,7 @@ public class ValidationExtensionsTests
         Assert.Equal(param4, result.Item4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateConstructorParameters_FiveParams_WithValidValues_ReturnsValidatedTuple()
     {
@@ -245,6 +262,7 @@ public class ValidationExtensionsTests
         Assert.Equal(param5, result.Item5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateCommonDependencies_WithValidValues_ReturnsValidatedTuple()
     {
@@ -262,6 +280,7 @@ public class ValidationExtensionsTests
         Assert.Equal("test", result.Item3.Value);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateCommonDependencies_WithNullConnectionProvider_ThrowsArgumentNullException()
     {

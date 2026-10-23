@@ -79,9 +79,11 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathError}");
         }
 
+        var outputRoot = _options.CurrentValue.OutputRootDirectory;
         if (!SinkPathResolver.TryResolveOutputPath(
-            _options.CurrentValue.OutputRootDirectory,
+            outputRoot,
             path,
+            job,
             out var resolvedPath,
             out var pathResolutionError))
         {
@@ -93,7 +95,7 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
         // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
         if (!FeatureStreamArtifact.TryOpenRead(
                 inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
-                _options.CurrentValue.OutputRootDirectory))
+                _options.CurrentValue.OutputRootDirectory, context))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -144,7 +146,10 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
                 await jsonWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            File.Move(tempPath, resolvedPath, overwrite: true);
+            cancellationToken.ThrowIfCancellationRequested();
+            await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(tempPath, resolvedPath, overwrite: false);
             committed = true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -162,13 +167,16 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
             }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await context.PublishArtifactAsync(
-            SinkResultArtifact.Build(HandledProcessId, ("path", path), ("featuresWritten", written), ("featuresRejected", rejected)),
-            cancellationToken).ConfigureAwait(false);
-        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
+        // The rename committed an immutable output. Preserve its receipt even when
+        // cancellation arrives after commit, independently of the cancelled job token.
+        await context.RecordCommittedEffectAsync(
+            SinkResultArtifact.Build(HandledProcessId,
+                ("path", Path.GetRelativePath(outputRoot, resolvedPath)),
+                ("requestedPath", path), ("attempt", job.AttemptCount), ("committed", true), ("featuresWritten", written), ("featuresRejected", rejected)),
+            CancellationToken.None).ConfigureAwait(false);
+        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
-        return JobExecutionResult.Succeeded();
+        return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
     }
 
     private static void TryDeleteTempFile(string tempPath)

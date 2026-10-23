@@ -35,4 +35,11 @@ public sealed class AuditChainVerificationOptions
     /// Grace delay before the first pass so startup work (migrations, warm-up) settles first.
     /// </summary>
     public TimeSpan InitialDelay { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Base64 chain key of at least 32 decoded bytes, held outside the database.
+    /// When unset, new rows are still written and chain verification does not succeed
+    /// for any hashed row. Set the same value on every node.
+    /// </summary>
+    public string? Key { get; set; }
 }

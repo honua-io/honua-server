@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -25,10 +29,12 @@ namespace Honua.Server.Features.PrintingTools;
 /// <summary>
 /// Maps GeoServices-compatible print service endpoints for the Export Web Map Task.
 /// </summary>
-internal static class PrintingToolsEndpoints
+internal static partial class PrintingToolsEndpoints
 {
     private const string TaskRoute = "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task";
     private const string TemplatesTaskRoute = "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task";
+    private const string GpServiceRoute = "/rest/services/Utilities/PrintingTools/GPServer";
+    private const string GpSoapRoute = "/services/Utilities/PrintingTools/GPServer";
 
     /// <summary>
     /// Maps print service endpoints.
@@ -118,25 +124,67 @@ internal static class PrintingToolsEndpoints
             .WithDescription("Returns metadata about available layout templates in the standard GP result shape")
             .WithTags("PrintingTools");
 
+        // Service resource. The task documents above stay on their existing shape.
+        endpoints.MapGet(GpServiceRoute,
+                static (HttpContext context, CancellationToken cancellationToken) => HandleGpServiceInfo(context, cancellationToken))
+            .WithDisplayName("PrintingTools GPServer Service")
+            .WithName("PrintingToolsGpServiceInfo")
+            .WithSummary("Get the PrintingTools GPServer service resource")
+            .WithDescription("Returns the GPServer service resource for Utilities/PrintingTools, including its tasks.")
+            .WithTags("PrintingTools");
+
+        // PUBLIC by design: the service resource is catalog metadata, same as the task resource.
+        endpoints.MapPost(GpServiceRoute,
+                static (HttpContext context, CancellationToken cancellationToken) => HandleGpServiceInfo(context, cancellationToken))
+            .WithDisplayName("PrintingTools GPServer Service (POST)")
+            .WithName("PrintingToolsGpServiceInfoPost")
+            .WithSummary("Get the PrintingTools GPServer service resource")
+            .WithDescription("POST form of the Utilities/PrintingTools GPServer service resource.")
+            .WithTags("PrintingTools")
+            .AllowAnonymous();
+
+        endpoints.MapGet(TemplatesTaskRoute,
+                static (HttpContext context) => HandleLayoutTaskInfo(context))
+            .WithDisplayName("Layout Templates Task Info")
+            .WithName("PrintingToolsLayoutTaskInfo")
+            .WithSummary("Get layout template task metadata")
+            .WithDescription("Returns the Get Layout Templates Info task resource and its output parameter.")
+            .WithTags("PrintingTools");
+
+        // PUBLIC by design: sibling GPServer SOAP discovery is anonymous at the route
+        // and enforces access inside the handler. Print execution reuses the REST handlers.
+        endpoints.MapPost(GpSoapRoute,
+                (Delegate)(static (HttpContext context) => HandleGpSoapAsync(context)))
+            .WithDisplayName("PrintingTools SOAP GPServer")
+            .WithName("PrintingToolsGpSoap")
+            .WithSummary("Discover and execute PrintingTools through the GPServer SOAP binding")
+            .WithDescription("SOAP binding for Utilities/PrintingTools. Discovery and execution use the print handlers.")
+            .WithTags("PrintingTools")
+            .AllowAnonymous();
+
         return endpoints;
+    }
+
+    private static (string[] FormatChoices, string[] TemplateChoices) ResolveAdvertisedChoices(HttpContext context)
+    {
+        var pdfEnabled = LicenseGate.IsEntitlementActive(context.RequestServices, "printing.pdf-output");
+        var layoutTemplatesEnabled = LicenseGate.IsEntitlementActive(context.RequestServices, "printing.layout-templates");
+        var templateNames = LayoutTemplateRegistry.GetTemplateNames();
+        var formatChoices = pdfEnabled
+            ? new[] { PrintOutputFormat.Pdf, PrintOutputFormat.Png32, PrintOutputFormat.Jpg }
+            : new[] { PrintOutputFormat.Png32, PrintOutputFormat.Jpg };
+        var templateChoices = layoutTemplatesEnabled ? templateNames.ToArray() : ["MAP_ONLY"];
+        return (formatChoices, templateChoices);
     }
 
     private static async Task<IResult> HandleServiceInfo(HttpContext context, CancellationToken cancellationToken)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var templateNames = LayoutTemplateRegistry.GetTemplateNames();
-
-        var pdfEnabled = LicenseGate.IsEntitlementActive(context.RequestServices, "printing.pdf-output");
-        var layoutTemplatesEnabled = LicenseGate.IsEntitlementActive(context.RequestServices, "printing.layout-templates");
-
-        var formatChoices = pdfEnabled
-            ? new[] { PrintOutputFormat.Pdf, PrintOutputFormat.Png32, PrintOutputFormat.Jpg }
-            : new[] { PrintOutputFormat.Png32, PrintOutputFormat.Jpg };
+        var (formatChoices, templateChoices) = ResolveAdvertisedChoices(context);
         // defaultFormat must match ResolveFormat's fallback (PNG32) so clients
         // that omit the Format parameter get the same result the metadata promises.
         // PDF is still available in the choiceList for Pro editions.
         var defaultFormat = PrintOutputFormat.Png32;
-        var templateChoices = layoutTemplatesEnabled ? [.. templateNames] : new[] { "MAP_ONLY" };
 
         var response = new PrintServiceInfoResponse
         {
@@ -338,7 +386,6 @@ internal static class PrintingToolsEndpoints
         var metadataGraphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
-        var accessPolicyEvaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
 
         (byte[] OutputBytes, string ContentType, string FileName)? result;
         try
@@ -346,7 +393,10 @@ internal static class PrintingToolsEndpoints
             result = await PrintingToolsRequestHandlers.ExecuteAsync(
                 req.WebMap, req.Format, req.TemplateName, req.Dpi,
                 resourceValidator, metadataGraphProvider, featureReader, styleCatalog, req.Logger, cancellationToken,
-                callerPrincipal: context.User, accessPolicyEvaluator: accessPolicyEvaluator);
+                callerPrincipal: context.User,
+                crsRegistry: context.RequestServices.GetService<ICrsRegistry>(),
+                authorizationServices: context.RequestServices,
+                tenantId: CaptureSubmitter(context).TenantId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -367,11 +417,14 @@ internal static class PrintingToolsEndpoints
         sw.Stop();
         PrintingToolsLog.ExecuteCompleted(req.Logger, req.TemplateName, req.Format, outputBytes.LongLength, sw.Elapsed.TotalMilliseconds);
 
-        // Check response format preference
+        // Check response format preference. SOAP execution sets the force-json item
+        // so the existing handler returns the GP result document instead of bytes.
         var responseFormat = context.Request.Query["f"].FirstOrDefault()
             ?? (context.Request.HasFormContentType ? (await context.Request.ReadFormAsync(cancellationToken))["f"].FirstOrDefault() : null);
+        var forceJson = context.Items.ContainsKey(ForceJsonResultItemKey);
 
-        if (string.Equals(responseFormat, "json", StringComparison.OrdinalIgnoreCase) ||
+        if (forceJson ||
+            string.Equals(responseFormat, "json", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(responseFormat, "pjson", StringComparison.OrdinalIgnoreCase))
         {
             // Store as a temporary file and return an HTTP-served download URL
@@ -440,7 +493,8 @@ internal static class PrintingToolsEndpoints
 
         var jobId = Guid.NewGuid().ToString("N");
         var totalElements = 1 + (webMap.OperationalLayers?.Length ?? 0); // map frame + layers
-        var job = new PrintJob(jobId, webMap, format, templateName, dpi, totalElements, CallerPrincipal: context.User);
+        var submitter = CaptureSubmitter(context);
+        var job = new PrintJob(jobId, webMap, format, templateName, dpi, totalElements, submitter);
 
         // Persist progress BEFORE publishing to the channel so a fast worker
         // cannot finish and have its Completed state overwritten by a late Queued write.
@@ -452,15 +506,27 @@ internal static class PrintingToolsEndpoints
             : (IReadOnlyList<string>)[];
 
         var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
+        var worker = context.RequestServices.GetService<PrintWorkerInstance>();
+        var tracker = context.RequestServices.GetService<PrintJobTracker>();
         var progress = PrintProgress.CreateInitial(jobId, format, templateName, totalElements) with
         {
-            Warnings = warningDescriptions
+            RequestedBy = ResolveOwner(context.User),
+            TenantId = submitter.TenantId,
+            AnonymousSubmission = context.User.Identity?.IsAuthenticated != true,
+            Warnings = warningDescriptions,
+            OwnerInstanceId = worker?.InstanceId,
+            HeartbeatAt = worker is null ? null : DateTimeOffset.UtcNow
         };
         await progressStore.SetProgressAsync(jobId, progress, PrintingToolsRequestHandlers.ResultTtl, cancellationToken);
+        if (worker is not null)
+        {
+            tracker?.Track(jobId);
+        }
 
         // Attempt non-blocking enqueue; return 503 if queue is full
         if (!channel.Writer.TryWrite(job))
         {
+            tracker?.Forget(jobId);
             await progressStore.DeleteProgressAsync(jobId, cancellationToken);
             return StandardErrorHelpers.CreateServiceUnavailable(context,
                 "Print queue is full. Please retry later.", retryAfterSeconds: 30);
@@ -495,7 +561,7 @@ internal static class PrintingToolsEndpoints
         var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
         var progress = await progressStore.GetProgressAsync(jobId, cancellationToken);
 
-        if (progress is not PrintProgress printProgress)
+        if (progress is not PrintProgress printProgress || !CanReadJob(printProgress, context))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Print job '{jobId}' not found.");
         }
@@ -559,7 +625,7 @@ internal static class PrintingToolsEndpoints
         var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
         var progress = await progressStore.GetProgressAsync(jobId, cancellationToken);
 
-        if (progress is not PrintProgress printProgress)
+        if (progress is not PrintProgress printProgress || !CanReadJob(printProgress, context))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Print job '{jobId}' not found.");
         }
@@ -590,6 +656,15 @@ internal static class PrintingToolsEndpoints
         string? format;
         string? templateName;
 
+        if (context.Items.TryGetValue(SoapParametersItemKey, out var stashed)
+            && stashed is IReadOnlyDictionary<string, string> soapParameters)
+        {
+            soapParameters.TryGetValue("Web_Map_as_JSON", out webMapJson);
+            soapParameters.TryGetValue("Format", out format);
+            soapParameters.TryGetValue("Layout_Template", out templateName);
+            return (webMapJson, format, templateName);
+        }
+
         if (context.Request.HasFormContentType)
         {
             var form = await context.Request.ReadFormAsync(cancellationToken);
@@ -605,6 +680,28 @@ internal static class PrintingToolsEndpoints
         }
 
         return (webMapJson, format, templateName);
+    }
+
+    private static Honua.Core.Features.Authorization.Domain.JobSecurityContext CaptureSubmitter(HttpContext context)
+        => JobSecurityContextCapture.Capture(context.User,
+            context.RequestServices.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions(),
+            context.RequestServices.GetService<ITenantContext>());
+
+    private static string? ResolveOwner(System.Security.Claims.ClaimsPrincipal principal)
+        => CanonicalSecurityActor.Resolve(principal) is { IsDurablyRevalidatable: true } actor
+            ? CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim) ?? actor.ActorId
+            : null;
+
+    private static bool CanReadJob(PrintProgress progress, HttpContext context)
+    {
+        if (progress.AnonymousSubmission is null ||
+            !string.Equals(progress.TenantId, CaptureSubmitter(context).TenantId, StringComparison.Ordinal))
+            return false;
+        if (progress.AnonymousSubmission == true ||
+            (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("admin")))
+            return true;
+        var owner = ResolveOwner(context.User);
+        return owner is not null && string.Equals(progress.RequestedBy, owner, StringComparison.Ordinal);
     }
 
     private static string MapOperationStatusToEsriJobStatus(OperationStatus status) => status switch

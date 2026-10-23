@@ -1,3 +1,8 @@
+---
+type: index
+title: "Historical archive"
+description: "Superseded pages kept for history; their claims are not current."
+---
 # Historical Documentation Archive
 
 This directory holds superseded design notes, audit write-ups, pilot materials, and implementation summaries that are kept only for historical traceability.

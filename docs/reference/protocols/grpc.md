@@ -1,67 +1,37 @@
+---
+type: reference
+title: "gRPC"
+description: "Honua hosts a versioned gRPC surface from the `Geospatial.Grpc` protocol package (geospatial.v1 protobuf package, Geospatial.V1 .NET namespace) for high-throughput feature, geoprocessing, spec, and scene access."
+resource: "honua://capability/serve.grpc"
+---
 # gRPC
 
 Honua hosts a versioned gRPC surface from the [`Geospatial.Grpc`](https://github.com/honua-io/geospatial-grpc) protocol package (`geospatial.v1` protobuf package, `Geospatial.V1` .NET namespace) for high-throughput feature, geoprocessing, spec, and scene access.
 
 ## .NET package installation
 
-gRPC remains **supported for 2026.1**. New `Geospatial.Grpc` releases use
-[GitHub Packages](https://github.com/orgs/honua-io/packages?repo_name=geospatial-grpc).
-Use the exact published package version certified for your server release;
-the server's existing dependency pin is described under versioning below.
+gRPC remains **supported for 2026.1**. `Geospatial.Grpc` is published to
+[nuget.org](https://www.nuget.org/packages/Geospatial.Grpc/) and installs
+anonymously:
 
-For a new consumer project, add this minimal `nuget.config` beside the project.
-For an existing project, merge the `github` source and `Geospatial.Grpc` mapping
-into its configuration and preserve other feeds and mappings. The `<clear />`
-in this standalone example removes inherited sources, including private feeds:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <clear />
-    <add key="github" value="https://nuget.pkg.github.com/honua-io/index.json" />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="github"><package pattern="Geospatial.Grpc" /></packageSource>
-    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
-</configuration>
+```bash
+dotnet add package Geospatial.Grpc
 ```
 
-The mapping selects GitHub Packages for `Geospatial.Grpc` and nuget.org for its
-dependencies. Replace `X.Y.Z` with the exact version listed in GitHub Packages:
-
-```text
-dotnet add package Geospatial.Grpc --version X.Y.Z
-```
-
-GitHub's NuGet registry requires authentication even for public packages.
-For local restores, have the operator supply a personal access token (classic)
-with `read:packages` and package access via a credential provider or the
-`NuGetPackageSourceCredentials_github` environment variable, formatted as
-`Username=GITHUB_LOGIN;Password=TOKEN;ValidAuthenticationTypes=Basic`.
-Keep credentials out of committed configuration and logs. In GitHub Actions,
-use `GITHUB_TOKEN` with `packages: read`; the package owner must grant the
-consumer repository read access under **Manage Actions access**.
-See [GitHub NuGet authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry).
-
-After checkout and .NET SDK setup, explicitly bind the token to NuGet in the
-consumer workflow's restore step; `packages: read` alone does not authenticate:
-
-```yaml
-- name: Restore authenticated GitHub Packages dependencies
-  env:
-    NuGetPackageSourceCredentials_github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
-  run: dotnet restore
-```
+No feed configuration, package-source mapping, or token is needed. Pin the exact
+version certified for your server release if you need reproducibility; the
+server's own dependency pin is described under [versioning](#versioning-and-deprecation-policy)
+below.
 
 The producer attests tag-built package bytes before publishing. Verify a
-downloaded archive using
-`gh attestation verify Geospatial.Grpc.X.Y.Z.nupkg --repo honua-io/geospatial-grpc`.
-Historical nuget.org versions remain available there; use the existing source
-configuration when restoring the server's historical pin. This consumer setup
-does not upgrade the server dependency or expand its certified operations.
+downloaded archive with:
+
+```bash
+gh attestation verify Geospatial.Grpc.X.Y.Z.nupkg --repo honua-io/geospatial-grpc
+```
+
+Installing this package does not upgrade the server dependency or expand its
+certified operations.
 
 ## Connection
 
@@ -114,6 +84,13 @@ Notes:
   `return_ids_only`, and `return_extent_only` shapes return the relevant scalar
   (`count`, `object_ids`, `extent`) and still carry `spatial_reference` /
   `geometry_type`, but omit `fields`.
+- `order_by` fields are resolved against the layer schema, so attributes declared
+  as numeric, date, or time sort by value rather than as text, matching the REST
+  adapters. Fields the schema does not declare keep text ordering.
+- `out_statistics` and `group_by` are rejected with `INVALID_ARGUMENT`.
+  `geospatial.v1` defines no aggregate result shape, so the server refuses the
+  request rather than returning ordinary features. Use the GeoServices FeatureServer
+  `query` parameters `outStatistics` and `groupByFieldsForStatistics` for aggregates.
 - Metadata-fallback contract: if a client is pinned to an older `Geospatial.Grpc`
   package whose `geospatial.v1` messages predate one of these fields, that field
   is absent (proto3 implicit default) and the client should fall back to the
@@ -135,16 +112,21 @@ Breaking changes require a new major version introduced alongside the old one: o
 
 CI enforcement: protobuf changes in the `Geospatial.Grpc` package must pass a breaking-change linter (`buf breaking`) against the latest release tag, and the server pins a specific package version so consumer breaks fail the build.
 
-The server currently pins `Geospatial.Grpc` **0.2.0-alpha.1**. The separate
-protocol package has published a 1.0.0 release, but that does not change the
-server's supported binding until the server dependency is upgraded and its
-compatibility evidence is refreshed.
+The server pins `Geospatial.Grpc` **1.0.0**, which is on
+[nuget.org](https://www.nuget.org/packages/Geospatial.Grpc/) and restores
+anonymously.
 
-### Pre-1.0 exception
+### The freeze is binding
 
-The pinned `Geospatial.Grpc` package is still pre-1.0, and its [`VERSIONING.md` Pre-1.0 Exception](https://github.com/honua-io/geospatial-grpc/blob/main/VERSIONING.md) permits a coordinated structural break inside `geospatial.v1` while the package major version is `0.x`. The freeze described above becomes binding at `1.0.0`.
+`1.0.0` promotes the `geospatial.v1` schema settled in `0.2.0-alpha.1` to the
+permanent v1 compatibility contract in
+[`VERSIONING.md`](https://github.com/honua-io/geospatial-grpc/blob/trunk/VERSIONING.md),
+with no wire-surface change from that baseline. The Pre-1.0 Exception that
+permitted a coordinated structural break inside `geospatial.v1` while the package
+major version was `0.x` therefore no longer applies: the freeze described above
+is binding, and bindings generated from `1.0.0` stay valid.
 
-One such break has been exercised. `0.2.0-alpha.1` (geospatial-grpc#48 Option A) promoted the duplicated job-lifecycle control-plane messages to `execution_types.proto` and converged `SpecService` onto them, and `0.1.0-alpha.3` unified the severity enums and widened feature-query pagination. The protobuf package stayed `geospatial.v1`, so no client support floor moved, but callers built against `0.1.x` bindings must regenerate. The changes that alter what a client reads:
+Two such breaks were exercised before the freeze. `0.2.0-alpha.1` promoted the duplicated job-lifecycle control-plane messages to `execution_types.proto` and converged `SpecService` onto them, and `0.1.0-alpha.3` unified the severity enums and widened feature-query pagination. The protobuf package stayed `geospatial.v1`, so no client support floor moved, but callers built against `0.1.x` bindings must regenerate. The changes that alter what a client reads:
 
 | Change | Before | After |
 | --- | --- | --- |

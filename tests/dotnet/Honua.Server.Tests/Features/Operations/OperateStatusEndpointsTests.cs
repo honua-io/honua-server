@@ -43,8 +43,7 @@ public sealed class OperateStatusEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                // Configure the availability SLO so the payload evaluates (rather than reporting
-                // not-configured) on this fixture.
+                // A configured target must not promote the replica-local reservoir into a platform SLO.
                 builder.UseSetting("Slo:Availability:Target", "0.995");
             });
     }
@@ -69,7 +68,7 @@ public sealed class OperateStatusEndpointsTests : IAsyncLifetime
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = json.RootElement;
 
-        root.GetProperty("schemaVersion").GetString().Should().Be("1.0");
+        root.GetProperty("schemaVersion").GetString().Should().Be("1.1");
         root.TryGetProperty("generatedAt", out _).Should().BeTrue();
         root.GetProperty("status").GetString().Should().BeOneOf("healthy", "degraded", "unhealthy");
         root.GetProperty("reasons").ValueKind.Should().Be(JsonValueKind.Array);
@@ -87,10 +86,14 @@ public sealed class OperateStatusEndpointsTests : IAsyncLifetime
         findings.TryGetProperty("total", out _).Should().BeTrue();
         findings.GetProperty("bySeverity").TryGetProperty("critical", out _).Should().BeTrue();
 
-        // SLO configured on this fixture => it evaluates an availability block.
+        // A platform SLO needs a distributed source. The old reservoir is explicitly local-only.
         var slo = root.GetProperty("slo");
-        slo.GetProperty("configured").GetBoolean().Should().BeTrue();
-        slo.GetProperty("availability").GetProperty("target").GetDouble().Should().Be(0.995);
+        slo.GetProperty("configured").GetBoolean().Should().BeFalse();
+        slo.GetProperty("availability").ValueKind.Should().Be(JsonValueKind.Null);
+        var retainedTail = slo.GetProperty("nodeLocalRetainedTail");
+        retainedTail.GetProperty("scope").GetString().Should().Be("replica-local");
+        retainedTail.GetProperty("isPlatformSli").GetBoolean().Should().BeFalse();
+        retainedTail.GetProperty("configuredTarget").GetDouble().Should().Be(0.995);
     }
 
     [IntegrationTest]
@@ -101,7 +104,25 @@ public sealed class OperateStatusEndpointsTests : IAsyncLifetime
 
         var response = await anonymous.GetAsync("/api/v1/operate/status");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The ops-read policy names the ApiKey scheme, so an UNAUTHENTICATED caller is
+        // challenged with exactly 401. 403 is reserved for an authenticated principal that
+        // lacks the grant (see OpsReadKey_CannotInvokeMutatingOpsEndpoints), so accepting
+        // either here would let an authentication regression pass as an authorization result.
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // Nothing is disclosed: none of the operational posture the admin read returns.
+        var body = await response.Content.ReadAsStringAsync();
+        foreach (var marker in new[] { "\"domains\"", "\"slo\"", "nodeLocalRetainedTail", "bySeverity", "schemaVersion" })
+        {
+            body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+        }
+
+        // The admin principal still gets the full status document off the same host.
+        var adminResponse = await _client.GetAsync("/api/v1/operate/status");
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var adminJson = JsonDocument.Parse(await adminResponse.Content.ReadAsStringAsync());
+        adminJson.RootElement.GetProperty("domains").GetProperty("findings")
+            .GetProperty("bySeverity").TryGetProperty("critical", out _).Should().BeTrue();
     }
 
     [IntegrationTest]

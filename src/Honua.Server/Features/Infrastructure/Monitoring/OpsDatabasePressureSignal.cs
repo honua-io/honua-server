@@ -91,4 +91,13 @@ internal sealed class OpsFindingsExtendedSignals
 
     /// <summary>Persisted ops-health rollup store (#2553, Postgres only), or null when unavailable.</summary>
     public IOpsHealthRollupStore? RollupStore { get; init; }
+
+    /// <summary>
+    /// Process-lifetime record of each store source's last successful collection (#4840), or null to
+    /// use a ledger private to the engine instance.
+    /// </summary>
+    public OpsFindingsCollectionLedger? CollectionLedger { get; init; }
+
+    /// <summary>Clock for evaluation and collection times, or null for the system clock.</summary>
+    public TimeProvider? TimeProvider { get; init; }
 }

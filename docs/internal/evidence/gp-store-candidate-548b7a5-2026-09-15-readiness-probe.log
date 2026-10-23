@@ -1,0 +1,69 @@
+started 2026-09-15T02:18:54Z
+image ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1
+image revision 548b7a5263da5a3f2381eb43f232687cdf92b0bf
+marker provisioned digest bb6a13a6b7970d85b518145569fd6470eb6940524ced24fa0994fa1d391f4041
+container server image sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1
+container server-peer image sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1
+== baseline (marker present)
+warm http://127.0.0.1:18180 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18180 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18181 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18181 ready=200 reason=none age=none cache-control=no-store live=200
+== marker removed (#4770 reproduction)
+removed probe 1 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 1 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 2 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 2 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 3 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 3 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 4 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 4 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 5 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 5 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 6 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed probe 6 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+removed unexpected=0 of 12 probes (6 per host)
+removed recovered http://127.0.0.1:18180 after 0s ready=200 reason=none age=none cache-control=no-store live=200
+removed recovered http://127.0.0.1:18181 after 1s ready=200 reason=none age=none cache-control=no-store live=200
+== marker corrupted (invalid JSON)
+warm http://127.0.0.1:18180 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18180 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18181 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18181 ready=200 reason=none age=none cache-control=no-store live=200
+corrupt-json probe 1 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 1 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 2 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 2 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 3 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 3 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 4 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 4 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 5 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 5 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 6 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json probe 6 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-json unexpected=0 of 12 probes (6 per host)
+corrupt-json recovered http://127.0.0.1:18180 after 1s ready=200 reason=none age=none cache-control=no-store live=200
+corrupt-json recovered http://127.0.0.1:18181 after 1s ready=200 reason=none age=none cache-control=no-store live=200
+== marker corrupted (well-formed, wrong configuration digest)
+warm http://127.0.0.1:18180 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18180 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18181 ready=200 reason=none age=none cache-control=no-store live=200
+warm http://127.0.0.1:18181 ready=200 reason=none age=none cache-control=no-store live=200
+corrupt-digest probe 1 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 1 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 2 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 2 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 3 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 3 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 4 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 4 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 5 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 5 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 6 http://127.0.0.1:18180 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest probe 6 http://127.0.0.1:18181 ready=503 reason=gp-output-store-attestation-unavailable age=none cache-control=no-store live=200
+corrupt-digest unexpected=0 of 12 probes (6 per host)
+corrupt-digest recovered http://127.0.0.1:18180 after 0s ready=200 reason=none age=none cache-control=no-store live=200
+corrupt-digest recovered http://127.0.0.1:18181 after 1s ready=200 reason=none age=none cache-control=no-store live=200
+authenticated probe after restore 200
+finished 2026-09-15T02:20:18Z unexpected_total=0

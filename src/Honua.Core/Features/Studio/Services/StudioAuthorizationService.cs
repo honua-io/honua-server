@@ -5,6 +5,8 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -29,6 +31,14 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     /// <summary>Denial code: the caller does not own the target resource and it is not publicly readable.</summary>
     public const string CrossUserDeniedCode = "studio_authorization/cross_user_denied";
 
+    /// <summary>
+    /// Denial code: the target resource belongs to another tenant (honua-server#4905). Answered
+    /// ahead of the admin bypass, because the platform <c>admin</c> role is tenant-scoped;
+    /// only <c>MultiTenancy:MultiTenantAdminRoles</c> reach across tenants. Surfaces as
+    /// <c>404 Not Found</c> so a tenant never learns that another tenant's id exists.
+    /// </summary>
+    public const string CrossTenantDeniedCode = "studio_authorization/cross_tenant_denied";
+
     /// <summary>Denial code: the caller is not authenticated.</summary>
     public const string AuthenticationRequiredCode = "studio_authorization/authentication_required";
 
@@ -51,13 +61,31 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options;
     private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions;
+    private readonly ITenantContext? _tenantContext;
+    private readonly IOptionsMonitor<TenantIsolationOptions>? _tenantIsolationOptions;
 
-    /// <summary>Initializes a new Studio authorization service.</summary>
+    /// <summary>Initializes a new Studio authorization service for a host without tenant resolution.</summary>
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
         IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
         IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
+        : this(evaluator, scopeAuthorizer, options, adminRoleOptions, tenantContext: null, tenantIsolationOptions: null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new Studio authorization service whose issuer-qualified owner keys are
+    /// bound to the request's resolved tenant, and which refuses lifecycle operations on
+    /// another tenant's content (honua-server#4905).
+    /// </summary>
+    public StudioAuthorizationService(
+        IOperatorAuthorizationEvaluator evaluator,
+        IOperatorScopeAuthorizer scopeAuthorizer,
+        IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
+        IOptionsMonitor<AdminRoleOptions> adminRoleOptions,
+        ITenantContext? tenantContext,
+        IOptionsMonitor<TenantIsolationOptions>? tenantIsolationOptions = null)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
         ArgumentNullException.ThrowIfNull(scopeAuthorizer);
@@ -67,6 +95,8 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         _scopeAuthorizer = scopeAuthorizer;
         _options = options;
         _adminRoleOptions = adminRoleOptions;
+        _tenantContext = tenantContext;
+        _tenantIsolationOptions = tenantIsolationOptions;
     }
 
     /// <inheritdoc />
@@ -112,15 +142,23 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // Honua.Core has no ASP.NET dependency, so this uses ClaimsPrincipal.FindFirst rather
         // than the Microsoft.AspNetCore.Authentication FindFirstValue extension.
         var candidate = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrWhiteSpace(candidate))
+        if (string.IsNullOrWhiteSpace(candidate))
         {
-            return candidate;
+            candidate = principal.FindFirst("sub")?.Value;
         }
 
-        candidate = principal.FindFirst("sub")?.Value;
         if (!string.IsNullOrWhiteSpace(candidate))
         {
-            return candidate;
+            // A token subject is unique only within its issuer, and one issuer can mint the same
+            // subject into several tenants (#3429, #3412). Bind issuer-bearing subjects to the
+            // validated issuer and the request's resolved tenant so neither an equal subject from
+            // another issuer nor the same subject in another tenant ever owns the same draft.
+            // Issuer-less principals (API keys, framework sessions) keep their immutable id.
+            var issuer = principal.FindFirst("iss")?.Value;
+            return string.IsNullOrWhiteSpace(issuer)
+                ? candidate
+                : $"subject:{Uri.EscapeDataString(issuer)}:{Uri.EscapeDataString(candidate)}"
+                    + $"@tenant:{Uri.EscapeDataString(_tenantContext?.TenantId ?? string.Empty)}";
         }
 
         candidate = principal.FindFirst("api_key_id")?.Value;
@@ -151,6 +189,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         string? callerId,
         StudioAuthorizationOperation operation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         bool isPubliclyReadable = false,
         string? resourceId = null,
         CancellationToken cancellationToken = default)
@@ -170,6 +209,18 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
                 ScopeDeniedCode,
                 scopeDecision.Reason
                     ?? $"The access token's scopes do not permit '{operation}' on Studio drafts.");
+        }
+
+        // Tenant ownership is an unconditional boundary over role, grant and ownership
+        // authority (honua-server#4905). It sits ahead of the admin bypass on purpose: the
+        // platform "admin" role is tenant-scoped, so a tenant-scoped administrator must never
+        // read, enumerate or propose another tenant's Studio content. Only the configured
+        // MultiTenancy:MultiTenantAdminRoles operate across tenants.
+        if (!CanAccessTenant(principal, resourceTenantId))
+        {
+            return StudioAuthorizationDecision.Deny(
+                CrossTenantDeniedCode,
+                "The Studio resource belongs to another tenant.");
         }
 
         // Admins always have full, unscoped access -- unchanged before and after #3001, and
@@ -269,6 +320,42 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             ElevatedGrantRequiredCode,
             $"'{operation}' requires a StudioDraft '{operatorOperation}' operator grant.",
             elevated: true);
+    }
+
+    /// <summary>
+    /// Whether the request's resolved tenant may act on a resource recorded in
+    /// <paramref name="resourceTenantId"/>. A host that never resolves a tenant (no
+    /// <see cref="ITenantContext"/> registered) has no tenant rail to enforce and is admitted
+    /// unchanged.
+    /// </summary>
+    private bool CanAccessTenant(ClaimsPrincipal principal, string? resourceTenantId)
+    {
+        if (_tenantContext is null)
+        {
+            return true;
+        }
+
+        var options = _tenantIsolationOptions?.CurrentValue ?? new TenantIsolationOptions();
+        return TenantOwnership.IsMultiTenantAdmin(principal, options)
+            || TenantOwnership.CanAccess(resourceTenantId, _tenantContext.TenantId, options);
+    }
+
+    /// <summary>
+    /// Builds the enumeration scope that keeps a listing inside the caller's tenant, or
+    /// <see langword="null"/> when no tenant scoping applies (honua-server#4905).
+    /// </summary>
+    public TenantScopeFilter? CreateTenantScopeFilter(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        if (_tenantContext is null)
+        {
+            return null;
+        }
+
+        return TenantOwnership.CreateScopeFilter(
+            principal,
+            _tenantContext.TenantId,
+            _tenantIsolationOptions?.CurrentValue ?? new TenantIsolationOptions());
     }
 
     private static OperatorOperation MapToScopeOperation(StudioAuthorizationOperation operation)

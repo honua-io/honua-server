@@ -22,16 +22,19 @@ internal sealed class ImageServerKeyPropertiesHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly IImageServerMultidimensionalInfoBuilder? _multidimensionalInfoBuilder;
     private readonly ILogger<ImageServerKeyPropertiesHandler> _logger;
 
     public ImageServerKeyPropertiesHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
-        ILogger<ImageServerKeyPropertiesHandler> logger)
+        ILogger<ImageServerKeyPropertiesHandler> logger,
+        IImageServerMultidimensionalInfoBuilder? multidimensionalInfoBuilder = null)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _multidimensionalInfoBuilder = multidimensionalInfoBuilder;
     }
 
     /// <summary>
@@ -51,7 +54,7 @@ internal sealed class ImageServerKeyPropertiesHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is null)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -62,6 +65,17 @@ internal sealed class ImageServerKeyPropertiesHandler
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            if (_multidimensionalInfoBuilder is not null)
+            {
+                var coverageGrid = await _multidimensionalInfoBuilder
+                    .DescribeGridAsync(layerId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (coverageGrid is not null)
+                {
+                    raster = ImageServerCoverageRaster.Apply(raster, coverageGrid);
+                }
             }
 
             var response = BuildResponse(raster);
@@ -115,7 +129,7 @@ internal sealed class ImageServerKeyPropertiesHandler
     /// <summary>
     /// Derives the finest/coarsest cell size from the raster geotransform.
     /// GeoTransform layout: [upperLeftX, scaleX, skewX, upperLeftY, skewY, scaleY];
-    /// pixel width is <c>|scaleX|</c> (index 1) and pixel height is <c>|scaleY|</c> (index 5).
+    /// pixel sizes are the lengths of the column (scaleX, skewY) and row (skewX, scaleY) vectors.
     /// Returns <c>(null, null)</c> when no geotransform is available.
     /// </summary>
     private static (double? Low, double? High) ComputeCellSizes(double[]? geoTransform)
@@ -125,8 +139,8 @@ internal sealed class ImageServerKeyPropertiesHandler
             return (null, null);
         }
 
-        var pixelWidth = Math.Abs(geoTransform[1]);
-        var pixelHeight = Math.Abs(geoTransform[5]);
+        var pixelWidth = VectorLength(geoTransform[1], geoTransform[4]);
+        var pixelHeight = VectorLength(geoTransform[2], geoTransform[5]);
 
         if (pixelWidth <= 0 && pixelHeight <= 0)
         {
@@ -144,6 +158,31 @@ internal sealed class ImageServerKeyPropertiesHandler
         }
 
         return (Math.Min(pixelWidth, pixelHeight), Math.Max(pixelWidth, pixelHeight));
+    }
+
+    internal static (double X, double Y) ComputePixelSizes(Core.Features.Raster.Domain.RasterInfo raster)
+    {
+        if (raster.GeoTransform is { Length: >= 6 } transform)
+        {
+            return (VectorLength(transform[1], transform[4]), VectorLength(transform[2], transform[5]));
+        }
+
+        return raster.Extent is { } extent
+            ? (raster.Width > 0 ? (extent.XMax - extent.XMin) / raster.Width : 0,
+               raster.Height > 0 ? (extent.YMax - extent.YMin) / raster.Height : 0)
+            : (0, 0);
+    }
+
+    private static double VectorLength(double x, double y)
+    {
+        if (!double.IsFinite(x) || !double.IsFinite(y))
+        {
+            return 0;
+        }
+
+        // Scale before squaring so a finite affine coefficient does not overflow.
+        var scale = Math.Max(Math.Abs(x), Math.Abs(y));
+        return scale == 0 ? 0 : scale * Math.Sqrt(Math.Pow(x / scale, 2) + Math.Pow(y / scale, 2));
     }
 
     internal static string MapPixelType(string postgisPixelType)

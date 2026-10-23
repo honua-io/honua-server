@@ -97,6 +97,136 @@ public sealed class LocalPostgisGeocodeProviderIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ForwardGeocodeAsync_CountryCodes_RestrictsStoredCountryBeforeRankingAndLimit()
+    {
+        // The Canadian record matches the query more tightly and would rank
+        // first without a SQL-level country predicate before LIMIT 1.
+        await InsertReferenceAsync(
+            "380 New York St, Toronto, ON",
+            "380 new york st redlands",
+            "380", "New York St", "Toronto", "ON", "M5H 2N2", "CA", "PointAddress",
+            -79.3832, 43.6532);
+
+        var unrestricted = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326));
+        Assert.Equal("380 New York St, Toronto, ON", Assert.Single(unrestricted).Address);
+
+        var us = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: " us "));
+        Assert.Equal("380 New York St, Redlands, CA 92373", Assert.Single(us).Address);
+
+        var ca = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: "CA"));
+        Assert.Equal("380 New York St, Toronto, ON", Assert.Single(ca).Address);
+
+        var multiple = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: "ca, US"));
+        Assert.Equal("380 New York St, Toronto, ON", Assert.Single(multiple).Address);
+
+        var excluded = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("1 Microsoft Way Redmond", 1, 4326, CountryCodes: "ca"));
+        Assert.Empty(excluded);
+    }
+
+    [Fact]
+    public async Task ForwardGeocodeAsync_CountryCodes_MatchExistingImportedAlphaThreeAndFullNames()
+    {
+        await InsertReferenceAsync(
+            "101 Alias Lane, Redlands",
+            "101 alias lane redlands usa",
+            "101", "Alias Lane", "Redlands", "CA", "92373", "USA", "PointAddress",
+            -117.196, 34.056);
+        await InsertReferenceAsync(
+            "102 Alias Lane, Redlands",
+            "102 alias lane redlands united states",
+            "102", "Alias Lane", "Redlands", "CA", "92373", "United States", "PointAddress",
+            -117.197, 34.057);
+        await InsertReferenceAsync(
+            "101 Alias Lane, Toronto",
+            "101 alias lane",
+            "101", "Alias Lane", "Toronto", "ON", "M5H 2N2", "CAN", "PointAddress",
+            -79.3832, 43.6532);
+
+        foreach (var (number, expected) in new[]
+                 {
+                     ("101", "101 Alias Lane, Redlands"),
+                     ("102", "102 Alias Lane, Redlands")
+                 })
+        {
+            var request = new ForwardGeocodeRequest("unused", 1, 4326, CountryCodes: "US", InputType: GeocodeInputType.Structured)
+            {
+                StructuredAddress = new StructuredAddress
+                {
+                    AddressNumber = number,
+                    StreetName = "Alias Lane",
+                    Country = "United States"
+                }
+            };
+            var results = await _provider.ForwardGeocodeAsync(request);
+            Assert.Equal(expected, Assert.Single(results).Address);
+        }
+
+        var batch = await _provider.BatchGeocodeAsync(
+            new BatchGeocodeRequest(["101 Alias Lane", "102 Alias Lane"], CountryCodes: "US"));
+        Assert.Collection(batch,
+            first => Assert.Equal("101 Alias Lane, Redlands", first.Address),
+            second => Assert.Equal("102 Alias Lane, Redlands", second.Address));
+
+        var alphaThree = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("101 Alias Lane", 1, 4326, CountryCodes: "USA"));
+        Assert.Equal("101 Alias Lane, Redlands", Assert.Single(alphaThree).Address);
+
+        var fullName = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("102 Alias Lane", 1, 4326, CountryCodes: "United States"));
+        Assert.Equal("102 Alias Lane, Redlands", Assert.Single(fullName).Address);
+    }
+
+    [Fact]
+    public async Task ForwardGeocodeAsync_MalformedCountryCodes_RefusesBeforeSearching()
+    {
+        foreach (var filter in new[] { "USA,", "US,", ",US", "U1", "üS", new string('U', 1025) })
+        {
+            var error = await Assert.ThrowsAsync<GeocodeRequestException>(() =>
+                _provider.ForwardGeocodeAsync(
+                    new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: filter)));
+            Assert.Equal("countryCodes", error.ParameterName);
+        }
+    }
+
+    [Fact]
+    public async Task BatchGeocodeAsync_CountryCodes_RestrictsEachInputAndPreservesResultIds()
+    {
+        await InsertReferenceAsync(
+            "380 New York St, Toronto, ON",
+            "380 new york st redlands",
+            "380", "New York St", "Toronto", "ON", "M5H 2N2", "CA", "PointAddress",
+            -79.3832, 43.6532);
+
+        var results = await _provider.BatchGeocodeAsync(
+            new BatchGeocodeRequest(
+                ["380 New York St Redlands", "1 Microsoft Way Redmond"],
+                CountryCodes: " ca "));
+
+        Assert.Equal(2, results.Count);
+        Assert.True(results[0].IsMatch);
+        Assert.Equal("380 New York St, Toronto, ON", results[0].Address);
+        Assert.Equal("0", results[0].Attributes[GeocodeCandidate.ResultIdAttribute]);
+        Assert.False(results[1].IsMatch);
+        Assert.Equal("1", results[1].Attributes[GeocodeCandidate.ResultIdAttribute]);
+    }
+
+    [Fact]
+    public async Task ForwardGeocodeAsync_SeventyThousandTokens_ThrowsGeocodeRequestException()
+    {
+        var query = string.Join(' ', Enumerable.Repeat("e", 70_000));
+
+        var exception = await Assert.ThrowsAsync<GeocodeRequestException>(() =>
+            _provider.ForwardGeocodeAsync(new ForwardGeocodeRequest(query, 5, 4326), CancellationToken.None));
+
+        Assert.Contains("Invalid", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ForwardGeocodeAsync_StructuredInput_ReturnsCandidate()
     {
         var request = new ForwardGeocodeRequest("ignored", 5, 4326, InputType: GeocodeInputType.Structured)

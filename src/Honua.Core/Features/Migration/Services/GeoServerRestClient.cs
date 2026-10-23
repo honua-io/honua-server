@@ -3,15 +3,12 @@
 
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using System.Globalization;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
-using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -28,7 +25,6 @@ namespace Honua.Core.Features.Migration.Services;
 /// </summary>
 internal sealed partial class GeoServerRestClient
 {
-    private const string DisallowedNetworkAddressMessage = "GeoServer service URL resolves to a disallowed network address.";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<GeoServerRestClient> _logger;
@@ -36,6 +32,27 @@ internal sealed partial class GeoServerRestClient
     private readonly AsyncLocal<AuthenticationHeaderValue?> _requestAuthorization = new();
     private readonly AsyncLocal<TimeSpan?> _requestTimeout = new();
     private static readonly AsyncLocal<bool> UnsafeLocalUrlsAllowed = new();
+
+    private static readonly MigrationServiceUrlPolicy ServiceUrlPolicy = new(
+        "GeoServer REST URL must be a valid HTTP or HTTPS URL.",
+        "GeoServer REST URL must be a valid HTTPS URL.",
+        "GeoServer REST URL must not include embedded credentials.",
+        "GeoServer service URL resolves to a disallowed network address.",
+        "Unable to establish a secure connection to the GeoServer host.");
+
+    internal static Task<IPAddress[]> ResolveAllowedAddressesAsync(
+        string host,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        bool allowUnsafeLocalUrls,
+        CancellationToken cancellationToken)
+        => MigrationPinnedDns.ResolveAllowedAddressesAsync(
+            host,
+            hostAddressResolver,
+            allowUnsafeLocalUrls,
+            ServiceUrlPolicy,
+            cancellationToken);
+
+
 
     public GeoServerRestClient(
         HttpClient httpClient,
@@ -60,7 +77,7 @@ internal sealed partial class GeoServerRestClient
             // on mid-range deployments.
             MaxConnectionsPerServer = 32,
             ConnectCallback = (context, cancellationToken) =>
-                ConnectWithPinnedDnsAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, cancellationToken)
+                MigrationPinnedDns.ConnectAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, ServiceUrlPolicy, cancellationToken)
         };
     }
 
@@ -80,7 +97,7 @@ internal sealed partial class GeoServerRestClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(geoServerRestUrl);
 
-        var serviceUri = ValidateGeoServerUri(geoServerRestUrl, allowUnsafeLocalUrls);
+        var serviceUri = MigrationPinnedDns.ValidateServiceUri(geoServerRestUrl, allowUnsafeLocalUrls, ServiceUrlPolicy);
         _ = await ResolveAllowedAddressesAsync(serviceUri.DnsSafeHost, _hostAddressResolver, allowUnsafeLocalUrls, cancellationToken).ConfigureAwait(false);
 
         Log.DiscoveringService(_logger, geoServerRestUrl);
@@ -177,114 +194,6 @@ internal sealed partial class GeoServerRestClient
         }
     }
 
-    private static Uri ValidateGeoServerUri(string geoServerRestUrl, bool allowUnsafeLocalUrls)
-    {
-        if (!Uri.TryCreate(geoServerRestUrl, UriKind.Absolute, out var uri) ||
-            (allowUnsafeLocalUrls
-                ? uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps
-                : uri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new HttpRequestException(allowUnsafeLocalUrls
-                ? "GeoServer REST URL must be a valid HTTP or HTTPS URL."
-                : "GeoServer REST URL must be a valid HTTPS URL.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
-        {
-            throw new HttpRequestException("GeoServer REST URL must not include embedded credentials.");
-        }
-
-        if (!allowUnsafeLocalUrls &&
-            (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-             uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return uri;
-    }
-
-    internal static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
-        string host,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (!allowUnsafeLocalUrls && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(DisallowedNetworkAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-        catch (ArgumentException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (!allowUnsafeLocalUrls && addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return addresses;
-    }
-
-    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
-        SocketsHttpConnectionContext context,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await ResolveAllowedAddressesAsync(
-                context.DnsEndPoint.Host,
-                hostAddressResolver,
-                allowUnsafeLocalUrls,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
-
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a secure connection to the GeoServer host.", lastException);
-    }
 
     private async Task<(string? Version, string? BuildTimestamp, string? GitRevision)> GetServerVersionAsync(
         string baseUrl, CancellationToken cancellationToken)

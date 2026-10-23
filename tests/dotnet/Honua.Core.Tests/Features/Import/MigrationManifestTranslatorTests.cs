@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class MigrationManifestTranslatorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithUnsupportedResource_DoesNotEmitTargetAndRecordsUnsupported()
     {
@@ -74,6 +75,7 @@ public sealed class MigrationManifestTranslatorTests
             remap.Action == "manual-review");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithPartialResource_EmitsManualReviewTargetAndReviewItem()
     {
@@ -110,6 +112,7 @@ public sealed class MigrationManifestTranslatorTests
         manifest.UnsupportedItems.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithOgcWfsFeatureType_EmitsFeatureImportPlan()
     {
@@ -161,6 +164,7 @@ public sealed class MigrationManifestTranslatorTests
         manifest.Summary.ServicePlanCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithFidelityClassifications_EmitsManifestFidelityMatrixWithTargetIds()
     {
@@ -230,6 +234,7 @@ public sealed class MigrationManifestTranslatorTests
             .Which.TargetIds.Should().Equal("target:style:arcgis-fidelity:renderer-fidelity-0");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithOgcWmsRenderOnlyInventory_EmitsManualReviewServicePlan()
     {
@@ -296,6 +301,7 @@ public sealed class MigrationManifestTranslatorTests
         });
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithOgcWmtsInventory_IncludesTileMatrixDependenciesInServicePlan()
     {
@@ -344,6 +350,7 @@ public sealed class MigrationManifestTranslatorTests
         manifest.Summary.ServicePlanCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisInventory_RecordsResourceIdentityEvidence()
     {
@@ -405,6 +412,7 @@ public sealed class MigrationManifestTranslatorTests
             .WhoseValue.Should().Be("target:resource:roads:centerlines");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisFolderUrl_CapturesSourceFolderPath()
     {
@@ -443,6 +451,7 @@ public sealed class MigrationManifestTranslatorTests
         resource.Identity.SourceQualifiedName.Should().Be("Utilities/Water/2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithNonArcGisInventory_OmitsLayerIdentityFields()
     {
@@ -465,6 +474,7 @@ public sealed class MigrationManifestTranslatorTests
         manifest.IdentityRemapping.Should().ContainKey("workspace:roads");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_OmitsPreservedIdentitiesFromIdentityRemapping()
     {
@@ -518,6 +528,7 @@ public sealed class MigrationManifestTranslatorTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithConflictingDuplicateSourceIds_Throws()
     {
@@ -537,6 +548,7 @@ public sealed class MigrationManifestTranslatorTests
             .WithMessage("*workspace:duplicate*conflicting*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_IdentityRemapEvidence_RoundTripsThroughSystemTextJson()
     {
@@ -598,6 +610,7 @@ public sealed class MigrationManifestTranslatorTests
             .Be(manifest.TargetResources[0].Identity!.IdentityStability);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisAttachmentUnderSizeThreshold_ClassifiesAsAutomated()
     {
@@ -627,6 +640,7 @@ public sealed class MigrationManifestTranslatorTests
                 record.Reason == null);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisAttachmentOverAutomatedLane_ClassifiesAsAssisted()
     {
@@ -652,6 +666,7 @@ public sealed class MigrationManifestTranslatorTests
         record.Reason.Should().Contain("10 MiB automated lane");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisAttachmentOverAssistedLane_ClassifiesAsManualReview()
     {
@@ -676,6 +691,7 @@ public sealed class MigrationManifestTranslatorTests
         record.Reason.Should().NotBeNullOrEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisAttachmentMissingSize_ClassifiesAsManualReview()
     {
@@ -695,6 +711,7 @@ public sealed class MigrationManifestTranslatorTests
         record.Reason.Should().Contain("size was not advertised");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisRelationshipKeyFields_PropagatesOriginAndDestinationFields()
     {
@@ -730,6 +747,7 @@ public sealed class MigrationManifestTranslatorTests
         record.EsriRelationshipId.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisOneToManyRelationship_ClassifiesAsAssisted()
     {
@@ -765,6 +783,7 @@ public sealed class MigrationManifestTranslatorTests
         record.Reason.Should().Contain("1:N");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisManyToManyRelationship_ClassifiesAsAssisted()
     {
@@ -792,6 +811,7 @@ public sealed class MigrationManifestTranslatorTests
         record.RelatedLayerIds.Should().Equal("0", "2", "5");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisCompositeRelationship_ClassifiesAsManualReviewWithReason()
     {
@@ -818,6 +838,7 @@ public sealed class MigrationManifestTranslatorTests
         record.Reason.Should().Contain("composite");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithNonArcGisInventory_OmitsAttachmentAndRelationshipRecords()
     {
@@ -833,6 +854,7 @@ public sealed class MigrationManifestTranslatorTests
         resource.Relationships.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_AttachmentAndRelationshipRecords_RoundTripThroughSystemTextJson()
     {
@@ -924,6 +946,7 @@ public sealed class MigrationManifestTranslatorTests
         resource.Relationships[0].RelatedLayerIds.Should().Equal("0", "1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisSimpleRenderer_ClassifiesAsAutomatedWithSuggestedStyleId()
     {
@@ -947,6 +970,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.Reason.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisUniqueValueRenderer_ClassifiesAsAssistedUnderCategoryLimit()
     {
@@ -969,6 +993,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.Reason.Should().Contain("uniqueValue");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisClassBreaksRenderer_ClassifiesAsAssistedUnderBreakLimit()
     {
@@ -990,6 +1015,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.SuggestedTargetStyleId.Should().Be("target:style:inspections:inspection-points:class-breaks");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisUniqueValueRenderer_OverCategoryLimit_ClassifiesAsManualReview()
     {
@@ -1008,6 +1034,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.Reason.Should().Contain("42 categories");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisDictionaryRenderer_ClassifiesAsManualReview()
     {
@@ -1025,6 +1052,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.Reason.Should().Contain("dictionary");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisUnknownRenderer_ClassifiesAsUnsupported()
     {
@@ -1041,6 +1069,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.SuggestedTargetStyleId.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisFieldTokenLabelExpression_ClassifiesAsAutomated()
     {
@@ -1060,6 +1089,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.Reason.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisArcadeLabelExpression_ClassifiesAsAssisted()
     {
@@ -1079,6 +1109,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.Reason.Should().Contain("Arcade");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithArcGisVBScriptLabelExpression_ClassifiesAsUnsupported()
     {
@@ -1098,6 +1129,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostic.Reason.Should().Contain("VBScript");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithMultipleArcGisLabelClasses_EmitsOneDiagnosticPerIndex()
     {
@@ -1123,6 +1155,7 @@ public sealed class MigrationManifestTranslatorTests
         diagnostics[2].Classification.Should().Be(MigrationManifestLabelClassClassifications.Assisted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithNonArcGisInventory_OmitsRendererAndLabelClassDiagnostics()
     {
@@ -1138,6 +1171,7 @@ public sealed class MigrationManifestTranslatorTests
         resource.LabelClassDiagnostics.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_RendererAndLabelDiagnostics_RoundTripThroughSystemTextJson()
     {

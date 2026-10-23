@@ -3,7 +3,7 @@
 # Release and deployment workflows use docker/Dockerfile.lambda.aot.
 
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
 
 # Build stage - Use official .NET SDK but target linux-x64 for AL2 compatibility
 FROM ${DOTNET_SDK_IMAGE} AS build
@@ -35,7 +35,7 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY src/Honua.Db/DuckDB/*.csproj src/Honua.Db/DuckDB/
 COPY src/Honua.Db/SqlServer/*.csproj src/Honua.Db/SqlServer/
 COPY src/Honua.Db/MySql/*.csproj src/Honua.Db/MySql/
-COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
+COPY src/Honua.GeoServicesRest/*.csproj src/Honua.GeoServicesRest/
 COPY src/Honua.Db/Oracle/*.csproj src/Honua.Db/Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
 COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/
@@ -101,7 +101,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage - Use Amazon Linux 2 runtime
-FROM public.ecr.aws/lambda/provided:al2-x86_64 AS runtime
+FROM public.ecr.aws/lambda/provided:al2-x86_64@sha256:3cdf7c0de35546f19452c3fe2ca5f047deb94a2c58b6227d74e9ff2f74b9fee6 AS runtime
 
 # Copy AWS Lambda Web Adapter
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter

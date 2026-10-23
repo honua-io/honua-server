@@ -191,7 +191,11 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
 
         var operation = RequestTelemetryClassifier.ResolveOperation(context);
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-        HonuaTelemetry.RecordServingRequest(protocol, operation, context.Response.StatusCode, elapsedMs);
+
+        // gRPC answers HTTP 200 for failed calls; the classifier maps grpc-status to the HTTP
+        // equivalent so gRPC errors count as errors in the histogram and the ops-health reservoir.
+        var statusCode = RequestTelemetryClassifier.ResolveServingStatusCode(context, protocol);
+        HonuaTelemetry.RecordServingRequest(protocol, operation, statusCode, elapsedMs);
     }
 
     private static bool TryGetRouteValue(
@@ -285,5 +289,29 @@ public static class CorrelationIdMiddlewareExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<CorrelationIdMiddleware>();
+    }
+
+    /// <summary>
+    /// Captures each gRPC call's <c>grpc-status</c> for the serving-latency sample that
+    /// <see cref="UseCorrelationId"/> records. Register immediately after <c>UseGrpcWeb</c>: gRPC-Web
+    /// writes its trailers into the response body and detaches them before control returns to
+    /// the outer middleware, so only a middleware inside it can still read the status (#5473).
+    /// </summary>
+    /// <param name="app">The application builder</param>
+    /// <returns>The application builder for method chaining</returns>
+    public static IApplicationBuilder UseGrpcServingStatusCapture(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(static async (context, next) =>
+        {
+            try
+            {
+                await next(context).ConfigureAwait(false);
+            }
+            finally
+            {
+                RequestTelemetryClassifier.CaptureGrpcStatus(context);
+            }
+        });
     }
 }

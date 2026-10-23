@@ -53,6 +53,7 @@ internal sealed partial class DockerGdalCommandRunner(
         string workingDirectory,
         CancellationToken cancellationToken)
     {
+        GdalErrorSanitizer.UseConfiguredEndpoints(s3Options.Value, azureOptions.Value);
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);

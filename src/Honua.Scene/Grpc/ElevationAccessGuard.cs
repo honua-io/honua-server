@@ -33,11 +33,12 @@ internal static class ElevationAccessGuard
     /// <param name="layerId">The publication layer index being queried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="RpcException">
-    /// Thrown with <see cref="StatusCode.NotFound"/> when the layer is absent or
-    /// retired, <see cref="StatusCode.Unauthenticated"/> when authentication is
-    /// required, <see cref="StatusCode.PermissionDenied"/> when the caller is
-    /// authenticated but not authorized, or <see cref="StatusCode.Internal"/> when
-    /// the HTTP request context is unavailable.
+    /// Thrown with <see cref="StatusCode.NotFound"/> when the layer is absent,
+    /// retired, or the service does not enable the Elevation protocol,
+    /// <see cref="StatusCode.Unauthenticated"/> when authentication is required,
+    /// <see cref="StatusCode.PermissionDenied"/> when the caller is authenticated
+    /// but not authorized, or <see cref="StatusCode.Internal"/> when the HTTP
+    /// request context is unavailable.
     /// </exception>
     /// <returns>
     /// The resolved (authorized) layer resource, so the caller can resolve the
@@ -80,6 +81,16 @@ internal static class ElevationAccessGuard
             throw new RpcException(new Status(
                 status,
                 result.Decision.FailureReason ?? "Access to this elevation layer is denied."));
+        }
+
+        // EvaluateLayerReadAccessV2Async treats the protocol as a preference and
+        // falls back to another publication of the same layer. HTTP elevation
+        // returns 404 when Elevation is not enabled; gRPC must do the same.
+        if (!ServiceProtocols.IsProtocolEnabled(result.Service, ServiceProtocols.Elevation))
+        {
+            throw new RpcException(new Status(
+                StatusCode.NotFound,
+                "Elevation is not enabled for this service."));
         }
 
         return result.Resource;

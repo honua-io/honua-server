@@ -124,6 +124,12 @@ internal sealed partial class WfsDagSource : IDagFeatureSource
             query.Add($"bbox={Uri.EscapeDataString(request.Bbox)}");
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Where))
+        {
+            // Explicit CQL_FILTER extension, documented on the source catalog input.
+            query.Add($"CQL_FILTER={Uri.EscapeDataString(request.Where)}");
+        }
+
         builder.Query = string.Join("&", query);
         return builder.Uri;
     }

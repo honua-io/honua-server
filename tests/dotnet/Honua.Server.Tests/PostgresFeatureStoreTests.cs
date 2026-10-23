@@ -7,6 +7,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Geometries;
@@ -19,6 +21,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for PostgresFeatureStore using real PostgreSQL database.
 /// </summary>
 [Collection("Database.CoreFeatureStore")]
+[Protocol(ProtocolNames.Infrastructure)]
 public class PostgresFeatureStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
@@ -259,6 +262,102 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.All(result.Items, item => Assert.Equal("TypeA", item.Attributes["type"]));
     }
 
+    [IntegrationTheory]
+    [InlineData(0, 0, 0, true)]
+    [InlineData(1, 0, 1, true)]
+    [InlineData(1, 1, 1, false)]
+    [InlineData(2, 0, 2, false)]
+    [InlineData(10, 0, 2, false)]
+    [InlineData(1, 2, 0, false)]
+    [InlineData(null, 0, 2, false)]
+    [InlineData(int.MaxValue, 0, 2, false)]
+    [Operation(Operations.ContractTesting)]
+    public async Task QueryAsync_DistinctFallback_ReportsWhetherAnotherProjectedRowExists(
+        int? limit, int offset, int expectedItems, bool expectedHasMore)
+    {
+        // Three source rows, independently known to project to just TypeA and TypeB.
+        await CreateTestFeatures();
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ["type"],
+            Limit = limit,
+            Offset = offset
+        };
+
+        var result = await _featureStore.QueryAsync(TestLayerId, query);
+
+        // Distinct totals follow the projected tuples (#6196): TypeA and TypeB, not the
+        // three source rows. Continuation stays on the extra-row probe, so a full last
+        // page does not report another page.
+        Assert.Equal(2, result.TotalCount);
+        Assert.Equal(expectedItems, result.Items.Length);
+        Assert.Equal(expectedHasMore, result.HasMoreResults);
+        Assert.Equal(new[] { "TypeA", "TypeB" }.Skip(offset).Take(limit ?? 2),
+            result.Items.Select(item => Assert.IsType<string>(item.Attributes["type"])));
+        Assert.All(result.Items, item =>
+        {
+            Assert.Equal(0, item.Id);
+            Assert.Null(item.Geometry);
+            Assert.Equal(2, item.Attributes.Count);
+            Assert.Equal(0L, Assert.IsType<long>(item.Attributes["objectid"]));
+        });
+    }
+
+    [IntegrationTheory]
+    [InlineData(0, 0, 0, true)]
+    [InlineData(1, 0, 1, true)]
+    [InlineData(2, 0, 2, true)]
+    [InlineData(1, 2, 1, false)]
+    [InlineData(3, 0, 3, false)]
+    [InlineData(10, 0, 3, false)]
+    [InlineData(1, 3, 0, false)]
+    [InlineData(null, 0, 3, false)]
+    [InlineData(int.MaxValue, 0, 3, false)]
+    [Operation(Operations.ContractTesting)]
+    public async Task QueryAsync_ReturnDistanceFallback_PreservesPageGeometryAndContinuation(
+        int? limit, int offset, int expectedItems, bool expectedHasMore)
+    {
+        await _fixture.ExecuteAsync("""
+            INSERT INTO features (objectid, layer_id, geometry, attributes) VALUES
+                (1, 1, ST_GeomFromText('POINT(0 0)', 4326), '{"name":"first"}'),
+                (2, 1, ST_GeomFromText('POINT(1 1)', 4326), '{"name":"second"}'),
+                (3, 1, ST_GeomFromText('POINT(2 2)', 4326), '{"name":"third"}'),
+                (4, 2, ST_GeomFromText('POINT(1 1)', 4326), '{"name":"other layer"}');
+            """, _schemaName);
+        var query = new FeatureQuery
+        {
+            Limit = limit,
+            Offset = offset,
+            OrderBy = [OrderByClause.Asc("objectid")],
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = new WKTReader().Read("POLYGON((-1 -1,3 -1,3 3,-1 3,-1 -1))").AsBinary(),
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.Intersects,
+                ReturnDistance = true
+            }
+        };
+
+        var result = await _featureStore.QueryAsync(TestLayerId, query);
+
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(expectedItems, result.Items.Length);
+        Assert.Equal(expectedHasMore, result.HasMoreResults);
+        Assert.Equal(new long[] { 1, 2, 3 }.Skip(offset).Take(limit ?? 3), result.Items.Select(item => item.Id));
+        Assert.All(result.Items, item =>
+        {
+            // Each seeded point lies inside the filter polygon, so its distance is zero.
+            Assert.InRange(Assert.IsType<double>(item.Attributes["distance"]), 0, 0.001);
+            Assert.NotNull(item.Geometry);
+            var point = Assert.IsType<Point>(new WKBReader().Read(item.Geometry));
+            Assert.Equal(item.Id - 1d, point.X);
+            Assert.Equal(item.Id - 1d, point.Y);
+            Assert.Equal(new[] { "first", "second", "third" }[checked((int)item.Id - 1)], item.Attributes["name"]);
+        });
+    }
+
     [Fact]
     public async Task CountAsync_WithoutFilter_ReturnsCorrectCount()
     {
@@ -349,45 +448,75 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.False(result.HasErrors);
     }
 
+    /// <summary>
+    /// honua-server#4406: the previous body of this test carried two <em>valid</em> creates on both
+    /// paths and asserted <c>WasRolledBack == false</c> twice, so it was a happy-path create test
+    /// wearing a rollback name — a genuinely broken rollback could not have failed it. It now
+    /// includes an operation that must fail (an update of an object id that does not exist), so
+    /// the two <c>rollbackOnFailure</c> paths are distinguished by what they leave in the database:
+    /// all-or-nothing discards the sibling create, partial-commit keeps it.
+    /// </summary>
     [Fact]
-    public async Task ApplyEditsAsync_WithRollbackOnFailureProperty_BehaviorIsImplemented()
+    public async Task ApplyEditsAsync_WithRollbackOnFailure_DiscardsTheSiblingCreate()
     {
-        // This test verifies that the FeatureEditBatch rollbackOnFailure property
-        // is properly handled by the feature store implementation
+        const long missingObjectId = 987_654_321;
+        var create = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "rollback-sibling"));
+        var doomedUpdate = Feature.Create(
+            missingObjectId,
+            null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "rollback-doomed"));
 
-        // Arrange
-        var feature1 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature1"));
-        var feature2 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature2"));
+        var result = await _featureStore.ApplyEditsAsync(
+            TestLayerId,
+            FeatureEditBatch.Create(
+                creates: ImmutableArray.Create(create),
+                updates: ImmutableArray.Create(doomedUpdate),
+                rollbackOnFailure: true));
 
-        // Test with rollbackOnFailure: true
-        var editBatchWithRollback = FeatureEditBatch.Create(
-            creates: ImmutableArray.Create(feature1, feature2),
-            rollbackOnFailure: true);
+        Assert.True(result.WasRolledBack);
+        Assert.Equal(0, result.CreatedCount);
+        Assert.Equal(0, result.UpdatedCount);
+        Assert.Single(result.UpdateResults);
+        Assert.False(result.UpdateResults[0].IsSuccess);
 
-        // Test with rollbackOnFailure: false (default GeoServices behavior)
-        var editBatchWithoutRollback = FeatureEditBatch.Create(
-            creates: ImmutableArray.Create(feature1, feature2),
-            rollbackOnFailure: false);
+        // The proof the old test could not make: the valid sibling create must not be in the table.
+        var survivors = await _featureStore.QueryAsync(
+            TestLayerId,
+            new FeatureQuery { Where = "attributes->>'name' = 'rollback-sibling'" });
+        Assert.Empty(survivors.Items);
+    }
 
-        // Act
-        var resultWithRollback = await _featureStore.ApplyEditsAsync(TestLayerId, editBatchWithRollback);
-        var resultWithoutRollback = await _featureStore.ApplyEditsAsync(TestLayerId, editBatchWithoutRollback);
+    /// <summary>
+    /// The contrasting half of <see cref="ApplyEditsAsync_WithRollbackOnFailure_DiscardsTheSiblingCreate"/>:
+    /// with <c>rollbackOnFailure=false</c> the same batch commits the create the failing update
+    /// would otherwise have discarded. Together the two tests prove the flag changes behaviour.
+    /// </summary>
+    [Fact]
+    public async Task ApplyEditsAsync_WithoutRollbackOnFailure_KeepsTheSiblingCreate()
+    {
+        const long missingObjectId = 987_654_322;
+        var create = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "partial-sibling"));
+        var doomedUpdate = Feature.Create(
+            missingObjectId,
+            null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "partial-doomed"));
 
-        // Assert
-        // Both should succeed in this case since we have valid features
-        Assert.True(resultWithRollback.IsSuccess);
-        Assert.Equal(2, resultWithRollback.CreatedCount);
-        Assert.False(resultWithRollback.WasRolledBack);
-        Assert.False(resultWithRollback.HasErrors);
-        Assert.Equal(2, resultWithRollback.CreateResults.Length);
-        Assert.All(resultWithRollback.CreateResults, r => Assert.True(r.IsSuccess));
+        var result = await _featureStore.ApplyEditsAsync(
+            TestLayerId,
+            FeatureEditBatch.Create(
+                creates: ImmutableArray.Create(create),
+                updates: ImmutableArray.Create(doomedUpdate),
+                rollbackOnFailure: false));
 
-        Assert.True(resultWithoutRollback.IsSuccess);
-        Assert.Equal(2, resultWithoutRollback.CreatedCount);
-        Assert.False(resultWithoutRollback.WasRolledBack);
-        Assert.False(resultWithoutRollback.HasErrors);
-        Assert.Equal(2, resultWithoutRollback.CreateResults.Length);
-        Assert.All(resultWithoutRollback.CreateResults, r => Assert.True(r.IsSuccess));
+        Assert.False(result.WasRolledBack);
+        Assert.Equal(1, result.CreatedCount);
+        Assert.Single(result.UpdateResults);
+        Assert.False(result.UpdateResults[0].IsSuccess);
+
+        var survivors = await _featureStore.QueryAsync(
+            TestLayerId,
+            new FeatureQuery { Where = "attributes->>'name' = 'partial-sibling'" });
+        Assert.Single(survivors.Items);
     }
 
     [Fact]

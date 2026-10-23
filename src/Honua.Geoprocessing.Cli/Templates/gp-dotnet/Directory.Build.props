@@ -1,0 +1,16 @@
+<Project>
+  <!-- The devkit extracts its matching SDK and harness under .honua/toolchain.
+       HONUA_SERVER_CHECKOUT is an explicit source-development override. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <HonuaServerCheckout Condition="'$(HonuaServerCheckout)' == '' and '$(HONUA_SERVER_CHECKOUT)' != ''">$(HONUA_SERVER_CHECKOUT)</HonuaServerCheckout>
+    <HonuaServerCheckout Condition="'$(HonuaServerCheckout)' == ''">$(MSBuildThisFileDirectory).honua/toolchain</HonuaServerCheckout>
+    <HonuaCustomCodeHarnessRoot>$(HonuaServerCheckout)/docker/worker-customcode-dotnet/harness</HonuaCustomCodeHarnessRoot>
+    <HonuaCustomCodeSdkProject>$(HonuaCustomCodeHarnessRoot)/src/Honua.CustomCode.Sdk/Honua.CustomCode.Sdk.csproj</HonuaCustomCodeSdkProject>
+    <HonuaCustomCodeHarnessProject>$(HonuaCustomCodeHarnessRoot)/src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj</HonuaCustomCodeHarnessProject>
+  </PropertyGroup>
+</Project>

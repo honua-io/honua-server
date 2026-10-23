@@ -1,4 +1,28 @@
 <Project>
+  <!--
+    Version identity for the whole repository. honua-server carried none: no
+    <Version>, no version file, no release manifest and no tags, so every
+    assembly built as the .NET default 1.0.0 and nothing downstream could name
+    the server it was built from. The Helm chart's appVersion gate refuses the
+    placeholder 0.0.0 for exactly this reason.
+
+    The scheme is calendar-based: <year>.<release>.<patch>, matching the
+    delivery arcs the release program already names (2026.1, 2026.2). It is a
+    valid SemVer triple, so `docker/metadata-action` stamps images as
+    2026.1.1-aot and v2026.1.1-aot from a v2026.1.1 tag, which is the exact
+    form honua-helm expects.
+
+    Because the major number tracks the year rather than compatibility, the
+    breaking-change signal for clients lives in the protocol version
+    (geospatial.v1 -> v2) and in the capability manifest, not here.
+
+    VersionPrefix rather than Version so CI can append a prerelease suffix
+    (-rc.1, -nightly.N) without editing this file.
+  -->
+  <PropertyGroup>
+    <VersionPrefix>2026.1.1</VersionPrefix>
+  </PropertyGroup>
+
   <PropertyGroup>
     <LangVersion>preview</LangVersion>
     <Nullable>enable</Nullable>
@@ -130,21 +154,11 @@
         the advisory is acknowledged here and tracked for re-evaluation when a
         patched e_sqlite3 ships, at which point this suppression is removed.
 
-      GHSA-37gx-xxp4-5rgx / GHSA-w3x6-4m5h-cxqf — System.Security.Cryptography.Xml
-        10.0.0 (high). TEST-ONLY: referenced solely by Honua.Server.Tests to SIGN
-        synthetic SAML assertions for the SP-SSO fixtures. Production SAML signature
-        VERIFICATION is hand-rolled (Exclusive C14N + RSA/ECDSA via System.Security.
-        Cryptography, no SignedXml), so the vulnerable code path never ships. Tracked
-        as a follow-up to drop this test dependency by signing fixtures with the same
-        hand-rolled path; suppression removed at that point.
-
     Genuinely transient restore failures (feed timeouts / 5xx) are handled
     separately by scripts/ci/dotnet-restore-retry.sh, which bounded-retries
     restore but deliberately does NOT retry NU190x audit errors.
   -->
   <ItemGroup>
     <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-37gx-xxp4-5rgx" />
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-w3x6-4m5h-cxqf" />
   </ItemGroup>
 </Project>

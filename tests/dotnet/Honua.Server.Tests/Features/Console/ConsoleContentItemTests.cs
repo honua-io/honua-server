@@ -101,5 +101,9 @@ public class ConsoleContentItemTests
         Assert.Contains("\"allowed\":true", json);
         Assert.Contains("\"reason\":\"insufficient-capability\"", json);
         Assert.Contains("\"content\":{", json);
+        Assert.Contains("\"persistence\":{", json);
+        Assert.Contains("\"mode\":\"in-memory\"", json);
+        Assert.Contains("\"durable\":false", json);
+        Assert.Contains("\"sharedAcrossReplicas\":false", json);
     }
 }

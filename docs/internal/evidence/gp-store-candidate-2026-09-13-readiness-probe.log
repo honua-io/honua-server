@@ -1,0 +1,42 @@
+ Network honua-gp-reliability-probe3900_default Creating 
+ Network honua-gp-reliability-probe3900_default Created 
+ Volume honua-gp-reliability-probe3900_postgres-data Creating 
+ Volume honua-gp-reliability-probe3900_postgres-data Created 
+ Volume honua-gp-reliability-probe3900_redis-data Creating 
+ Volume honua-gp-reliability-probe3900_redis-data Created 
+ Container honua-gp-reliability-probe3900-postgres-1 Creating 
+ Container honua-gp-reliability-probe3900-redis-1 Creating 
+ Container honua-gp-reliability-probe3900-postgres-1 Created 
+ Container honua-gp-reliability-probe3900-redis-1 Created 
+ Container honua-gp-reliability-probe3900-server-1 Creating 
+ Container honua-gp-reliability-probe3900-server-peer-1 Creating 
+ Container honua-gp-reliability-probe3900-server-1 Created 
+ Container honua-gp-reliability-probe3900-server-peer-1 Created 
+ Container honua-gp-reliability-probe3900-redis-1 Starting 
+ Container honua-gp-reliability-probe3900-postgres-1 Starting 
+ Container honua-gp-reliability-probe3900-postgres-1 Started 
+ Container honua-gp-reliability-probe3900-redis-1 Started 
+ Container honua-gp-reliability-probe3900-postgres-1 Waiting 
+ Container honua-gp-reliability-probe3900-redis-1 Waiting 
+ Container honua-gp-reliability-probe3900-postgres-1 Waiting 
+ Container honua-gp-reliability-probe3900-redis-1 Waiting 
+ Container honua-gp-reliability-probe3900-redis-1 Healthy 
+ Container honua-gp-reliability-probe3900-redis-1 Healthy 
+ Container honua-gp-reliability-probe3900-postgres-1 Healthy 
+ Container honua-gp-reliability-probe3900-server-peer-1 Starting 
+ Container honua-gp-reliability-probe3900-postgres-1 Healthy 
+ Container honua-gp-reliability-probe3900-server-1 Starting 
+ Container honua-gp-reliability-probe3900-server-1 Started 
+ Container honua-gp-reliability-probe3900-server-peer-1 Started 
+Ready
+probe 1 Ready HTTP 200
+
+probe 2 Ready HTTP 200
+
+probe 3 Ready HTTP 200
+
+probe 4 Ready HTTP 200
+
+probe 5 Ready HTTP 200
+
+probe 6 Ready HTTP 200

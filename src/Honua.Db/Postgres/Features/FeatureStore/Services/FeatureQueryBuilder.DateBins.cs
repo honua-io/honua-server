@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
@@ -29,7 +30,7 @@ internal sealed partial class FeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
             var fieldExpr = GetFieldExpression(dateBin.BinField);
-            var timestampExpr = $"({fieldExpr})::timestamptz";
+            var timestampExpr = BuildEpochAwareTemporalExpression(fieldExpr, MetadataV2FieldType.DateTime);
 
             sql.Append("SELECT ");
 

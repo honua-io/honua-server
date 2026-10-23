@@ -1,0 +1,13 @@
+{
+  "lane": "gdal-3.13.3",
+  "started_at": "2026-09-16T21:44:31.939479Z",
+  "python": "3.14.4",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+  "cells": [
+    "gdal_cng_cells.cog_serving",
+    "gdal_cng_cells.multidim"
+  ],
+  "client_identity": "GDAL 3.13.3 \"Iowa City\", released 2026/08/13",
+  "finished_at": "2026-09-16T21:46:38.789990Z",
+  "harness_failures": []
+}

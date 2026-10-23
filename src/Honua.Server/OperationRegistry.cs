@@ -31,6 +31,7 @@ public static class OperationRegistry
     private const string Wms13 = "WMS-1.3.0";
     private const string Wms111 = "WMS-1.1.1";
     private const string Wmts10 = "WMTS-1.0.0";
+    private const string Wcs10 = "WCS-1.0.0";
     private const string Wcs201 = "WCS-2.0.1";
     private const string Wps202 = "WPS-2.0.2";
     private const string ODataV4 = "OData-v4";
@@ -40,6 +41,7 @@ public static class OperationRegistry
     private const string SensorThings11 = "SensorThings-1.1";
     private const string GeoservicesCatalog = "GeoservicesCatalog";
     private const string ImageServer = "ImageServer";
+    private const string GPServer = "GPServer";
 
     /// <summary>
     /// All public-interface operations that require integration test coverage.
@@ -81,7 +83,10 @@ public static class OperationRegistry
         new(Wmts10, "GetTile"),
         new(Wmts10, "GetFeatureInfo"),
 
-        // WCS 2.0.1 operations (KVP via ImageServer and service-scoped OGC aliases)
+        // WCS 1.0.0 and 2.0.1 operations (KVP via ImageServer and service-scoped OGC aliases)
+        new(Wcs10, "GetCapabilities"),
+        new(Wcs10, "DescribeCoverage"),
+        new(Wcs10, "GetCoverage"),
         new(Wcs201, "GetCapabilities"),
         new(Wcs201, "DescribeCoverage"),
         new(Wcs201, "GetCoverage"),
@@ -146,6 +151,7 @@ public static class OperationRegistry
         new(VersionManagementServer, "serviceInfo"),
         new(VersionManagementServer, "versions"),
         new(VersionManagementServer, "versionInfo"),
+        new(VersionManagementServer, "versionInfos"),
         new(VersionManagementServer, "create"),
         new(VersionManagementServer, "delete"),
         new(VersionManagementServer, "alter"),
@@ -174,10 +180,27 @@ public static class OperationRegistry
         new(GeoservicesCatalog, "GetTokenServiceURL"),
         new(GeoservicesCatalog, "RequiresTokens"),
 
+        // ArcGIS SOAP GPServer discovery and execution operations.
+        new(GPServer, "GetToolInfos"),
+        new(GPServer, "GetTaskInfos"),
+        new(GPServer, "GetToolNames"),
+        new(GPServer, "GetTaskNames"),
+        new(GPServer, "GetToolInfo"),
+        new(GPServer, "GetExecutionType"),
+        new(GPServer, "GetResultMapServerName"),
+        new(GPServer, "SubmitJob"),
+        new(GPServer, "Execute"),
+        new(GPServer, "GetJobStatus"),
+        new(GPServer, "GetJobMessages"),
+        new(GPServer, "GetJobResult"),
+        new(GPServer, "GetJobToolName"),
+        new(GPServer, "CancelJob"),
+
         // ArcGIS SOAP ImageServer operations dispatched through POST /services/{serviceId}/ImageServer.
         new(ImageServer, "GetVersion"),
         new(ImageServer, "IsFixedScaleImage"),
         new(ImageServer, "GetServiceInfo"),
+        new(ImageServer, "GetView"),
         new(ImageServer, "GetFields"),
         new(ImageServer, "GetKeyProperties"),
         new(ImageServer, "GetKeyPropertiesX"),
@@ -186,6 +209,15 @@ public static class OperationRegistry
         new(ImageServer, "ExecuteAISRequest"),
         new(ImageServer, "ExportImage"),
         new(ImageServer, "GetImage"),
+        new(ImageServer, "GetCatalogItemCount"),
+        new(ImageServer, "GetCatalogItemIDs"),
+        new(ImageServer, "GetCatalogItems"),
+        new(ImageServer, "GetRasterKeyProperties"),
+        new(ImageServer, "ComputeHistograms"),
+        new(ImageServer, "GetCacheDescriptionInfo"),
+        new(ImageServer, "GetTileCacheInfo"),
+        new(ImageServer, "GetTileImageInfo"),
+        new(ImageServer, "GetImageTile"),
     ];
 }
 

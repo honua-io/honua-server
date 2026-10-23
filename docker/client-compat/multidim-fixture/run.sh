@@ -25,7 +25,7 @@ export HONUA_CLIENT_COMPAT_STORAGE_PROVIDER=AwsS3
 docker compose -f "$compose_file" --profile multidim-fixture up \
   --build \
   --wait \
-  honua gdal-worker
+  honua gdal-worker seed
 
 docker compose -f "$compose_file" --profile multidim-fixture run \
   --build \

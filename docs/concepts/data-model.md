@@ -1,3 +1,8 @@
+---
+type: concept
+title: "Data model"
+description: "Honua's catalog is built from four ideas: connections point at data, layers publish individual tables or rasters, services expose layers through protocols, and styles and metadata control how layers look and describe themselves."
+---
 # Data model
 
 Honua's catalog is built from four ideas: **connections** point at data, **layers** publish individual tables or rasters, **services** expose layers through protocols, and **styles and metadata** control how layers look and describe themselves. Understand these and the whole admin surface — UI, [admin API](../reference/admin-api/overview.md), and GitOps manifests — reads the same way.
@@ -14,7 +19,7 @@ Honua's catalog is built from four ideas: **connections** point at data, **layer
 
 A connection is a registered data source: a PostGIS database, a DuckDB file, or a read-only SQL Server, Oracle, or MySQL/MariaDB database. Credentials are stored encrypted or referenced from a secret store — they never appear in catalog metadata.
 
-Connections are managed at `/api/v1/admin/connections` (create, test, list tables). Registering a connection does not publish anything by itself; it makes tables discoverable for publishing. Provider capabilities differ — only PostGIS connections support writes — see the [data source reference](../reference/configuration/data-sources/README.md).
+Connections are managed at `/api/v1/admin/connections` (create, test, list tables). Registering a connection does not publish anything by itself; it makes tables discoverable for publishing. Provider capabilities differ; a writable database connection does not imply a source-backed published layer accepts edits. See the [data source reference](../reference/configuration/data-sources/README.md) and the managed-storage contract below.
 
 ## Layers
 
@@ -25,7 +30,7 @@ A layer is one published table or raster from a connection. Publishing records, 
 - capabilities such as whether editing is allowed
 - display defaults, access policies, and style references
 
-Publishing never copies or converts data. The source table stays where it is; queries run against it live. Layers are published from a connection's tables at `/api/v1/admin/connections/{id}/layers` — see [Publish layers](../guides/publish/publish-layers.md).
+Source-backed publishing registers a binding to the existing table, which remains authoritative. Managed publishing (`storageMode: managed`) copies source rows into the managed feature store, which then becomes authoritative for that layer; it no longer tracks the source table. Source-backed layers do not accept feature writes. See the [storage modes and edit-capability contract](../reference/admin-api/connections-and-layers.md#editable-layers). Layers are published from a connection's tables at `/api/v1/admin/connections/{id}/layers`.
 
 Schema expectations for smooth cross-protocol publishing: an integer primary key (required by FeatureServer), a single geometry column with an explicit type and SRID, a GiST spatial index, and simple snake_case field names. `objectid` and `shape` are FeatureServer-reserved names — use them only for the primary key and geometry roles.
 
@@ -48,18 +53,21 @@ Descriptive metadata (title, description, keywords, attribution, temporal info) 
 
 ## What "publishing" means
 
-Publishing a layer means writing catalog metadata; it is configuration, not data movement. The complete flow:
+Publishing a layer creates catalog metadata and, when managed storage is selected, materializes a separate managed copy. The complete flow:
 
 1. **Register a connection** to your database.
 2. **Publish a layer** from one of its tables (schema is auto-discovered and can be adjusted).
 3. **Attach it to a service** and choose which protocols the service enables.
 4. **Optionally refine styles and metadata.**
 
-From that point the one layer is simultaneously an Esri FeatureServer layer, an OGC API Features collection, a WFS feature type, an OData entity set, a vector tile source, and a STAC collection — same data, same access policy, no synchronization. Edits made through any write-enabled protocol are immediately visible through all of the others because every protocol reads the same source table.
+The layer can then be projected through its enabled and supported protocols, such as FeatureServer, OGC API Features, WFS, OData, vector tiles, and STAC. Those projections share the canonical resource and its policies; a service's existence does not enable every protocol. Human-facing edits require a managed layer with the relevant declared capability and authority, and other readers observe the managed store. AI workflows do not edit source feature data.
 
 The catalog itself can also be managed declaratively: metadata manifests can be exported, diffed, approved, and applied through the admin API's GitOps surfaces, so the connection/layer/service graph can live in version control.
 
 ## Where to go next
+
+- [GIS domain language](domain/README.md) — precise meanings, common phrases, and workflow links for people and agents
+- [Canonical resource](domain/resource.md), [storage binding](domain/storage-binding.md), and [publication](domain/publication.md) — Metadata v2 separates data semantics, physical storage, and service exposure
 
 - [Quickstart](../get-started/quickstart.md) — publish your first layer end to end
 - [Publish layers](../guides/publish/publish-layers.md) — the publishing workflow in detail

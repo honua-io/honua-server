@@ -13,6 +13,11 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
 {
+    /// <summary>
+    /// Denial recorded when an explicit role list excludes the principal.
+    /// </summary>
+    internal const string RequiredRoleDeniedReason = "User does not have the required role.";
+
     /// <inheritdoc />
     public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action)
         => Task.FromResult(Evaluate(principal, resource, action));
@@ -47,6 +52,14 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
         object? scope = null)
     {
         var requiresWrite = IsWriteScope(scope);
+
+        // Resource-less/coarse evaluation cannot prove that a scoped API key's grant
+        // matches a target. Fail closed; resource-aware callers authorize matching
+        // grants before reaching this fallback.
+        if (LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
+        {
+            return AccessDecision.Forbidden("API key permission does not grant access to this resource.");
+        }
 
         var layerDecision = EvaluateSinglePolicy(principal, layerPolicy, requiresWrite);
         var serviceDecision = EvaluateSinglePolicy(principal, servicePolicy, requiresWrite);
@@ -95,7 +108,7 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
 
         if (allowedRoles is { Length: > 0 } && !IsInAnyRole(principal, allowedRoles))
         {
-            return AccessDecision.Forbidden("User does not have the required role.");
+            return AccessDecision.Forbidden(RequiredRoleDeniedReason);
         }
 
         return AccessDecision.Allowed();

@@ -45,6 +45,27 @@ namespace Honua.Protocols.Stac;
 [JsonSerializable(typeof(Dictionary<string, StacAsset>))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]
+// Storage-bound item filters project feature attributes. Those values keep their
+// provider CLR types, and the shipped image has reflection JSON disabled.
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(byte))]
+[JsonSerializable(typeof(sbyte))]
+[JsonSerializable(typeof(short))]
+[JsonSerializable(typeof(ushort))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(uint))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(ulong))]
+[JsonSerializable(typeof(float))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(decimal))]
+[JsonSerializable(typeof(Guid))]
+[JsonSerializable(typeof(byte[]))]
+[JsonSerializable(typeof(DateOnly))]
+[JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(TimeOnly))]
 internal sealed partial class StacJsonContext : JsonSerializerContext
 {
 }

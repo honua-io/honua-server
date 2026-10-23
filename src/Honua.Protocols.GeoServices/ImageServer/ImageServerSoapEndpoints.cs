@@ -1,11 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using System.Xml;
-using System.Xml.Schema;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -15,10 +14,12 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Raster;
 using Honua.Protocols.GeoServices.ImageServer.Services;
-using Honua.Protocols.GeoServices.Soap;
+using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using SkiaSharp;
 
@@ -29,15 +30,10 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 /// ArcGIS Pro. Rendering delegates to the canonical REST ImageServer handler so
 /// the SOAP surface never becomes a second raster execution engine.
 /// </summary>
-internal static class ImageServerSoapEndpoints
+internal static partial class ImageServerSoapEndpoints
 {
-    private const string Soap11ContentType = "text/xml; charset=utf-8";
-    private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
-    private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
-    private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
     private const string XmlSchemaNamespace = "http://www.w3.org/2001/XMLSchema";
     private const string XmlSchemaInstanceNamespace = "http://www.w3.org/2001/XMLSchema-instance";
-    private const int MaxRequestCharacters = 1_048_576;
     private const int MaxImageDimension = 4096;
 
     public static void MapImageServerSoapEndpoints(this IEndpointRouteBuilder endpoints)
@@ -93,10 +89,13 @@ internal static class ImageServerSoapEndpoints
         var operationName = operation.Name.LocalName;
         var authorizationOperation = operationName switch
         {
-            "ExportImage" or "GetImage" => AuthorizationOperation.Export,
-            "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetFields"
-                or "GetKeyProperties" or "GetKeyPropertiesX" or "GetMetadata"
-                or "GetMultidimensionalInfo" or "ExecuteAISRequest" => AuthorizationOperation.Metadata,
+            "ExportImage" or "GetImage" or "GetImageTile" => AuthorizationOperation.Export,
+            "GetCatalogItemCount" or "GetCatalogItemIDs" or "GetCatalogItems" => AuthorizationOperation.Query,
+            "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetView" or "GetFields"
+                or "GetKeyProperties" or "GetKeyPropertiesX" or "GetRasterKeyProperties"
+                or "GetMetadata" or "GetMultidimensionalInfo" or "ComputeHistograms"
+                or "GetCacheDescriptionInfo" or "GetTileCacheInfo" or "GetTileImageInfo"
+                or "ExecuteAISRequest" => AuthorizationOperation.Metadata,
             _ => (AuthorizationOperation?)null
         };
         if (authorizationOperation is null)
@@ -115,7 +114,7 @@ internal static class ImageServerSoapEndpoints
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
             .WithTag(HonuaTelemetry.Tags.Operation, operationName);
 
-        var requirePrimaryRaster = operationName is "GetServiceInfo" or "ExportImage" or "GetImage";
+        var requirePrimaryRaster = operationName is "GetServiceInfo" or "GetView" or "ExportImage" or "GetImage";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
@@ -151,44 +150,80 @@ internal static class ImageServerSoapEndpoints
                     soapNamespace,
                     operationNamespace,
                     "IsFixedScaleImageResponse",
-                    new XElement("Result", false)),
+                    new XElement(
+                        "Result",
+                        context.RequestServices.GetRequiredService<IOptions<ImageServerTileMetadataOptions>>().Value.Enabled)),
                 "GetServiceInfo" => await HandleGetServiceInfoAsync(
                     serviceId,
                     rasterRequest,
                     layerResolver,
                     rasterStore,
                     cancellationToken).ConfigureAwait(false),
-                "GetFields" => CreateSoapResponse(
-                    soapNamespace,
-                    operationNamespace,
-                    "GetFieldsResponse",
-                    BuildFields()),
-                "GetKeyProperties" => CreateSoapResponse(
-                    soapNamespace,
-                    operationNamespace,
+                "GetView" => await HandleGetViewAsync(
+                    operation,
+                    rasterRequest,
+                    layerResolver,
+                    rasterStore,
+                    cancellationToken).ConfigureAwait(false),
+                "GetFields" => await HandleGetFieldsAsync(
+                    rasterRequest,
+                    layerResolver,
+                    rasterStore,
+                    cancellationToken).ConfigureAwait(false),
+                "GetKeyProperties" => await HandleGetKeyPropertiesAsync(
+                    operation,
+                    rasterRequest,
                     "GetKeyPropertiesResponse",
-                    BuildKeyProperties()),
-                "GetKeyPropertiesX" => CreateSoapResponse(
-                    soapNamespace,
-                    operationNamespace,
+                    cancellationToken).ConfigureAwait(false),
+                "GetKeyPropertiesX" => await HandleGetKeyPropertiesAsync(
+                    operation,
+                    rasterRequest,
                     "GetKeyPropertiesXResponse",
-                    BuildKeyProperties()),
+                    cancellationToken).ConfigureAwait(false),
+                "GetRasterKeyProperties" => await HandleGetRasterKeyPropertiesAsync(
+                    operation,
+                    rasterRequest,
+                    cancellationToken).ConfigureAwait(false),
                 "GetMetadata" => CreateSoapResponse(
                     soapNamespace,
                     operationNamespace,
                     "GetMetadataResponse",
                     new XElement("Result", BuildMetadata(serviceId))),
-                // Deliberately keep the published SOAP result well-formed and nil until the
-                // canonical seed contains a registered, scanned multidimensional coverage.
-                // The REST multidimensionalInfo model is not itself an ArcGIS SOAP contract;
-                // its XML element shape must be captured and A/B verified with licensed Pro
-                // against genuine coverage metadata before replacing this compatibility-safe
-                // response. Track the missing fixture and licensed validation in #3558.
-                "GetMultidimensionalInfo" => CreateSoapResponse(
-                    soapNamespace,
-                    operationNamespace,
-                    "GetMultidimensionalInfoResponse",
-                    BuildNilResult()),
+                "GetMultidimensionalInfo" => await HandleGetMultidimensionalInfoAsync(
+                    rasterRequest,
+                    cancellationToken).ConfigureAwait(false),
+                "ComputeHistograms" => await HandleComputeHistogramsAsync(
+                    operation,
+                    rasterRequest,
+                    cancellationToken).ConfigureAwait(false),
+                "GetCatalogItemCount" => await HandleCatalogAsync(
+                    operation,
+                    rasterRequest,
+                    CatalogSoapResultKind.Count,
+                    cancellationToken).ConfigureAwait(false),
+                "GetCatalogItemIDs" => await HandleCatalogAsync(
+                    operation,
+                    rasterRequest,
+                    CatalogSoapResultKind.Ids,
+                    cancellationToken).ConfigureAwait(false),
+                "GetCatalogItems" => await HandleCatalogAsync(
+                    operation,
+                    rasterRequest,
+                    CatalogSoapResultKind.Items,
+                    cancellationToken).ConfigureAwait(false),
+                "GetCacheDescriptionInfo" => await HandleGetCacheDescriptionInfoAsync(
+                    rasterRequest,
+                    cancellationToken).ConfigureAwait(false),
+                "GetTileCacheInfo" => await HandleGetTileCacheInfoAsync(
+                    rasterRequest,
+                    cancellationToken).ConfigureAwait(false),
+                "GetTileImageInfo" => await HandleGetTileImageInfoAsync(
+                    rasterRequest,
+                    cancellationToken).ConfigureAwait(false),
+                "GetImageTile" => await HandleGetImageTileAsync(
+                    operation,
+                    rasterRequest,
+                    cancellationToken).ConfigureAwait(false),
                 "ExecuteAISRequest" => HandleExecuteAisRequest(
                     operation,
                     soapNamespace,
@@ -266,8 +301,8 @@ internal static class ImageServerSoapEndpoints
         return result;
     }
 
-    private static async Task<IResult> HandleGetServiceInfoAsync(
-        string serviceId,
+    private static async Task<(ImageServerLayerResolution Resolution, RasterInfo[] Rasters,
+        RasterExtent? Extent, IResult? ErrorResult)> ReadServiceRastersAsync(
         SoapRasterRequestContext request,
         IImageServerLayerResolver layerResolver,
         IRasterStore rasterStore,
@@ -282,7 +317,7 @@ internal static class ImageServerSoapEndpoints
             cancellationToken).ConfigureAwait(false);
         if (revalidation.ErrorResult is not null)
         {
-            return revalidation.ErrorResult;
+            return (revalidation.Resolution, [], null, revalidation.ErrorResult);
         }
 
         var rasters = await rasterStore.ListRastersAsync(
@@ -290,66 +325,157 @@ internal static class ImageServerSoapEndpoints
             cancellationToken).ConfigureAwait(false);
         if (rasters.Length == 0)
         {
-            return CreateSoapFault(
+            return (revalidation.Resolution, rasters, null, CreateSoapFault(
                 "Image service has no rasters.",
                 StatusCodes.Status404NotFound,
-                request.SoapNamespace);
+                request.SoapNamespace));
         }
 
         var extent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
         if (extent is null)
         {
-            return CreateSoapFault(
+            return (revalidation.Resolution, rasters, null, CreateSoapFault(
                 "Image service extent is unavailable.",
                 StatusCodes.Status500InternalServerError,
-                request.SoapNamespace);
+                request.SoapNamespace));
         }
 
-        var referenceRaster = SelectReferenceRaster(rasters);
-        var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
-        var mergeStrategy = revalidation.Resolution.MergeStrategy;
-        var schemaName = request.HttpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-        var statistics = await ImageServerStatisticsBudget.ResolveAsync(
-            request.HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-            ImageServerStatisticsBudget.CreateStatisticsOperationKey(
-                schemaName,
-                revalidation.Resolution.LayerId,
-                rasterIds,
-                mergeStrategy),
-            schemaName,
-            (services, ct) =>
-            {
-                var scopedRasterStore = services.GetRequiredService<IRasterStore>();
-                return rasters.Length == 1
-                    ? scopedRasterStore.GetStatisticsAsync(
-                        revalidation.Resolution.LayerId,
-                        referenceRaster.Id,
-                        cancellationToken: ct)
-                    : scopedRasterStore.GetMosaicStatisticsAsync(
-                        revalidation.Resolution.LayerId,
-                        rasterIds,
-                        mergeStrategy,
-                        cancellationToken: ct);
-            },
-            onBudgetExceeded: () => request.HttpContext.Response.Headers.CacheControl = "no-store",
-            cancellationToken).ConfigureAwait(false);
-        statistics = statistics.OrderBy(static statistic => statistic.Band).ToArray();
+        return (revalidation.Resolution, rasters, extent, null);
+    }
 
-        var referenceExtent = referenceRaster.Extent;
-        var pixelSizeX = referenceRaster.Width > 0 && referenceExtent.HasValue
-            ? (referenceExtent.Value.XMax - referenceExtent.Value.XMin) / referenceRaster.Width
-            : 0;
-        var pixelSizeY = referenceRaster.Height > 0 && referenceExtent.HasValue
-            ? (referenceExtent.Value.YMax - referenceExtent.Value.YMin) / referenceRaster.Height
-            : 0;
+    private static async Task<IResult> HandleGetFieldsAsync(
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var srid = service.Extent!.Value.Srid ?? SpatialConstants.DefaultSrid;
+        var maskedFields = await ReadCatalogMasksAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        return CreateSoapResponse(
+            request.SoapNamespace,
+            request.OperationNamespace,
+            "GetFieldsResponse",
+            BuildFields(srid, maskedFields));
+    }
+
+    private static async Task<IResult> HandleGetViewAsync(
+        XElement operation,
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        // Stock Pro requests an empty VID during service discovery. Honua has no
+        // persisted named views: expose only the authorized service's default
+        // raster view, never silently substitute it for an unknown named view.
+        // ImageView's optional fields and order follow the ArcGIS SOAP XSD.
+        var viewId = operation.Elements().FirstOrDefault(element => element.Name.LocalName == "VID")?.Value;
+        if (!string.IsNullOrEmpty(viewId))
+        {
+            return CreateSoapFault("Image view was not found.", StatusCodes.Status404NotFound, request.SoapNamespace);
+        }
+
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var raster = SelectReferenceRaster(service.Rasters);
+        var viewExtent = service.Extent!.Value;
+        var viewGrid = await ReadCoverageGridAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        if (viewGrid is not null)
+        {
+            raster = ImageServerCoverageRaster.Apply(raster, viewGrid);
+            viewExtent = viewGrid.Extent;
+        }
+
+        var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(raster);
         XNamespace xsi = XmlSchemaInstanceNamespace;
+        return CreateSoapResponse(
+            request.SoapNamespace,
+            request.OperationNamespace,
+            "GetViewResponse",
+            new XElement("Result",
+                new XAttribute(xsi + "type", "tns:ImageView"),
+                new XElement("VID", string.Empty),
+                new XElement("Description", string.Empty),
+                BuildEnvelope(viewExtent),
+                new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
+                new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
+                new XElement("BandCount", raster.BandCount),
+                new XElement("PixelType", MapPixelType(raster.PixelType))));
+    }
+
+    private static async Task<IResult> HandleGetServiceInfoAsync(
+        string serviceId,
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var rasters = service.Rasters;
+        var extent = service.Extent!.Value;
+        var referenceRaster = SelectReferenceRaster(rasters);
+        var coverageGrid = await ReadCoverageGridAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        RasterStatistics[] statistics;
+        if (coverageGrid is not null)
+        {
+            referenceRaster = ImageServerCoverageRaster.Apply(referenceRaster, coverageGrid);
+            extent = coverageGrid.Extent;
+            statistics = ImageServerCoverageRaster.Statistics(coverageGrid);
+        }
+        else
+        {
+            statistics = await ReadServiceStatisticsAsync(
+                request.HttpContext,
+                service.Resolution.LayerId,
+                rasters,
+                service.Resolution.MergeStrategy,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(referenceRaster);
+        XNamespace xsi = XmlSchemaInstanceNamespace;
+        var maskedFields = await ReadCatalogMasksAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        var extras = await BuildServiceInfoExtrasAsync(
+            request.HttpContext,
+            service.Resolution.LayerId,
+            rasters,
+            service.Resolution.MergeStrategy,
+            request.SoapNamespace,
+            maskedFields,
+            cancellationToken).ConfigureAwait(false);
+        if (extras.Error is not null)
+        {
+            return extras.Error;
+        }
 
         var result = new XElement(
             "Result",
             new XAttribute(xsi + "type", "tns:ImageServiceInfo"),
             new XElement("Name", serviceId),
             new XElement("Description", $"Image service for {serviceId}"),
-            BuildEnvelope(extent.Value),
+            BuildEnvelope(extent),
             new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
             new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
             new XElement("BandCount", referenceRaster.BandCount),
@@ -367,17 +493,24 @@ internal static class ImageServerSoapEndpoints
             new XElement("MaxNCols", MaxImageDimension),
             new XElement("MaxNRows", MaxImageDimension),
             new XElement("ServiceSourceType", "esriImageServiceSourceTypeMosaicDataset"),
-            new XElement("AllowedFields", "OBJECTID,Shape,Name"),
+            new XElement("AllowedFields", string.Join(',', SoapCatalogFieldNames(maskedFields))),
             new XElement("AllowedCompressions", "None"),
-            new XElement("AllowedMosaicMethods", "NorthWest,LockRaster,None"),
+            new XElement("AllowedMosaicMethods", ImageServerMosaicRule.AllowedMosaicMethods),
             new XElement("MaxRecordCount", 1000),
             new XElement("MaxMosaicImageCount", 20),
             new XElement("DefaultCompression", "None"),
             new XElement("DefaultCompressionQuality", 75),
             new XElement("DefaultResamplingMethod", "RSP_BilinearInterpolation"),
-            new XElement("DefaultMosaicMethod", "esriMosaicNorthwest"),
-            new XElement("SupportBSQ", false),
-            new XElement("SupportsTime", false),
+            new XElement(
+                "DefaultMosaicMethod",
+                ImageServerMosaicRule.ToMosaicMethodWireValue(ImageServerMosaicRule.DefaultMosaicMethod)),
+            new XElement("SupportBSQ", referenceRaster.PixelType.ToUpperInvariant() is
+                "8BUI" or "8BSI" or "16BUI" or "16BSI" or "32BUI" or "32BSI" or "32BF" or "64BF"),
+            new XElement("SupportsTime", extras.SupportsTime),
+            extras.StartTimeFieldName,
+            extras.EndTimeFieldName,
+            extras.TimeExtent,
+            extras.Histograms,
             new XElement("MensurationCapabilities", "Basic"),
             new XElement("HasRasterAttributeTable", false),
             new XElement("MinScale", 0),
@@ -406,11 +539,6 @@ internal static class ImageServerSoapEndpoints
                 requestContext.SoapNamespace);
         }
 
-        if (CreateUnsupportedNoDataFault(request, requestContext.SoapNamespace) is { } noDataFault)
-        {
-            return noDataFault;
-        }
-
         var returnType = FindDescendantValue(operation, "ImageReturnType");
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
         var revalidation = await RevalidateRasterPublicationAsync(
@@ -429,6 +557,43 @@ internal static class ImageServerSoapEndpoints
         var referenceRaster = await rasterStore
             .GetPrimaryRasterInfoAsync(current.LayerId, cancellationToken)
             .ConfigureAwait(false);
+        var requireAllBandsValid = false;
+        if (!string.IsNullOrWhiteSpace(request.NoData))
+        {
+            // NoData describes output bands, which can differ from a source's native band count.
+            // Prove the stored sentinel for every possible source, including the empty-extent template.
+            if (!ImageServerExportHandler.TryParseBandIds(request.BandIds, out var selectedBands, out var bandError))
+            {
+                return CreateSoapFault(bandError!, StatusCodes.Status400BadRequest, requestContext.SoapNamespace);
+            }
+
+            var serviceBandCount = referenceRaster?.BandCount ?? 0;
+            if (referenceRaster.HasValue && selectedBands is { Length: > 0 } && selectedBands.Any(band => band > serviceBandCount))
+            {
+                return CreateSoapFault(
+                    "bandIds entries must be within the service band range.",
+                    StatusCodes.Status400BadRequest,
+                    requestContext.SoapNamespace);
+            }
+
+            var outputBandCount = selectedBands is { Length: > 0 } ? selectedBands.Length : serviceBandCount;
+            var rasters = referenceRaster.HasValue && IsStoredNoDataOverride(request, referenceRaster.Value, serviceBandCount, outputBandCount)
+                ? await rasterStore.ListRastersAsync(current.LayerId, cancellationToken).ConfigureAwait(false)
+                : Array.Empty<RasterInfo>();
+            if (rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster, serviceBandCount, outputBandCount)))
+            {
+                return CreateSoapFault(
+                    "SOAP NoData overrides without proven equivalent stored values and masking semantics are not supported by the canonical raster renderer.",
+                    StatusCodes.Status501NotImplemented,
+                    requestContext.SoapNamespace);
+            }
+
+            // The samples' NoData values already match every source. MatchAny still
+            // needs an AND of the canonical per-band validity masks on the BSQ wire.
+            requireAllBandsValid = string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase);
+            request = CopyWithoutNoData(request);
+        }
+
         request = CopyWithResponseFormat(
             request,
             returnMimeData ? "image" : "json",
@@ -439,6 +604,7 @@ internal static class ImageServerSoapEndpoints
             request,
             current.PublicationId!,
             AuthorizationOperation.Export,
+            requireAllBandsValid,
             cancellationToken).ConfigureAwait(false);
 
         if (returnMimeData && exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
@@ -649,6 +815,38 @@ internal static class ImageServerSoapEndpoints
                 StatusCodes.Status501NotImplemented,
                 soapNamespace);
 
+    private static bool IsStoredNoDataOverride(ExportImageRequest request, RasterInfo raster, int serviceBandCount, int outputBandCount)
+    {
+        // Exact equality is intentional: U8 sentinels must be integers in [0, 255].
+        // A tolerance would admit a different stored sentinel before conversion to byte.
+        if ((!string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
+            !string.Equals(request.Format, "bsq", StringComparison.OrdinalIgnoreCase) ||
+            raster.BandCount < 1 || raster.BandCount > serviceBandCount ||
+            !raster.HasUniformNoDataValue ||
+            !raster.NoDataValue.HasValue ||
+            !string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase) ||
+            raster.NoDataValue.Value is < byte.MinValue or > byte.MaxValue ||
+            // codeql[cs/equality-on-floats]: U8 nodata must be an exact integer; a tolerance would admit a different stored byte
+            raster.NoDataValue.Value != Math.Truncate(raster.NoDataValue.Value))
+        {
+            return false;
+        }
+
+        byte[] values;
+        try
+        {
+            values = Convert.FromBase64String(request.NoData!);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        var storedValue = (byte)raster.NoDataValue.Value;
+        return outputBandCount > 0 && values.Length == outputBandCount && values.All(value => value == storedValue);
+    }
+
     /// <summary>
     /// Converts the canonical encoded render into Esri GetImage binary layout: unsigned
     /// 8-bit samples in band-interleaved-by-pixel order followed by a packed validity
@@ -707,6 +905,29 @@ internal static class ImageServerSoapEndpoints
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Reads band ids from a direct <c>BandIDs</c>, <c>BandIds</c>, or <c>BandSelection</c>
+    /// child of <paramref name="description"/>. Nested integers under
+    /// <c>MosaicRule</c> (lock raster ids) are not band ids.
+    /// </summary>
+    internal static string? ReadImageDescriptionBandIds(XElement description)
+    {
+        ArgumentNullException.ThrowIfNull(description);
+        var bandElement = description.Elements()
+            .FirstOrDefault(static element => element.Name.LocalName is "BandIDs" or "BandIds" or "BandSelection");
+        if (bandElement is null)
+        {
+            return null;
+        }
+
+        var ids = bandElement.Descendants()
+            .Where(static element => element.Name.LocalName == "Int")
+            .Select(static element => element.Value.Trim())
+            .Where(static value => value.Length > 0)
+            .ToArray();
+        return ids.Length == 0 ? null : string.Join(",", ids);
     }
 
     private static int ResolveGetImageBandCount(string? bandIds, int serviceBandCount)
@@ -770,7 +991,7 @@ internal static class ImageServerSoapEndpoints
         var format = MapImageFormat(FindDescendantValue(imageType, "ImageFormat"));
         if (format is null)
         {
-            error = "ImageFormat must be PNG, JPG, or TIFF.";
+            error = "ImageFormat must be PNG, JPG, TIFF, or BSQ.";
             return false;
         }
 
@@ -792,17 +1013,34 @@ internal static class ImageServerSoapEndpoints
             Format = format,
             PixelType = NormalizeOptionalValue(FindDescendantValue(description, "PixelType")),
             NoData = NormalizeOptionalValue(FindDescendantValue(description, "NoData")),
+            NoDataInterpretation = NormalizeOptionalValue(FindDescendantValue(description, "NoDataInterpretation"))
+                ?? "esriNoDataMatchAny",
             Interpolation = NormalizeOptionalValue(FindDescendantValue(description, "Interpolation")),
             Compression = NormalizeOptionalValue(FindDescendantValue(description, "Compression")),
             CompressionQuality = TryReadInt(description, "CompressionQuality", out var quality) ? quality : 75,
-            BandIds = string.Join(",", description.Descendants()
-                .Where(static element => element.Name.LocalName == "Int")
-                .Select(static element => element.Value)),
+            BandIds = ReadImageDescriptionBandIds(description),
             MosaicRule = mosaicRule,
             F = "json"
         };
         return true;
     }
+
+    private static ExportImageRequest CopyWithoutNoData(ExportImageRequest request)
+        => new()
+        {
+            Bbox = request.Bbox,
+            Size = request.Size,
+            ImageSr = request.ImageSr,
+            BboxSr = request.BboxSr,
+            Format = request.Format,
+            PixelType = request.PixelType,
+            Interpolation = request.Interpolation,
+            Compression = request.Compression,
+            CompressionQuality = request.CompressionQuality,
+            BandIds = request.BandIds,
+            MosaicRule = request.MosaicRule,
+            F = request.F
+        };
 
     private static ExportImageRequest CopyWithResponseFormat(
         ExportImageRequest request,
@@ -844,6 +1082,9 @@ internal static class ImageServerSoapEndpoints
             return true;
         }
 
+        // SOAP accepts every method the service advertises in AllowedMosaicMethods (#4063), as
+        // either the advertised token or its esriMosaic* enum name, and forwards it to the shared
+        // REST mosaic-rule parser.
         var requested = FindDescendantValue(element, "MosaicMethod");
         var canonical = requested?.Trim() switch
         {
@@ -853,6 +1094,12 @@ internal static class ImageServerSoapEndpoints
                 || value.Equals("esriMosaicNorthwest", StringComparison.OrdinalIgnoreCase) => "esriMosaicNorthwest",
             string value when value.Equals("LockRaster", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("esriMosaicLockRaster", StringComparison.OrdinalIgnoreCase) => "esriMosaicLockRaster",
+            string value when value.Equals("ByAttribute", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) => "esriMosaicAttribute",
+            string value when value.Equals("Nadir", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicNadir", StringComparison.OrdinalIgnoreCase) => "esriMosaicNadir",
+            string value when value.Equals("Seamline", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicSeamline", StringComparison.OrdinalIgnoreCase) => "esriMosaicSeamline",
             _ => null
         };
         if (canonical is null)
@@ -861,9 +1108,51 @@ internal static class ImageServerSoapEndpoints
             return false;
         }
 
+        var mosaicOperation = NormalizeOptionalValue(FindDescendantValue(element, "MosaicOperation"));
+        var where = NormalizeOptionalValue(FindDescendantValue(element, "Where"));
+        var fids = ReadSoapMosaicFids(element);
+
+        if (canonical == "esriMosaicAttribute")
+        {
+            var ascendingValue = NormalizeOptionalValue(FindDescendantValue(element, "Ascending"));
+            bool? ascending = null;
+            if (ascendingValue is not null)
+            {
+                // xsd:boolean lexical space is true, false, 1 and 0.
+                ascending = ascendingValue switch
+                {
+                    "1" => true,
+                    "0" => false,
+                    _ when bool.TryParse(ascendingValue, out var parsedAscending) => parsedAscending,
+                    _ => null
+                };
+                if (ascending is null)
+                {
+                    error = "SOAP ByAttribute mosaic Ascending must be an xsd:boolean (true, false, 1 or 0).";
+                    return false;
+                }
+            }
+
+            serialized = SerializeSoapMosaicRule(
+                canonical,
+                null,
+                NormalizeOptionalValue(FindDescendantValue(element, "SortField")),
+                NormalizeOptionalValue(FindDescendantValue(element, "SortValue")),
+                ascending,
+                mosaicOperation,
+                where,
+                fids);
+            return true;
+        }
+
         if (canonical != "esriMosaicLockRaster")
         {
-            serialized = SerializeSoapMosaicRule(canonical, null);
+            serialized = SerializeSoapMosaicRule(
+                canonical,
+                null,
+                mosaicOperation: mosaicOperation,
+                where: where,
+                fids: fids);
             return true;
         }
 
@@ -883,17 +1172,88 @@ internal static class ImageServerSoapEndpoints
 
         serialized = SerializeSoapMosaicRule(
             canonical,
-            lockIds.Select(static id => id!.Value).ToArray());
+            lockIds.Select(static id => id!.Value).ToArray(),
+            mosaicOperation: mosaicOperation,
+            where: where,
+            fids: fids);
         return true;
     }
 
-    private static string SerializeSoapMosaicRule(string mosaicMethod, long[]? lockRasterIds)
+    private static long[]? ReadSoapMosaicFids(XElement mosaicRule)
+    {
+        var fids = mosaicRule.Descendants()
+            .FirstOrDefault(static candidate => candidate.Name.LocalName is "FIDs" or "Fids" or "fids");
+        if (fids is null)
+        {
+            return null;
+        }
+
+        var parsed = new List<long>();
+        foreach (var candidate in fids.Descendants().Where(static element => element.Name.LocalName == "Int"))
+        {
+            if (!long.TryParse(candidate.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            {
+                return null;
+            }
+
+            parsed.Add(id);
+        }
+
+        return parsed.Count == 0 ? null : parsed.ToArray();
+    }
+
+    private static string SerializeSoapMosaicRule(
+        string mosaicMethod,
+        long[]? lockRasterIds,
+        string? sortField = null,
+        string? sortValue = null,
+        bool? ascending = null,
+        string? mosaicOperation = null,
+        string? where = null,
+        long[]? fids = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
             writer.WriteString("mosaicMethod", mosaicMethod);
+            if (mosaicOperation is not null)
+            {
+                writer.WriteString("mosaicOperation", mosaicOperation);
+            }
+
+            if (where is not null)
+            {
+                writer.WriteString("where", where);
+            }
+
+            if (fids is { Length: > 0 })
+            {
+                writer.WritePropertyName("fids");
+                writer.WriteStartArray();
+                foreach (var fid in fids)
+                {
+                    writer.WriteNumberValue(fid);
+                }
+
+                writer.WriteEndArray();
+            }
+
+            if (sortField is not null)
+            {
+                writer.WriteString("sortField", sortField);
+            }
+
+            if (sortValue is not null)
+            {
+                writer.WriteString("sortValue", sortValue);
+            }
+
+            if (ascending is { } ascendingValue)
+            {
+                writer.WriteBoolean("ascending", ascendingValue);
+            }
+
             if (lockRasterIds is not null)
             {
                 writer.WritePropertyName("lockRasterIds");
@@ -910,7 +1270,32 @@ internal static class ImageServerSoapEndpoints
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static XElement BuildFields()
+    /// <summary>
+    /// SOAP catalog field names: the neutral catalog schema
+    /// (<see cref="ImageServerCatalogFields.Schema"/>) that REST metadata and query
+    /// also project, minus the caller's field masks, with the footprint <c>Shape</c>
+    /// geometry field after the OID, as Esri mosaic catalogs list it.
+    /// GetFields, AllowedFields and QueryRasterCatalog therefore describe one schema.
+    /// </summary>
+    internal static IEnumerable<string> SoapCatalogFieldNames(ImmutableArray<string> maskedFields = default)
+        => SoapCatalogFields(maskedFields).Select(static field => field.Name);
+
+    private static IEnumerable<Field> SoapCatalogFields(ImmutableArray<string> maskedFields)
+    {
+        var catalog = ImageServerCatalogFields.Schema(maskedFields);
+        foreach (var field in catalog.Where(static field => field.Type == "esriFieldTypeOID"))
+        {
+            yield return field;
+        }
+
+        yield return new Field { Name = "Shape", Type = "esriFieldTypeGeometry", Alias = "Shape", Nullable = true };
+        foreach (var field in catalog.Where(static field => field.Type != "esriFieldTypeOID"))
+        {
+            yield return field;
+        }
+    }
+
+    internal static XElement BuildFields(int srid, ImmutableArray<string> maskedFields = default)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return new XElement(
@@ -919,59 +1304,9 @@ internal static class ImageServerSoapEndpoints
             new XElement(
                 "FieldArray",
                 new XAttribute(xsi + "type", "tns:ArrayOfField"),
-                BuildField("OBJECTID", "esriFieldTypeOID", false, 4, required: true),
-                BuildField("Shape", "esriFieldTypeGeometry", true, 0, required: true),
-                BuildField("Name", "esriFieldTypeString", true, 255, required: false)));
-    }
-
-    private static XElement BuildField(
-        string name,
-        string type,
-        bool nullable,
-        int length,
-        bool required)
-    {
-        XNamespace xsi = XmlSchemaInstanceNamespace;
-        var field = new XElement(
-            "Field",
-            new XAttribute(xsi + "type", "tns:Field"),
-            new XElement("Name", name),
-            new XElement("Type", type),
-            new XElement("IsNullable", nullable),
-            new XElement("Length", length),
-            new XElement("Precision", 0),
-            new XElement("Scale", 0),
-            new XElement("Required", required),
-            new XElement("Editable", false));
-
-        if (string.Equals(type, "esriFieldTypeGeometry", StringComparison.Ordinal))
-        {
-            field.Add(
-                new XElement(
-                    "GeometryDef",
-                    new XAttribute(xsi + "type", "tns:GeometryDef"),
-                    new XElement("AvgNumPoints", 0),
-                    new XElement("GeometryType", "esriGeometryPolygon"),
-                    new XElement("HasM", false),
-                    new XElement("HasZ", false)));
-        }
-
-        field.Add(new XElement("AliasName", name), new XElement("ModelName", name));
-        return field;
-    }
-
-    private static XElement BuildKeyProperties()
-    {
-        XNamespace xsi = XmlSchemaInstanceNamespace;
-        return new XElement(
-            "Result",
-            new XAttribute(xsi + "type", "tns:PropertySet"),
-            new XElement(
-                "PropertyArray",
-                new XAttribute(xsi + "type", "tns:ArrayOfPropertySetProperty"),
-                BuildProperty("BandDefinitionKeyword", "NONE", "xsd:string", xsi),
-                BuildProperty("LowCellSize", "0", "xsd:double", xsi),
-                BuildProperty("HighCellSize", "0", "xsd:double", xsi)));
+                SoapCatalogFields(maskedFields).Select(field => BuildCatalogField(
+                    field,
+                    field.Type == "esriFieldTypeGeometry" ? BuildGeometryDef(srid, srid) : null))));
     }
 
     private static XElement? BuildDoubleArray(string name, IEnumerable<double> values)
@@ -987,12 +1322,6 @@ internal static class ImageServerSoapEndpoints
             name,
             new XAttribute(xsi + "type", "tns:ArrayOfDouble"),
             materialized.Select(static value => new XElement("Double", FormatDouble(value))));
-    }
-
-    private static XElement BuildNilResult()
-    {
-        XNamespace xsi = XmlSchemaInstanceNamespace;
-        return new XElement("Result", new XAttribute(xsi + "nil", true));
     }
 
     private static XElement BuildClientExtensionDefinition()
@@ -1089,166 +1418,6 @@ internal static class ImageServerSoapEndpoints
             new XElement("AnyType", new XAttribute(xsi + "type", "xsd:double"), FormatDouble(noData.Value)));
     }
 
-    private static async Task<(XElement? Operation, XNamespace? SoapNamespace, IResult? ErrorResult)> TryReadSoapRequestAsync(
-        HttpContext context)
-    {
-        if (!IsSupportedSoapContentType(context.Request.ContentType))
-        {
-            var requestedSoap = RequestedSoapNamespace(context.Request);
-            return (null, requestedSoap, CreateSoapFault(
-                "Content-Type must be text/xml or application/soap+xml.",
-                StatusCodes.Status415UnsupportedMediaType,
-                requestedSoap));
-        }
-
-        try
-        {
-            using var reader = SoapRequestXml.CreateReader(context.Request.Body, MaxRequestCharacters);
-            var request = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
-            var envelopeNamespace = request.Root?.Name.Namespace;
-            if (request.Root?.Name.LocalName != "Envelope" ||
-                (envelopeNamespace != Soap11EnvelopeNamespace && envelopeNamespace != Soap12EnvelopeNamespace))
-            {
-                var requestedSoap = RequestedSoapNamespace(context.Request);
-                return (null, requestedSoap, CreateSoapFault(
-                    "Unsupported SOAP envelope namespace.",
-                    StatusCodes.Status400BadRequest,
-                    requestedSoap));
-            }
-
-            var requestedSoapNamespace = RequestedSoapNamespace(context.Request);
-            if (envelopeNamespace != requestedSoapNamespace)
-            {
-                return (null, requestedSoapNamespace, CreateSoapFault(
-                    "Content-Type does not match the SOAP envelope version.",
-                    StatusCodes.Status415UnsupportedMediaType,
-                    requestedSoapNamespace));
-            }
-
-            XNamespace soap = envelopeNamespace;
-            var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
-            if (bodies.Length != 1)
-            {
-                return (null, soap, CreateSoapFault(
-                    "SOAP envelope must contain exactly one Body element.",
-                    StatusCodes.Status400BadRequest,
-                    soap));
-            }
-
-            var operations = bodies[0].Elements().Take(2).ToArray();
-            if (operations is not { Length: 1 })
-            {
-                return (null, soap, CreateSoapFault(
-                    "SOAP body must contain exactly one ImageServer operation.",
-                    StatusCodes.Status400BadRequest,
-                    soap));
-            }
-
-            if (!ArcGisSoapNamespaces.IsSupported(operations[0].Name.Namespace))
-            {
-                return (null, soap, CreateSoapFault(
-                    "Unsupported ArcGIS SOAP operation namespace.",
-                    StatusCodes.Status400BadRequest,
-                    soap));
-            }
-
-            return (operations[0], soap, null);
-        }
-        catch (Exception exception) when (exception is XmlException or XmlSchemaValidationException or InvalidOperationException)
-        {
-            var requestedSoap = RequestedSoapNamespace(context.Request);
-            return (null, requestedSoap, CreateSoapFault(
-                SoapRequestXml.GetSafeErrorMessage(exception),
-                StatusCodes.Status400BadRequest,
-                requestedSoap));
-        }
-    }
-
-    private static IResult CreateSoapResponse(
-        XNamespace soap,
-        XNamespace operationNamespace,
-        string responseName,
-        XElement result)
-    {
-        XNamespace xsi = XmlSchemaInstanceNamespace;
-        XNamespace xsd = XmlSchemaNamespace;
-        var response = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
-                new XAttribute(XNamespace.Xmlns + "xsi", xsi.NamespaceName),
-                new XAttribute(XNamespace.Xmlns + "xsd", xsd.NamespaceName),
-                new XAttribute(XNamespace.Xmlns + "tns", operationNamespace.NamespaceName),
-                new XElement(
-                    soap + "Body",
-                    new XElement(operationNamespace + responseName, result))));
-
-        return Results.Content(
-            ArcGisSoapNamespaces.SerializeResponse(response),
-            contentType: SoapContentTypeFor(soap),
-            contentEncoding: Encoding.UTF8);
-    }
-
-    private static IResult CreateSoapFaultFromResult(IResult result, string message, XNamespace soap)
-    {
-        var statusCode = (result as IStatusCodeHttpResult)?.StatusCode
-            ?? StatusCodes.Status500InternalServerError;
-        return CreateSoapFault(message, statusCode, soap);
-    }
-
-    private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
-    {
-        var fault = soap == Soap12EnvelopeNamespace
-            ? new XElement(
-                soap + "Fault",
-                new XElement(
-                    soap + "Code",
-                    new XElement(soap + "Value", statusCode >= 500 ? "soap:Receiver" : "soap:Sender")),
-                new XElement(
-                    soap + "Reason",
-                    new XElement(
-                        soap + "Text",
-                        new XAttribute(XNamespace.Xml + "lang", "en"),
-                        message)))
-            : new XElement(
-                soap + "Fault",
-                new XElement("faultcode", statusCode >= 500 ? "soap:Server" : "soap:Client"),
-                new XElement("faultstring", message));
-        var response = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
-                new XElement(
-                    soap + "Body",
-                    fault)));
-
-        return Results.Content(
-            ArcGisSoapNamespaces.SerializeResponse(response),
-            contentType: SoapContentTypeFor(soap),
-            contentEncoding: Encoding.UTF8,
-            statusCode: statusCode);
-    }
-
-    private static XNamespace RequestedSoapNamespace(HttpRequest request)
-        => string.Equals(
-            request.ContentType?.Split(';', 2)[0].Trim(),
-            "application/soap+xml",
-            StringComparison.OrdinalIgnoreCase)
-            ? Soap12EnvelopeNamespace
-            : Soap11EnvelopeNamespace;
-
-    private static bool IsSupportedSoapContentType(string? contentType)
-    {
-        var mediaType = contentType?.Split(';', 2)[0].Trim();
-        return string.Equals(mediaType, "text/xml", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mediaType, "application/soap+xml", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string SoapContentTypeFor(XNamespace soap)
-        => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;
-
     private static string? FindDescendantValue(XElement? element, string localName)
         => element?.DescendantsAndSelf()
             .FirstOrDefault(candidate => candidate.Name.LocalName == localName)?.Value;
@@ -1277,6 +1446,7 @@ internal static class ImageServerSoapEndpoints
             null or "" or "esriImagePNG" or "esriImagePNG24" or "esriImagePNG32" => "png",
             "esriImageJPG" => "jpg",
             "esriImageTIFF" => "tiff",
+            "esriImageBSQ" => "bsq",
             _ => null
         };
 
@@ -1285,25 +1455,12 @@ internal static class ImageServerSoapEndpoints
         {
             "jpg" or "jpeg" => "esriImageJPG",
             "tif" or "tiff" => "esriImageTIFF",
+            "bsq" => "esriImageBSQ",
             _ => "esriImagePNG"
         };
 
     private static string MapPixelType(string postgisPixelType)
-        => postgisPixelType.ToUpperInvariant() switch
-        {
-            "1BB" => "U1",
-            "2BUI" => "U2",
-            "4BUI" => "U4",
-            "8BUI" => "U8",
-            "8BSI" => "S8",
-            "16BUI" => "U16",
-            "16BSI" => "S16",
-            "32BUI" => "U32",
-            "32BSI" => "S32",
-            "32BF" => "F32",
-            "64BF" => "F64",
-            _ => "U8"
-        };
+        => ImageServerPixelTypes.ToEsriPixelType(postgisPixelType) ?? "U8";
 
     private static string FormatDouble(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);

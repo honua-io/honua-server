@@ -69,6 +69,7 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(MintEmbedTokenRequest))]
 [JsonSerializable(typeof(ConsoleContentItem))]
 [JsonSerializable(typeof(ConsoleSessionContext))]
+[JsonSerializable(typeof(ConsolePersistenceNotice))]
 [JsonSerializable(typeof(ConsoleContentListResponse))]
 [JsonSerializable(typeof(ConsoleActionCheckResponse))]
 [JsonSerializable(typeof(ConsoleProvenanceChainResponse))]

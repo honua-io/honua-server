@@ -11,12 +11,14 @@ namespace Honua.Core.Tests.Features.Licensing;
 /// </summary>
 public sealed class FeatureCatalogTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_ContainsFeatures()
     {
         FeatureCatalog.All.Should().NotBeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_HasUniqueKeys()
     {
@@ -24,6 +26,7 @@ public sealed class FeatureCatalogTests
         keys.Should().OnlyHaveUniqueItems();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_EachFeatureHasRequiredProperties()
     {
@@ -36,6 +39,7 @@ public sealed class FeatureCatalogTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_ContainsAllExpectedCategories()
     {
@@ -59,6 +63,7 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.DisasterRecovery);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("dr.backup-automation")]
     [InlineData("dr.failover")]
@@ -75,6 +80,7 @@ public sealed class FeatureCatalogTests
         feature.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("analytics.clustering")]
     [InlineData("analytics.spatial-join")]
@@ -94,6 +100,7 @@ public sealed class FeatureCatalogTests
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_FeatureStreamingIsProTier()
     {
@@ -104,6 +111,7 @@ public sealed class FeatureCatalogTests
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_RedisDistributedCacheIsProTier()
     {
@@ -114,6 +122,7 @@ public sealed class FeatureCatalogTests
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_RoutingSolveIsProTier()
     {
@@ -124,6 +133,7 @@ public sealed class FeatureCatalogTests
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_FeatureServerEditingIsProTier()
     {
@@ -143,6 +153,7 @@ public sealed class FeatureCatalogTests
         feature.Description.Should().NotContain("gRPC");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_OfflineFieldSyncIsProTier()
     {
@@ -154,8 +165,14 @@ public sealed class FeatureCatalogTests
         feature!.Key.Should().Be("fieldops.offline-sync");
         feature.Category.Should().Be(FeatureCatalog.Categories.FieldOps);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+
+        // #5022: replica delivery produces Esri JSON only (createReplica rejects every
+        // other dataFormat), so the description must not advertise a GeoPackage container.
+        feature.Description.Should().Contain("Esri JSON");
+        feature.Description.Should().NotContain("GeoPackage");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(FeatureCatalog.AiSpecApplyKey, "ai.spec-apply")]
     [InlineData(FeatureCatalog.AiGroundingKey, "ai.grounding")]
@@ -172,6 +189,7 @@ public sealed class FeatureCatalogTests
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_BranchVersioningIsProAndApprovalPolicyIsEnterprise()
     {
@@ -186,6 +204,7 @@ public sealed class FeatureCatalogTests
             .MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_OidcSingleProviderIsProAndGovernanceIsEnterprise()
     {
@@ -210,6 +229,7 @@ public sealed class FeatureCatalogTests
         claimsMapping.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_CommunityFeaturesAreExpected()
     {
@@ -231,6 +251,7 @@ public sealed class FeatureCatalogTests
         ]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_AiGuardrailLadderHasExpectedEditions()
     {
@@ -255,6 +276,7 @@ public sealed class FeatureCatalogTests
         approval.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("temporal.filtering", HonuaEdition.Community)]
     [InlineData("temporal.extent-discovery", HonuaEdition.Community)]
@@ -272,6 +294,7 @@ public sealed class FeatureCatalogTests
         feature.MinimumEdition.Should().Be(expectedEdition);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(HonuaEdition.Community, 0)]
     [InlineData(HonuaEdition.Pro, 1)]
@@ -281,6 +304,7 @@ public sealed class FeatureCatalogTests
         ((int)edition).Should().Be(expectedValue);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void LicenseStatus_DaysUntilExpiry_NullForNoExpiry()
     {
@@ -288,6 +312,7 @@ public sealed class FeatureCatalogTests
         status.DaysUntilExpiry.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void LicenseStatus_DaysUntilExpiry_CalculatedCorrectly()
     {
@@ -298,6 +323,7 @@ public sealed class FeatureCatalogTests
         status.LicensedTo.Should().Be("Test Corp");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void LicenseUploadResult_Success()
     {
@@ -306,6 +332,7 @@ public sealed class FeatureCatalogTests
         result.Message.Should().Be("License applied.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void LicenseUploadResult_Failure()
     {

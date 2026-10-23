@@ -255,6 +255,134 @@ Release evidence:
   stale-index miss returning null, and a late update to an older retry leaving
   the latest operation's package-ID index entry in place.
 
+## Staged Activation and Verified Recovery (#4619)
+
+Derived from [#4619](https://github.com/honua-io/honua-server/issues/4619). The
+additive metadata-release reconciler (`MetadataReleaseReconciler`) never edits
+the active graph in place. Its stages are:
+
+1. **Preflight** — `MetadataReleaseChangePolicy` rejects, before any write,
+   destructive forward operations (`metadata-release-destructive-change`),
+   non-nullable adds (`metadata-release-non-nullable-add`), inverses that drop
+   anything the release does not add (`metadata-release-inverse-not-owned`), and
+   a data-populate workload whose declared `dataPopulateFields` are empty or
+   include anything other than the new nullable fields
+   (`metadata-release-etl-unproven-compensation`). The compatibility gate and the
+   snapshot-required refusal then run as before.
+2. **Backup** — captures the active revision and its ETag
+   (`priorRevision`, `priorEtag`). Only a retained Metadata v2 revision can be a
+   base; a synthesized compatibility or empty graph is refused
+   (`metadata-release-prior-not-retained`).
+3. **ScriptMigration** — prepares the candidate from the immutable prior revision,
+   validates it, and stages it with `IMetadataV2GraphRevisionStager.StageAsync`: a
+   retained revision that does not move `metadata_v2_current` and has no sidecar
+   rows, so canonical readers stay on the prior revision. The operation records
+   `candidateRevision`, `candidateEtag`, and `ownedOperations` (only the fields
+   this release actually added).
+4. **ServicePublication** — the qualified additive ETL runs, still before activation.
+5. **Smoke** — `MetadataReleaseSmokeChecker` exercises the candidate revision
+   explicitly: schema expectation, publication and storage binding, rendering
+   references that resolve in the prior revision (display and editor-tracking
+   fields, styles), identical `IAccessPolicyEvaluator` decisions for anonymous,
+   authenticated and every referenced role (read and write), and a canonical query
+   through `FeatureProviderQueryRouter` bound to the candidate snapshot.
+6. **MetadataApply** — `ActivateRevisionAsync(candidate, priorEtag)` moves the
+   pointer and publishes the candidate's sidecars in one transaction. A newer
+   revision is reported as `MetadataV2GraphConcurrencyException` and never
+   overwritten: the change is rebased onto it, re-staged and re-smoked (up to
+   three times, recorded in `rebaseCount` and `warnings`), or rejected
+   (`metadata-release-activation-conflict`, or the preparation blocker when the
+   concurrent update conflicts with the owned field).
+7. **SloWatch** — a post-activation smoke on the live revision (`smoke` evidence);
+   a failure requests rollback.
+
+A failure before activation (preparation, ETL, candidate smoke) discards the
+staged candidate and fails the operation with the live catalog unchanged.
+
+Rollback restores only the operation-owned change. While the candidate is still
+current it reactivates the prior revision; otherwise it removes only
+`ownedOperations` on top of the live revision with an ETag-conditional save, so
+later updates to other services survive (`metadata-release-owned-field-modified`
+if someone changed an owned field since). It never touches physical data or
+committed feature edits. The recovered live revision is smoke-checked
+(`smoke-recovered` evidence) before the operation reports `RolledBack`; a failed
+verification ends in `ManualInterventionRequired`
+(`metadata-release-recovery-unverified`).
+
+Every stage is idempotent against the persisted record. A crash after the pointer
+move resumes as an already-active activation; a crash after staging leaves an
+inert retained revision that never becomes current; a crash mid-rollback resumes
+to the same verified result. Activation also checks the recorded candidate ETag,
+so a reused revision number can never activate another writer's snapshot.
+
+Release evidence:
+
+- `PostgresMetadataV2GraphStoreFreshDbTests.StageAsync_KeepsReadersOnCurrent_AndActivationNeverOverwritesANewerRevision`
+  proves the staging, typed-conflict, discard and rebased-activation semantics on
+  PostgreSQL.
+- `MetadataReleaseReconcilerTests` drives the real reconciler, activator, script
+  executor, preflight gate and smoke checker through preparation failure, ETL and
+  candidate-smoke failure, post-activation regression, rollback after an unrelated
+  update and committed edits, concurrent updates to a different service, ETag
+  conflicts (compatible, incompatible and persistent), crash/resume at staging,
+  activation and rollback, and physical data preservation.
+- The installed fault/recovery proof against a release candidate belongs to the
+  release gate, not the per-PR gate.
+
+### Installed fault/recovery qualification
+
+`python3 scripts/qualification/metadata-release-installed.py --manifest /path/to/platform-manifest.yaml --output /tmp/metadata-release-proof`
+
+Run from the repository root with Docker access and the manifest's digest-pinned
+server image already pulled. The harness checks its OCI digest and source label,
+starts isolated PostGIS and persistent Redis containers, and boots that installed
+image with its own migrations. It never builds the server from checkout. It uses
+the existing CNG point fixture and independently specified expected names,
+populations, six longitude/latitude pairs, and EPSG:4326. SQL seeds and observes
+only the isolated fixture; release submission and concurrent service-policy
+updates use the admin API, and functional checks use the public FeatureServer.
+
+Test-owned Redis leases pause the **real polling worker** between durable stages;
+the harness never writes an operation record or replaces a runtime component.
+A SIGKILL/restart with the candidate staged must preserve the operation and leave
+the prior graph active. The existing non-production fault injection fails only
+the post-activation smoke. Recovery must restore the schema, retain the independently
+specified committed population edit (`1000000 + 7`), and pass query/coordinate and
+authorization checks. A concurrent update before activation must force an ETag
+rebase; another service update after activation must survive owned-only rollback.
+Missing-resource preparation, undeclared-compensation ETL, and an operator-cancelled
+durable preparation job must fail without exposing a partial catalog; discarded
+candidates must be absent from retained snapshots.
+
+The harness exits nonzero on any failed assertion or incomplete cleanup. Its
+`receipt.json` includes the source/digest, manifest and harness SHA-256 hashes,
+durable operation records, functional assertions, and server-log hash. Keep the
+receipt and `server.log` together as release evidence. These are installed runtime
+proofs, separate from the seven negative controls in
+`python3 -m unittest discover -s scripts/qualification -p test_metadata_release_installed.py`.
+
+The 2026-09-12 qualification compares the current release manifest with the
+proposed re-pin in [honua-release#342](https://github.com/honua-io/honua-release/pull/342).
+The current pin `7ba422672e0c751843b17beb36e954a019cc19fb` predates #4663 and
+fails the prior-capture/staging invariant; it cannot qualify the 2026.1 safe rollout
+promise. Evidence for the proposed `9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd`
+image passed all five installed scenarios. Its positive receipt does not certify
+the older pin. Both [receipts and compressed logs](../../../../tests/baselines/metadata-release-installed/2026-09-12/)
+are retained with exact input hashes; the current pin advanced the live graph
+from revision 3 to 4 and exposed `owner_email` during preparation while its
+operation still had no captured prior revision. Re-run against the accepted manifest when
+the release owner advances the candidate.
+
+The 2026-09-15 qualification ran the unchanged harness against the accepted re-pin from
+[honua-release#349](https://github.com/honua-io/honua-release/pull/349): server
+`548b7a5263da5a3f2381eb43f232687cdf92b0bf`, OCI digest
+`sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`, manifest
+SHA-256 `02c076be536514622c32a411e492f18413f257e9d4ff3d04c353dea591b89709`. All five
+installed scenarios passed: the operation captured prior revision 3 and its ETag while the
+live graph stayed on revision 3 without `owner_email` until activation of candidate
+revision 4. Its [receipt and compressed log](../../../../tests/baselines/metadata-release-installed/2026-09-15/)
+qualify the accepted 2026.1 candidate; the 2026-09-12 receipts remain as history.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:

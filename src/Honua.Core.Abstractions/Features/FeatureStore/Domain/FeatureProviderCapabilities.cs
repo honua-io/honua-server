@@ -39,10 +39,20 @@ public sealed record FeatureProviderCapabilities
     public FeatureProviderOutputCapabilities Outputs { get; init; } = FeatureProviderOutputCapabilities.FormattedFallback;
 
     /// <summary>
+    /// Gets whether the provider applies a layer's request-scoped read policy: the row-level
+    /// security predicate and the field masks resolved for the caller. Defaults to
+    /// <see langword="false"/>; a provider that does not advertise this refuses reads of a
+    /// layer such a policy applies to, and policy administration rejects policies that
+    /// target its layers.
+    /// </summary>
+    public bool SupportsReadPolicyEnforcement { get; init; }
+
+    /// <summary>
     /// Capabilities for a read-write PostGIS-style provider.
     /// </summary>
     public static FeatureProviderCapabilities ReadWritePostgis { get; } = new()
     {
+        SupportsReadPolicyEnforcement = true,
         Edits = FeatureProviderEditCapabilities.ReadWrite,
         Outputs = new FeatureProviderOutputCapabilities
         {

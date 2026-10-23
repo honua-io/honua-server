@@ -1,0 +1,66 @@
+{
+  "kind": "customer-install-review-validation",
+  "pullRequest": 4574,
+  "observedAt": "2026-09-08T18:41:27.451645+00:00",
+  "documentRevision": "b0022db17d19d235eb64cbe10d010d248c6b1fe5",
+  "environment": "Ubuntu 24.04 / Python 3.12 / Docker Desktop Linux engine 29.6.2; native Windows PowerShell 5.1 syntax checks",
+  "serverImage": "ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9",
+  "clients": {
+    "honua-admin": "0.1.8",
+    "honua-sdk": "0.1.11",
+    "mcp": "2.1.1"
+  },
+  "runtime": {
+    "project": "adj4574-c3426fbae8",
+    "exitCode": 0,
+    "freshVolumes": true,
+    "existingPublishedClientVenv": true,
+    "authenticatedSdkReadiness": true,
+    "failureBeforeIngestReusesConnection": true,
+    "failureBeforePublicationReusesConnection": true,
+    "exactlyOneWindowsLocalConnectionAfterRetries": true,
+    "twoFeaturesValuesCoordinatesAndCrsVerified": true,
+    "restartReadback": true,
+    "databaseAndFileStorageRestoreReadback": true,
+    "postBackupOrdinaryHiddenNestedAndSymlinkEntriesRemoved": true,
+    "snapshotContentAndOwnershipRestored": true,
+    "symlinkTargetOutsideStorageUntouched": true,
+    "publishedNativeGrpcHttp2SettingsReceived": true,
+    "scopedTeardown": true,
+    "logSha256": "24899a65eaea842c906befd0ee5709b152953e1a0cad0f4bab801b3230e06dc1"
+  },
+  "checks": {
+    "nativePowerShell51BlocksParsed": 27,
+    "composeVersionCases": [
+      "2.23.0 rejected",
+      "2.23.1 accepted",
+      "v2.23.1-desktop.1 accepted",
+      "5.3.1 accepted"
+    ],
+    "bashBlocksParsed": 10,
+    "embeddedPythonScriptsParsed": 13,
+    "allFourComposeReadinessAndJourneyExamplesIdentical": true,
+    "sdkReadinessCases": [
+      "connect error then success",
+      "503 then success",
+      "429 then success",
+      "401 immediate failure",
+      "403 immediate failure",
+      "deadline failure"
+    ],
+    "composeLoopbackGrpcPortsRendered": [
+      18081,
+      28741
+    ],
+    "datastorePortsRemainUnpublished": true,
+    "documentationLinksAndAnchorsPassed": true,
+    "linkCheckerTestsPassed": 24,
+    "exampleSurfaceGateAndTestsPassed": true
+  },
+  "limitations": [
+    "Runtime replay used Linux and an existing pinned-client virtual environment, not a clean Windows machine.",
+    "PowerShell validation parsed the examples and evaluated version checks; it did not replay the Windows installation.",
+    "The native gRPC test negotiated HTTP/2 through the published loopback port; public TLS/proxy and full gRPC SDK qualification require the deployment host.",
+    "No .NET project or workflow changed; no .NET build or actionlint run was required."
+  ]
+}

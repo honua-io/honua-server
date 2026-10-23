@@ -33,6 +33,7 @@ public class ValidatedServiceBaseTests
         public string Value { get; set; } = "default";
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateRequired_WithValidValue_ReturnsValue()
     {
@@ -46,6 +47,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal(testValue, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateRequired_WithNullValue_ThrowsArgumentNullException()
     {
@@ -57,6 +59,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("testValue", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateRequired_WithNullableStruct_ValidValue_ReturnsValue()
     {
@@ -70,6 +73,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal(42, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateRequired_WithNullableStruct_NullValue_ThrowsArgumentNullException()
     {
@@ -81,6 +85,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("testValue", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateOptions_WithValidOptions_ReturnsValue()
     {
@@ -96,6 +101,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("test", result.Value);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateOptions_WithNullOptions_ThrowsArgumentNullException()
     {
@@ -107,6 +113,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("options", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateOptions_WithNullOptionsValue_ThrowsArgumentNullException()
     {
@@ -118,6 +125,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("optionsWrapper.Value", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateCollectionNotEmpty_WithValidCollection_ReturnsCollection()
     {
@@ -131,6 +139,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal(collection, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateCollectionNotEmpty_WithNullCollection_ThrowsArgumentNullException()
     {
@@ -142,6 +151,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("collection", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateCollectionNotEmpty_WithEmptyCollection_ThrowsArgumentException()
     {
@@ -154,6 +164,7 @@ public class ValidatedServiceBaseTests
         Assert.Contains("cannot be empty", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateNotEmpty_WithValidString_ReturnsString()
     {
@@ -167,6 +178,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal(testValue, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateNotEmpty_WithNullString_ThrowsArgumentNullException()
     {
@@ -178,6 +190,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("testValue", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateNotEmpty_WithEmptyString_ThrowsArgumentException()
     {
@@ -190,6 +203,7 @@ public class ValidatedServiceBaseTests
         Assert.Contains("cannot be empty or whitespace", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateNotEmpty_WithWhitespaceString_ThrowsArgumentException()
     {
@@ -202,6 +216,7 @@ public class ValidatedServiceBaseTests
         Assert.Contains("cannot be empty or whitespace", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidationBuilder_FluentValidation_WorksCorrectly()
     {
@@ -220,6 +235,7 @@ public class ValidatedServiceBaseTests
             .That(str.Length > 0, new InvalidOperationException("Custom exception"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidationBuilder_WithFailingCondition_ThrowsExpectedException()
     {
@@ -231,6 +247,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("Custom exception", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidationBuilder_WithFailingConditionAndMessage_ThrowsArgumentException()
     {
@@ -243,6 +260,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("paramName", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TestService_WithValidParameters_ConstructsSuccessfully()
     {
@@ -260,6 +278,7 @@ public class ValidatedServiceBaseTests
         Assert.Equal("test", service.TestOptions.Value);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TestService_WithNullParameter_ThrowsArgumentNullException()
     {

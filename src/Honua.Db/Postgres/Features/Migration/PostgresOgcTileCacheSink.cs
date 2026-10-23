@@ -144,6 +144,90 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
         return OgcTileCacheWriteStatus.AlreadyPresent;
     }
 
+    /// <inheritdoc />
+    public async Task<OgcTileCacheWriteStatus> ReplaceTileAsync(
+        OgcTileCacheRecord record,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = lease.Connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO honua.tile_cache_entries (
+                tile_cache_id,
+                zoom_level,
+                tile_column,
+                tile_row,
+                content_type,
+                content,
+                source_url)
+            VALUES (
+                @tile_cache_id,
+                @zoom_level,
+                @tile_column,
+                @tile_row,
+                @content_type,
+                @content,
+                @source_url)
+            ON CONFLICT (tile_cache_id, zoom_level, tile_column, tile_row) DO UPDATE SET
+                content_type = EXCLUDED.content_type,
+                content = EXCLUDED.content,
+                source_url = EXCLUDED.source_url
+            RETURNING (xmax = 0) AS inserted;
+            """;
+        cmd.Parameters.AddWithValue("tile_cache_id", record.TileCacheId);
+        cmd.Parameters.AddWithValue("zoom_level", record.Z);
+        cmd.Parameters.AddWithValue("tile_column", record.X);
+        cmd.Parameters.AddWithValue("tile_row", record.Y);
+        cmd.Parameters.AddWithValue("content_type", record.ContentType);
+        cmd.Parameters.Add("content", NpgsqlDbType.Bytea).Value = record.Content;
+        cmd.Parameters.AddWithValue("source_url", record.SourceUrl);
+
+        var inserted = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return inserted is true
+            ? OgcTileCacheWriteStatus.Inserted
+            : OgcTileCacheWriteStatus.Replaced;
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteTilesExceptAsync(
+        string tileCacheId,
+        IReadOnlyList<OgcTileCoordinate> retained,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tileCacheId);
+        ArgumentNullException.ThrowIfNull(retained);
+
+        var zs = new int[retained.Count];
+        var xs = new int[retained.Count];
+        var ys = new int[retained.Count];
+        for (var i = 0; i < retained.Count; i++)
+        {
+            zs[i] = retained[i].Z;
+            xs[i] = retained[i].X;
+            ys[i] = retained[i].Y;
+        }
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = lease.Connection.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM honua.tile_cache_entries AS existing
+            WHERE existing.tile_cache_id = @tile_cache_id
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM unnest(@zs, @xs, @ys) AS kept(z, x, y)
+                  WHERE existing.zoom_level = kept.z
+                    AND existing.tile_column = kept.x
+                    AND existing.tile_row = kept.y);
+            """;
+        cmd.Parameters.AddWithValue("tile_cache_id", tileCacheId);
+        cmd.Parameters.Add("zs", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = zs;
+        cmd.Parameters.Add("xs", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = xs;
+        cmd.Parameters.Add("ys", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = ys;
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Build a deterministic tile-cache identifier from the descriptor. The
     /// identifier collapses long URLs and identifiers to a short fingerprint

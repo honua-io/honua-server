@@ -44,6 +44,27 @@ public static class MetadataV2SpatialExtensions
     }
 
     /// <summary>
+    /// Returns whether the resource carries geometry at all.
+    /// </summary>
+    /// <remarks>
+    /// A resource can declare geometry two independent ways: through the typed
+    /// <see cref="MetadataV2ResourceSpatial.GeometryType"/> slot, or through a
+    /// <see cref="MetadataV2FieldType.Geometry"/> / <see cref="MetadataV2FieldType.Geography"/>
+    /// schema field. Both are legal — <see cref="MetadataV2Resource.Spatial"/> is nullable, so a
+    /// graph compiled from a source that carries a geometry column but no declared layer geometry
+    /// type leaves the slot unset — which is why a spatial predicate that reads only one of them
+    /// misclassifies half the catalog as attribute-only. WFS 2.0, WMTS, the raster renderers and
+    /// the GeoServices related-records path already OR the two; this is that predicate, named once
+    /// so the export writers cannot drift away from it again (honua-server#4666).
+    /// </remarks>
+    public static bool HasGeometry(this MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return resource.ReadGeometryType() != MetadataV2GeometryType.None
+            || resource.FindPrimaryGeometryField() is not null;
+    }
+
+    /// <summary>
     /// Returns the field configured as the resource's primary geometry column.
     /// Resolution order: (1) explicit <see cref="MetadataV2ResourceSpatial.PrimaryGeometryField"/>;
     /// (2) the first schema field carrying the <c>geometry.primary</c> semantic role;

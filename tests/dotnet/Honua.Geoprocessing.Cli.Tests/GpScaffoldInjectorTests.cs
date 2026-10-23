@@ -12,6 +12,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// scaffolded process REGISTERED in one command (GP Devkit P4, issue #2125). All pure
 /// string transforms against representative source snippets.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpScaffoldInjectorTests
 {
     private static string LeadingWhitespace(string line) =>

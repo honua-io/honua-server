@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
@@ -12,11 +13,13 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
 public sealed class OgcServiceMigrationScannerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_Wfs20Capabilities_ProducesFeatureInventory()
     {
@@ -51,6 +54,30 @@ public sealed class OgcServiceMigrationScannerTests
                 record.TargetKind == "feature-layer");
     }
 
+    [UnitTest]
+    public async Task ScanSourceAsync_BasicCredentials_AreSentOnCapabilitiesAndDescribe()
+    {
+        var handler = new RecordingAuthHandler();
+        using var httpClient = new HttpClient(handler);
+        var scanner = CreateScanner(httpClient, CreateCrsRegistry());
+        var expected = Convert.ToBase64String(Encoding.ASCII.GetBytes("u:p"));
+
+        var artifact = await scanner.ScanSourceAsync(new OgcServiceScanRequest
+        {
+            ServiceType = "WFS",
+            ServiceUrl = "https://example.com/geoserver/wfs",
+            Version = "2.0.0",
+            TimeoutSeconds = 10,
+            Username = "u",
+            Password = "p"
+        });
+
+        artifact.ScanCompleteness.Status.Should().Be("complete");
+        handler.Authorizations.Should().NotBeEmpty();
+        handler.Authorizations.Should().OnlyContain(value => value == "Basic " + expected);
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_CapabilitiesFailure_ReturnsSanitizedFailureArtifact()
     {
@@ -76,6 +103,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().NotContain(value => value.Contains("secret", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_ServiceUrlWithSecretQuery_RedactsArtifactUrls()
     {
@@ -98,6 +126,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().OnlyContain(address => address == null || !address.Contains("super-secret", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_ServiceUrlWithRoutingQuery_PreservesSafeDependencyAddress()
     {
@@ -119,6 +148,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().OnlyContain(address => address == null || !address.Contains("super-secret", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_DescribeFeatureTypeFailure_UsesSanitizedManualReviewWarning()
     {
@@ -147,6 +177,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().NotContain(value => value.Contains("secret", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WmsCapabilities_ReportsRenderOnlyUnsupportedResource()
     {
@@ -184,6 +215,7 @@ public sealed class OgcServiceMigrationScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WmtsCapabilities_ReportsTileOnlyUnsupportedResourceAndTileMatrixSet()
     {
@@ -224,6 +256,7 @@ public sealed class OgcServiceMigrationScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WcsCapabilitiesAndDescribeCoverage_ProducesCoverageInventory()
     {
@@ -255,6 +288,7 @@ public sealed class OgcServiceMigrationScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.Assisted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WcsDescribeCoverageFailure_LeavesAccessConstraintsEmptyAndFlagsManualReview()
     {
@@ -283,6 +317,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().Be(OgcCoverageMigrationCompatibilityCodes.OutputFormatMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_OgcApiCoveragesCollections_UsesOnlyCoverageOutputLinksForFormats()
     {
@@ -321,6 +356,24 @@ public sealed class OgcServiceMigrationScannerTests
         registry.Setup(item => item.ResolveBySridAsync(4326, It.IsAny<CancellationToken>()))
             .Returns(new ValueTask<CrsDefinition?>((CrsDefinition?)null));
         return registry;
+    }
+
+    private sealed class RecordingAuthHandler : HttpMessageHandler
+    {
+        public List<string> Authorizations { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Authorizations.Add(request.Headers.Authorization?.ToString() ?? string.Empty);
+            var query = request.RequestUri?.Query ?? string.Empty;
+            var payload = query.Contains("DescribeFeatureType", StringComparison.OrdinalIgnoreCase)
+                ? WfsSchema
+                : WfsCapabilities;
+            return Task.FromResult<HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload)
+            });
+        }
     }
 
     private sealed class OgcFixtureHandler : HttpMessageHandler

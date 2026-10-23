@@ -4,7 +4,7 @@
  * Validates that the attempt/record pairing correctly detects unmatched
  * attempts when multiple tests target the same CERT or extension ID.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EvidenceCollector } from './evidence';
 
 function createIsolatedCollector(protocol: string): EvidenceCollector {
@@ -12,6 +12,23 @@ function createIsolatedCollector(protocol: string): EvidenceCollector {
 }
 
 describe('EvidenceCollector', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('unfiltered WFS retrieval extension cannot supply core query filtering credit', () => {
+    const collector = createIsolatedCollector('wfs');
+    collector.attemptExtension('JS-EXT-OL-WFS-GETFEATURE-01');
+    collector.recordExtension('JS-EXT-OL-WFS-GETFEATURE-01', 'pass', { notes: 'Unfiltered GetFeature parsed' });
+    const envelope = collector.build();
+    expect(envelope.extensions.find(row => row.test_case_id === 'JS-EXT-OL-WFS-GETFEATURE-01')?.status).toBe('pass');
+    expect(envelope.results.find(row => row.test_case_id === 'CERT-QFLT-01')?.status).toBe('skip');
+  });
+
+  it('binds Docker observations to the supplied server source rather than the harness checkout', () => {
+    const source = '1234567890abcdef1234567890abcdef12345678';
+    vi.stubEnv('GITHUB_SHA', source);
+    expect(createIsolatedCollector('ogc-features').build().server_version).toBe(source);
+  });
+
   // -----------------------------------------------------------------------
   // Core CERT: pending-attempt guard
   // -----------------------------------------------------------------------

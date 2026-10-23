@@ -78,9 +78,22 @@ public sealed record JobExecutionResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
+    /// Whether a failed execution may consume the remaining retry budget.
+    /// Deterministic capability or input failures set this to false.
+    /// </summary>
+    public bool IsRetryable { get; init; } = true;
+
+    /// <summary>
     /// Warnings collected during execution.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// Whether successful execution completed by committing sink effects. A later
+    /// operator cancellation cannot undo this completion. Finalization also requires
+    /// a durable committed-effect receipt before honouring this indication.
+    /// </summary>
+    public bool CompletedWithCommittedEffects { get; init; }
 
     /// <summary>
     /// Creates a successful result.
@@ -144,6 +157,33 @@ public interface IJobExecutionContext
     Task PublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Publishes an artifact and reports whether the execution fence accepted it.
+    /// Durable contexts must return false when ownership, attempt identity, or
+    /// cancellation rejects publication. Lease-free contexts accept completed writes.
+    /// </summary>
+    async Task<bool> TryPublishArtifactAsync(
+        string artifactReference,
+        CancellationToken cancellationToken = default)
+    {
+        await PublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Records a receipt for a sink transaction that has already committed. Durable
+    /// contexts preserve this evidence after operator cancellation, while retaining
+    /// worker ownership and attempt fences. Rejection must be surfaced to the executor.
+    /// Use an independent cleanup token after commit rather than the cancelled job token.
+    /// </summary>
+    async Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
+    {
+        if (!await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The execution fence rejected a committed-effect receipt.");
+        }
+    }
 
     /// <summary>
     /// Verifies that the worker still owns the active execution attempt before an

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Schema name="zones" id="zones">
+	<SimpleField name="zone_id" type="int"></SimpleField>
+	<SimpleField name="zone_name" type="string"></SimpleField>
+</Schema>
+<Folder><name>zones</name>
+  <Placemark id="zones.1">
+	<Style><LineStyle><color>ff0000ff</color></LineStyle><PolyStyle><fill>0</fill></PolyStyle></Style>
+	<ExtendedData><SchemaData schemaUrl="#zones">
+		<SimpleData name="zone_id">7</SimpleData>
+		<SimpleData name="zone_name">outer-with-hole</SimpleData>
+	</SchemaData></ExtendedData>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>-122.5,37.7 -122.3,37.7 -122.3,37.9 -122.5,37.9 -122.5,37.7</coordinates></LinearRing></outerBoundaryIs><innerBoundaryIs><LinearRing><coordinates>-122.45,37.75 -122.35,37.75 -122.35,37.85 -122.45,37.85 -122.45,37.75</coordinates></LinearRing></innerBoundaryIs></Polygon>
+  </Placemark>
+</Folder>
+</Document></kml>

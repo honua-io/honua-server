@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Security;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
 
@@ -25,6 +26,8 @@ namespace Honua.Infrastructure.Models;
 /// </remarks>
 internal static class StandardErrorResponseFormatter
 {
+    internal const string WfsRequestVersionItemKey = "Honua.Wfs.RequestVersion";
+
     /// <summary>
     /// Optional OData error formatter. When set, requests classified as OData
     /// (<see cref="ProtocolRequestClassifier.IsOData"/>) are formatted via the
@@ -60,6 +63,13 @@ internal static class StandardErrorResponseFormatter
 
         TryRecordRecentError(context, errorResponse);
         var result = FormatProtocolError(context, errorResponse, options);
+        if (errorResponse.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden)
+        {
+            // Apply after protocol formatting so AdditionalHeaders cannot make an
+            // authentication error cacheable, including GeoServices HTTP 200 errors.
+            AuthenticationResponseCachePolicy.PreventStorage(context);
+        }
+
         // The envelope's logical error code can differ from the transport status
         // (GeoServices errors are HTTP 200). Observe the selected result, including
         // protocol aliases, instead of inferring transport semantics from the path.
@@ -173,9 +183,14 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatWfsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        var exceptionCode = string.IsNullOrWhiteSpace(options.WfsExceptionCode)
-            ? MapWfsCode(errorResponse)
-            : options.WfsExceptionCode;
+        // Authentication/authorization failures use the AccessDenied code the WFS handler
+        // emits for its own access checks, so a rejected credential (missing, invalid or
+        // expired token) is recognisable whichever layer refused it.
+        var exceptionCode = !string.IsNullOrWhiteSpace(options.WfsExceptionCode)
+            ? options.WfsExceptionCode
+            : IsAuthenticationFailure(errorResponse)
+                ? AccessDeniedExceptionCode
+                : MapWfsCode(errorResponse);
         var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
             ? string.Empty
             : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
@@ -183,11 +198,13 @@ internal static class StandardErrorResponseFormatter
         // PA-076: Select the version-appropriate exception envelope based on the VERSION query parameter.
         // WFS 1.0.0 → ogc:ServiceExceptionReport; WFS 1.1.0 → OWS 1.0 ows:ExceptionReport;
         // WFS 2.0.0 / absent → OWS 1.1 ows:ExceptionReport (current default, language required).
-        var wfsVersion = context.Request.Query.TryGetValue("VERSION", out var versionValue)
-            ? versionValue.ToString()
-            : context.Request.Query.TryGetValue("version", out var versionLowerValue)
-                ? versionLowerValue.ToString()
-                : null;
+        var wfsVersion = context.Items.TryGetValue(WfsRequestVersionItemKey, out var parsedVersion)
+            ? parsedVersion as string
+            : context.Request.Query.TryGetValue("VERSION", out var versionValue)
+                ? versionValue.ToString()
+                : context.Request.Query.TryGetValue("version", out var versionLowerValue)
+                    ? versionLowerValue.ToString()
+                    : null;
 
         string xmlContent;
         if (string.Equals(wfsVersion, "1.0.0", StringComparison.Ordinal))
@@ -267,9 +284,13 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatWmtsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        var exceptionCode = string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
-            ? MapWfsCode(errorResponse)
-            : options.WmtsExceptionCode;
+        // Middleware and resource-policy refusals retain a typed auth code,
+        // just as WFS does; explicit protocol codes still take precedence.
+        var exceptionCode = !string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
+            ? options.WmtsExceptionCode
+            : IsAuthenticationFailure(errorResponse)
+                ? AccessDeniedExceptionCode
+                : MapWfsCode(errorResponse);
         var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
             ? string.Empty
             : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
@@ -295,11 +316,24 @@ internal static class StandardErrorResponseFormatter
     /// <summary>
     /// Formats infrastructure errors on WMS alias paths (/ogc/services/{id}/wms,
     /// /rest/services/{id}/MapServer/wms) as a WMS ServiceExceptionReport with HTTP 200,
-    /// matching the WMS 1.3.0 § 7.3.3.4 requirement.
+    /// matching the WMS 1.3.0 § 7.3.3.4 requirement. Authentication and authorization
+    /// failures without an explicit protocol code are the exception: they reproduce the WMS
+    /// handler's own AccessDenied response (HTTP 401/403, WMS 1.1.1 DTD or 1.3.0 envelope
+    /// and media type per the request), so an invalid or expired token rejected by
+    /// middleware is indistinguishable from the handler's missing-credential refusal.
     /// </summary>
     private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
+        if (string.IsNullOrWhiteSpace(options.WmsExceptionCode) && IsAuthenticationFailure(errorResponse))
+        {
+            return WmsServiceExceptionReport.CreateXmlResult(
+                context,
+                AccessDeniedExceptionCode,
+                BuildDetailWithExtras(errorResponse, options),
+                errorResponse.StatusCode);
+        }
+
         var exceptionCode = string.IsNullOrWhiteSpace(options.WmsExceptionCode)
             ? MapWmsAliasCode(errorResponse)
             : options.WmsExceptionCode;
@@ -320,7 +354,7 @@ internal static class StandardErrorResponseFormatter
         return errorResponse.StatusCode switch
         {
             StatusCodes.Status404NotFound => "LayerNotDefined",
-            StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden => "InvalidParameterValue",
+            StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden => AccessDeniedExceptionCode,
             StatusCodes.Status413PayloadTooLarge => "NoApplicableCode",
             StatusCodes.Status400BadRequest => "InvalidParameterValue",
             _ => "NoApplicableCode"
@@ -368,12 +402,26 @@ internal static class StandardErrorResponseFormatter
 
         AddResponseHeaders(context, options);
 
-        // PA-070/PA-117: Esri GeoServices REST spec: ALL responses (including errors) use HTTP 200 OK.
-        // The error is signalled exclusively through the JSON body {"error":{"code":N,...}}.
+        // #4980: the envelope usually travels as HTTP 200, which the output cache would otherwise
+        // store like a success. Mark it so the shared base policy refuses storage without parsing
+        // the body; policies that deliberately cache a deterministic refusal read the code back.
+        BypassOutputCacheOnErrorEnvelopePolicy.MarkErrorEnvelope(context, bodyCode);
+
+        // Honua normally carries GeoServices errors in an HTTP 200 ArcGIS envelope.
+        // QGIS's FeatureServer edit provider treats a 200 response without edit results as
+        // success, even when it contains error.code=403. Explicitly registered mutation
+        // endpoints therefore retain the envelope and also expose authorization denial in
+        // the transport. Missing/invalid token challenges (498/499) are unchanged.
+        var forbiddenUsesHttpStatus = errorResponse.StatusCode == StatusCodes.Status403Forbidden &&
+            bodyCode == StatusCodes.Status403Forbidden &&
+            context.GetEndpoint()?.Metadata.GetMetadata<GeoServicesForbiddenHttpStatusMetadata>() is not null;
+
         return Results.Json(
             apiErrorResponse,
             LimitsEnforcementJsonContext.Default.ApiErrorResponse,
-            statusCode: StatusCodes.Status200OK);
+            statusCode: options.GeoServicesUseHttpStatus || forbiddenUsesHttpStatus
+                ? errorResponse.StatusCode
+                : StatusCodes.Status200OK);
     }
 
     /// <summary>
@@ -475,6 +523,11 @@ internal static class StandardErrorResponseFormatter
 
         return detailParts.Count > 0 ? string.Join(" ", detailParts) : errorResponse.Title;
     }
+
+    private const string AccessDeniedExceptionCode = "AccessDenied";
+
+    private static bool IsAuthenticationFailure(StandardErrorResponse errorResponse)
+        => errorResponse.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden;
 
     private static string MapWfsCode(StandardErrorResponse errorResponse)
     {
@@ -641,16 +694,39 @@ internal static class StandardErrorResponseFormatter
             return "unknown";
         }
 
-        // Use the last segment as the operation only when it is purely alphabetic
-        // (Esri operations like query/addFeatures/applyEdits/exportImage). Numeric
-        // or mixed segments are identifiers (layer/feature ids) and would explode
-        // metric cardinality, so they collapse to "unknown".
+        // Closed set: the last segment is caller-controlled (service and layer names), so only
+        // known operation terminals become labels; everything else collapses to "unknown".
         var last = segments[^1];
-        if (last.Any(ch => !char.IsLetter(ch)))
-        {
-            return "unknown";
-        }
-
-        return last.ToLowerInvariant();
+        return GeoServicesOperations.Contains(last) ? last.ToLowerInvariant() : "unknown";
     }
+
+    /// <summary>
+    /// Fixed GeoServices REST operation terminals across Feature/Map/Image/GP/NA/Geocode/
+    /// VectorTile servers that are safe to emit as the bounded <c>operation</c> metric label.
+    /// </summary>
+    private static readonly HashSet<string> GeoServicesOperations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // FeatureServer / layer
+        "query", "queryTopFeatures", "queryDateBins", "queryBins", "queryRelatedRecords",
+        "queryAttachments", "queryDomains", "queryContingentValues", "queryAnalytic",
+        "addFeatures", "updateFeatures", "deleteFeatures", "applyEdits", "calculate", "append",
+        "validateSQL", "generateRenderer", "addAttachment", "updateAttachment", "deleteAttachments",
+        "createReplica", "synchronizeReplica", "unRegisterReplica", "extractChanges",
+        "uploadAssets", "queryAssets", "cleanupAssets", "hasAssets",
+
+        // MapServer
+        "export", "identify", "find", "legend", "queryLegends", "generateKml", "exportTiles",
+        "estimateExportTilesSize", "htmlPopup", "dynamicLayer", "allLayersAndTables", "tilemap",
+
+        // ImageServer
+        "exportImage", "getSamples", "measure", "computeHistograms", "computeStatisticsHistograms",
+        "computeClassStatistics", "computePixelLocation", "computeTiePoints", "calculateVolume",
+        "queryBoundary", "rasterAttributeTable", "keyProperties", "rasterFunctionInfos",
+        "multidimensionalInfo", "imageSupportData", "histograms", "statistics", "download",
+
+        // GPServer / NAServer / GeocodeServer / generic
+        "submitJob", "execute", "cancel", "solve", "solveClosestFacility", "solveServiceArea",
+        "findAddressCandidates", "geocodeAddresses", "reverseGeocode", "suggest",
+        "generate", "generateToken",
+    };
 }

@@ -1,0 +1,41 @@
+ Network honua-aot-geoparquet-smoke-4930_cng-network Creating 
+ Network honua-aot-geoparquet-smoke-4930_cng-network Created 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Creating 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Creating 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Created 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Created 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Starting 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Starting 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Started 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Started 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Running 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Running 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Creating 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Created 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Waiting 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Waiting 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Healthy 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Healthy 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Starting 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Started 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Stopping 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Stopped 
+psql:/tmp/cng-seed.sql:20: NOTICE:  extension "postgis" already exists, skipping
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Running 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Running 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Waiting 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Waiting 
+ Container honua-aot-geoparquet-smoke-4930-postgres-1 Healthy 
+ Container honua-aot-geoparquet-smoke-4930-redis-1 Healthy 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Starting 
+ Container honua-aot-geoparquet-smoke-4930-honua-server-1 Started 
+image=ghcr.io/honua-io/honua-server@sha256:ec8d7915ca72ef3a8d4ffb4719f7711496f5046f538acf7e4fc2d7e6e2d028aa
+revision=886206527cc97bad1bbaa5fa6358910ebc45e9c0
+architecture=amd64
+GET /rest/services/cng/FeatureServer/1000/query?where=1=1&outFields=*&f=parquet
+HTTP 200
+bytes 4947
+head PAR1
+tail PAR1
+AOT GeoParquet smoke passed: 4947 bytes of GeoParquet from ghcr.io/honua-io/honua-server@sha256:ec8d7915ca72ef3a8d4ffb4719f7711496f5046f538acf7e4fc2d7e6e2d028aa
+exit=0

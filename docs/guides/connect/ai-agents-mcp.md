@@ -1,150 +1,212 @@
+---
+type: guide
+title: "Connect AI agents to Honua over MCP"
+description: "Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol."
+resource: "honua://capability/ai.mcp-discovery"
+resources:
+  - "honua://capability/ai.agent-operations"
+  - "honua://capability/ai.approval-workflows"
+  - "honua://capability/operations.proposals"
+---
 # Connect AI agents to Honua over MCP
 
-Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
+Honua's agent endpoint is `POST /mcp`: JSON-RPC 2.0 over Streamable HTTP, MCP protocol revision `2025-03-26`. Any MCP-capable agent connects to it and gets the same tools, the same authorization checks, and the same approval rules as every other protocol. An agent can discover the catalog, query features, plan and run geoprocessing, observe operational health, compose Studio drafts, and *propose* control-plane changes. It never approves its own proposals, and no feature-edit tool is ever advertised.
 
-Layer discovery, layer descriptions, feature pages, and counts use the shared
-REST resource-access gate, including service/layer policies and per-operation
-grants. Discovery and schema descriptions require metadata access; feature queries
-and descriptions that include a row count additionally require query access.
-Discovery filters inaccessible layers before calculating pagination totals.
+Which tool calls an agent may make is an edition boundary: reading is Community, changing anything is Pro, and organisational approval policy is Enterprise. See [What an agent can do in each edition](agent-capabilities-and-editions.md).
 
-For operations work, MCP is the agent seat in the same control loop that Console `/operate` uses. See [Operating Honua](../operate/README.md) for the observe -> diagnose -> propose -> approve model, the autonomy ladder, and the current line between shipped MCP observability tools and in-progress platform-ops tools.
+**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md))
+and an authenticated identity for tool calls ([authentication](../secure/authentication.md)).
+An empty server is enough to connect an agent and configure services and layers.
+A [published layer](../publish/publish-layers.md) is needed when the requested task
+queries data. Before the server exists, an installation agent uses the authorized
+host's deployment tools; it connects to MCP after startup. Start with the
+[GIS workflow-language guide](../workflows/use-workflow-language.md) for the full
+setup, administration, operations, and realtime-map journeys.
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). Tool calls require an authenticated identity — see [authentication](../secure/authentication.md).
+The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Authentication accepts `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`); when both are present, the bearer token is evaluated first.
 
-The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches), MCP protocol revision `2025-03-26`. The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant.
+Layer references also require tenant-visible publications and shared resource access for the requested operation. Entity resolution and grounding rank only readable publications and omit services without readable publications or service metadata access. A layer-specific grant preserves the layer candidate while service candidates require service metadata access. `honua_render_map` checks every requested layer before invoking the renderer; layer-specific style operations use the same checked resolver. Rendering checks query access, catalog and layer discovery check metadata access, and applying a style preset checks administrative resource access in addition to its operation authorization.
 
-Authentication supports both legacy `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`).
-When both are present, bearer tokens are evaluated first for this route.
+## Connect a client
 
-Applying a catalog style with `honua_apply_style_preset` requires admin write
-access in addition to the published-service publish grant. It uses the
-`style.apply-preset` operation and honors operator approval and
-`Operations:Policy` rules before changing the layer. An approval-required result
-has `approvalRequired: true`; when a durable proposal is created, use its returned
-`proposalId` and resource URI to track approval. Only a completed application
-returns `applied: true`. Set `dryRun: true` to validate without changing the
-layer; a completed preview returns `dryRun: true` and `applied: false`.
-Approval plans identify the service, layer, and preset and preserve preview
-intent when replayed after approval. The proposal also pins the selected publication,
-resource and storage binding; replay refuses a rebound target and requires a new
-approval request.
-If the binding commits but metadata reconciliation fails, the result keeps
-`applied: true` and includes a `warning`; re-apply the preset to retry that
-reconciliation. Policy rules receive the active license tier on both MCP and
-REST operation submissions.
+**Claude Code.** Add the server to the project's `.mcp.json`:
 
-## Two MCP surfaces: data-access (open) vs. operator (proprietary)
+```json
+{
+  "mcpServers": {
+    "honua": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": { "X-API-Key": "${HONUA_API_KEY}" }
+    }
+  }
+}
+```
 
-There are two distinct MCP surfaces in the Honua platform, and it is easy to
-conflate them. This page documents the **open** one. The boundary between them is
-**evidence vs. intelligence** (ADR-0066), which is also the open-core licensing
-line (ADR-0024).
+**Agent API key.** In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
 
-| | **This repo — MCP data-access surface** | **`honua-devops` — operator surface** |
-|---|---|---|
-| Dispatcher | `McpDataAccessSurface` in `honua-server` | operator agent in `honua-devops` (private) |
-| Transport | HTTP `POST /mcp` (Streamable HTTP), authenticated | MCP stdio (`--mcp`) |
-| Roster | ~27 studio/data-access tools (query, render, style, geocode/route, plan/execute, authoring/packaging) + **8 bounded, read-only ops-*evidence* tools** | ~35 operator-*intelligence* tools |
-| What it does | Serves geospatial data-access and studio workflows, and reads bounded operational **evidence**; at most it *proposes* a control-plane action that a human approves in the Console inbox (ADR-0062) | Reasons over that evidence and acts: diagnose, tune, upgrade planning with rollback gates, GitOps rollout, remediation planning. Consumes this repo's evidence tools via its `honua_observe_diagnose_propose` day-2 loop |
-| Licensing | Open-core (ELv2); included in Community (ADR-0024) | Private/proprietary; **not** part of the open-core runtime promise |
+```json
+{
+  "name": "honua-local-agent",
+  "permissions": ["admin:read", "admin:write", "read:*"],
+  "expiresAt": null
+}
+```
 
-The 8 ops-evidence tools (`honua_ops_health`, `honua_ops_findings`,
-`honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`,
-`honua_deploy_operations`, `honua_supported_operation_kinds`,
-`honua_propose_rollback`) are deliberately public: they expose bounded read-only
-facts and human-gated proposals, not operator reasoning. This repo serves the
-*evidence*; `honua-devops` supplies the *intelligence* that acts on it. Nothing
-named "operator surface" ships in this repo.
+`admin:read` and `admin:write` cover the administrative tools; `read:*` grants data reads (`honua_list_layers`, `honua_query_features`, `honua_render_map`, catalog grounding) across every service. Name the data authority explicitly: a key without a full-admin grant is scope-governed, and `admin:read` alone cannot read any layer — resource access then requires a matching `read:` grant and is otherwise denied, so `tools/call honua_list_layers` returns an empty list. For a read-only agent use `["admin:read", "read:*"]`; to confine data reads, replace `read:*` with `read:{service}`, `read:{service}/*` or `read:{service}/{layer}` grants. Access policies, field masks and row-level filters still apply. See the [grant grammar](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
 
-## Steps
+**Claude Desktop** launches MCP servers over stdio, so it reaches a deployment through the `honua-mcp-proxy` bridge shipped in `@honua/mcp-server`. The configuration is in [Drive Studio from Claude Desktop](../../studio/drive-from-claude-desktop.md).
 
-1. Confirm the endpoint answers:
+**Any other client** that speaks the MCP HTTP transport works the same way: send credentials as the `X-API-Key` header (or your deployment's bearer token) on every request. The initialize handshake is the standard one:
 
-   Connect an MCP client to the Streamable HTTP endpoint at `/mcp`. The client performs the initialize handshake; the equivalent protocol payload is:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "clientInfo": { "name": "honua-docs", "version": "1" }
+  }
+}
+```
 
-   ```json
-   {
-     "jsonrpc": "2.0",
-     "id": 1,
-     "method": "initialize",
-     "params": {
-       "protocolVersion": "2025-03-26",
-       "capabilities": {},
-       "clientInfo": { "name": "honua-docs", "version": "1" }
-     }
-   }
-   ```
-
-2. Register the server with your MCP client. For Claude Code, add to the project's `.mcp.json`:
-
-   ```json
-   {
-     "mcpServers": {
-       "honua": {
-         "type": "http",
-         "url": "http://localhost:8080/mcp",
-         "headers": { "X-API-Key": "${HONUA_API_KEY}" }
-       }
-     }
-   }
-   ```
-
-   Any client that speaks the MCP HTTP transport works the same way; send credentials as the `X-API-Key` header (or your deployment's bearer token) on every request.
-
-3. Ask the agent to list tools and start with the safe ones — everything in the planning family is read-only:
-
-   - `honua_ground_candidates` / `honua_clarify_intent` — turn a natural-language goal into a drafted intent with candidate datasets and processes
-   - `honua_plan_analysis` — draft an executable plan from an intent. It replays deterministic fixtures (responses are flagged `engine: "fixture"`); the server performs no model inference of its own (ADR-0076), so compiling an arbitrary intent into plan steps is your client agent's job — then confirm it with `honua_validate_plan`.
-   - `honua_validate_plan` — static validation: returns `isExecutable`, `requiresApproval`, violations, and warnings
-   - `honua_dry_run_plan` — estimates duration, artifacts, and side effects without executing
-   - `honua_validate_package` / `honua_preview_package` — review a map/app package before execute or publish
-
-4. Execute and manage jobs once a plan validates:
-
-   - `honua_execute_plan` — submits the plan (supports an `idempotencyKey`); returns a `jobId` and a `honua://jobs/{jobId}` resource URI
-   - `honua_cancel_job` — requests cancellation by `jobId`
-
-5. Read results through resources (`resources/read`):
-
-   - `honua://catalog/processes` — the process catalog the planner can draw from
-   - `honua://jobs/{jobId}` — live job status, phase, and percent complete
-   - `honua://jobs/{jobId}/results` — the result package for a terminal job
-   - `honua://jobs/{jobId}/report` — a structured analysis report for the same job
-   - `honua://workspaces/{workspaceId}` — workspace lifecycle for job outputs
-
-   Postgres-backed deployments also advertise the durable promotion catalog:
-   `honua://published-services`, `honua://deployments`, `honua://map-packages`, and
-   `honua://app-packages` (plus their item resources). Storeless or non-Postgres
-   hosts omit these resources unless they register canonical durable stores.
-
-6. For operational observability, use the read-only ops tools:
-
-   - `honua_ops_health` and `honua://ops/health` - current operational posture.
-   - `honua_ops_findings` and `honua://ops/findings` - deterministic findings and recommended actions where real executors exist.
-   - `honua_alert_events` - Preview customer GIS alert events and ops notifications. Customer alerting requires explicit opt-in for 2026.1; the shared ops notification feed does not imply a GA alert-delivery commitment.
-   - `honua_operate_events` - fused Operate timeline events.
-
-   Mutating control-plane requests use schema-closed tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Approval resolves through the Console inbox; MCP does not approve its own proposals or accept opaque execution payloads.
-
-7. Compose a Studio draft — the same server-resident lifecycle draft the Studio UI observes (AD-8: composition state IS the draft; the browser is a projection). Every mutating call is optimistic-concurrency checked: pass the `generation` last returned by `honua_studio_get_draft` / `honua_studio_create_draft`, and a stale value returns `failed_precondition` — re-fetch and retry rather than resubmitting blindly.
-
-   - `honua_studio_create_draft` / `honua_studio_get_draft` / `honua_studio_update_draft` — draft lifecycle (create, read, generation-checked whole-envelope update), delegating to the same canonical Studio package lifecycle service the REST admin surface uses (`docs/internal/admin-api/studio-package-lifecycle.md`).
-   - `honua_studio_validate_draft` / `honua_studio_preview_draft` — genuinely read-only: they call the pure Studio validator directly and do NOT persist a validation summary or advance the draft's generation (unlike the REST admin `POST .../validate` / `POST .../preview-plan` endpoints), so calling them between composition-mutation calls never invalidates the generation you are about to submit.
-   - `honua_studio_add_layer` / `honua_studio_remove_layer` / `honua_studio_set_layer_style` / `honua_studio_set_layer_visibility` / `honua_studio_set_view` / `honua_studio_add_widget` / `honua_studio_remove_widget` — bounded composition mutations for `map`/`app`-family drafts, taxonomy-aligned with the honua-sdk-js agent-tools vocabulary (`addLayer`, `setViewport`). Each patches the draft's composition body and pushes it through the same generation-checked update path. `honua_studio_set_layer_visibility` is the persisted counterpart of the ADR-0030 `setVisibility` action verb: `visible` is part of the stored composition wire shape, so a client-local table-of-contents toggle is overwritten by the next draft sync unless it is written through this tool.
-   - `honua_studio_bind_interaction` / `honua_studio_remove_interaction` — declarative event→action wiring between the draft's components (geospatial-mcp ADR-0030, opt-in `composition` conformance profile; Honua is the reference implementation of the standard's `bind_interaction`/`remove_interaction`). A binding is `{ id, on: {ref, event}, do: {ref, verb, args} }` over closed sets: events `featureSelect`/`featureHover` (layers), `selection` (widgets), `change` (controls), `viewportChange` (map); verbs `setFilter`, `setViewport`, `selectFeature`, `runWidgetQuery`, `setVisibility`. Bindings are data, never code — `args` is static JSON plus `$event.` path substitution, with no expression language — and actions never emit events, so bindings cannot cascade. Binding an existing `id` replaces it; removing an unknown `id` is an error, not a no-op. The server rejects bindings whose `on.ref`/`do.ref` does not resolve to a component declared in the same document — including a `control:{id}` reference, which resolves against the draft's `controls` collection (add the control first with `honua_studio_add_control`) — and rejects a ninth binding on any one `(on.ref, on.event)` source.
-   - `honua_studio_add_control` / `honua_studio_remove_control` — the draft's `controls` collection (geospatial-mcp ADR-0031, same opt-in `composition` profile; Honua is the reference implementation of the standard's `add_control`/`remove_control`). A control is `{ id, kind, title?, sourceId?, config? }` — an input affordance the user operates, and the thing a `control:{id}` interaction reference resolves against. Controls are a peer collection to layers and widgets rather than a widget kind, and they are chrome rather than `layout` grid items. `kind` is a closed set: `navigation`, `scale`, `fullscreen`, `geolocate`, `search`, `measure`, `timeSlider`, `filterSelect`, `filterSlider`, `filterDateRange`, `bookmarks`, `opacity`, `attribution`, `basemapSwitcher` — deliberately with no feature-editing draw kind, because source-record mutation stays behind the governed `edit_features` boundary (ADR-0028). Adding an existing `id` replaces that control; removing an unknown `id` is an error, not a no-op. Removing a control an interaction still references fails unless you pass `cascadeInteractions: true`, which removes those bindings with it — a document never silently retains a dangling `control:` binding.
-   - `honua_studio_propose_publication` — records publish/share/embed **intent only** on the draft for human review. There is no publish/share/embed execution tool on the agent surface, in any profile, by design: exposure-widening actions are always a human-confirmed step taken through the Studio UI or REST admin surface, never the agent tool surface.
-
-   These tools authorize against a distinct operator-grant family (`OperatorResourceType.StudioDraft`, informally "studio-compose") from the package-review/authoring tools above, so an operator can scope Studio composition access independently once end-user (non-admin) authorization lands (honua-server#3001). The default posture mirrors the REST Studio lifecycle surface: `admin` bypasses as usual; non-admin principals need an explicit grant. All seventeen tools are advertised unconditionally (like `honua_create_map_package`/`honua_publish_service`): each resolves the Studio persistence service per call rather than at registration time, so a host that never composed Studio persistence still lists the tools but fails calls with a structured, retryable `unavailable` error instead of silently omitting them from `tools/list`.
-
-## Verify
+### Verify
 
 Run `POST /mcp` with `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`.
 
-The response lists the nine `honua_*` tools above with JSON Schema input definitions. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
+The response lists the `honua_*` tools this deployment advertises, with JSON Schema input definitions. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
 Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
+
+## What the tools do
+
+### Plan, validate, and run geoprocessing
+
+Start with the safe ones; everything in the planning family is read-only:
+
+- `honua_ground_candidates` / `honua_clarify_intent` — turn a natural-language goal into a drafted intent with candidate datasets and processes.
+- `honua_plan_analysis` — draft an executable plan from an intent. It replays deterministic fixtures (responses are flagged `engine: "fixture"`); the server performs no model inference of its own, so compiling an arbitrary intent into plan steps is your client agent's job. Confirm the result with `honua_validate_plan`.
+- `honua_validate_plan` — static validation: returns `isExecutable`, `requiresApproval`, violations, and warnings.
+- `honua_dry_run_plan` — estimates duration, artifacts, and side effects without executing.
+- `honua_validate_package` / `honua_preview_package` — review a map/app package before execute or publish.
+
+Once a plan validates:
+
+- `honua_execute_plan` — submits the plan (supports an `idempotencyKey`); returns a `jobId` and a `honua://jobs/{jobId}` resource URI.
+- `honua_cancel_job` — requests cancellation by `jobId`.
+- `honua_diagnose_job` — read-only diagnosis of a job you can read: `observed` facts (status, timestamps, heartbeat, structured failure, release identity, artifacts) kept apart from `inferred` explanations (canonical phase, liveness verdict, failure classification, recovery, retry disposition), with `evidence.missing` and `evidence.truncated` listed. A returned diagnosis is never proof the job succeeded; read `observed.status`.
+- `honua_job_evidence` — the bounded evidence behind a diagnosis: sanitized steps, the most recent events (`events`, maximum 500) and artifact availability, with no inferred layer. Both tools read the same projection as `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](../query-analyze/gp-job-diagnostics.md).
+
+A worked example that runs one buffer through OGC API Processes, MCP, and the JavaScript SDK is in [Geoprocessing with AI](../query-analyze/geoprocessing-with-ai.md).
+
+### Read results through resources
+
+`resources/read` serves:
+
+- `honua://catalog/processes` — the process catalog the planner can draw from.
+- `honua://jobs/{jobId}` — live job status, phase, and percent complete.
+- `honua://jobs/{jobId}/results` — the result package for a terminal job.
+- `honua://jobs/{jobId}/report` — a structured analysis report for the same job.
+- `honua://workspaces/{workspaceId}` — workspace lifecycle for job outputs.
+- The exact rendered-artifact URI returned by `honua_render_map` — normally `/temp/{fileId}`, or the configured temporary-file base URL. The stable discovery alias `honua://temporary-files/{fileId}` addresses the same artifact. Reads preserve the temporary store's owner and expiry checks and return the original bytes as a base64 `blob` with their MIME type.
+
+Postgres-backed deployments also advertise the durable promotion catalog: `honua://published-services`, `honua://deployments`, `honua://map-packages`, and `honua://app-packages` (plus their item resources). Storeless or non-Postgres hosts omit these resources unless they register canonical durable stores. The published-services resource also reads ordinary table publications from the persisted metadata catalog. Use the exact URI returned by the publishing tool or completed operation status. A service can remain readable as metadata while stopped; check `serving` before treating it as available for requests. Catalog reads retain tenant and service/layer access checks.
+
+> `honua://capability/<key>` is **not** one of these. It is an Open Knowledge Format document identity used by the published docs bundle, not an MCP resource; a `resources/read` on one returns `not_found`. Resolve it by opening the matching page under `okf/capabilities/` instead.
+
+### Observe operations and propose changes
+
+Read-only ops tools give an agent the same operational posture a human sees in Console:
+
+- `honua_ops_health` and `honua://ops/health` — current operational posture.
+- `honua_ops_findings` and `honua://ops/findings` — deterministic findings and recommended actions where real executors exist.
+- `honua_alert_events` — Preview customer GIS alert events and ops notifications. Customer alerting requires explicit opt-in for 2026.1.
+- `honua_operate_events` — fused Operate timeline events.
+- `honua_supported_operation_kinds` — the live catalog of operation classes that can actually be routed.
+
+Mutating control-plane requests use schema-closed proposal tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Each creates a proposal and returns its id; a separate authorized principal approves it in the Console inbox or with the Admin CLI. MCP does not approve its own proposals and does not accept opaque execution payloads. The full observe → diagnose → propose → approve loop is in [Operating Honua](../operate/README.md).
+
+To upgrade the platform, an agent reads `honua_platform_release_status` and `GET /api/v1/admin/deploy/preflight`, then calls `honua_propose_platform_release_convergence` with an optional `targetVersion` (for example `2026.1-rc.3`; `honua-` and `v` prefixes and a `.0` patch are normalized). If the server's declared release differs, the tool returns `outcome: "rejected"` with `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned` instead of a proposal; a tenant-bound key still gets `platform_admin_required` first. After a separate principal approves, `honua_propose_rollback` is the way back. The server never resolves a version to an image: version-to-digest resolution lives in the signed release lock, which the provisioning executor writes into `ControlPlane__PlatformRelease__*`. See [Agent-driven upgrade over MCP](../deploy/upgrade-and-rollback.md#agent-driven-upgrade-over-mcp).
+
+### Apply a catalog style
+
+`honua_apply_style_preset` applies a catalog style to a layer. It requires admin write access in addition to the published-service publish grant, uses the `style.apply-preset` operation, and honors operator approval and `Operations:Policy` rules (see [Operation policy in Production](#operation-policy-in-production)) before changing the layer. An approval-required result has `approvalRequired: true`; when a durable proposal is created, use its returned `proposalId` and resource URI to track approval. Only a completed application returns `applied: true`. Set `dryRun: true` to validate without changing the layer; a completed preview returns `dryRun: true` and `applied: false`. Approval plans pin the service, layer, preset, publication, resource and storage binding; replay refuses a rebound target and requires a new approval request. If the binding commits but metadata reconciliation fails, the result keeps `applied: true` with a `warning`; re-apply the preset to retry.
+
+Every completed result, including a dry run, carries the `style.apply-preset` operation handle in the same shape as `honua_publish_service`: `status`, `operationId`, `operationInstanceId` (also as `handleId`), `correlationId` and `auditId`, with `createdAt`, `updatedAt`, `authorizationOutcome` and `policyOutcome`. Use these to join the style change to its audit record.
+
+### Render the applied style
+
+`honua_render_map` draws each layer with the style currently applied to it: the primary catalog style that `honua_apply_style_preset` (or the OGC API - Styles surface) bound. A layer with no applied catalog style draws with its stored default style. Each entry in the result's `layers` array reports what was drawn:
+
+| `styleRendering` | Meaning |
+| --- | --- |
+| `applied` | The applied style was drawn; `styleId` names it. |
+| `default` | No catalog style is applied; the layer's stored default style was drawn and `styleId` is `null`. |
+| `unsupported-style-construct` | The applied style contains constructs the server rasterizer cannot draw. `unsupportedStyleConstructs` lists them. The drawable parts of the style still render, and the stored default style is never substituted. |
+
+The server rasterizes MapLibre `circle`, `line` and `fill` style layers with `filter`, `minzoom`/`maxzoom` and data-driven expressions. It honours these properties:
+
+- `circle`: `circle-radius`, `circle-color`, `circle-opacity`, `circle-stroke-color`, `circle-stroke-opacity` and `circle-stroke-width`.
+- `line`: `line-color`, `line-width`, `line-opacity`, `line-dasharray`, and the layout properties `line-cap` and `line-join`.
+- `fill`: `fill-color`, `fill-opacity`, `fill-outline-color` and `fill-antialias`.
+- Every type: the layout property `visibility`.
+
+A `circle` draws point geometry, a `line` draws line or polygon outlines, and a `fill` draws polygons. Anything else is reported as an unsupported construct, and `applied` is reported only when every construct was drawn. That includes:
+
+- any other paint or layout property, such as `fill-pattern`, `line-gradient`, `*-translate` or `circle-blur`;
+- a style layer with no paint, which the server draws with its own default symbology;
+- other layer types: `symbol`, `heatmap`, `fill-extrusion`, `raster`, `hillshade` and `background`;
+- a style layer whose type does not draw the layer's geometry;
+- a vector style bound to a raster coverage.
+
+An applied style with no style layers draws nothing for that layer. The caption repeats each layer's style and any unsupported constructs.
+
+`honua_render_map` refuses two kinds of request with `invalid_argument`. One mixes raster coverage layers with vector layers, because the renderer cannot composite them. The other includes two layers that resolve to the same storage layer through different published resources. Render those layers in separate calls.
+
+### Compose Studio drafts
+
+The `honua_studio_*` tools compose the same server-resident draft the Studio UI observes: create, read and update a draft; add and remove layers, widgets, controls and interaction bindings; set styles, visibility and the view; validate and preview; save an immutable version; reopen a version as a new draft; and propose a saved version for governed publication. The tool table is in [Studio MCP tools](../../studio/mcp-tools.md).
+
+Two rules matter when driving them:
+
+- **Draft mutations that accept `generation` are generation-checked.** Pass the latest generation returned by a successful draft read or mutation. A stale value returns `failed_precondition` with the current generation; fetch the draft again and reconcile rather than resubmitting blindly. `honua_studio_validate_draft` and `honua_studio_preview_draft` are read-only and never advance the generation, so calling them between mutations is safe.
+- **Publication is not a canvas mutation.** Save the intended draft with
+  `honua_studio_save_version`; its `versionId` and `contentHash` are nested under
+  `version`. `honua_studio_get_version` can retrieve an existing saved version
+  and returns those fields at the top level. Submit the current saved item,
+  version, hash, route, and visibility to `honua_studio_propose_publication`.
+  An authorized admin receives `Published` and the share URL after completion.
+  Other callers receive `AwaitingApproval` and proposal/operation identities;
+  a separate authorized principal approves, and the agent follows the returned
+  `proposalUri` for the final status and active URL. Do not infer an approval
+  requirement or successful activation from the tool name alone.
+
+These tools authorize against their own operator-grant family (`StudioDraft`), separate from the package-review tools above, so composition access can be scoped independently. The Studio tool inventory is advertised independently of persistence readiness; a host that never composed Studio persistence still lists them but fails calls with a structured, retryable `unavailable` error.
+
+Realtime authoring is the intended design loop. See the
+[composition policy](../../studio/mcp-tools.md#composition-policy) for the current
+Enterprise and override cases that can still gate draft mutations.
+
+### What is never advertised
+
+No feature-edit tool appears in any profile, by design: an agent does not mutate source GIS records through MCP. Editing stays on the human protocol and API workflows described in [Edit features](../edit/edit-features.md).
+
+## Two MCP surfaces
+
+There are two MCP surfaces in the Honua platform, and it is easy to conflate them.
+
+| | **honua-server `/mcp`** | **honua-devops operator agent** |
+|---|---|---|
+| Transport | HTTP `POST /mcp` (Streamable HTTP), authenticated | MCP stdio (`honua-devops --mcp`) |
+| Roster | The data-access, planning, Studio and ops-evidence tools on this page, plus a dynamic `honua_op_*` tool per published operation | Operator-intelligence tools that reason over the evidence and plan diagnosis, tuning, upgrades and remediation |
+| What it does | Serves geospatial data-access and Studio workflows and reads bounded operational evidence; at most it *proposes* a control-plane action a human approves | Consumes this server's evidence tools and acts on them through its own day-2 loop |
+| Licensing | Open-core (ELv2), included in Community | Public source under a proprietary licence; built from source or run as a container, not installed from a package registry |
+
+The eight ops-evidence tools on this page (`honua_ops_health`, `honua_ops_findings`, `honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`, `honua_deploy_operations`, `honua_supported_operation_kinds`, `honua_propose_rollback`) are deliberately public: they expose bounded read-only facts and human-gated proposals, not operator reasoning.
+
+A third, unrelated server exists in the same npm package as the Claude Desktop bridge: the standalone `honua-mcp` binary serves any public ArcGIS or OGC endpoint and needs no Honua deployment. See [the standalone MCP server](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/mcp-server.md).
 
 ## Workflow views (bounded discovery)
 
@@ -154,11 +216,19 @@ Discover the published views with `honua_list_capabilities`; each entry carries 
 
 Select a view three ways, highest precedence first:
 
-1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"setup"}}` (or `params._meta["honua.io/workflow-view"]`).
-2. **Per session** — send `_meta: {"honua.io/workflow-view": "setup"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
+1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"configure"}}` (or `params._meta["honua.io/workflow-view"]`).
+2. **Per session** — send `_meta: {"honua.io/workflow-view": "configure"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
 3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. The default is the server-authored `default` view, capped at 12 meta/workflow tools.
 
-The shipped view is `setup`: the bounded terminal path of readiness → connect/import → publish service and layer → verify access → canonical style and render → bounded geoprocessing → Studio map/dashboard composition and lifecycle → publication submit and status. It is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
+The curated prompts select `configure` or `analyze`, not `setup`. Each view is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
+
+| View | What an admin selects it for |
+|---|---|
+| `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
+| `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
+| `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
+| `setup` | The bounded terminal path (`setup.v3`): readiness, ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Curated prompts select `configure` or `analyze` instead, because those views also carry the admin roster or the analysis path. |
+| `default` | The 12-tool discovery surface. It does not contain the admin roster. |
 
 A view is **discovery, not authority**:
 
@@ -169,74 +239,41 @@ A view is **discovery, not authority**:
 - `resources/read` returns at most 64,000 characters by default. A caller may explicitly request `maxChars` up to the hard ceiling of 1,000,000.
 - Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.
 
-Studio composition and lifecycle members also carry server-owned routing metadata in
-their canonical descriptor. `_meta["honua.studio"]` identifies the
-`honua.studio.composition` family, the `setup` view, and its revision. Terminal
-and SDK clients can therefore route the live family without a hard-coded tool-name
-table; unclassified tools are not implicitly part of that family. The metadata is
-identical in the full catalog and the narrowed view, and remains discovery-only —
-it never widens call-time authorization.
+Studio composition and lifecycle members also carry server-owned routing metadata in their canonical descriptor. `_meta["honua.studio"]` identifies the `honua.studio.composition` family, the `setup` view, and its revision, so terminal and SDK clients can route the live family without a hard-coded tool-name table. The metadata is identical in the full catalog and the narrowed view, and remains discovery-only.
 
 Membership is derived from the live catalog, so an eligible server operation that appears (or disappears) at runtime joins or leaves the view with no client or SDK source-list edit. Runtime-published members are appended after the static ones so a mid-conversation `notifications/tools/list_changed` refresh does not re-sort the `tools` array and invalidate a host's prompt cache.
 
-### Release qualification
+## The canonical tool roster
 
-The descriptor budget and discovery tests establish the server contract. A
-release-certifying terminal-model run must additionally consume the entire
-`setup` view without forcing a specific tool choice, execute real calls in an
-isolated namespace, and verify saved and reopened map/dashboard state. Record
-the view revision, membership and descriptor digests, measured UTF-8 descriptor
-bytes, estimated tokens, candidate image digest, and installed client versions.
-These measurements describe the complete descriptor array, including its JSON
-brackets and separators; the token estimate is the byte count divided by four.
+The server publishes its `/mcp` tool roster as a generated file, [`docs/gis/data/mcp-tool-roster.v1.json`](../../gis/data/mcp-tool-roster.v1.json) (schema: [`mcp-tool-roster.v1.schema.json`](../../gis/data/mcp-tool-roster.v1.schema.json)). It lists:
 
-Run the [terminal-model canary](https://github.com/honua-io/honua-release/blob/trunk/.github/workflows/terminal-model-canary.yml)
-with a green deterministic journey receipt for the same candidate and the
-configured candidate proxy, model, and trusted public signing manifest. Missing
-configuration, skipped calls, a direct provider call, or a receipt for another
-candidate cannot qualify this workflow. The exact-candidate canary remains
-outstanding until that immutable candidate exists and this run passes; local
-discovery tests do not establish model selection or saved-state execution.
+- `static`: the hand-authored `honua_*` tools.
+- `projectedAdmin`: the `honua_admin_*` tools that the default composition publishes. These are the audited Admin projection plus the closed operator roster, minus the audited secret and browser-session exclusions.
+- `requiresDurableControlPlane`: the projected Admin tools that register only when a durable operation-proposal store is configured.
+- `views`: the members of the `default`, `setup`, `configure`, `operate` and `analyze` workflow views.
+- `retired`: tool names the server no longer advertises, such as `honua_propose_operation`.
+
+`serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.
+
+The roster is for build-time parity gates, not for runtime discovery. A running agent still discovers tools with `tools/list` and `honua_list_capabilities`. Downstream catalogs gate on the roster at their pinned server commit instead of keeping their own lists. These include sdk-js MCP certification (`roster-parity`), honua-release `e2e/drivers/mcp/expected-tools.json`, and the geospatial-mcp `index.json` reference tool names. A consumer that names a `retired` tool, or a tool missing from the roster, is stale.
 
 ## Pagination
 
 The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`) are paginated per MCP 2025-03-26: when more entries remain the result carries an opaque `nextCursor`; pass it back as `params.cursor` to fetch the next page. A single-page result omits `nextCursor`. Treat cursors as opaque and echo them verbatim; an invalid or expired cursor returns JSON-RPC `-32602` invalid-params. Large `resources/read` documents (job results, catalogs) are chunked the same way — each page's `text` concatenates per `uri` to rebuild the full document, with `nextCursor` pointing at the next chunk.
 
-## Troubleshoot
-
-- **`unauthenticated` on `tools/call` or `resources/read`** — handshake methods work anonymously but tool calls do not; attach the `X-API-Key` header (or token) to the client config. See [troubleshooting](../deploy/troubleshooting.md).
-- **`permission_denied`** — the identity authenticates but lacks the operator grant for that tool family; grant the relevant operator permission to the calling identity.
-- **`insufficient_scope`** — distinct from `permission_denied`: the identity *is* authorized by grant, but the OAuth bearer token's scopes do not cover the operation (or the token carries no recognized `honua.mcp.*` scope, which is fail-closed). Mint a token whose `scope` claim includes the scope for that operation — see [OAuth scopes](#oauth-21-bearer-tokens-and-scope-mapping). Does not apply to X-API-Key callers.
-- **HTTP 202 with an empty body** — not an error: MCP notifications (`notifications/*` without an `id`) are acknowledged with 202 by design.
-- **`invalid_request` (-32600)** — malformed JSON-RPC envelope; common causes are a missing `id` on a non-notification method or batching the `initialize` call (it must be sent alone).
-- **Agent "succeeds" but reports a tool error** — tool failures are returned inside `result` with `isError: true` and a structured `code` (`invalid_argument`, `not_found`, `failed_precondition`, …) per the MCP error contract; read the embedded message.
-
-A separate read-only discovery/query MCP server (`@honua/mcp-server`, from the `honua-sdk-js` repository) is also available for agents that only need to browse services and query features rather than run operator workflows.
+Binary artifact reads are atomic: the response contains `blob`, not `text`, and has no `nextCursor`. `maxChars` counts base64 characters and uses the same default and hard ceiling as text reads. If the image exceeds the requested budget, retry with the suggested `maxChars` up to 1,000,000, or render a smaller image. Binary reads reject pagination cursors. Only the canonical temporary-file alias and artifact URIs under the configured temporary-file base are supported; arbitrary URLs and filesystem paths are not fetched.
 
 ## OAuth 2.1 bearer tokens and scope mapping
 
-`/mcp` is an OAuth 2.1 resource server: it accepts `Authorization: Bearer` tokens
-validated against your configured OIDC authorities (Entra, Keycloak, Okta, Auth0,
-Google, or a generic provider), and advertises how to discover the authorization
-server through RFC 9728 protected-resource metadata at
-`/.well-known/oauth-protected-resource/mcp`. Honua is never the authorization
-server — your IdP mints the tokens; Honua only validates and consumes them.
+`/mcp` is an OAuth 2.1 resource server: it accepts `Authorization: Bearer` tokens validated against your configured OIDC authorities (Entra, Keycloak, Okta, Auth0, Google, or a generic provider), and advertises how to discover the authorization server through RFC 9728 protected-resource metadata at `/.well-known/oauth-protected-resource/mcp`. Honua is never the authorization server — your IdP mints the tokens; Honua only validates and consumes them.
 
-Authorization is a two-layer intersection. The per-tool **operator grant** model
-(`EnsureCallerAuthorizedAsync`) remains the authority for *what a principal may do*.
-A bearer token's **scopes** then narrow that: a scope can only ever restrict what
-the principal's grants already permit — it can never widen them. So the effective
-authority of a bearer caller is `grants ∩ scopes`.
+Authorization is a two-layer intersection. The per-tool **operator grant** model remains the authority for *what a principal may do*. A bearer token's **scopes** then narrow that: a scope can only ever restrict what the principal's grants already permit — it can never widen them. So the effective authority of a bearer caller is `grants ∩ scopes`.
 
-**This applies only to OAuth bearer tokens.** X-API-Key callers, interactive
-sessions, and the dev-auth bypass are not scope-governed and are unaffected.
+**This applies only to OAuth bearer tokens.** X-API-Key callers, interactive sessions, and the dev-auth bypass are not scope-governed and are unaffected.
 
 ### Scope taxonomy
 
-Scopes are defined at operation granularity across every operator resource type
-(catalog, workspace, process, package, deployment, job, published service). Mint a
-token whose `scope` claim (space-delimited, per RFC 9068; `scp` is also read) lists
-the scopes the agent needs:
+Scopes are defined at operation granularity across every operator resource type (catalog, workspace, process, package, deployment, job, published service). Mint a token whose `scope` claim (space-delimited, per RFC 9068; `scp` is also read) lists the scopes the agent needs:
 
 | Scope | Authorizes |
 |---|---|
@@ -252,85 +289,57 @@ the scopes the agent needs:
 
 The full vocabulary is advertised in the RFC 9728 metadata's `scopes_supported`.
 
-### Studio package lifecycle grants (honua-server#3001)
+### Studio draft grants
 
-The operator-grant model includes a `StudioDraft` resource type — a distinct
-grant family from `Package` — reserved for the Studio draft-lifecycle and
-composition MCP tools tracked in honua-server#3002. Once those tools land and
-the [Studio package lifecycle API](../../internal/admin-api/studio-package-lifecycle.md#authorization)'s
-`Studio:EndUserAuthorization:Enabled` flag is on, non-admin end users hold
-`StudioDraft` grants scoped to their own drafts using the same ownership
-convention as the REST lifecycle API: a role grant with layer `own` authorizes
-every draft/content item the principal owns; a grant scoped to a concrete
-resource id authorizes an operator-provisioned delegate instead. Publish and
-rollback are additionally policy-gated operations that require their own
-`StudioDraft` grant even for the resource's own owner. Admin principals, and
-the OAuth bearer-scope narrowing above (`grants ∩ scopes`), apply unchanged.
+The operator-grant model includes a `StudioDraft` resource type — a distinct grant family from `Package` — for the Studio draft-lifecycle and composition tools. With `Studio:EndUserAuthorization:Enabled` on, non-admin end users hold `StudioDraft` grants scoped to their own drafts using the same ownership convention as the REST lifecycle API: a role grant with layer `own` authorizes every draft/content item the principal owns; a grant scoped to a concrete resource id authorizes an operator-provisioned delegate instead. Publish and rollback are additionally policy-gated operations that require their own `StudioDraft` grant even for the resource's own owner. Admin principals, and the OAuth bearer-scope narrowing above (`grants ∩ scopes`), apply unchanged.
 
-**Fail-closed default.** A bearer token that presents **no recognized `honua.mcp.*`
-scope** authorizes nothing — every tool call returns `insufficient_scope` — even
-when its principal's grants (or `admin` role) would allow the operation. This is
-deliberate: least-privilege delegation is the reason to issue an agent an OAuth
-token rather than a shared API key. To restore full grant-bounded authority
-explicitly, include `honua.mcp.full`.
+**Fail-closed default.** A bearer token that presents **no recognized `honua.mcp.*` scope** authorizes nothing — every tool call returns `insufficient_scope` — even when its principal's grants (or `admin` role) would allow the operation. This is deliberate: least-privilege delegation is the reason to issue an agent an OAuth token rather than a shared API key. To restore full grant-bounded authority explicitly, include `honua.mcp.full`.
 
-**Least-privilege example.** Issue an ops-monitoring agent a token scoped
-`honua.mcp.discover honua.mcp.read`: it can browse the catalog and read job
-results and ops-evidence, but a `tools/call` that submits a geoprocessing plan is
-denied with `insufficient_scope` — without ever touching the principal's grants.
+**Least-privilege example.** Issue an ops-monitoring agent a token scoped `honua.mcp.discover honua.mcp.read`: it can browse the catalog and read job results and ops-evidence, but a `tools/call` that submits a geoprocessing plan is denied with `insufficient_scope` — without ever touching the principal's grants.
+
+## Operation policy in Production
+
+Every typed operation an agent runs, including `honua_apply_style_preset` and the published `honua_admin_*` operation tools, passes through the `Operations:Policy` decision point. A Production install ships a fail-closed policy (`Enabled=true`, `DefaultDecision=Deny`) and appends two built-in rules after any rules you configure:
+
+- callers with the `admin` role (the bootstrap admin, and API keys with `admin`, `*`, `admin:*`, `admin:write`, or `admin:manage` grants) execute directly, with reason `built-in: full administrators execute directly`;
+- callers with the `scoped-admin-key` role (API keys with narrower administrative grants such as `admin:read` or `admin:approve`) execute directly, with reason `built-in: administrative keys execute directly`.
+
+So an agent holding an `admin:write` key can publish without any operator-authored rule, while a `write:*` layer write key or an ordinary scoped key is denied with `No policy rule matched this caller; Production denies by default.` The policy decision does not widen a key's authority: the operation surface still checks the key's grants against each operation's side effect, so an `admin:read` key cannot run a mutating operation. Your own rules are evaluated first, so you can still deny administrators or require approval for them, and `Operations:Policy:BuiltInProductionRules=false` removes the built-ins for a pure fail-closed policy. See [Operation policy](../../reference/configuration/environment-variables.md#operation-policy) for the settings and an example rule.
 
 ## Harden the MCP endpoint (production)
 
-`POST /mcp` issues a session id on `initialize` (returned on the `Mcp-Session-Id`
-header) and validates it on every later request. The defaults below bound host
-memory and bind each session to the caller so a public, anonymous-capable
-endpoint cannot be abused. Options live under the `Mcp` configuration section.
+`POST /mcp` issues a session id on `initialize` (returned on the `Mcp-Session-Id` header) and validates it on every later request. The defaults below bound host memory and bind each session to the caller so a public, anonymous-capable endpoint cannot be abused. Options live under the `Mcp` configuration section.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (progress / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. |
+| `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (progress / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. `initialize` advertises `tools.listChanged` and `resources.listChanged` only when this is on, because that is the only channel that can deliver the notification. `honua_execute_plan` starts its job-store progress poll only when this is on, for the same reason. |
 | `Mcp:SessionIdleTimeout` | `00:30:00` | Sliding idle TTL. Every request (or an opened GET stream) on a session refreshes the window; an untouched session expires and is swept. Expired ids return `404`, so clients re-initialize cleanly. |
 | `Mcp:MaxSessions` | `10000` | Maximum concurrently tracked sessions. Bounds memory on a public endpoint. |
-| `Mcp:SessionEvictionPolicy` | `EvictLeastRecentlyUsed` | What to do at capacity: evict the least-recently-used session, or `RejectNew` (refuse `initialize` with a retryable `unavailable` error and leave live sessions untouched). |
-| `Mcp:StatelessSessionFallback` | `true` | Serve a `POST /mcp` that presents a well-formed but unknown `Mcp-Session-Id` as if it were session-less instead of `404`. Session state is per instance, so this keeps spec-compliant clients working on multi-instance deployments without sticky routing. Set `false` for the strict Streamable-HTTP behavior (`404` so the client re-initializes). Malformed ids always `404`. |
+| `Mcp:MaxAnonymousSessions` | `1000` | Maximum concurrently tracked anonymous sessions, counted inside `Mcp:MaxSessions`. An anonymous `initialize` only ever evicts another anonymous session. An authenticated `initialize` evicts anonymous sessions when the global table is full, and never another principal's session. |
+| `Mcp:MaxSessionsPerPrincipal` | `32` | Maximum sessions one authenticated principal may hold. The session binding already includes the effective tenant. At this quota the eviction policy drops that principal's own least-recently-used session, or `RejectNew` refuses only that principal. A value at or above `Mcp:MaxSessions` is clamped to one below the global cap. |
+| `Mcp:MaxBatchSize` | `50` | Maximum elements in one JSON-RPC batch. A longer batch is answered with a single `invalid_request` error (`id: null`) and none of its elements runs. |
+| `Mcp:MaxRequestBodyBytes` | `10485760` | Maximum `POST /mcp` body size (10 MiB). A larger body is refused with `413 Payload Too Large` before it is parsed. |
+| `Mcp:SessionEvictionPolicy` | `EvictLeastRecentlyUsed` | What to do when a principal is at `Mcp:MaxSessionsPerPrincipal`, or the anonymous pool or global table is full: evict the least-recently-used session that principal is allowed to displace (its own, or an anonymous session), or `RejectNew` (refuse `initialize` with a retryable `unavailable` error and leave every session untouched). |
+| `Mcp:StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience only. Serve a `POST /mcp` that presents a well-formed `Mcp-Session-Id` no instance holds as if it were session-less instead of `404`. Off outside Development because it silently drops what the client negotiated at `initialize`. An explicit setting overrides the environment default. Malformed ids always `404`. |
 
-**Stateless session fallback.** Session state is held in each instance's memory,
-so on a multi-instance deployment without sticky routing (for example the
-multi-container Lambda demo) a client that ran `initialize` against one instance
-would strictly `404` whenever a later `POST` lands on a different instance. By
-default the server instead serves such a request statelessly: every `POST` is
-independently authenticated and authorized, and the only session-negotiated
-state (elicitation capability, SSE progress routing) degrades to its documented
-session-less fallback. No session id is echoed on these responses — only
-`initialize` mints. Note this also means a session id that was terminated with
-`DELETE /mcp` (or idle-expired) is served statelessly rather than `404`; set
-`Mcp:StatelessSessionFallback=false` to restore the strict spec posture.
+**Sessions across replicas.** A session is everything the client negotiated at `initialize`: its workflow view (`_meta["honua.io/workflow-view"]`, for example `setup`), its elicitation capability, and the principal it is bound to. The invariant is: a session negotiated on any instance is honoured by every instance, or refused with `404`, never silently downgraded.
 
-**Server-initiated streaming.** Leave `Mcp:ServerInitiatedStreamEnabled=false`
-behind any ingress that buffers responses — notably serverless gateways
-(CloudFront → API Gateway HTTP API → Lambda), where the SDK's standalone GET
-stream would hang at the origin. Enable it only behind ingress that can hold a
-streaming response open (nginx with `proxy_buffering off`, an ALB, or a direct
-connection). Regardless of this flag, a `GET /mcp` stream's teardown never
-invalidates the session — session lifetime is bounded only by `DELETE /mcp` or
-the idle TTL.
+- **Redis connected** (`ConnectionStrings__Redis`; the governed control plane requires it): each session record is also written to Redis under `mcp:session:<id>`, with `Mcp:SessionIdleTimeout` as its TTL. Every accepted request on any instance slides that TTL. An instance that receives an id it has not seen reads the record from Redis, so `tools/list` returns the same view whichever replica serves the request. `DELETE /mcp` on any instance ends the session on all of them: the record is removed and the removal is broadcast over Redis pub/sub, so an instance holding an open `GET /mcp` stream for the session closes it at once. If the record cannot be removed, `DELETE` answers `503` rather than `204`. Each instance keeps an in-memory copy as a read-through cache. `Mcp:MaxSessions`, `Mcp:MaxAnonymousSessions`, and `Mcp:MaxSessionsPerPrincipal` bound that per-instance cache. A capacity eviction drops only a local copy the admission is allowed to displace (the same principal, or an anonymous session) and leaves the Redis record in place until its idle TTL; another principal's session is not dropped. If Redis is briefly unreachable, an instance keeps serving the sessions it already holds and answers any other id with `404`.
+- **No Redis, single instance**: sessions live only in the memory of the instance that ran `initialize`. That is correct for one ECS task or one container.
+- **No Redis, several instances** (AWS Lambda, Azure Functions, Cloud Run, or `Deployment:Mode=MultiNode`): sessions are stateless. The `Mcp-Session-Id` issued at `initialize` is a signed token (`hs1.` prefix) that carries the negotiated workflow view, the elicitation capability, a keyed hash of the bound principal, and the time it was minted. Every instance derives the same HMAC key from `Mcp:SessionSigningKey`, or, when that is unset, from `ConnectionStrings:DefaultConnection`, which every instance already shares. So `tools/list` on any execution environment answers the view negotiated on another, with no shared memory. An id that fails the signature, belongs to another principal, or is past its lifetime is refused as before (`404`, or the principal-mismatch error). A stateless session cannot slide an idle window or be revoked across instances, so it ends `Mcp:StatelessSessionLifetime` (default 8 hours) after `initialize`, and `DELETE /mcp` answers `405 Method Not Allowed`, which the spec defines as "this server does not let clients terminate sessions". MCP SDK clients treat that as a completed close. The id grants no authority on its own: every request is authenticated and every `tools/call` is authorized again.
+- **AWS Lambda**: concurrent requests from one client are spread across separate execution environments, so a Lambda deployment is always multi-instance. With Redis, sessions are shared. Without Redis, they are stateless as described above.
 
-**Principal binding.** A session is bound at `initialize` to the authenticated
-principal (or to anonymous where the endpoint allows anonymous access). The
-binding includes the auth scheme and principal identifier, so a bearer principal
-and an API-key principal cannot silently share the same `Mcp-Session-Id`.
-A later request that presents the id under a *different* identity is rejected
-with a structured `permission_denied` / `requiresReauthentication` error, so a
-leaked `Mcp-Session-Id` cannot be ridden by another caller. This mirrors the
-existing auth posture — it adds no new authentication requirement.
+Set `Mcp:SessionMode` to `InMemory` or `Stateless` to override the automatic choice; a connected Redis always wins. The `initialize` result reports which mode answered in `_meta["honua.io/session-mode"]`: `shared`, `stateless`, or `in-memory`. A multi-instance host with no Redis and no signing secret keeps in-memory sessions and logs a warning at startup, because another instance will then answer its session ids with `404`.
+
+**Stateless session fallback (development only).** With `Mcp:StatelessSessionFallback=true`, a `POST` bearing a well-formed id that no instance holds, including one terminated with `DELETE /mcp` or idle-expired, is served as if it carried no session. Authentication and authorization are unchanged, because every `POST` is checked on its own. The request gets the default view with no elicitation, and the response carries no `Mcp-Session-Id`. The fallback is on by default only in the Development environment, where it lets a hand-written client keep working after a server restart. Do not enable it in production: it hides lost sessions instead of letting the client re-initialize.
+
+**Server-initiated streaming.** Leave `Mcp:ServerInitiatedStreamEnabled=false` behind any ingress that buffers responses — notably serverless gateways (CloudFront → API Gateway HTTP API → Lambda), where the SDK's standalone GET stream would hang at the origin. Enable it only behind ingress that can hold a streaming response open (nginx with `proxy_buffering off`, an ALB, or a direct connection). Regardless of this flag, a `GET /mcp` stream's teardown never invalidates the session — session lifetime is bounded only by `DELETE /mcp` or the idle TTL.
+
+**Principal binding.** A session is bound at `initialize` to the authenticated principal (or to anonymous where the endpoint allows anonymous access). The binding includes the auth scheme and principal identifier, so a bearer principal and an API-key principal cannot silently share the same `Mcp-Session-Id`. A later request that presents the id under a *different* identity is rejected with a structured `permission_denied` / `requiresReauthentication` error, so a leaked `Mcp-Session-Id` cannot be ridden by another caller.
 
 ### Rate limiting
 
-Rate limiting stays at the edge by default (nginx/ALB/WAF; ADR-0004). The
-optional app-level limiter (`RateLimiting:Enabled`, off by default) already
-partitions correctly for MCP: by tenant, then the authenticated principal
-(user/API key), falling back to source IP for anonymous traffic. Recommended
-opt-in config for the MCP surface:
+Rate limiting stays at the edge by default (nginx/ALB/WAF). The optional app-level limiter (`RateLimiting:Enabled`, off by default) already partitions correctly for MCP: by tenant, then the authenticated principal (user/API key), falling back to source IP for anonymous traffic. Recommended opt-in config for the MCP surface:
 
 ```jsonc
 {
@@ -341,65 +350,58 @@ opt-in config for the MCP surface:
 }
 ```
 
-Do **not** attempt to partition the limiter by `Mcp-Session-Id`: a hostile client
-mints a fresh session per request, so a per-session bucket would be trivially
-bypassable. The principal/IP partition plus the `Mcp:MaxSessions` cap and idle
-TTL are the memory- and abuse-control mechanisms for `initialize` bursts; the
-edge limiter remains the first line of defense.
+Do **not** attempt to partition the limiter by `Mcp-Session-Id`: a hostile client mints a fresh session per request, so a per-session bucket would be trivially bypassable. The principal/IP partition plus the `Mcp:MaxSessions` and `Mcp:MaxSessionsPerPrincipal` caps and idle TTL are the memory- and abuse-control mechanisms for `initialize` bursts; the edge limiter remains the first line of defense.
 
 ## Deployment profiles and the resulting surface
 
-The MCP surface is the same set of tools and resources everywhere; one
-configuration switch changes how progress is delivered. Pick the profile that
-matches your ingress:
+The MCP surface is the same set of tools and resources everywhere; one configuration switch changes how progress is delivered. Pick the profile that matches your ingress:
 
 | Profile | Key config | Progress delivery | `honua_plan_analysis` | Notes |
 |---|---|---|---|---|
 | **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false` | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
 | **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
 
-Both profiles change only *how* the surface behaves, not *which* tools and
-resources it advertises: the progress-delivery switch leaves
-`tools/list`, `resources/list`, and `prompts/list` unchanged. The difference is
-operational — whether progress is pushed or polled. The read-only pre-flight tools
-(`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in
-every profile — including that a job runs a single process, so multi-step or
-sync-only plans are flagged rather than silently under-executed.
+Both profiles change only *how* the surface behaves, not *which* tools and resources it advertises. The read-only pre-flight tools (`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in every profile — including that a job runs a single process, so multi-step or sync-only plans are flagged rather than silently under-executed.
 
 ### Which tools and resources appear (capability gating)
 
-A second, independent axis *does* change the advertised roster: several tools and
-resources are gated on the host having composed the canonical service that backs
-them, so `tools/list` / `resources/list` never advertise a capability that could
-only fail at invocation time. The single-node Postgres server profile
-(`docker compose up`) wires all of the rows below except where a switch is noted;
-minimal or serverless-function compositions may omit the data provider, the
-promotion stores, or a geocode/route provider. Ask the running server what it
-actually exposes with `honua_list_capabilities` — the table is the pre-connection
-map, that tool is the runtime source of truth.
+A second, independent axis *does* change the advertised roster: several tools and resources are gated on the host having composed the canonical service that backs them, so `tools/list` / `resources/list` never advertise a capability that could only fail at invocation time. The single-node Postgres server profile wires all of the rows below except where a switch is noted; minimal or serverless-function compositions may omit the data provider, the promotion stores, or a geocode/route provider. Ask the running server what it actually exposes with `honua_list_capabilities` — the table is the pre-connection map, that tool is the runtime source of truth.
 
 | Surface | Config / composition gate | Default (Postgres server profile) | When absent |
 |---|---|---|---|
 | Server-push `GET /mcp` SSE stream | `Mcp:ServerInitiatedStreamEnabled=true` | Off — `GET /mcp` → `405`, clients poll `honua://jobs/{jobId}` | Off by default; see the profile table above |
-| Published-operation tools (operations toolset projected as `tools/call`) | `Mcp:PublishOperations:Enabled=true` **and** operations toolset composed | Off — not advertised | Off by default |
-| Promotion resources (`honua://published-services/…`, `honua://deployments/…`, map/app packages, promotion index) | Canonical publishing + deployment persistence (`IPublishedServiceStore` + `IDeploymentStore`) composed | Advertised (Postgres persistence is wired) | Omitted in compositions without canonical promotion stores |
-| Analysis report resource (`honua://jobs/{jobId}/report`) | `Reporting:Enabled=true` (`IAnalysisReportService`) | Advertised | Omitted when reporting is disabled |
-| Geocode tools (`honua_geocode_address`, `honua_geocode_addresses`) | A geocode provider is composed (`IGeocodeCoordinatorService`; server profile wires the Nominatim provider by default) | Advertised | Omitted when no geocode provider is composed |
-| Route tool (`honua_solve_route`) | A routing provider is selected (`Routing:Provider` → `IRoutingProvider`; `pgrouting` needs Postgres) | Advertised | Omitted when no routing provider is selected |
+| Published-operation tools (operations toolset projected as `tools/call`) | Audited Admin projection: `Mcp:PublishOperations:AdminProjection` (default `true`). Full operations catalog: `Mcp:PublishOperations:Enabled=true` | The audited projection, including the closed operator roster in `docs/gis/data/operator-journey-mcp-roster.v1.json`, is advertised as `honua_admin_*`. Those roster tools are on the `configure` view. The `default` view does not include them, and the full catalog stays off. Connection create publishes with `secretReference` and `secretType` and does not accept a password. Connection update, draft connection test, one-time secret issuance, and browser-session operations stay off MCP | Omitted when both switches are off or the operations toolset is not composed |
+| Promotion resources (`honua://published-services/…`, `honua://deployments/…`, map/app packages, promotion index) | Canonical publishing + deployment persistence composed | Advertised (Postgres persistence is wired) | Omitted in compositions without canonical promotion stores |
+| Analysis report resource (`honua://jobs/{jobId}/report`) | `Reporting:Enabled=true` | Advertised | Omitted when reporting is disabled |
+| Geocode tools (`honua_geocode_address`, `honua_geocode_addresses`) | A geocode provider is composed (the server profile wires the Nominatim provider by default) | Advertised | Omitted when no geocode provider is composed |
+| Route tool (`honua_solve_route`) | A routing provider is selected (`Routing:Provider`; `pgrouting` needs Postgres) | Advertised | Omitted when no routing provider is selected |
 | Catalog / query / render / style tools (`honua_list_layers`, `honua_query_features`, `honua_describe_layer`, `honua_render_map`, style tools) | Metadata v2 graph — and, for query/render, a feature reader / raster renderer — composed by the data provider | Advertised | Omitted in compositions without a data provider |
-| Dataset ingest (`honua_ingest_dataset`) | Import service (`IFileImportService`) composed | Advertised | Omitted without an import-capable provider |
+| Dataset ingest (`honua_ingest_dataset`) | Import service composed | Advertised | Omitted without an import-capable provider |
 | Platform-ops observability + deploy tools (`honua_ops_health`, `honua_ops_findings`, `honua_deploy_operations`, …) | Ops-observability / platform-ops readers composed | Advertised | Omitted in minimal hosts |
 
-The `honua_plan_analysis`, `honua_validate_plan`, `honua_dry_run_plan`,
-`honua_execute_plan`, `honua_cancel_job`, `honua_list_jobs`, grounding, and
-`honua_list_capabilities` tools, plus the job/workspace/process-catalog/feature-catalog
-resources, are advertised in **every** composition — they depend only on the job
-runtime and embedded catalogs that are always present. No feature-edit tool is ever
-advertised, in any profile, by design (ADR-0028).
+**The governed `honua_admin_*` tools advertise on every topology, including hosts without Redis.** Advertisement does not depend on whether the durable control plane is composed; execution does. Approval-gated admin operations persist a proposal, and every typed operation persists a durable operation record, in the Redis-backed store. On a Production host without Redis (or without the `caching.redis` entitlement) a call therefore refuses with a typed capability-unavailable error (`code: "unavailable"`, `retryable: false`, `missingDependency: "redis"`) instead of creating a proposal; the proposal tools (`honua_propose_*`) return `outcome: "unavailable"`. **`honua_publish_service` and `honua_apply_style_preset` are the exceptions for direct execution:** publishing a service is configuration and applying a style preset is styling, so when `Operations:Policy` allows the caller (an `admin` or `scoped-admin-key` role, such as an `admin:write` key) each one executes without Redis and returns the usual handle (`operationId`, `operationInstanceId`, `correlationId`, `auditId`, `status`, `policyOutcome`, `authorizationOutcome`) with `durable: false`, because the operation instance record is kept only in memory and cannot be polled afterwards; the acceptance and completion are still written to the audit log. `honua_render_map` is a read and renders the applied style on the same host. A caller the policy denies gets `status: "Denied"`, and a publish or style preset whose policy decision requires approval still refuses with the typed `redis` error. The same changes remain available through the admin REST API and Console. Check before calling: the capability manifest (`GET /api/v1/capabilities/manifest`) reports `operations.proposals` with `available: false` and `reasonCode: "dependency-unavailable"` when Redis is absent, or `"license-required"` when Redis is present but unentitled. On a Development or Test host without Redis, Studio drafts still compose, but `honua_studio_propose_publication` (and the Studio REST publish-request) refuses a publication that needs separate-principal approval with the same typed error, carrying `capability: "operations.proposals"`. A Redis-off host is a serving, configure and style/render topology; see [Redis is optional; PostGIS is not](../deploy/docker-compose.md#redis-is-optional-postgis-is-not). Any connected Redis enables `operations.proposals`, including managed Redis such as AWS ElastiCache or MemoryDB whose persistence policy the server cannot read. The Redis durability outcome is published separately under `limits.job.redisDurability` and never makes these tools refuse.
+
+The `honua_plan_analysis`, `honua_validate_plan`, `honua_dry_run_plan`, `honua_execute_plan`, `honua_cancel_job`, `honua_list_jobs`, grounding, and `honua_list_capabilities` tools, plus the job/workspace/process-catalog/feature-catalog resources, are advertised in **every** composition — they depend only on the job runtime and embedded catalogs that are always present.
+
+Layer discovery, layer descriptions, feature pages, and counts use the shared REST resource-access gate, including service/layer policies and per-operation grants. Discovery and schema descriptions require metadata access; feature queries and descriptions that include a row count additionally require query access. Discovery filters inaccessible layers before calculating pagination totals.
+
+## Troubleshoot
+
+- **`unauthenticated` on `tools/call` or `resources/read`** — handshake methods work anonymously but tool calls do not; attach the `X-API-Key` header (or token) to the client config. See [troubleshooting](../deploy/troubleshooting.md).
+- **`permission_denied`** — the identity authenticates but lacks the operator grant for that tool family; grant the relevant operator permission to the calling identity.
+- **`insufficient_scope`** — distinct from `permission_denied`: the identity *is* authorized by grant, but the OAuth bearer token's scopes do not cover the operation (or the token carries no recognized `honua.mcp.*` scope, which is fail-closed). Mint a token whose `scope` claim includes the scope for that operation — see [OAuth scopes](#oauth-21-bearer-tokens-and-scope-mapping). Does not apply to X-API-Key callers.
+- **HTTP 202 with an empty body** — not an error: MCP notifications (`notifications/*` without an `id`) are acknowledged with 202 by design.
+- **`invalid_request` (-32600)** — malformed JSON-RPC envelope; common causes are a missing `id` on a non-notification method or batching the `initialize` call (it must be sent alone).
+- **Agent "succeeds" but reports a tool error** — tool failures are returned inside `result` with `isError: true` and a structured `code` (`invalid_argument`, `not_found`, `failed_precondition`, …) per the MCP error contract; read the embedded message.
+- **A `honua_admin_*` or `honua_propose_*` call returns `unavailable` with `missingDependency: "redis"`** — the host has no Redis-backed durable control plane, so governed proposals cannot be persisted. The tool is still listed by design. Configure Redis (and the `caching.redis` entitlement) to enable proposals and approvals; the capability manifest's `operations.proposals` entry reports this before any call.
+- **A Studio tool returns `unavailable`** — the host has not composed Studio persistence; the tools are still listed so clients can discover them, but calls fail with a structured, retryable error.
 
 ## Next steps
 
+- [What an agent can do in each edition](agent-capabilities-and-editions.md)
+- [Drive Studio from Claude Desktop](../../studio/drive-from-claude-desktop.md)
+- [Studio MCP tools](../../studio/mcp-tools.md)
+- [Geoprocessing with AI](../query-analyze/geoprocessing-with-ai.md)
 - [Operating Honua](../operate/README.md)
 - [Run geoprocessing](../query-analyze/run-geoprocessing.md)
 - [Authentication](../secure/authentication.md)
-- [Protocol overview](../../concepts/protocols.md)

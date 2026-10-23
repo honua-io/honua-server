@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.GPServer.Models;
@@ -84,10 +85,11 @@ internal sealed class GPParameterInfo
     /// Default value. Esri GP task metadata always carries a <c>defaultValue</c> key
     /// (JSON <c>null</c> when the parameter has no default); arcgis.geoprocessing's
     /// <c>import_toolbox()</c> raises <c>KeyError('defaultValue')</c> when it is absent,
-    /// so this property is always serialized even when null. (#1775)
+    /// so this property is always serialized even when null. Scalar values retain
+    /// their declared JSON type rather than the canonical catalog's text encoding.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
-    public string? DefaultValue { get; set; }
+    public JsonElement? DefaultValue { get; set; }
 
     /// <summary>Parameter type (esriGPParameterTypeRequired, esriGPParameterTypeOptional).</summary>
     public string? ParameterType { get; set; }

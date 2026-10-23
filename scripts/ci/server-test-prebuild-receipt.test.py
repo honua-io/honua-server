@@ -26,6 +26,11 @@ class PrebuildReceiptTests(unittest.TestCase):
         self.policy = self.directory / "policy"
         self.policy.mkdir()
         subprocess.run(["git", "init", "--initial-branch=trunk"], cwd=self.policy, check=True, capture_output=True)
+        # Detached `git maintenance run --auto` can recreate files under the
+        # fixture after commit returns, so TemporaryDirectory.cleanup() fails
+        # with "Directory not empty". Disable it on the fixture repo only.
+        subprocess.run(["git", "config", "maintenance.auto", "false"], cwd=self.policy, check=True)
+        subprocess.run(["git", "config", "gc.auto", "0"], cwd=self.policy, check=True)
         subprocess.run(["git", "config", "user.email", "ci@example.invalid"], cwd=self.policy, check=True)
         subprocess.run(["git", "config", "user.name", "CI Fixture"], cwd=self.policy, check=True)
         for relative in MODULE.POLICY_PATHS:
@@ -78,6 +83,24 @@ class PrebuildReceiptTests(unittest.TestCase):
             "archive_path": self.archive,
             "now_epoch": self.now,
         }
+
+    def test_fixture_repo_disables_auto_maintenance(self) -> None:
+        maintenance = subprocess.run(
+            ["git", "config", "--get", "maintenance.auto"],
+            cwd=self.policy,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        gc_auto = subprocess.run(
+            ["git", "config", "--get", "gc.auto"],
+            cwd=self.policy,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(maintenance.stdout.strip(), "false")
+        self.assertEqual(gc_auto.stdout.strip(), "0")
 
     def test_cross_workflow_receipt_round_trips(self) -> None:
         receipt = MODULE.build_receipt(**self.common())

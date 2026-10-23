@@ -276,7 +276,31 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
             using var response = await anonymous.PostAsync(RunsPath, content, CancellationToken.None);
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+            // The conformance-mutate policy names the ApiKey scheme, so an unauthenticated
+            // caller is challenged: exactly 401, as the test name states.
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+            // Nothing is disclosed: no lease, no run id and no run token come back.
+            var body = await response.Content.ReadAsStringAsync();
+            foreach (var marker in new[] { "runId", "runToken", "\"data\"" })
+            {
+                body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+            }
+
+            // Nothing is changed: the refused lease consumed no capacity, so a credentialed
+            // caller on the SAME host can still take both of the two configured leases.
+            using var credentialed = fixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword));
+
+            using var firstContent = new StringContent("{}", Encoding.UTF8, "application/json");
+            using var first = await credentialed.PostAsync(RunsPath, firstContent, CancellationToken.None);
+            first.StatusCode.Should().Be(HttpStatusCode.Created, await first.Content.ReadAsStringAsync());
+
+            using var secondContent = new StringContent("{}", Encoding.UTF8, "application/json");
+            using var second = await credentialed.PostAsync(RunsPath, secondContent, CancellationToken.None);
+            second.StatusCode.Should().Be(
+                HttpStatusCode.Created,
+                "the anonymous attempt must not have consumed one of the two leases");
         }
         finally
         {

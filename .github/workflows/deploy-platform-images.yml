@@ -32,7 +32,11 @@ jobs:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 140
+    # 180, matching nightly-container-build.yml: a COLD native-AOT build (the amd64 Lambda AOT
+    # leg included) does not fit in 140 minutes once boundary verification, SBOM, two Trivy
+    # scans and cross-registry promotion follow it, and a timeout here skips every release
+    # manifest publication downstream.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -65,7 +69,7 @@ jobs:
             image_name: Lambda Development JIT Image
             dockerfile: docker/Dockerfile.lambda
             tag_suffix: -lambda-jit
-            cache_scope: release-lambda-jit
+            cache_scope: honua-lambda-jit
             sarif_output: trivy-results-lambda
             sarif_category: trivy-lambda
             arch: arm64
@@ -77,19 +81,37 @@ jobs:
             image_name: Lambda AOT Image
             dockerfile: docker/Dockerfile.lambda.aot
             tag_suffix: -lambda-aot
-            cache_scope: release-lambda-aot
+            cache_scope: honua-lambda-aot
             sarif_output: trivy-results-lambda-aot
             sarif_category: trivy-lambda-aot
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-            provenance: false
-            sbom: false
+            provenance: mode=max
+            sbom: true
+          # x86_64 is the release-certified Lambda architecture: the 2026.1 release
+          # manifest pins `awsLambdaArchitecture: x86_64` (honua-release
+          # platform-manifest.yaml) and the Lambda GA bill rejects any other
+          # architecture. This leg publishes `<tag>-lambda-aot-amd64`, the same
+          # per-architecture shape the nightly publishes as
+          # `nightly-lambda-aot-<sha7>-amd64`; arm64 above stays for parity with it.
+          - image_key: lambda-aot
+            image_name: Lambda AOT Image
+            dockerfile: docker/Dockerfile.lambda.aot
+            tag_suffix: -lambda-aot
+            cache_scope: honua-lambda-aot
+            sarif_output: trivy-results-lambda-aot
+            sarif_category: trivy-lambda-aot
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+            provenance: mode=max
+            sbom: true
           - image_key: functions-jit
             image_name: Functions Development JIT Image
             dockerfile: docker/Dockerfile.functions
             tag_suffix: -functions-jit
-            cache_scope: release-functions-jit
+            cache_scope: honua-functions-jit
             sarif_output: trivy-results-functions
             sarif_category: trivy-functions
             arch: amd64
@@ -107,7 +129,7 @@ jobs:
             arch: amd64
             platform: linux/amd64
             runner: ubuntu-24.04
-            provenance: true
+            provenance: mode=max
             sbom: true
     permissions:
       contents: read
@@ -116,7 +138,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -277,6 +299,10 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
+          # Stamp the source revision the way the nightly AOT builds do: the build context
+          # excludes .git, so without this the image reports a null deployment revision.
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
@@ -288,6 +314,7 @@ jobs:
           sbom: ${{ matrix.sbom }}
 
       - name: Verify native-AOT platform candidate before registry publication
+        id: aot_verified
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
         shell: bash
         env:
@@ -295,7 +322,20 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          attestation_args=()
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" || "${{ matrix.image_key }}" == "functions-aot" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends skopeo
+            docker buildx imagetools inspect "$CANDIDATE"
+            attestation_args=(--require-attestations --attestation-report "${RUNNER_TEMP}/platform-attestations.json")
+          fi
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE" "${attestation_args[@]}"
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" ]]; then
+            serving_candidate="$(jq -er --arg platform "${{ matrix.platform }}" \
+              '.[] | select(.platform == $platform) | .subject | ltrimstr("oci://")' \
+              "${RUNNER_TEMP}/platform-attestations.json")"
+            echo "serving_candidate=$serving_candidate" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish verified native-AOT platform architecture tags
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
@@ -303,10 +343,25 @@ jobs:
         env:
           CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.aot_candidate.outputs.digest }}
           TAGS: ${{ steps.arch_tags.outputs.tags }}
+          SERVING_CANDIDATE: ${{ steps.aot_verified.outputs.serving_candidate }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends skopeo
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" ]]; then
+            # Retain the attested parent in every target registry, but keep Lambda
+            # deployment tags as runnable, digest-preserved per-architecture child
+            # manifests (`-lambda-aot-amd64`, `-lambda-aot-arm64`).
+            evidence_tags="$(while IFS= read -r tag; do
+              [ -n "$tag" ] || continue
+              printf '%s:attested-lambda-aot-${{ matrix.arch }}-${{ github.sha }}\n' "${tag%:*}"
+            done <<< "$TAGS")"
+            printf '%s\n' "$evidence_tags" | python3 scripts/ci/promote-verified-image.py \
+              --candidate "$CANDIDATE" \
+              --staging-tag "boundary-attested-lambda-aot-${{ matrix.arch }}-${{ github.sha }}" \
+              --authfile "$HOME/.docker/config.json"
+            CANDIDATE="$SERVING_CANDIDATE"
+          fi
           printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
             --candidate "$CANDIDATE" \
             --staging-tag "boundary-candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
@@ -377,11 +432,9 @@ jobs:
         run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "${{ steps.scan_prep.outputs.scan_local }}"
 
       # Always generate an SPDX SBOM artifact for every platform image, even
-      # when matrix.sbom is false (Lambda images skip the OCI SBOM
-      # attestation because AWS Lambda's image format rejects unknown
-      # manifest entries). This ensures audit gate A -> A+ coverage of
-      # *every* container build, not just the ones that publish an
-      # attestation alongside the image.
+      # when matrix.sbom is false (the development Lambda JIT image).
+      # Production Lambda AOT uses the per-architecture serving child digest
+      # for deployment; its OCI index also retains SBOM and provenance.
       - name: Generate SBOM (SPDX JSON) for ${{ matrix.image_key }} (${{ matrix.arch }})
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
@@ -468,7 +521,7 @@ jobs:
           category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
 
       - name: Upload Trivy unfixed-inclusive inventory
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always() && hashFiles(format('trivy-inventory-{0}-{1}.json', matrix.image_key, matrix.arch)) != ''
         with:
           name: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}
@@ -497,9 +550,13 @@ jobs:
             tag_suffix: -lambda-jit
             source_arches: "arm64"
             publish_aot_alias: false
+          # The unsuffixed `-lambda-aot` (and `-lambda`) tags are a single runnable
+          # child copied with --prefer-index=false, so they name exactly one
+          # architecture: x86_64, the only certified Lambda architecture. arm64 stays
+          # reachable under its explicit `-lambda-aot-arm64` tag.
           - image_name: Lambda AOT Image
             tag_suffix: -lambda-aot
-            source_arches: "arm64"
+            source_arches: "amd64"
             publish_aot_alias: true
           - image_name: Functions Development JIT Image
             tag_suffix: -functions-jit
@@ -640,6 +697,7 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
           SOURCE_ARCHES: ${{ matrix.source_arches }}
           PUBLISH_AOT_ALIAS: ${{ matrix.publish_aot_alias }}
+          TAG_SUFFIX: ${{ matrix.tag_suffix }}
         run: |
           set -euo pipefail
           read -r -a source_arches <<< "$SOURCE_ARCHES"
@@ -659,5 +717,9 @@ jobs:
             if [[ "$PUBLISH_AOT_ALIAS" == "true" ]]; then
               targets+=(-t "${tag%-aot}")
             fi
-            docker buildx imagetools create "${targets[@]}" "${refs[@]}"
+            if [[ "$TAG_SUFFIX" == "-lambda-aot" ]]; then
+              docker buildx imagetools create --prefer-index=false "${targets[@]}" "${refs[@]}"
+            else
+              docker buildx imagetools create "${targets[@]}" "${refs[@]}"
+            fi
           done

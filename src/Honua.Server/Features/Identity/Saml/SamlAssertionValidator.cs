@@ -76,19 +76,31 @@ public sealed class SamlSubject
 /// framework and is not AOT/trim-friendly. Enforces signature presence, digest match, issuer,
 /// audience, and the <c>NotBefore</c>/<c>NotOnOrAfter</c> conditions with bounded clock skew.
 /// </summary>
-internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions> options) : ISamlAssertionValidator
+internal sealed class SamlAssertionValidator(
+    IOptions<SamlAuthenticationOptions> options,
+    ISamlAssertionReplayCache? replayCache = null) : ISamlAssertionValidator
 {
     private const string DsigNs = "http://www.w3.org/2000/09/xmldsig#";
     private const string SamlAssertionNs = "urn:oasis:names:tc:SAML:2.0:assertion";
     private const string SamlProtocolNs = "urn:oasis:names:tc:SAML:2.0:protocol";
 
     private readonly SamlAuthenticationOptions _options = options.Value;
+    private readonly ISamlAssertionReplayCache _replay = replayCache
+        ?? new SamlAssertionReplayCache(new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
 
     public SamlValidationResult Validate(string responseXml)
     {
         if (string.IsNullOrWhiteSpace(responseXml))
         {
             return SamlValidationResult.Failure("Empty SAML response.");
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.EntityId)
+            || string.IsNullOrWhiteSpace(_options.IdpEntityId)
+            || string.IsNullOrWhiteSpace(_options.AssertionConsumerServiceUrl))
+        {
+            return SamlValidationResult.Failure("SAML service provider is not fully configured.");
         }
 
         if (string.IsNullOrWhiteSpace(_options.IdpSigningCertificate))
@@ -107,22 +119,33 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
         }
 
         var root = document.Root;
-        if (root is null)
+        if (root is null || root.Name.LocalName != "Response")
         {
-            return SamlValidationResult.Failure("Missing SAML root element.");
+            return SamlValidationResult.Failure("SAML Response is required.");
         }
 
-        // Status must be Success (when a protocol Response envelope is present).
-        if (root.Name.LocalName == "Response")
+        var destination = root.Attribute("Destination")?.Value?.Trim();
+        if (!string.Equals(destination, _options.AssertionConsumerServiceUrl, StringComparison.Ordinal))
         {
-            var statusCode = root
-                .Element(XName.Get("Status", SamlProtocolNs))?
-                .Element(XName.Get("StatusCode", SamlProtocolNs))?
-                .Attribute("Value")?.Value;
-            if (statusCode is not null && !statusCode.EndsWith(":status:Success", StringComparison.Ordinal))
-            {
-                return SamlValidationResult.Failure("SAML Response status is not Success.");
-            }
+            return SamlValidationResult.Failure("SAML Response Destination does not match the assertion consumer service.");
+        }
+
+        var responseId = root.Attribute("ID")?.Value?.Trim();
+        if (string.IsNullOrEmpty(responseId))
+        {
+            return SamlValidationResult.Failure("SAML Response has no ID attribute.");
+        }
+
+        var responseInResponseTo = root.Attribute("InResponseTo")?.Value?.Trim();
+
+        // Status must be Success (when a protocol Response envelope is present).
+        var statusCode = root
+            .Element(XName.Get("Status", SamlProtocolNs))?
+            .Element(XName.Get("StatusCode", SamlProtocolNs))?
+            .Attribute("Value")?.Value;
+        if (statusCode is not null && !statusCode.EndsWith(":status:Success", StringComparison.Ordinal))
+        {
+            return SamlValidationResult.Failure("SAML Response status is not Success.");
         }
 
         var assertion = root.Name.LocalName == "Assertion"
@@ -153,10 +176,15 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
             }
         }
 
+        var assertionId = assertion.Attribute("ID")?.Value?.Trim();
+        if (string.IsNullOrEmpty(assertionId))
+        {
+            return SamlValidationResult.Failure("SAML assertion has no ID attribute.");
+        }
+
         // ---- Issuer.
         var issuer = assertion.Element(XName.Get("Issuer", SamlAssertionNs))?.Value?.Trim();
-        if (!string.IsNullOrEmpty(_options.IdpEntityId) &&
-            !string.Equals(issuer, _options.IdpEntityId, StringComparison.Ordinal))
+        if (!string.Equals(issuer, _options.IdpEntityId, StringComparison.Ordinal))
         {
             return SamlValidationResult.Failure("SAML assertion issuer does not match the configured IdP.");
         }
@@ -164,36 +192,38 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
         var now = DateTimeOffset.UtcNow;
         var skew = TimeSpan.FromSeconds(Math.Max(0, _options.AllowedClockSkewSeconds));
 
-        // ---- Conditions: NotBefore / NotOnOrAfter + AudienceRestriction.
+        // ---- Conditions: NotBefore / NotOnOrAfter + AudienceRestriction are required.
         var conditions = assertion.Element(XName.Get("Conditions", SamlAssertionNs));
-        if (conditions is not null)
+        if (conditions is null)
         {
-            if (TryParseInstant(conditions.Attribute("NotBefore")?.Value, out var notBefore) &&
-                now + skew < notBefore)
-            {
-                return SamlValidationResult.Failure("SAML assertion is not yet valid (NotBefore).");
-            }
+            return SamlValidationResult.Failure("SAML assertion has no Conditions.");
+        }
 
-            if (TryParseInstant(conditions.Attribute("NotOnOrAfter")?.Value, out var notOnOrAfter) &&
-                now - skew >= notOnOrAfter)
-            {
-                return SamlValidationResult.Failure("SAML assertion has expired (NotOnOrAfter).");
-            }
+        if (TryParseInstant(conditions.Attribute("NotBefore")?.Value, out var notBefore) &&
+            now + skew < notBefore)
+        {
+            return SamlValidationResult.Failure("SAML assertion is not yet valid (NotBefore).");
+        }
 
-            if (!string.IsNullOrEmpty(_options.EntityId))
-            {
-                var audiences = conditions
-                    .Elements(XName.Get("AudienceRestriction", SamlAssertionNs))
-                    .SelectMany(ar => ar.Elements(XName.Get("Audience", SamlAssertionNs)))
-                    .Select(a => a.Value.Trim())
-                    .ToList();
+        if (!TryParseInstant(conditions.Attribute("NotOnOrAfter")?.Value, out var notOnOrAfter))
+        {
+            return SamlValidationResult.Failure("SAML assertion Conditions have no NotOnOrAfter.");
+        }
 
-                if (audiences.Count > 0 &&
-                    !audiences.Any(a => string.Equals(a, _options.EntityId, StringComparison.Ordinal)))
-                {
-                    return SamlValidationResult.Failure("SAML assertion audience does not match this SP.");
-                }
-            }
+        if (now - skew >= notOnOrAfter)
+        {
+            return SamlValidationResult.Failure("SAML assertion has expired (NotOnOrAfter).");
+        }
+
+        var audiences = conditions
+            .Elements(XName.Get("AudienceRestriction", SamlAssertionNs))
+            .SelectMany(ar => ar.Elements(XName.Get("Audience", SamlAssertionNs)))
+            .Select(a => a.Value.Trim())
+            .ToList();
+        if (audiences.Count == 0 ||
+            !audiences.Any(a => string.Equals(a, _options.EntityId, StringComparison.Ordinal)))
+        {
+            return SamlValidationResult.Failure("SAML assertion audience does not match this SP.");
         }
 
         // ---- Subject.
@@ -211,15 +241,44 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
             return SamlValidationResult.Failure("SAML assertion has no Subject NameID.");
         }
 
-        // ---- SubjectConfirmationData NotOnOrAfter (bearer expiry).
+        // ---- SubjectConfirmationData Recipient, InResponseTo, and NotOnOrAfter.
         var confirmationData = subjectElement
             .Element(XName.Get("SubjectConfirmation", SamlAssertionNs))?
             .Element(XName.Get("SubjectConfirmationData", SamlAssertionNs));
-        if (confirmationData is not null &&
-            TryParseInstant(confirmationData.Attribute("NotOnOrAfter")?.Value, out var subjectExpiry) &&
-            now - skew >= subjectExpiry)
+        if (confirmationData is null)
+        {
+            return SamlValidationResult.Failure("SAML assertion has no SubjectConfirmationData.");
+        }
+
+        var recipient = confirmationData.Attribute("Recipient")?.Value?.Trim();
+        if (!string.Equals(recipient, _options.AssertionConsumerServiceUrl, StringComparison.Ordinal))
+        {
+            return SamlValidationResult.Failure("SAML SubjectConfirmation Recipient does not match the assertion consumer service.");
+        }
+
+        var confirmationInResponseTo = confirmationData.Attribute("InResponseTo")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(responseInResponseTo) || !string.IsNullOrEmpty(confirmationInResponseTo))
+        {
+            if (!string.Equals(responseInResponseTo, confirmationInResponseTo, StringComparison.Ordinal))
+            {
+                return SamlValidationResult.Failure("SAML InResponseTo does not match the subject confirmation.");
+            }
+        }
+
+        if (!TryParseInstant(confirmationData.Attribute("NotOnOrAfter")?.Value, out var subjectExpiry))
+        {
+            return SamlValidationResult.Failure("SAML subject confirmation has no NotOnOrAfter.");
+        }
+
+        if (now - skew >= subjectExpiry)
         {
             return SamlValidationResult.Failure("SAML subject confirmation has expired.");
+        }
+
+        var rememberUntil = (notOnOrAfter > subjectExpiry ? notOnOrAfter : subjectExpiry) + skew;
+        if (!_replay.TryRemember(assertionId, rememberUntil) || !_replay.TryRemember(responseId, rememberUntil))
+        {
+            return SamlValidationResult.Failure("SAML assertion replay was detected.");
         }
 
         // ---- Attributes -> roles / email / display name.

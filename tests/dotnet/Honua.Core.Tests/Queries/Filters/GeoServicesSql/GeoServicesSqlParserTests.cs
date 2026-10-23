@@ -13,6 +13,34 @@ public class GeoServicesSqlParserTests
 {
     private readonly GeoServicesSqlParser _parser = new();
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("\"category\" = 'A' AND \"value\" >= 60")]
+    [InlineData("[category] = 'A' AND [value] >= 60")]
+    [InlineData("category = 'A' AND value >= 60")]
+    public void Parse_DelimitedCompoundFilter_UsesSchemaFieldNames(string filter)
+    {
+        var expression = (BinaryExpression)_parser.Parse(filter);
+        expression.Operator.Should().Be(BinaryOperator.And);
+        var category = (BinaryExpression)expression.Left;
+        var value = (BinaryExpression)expression.Right;
+        ((PropertyReference)category.Left).PropertyName.Should().Be("category");
+        ((Literal)category.Right).Value.Should().Be("A");
+        ((PropertyReference)value.Left).PropertyName.Should().Be("value");
+        ((Literal)value.Right).Value.Should().Be(60L);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("\"layer\".\"name\" = 'Test Feature'")]
+    [InlineData("[layer].[name] = 'Test Feature'")]
+    public void Parse_DelimitedQualifiedIdentifier_RemovesEachDelimiter(string filter)
+    {
+        var expression = (BinaryExpression)_parser.Parse(filter);
+        ((PropertyReference)expression.Left).PropertyName.Should().Be("layer.name");
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SimpleEquality_ReturnsBinaryExpression()
     {
@@ -30,6 +58,7 @@ public class GeoServicesSqlParserTests
         right.Value.Should().Be("Test Feature");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InList_ReturnsValueList()
     {
@@ -44,6 +73,7 @@ public class GeoServicesSqlParserTests
         values.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_Between_ReturnsRangeExpression()
     {
@@ -54,6 +84,7 @@ public class GeoServicesSqlParserTests
         binary.Operator.Should().Be(BinaryOperator.And);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_WithNestedParenthesesBeyondLimit_ThrowsArgumentException()
     {
@@ -67,6 +98,45 @@ public class GeoServicesSqlParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("AND")]
+    [InlineData("OR")]
+    public void Parse_FlatLogicalSequenceBeyondOperandLimit_ThrowsArgumentException(string keyword)
+    {
+        var filter = string.Join($" {keyword} ", Enumerable.Repeat("name = 'a'", FilterParserGuard.MaxExpressionDepth + 1));
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_FlatLogicalSequenceWithinDepthLimit_ReturnsLeftDeepChain()
+    {
+        // N comparison operands fold into a tree of depth N + 1.
+        var filter = string.Join(" OR ", Enumerable.Repeat("name = 'a'", FilterParserGuard.MaxExpressionDepth - 1));
+
+        var expression = _parser.Parse(filter);
+
+        expression.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.Or);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_FlatArithmeticSequenceBeyondDepthLimit_ThrowsArgumentException()
+    {
+        var filter = "size" + string.Concat(Enumerable.Repeat(" + 1", FilterParserGuard.MaxExpressionDepth + 1)) + " > 0";
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_DateLiteral_ProducesDateOnly()
     {
@@ -78,6 +148,7 @@ public class GeoServicesSqlParserTests
         literal.Value.Should().Be(DateOnly.Parse("2024-01-01", CultureInfo.InvariantCulture));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_TimestampLiteralWithoutOffset_AcceptedAsUtc()
     {
@@ -94,6 +165,7 @@ public class GeoServicesSqlParserTests
         value.UtcDateTime.Should().Be(new DateTime(2024, 6, 1, 12, 30, 0, DateTimeKind.Utc));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_IntervalLiteral_ProducesIntervalFunction()
     {
@@ -107,6 +179,7 @@ public class GeoServicesSqlParserTests
         ((Literal)interval.Arguments[1]).Value.Should().Be("DAY");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_TimestampLiteralAtMidnightWithoutOffset_Accepted()
     {
@@ -118,6 +191,7 @@ public class GeoServicesSqlParserTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_HashDatetimeLiteralWithoutOffset_AcceptedAsUtc()
     {
@@ -134,6 +208,7 @@ public class GeoServicesSqlParserTests
         value.UtcDateTime.Should().Be(new DateTime(2024, 6, 1, 12, 30, 0, DateTimeKind.Utc));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_TimestampKeywordWithoutOffset_AcceptedAsUtc()
     {
@@ -150,6 +225,7 @@ public class GeoServicesSqlParserTests
         value.UtcDateTime.Should().Be(new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnknownFunction_ThrowsArgumentException()
     {
@@ -161,6 +237,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*Unknown or unsupported function*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CurrentDate_ReturnsFunctionCall()
     {
@@ -174,6 +251,7 @@ public class GeoServicesSqlParserTests
         function.Arguments.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CastAsType_ReturnsCastFunctionCall()
     {
@@ -190,6 +268,7 @@ public class GeoServicesSqlParserTests
         typeLiteral.Value.Should().Be("INTEGER");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CastAsTwoWordType_PreservesFullTypeName()
     {
@@ -201,6 +280,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[1]).Value.Should().Be("DOUBLE PRECISION");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CastMissingAsKeyword_ThrowsArgumentException()
     {
@@ -210,6 +290,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*AS*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CastVarcharWithLength_PreservesLengthInTypeName()
     {
@@ -222,6 +303,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[1]).Value.Should().Be("VARCHAR(20)");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CastCharWithLength_PreservesLengthInTypeName()
     {
@@ -232,6 +314,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[1]).Value.Should().Be("CHAR(8)");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CastDecimalWithPrecisionAndScale_PreservesArguments()
     {
@@ -242,6 +325,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[1]).Value.Should().Be("DECIMAL(10,2)");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CastWithNonIntegerLength_ThrowsArgumentException()
     {
@@ -250,6 +334,7 @@ public class GeoServicesSqlParserTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ExtractYearFrom_MapsToYearFunction()
     {
@@ -262,6 +347,7 @@ public class GeoServicesSqlParserTests
         ((PropertyReference)function.Arguments[0]).PropertyName.Should().Be("created");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ExtractUnsupportedField_ThrowsArgumentException()
     {
@@ -273,6 +359,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*Unsupported EXTRACT field*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubstringFromFor_MapsToSubstringFunction()
     {
@@ -287,6 +374,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[2]).Value.Should().Be(3L);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubstringFromWithoutFor_OmitsLengthArgument()
     {
@@ -298,6 +386,7 @@ public class GeoServicesSqlParserTests
         function.Arguments.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubstringCommaForm_StillSupported()
     {
@@ -309,6 +398,7 @@ public class GeoServicesSqlParserTests
         function.Arguments.Should().HaveCount(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_PositionIn_MapsToPositionFunction()
     {
@@ -322,6 +412,7 @@ public class GeoServicesSqlParserTests
         ((PropertyReference)function.Arguments[1]).PropertyName.Should().Be("name");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GenericFunction_StillUsesCommaArguments()
     {
@@ -337,6 +428,7 @@ public class GeoServicesSqlParserTests
     // #1865 — extended grammar: LIKE ESCAPE, extra EXTRACT fields, CASE.
     // ------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LikeEscapeClause_ProducesLikeEscapeFunction()
     {
@@ -350,6 +442,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[2]).Value.Should().Be("!");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotLikeEscapeClause_ProducesNotLikeEscapeFunction()
     {
@@ -361,6 +454,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[2]).Value.Should().Be("!");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LikeWithoutEscape_StillProducesBinaryExpression()
     {
@@ -370,6 +464,7 @@ public class GeoServicesSqlParserTests
         binary.Operator.Should().Be(BinaryOperator.Like);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LikeEscapeMultiCharacter_ThrowsArgumentException()
     {
@@ -379,6 +474,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*single-character*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LikeEscapeNonStringChar_ThrowsArgumentException()
     {
@@ -388,6 +484,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*single-character*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("DOW")]
     [InlineData("DOY")]
@@ -405,6 +502,7 @@ public class GeoServicesSqlParserTests
         ((PropertyReference)function.Arguments[0]).PropertyName.Should().Be("created");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ExtractTrulyUnsupportedField_StillThrows()
     {
@@ -414,6 +512,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*Unsupported EXTRACT field*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SearchedCase_ProducesCaseFunctionWithBranchesAndElse()
     {
@@ -430,6 +529,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[4]).Value.Should().Be("child");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SearchedCaseWithoutElse_ProducesEvenArgumentCount()
     {
@@ -441,6 +541,7 @@ public class GeoServicesSqlParserTests
         function.Arguments.Should().HaveCount(2); // one WHEN/THEN, no ELSE
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SimpleCase_DesugarsSelectorIntoEqualityConditions()
     {
@@ -460,6 +561,7 @@ public class GeoServicesSqlParserTests
         ((Literal)function.Arguments[1]).Value.Should().Be(1L);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CaseMissingThen_ThrowsArgumentException()
     {
@@ -469,6 +571,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*THEN*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CaseMissingEnd_ThrowsArgumentException()
     {
@@ -478,6 +581,7 @@ public class GeoServicesSqlParserTests
             .WithMessage("*END*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CaseWithNoBranches_ThrowsArgumentException()
     {
@@ -490,6 +594,7 @@ public class GeoServicesSqlParserTests
     // literals must survive intact inside string Literal nodes (it is the parser's job to
     // keep it a value; the translator binds it as a parameter — proven in the translator
     // injection tests).
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CaseWithInjectionPayloadInLiterals_KeepsPayloadAsLiteralValues()
     {

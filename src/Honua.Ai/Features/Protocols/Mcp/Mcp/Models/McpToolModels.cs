@@ -42,6 +42,36 @@ internal sealed class McpCancelJobArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_diagnose_job</c> (honua-server#6219).
+/// </summary>
+internal sealed class McpDiagnoseJobArgument
+{
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("events")]
+    public int? Events { get; set; }
+
+    [JsonPropertyName("eventCursor")]
+    public string? EventCursor { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_job_evidence</c> (honua-server#6219).
+/// </summary>
+internal sealed class McpJobEvidenceArgument
+{
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("events")]
+    public int? Events { get; set; }
+
+    [JsonPropertyName("eventCursor")]
+    public string? EventCursor { get; set; }
+}
+
+/// <summary>
 /// Arguments for <c>honua_ops_findings</c>: list active deterministic ops
 /// findings, or fetch a single finding by its stable identifier.
 /// </summary>
@@ -219,6 +249,15 @@ internal sealed class McpMetadataReleaseMutationArgument
 
 internal sealed class McpPlatformReleaseConvergenceArgument
 {
+    /// <summary>
+    /// Optional release the agent intends to converge to (for example <c>2026.1-rc.3</c>). When set
+    /// and it does not name the declared <c>ControlPlane:PlatformRelease:Version</c> (compared with
+    /// <c>PlatformReleaseVersion.Normalize</c>), the proposal is rejected with
+    /// <c>platform_release_version_mismatch</c> instead of sealing a convergence to a different release.
+    /// </summary>
+    [JsonPropertyName("targetVersion")]
+    public string? TargetVersion { get; set; }
+
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
 
@@ -265,6 +304,26 @@ internal sealed class McpProposeOperationOutput
 
     [JsonPropertyName("targets")]
     public McpConvergenceTargetOutput[]? Targets { get; set; }
+
+    /// <summary>Stable machine-readable rejection code (for example <c>platform_release_version_mismatch</c>).</summary>
+    [JsonPropertyName("code")]
+    public string? Code { get; set; }
+
+    /// <summary>Declared platform-release version, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("declaredVersion")]
+    public string? DeclaredVersion { get; set; }
+
+    /// <summary>The requested target version, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("targetVersion")]
+    public string? TargetVersion { get; set; }
+
+    /// <summary>Declared serving artifact reference, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("servingArtifactReference")]
+    public string? ServingArtifactReference { get; set; }
+
+    /// <summary>Deploy-preflight co-versioning summary, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("isCoVersioned")]
+    public bool? IsCoVersioned { get; set; }
 }
 
 internal sealed class McpConvergenceTargetOutput
@@ -361,6 +420,16 @@ internal sealed class McpPublishServiceOutput
 
     [JsonPropertyName("handleId")]
     public string HandleId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// <see langword="false"/> when the operation instance record was not durably persisted: a
+    /// direct publish on a host started without Redis (owner decision 20). The identities and
+    /// audit receipts are real, but the handle cannot be read back through the operation status
+    /// surfaces. Omitted when the record went to the composed instance store.
+    /// </summary>
+    [JsonPropertyName("durable")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Durable { get; set; }
 
     [JsonPropertyName("proposalId")]
     public string? ProposalId { get; set; }
@@ -1027,28 +1096,6 @@ internal sealed class McpCancelJobOutput
 
     [JsonPropertyName("cancellationRequested")]
     public bool CancellationRequested { get; set; }
-}
-
-/// <summary>
-/// Envelope for stub tools returning <c>not_implemented</c> with enough
-/// information for operators to understand the contract and the unblock path.
-/// </summary>
-internal sealed class McpNotImplementedOutput
-{
-    [JsonPropertyName("status")]
-    public string Status { get; set; } = "not_implemented";
-
-    [JsonPropertyName("tool")]
-    public string Tool { get; set; } = string.Empty;
-
-    [JsonPropertyName("blockedBy")]
-    public string BlockedBy { get; set; } = string.Empty;
-
-    [JsonPropertyName("contract")]
-    public string Contract { get; set; } = string.Empty;
-
-    [JsonPropertyName("nextSteps")]
-    public IReadOnlyList<string> NextSteps { get; set; } = [];
 }
 
 /// <summary>

@@ -76,9 +76,16 @@ internal static class KmlFormatReader
         var attributes = new AttributesTable();
         NtsGeometry? geometry = null;
 
-        while (await reader.ReadAsync())
+        // ReadElementContentAsStringAsync consumes the element's end tag and leaves the reader ON
+        // the following node. Calling ReadAsync again would then step over that node, and the node
+        // after a Placemark's <name>/<description> is very often the geometry itself — which was
+        // silently dropped, yielding a feature with no geometry at all (honua-server#4419). Reuse
+        // the already-positioned node instead of advancing past it.
+        var reuseCurrentNode = false;
+        while (reuseCurrentNode || await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            reuseCurrentNode = false;
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "Placemark")
                 break;
@@ -90,10 +97,12 @@ internal static class KmlFormatReader
                     case "name":
                         var name = await reader.ReadElementContentAsStringAsync();
                         AddOrReplaceAttribute(attributes, "name", name);
+                        reuseCurrentNode = true;
                         break;
                     case "description":
                         var desc = await reader.ReadElementContentAsStringAsync();
                         AddOrReplaceAttribute(attributes, "description", desc);
+                        reuseCurrentNode = true;
                         break;
                     case "ExtendedData":
                         await ParseExtendedDataAsync(reader, attributes, cancellationToken);
@@ -108,6 +117,7 @@ internal static class KmlFormatReader
                         {
                             AddOrReplaceAttribute(attributes, simpleDataName, simpleDataValue);
                         }
+                        reuseCurrentNode = true;
                         break;
                     case "Point":
                         geometry = await ParsePointAsync(reader, geometryFactory, cancellationToken);
@@ -133,9 +143,13 @@ internal static class KmlFormatReader
         AttributesTable attributes,
         CancellationToken cancellationToken)
     {
-        while (await reader.ReadAsync())
+        // Same hazard as ParsePlacemarkAsync: a SimpleData read leaves the reader on the next node,
+        // so consecutive <SimpleData> siblings would drop every other one.
+        var reuseCurrentNode = false;
+        while (reuseCurrentNode || await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            reuseCurrentNode = false;
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "ExtendedData")
                 break;
@@ -155,6 +169,8 @@ internal static class KmlFormatReader
                 {
                     AddOrReplaceAttribute(attributes, name, value);
                 }
+
+                reuseCurrentNode = true;
             }
         }
     }

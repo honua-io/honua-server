@@ -16,6 +16,12 @@ the full result, including the drafted intent id, stable. Model-backed
 engines can plug in through the same interface without touching the service,
 the authorization graph, or the tool surface.
 
+Catalog layers and services are selected from routable publications visible to the
+request tenant and allowed by the shared resource metadata access evaluation.
+Filtering happens before scoring and shortlist limits. Services without readable
+publications or service metadata access are omitted. The supplied principal is used for each grounding call;
+request tenant resolution is retained while metadata loads in a fresh scope.
+
 ## Pipeline
 
 ```
@@ -32,7 +38,8 @@ GroundingRequest (goal, optional hint, explicit inputs, assumption policy)
 ┌──────────────────────────────────────────────────────────────────────┐
 │ GroundingService                                                     │
 │  1. Tokenize goal                                                    │
-│  2. Engine classification + candidate scoring                        │
+│  2. Engine classification + candidate scoring (job-callable          │
+│     processes only — see "Deterministic engine" below)               │
 │  3. IGroundingAuthorizationFilter — drop candidates the principal    │
 │     cannot see (shares the IOperatorAuthorizationEvaluator graph)    │
 │  4. Apply confidence bands + MaxCandidatesPerKind cap                │
@@ -181,7 +188,14 @@ is the engine the conformance harness pins against.
   evidence entry; falls back to `Analyze` with low confidence when nothing
   matches.
 - **Process ranker**: weighted bag-of-lemma over `{ title: 0.55,
-  category: 0.20, description: 0.15, parameter: 0.10 }`.
+  category: 0.20, description: 0.15, parameter: 0.10 }`. `GroundingService`
+  restricts the pool handed to the ranker to processes
+  `ProcessExecutionEligibility.IsJobCallable` accepts — a `process.selection`
+  candidate is what a caller places into an `AnalysisPlan` step and submits
+  to the job runtime, so a protocol-only or workflow-only operation (declared
+  via `ProcessDefinition.SupportedEntryPoints`) is never ranked, regardless of
+  text overlap. This filter runs independently of which `IGroundingEngine` is
+  wired (honua-server#4454).
 - **Layer / service rankers**: name + description overlap.
 
 Every candidate carries an `Evidence` list whose entries report hit counts
@@ -243,7 +257,7 @@ process IDs that a catalog addition could reshuffle.
 ## Spec-workspace grounding
 
 The workflow-family pipeline above grounds an operator goal into typed
-intents and catalog candidates. Editing a canonical [spec grammar](../../developer/spec-grammar/v1.0/README.md)
+intents and catalog candidates. Editing a canonical [spec grammar](../../developer/spec-grammar/spec-grammar-v1.0.md)
 document from natural language is a separate surface:
 
 - `POST /v1/grounding/spec/mutate` — NL turn → validated `SpecMutationPlan`
@@ -266,14 +280,14 @@ reason codes (`ambiguous_dataset`, `ambiguous_column`,
 candidate payloads. Explicit roadmap keywords (`schedule`, `publish`,
 `deploy`, `dashboard`, `app`) surface `out_of_scope`; other turns that
 cannot be mapped to the closed mutation catalog stay `unresolvable`.
-See [Spec Grounding v1.0](../../developer/spec-grounding/v1.0/README.md) for the full
+See [Spec Grounding v1.0](../../developer/spec-grounding/spec-grounding-v1.0.md) for the full
 contract and clause grammar.
 
 ## Related
 
 - [MCP_SERVER.md](../../guides/connect/ai-agents-mcp.md) — operator MCP surface (tool definitions,
   payload shapes, authorization story)
-- [Spec Grounding v1.0](../../developer/spec-grounding/v1.0/README.md) — spec-workspace
+- [Spec Grounding v1.0](../../developer/spec-grounding/spec-grounding-v1.0.md) — spec-workspace
   mutate/summarize HTTP surface
 - [ADR-0027](../contributor/adr/0027-deterministic-intent-clarification-workflow.md) — canonical workflow
   taxonomy and material-ambiguity contract

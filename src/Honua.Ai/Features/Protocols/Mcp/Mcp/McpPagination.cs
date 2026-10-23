@@ -115,10 +115,26 @@ internal static class McpPagination
     {
         ArgumentNullException.ThrowIfNull(contents);
 
+        if (contents.Any(content => content.Blob is not null))
+        {
+            if (!string.IsNullOrEmpty(cursor))
+            {
+                throw new GeoprocessingValidationException("Binary resources do not support a pagination cursor.");
+            }
+            var binaryChars = contents.Sum(content => (long)(content.Blob?.Length ?? 0) + (content.Text?.Length ?? 0));
+            if (binaryChars > maxChars || binaryChars > MaxResourceReadChars)
+            {
+                throw new GeoprocessingValidationException(
+                    $"Binary resources cannot be chunked; retry with maxChars of at least {binaryChars}, up to {MaxResourceReadChars}, or render a smaller image.");
+            }
+            nextCursor = null;
+            return contents;
+        }
+
         var totalChars = 0L;
         foreach (var content in contents)
         {
-            totalChars += content.Text.Length;
+            totalChars += (content.Text?.Length ?? 0);
         }
 
         // Fast path: an unpaginated read of a document that fits in one page is
@@ -142,7 +158,7 @@ internal static class McpPagination
             (contentIndex, charOffset) = DecodeReadCursor(cursor);
             if (contentIndex < 0
                 || contentIndex > contents.Count
-                || (contentIndex < contents.Count && (charOffset < 0 || charOffset > contents[contentIndex].Text.Length)))
+                || (contentIndex < contents.Count && (charOffset < 0 || charOffset > (contents[contentIndex].Text?.Length ?? 0))))
             {
                 throw new GeoprocessingValidationException("The pagination cursor is invalid or has expired.");
             }
@@ -155,23 +171,23 @@ internal static class McpPagination
         while (i < contents.Count && budget > 0)
         {
             var content = contents[i];
-            if (offset >= content.Text.Length)
+            if (offset >= (content.Text?.Length ?? 0))
             {
                 i++;
                 offset = 0;
                 continue;
             }
 
-            var take = Math.Min(budget, content.Text.Length - offset);
+            var take = Math.Min(budget, (content.Text?.Length ?? 0) - offset);
             page.Add(new McpResourceContent
             {
                 Uri = content.Uri,
                 MimeType = content.MimeType,
-                Text = content.Text.Substring(offset, take),
+                Text = content.Text!.Substring(offset, take),
             });
             offset += take;
             budget -= take;
-            if (offset >= content.Text.Length)
+            if (offset >= (content.Text?.Length ?? 0))
             {
                 i++;
                 offset = 0;
@@ -180,7 +196,7 @@ internal static class McpPagination
 
         // Normalize the resume position past any fully consumed/empty blocks so a
         // trailing empty content does not produce a dangling nextCursor.
-        while (i < contents.Count && offset >= contents[i].Text.Length)
+        while (i < contents.Count && offset >= (contents[i].Text?.Length ?? 0))
         {
             i++;
             offset = 0;

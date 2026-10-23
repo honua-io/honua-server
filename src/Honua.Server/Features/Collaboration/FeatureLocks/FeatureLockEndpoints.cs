@@ -16,6 +16,24 @@ internal static class FeatureLockEndpoints
     private const int MinLeaseSeconds = 1;
     private const int MaxLeaseSeconds = 3600;
 
+    // Published on every feature-lock route so a client discovers what a lease actually
+    // guarantees from the API description itself, not only from the documentation site
+    // (#4402). Every claim in this text is enforced by a test: FeatureServer, OGC API
+    // Features and OData all consult IFeatureEditGuard before mutating a feature, and the
+    // only lease store that ships is in-process.
+    private const string EnforcementScopeDescription =
+        "Feature-edit leases are ENFORCED on every write path: while another editor holds " +
+        "a lease, a FeatureServer applyEdits slot for that feature fails with code 1005 " +
+        "(FeatureLocked), and OGC API Features and OData writes return 423 Locked. " +
+        "Claiming a lease is optional — a caller that holds none is unaffected. " +
+        "SCOPE LIMITS for 2026.1: enforcement is NODE-LOCAL (the shipped lease store is " +
+        "in-process, so a lease does not survive a restart and does not block a write " +
+        "routed to another node), client-supplied expected-version tokens are NOT enforced " +
+        "on GeoServices applyEdits, and the shipped lock authorizer denies every claim " +
+        "until a deployment supplies its own. A lease is keyed on the routed service NAME, " +
+        "the published layer id, and the feature's OBJECTID. " +
+        "See docs/reference/collaboration/feature-locks.md.";
+
     public static void MapFeatureLockEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/feature-locks")
@@ -29,6 +47,7 @@ internal static class FeatureLockEndpoints
 
         group.MapPost("/claim", HandleClaim)
             .WithDisplayName("Claim Saved Map Feature Lock")
+            .WithDescription(EnforcementScopeDescription)
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<ApiResponse<FeatureLockClaimResponse>>()
             .Produces<ApiResponse<FeatureLockClaimResponse>>(StatusCodes.Status409Conflict)
@@ -38,6 +57,7 @@ internal static class FeatureLockEndpoints
 
         group.MapPost("/renew", HandleRenew)
             .WithDisplayName("Renew Saved Map Feature Lock")
+            .WithDescription(EnforcementScopeDescription)
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<ApiResponse<FeatureLockRenewResponse>>()
             .Produces<ApiResponse<FeatureLockRenewResponse>>(StatusCodes.Status404NotFound)
@@ -48,6 +68,7 @@ internal static class FeatureLockEndpoints
 
         group.MapPost("/release", HandleRelease)
             .WithDisplayName("Release Saved Map Feature Lock")
+            .WithDescription(EnforcementScopeDescription)
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<ApiResponse<FeatureLockReleaseResponse>>()
             .Produces<ApiResponse<FeatureLockReleaseResponse>>(StatusCodes.Status404NotFound)
@@ -76,7 +97,7 @@ internal static class FeatureLockEndpoints
 
         var result = await locks.ClaimAsync(
                 request.ToFeatureRef(),
-                request.ToHolder(),
+                request.ToHolder(context.User),
                 request.ToLeaseDuration(),
                 auth.Access,
                 context.RequestAborted)
@@ -112,7 +133,7 @@ internal static class FeatureLockEndpoints
 
         var result = await locks.RenewAsync(
                 request.ToFeatureRef(),
-                request.ToHolder(),
+                request.ToHolder(context.User),
                 request.ToLeaseDuration(),
                 auth.Access,
                 context.RequestAborted)
@@ -146,7 +167,7 @@ internal static class FeatureLockEndpoints
 
         var result = await locks.ReleaseAsync(
                 request.ToFeatureRef(),
-                request.ToHolder(),
+                request.ToHolder(context.User),
                 auth.Access,
                 context.RequestAborted)
             .ConfigureAwait(false);

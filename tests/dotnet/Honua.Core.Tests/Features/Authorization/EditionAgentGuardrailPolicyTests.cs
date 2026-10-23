@@ -29,6 +29,7 @@ public sealed class EditionAgentGuardrailPolicyTests
     private static EditionAgentGuardrailPolicy PolicyFor(HonuaEdition edition)
         => new(new StubEntitlementService(edition));
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(HonuaEdition.Community, AgentGuardrailLevel.Direct)]
     [InlineData(HonuaEdition.Pro, AgentGuardrailLevel.Validated)]
@@ -38,6 +39,7 @@ public sealed class EditionAgentGuardrailPolicyTests
         PolicyFor(edition).LevelFor(edition).Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_Community_RunsDirectlyWithNoGuardrails()
     {
@@ -53,6 +55,7 @@ public sealed class EditionAgentGuardrailPolicyTests
         decision.ReasonCodes.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_Pro_RequiresValidationLayerAndSnapshotButNotApproval()
     {
@@ -70,6 +73,7 @@ public sealed class EditionAgentGuardrailPolicyTests
         decision.ReasonCodes.Should().NotContain("agent-change-requires-approval");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_Enterprise_RequiresApprovalAndPolicyAuditOnTopOfValidation()
     {
@@ -86,6 +90,7 @@ public sealed class EditionAgentGuardrailPolicyTests
         decision.ReasonCodes.Should().Contain("agent-action-policy-audit");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_Enterprise_DestructiveChange_EmitsDestructiveApprovalReason()
     {
@@ -95,6 +100,7 @@ public sealed class EditionAgentGuardrailPolicyTests
         decision.ReasonCodes.Should().Contain("destructive-agent-change-requires-approval");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_Pro_SnapshotUnsupportedOperation_FlagsUnsatisfiableGate()
     {
@@ -106,6 +112,7 @@ public sealed class EditionAgentGuardrailPolicyTests
         decision.ReasonCodes.Should().NotContain("pre-change-snapshot-required");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(HonuaEdition.Community)]
     [InlineData(HonuaEdition.Pro)]

@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Control access to services and layers"
+description: "Decide who can read and who can write each published service and layer, using access policies for coarse rules and roles with per-operation grants for fine-grained RBAC."
+resource: "honua://capability/identity.claims-mapping"
+---
 # Control access to services and layers
 
 Decide who can read and who can write each published service and layer, using access policies for coarse rules and roles with per-operation grants for fine-grained RBAC.
@@ -87,6 +93,14 @@ RLS controls which *rows* a role sees. Field-mask policies control which attribu
 fields a role can read. Matching field masks remove the named fields, with
 case-insensitive matching, even when the client explicitly requests them.
 
+Row-level security and field-mask policies are enforced by the PostgreSQL provider.
+Layers served by another provider (DuckDB, MySQL/MariaDB, SQL Server, Oracle,
+Redshift, Snowflake, Databricks, ArcGIS REST) cannot apply them. Creating a policy
+whose scope includes such a layer is rejected with `400`, naming the layer and its
+provider, and a read of such a layer by a caller that an existing policy applies to
+is refused rather than served unfiltered. In a deployment that mixes providers, scope
+policies to concrete PostgreSQL-backed layers instead of `*`.
+
 Feature-stream subscriptions resolve these same row and field policies for the
 subscriber. Both live delivery and cursor replay enforce row visibility and remove
 masked values from `attributes` and `changedAttributes`. Field masks also apply
@@ -98,6 +112,13 @@ Delete events with a before-image
 must pass row visibility; when a row policy applies and the event has no before-image,
 the delete is withheld because its visibility cannot be established. Stream routes
 also require access to the publication in the subscriber's effective tenant.
+
+Offline replica downloads (`synchronizeReplica`, `extractChanges`) judge each update
+and delete against the row image the change log recorded before the change, under the
+caller's current row policy and the replica scope. A delete is delivered only when the
+caller could read the row before it changed, and a row that becomes readable arrives
+as an add. Changes recorded before that image was captured, and branch-version edits,
+have no before-image, so their deletes stay withheld under a row policy.
 
 ## Verify
 

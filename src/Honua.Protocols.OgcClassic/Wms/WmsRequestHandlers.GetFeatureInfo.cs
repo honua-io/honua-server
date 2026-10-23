@@ -63,6 +63,14 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "MissingParameterValue", "QUERY_LAYERS parameter is required.");
         }
 
+        var maxLayers = GetWmsMaxLayersPerRequest(context);
+        var layerCountError = ValidateWmsLayerTokenCount(context, "LAYERS", mapLayerTokens.Length, maxLayers)
+            ?? ValidateWmsLayerTokenCount(context, "QUERY_LAYERS", queryLayerTokens.Length, maxLayers);
+        if (layerCountError != null)
+        {
+            return layerCountError;
+        }
+
         if (!TryGetRequiredQueryValue(query, "BBOX", out var bboxValue))
         {
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
@@ -135,6 +143,10 @@ internal static partial class WmsRequestHandlers
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedQueryLayer) ? "requested layer" : unresolvedQueryLayer;
             return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
         }
+
+        // Query each storage layer once: repeated QUERY_LAYERS tokens would otherwise repeat
+        // the temporal resolution and the identify scan per token (#6097).
+        queryLayers = [.. queryLayers.DistinctBy(layer => layer.StorageLayerId)];
 
         var mapLayerStorageIds = new HashSet<int>(mapLayers.Select(layer => layer.StorageLayerId));
         if (queryLayers.Any(layer => !mapLayerStorageIds.Contains(layer.StorageLayerId)))
@@ -220,8 +232,8 @@ internal static partial class WmsRequestHandlers
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();
-        var jsonFeatures = new List<WmsFeatureInfoFeature>();
-        var gmlFeatures = new List<WmsFeatureInfoFeature>();
+        var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
+        var gmlFeatures = new List<OgcClassicFeatureInfoFeature>();
 
         foreach (var layer in queryLayers)
         {
@@ -232,6 +244,7 @@ internal static partial class WmsRequestHandlers
 
             // Per-layer source SRID — see ResolveServiceSrid for the resolution order.
             var serviceSrid = ResolveServiceSrid(service, layer.Resource);
+            var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
             var layerClickExtent = clickExtent;
             if (requestSrid != serviceSrid)
@@ -272,7 +285,12 @@ internal static partial class WmsRequestHandlers
             // would address the wrong table when the protocol-facing index differs
             // from the storage handle (the common case once a graph has migrated its
             // bindings). Matches the resolution order the WMTS V2 port uses.
-            var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
+            var layerReader = await ResolveLayerReaderAsync(
+                context,
+                layer,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+            var queryResult = await layerReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
             if (queryResult.Items.Length == 0)
             {
                 continue;
@@ -287,11 +305,11 @@ internal static partial class WmsRequestHandlers
 
                 remaining--;
                 var layerName = GetWmsLayerDisplayName(layer);
-                var attributes = BuildVisibleFeatureInfoAttributes(item);
+                var attributes = BuildVisibleFeatureInfoAttributes(item, hiddenFields);
 
                 if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
                 {
-                    jsonFeatures.Add(new WmsFeatureInfoFeature
+                    jsonFeatures.Add(new OgcClassicFeatureInfoFeature
                     {
                         Layer = layerName,
                         Attributes = attributes
@@ -301,7 +319,7 @@ internal static partial class WmsRequestHandlers
 
                 if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
                 {
-                    gmlFeatures.Add(new WmsFeatureInfoFeature
+                    gmlFeatures.Add(new OgcClassicFeatureInfoFeature
                     {
                         Layer = layerName,
                         Attributes = attributes
@@ -324,20 +342,27 @@ internal static partial class WmsRequestHandlers
 
         if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            var payload = new WmsFeatureInfoResponse
+            var payload = new OgcClassicFeatureInfoResponse
             {
                 Features = [.. jsonFeatures]
             };
 
-            return Results.Json(payload, OgcClassicJsonContext.Default.WmsFeatureInfoResponse, contentType: JsonMimeType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.OgcClassicFeatureInfoResponse, contentType: JsonMimeType);
         }
 
         if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
         {
+            // The schema location names the endpoint and WMS version that answered this request
+            // (honua-server#5019). This handler serves both the MapServer mount and the OGC mount,
+            // and a fixed MapServer/1.1.1 location sent a 1.3.0 response from the OGC mount to a
+            // different endpoint and protocol version, one that is unreachable when only WMS is
+            // enabled. BaseUrlResolver already includes PathBase, so only the matched route path is
+            // appended; the version is the canonical constant for the version already validated.
             var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+            var schemaVersion = IsWms111Version(versionValue) ? Wms111Version : Wms13Version;
             var schemaUrl =
-                $"{baseUrl}/rest/services/{Uri.EscapeDataString(serviceId)}/MapServer/WMS"
-                + $"?SERVICE=WMS&VERSION={Wms111Version}&REQUEST={WmsGmlFeatureInfoSchemaRequest}";
+                $"{baseUrl}{context.Request.Path.ToUriComponent()}"
+                + $"?SERVICE=WMS&VERSION={schemaVersion}&REQUEST={WmsGmlFeatureInfoSchemaRequest}";
             var gml = BuildWmsGmlFeatureInfo(gmlFeatures, schemaUrl);
             return Results.Content(gml, GmlFeatureInfoMimeType, Encoding.UTF8, StatusCodes.Status200OK);
         }
@@ -390,7 +415,7 @@ internal static partial class WmsRequestHandlers
     /// content type matches the advertised GML format.
     /// </summary>
     private static string BuildWmsGmlFeatureInfo(
-        IReadOnlyList<WmsFeatureInfoFeature> features,
+        IReadOnlyList<OgcClassicFeatureInfoFeature> features,
         string schemaUrl)
     {
         var sb = new StringBuilder(512);

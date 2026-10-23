@@ -203,6 +203,48 @@ internal static class ProcessEndpoints
         return Results.Json(processList, OgcProcessesJsonContext.Default.OgcProcessList, MediaTypes.Json);
     }
 
+    /// <summary>
+    /// Maximum accepted <c>Idempotency-Key</c> header length (server#4627). Bounds abusive
+    /// payloads; the resolved GP job id is a fixed-size hash of the key regardless of length.
+    /// </summary>
+    private const int MaxIdempotencyKeyLength = 512;
+
+    /// <summary>
+    /// Resolves the optional <c>Idempotency-Key</c> request header (server#4627): OGC API
+    /// Processes has no native idempotency-key concept, so this is a documented, additive
+    /// Honua extension wired to the same canonical <c>Idempotency-Key</c> header semantics
+    /// MCP and the admin/webhook endpoints already use. Absent header ⇒ unchanged legacy
+    /// behavior (a fresh job id every submission). Present but malformed ⇒ a clear 400
+    /// rather than silently ignoring a client's deduplication intent.
+    /// </summary>
+    private static bool TryResolveIdempotencyKey(HttpContext context, out string? idempotencyKey, out string? error)
+    {
+        idempotencyKey = null;
+        error = null;
+
+        if (!context.Request.Headers.TryGetValue("Idempotency-Key", out var values) || values.Count == 0)
+        {
+            return true;
+        }
+
+        var raw = values[0];
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            error = "Idempotency-Key header must not be empty.";
+            return false;
+        }
+
+        var trimmed = raw.Trim();
+        if (trimmed.Length > MaxIdempotencyKeyLength)
+        {
+            error = $"Idempotency-Key header must be at most {MaxIdempotencyKeyLength} characters.";
+            return false;
+        }
+
+        idempotencyKey = trimmed;
+        return true;
+    }
+
     private static bool TryParseProcessListLimit(HttpRequest request, out int? limit)
     {
         limit = null;
@@ -513,6 +555,14 @@ internal static class ProcessEndpoints
                 }
             }
 
+            if (!TryResolveIdempotencyKey(context, out var idempotencyKey, out var idempotencyKeyError))
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid Idempotency-Key header",
+                    idempotencyKeyError!);
+            }
+
             var submissionCatalog = definition != null
                 && OgcProcessesCiteEchoFixture.IsDefinition(definition)
                     ? processCatalog
@@ -520,7 +570,7 @@ internal static class ProcessEndpoints
             var jobRecord = await jobService
                 .SubmitProtocolJobAsync(
                     analysisPlan!,
-                    idempotencyKey: null,
+                    idempotencyKey,
                     context.User,
                     submissionCatalog,
                     metadata,

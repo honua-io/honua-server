@@ -5,6 +5,8 @@
  * and other constants used in matrix testing.
  */
 
+import esriFieldTypes from './esri-field-types.json';
+
 // =============================================================================
 // Spatial Relationships
 // =============================================================================
@@ -24,8 +26,8 @@ export const NON_DISTANCE_SPATIAL_RELS = [
 
 /** Distance-based spatial relationships */
 export const DISTANCE_SPATIAL_RELS = [
-  'esriSpatialRelWithinDistance',
-  'esriSpatialRelBeyondDistance',
+  'withinDistance',
+  'beyondDistance',
 ] as const;
 
 /** All spatial relationships */
@@ -79,6 +81,17 @@ export const ALL_GEOMETRY_METHODS = [
 ] as const;
 
 // =============================================================================
+// Esri Field Types
+// =============================================================================
+
+/**
+ * Esri field types a GeoServices client must accept in layer field metadata. The list lives in
+ * esri-field-types.json so the .NET GeoServicesFieldTypeClientContractTests (which run on every PR)
+ * hold the server's advertised field types to the same contract this suite enforces.
+ */
+export const VALID_ESRI_FIELD_TYPES: readonly string[] = esriFieldTypes.fieldTypes;
+
+// =============================================================================
 // Esri Geometry Types
 // =============================================================================
 
@@ -89,8 +102,6 @@ export const VALID_ESRI_GEOMETRY_TYPES = [
   'esriGeometryPolyline',
   'esriGeometryPolygon',
   'esriGeometryEnvelope',
-  // Honua reports Mixed / None / GeometryCollection layers' geometryType as esriGeometryNull.
-  'esriGeometryNull',
 ] as const;
 
 // =============================================================================

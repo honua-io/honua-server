@@ -15,7 +15,7 @@
 #   - ./output/owslib:/output             (where the .cert.json envelopes land)
 # and set HONUA_BASE_URL to the compose `honua` service.
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

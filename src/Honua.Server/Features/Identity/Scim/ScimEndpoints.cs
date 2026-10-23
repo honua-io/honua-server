@@ -7,6 +7,8 @@ using System.Text.Json;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Identity.Scim.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -293,6 +295,14 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status404NotFound, "User not found.");
         }
 
+        if (!active)
+        {
+            await PortalOAuthRefreshRevoker.RevokeManagedUserAsync(
+                context.RequestServices.GetService<PortalOAuthStore>(),
+                updated,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+
         ScimLog.UserActiveChanged(logger, updated.UserId, active);
         return ScimJson(ToScimUser(updated), ScimJsonContext.Default.ScimUser, StatusCodes.Status200OK);
     }
@@ -309,12 +319,17 @@ internal static partial class ScimEndpoints
             return Unauthorized();
         }
 
+        var existing = await store.GetUserAsync(id, context.RequestAborted).ConfigureAwait(false);
         var deleted = await store.DeleteUserAsync(id, context.RequestAborted).ConfigureAwait(false);
         if (!deleted)
         {
             return ScimErrorResult(StatusCodes.Status404NotFound, "User not found.");
         }
 
+        await PortalOAuthRefreshRevoker.RevokeManagedUserAsync(
+            context.RequestServices.GetService<PortalOAuthStore>(),
+            existing,
+            context.RequestAborted).ConfigureAwait(false);
         ScimLog.UserDeprovisioned(logger, id);
         return Results.StatusCode(StatusCodes.Status204NoContent);
     }
@@ -547,7 +562,16 @@ internal static partial class ScimEndpoints
         }
 
         var presented = raw[BearerPrefix.Length..].Trim();
-        return FixedTimeEquals(presented, configured);
+        if (!FixedTimeEquals(presented, configured))
+        {
+            return false;
+        }
+
+        // The static bearer is validated entirely here without attaching a principal to
+        // HttpContext.User, so the shared cache policy must be told explicitly or a
+        // successful response reads as anonymous and stays cacheable after revocation.
+        AuthenticationResponseCachePolicy.MarkAuthenticated(context);
+        return true;
     }
 
     private static bool FixedTimeEquals(string a, string b)

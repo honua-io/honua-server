@@ -109,12 +109,12 @@ public sealed class QueryParameters
     /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelIndexIntersects,
     /// esriSpatialRelContains, esriSpatialRelWithin, esriSpatialRelCrosses, esriSpatialRelTouches,
     /// esriSpatialRelOverlaps, esriSpatialRelDisjoint, esriSpatialRelEquals,
-    /// esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance)
+    /// withinDistance, beyondDistance)
     /// </summary>
     public string? SpatialRel { get; init; }
 
     /// <summary>
-    /// Distance value for distance-based spatial queries (esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance).
+    /// Distance value for distance-based spatial queries (withinDistance, beyondDistance).
     /// Required when using distance-based spatial relationships.
     /// </summary>
     public double? Distance { get; init; }

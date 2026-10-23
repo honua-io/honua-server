@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Protocols.Ogc.Common;
 
@@ -118,14 +117,12 @@ public sealed record OgcRecordFeature
     public required string Id { get; init; }
 
     /// <summary>
-    /// Optional GeoJSON geometry. Catalog records are currently extent-backed, so
-    /// this is null and bbox carries the spatial footprint. RFC 7946 §3.2 requires
-    /// the "geometry" member to be present (with a null value) on every Feature,
-    /// so it must never be omitted from the payload.
+    /// Optional GeoJSON geometry describing the record's spatial extent. Records
+    /// without a spatial extent retain the required null geometry member.
     /// </summary>
     [JsonPropertyName("geometry")]
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
-    public JsonElement? Geometry { get; init; }
+    public OgcRecordGeometry? Geometry { get; init; }
 
     /// <summary>
     /// Optional bbox in CRS84 order.
@@ -145,6 +142,24 @@ public sealed record OgcRecordFeature
     /// </summary>
     [JsonPropertyName("links")]
     public required ImmutableArray<Link> Links { get; init; }
+}
+
+/// <summary>
+/// GeoJSON Polygon used to expose a record's spatial extent.
+/// </summary>
+public sealed record OgcRecordGeometry
+{
+    /// <summary>
+    /// GeoJSON geometry type.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "Polygon";
+
+    /// <summary>
+    /// Polygon rings in CRS84 coordinate order.
+    /// </summary>
+    [JsonPropertyName("coordinates")]
+    public required ImmutableArray<ImmutableArray<ImmutableArray<double>>> Coordinates { get; init; }
 }
 
 /// <summary>

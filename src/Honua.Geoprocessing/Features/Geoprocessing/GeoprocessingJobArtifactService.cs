@@ -7,6 +7,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
@@ -36,6 +37,8 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly IGeoprocessingRasterSourceResolver? _rasterSourceResolver;
     private readonly GeoprocessingRasterOutputRegistrar? _outputRegistrar;
     private readonly IGeoprocessingOutputObjectStore? _outputStore;
+    private readonly TimeProvider _timeProvider;
+    private readonly IJobTerminalCallback[] _terminalCallbacks;
 
     /// <summary>
     /// Creates the artifact coordinator over the catalog, the optional result-package store,
@@ -48,7 +51,9 @@ internal sealed class GeoprocessingJobArtifactService
         IGeoprocessingResultPackageStore? resultPackageStore = null,
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
         GeoprocessingRasterOutputRegistrar? outputRegistrar = null,
-        IGeoprocessingOutputObjectStore? outputStore = null)
+        IGeoprocessingOutputObjectStore? outputStore = null,
+        TimeProvider? timeProvider = null,
+        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -57,6 +62,84 @@ internal sealed class GeoprocessingJobArtifactService
         _rasterSourceResolver = rasterSourceResolver;
         _outputRegistrar = outputRegistrar;
         _outputStore = outputStore;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
+    }
+
+    /// <summary>
+    /// Replays terminal callbacks against the job as stored, before a result package is read,
+    /// so a job whose first transition never ran them (for example one finalized by another
+    /// process) is healed. The replay is skipped when the job's result package is already
+    /// stored: that package is only written after its artifacts persisted, so there is nothing
+    /// to heal and a status poll must not re-persist anything (#6107).
+    /// Callbacks use <see cref="CancellationToken.None"/> so a cancelled result read cannot
+    /// leave a replay half-done. The replay is non-destructive: replay-aware callbacks never
+    /// rewrite the terminal job, and a failed repair is rethrown as a retryable
+    /// <see cref="GeoprocessingStoreUnavailableException"/> after every callback has run.
+    /// </summary>
+    internal async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
+    {
+        if (_terminalCallbacks.Length == 0
+            || await HasStoredResultPackageAsync(job).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        GeoprocessingStoreUnavailableException? retryable = null;
+        foreach (var callback in _terminalCallbacks)
+        {
+            try
+            {
+                if (callback is IReplayableJobTerminalCallback replayable)
+                {
+                    await replayable.ReplayAsync(job, CancellationToken.None).ConfigureAwait(false);
+                }
+                else
+                {
+                    await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            catch (GeoprocessingStoreUnavailableException ex) when (callback is IReplayableJobTerminalCallback)
+            {
+                GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
+                retryable ??= ex;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
+            }
+        }
+
+        if (retryable is not null)
+        {
+            throw retryable;
+        }
+    }
+
+    private async Task<bool> HasStoredResultPackageAsync(ExecutionJobRecord job)
+    {
+        if (_resultPackageStore is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var stored = await _resultPackageStore
+                .GetAsync(job.OperationId, CancellationToken.None)
+                .ConfigureAwait(false);
+            return stored is not null
+                && string.Equals(
+                    stored.ResultPackageId,
+                    GeoprocessingResultPackageFactory.CreateResultPackageId(job),
+                    StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Unknown is treated as missing: the replay is idempotent and non-destructive.
+            GeoprocessingServiceLog.JobResultsStoreReadFailed(_logger, job.OperationId, ex);
+            return false;
+        }
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -252,13 +335,22 @@ internal sealed class GeoprocessingJobArtifactService
     /// Returns the result package for a terminal job: the durable stored package when it
     /// matches the expected identifier, otherwise a freshly synthesized package (persisted
     /// best-effort for subsequent reads). Store read/write failures are logged and
-    /// swallowed so retrieval always succeeds from terminal job state.
+    /// swallowed so retrieval succeeds from terminal job state while the results are
+    /// still retained.
     /// </summary>
+    /// <exception cref="GeoprocessingNotFoundException">
+    /// <see cref="GeoprocessingExecutorOptions.ResultRetention"/> has elapsed since the job
+    /// reached its terminal state. The job record can outlive the results (the job store
+    /// keeps its own, longer retention), so availability is bounded here, from the job's
+    /// completion time, rather than by whether a package is still cached: otherwise an
+    /// expired package would be re-synthesized from the lingering record on every read.
+    /// </exception>
     public async Task<AnalysisResultPackage> GetOrSynthesizeResultPackageAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken)
     {
         var jobId = job.OperationId;
+        EnsureResultsRetained(job);
         var expectedResultPackageId = GeoprocessingResultPackageFactory.CreateResultPackageId(job);
         if (_resultPackageStore != null)
         {
@@ -319,6 +411,24 @@ internal sealed class GeoprocessingJobArtifactService
 
         GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
         return ProjectStagedArtifactAvailability(synthesizedPackage, jobId, _outputStore);
+    }
+
+    /// <summary>
+    /// Fails closed once the configured result retention has elapsed since the job
+    /// finished. <see cref="ExecutionJobRecord.CompletedAt"/> is the retention anchor;
+    /// a terminal record without it falls back to its last update.
+    /// </summary>
+    private void EnsureResultsRetained(ExecutionJobRecord job)
+    {
+        var finishedAt = job.CompletedAt ?? job.UpdatedAt;
+        if (_timeProvider.GetUtcNow() - finishedAt < ProgressRetention)
+        {
+            return;
+        }
+
+        GeoprocessingServiceLog.JobResultsExpired(_logger, job.OperationId);
+        throw new GeoprocessingNotFoundException(
+            $"Results for job '{job.OperationId}' are no longer available; the result retention period has elapsed.");
     }
 
     /// <summary>

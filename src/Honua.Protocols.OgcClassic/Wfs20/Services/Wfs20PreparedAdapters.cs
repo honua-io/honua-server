@@ -34,9 +34,16 @@ internal readonly record struct Wfs20QueryRequest
 /// <summary>
 /// Prepared WFS 2.0 edit inputs ready for adapter conversion.
 /// </summary>
+internal readonly record struct Wfs20EditOperation(
+    FeatureEditOperation Operation,
+    EditUpdateMode UpdateMode = EditUpdateMode.Merge);
+
+/// <summary>
+/// Prepared WFS 2.0 transaction inputs ready for adapter conversion.
+/// </summary>
 internal readonly record struct Wfs20EditRequest
 {
-    public ImmutableArray<FeatureEditOperation> Operations { get; init; }
+    public ImmutableArray<Wfs20EditOperation> Operations { get; init; }
 
     public bool RollbackOnFailure { get; init; }
 }
@@ -165,22 +172,23 @@ internal sealed class Wfs20EditParameterAdapter(
         }
     }
 
-    private static UnifiedEditOperation ToUnifiedOperation(FeatureEditOperation operation)
+    private static UnifiedEditOperation ToUnifiedOperation(Wfs20EditOperation prepared)
     {
+        var operation = prepared.Operation;
         return operation.Kind switch
         {
             FeatureEditOperationKind.Create => UnifiedEditOperation.Create(
                 EditFeature.ForCreate(
                     operation.Feature?.Geometry,
                     operation.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty)),
-            FeatureEditOperationKind.Update => CreateUpdateOperation(operation),
+            FeatureEditOperationKind.Update => CreateUpdateOperation(operation, prepared.UpdateMode),
             FeatureEditOperationKind.Delete => UnifiedEditOperation.Delete(
                 operation.ObjectId ?? throw new InvalidOperationException("Delete operation is missing an object ID.")),
             _ => throw new InvalidOperationException($"Unsupported feature edit operation kind '{operation.Kind}'.")
         };
     }
 
-    private static UnifiedEditOperation CreateUpdateOperation(FeatureEditOperation operation)
+    private static UnifiedEditOperation CreateUpdateOperation(FeatureEditOperation operation, EditUpdateMode updateMode)
     {
         var feature = operation.Feature ?? throw new InvalidOperationException("Update operation is missing a feature payload.");
         return UnifiedEditOperation.Update(
@@ -188,6 +196,7 @@ internal sealed class Wfs20EditParameterAdapter(
                 feature.Id,
                 feature.Geometry,
                 feature.Attributes,
-                EditUpdateMode.Merge));
+                updateMode,
+                EditConstraints.WithExpectedState(FeatureStateToken.FromReadSnapshot(feature))));
     }
 }

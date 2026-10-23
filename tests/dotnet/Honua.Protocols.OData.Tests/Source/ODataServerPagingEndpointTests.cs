@@ -65,8 +65,9 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
 
         root.TryGetProperty("@odata.nextLink", out var nextLink).Should().BeTrue(
             "more rows than the page size exist, so the server must emit a nextLink for server-driven paging");
-        nextLink.GetString().Should().Contain($"$top={MaxPageSize}",
-            "the nextLink carries the clamped page size so clients page at a safe size");
+        nextLink.GetString().Should().Contain("$skip=5")
+            .And.Contain("$top=4995",
+                "the nextLink carries the remaining $top budget, not the clamped page size (#5464)");
     }
 
     [IntegrationTest]
@@ -103,6 +104,130 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
         // The seed has 15 features on layer 0; all must be reachable across pages.
         seen.Count.Should().Be(15);
         pages.Should().BeGreaterThan(1, "a 15-row layer with a page size of 5 requires multiple pages");
+    }
+
+    // OData 4.01 Part 1 §11.2.6.3 / §11.2.6.7 (#5464): $top bounds the whole requested
+    // collection. When the server page is smaller than $top, each nextLink carries the
+    // remaining budget, and the page that exhausts it carries no nextLink.
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$top=12")]
+    public async Task Features_WithTopAboveServerPage_ContinuationCarriesRemainingTop()
+    {
+        var pages = await FollowAsync($"/odata/Features({TestLayerId})?$top=12&$orderby=ObjectId&$select=ObjectId");
+
+        pages.Select(page => page.Ids.Count).Should().Equal(5, 5, 2);
+        pages[0].NextLink.Should().Contain("$skip=5").And.Contain("$top=7");
+        pages[1].NextLink.Should().Contain("$skip=10").And.Contain("$top=2");
+        pages[2].NextLink.Should().BeNull("the requested $top=12 is exhausted on the third page");
+        pages.SelectMany(page => page.Ids).Should().Equal(Enumerable.Range(1, 12).Select(id => (long)id));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$skiptoken=0&$top=7")]
+    public async Task Features_WithSkipTokenAndTopAboveServerPage_StopsAtTop()
+    {
+        var pages = await FollowAsync($"/odata/Features({TestLayerId})?$skiptoken=0&$top=7&$select=ObjectId");
+
+        pages.Select(page => page.Ids.Count).Should().Equal(5, 2);
+        pages[0].NextLink.Should().Contain("$skiptoken=").And.Contain("$top=2");
+        pages.SelectMany(page => page.Ids).Should().Equal(Enumerable.Range(1, 7).Select(id => (long)id));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task NextLink_WhenMoreResultsExist_ReturnsValidNextLink()
+    {
+        var pages = await FollowAsync($"/odata/Features({TestLayerId})", maxPages: 1);
+
+        pages[0].Ids.Should().HaveCount(MaxPageSize);
+        pages[0].NextLink.Should().NotBeNullOrEmpty();
+        pages[0].NextLink.Should().Contain("$skip=5");
+        pages[0].NextLink.Should().NotContain("$top=",
+            "a request without $top has no client ceiling, so the continuation must not invent one");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId}) follow nextLink")]
+    public async Task NextLink_FollowNextLink_ReturnsNextPage()
+    {
+        var pages = await FollowAsync($"/odata/Features({TestLayerId})", maxPages: 2);
+
+        pages[1].Ids.Should().HaveCount(5);
+        pages[1].Ids[0].Should().Be(6);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId}) iterate all pages")]
+    public async Task NextLink_IterateAllPages_ReturnsAllFeatures()
+    {
+        var pages = await FollowAsync($"/odata/Features({TestLayerId})");
+
+        pages.SelectMany(page => page.Ids).Should().HaveCount(15);
+        pages.Should().HaveCount(3); // 15 features / 5 per page = 3 pages
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$orderby=...")]
+    public async Task NextLink_WithOrderBy_PreservesOrderByInNextLink()
+    {
+        var pages = await FollowAsync($"/odata/Features({TestLayerId})?$orderby=population desc", maxPages: 1);
+
+        pages[0].NextLink.Should().Contain("$orderby");
+        pages[0].NextLink.Should().Contain("population");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$format=...")]
+    public async Task NextLink_WithFormat_PreservesFormatInNextLink()
+    {
+        var pages = await FollowAsync(
+            $"/odata/Features({TestLayerId})?$format=application/json;odata.metadata=none",
+            maxPages: 1);
+
+        pages[0].NextLink.Should().Contain("$format=");
+        pages[0].NextLink.Should().Contain("odata.metadata");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$skiptoken=0")]
+    public async Task NextLink_WithSkipToken_UsesSkipTokenInNextLink()
+    {
+        var pages = await FollowAsync($"/odata/Features({TestLayerId})?$skiptoken=0", maxPages: 1);
+
+        // Skip token is now an opaque Base64Url-encoded cursor, not a raw integer
+        pages[0].NextLink.Should().Contain("$skiptoken=");
+        pages[0].NextLink.Should().NotContain("$skip=");
+    }
+
+    private async Task<List<(List<long> Ids, string? NextLink)>> FollowAsync(string relativePath, int maxPages = 20)
+    {
+        var pages = new List<(List<long> Ids, string? NextLink)>();
+        string? current = relativePath;
+        while (current != null && pages.Count < maxPages)
+        {
+            var response = await _fixture.Client.GetAsync(current);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var ids = document.RootElement.GetProperty("value").EnumerateArray()
+                .Select(item => item.GetProperty("ObjectId").GetInt64())
+                .ToList();
+            var nextLink = document.RootElement.TryGetProperty("@odata.nextLink", out var link)
+                ? link.GetString()
+                : null;
+            pages.Add((ids, nextLink));
+            current = nextLink == null ? null : ToRelative(nextLink);
+        }
+
+        return pages;
     }
 
     private static string ToRelative(string url)

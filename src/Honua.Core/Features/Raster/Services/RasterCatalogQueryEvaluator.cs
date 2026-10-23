@@ -50,11 +50,11 @@ public static class RasterCatalogQueryEvaluator
 
         // 1. Temporal newest-batch, computed layer-wide (before identity/spatial narrowing) so the
         //    snapshot instant selects the same acquisition the canonical provider query would.
-        if (query.Timestamp is { } timestamp)
+        if (query.Timestamp is not null || query.TimeStart is not null)
         {
             var target = rasters
                 .Select(EffectiveAcquisition)
-                .Where(t => t <= timestamp)
+                .Where(t => (query.Timestamp is not { } end || t <= end) && (query.TimeStart is not { } start || t >= start))
                 .DefaultIfEmpty(default)
                 .Max();
 

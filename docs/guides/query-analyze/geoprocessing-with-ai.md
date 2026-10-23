@@ -1,136 +1,165 @@
+---
+type: guide
+title: "Geoprocessing with AI"
+description: "Let an MCP agent discover GP functions, validate a plan, execute it, and inspect the actual job results on a local or deployed Honua server."
+---
 # Geoprocessing with AI
 
-Use one governed `geometry.buffer` operation across OGC API Processes, Honua's MCP plan tools, and the JavaScript SDK, then hand the result artifact to Studio. This is stage two of the terminal journey: complete the [server setup and control-plane walkthrough](https://github.com/honua-io/honua-server/issues/3364) first, and continue with the [Studio save and reopen journey](https://github.com/honua-io/honua-server/issues/3305) when that documentation lands.
+An AI client uses Honua's MCP tools to discover processes and submit plans to the
+same GP runtime used by OGC API Processes and GPServer. The client model chooses
+the steps; Honua validates inputs, checks access, runs the job, and records results.
 
-> [!IMPORTANT]
-> **Capability truth.** `process.geoprocessing` and `process.ogc-api-processes` are Community capabilities. Process discovery is open; OGC execution requires an authenticated identity with `Process.Execute`. MCP plan validation is available in Community, but `honua_execute_plan` additionally requires a Pro license with the `ai.spec-apply` and `ai.agent-operations` entitlements. Redis-backed durable job storage is required for asynchronous execution. The bounded `geometry.buffer` operation is non-destructive and does not require approval. Mutating or destructive catalog operations require their additional grant and may enter the human approval lane. The direct geospatial-mcp analysis-profile verb `buffer_features` is not shipped: [#3269](https://github.com/honua-io/honua-server/issues/3269) blocks that shortcut. Use the shipped `honua_validate_plan` and, on Pro, `honua_execute_plan` tools below.
+Start the [local GP stack](gp-local-dev-quickstart.md), then connect an MCP client
+to `http://localhost:8080/mcp` using the [connection guide](../connect/ai-agents-mcp.md).
+The sample below uses inline geometry, so it needs no published input layer.
 
-## Before you start
+For an agent working directly in a developer checkout, the
+[devkit](gp-devkit-authoring.md) provides `list --json`, `describe --json`, and
+`doctor --managed-only --json`. Catalog registration does not prove dependencies
+are installed. A doctor result verifies only its reported checks; a successful
+`run` and inspected output are execution evidence.
 
-Set the server URL and API key without putting the credential in the guide or a checked-in file:
+Custom Python/.NET tools can use the [local debugging sample](../../../samples/gp-custom-local/README.md).
+Its receipts and progress events remain local and unsanitized. These local tools
+do not add MCP capabilities or authorize a remote deployment. Discover the live
+MCP surface before proposing remote inspection, retries, or deployment actions.
 
-```bash
-export HONUA_URL=http://localhost:8080
-export HONUA_API_KEY='<your API key>'
-```
+## Access and execution prerequisites
 
-The examples use `POINT(-122.4194 37.7749)` in EPSG:4326 and a planar distance of `0.00025` degrees. Use a projected CRS for a distance in meters.
+- Authenticate tool calls and resource reads. The local stack's admin key is
+  `quickstart-admin-password`; use the configured API key or bearer identity elsewhere.
+- Process execution needs `Process.Execute`. Mutating processes and custom code
+  require their additional grants. Approval requirements depend on the operation
+  and configured policy; the bounded buffer below is non-destructive.
+- MCP execution requires `ai.spec-apply` and the applicable agent-operation
+  entitlements. With license enforcement enabled, this is a Pro-or-higher path;
+  Community can validate plans. The local stack supplies its Development grant.
+- Async jobs need Redis. Native processes also need a matching heavy worker.
 
-## 1. Discover and describe the process
+## 1. Discover the live tool and process surface
 
-Use the JavaScript SDK to confirm that the candidate publishes the process, its
-execution modes, and both accepted geometry representations:
+Have the client call `tools/list` and read `honua://catalog/processes` with
+`resources/read`. Select a process whose `executionKind` is `Job` and whose
+`supportedExecutionModes` includes `Async`. Inspect its parameter names, types,
+allowed values, and output kinds before constructing inputs.
 
-```ts
-import { HonuaClient } from "@honua/sdk-js";
+Large catalog reads can span several text chunks. Follow `nextCursor` as
+`params.cursor`, concatenate the text for each resource URI, and parse the
+complete document only after the last chunk.
 
-const client = new HonuaClient({
-  baseUrl: process.env.HONUA_URL!,
-  apiKey: process.env.HONUA_API_KEY!,
-});
-const discovery = client.ogcProcesses();
-const conformance = await discovery.conformance();
-const processes = client.ogcProcesses({ conformance, capabilityPolicy: "advertised" });
-const description = await processes.describe("geometry.buffer");
-console.log(description.id, description.jobControlOptions, description.inputs, description.outputs);
-```
+The shipped execution tools are `honua_validate_plan`, `honua_dry_run_plan`,
+`honua_execute_plan`, `honua_list_jobs`, and `honua_cancel_job`. Use the live
+schemas to determine their arguments. The direct analysis verb `buffer_features`
+is not shipped; configuring an analysis profile does not implement it.
 
-The `wkb` input name is retained for compatibility, but its OGC schema accepts either base64 WKB or a GeoJSON geometry object (`application/geo+json`).
+The default tool view is deliberately small and can omit cancellation. Discover
+views with `honua_list_capabilities`, then request `tools/list` with
+`params.view: "analyze"` when that view is advertised. Check that cancellation
+is available before starting a job that may need it.
 
-## 2. Run the buffer through OGC
+If using `honua_plan_analysis`, inspect its `engine` field. `engine: "fixture"`
+means a demonstration template, not a plan compiled from the user's request.
+In that case the client model must construct a plan from the catalog and validate
+it. A successful planning call is not evidence that GP has executed.
 
-Execute through that same advertised SDK surface. `mode: "sync"` selects the
-advertised bounded synchronous mode:
+## 2. Validate a concrete plan
 
-```ts
-const run = await processes.execute({
-  processId: "geometry.buffer",
-  mode: "sync",
-  jobControlOptions: description.jobControlOptions ?? [],
-  inputs: {
-    wkb: "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-    srid: 4326,
-    distance: 0.00025,
-    geodesic: false,
-  },
-});
-const result = await run.results();
-const artifact = result.outputs.outputFeatureLayer;
-console.log(artifact.id, artifact.kind, artifact.href, artifact.type);
-```
-
-Keep the returned artifact `id` and `href`. The `href` is a GeoJSON data URI in the bounded inline result; it is the artifact consumed by the later Studio stage. For durable execution, send `Prefer: respond-async`, poll the returned job URL, and read `/ogc/processes/jobs/{jobId}/results`.
-
-## 3. Run the same governed operation through MCP
-
-The shipped MCP surface executes canonical plans on Pro. The executing identity needs `Process.Execute`, `ai.spec-apply`, and `ai.agent-operations`; Community can validate the plan but cannot execute it through MCP. Its plan schema currently string-encodes process inputs, and catalog validation for this base-plan path requires base64 WKB. This is a transport-shape distinction, not a claim that OGC accepts only WKB.
-
-Call `honua_validate_plan` first with this `plan` value, then pass the same value to `honua_execute_plan`:
+Pass the following **tool arguments** to `honua_validate_plan`. A copy is checked
+in as [buffer-plan.json](../../../samples/gp-local-dev/buffer-plan.json).
 
 ```json
 {
-  "planId": "gp-ai-journey-buffer",
-  "steps": [
-    {
-      "stepId": "buffer-point",
-      "kind": "Geoprocess",
-      "processId": "geometry.buffer",
-      "inputs": {
-        "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-        "srid": "4326",
-        "distance": "0.00025",
-        "geodesic": "false"
-      },
-      "dependsOn": []
-    }
-  ],
-  "outputs": ["FeatureLayer"]
+  "plan": {
+    "planId": "gp-local-buffer-500m",
+    "steps": [
+      {
+        "stepId": "buffer-point",
+        "kind": "Geoprocess",
+        "processId": "geometry.buffer",
+        "inputs": {
+          "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "srid": "3857",
+          "distance": "500",
+          "geodesic": "false"
+        },
+        "dependsOn": []
+      }
+    ],
+    "outputs": ["FeatureLayer"]
+  }
 }
 ```
 
-`honua_validate_plan` must return `isExecutable: true`. `honua_execute_plan` returns a `jobId` and `honua://jobs/{jobId}`. Read that resource until the status is terminal, then read `honua://jobs/{jobId}/results`. Preserve the result artifact reference for Studio.
+This buffers `POINT(0 0)` by 500 metres. MCP's plan input map contains
+string-encoded values, including base64 WKB. The OGC geometry input also accepts
+a GeoJSON geometry object; do not transfer that object unchanged into the MCP
+string-valued map.
 
-Do not call or document `buffer_features` yet. It is deliberately absent from `tools/list`, even if an operator configures the `analysis` profile, until [#3269](https://github.com/honua-io/honua-server/issues/3269) delivers executable implementations. The adjudicated export fixture uses GeoJSON or FileGDB; GeoPackage is not part of this journey.
+Require `isExecutable: true`. Inspect validation errors and use
+`honua_dry_run_plan` to inspect the plan before submitting it. Dry-run success
+does not replace checking the executed result.
 
-## 4. Consume it with the JavaScript SDK
+## 3. Execute and follow the job
 
-The SDK performs discovery and gates execution on the candidate's advertised conformance classes and `jobControlOptions`:
+Pass the same `plan` to `honua_execute_plan`. For retry-safe submission, supply
+an `idempotencyKey` unique to this logical request and retain it across retries.
 
-```ts
-import { HonuaClient } from "@honua/sdk-js";
+The response includes `jobId` and `resourceUri`. Read that returned resource with
+`resources/read` until status is `Succeeded`, `Failed`, or `Cancelled`. Use a
+bounded wait; on timeout inspect the job or request cancellation with
+`honua_cancel_job` rather than submitting duplicates. Progress notifications can
+supplement polling when supported by the client session.
 
-const run = await processes.execute({
-  processId: "geometry.buffer",
-  mode: "async",
-  jobControlOptions: description.jobControlOptions ?? [],
-  inputs: {
-    wkb: "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-    srid: 4326,
-    distance: 0.00025,
-    geodesic: false,
-  },
-});
+On success, read `honua://jobs/{jobId}/results`. Inspect the returned `artifacts`
+and retain their actual identifiers and references. Check the geometry: this
+example should have bounds `[-500, -500, 500, 500]` in EPSG:3857 and area within
+1% of `π × 500²` square metres. A job ID or a successful tool call alone does not
+prove the requested analysis completed correctly.
 
-const result = await run.results();
-const artifact = result.outputs.outputFeatureLayer;
-```
+A useful agent instruction is:
 
-The SDK handles either legal synchronous or asynchronous response shape. It does not send the non-standard `Prefer: respond-sync`. Cancellation must remain disabled when `dismiss` is not advertised.
+> Discover the available GP tools and process schema. Validate and execute the
+> checked-in 500-metre buffer plan. Wait for a terminal job state, inspect the
+> result geometry, and report the job ID, artifact reference, CRS, bounds, and
+> whether the result matches the requested distance. Report failures explicitly.
 
-## 5. Continue in Studio
+## 4. Consume results or continue into a map
 
-Add the GeoJSON result referenced by `artifact.href` to the same server-resident Studio draft. The `geometry.buffer` result is an inline GeoJSON data-URI artifact, not a materialized database table, so it cannot be passed directly to `honua_publish_result`. A hosted-layer workflow must first import or otherwise materialize the GeoJSON into a table that records `connectionId`, `schema`, and `table` metadata. Save the artifact id, job id, draft id, and draft generation together so the next stage can prove it is using this run rather than a fixture.
+| Client surface | Result shape |
+| --- | --- |
+| MCP job results resource | Canonical result package with `artifacts` |
+| Python GP `results(...)` | OGC output document, such as `outputFeatureLayer.value` |
+| JavaScript `run.results()` | Result wrapper with the OGC document under `outputs` |
 
-The complete Studio authoring/run UI is a 2026.2 surface. Until [#3305](https://github.com/honua-io/honua-server/issues/3305) lands, use the existing [Studio AI proxy guide](../run-studio-ai-proxy.md) and the `honua_studio_*` MCP lifecycle described in [Connect AI agents](../connect/ai-agents-mcp.md). Console job/result inspection is optional and does not define completion of this terminal path.
+OGC qualified outputs carry `value` and `mediaType`, or a referenced `href`.
+They do not acquire MCP artifact `artifactId` or `kind` fields merely because an agent
+requested them. Follow the returned reference using the authenticated product
+surface, and preserve the job and artifact provenance.
 
-## Deferred surfaces
+MCP artifacts identify themselves with `artifactId` and carry their reference in
+`uri`. An inline `data:` URI contains the artifact itself; decode it according to
+its media type and encoding before inspecting the geometry.
 
-Python, .NET, Batch, QGIS, broad GPServer task parity, direct analysis-profile verbs, and Console authoring/run UI are 2026.2 or separately tracked work. They are not requirements for this bounded OGC/MCP/JavaScript journey.
+This sample's coordinates are metric. Before importing into a map that expects
+WGS 84 GeoJSON, reproject to EPSG:4326 using a described projection process;
+do not simply relabel the CRS. A GP artifact is also not automatically a hosted
+database layer. `honua_publish_result` requires a publishable, materialized
+result; an inline geometry must first follow the supported import/materialization
+workflow. See [Honua Studio](../../studio/README.md) for the map application path.
+
+For a Python-only agent, the [SDK quickstart](gp-local-dev-quickstart.md#2-submit-and-verify-a-buffer)
+is an alternative to MCP. Native functions use the same discovery and job
+lifecycle after a native worker is available. AWS Batch and Kubernetes are
+execution targets selected by deployment configuration, not different agent tools.
+Azure remains experimental; it is outside this local/RC journey.
 
 ## Troubleshoot
 
-- `401` means execution was attempted without a valid identity.
-- `403` means the identity lacks `Process.Execute` or an additional grant required by the selected process.
-- `503` on an asynchronous request means the durable job substrate is unavailable.
-- An MCP `invalid_argument` saying `expected base64-encoded WKB` means GeoJSON was passed through the base plan's string-valued input map. Use GeoJSON on the OGC route; use the advertised base64 WKB shape for the shipped MCP plan path.
-- A missing `buffer_features` tool is expected until #3269 lands; do not enable it by configuration or substitute GeoPackage.
+| Symptom | Action |
+| --- | --- |
+| Authentication or authorization error | Check identity, process grants, and MCP execution entitlements. |
+| `expected base64-encoded WKB` | Use the catalog's base-plan string encoding; GeoJSON objects belong on the OGC geometry input. |
+| `engine: "fixture"` | Build a real plan from the catalog; do not treat the template as an intent-specific result. |
+| Async substrate unavailable | Check Redis and the matching worker. |
+| Job `Failed` or `Cancelled` | Inspect the recorded error; do not present its artifacts as a successful analysis. |
+| Missing `buffer_features` | Use the shipped plan tools. |

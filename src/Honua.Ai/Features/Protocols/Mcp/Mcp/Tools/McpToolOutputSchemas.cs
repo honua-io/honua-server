@@ -313,7 +313,15 @@ internal static class McpToolOutputSchemas
                   "message": { "type": ["string", "null"] }
                 }
               }
-            }
+            },
+            "code": {
+              "type": ["string", "null"],
+              "description": "Stable rejection code, e.g. platform_release_version_mismatch when a convergence targetVersion differs from the declared release."
+            },
+            "declaredVersion": { "type": ["string", "null"] },
+            "targetVersion": { "type": ["string", "null"] },
+            "servingArtifactReference": { "type": ["string", "null"] },
+            "isCoVersioned": { "type": ["boolean", "null"] }
           }
         }
         """);
@@ -340,6 +348,10 @@ internal static class McpToolOutputSchemas
             "operationId": { "type": "string" },
             "operationInstanceId": { "type": "string" },
             "handleId": { "type": "string" },
+            "durable": {
+              "type": "boolean",
+              "description": "Present and false when the operation instance record was not durably persisted (a direct publish on a server started without Redis). The ids and audit receipts are real; the handle cannot be polled afterwards."
+            },
             "proposalId": { "type": ["string", "null"] },
             "correlationId": { "type": "string" },
             "auditId": { "type": ["string", "null"] },
@@ -682,6 +694,7 @@ internal static class McpToolOutputSchemas
                   "serviceId": { "type": "string" },
                   "serviceName": { "type": "string" },
                   "layerId": { "type": "integer" },
+                  "studioSourceId": { "type": "string", "description": "Existing Studio catalog key for composition layer.sourceId; not a composition layer.id or a data permission." },
                   "name": { "type": "string" },
                   "type": { "type": "string" },
                   "geometryType": { "type": "string" },
@@ -785,11 +798,17 @@ internal static class McpToolOutputSchemas
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["serviceId", "layerId"],
+                "required": ["serviceId", "layerId", "styleRendering"],
                 "properties": {
                   "serviceId": { "type": "string" },
                   "layerId": { "type": "integer" },
-                  "styleId": { "type": ["string", "null"] }
+                  "styleId": { "type": ["string", "null"], "description": "The layer's applied (primary) catalog style; null when the stored default style rendered." },
+                  "styleRendering": {
+                    "type": "string",
+                    "enum": ["applied", "default", "unsupported-style-construct"],
+                    "description": "applied: the applied style was drawn. default: no applied style, the stored default style was drawn. unsupported-style-construct: unsupportedStyleConstructs lists what the server rasterizer did not draw (the default style is never substituted)."
+                  },
+                  "unsupportedStyleConstructs": { "type": "array", "items": { "type": "string" } }
                 }
               }
             },
@@ -939,8 +958,22 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "styleId", "applied"],
+          "required": ["serviceId", "layerId", "styleId", "applied", "status", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
           "properties": {
+            "status": { "type": "string", "description": "Canonical operation handle status (Completed for an applied or previewed preset)." },
+            "operationId": { "type": "string", "const": "style.apply-preset" },
+            "operationInstanceId": { "type": "string", "minLength": 1 },
+            "handleId": { "type": "string", "minLength": 1 },
+            "durable": {
+              "type": "boolean",
+              "description": "Present and false when the operation instance record was not durably persisted (a direct style.apply-preset on a server started without Redis). The ids and audit receipts are real; the handle cannot be polled afterwards."
+            },
+            "correlationId": { "type": "string", "minLength": 1 },
+            "auditId": { "type": ["string", "null"], "description": "Durable audit identity of the style.apply-preset operation." },
+            "createdAt": { "type": "string", "format": "date-time" },
+            "updatedAt": { "type": "string", "format": "date-time" },
+            "authorizationOutcome": { "type": ["string", "null"] },
+            "policyOutcome": { "type": ["string", "null"] },
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
             "styleId": { "type": "string", "description": "The selected preset; bound as primary only when applied=true." },
@@ -949,22 +982,6 @@ internal static class McpToolOutputSchemas
             "applied": { "type": "boolean" },
             "dryRun": { "type": "boolean", "description": "True when validation completed without changing metadata." },
             "warning": { "type": ["string", "null"], "description": "Any follow-up needed after the style binding was applied." }
-          }
-        }
-        """);
-
-    /// <summary>Schema for <see cref="Models.McpNotImplementedOutput"/>.</summary>
-    public static readonly JsonElement NotImplementedOutputSchema = Parse(
-        """
-        {
-          "type": "object",
-          "required": ["status", "tool", "blockedBy", "contract", "nextSteps"],
-          "properties": {
-            "status": { "type": "string", "const": "not_implemented" },
-            "tool": { "type": "string" },
-            "blockedBy": { "type": "string" },
-            "contract": { "type": "string" },
-            "nextSteps": { "type": "array", "items": { "type": "string" } }
           }
         }
         """);
@@ -1144,22 +1161,50 @@ internal static class McpToolOutputSchemas
 
     /// <summary>
     /// Schema for <c>McpStudioProposePublicationOutput</c>
-    /// (<c>honua_studio_propose_publication</c>). <c>recorded</c> and
-    /// <c>humanConfirmationRequired</c> are structural proof the tool only
-    /// recorded intent on the draft — it never executed publish/share/embed.
+    /// (<c>honua_studio_propose_publication</c>).
     /// </summary>
     public static readonly JsonElement StudioProposePublicationOutputSchema = Parse(
         """
         {
           "type": "object",
-          "required": ["draft", "recorded", "humanConfirmationRequired", "message"],
+          "required": ["operation", "operationInstanceId", "auditId", "correlationId", "idempotencyIdentity", "status", "humanConfirmationRequired", "message"],
           "properties": {
-            "draft": { "type": "object" },
-            "recorded": { "type": "boolean", "const": true },
-            "humanConfirmationRequired": { "type": "boolean", "const": true },
+            "operation": { "type": "object" },
+            "operationInstanceId": { "type": "string", "minLength": 1 },
+            "proposalId": { "type": "string", "minLength": 1 },
+            "proposalUri": { "type": "string", "pattern": "^honua://proposals/.+" },
+            "auditId": { "type": "string", "minLength": 1 },
+            "correlationId": { "type": "string", "minLength": 1 },
+            "idempotencyIdentity": { "type": "string", "minLength": 1 },
+            "status": { "type": "string", "minLength": 1 },
+            "humanConfirmationRequired": { "type": "boolean" },
+            "shareUrl": { "type": "string", "minLength": 1 },
+            "deploymentId": { "type": "string", "minLength": 1 },
+            "deploymentResourceUri": { "type": "string", "pattern": "^honua://deployments/.+" },
             "message": { "type": "string" }
           }
         }
+        """);
+
+    /// <summary>
+    /// Top-level read of a saved Studio version (<c>honua_studio_get_version</c>).
+    /// Save keeps these fields nested under <c>version</c>.
+    /// </summary>
+    public static readonly JsonElement StudioGetVersionOutputSchema = Parse("""
+        {"type":"object","required":["versionId","contentHash"],"additionalProperties":false,"properties":{
+          "versionId":{"type":"string","format":"uuid"},
+          "contentHash":{"type":"string","minLength":1}}}
+        """);
+
+    public static readonly JsonElement StudioVersionMutationOutputSchema = Parse("""
+        {"type":"object","required":["operation"],"properties":{
+          "operation":{"type":"object","required":["operationId","operationInstanceId","status"],"properties":{
+            "operationId":{"type":"string"},"operationInstanceId":{"type":"string"},"status":{"type":"string"},
+            "proposalId":{"type":["string","null"]}}},
+          "version":{"type":["object","null"],"properties":{
+            "itemId":{"type":"string"},"versionId":{"type":"string"},"contentHash":{"type":"string"},
+            "envelope":{"type":"object"},"validation":{"type":"object"}}},
+          "studioAuthorizationCode":{"type":["string","null"]}}}
         """);
 
     private static string ArtifactKindEnum => JsonStringArray(Enum.GetNames<ArtifactKind>());

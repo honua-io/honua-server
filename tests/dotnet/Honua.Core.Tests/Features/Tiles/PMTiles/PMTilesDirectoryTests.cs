@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Tiles.PMTiles;
 
 public class PMTilesDirectoryTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_SingleEntry_RoundTrips()
     {
@@ -26,6 +27,7 @@ public class PMTilesDirectoryTests
         result[0].RunLength.Should().Be(1U);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_ContiguousEntries_RoundTrips()
     {
@@ -50,6 +52,7 @@ public class PMTilesDirectoryTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_NonContiguousEntries_RoundTrips()
     {
@@ -74,6 +77,7 @@ public class PMTilesDirectoryTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_ContiguousOffsets_EncodedAsZero()
     {
@@ -93,6 +97,7 @@ public class PMTilesDirectoryTests
         result[1].Offset.Should().Be(50UL);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_LeafEntries_RoundTrips()
     {
@@ -115,6 +120,7 @@ public class PMTilesDirectoryTests
         result[1].Offset.Should().Be(512UL);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeEntries_IncludesNumEntriesPrefix()
     {
@@ -129,6 +135,7 @@ public class PMTilesDirectoryTests
         bytes[0].Should().Be(1, "first byte should be num_entries varint for 1 entry");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeEntries_ManyEntries_NumEntriesPrefixIsCorrect()
     {
@@ -152,6 +159,7 @@ public class PMTilesDirectoryTests
         result[199].TileId.Should().Be(199UL);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_DirectoryEntriesLocateTileData()
     {
@@ -191,15 +199,18 @@ public class PMTilesDirectoryTests
 
         entries.Should().HaveCount(3);
 
-        // Verify each entry can locate its tile data
-        var expectedTiles = new[] { tile0, tile1, tile2 };
-        // Entries are sorted by Hilbert tile ID
-        var sortedTileIds = new[]
+        // honua-server#4397: this used to look up the expected tile by payload LENGTH, so a writer
+        // that stored every tile at the wrong coordinate passed as long as the lengths were
+        // distinct. Match on the Hilbert tile id derived from z/x/y instead.
+        var expectedByTileId = new Dictionary<ulong, byte[]>
         {
-            HilbertCurve.XYZToTileId(0, 0, 0),
-            HilbertCurve.XYZToTileId(1, 0, 0),
-            HilbertCurve.XYZToTileId(1, 1, 0),
+            [HilbertCurve.XYZToTileId(0, 0, 0)] = tile0,
+            [HilbertCurve.XYZToTileId(1, 0, 0)] = tile1,
+            [HilbertCurve.XYZToTileId(1, 1, 0)] = tile2,
         };
+
+        // Entries are sorted by Hilbert tile ID
+        var sortedTileIds = expectedByTileId.Keys.ToArray();
         Array.Sort(sortedTileIds);
 
         for (var i = 0; i < entries.Length; i++)
@@ -210,10 +221,9 @@ public class PMTilesDirectoryTests
             var tileLength = (int)entries[i].Length;
             var tileData = archiveBytes.AsSpan(tileOffset, tileLength).ToArray();
 
-            // Find expected tile by matching length (each test tile has unique length)
-            var expectedTile = expectedTiles.First(t => t.Length == tileLength);
+            var expectedTile = expectedByTileId[entries[i].TileId];
             tileData.Should().BeEquivalentTo(expectedTile,
-                $"tile at entry {i} (tileId={entries[i].TileId}) should match expected data");
+                $"the bytes at tileId={entries[i].TileId} must be that coordinate's tile");
         }
     }
 }

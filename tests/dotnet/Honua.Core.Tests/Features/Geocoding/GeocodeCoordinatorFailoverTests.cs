@@ -17,6 +17,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 
 public sealed class GeocodeCoordinatorFailoverTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AddGeocodingCore_WithoutLicenseService_ResolvesProviderCoordinator()
     {
@@ -31,6 +32,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IGeocodeProviderCoordinator>());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_CapabilityIncompatibleFirstProvider_DoesNotConsumeFailoverBudget()
     {
@@ -69,6 +71,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(0, incapable.ForwardCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_ExceedsAdvertisedRateLimit_ThrottlesWithRetryAfter()
     {
@@ -112,6 +115,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(1, provider.ForwardCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_AllProvidersLackCapability_FailsWithNoProviderSupportsMessage()
     {
@@ -139,6 +143,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Empty(result.AttemptedProviders ?? []);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReverseGeocodeAsync_CapabilityIncompatibleFirstProvider_FailsOverToCapableProvider()
     {
@@ -170,6 +175,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(1, capable.ReverseCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_FailoverBudgetCapsRealAttempts()
     {
@@ -203,6 +209,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(0, second.ForwardCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -260,6 +267,38 @@ public sealed class GeocodeCoordinatorFailoverTests
             Times.Exactly(2));
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task BatchGeocodeAsync_FailoverTargetOverItsCap_DoesNotReceiveTheBatch()
+    {
+        var primary = new FakeGeocodeProvider(
+            "primary",
+            new GeocodeProviderCapabilities(SupportsBatch: true) { MaxBatchSize = 1000 })
+        {
+            BatchException = new InvalidOperationException("primary unavailable"),
+        };
+        var secondary = new FakeGeocodeProvider(
+            "secondary",
+            new GeocodeProviderCapabilities(SupportsBatch: true) { MaxBatchSize = 100 });
+
+        var coordinator = CreateCoordinator(
+            providers: [primary, secondary],
+            defaultProvider: "primary",
+            maxFailoverAttempts: 2);
+
+        var queries = Enumerable.Range(0, 500).Select(index => $"address {index}").ToArray();
+        var result = await coordinator.BatchGeocodeAsync(
+            new BatchGeocodeRequest(queries),
+            providerName: "primary",
+            allowFailover: true,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains(GeocodeLimitMetadata.BatchSizeMarker, result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, primary.BatchCallCount);
+        Assert.Equal(0, secondary.BatchCallCount);
+    }
+
     private static GeocodeCoordinatorService CreateCoordinator(
         IReadOnlyList<IGeocodeProvider> providers,
         string defaultProvider,
@@ -309,9 +348,13 @@ public sealed class GeocodeCoordinatorFailoverTests
 
         public Exception? ForwardException { get; init; }
 
+        public Exception? BatchException { get; init; }
+
         public int ForwardCallCount { get; private set; }
 
         public int ReverseCallCount { get; private set; }
+
+        public int BatchCallCount { get; private set; }
 
         public Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
             ForwardGeocodeRequest request,
@@ -343,7 +386,15 @@ public sealed class GeocodeCoordinatorFailoverTests
         public Task<IReadOnlyList<GeocodeCandidate>> BatchGeocodeAsync(
             BatchGeocodeRequest request,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<GeocodeCandidate>>([]);
+        {
+            BatchCallCount++;
+            if (BatchException is not null)
+            {
+                throw BatchException;
+            }
+
+            return Task.FromResult<IReadOnlyList<GeocodeCandidate>>([]);
+        }
 
         public Task<GeocodeProviderHealth> CheckHealthAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new GeocodeProviderHealth(Name, true, LastChecked: DateTime.UtcNow));

@@ -194,6 +194,14 @@ public sealed record GeoservicesImportRequest
     public string? JobId { get; init; }
 
     /// <summary>
+    /// Server-owned coordination flag persisted for a batch child whose parent batch
+    /// will apply relationships and evaluate their fidelity after all children publish.
+    /// Standalone API imports leave this false.
+    /// </summary>
+    public bool DeferRelationshipApplyToBatch { get; init; }
+
+
+    /// <summary>
     /// The base URL of the ArcGIS Server service.
     /// </summary>
     public required string ServiceUrl { get; init; }
@@ -338,6 +346,9 @@ public sealed record GeoservicesImportResult
     /// </summary>
     public string? ErrorMessage { get; init; }
 
+    /// <summary>Stable machine-readable failure code, when available.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>
     /// Target Honua service name when the import requested or completed publishing.
     /// </summary>
@@ -382,6 +393,12 @@ public sealed record GeoservicesImportResult
     public bool NeedsReview { get; init; }
 
     /// <summary>
+    /// True when imported rows were already committed before this result was produced.
+    /// A later cancel or publication failure must not be reported as if those rows were rolled back.
+    /// </summary>
+    public bool DataCommitted { get; init; }
+
+    /// <summary>
     /// Per-layer data-reconciliation artifact produced by the Validating phase, when reconciliation
     /// ran. <c>null</c> when the import did not publish a queryable layer to reconcile against.
     /// </summary>
@@ -392,6 +409,24 @@ public sealed record GeoservicesImportResult
     /// was available to reconcile against. <c>null</c> otherwise.
     /// </summary>
     public MigrationCatalogReconciliationReport? CatalogReconciliationReport { get; init; }
+
+    /// <summary>
+    /// Unified migration fidelity verdict (issue #4600): one of
+    /// <see cref="MigrationFidelityVerdicts.FullFidelity"/>,
+    /// <see cref="MigrationFidelityVerdicts.Unverified"/> or
+    /// <see cref="MigrationFidelityVerdicts.Incomplete"/>. <see cref="Success"/> answers "did the
+    /// job finish"; this answers "is the migrated layer equivalent to the source". A finished job
+    /// whose checks were skipped is <see cref="MigrationFidelityVerdicts.Unverified"/>, never
+    /// full fidelity.
+    /// </summary>
+    public string FidelityVerdict { get; init; } = MigrationFidelityVerdicts.Unverified;
+
+    /// <summary>
+    /// Actionable per-resource differences (and unexecuted checks) that produced
+    /// <see cref="FidelityVerdict"/>, ordered deterministically by code then subject. Empty only
+    /// when the run reconciled as full fidelity.
+    /// </summary>
+    public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
 
     /// <summary>
     /// Create successful import result.
@@ -410,7 +445,9 @@ public sealed record GeoservicesImportResult
         int attachmentCount = 0,
         int failedAttachments = 0,
         MigrationReconciliationArtifact? reconciliationArtifact = null,
-        MigrationCatalogReconciliationReport? catalogReconciliationReport = null) =>
+        MigrationCatalogReconciliationReport? catalogReconciliationReport = null,
+        string fidelityVerdict = MigrationFidelityVerdicts.Unverified,
+        MigrationFidelityDifference[]? fidelityDifferences = null) =>
         new()
         {
             Success = true,
@@ -427,7 +464,10 @@ public sealed record GeoservicesImportResult
             AttachmentCount = attachmentCount,
             FailedAttachments = failedAttachments,
             ReconciliationArtifact = reconciliationArtifact,
-            CatalogReconciliationReport = catalogReconciliationReport
+            CatalogReconciliationReport = catalogReconciliationReport,
+            FidelityVerdict = fidelityVerdict,
+            FidelityDifferences = fidelityDifferences ?? [],
+            DataCommitted = true
         };
 
     /// <summary>
@@ -449,7 +489,9 @@ public sealed record GeoservicesImportResult
         int failedAttachments,
         MigrationReconciliationArtifact? reconciliationArtifact,
         MigrationCatalogReconciliationReport? catalogReconciliationReport,
-        string reviewReason) =>
+        string reviewReason,
+        string fidelityVerdict = MigrationFidelityVerdicts.Incomplete,
+        MigrationFidelityDifference[]? fidelityDifferences = null) =>
         new()
         {
             Success = false,
@@ -468,7 +510,10 @@ public sealed record GeoservicesImportResult
             FailedAttachments = failedAttachments,
             ReconciliationArtifact = reconciliationArtifact,
             CatalogReconciliationReport = catalogReconciliationReport,
-            ErrorMessage = reviewReason
+            FidelityVerdict = fidelityVerdict,
+            FidelityDifferences = fidelityDifferences ?? [],
+            ErrorMessage = reviewReason,
+            DataCommitted = true
         };
 
     /// <summary>
@@ -487,6 +532,7 @@ public sealed record GeoservicesImportResult
             SourceServiceUrl = sourceServiceUrl,
             SourceLayerId = sourceLayerId,
             ErrorMessage = errorMessage,
-            Duration = duration
+            Duration = duration,
+            FidelityVerdict = MigrationFidelityVerdicts.Incomplete
         };
 }

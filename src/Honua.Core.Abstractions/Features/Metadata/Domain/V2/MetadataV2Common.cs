@@ -221,13 +221,18 @@ public sealed record MetadataV2ObjectMetadata
 /// <summary>
 /// Lifecycle and observed status shared by Metadata v2 graph entities.
 /// </summary>
+[JsonConverter(typeof(MetadataV2StatusJsonConverter))]
 public sealed record MetadataV2Status
 {
     /// <summary>
     /// Desired or declared lifecycle state.
+    /// When a caller omits <c>status</c> or <c>status.lifecycle</c>, this defaults to
+    /// <see cref="MetadataV2LifecycleStatus.Active"/> so the entity stays on serving
+    /// routes. <see cref="MetadataV2LifecycleStatus.Draft"/> hides the entity only
+    /// when the caller sets it explicitly.
     /// </summary>
     [JsonPropertyName("lifecycle")]
-    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Draft;
+    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Active;
 
     /// <summary>
     /// Observed operational state.
@@ -623,13 +628,29 @@ public sealed record MetadataV2Subtype
 /// </summary>
 public sealed record MetadataV2SubtypeFieldOverride
 {
+    private JsonElement? _defaultValue;
+    private static readonly JsonElement ExplicitNull = CreateExplicitNull();
+
+    /// <summary>
+    /// Distinguishes an explicit null default from an absent default when nullable
+    /// JSON values are deserialized. Omitted for legacy overrides that did not carry
+    /// this marker; their null defaults continue to mean no override.
+    /// </summary>
+    [JsonPropertyName("defaultValueIsNull")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool DefaultValueIsNull { get; init; }
+
     /// <summary>
     /// Default value used by edit-capable services for this field when no value is
     /// supplied on insert of a row of this subtype, or <c>null</c> when the subtype
     /// declares no default for the field.
     /// </summary>
     [JsonPropertyName("defaultValue")]
-    public JsonElement? DefaultValue { get; init; }
+    public JsonElement? DefaultValue
+    {
+        get => _defaultValue ?? (DefaultValueIsNull ? ExplicitNull : null);
+        init => _defaultValue = value;
+    }
 
     /// <summary>
     /// Per-subtype value domain (coded values or numeric range) for this field, or
@@ -637,6 +658,12 @@ public sealed record MetadataV2SubtypeFieldOverride
     /// </summary>
     [JsonPropertyName("domain")]
     public MetadataV2FieldDomain? Domain { get; init; }
+
+    private static JsonElement CreateExplicitNull()
+    {
+        using var document = JsonDocument.Parse("null");
+        return document.RootElement.Clone();
+    }
 }
 
 /// <summary>

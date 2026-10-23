@@ -29,7 +29,7 @@ public sealed class StudioAuthorizationServiceTests
     {
         var service = BuildService(enabled: false, out _);
         var decision = await service.AuthorizeAsync(
-            AdminPrincipal(), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: Bob);
+            AdminPrincipal(), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: Bob, resourceTenantId: null);
 
         Assert.True(decision.IsAllowed);
     }
@@ -39,7 +39,7 @@ public sealed class StudioAuthorizationServiceTests
     {
         var service = BuildService(enabled: false, out _);
         var decision = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: Alice, resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.EndUserModeDisabledCode, decision.Code);
@@ -50,7 +50,7 @@ public sealed class StudioAuthorizationServiceTests
     {
         var service = BuildService(enabled: true, out _);
         var decision = await service.AuthorizeAsync(
-            AdminPrincipal(), "admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: Bob);
+            AdminPrincipal(), "admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: Bob, resourceTenantId: null);
 
         Assert.True(decision.IsAllowed);
         Assert.False(decision.IsElevated);
@@ -61,7 +61,7 @@ public sealed class StudioAuthorizationServiceTests
     {
         var service = BuildService(enabled: true, out var evaluator);
         var decision = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: Alice, resourceTenantId: null);
 
         Assert.True(decision.IsAllowed);
         Assert.False(decision.IsElevated);
@@ -75,14 +75,14 @@ public sealed class StudioAuthorizationServiceTests
         // created before the ownership migration (or a partial backfill) may still have no
         // recorded owner. A null owner must never be treated as "owned by whoever asks" (that
         // would let any authenticated caller claim it); it fails closed to admin-only until an
-        // owner is assigned. Endpoints never call AuthorizeAsync with resourceOwnerId: null for
+        // owner is assigned. Endpoints never call AuthorizeAsync with resourceOwnerId: null for, resourceTenantId: null
         // a brand-new resource -- StudioPackageEndpoints resolves ownership to the creating
         // caller before persisting and only authorizes against an existing resource's recorded
         // owner thereafter, so this null-owner path is exclusively the "no owner assigned yet"
         // case in practice.
         var service = BuildService(enabled: true, out _);
         var decision = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: null);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: null, resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
@@ -98,7 +98,7 @@ public sealed class StudioAuthorizationServiceTests
             UserPrincipal(Alice),
             Alice,
             StudioAuthorizationOperation.ReadContentItem,
-            resourceOwnerId: null,
+            resourceOwnerId: null, resourceTenantId: null,
             isPubliclyReadable: true);
 
         Assert.True(decision.IsAllowed);
@@ -109,7 +109,7 @@ public sealed class StudioAuthorizationServiceTests
     {
         var service = BuildService(enabled: true, out _);
         var decision = await service.AuthorizeAsync(
-            AdminPrincipal(), "admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: null);
+            AdminPrincipal(), "admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: null, resourceTenantId: null);
 
         Assert.True(decision.IsAllowed);
     }
@@ -119,7 +119,7 @@ public sealed class StudioAuthorizationServiceTests
     {
         var service = BuildService(enabled: true, out _);
         var decision = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: Bob);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: Bob, resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
@@ -134,7 +134,7 @@ public sealed class StudioAuthorizationServiceTests
             UserPrincipal(Alice),
             Alice,
             StudioAuthorizationOperation.ReadDraft,
-            resourceOwnerId: "Test:sub:alice");
+            resourceOwnerId: "Test:sub:alice", resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
@@ -149,7 +149,7 @@ public sealed class StudioAuthorizationServiceTests
             UserPrincipal(Bob),
             Bob,
             StudioAuthorizationOperation.ReadDraft,
-            resourceOwnerId: "Test:sub:alice");
+            resourceOwnerId: "Test:sub:alice", resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
@@ -169,7 +169,7 @@ public sealed class StudioAuthorizationServiceTests
             principal,
             service.ResolveCallerId(principal),
             StudioAuthorizationOperation.ReadDraft,
-            resourceOwnerId: "Test:authenticated");
+            resourceOwnerId: "Test:authenticated", resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
@@ -189,12 +189,13 @@ public sealed class StudioAuthorizationServiceTests
             principal,
             service.ResolveCallerId(principal),
             StudioAuthorizationOperation.ReadDraft,
-            resourceOwnerId: "Test:name:alice");
+            resourceOwnerId: "Test:name:alice", resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("11111111-2222-3333-4444-555555555555")]
@@ -216,7 +217,7 @@ public sealed class StudioAuthorizationServiceTests
             principal,
             service.ResolveCallerId(principal),
             StudioAuthorizationOperation.ReadDraft,
-            resourceOwnerId: "ApiKey:name:shared-studio-key");
+            resourceOwnerId: "ApiKey:name:shared-studio-key", resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
@@ -230,7 +231,7 @@ public sealed class StudioAuthorizationServiceTests
             UserPrincipal(Alice),
             Alice,
             StudioAuthorizationOperation.ReadContentItem,
-            resourceOwnerId: Bob,
+            resourceOwnerId: Bob, resourceTenantId: null,
             isPubliclyReadable: true);
 
         Assert.True(decision.IsAllowed);
@@ -244,7 +245,7 @@ public sealed class StudioAuthorizationServiceTests
             UserPrincipal(Alice),
             Alice,
             StudioAuthorizationOperation.UpdateDraft,
-            resourceOwnerId: Bob,
+            resourceOwnerId: Bob, resourceTenantId: null,
             isPubliclyReadable: true);
 
         Assert.False(decision.IsAllowed);
@@ -257,7 +258,7 @@ public sealed class StudioAuthorizationServiceTests
         var service = BuildService(enabled: true, out _);
         var decision = await service.AuthorizeAsync(
             new ClaimsPrincipal(new ClaimsIdentity()), callerId: null,
-            StudioAuthorizationOperation.ReadDraft, resourceOwnerId: null);
+            StudioAuthorizationOperation.ReadDraft, resourceOwnerId: null, resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.AuthenticationRequiredCode, decision.Code);
@@ -268,7 +269,7 @@ public sealed class StudioAuthorizationServiceTests
     {
         var service = BuildService(enabled: true, out _);
         var decision = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.PublishRequest, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.PublishRequest, resourceOwnerId: Alice, resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.True(decision.IsElevated);
@@ -282,7 +283,7 @@ public sealed class StudioAuthorizationServiceTests
         evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Publish);
 
         var decision = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.PublishRequest, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.PublishRequest, resourceOwnerId: Alice, resourceTenantId: null);
 
         Assert.True(decision.IsAllowed);
         Assert.True(decision.IsElevated);
@@ -297,12 +298,12 @@ public sealed class StudioAuthorizationServiceTests
         evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Publish);
 
         var denied = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Rollback, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Rollback, resourceOwnerId: Alice, resourceTenantId: null);
         Assert.False(denied.IsAllowed);
 
         evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Rollback);
         var allowed = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Rollback, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Rollback, resourceOwnerId: Alice, resourceTenantId: null);
         Assert.True(allowed.IsAllowed);
     }
 
@@ -317,14 +318,14 @@ public sealed class StudioAuthorizationServiceTests
         evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Rollback);
 
         var denied = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Generate, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Generate, resourceOwnerId: Alice, resourceTenantId: null);
         Assert.False(denied.IsAllowed);
         Assert.True(denied.IsElevated);
         Assert.Equal(StudioAuthorizationService.ElevatedGrantRequiredCode, denied.Code);
 
         evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Execute);
         var allowed = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Generate, resourceOwnerId: Alice);
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Generate, resourceOwnerId: Alice, resourceTenantId: null);
         Assert.True(allowed.IsAllowed);
         Assert.True(allowed.IsElevated);
     }
@@ -341,7 +342,7 @@ public sealed class StudioAuthorizationServiceTests
             UserPrincipal(Alice),
             Alice,
             StudioAuthorizationOperation.PublishRequest,
-            resourceOwnerId: Bob,
+            resourceOwnerId: Bob, resourceTenantId: null,
             resourceId: "item-42");
 
         Assert.True(decision.IsAllowed);
@@ -359,7 +360,7 @@ public sealed class StudioAuthorizationServiceTests
             UserPrincipal(Alice),
             Alice,
             StudioAuthorizationOperation.PublishRequest,
-            resourceOwnerId: Bob,
+            resourceOwnerId: Bob, resourceTenantId: null,
             resourceId: "item-42");
 
         Assert.False(decision.IsAllowed);
@@ -431,7 +432,7 @@ public sealed class StudioAuthorizationServiceTests
             authenticationType: "Test"));
 
         var decision = await service.AuthorizeAsync(
-            aliasedAdmin, "oidc-admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: Bob);
+            aliasedAdmin, "oidc-admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: Bob, resourceTenantId: null);
 
         Assert.True(decision.IsAllowed);
         Assert.False(decision.IsElevated);
@@ -446,13 +447,96 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
+    public void ResolveCallerId_IssuerBearingSubject_BindsIssuerAndResolvedTenant()
+    {
+        var service = BuildService(enabled: true, out _, tenantId: "tenant-a");
+
+        var callerId = service.ResolveCallerId(IssuedPrincipal("https://idp.example/realms/a", "alice"));
+
+        // Independently declared: each component is URI-escaped so ':' and '@' inside an issuer,
+        // subject or tenant can never forge a different component boundary.
+        Assert.Equal("subject:https%3A%2F%2Fidp.example%2Frealms%2Fa:alice@tenant:tenant-a", callerId);
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_EqualSubjectFromAnotherIssuerOrTenant_NeverSameOwner()
+    {
+        var tenantA = BuildService(enabled: true, out _, tenantId: "tenant-a");
+        var tenantB = BuildService(enabled: true, out _, tenantId: "tenant-b");
+        var issuerOne = IssuedPrincipal("https://idp-one.example", "alice");
+        var issuerTwo = IssuedPrincipal("https://idp-two.example", "alice");
+
+        var owner = tenantA.ResolveCallerId(issuerOne);
+
+        Assert.NotEqual(owner, tenantA.ResolveCallerId(issuerTwo));
+        Assert.NotEqual(owner, tenantB.ResolveCallerId(issuerOne));
+        Assert.NotEqual("alice", owner);
+        Assert.Equal(owner, tenantA.ResolveCallerId(IssuedPrincipal("https://idp-one.example", "alice")));
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_SameSubjectInAnotherTenant_CrossUserDenied()
+    {
+        var owningTenant = BuildService(enabled: true, out _, tenantId: "public");
+        var otherTenant = BuildService(enabled: true, out _, tenantId: "tenant-b");
+        var principal = IssuedPrincipal("https://idp.example", "alice");
+        var ownerId = owningTenant.ResolveCallerId(principal);
+
+        var decision = await otherTenant.AuthorizeAsync(
+            principal,
+            otherTenant.ResolveCallerId(principal),
+            StudioAuthorizationOperation.ReadDraft,
+            resourceOwnerId: ownerId,
+            // Deliberately the caller's OWN tenant: honua-server#4905's tenant boundary would
+            // otherwise answer first, and this case is about the owner key alone (#3429) --
+            // an equal subject minted into another tenant must never own the same draft, even
+            // when the record itself sits in the caller's tenant.
+            resourceTenantId: "tenant-b");
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_IssuerlessApiKeyPrincipal_KeepsImmutableKeyId()
+    {
+        var service = BuildService(enabled: true, out _, tenantId: "tenant-a");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "11111111-2222-3333-4444-555555555555"),
+                new Claim("api_key_id", "11111111-2222-3333-4444-555555555555"),
+            ],
+            authenticationType: "ApiKey"));
+
+        Assert.Equal("11111111-2222-3333-4444-555555555555", service.ResolveCallerId(principal));
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_MissingResourceAsOwnerlessTarget_MatchesCrossOwnerDenial()
+    {
+        var service = BuildService(enabled: true, out _);
+
+        var missing = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: null, resourceTenantId: null);
+        var crossOwner = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: Bob, resourceTenantId: null);
+        var admin = await service.AuthorizeAsync(
+            AdminPrincipal(), "admin-1", StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: null, resourceTenantId: null);
+
+        Assert.False(missing.IsAllowed);
+        Assert.Equal(crossOwner.Code, missing.Code);
+        Assert.Equal(crossOwner.Reason, missing.Reason);
+        Assert.True(admin.IsAllowed);
+    }
+
+    [UnitTest]
     public async Task AuthorizeAsync_ReadScopedAdmin_CannotCreateDraft()
     {
         var service = BuildService(enabled: true, out _);
         var principal = ScopeGovernedPrincipal("admin-1", "admin", OperatorScopeCatalog.Read);
 
         var decision = await service.AuthorizeAsync(
-            principal, "admin-1", StudioAuthorizationOperation.CreateDraft, "admin-1");
+            principal, "admin-1", StudioAuthorizationOperation.CreateDraft, "admin-1", resourceTenantId: null);
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.ScopeDeniedCode, decision.Code);
@@ -465,9 +549,9 @@ public sealed class StudioAuthorizationServiceTests
         var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Read);
 
         var read = await service.AuthorizeAsync(
-            principal, Alice, StudioAuthorizationOperation.ReadDraft, Alice);
+            principal, Alice, StudioAuthorizationOperation.ReadDraft, Alice, resourceTenantId: null);
         var update = await service.AuthorizeAsync(
-            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice, resourceTenantId: null);
 
         Assert.True(read.IsAllowed);
         Assert.False(update.IsAllowed);
@@ -481,9 +565,9 @@ public sealed class StudioAuthorizationServiceTests
         var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Create);
 
         var update = await service.AuthorizeAsync(
-            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice, resourceTenantId: null);
         var delete = await service.AuthorizeAsync(
-            principal, Alice, StudioAuthorizationOperation.DeleteDraft, Alice);
+            principal, Alice, StudioAuthorizationOperation.DeleteDraft, Alice, resourceTenantId: null);
 
         Assert.False(update.IsAllowed);
         Assert.Equal(StudioAuthorizationService.ScopeDeniedCode, update.Code);
@@ -499,9 +583,9 @@ public sealed class StudioAuthorizationServiceTests
         var deletePrincipal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Delete);
 
         var update = await service.AuthorizeAsync(
-            updatePrincipal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+            updatePrincipal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice, resourceTenantId: null);
         var delete = await service.AuthorizeAsync(
-            deletePrincipal, Alice, StudioAuthorizationOperation.DeleteDraft, Alice);
+            deletePrincipal, Alice, StudioAuthorizationOperation.DeleteDraft, Alice, resourceTenantId: null);
 
         Assert.True(update.IsAllowed);
         Assert.True(delete.IsAllowed);
@@ -510,7 +594,8 @@ public sealed class StudioAuthorizationServiceTests
     private static StudioAuthorizationService BuildService(
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,
-        string[]? adminRoles = null)
+        string[]? adminRoles = null,
+        string? tenantId = null)
     {
         evaluator = new FakeOperatorAuthorizationEvaluator();
         var options = new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = enabled });
@@ -519,7 +604,33 @@ public sealed class StudioAuthorizationServiceTests
             evaluator,
             new OperatorScopeAuthorizer(),
             options,
-            adminRoleOptions);
+            adminRoleOptions,
+            tenantId is null ? null : new StaticTenantContext(tenantId));
+    }
+
+    private static ClaimsPrincipal IssuedPrincipal(string issuer, string subject)
+        => new(new ClaimsIdentity(
+            [
+                new Claim("iss", issuer),
+                new Claim("sub", subject),
+                new Claim(ClaimTypes.Role, "creator"),
+            ],
+            authenticationType: "Bearer"));
+
+    private sealed class StaticTenantContext(string tenantId)
+        : Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext
+    {
+        public string? TenantId { get; } = tenantId;
+
+        public Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource Source
+            => Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource.Claim;
+
+        public bool RequireTenantId(out string tenantId, out string? reason)
+        {
+            tenantId = TenantId!;
+            reason = null;
+            return true;
+        }
     }
 
     private static ClaimsPrincipal AdminPrincipal()

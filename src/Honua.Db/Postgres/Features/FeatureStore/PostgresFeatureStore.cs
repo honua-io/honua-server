@@ -11,13 +11,14 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -40,7 +41,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -53,6 +54,14 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
     private readonly IFieldMaskSource? _fieldMaskSource;
     private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
+    private readonly string? _managedFeatureSchema;
+    private readonly bool? _preferSerialBoundedSpatialReads;
+    private readonly bool _disableJitForSourceSpatialCounts;
+    private readonly bool? _preferSerialSourceSpatialCounts;
+    private readonly LayerReadSecurityResolver _readSecurity;
+    private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
+    private readonly IRequestSecretReferenceResolver? _secretReferenceResolver;
+    private readonly IResolvedConnectionStringValidator? _resolvedConnectionStringValidator;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
@@ -80,19 +89,34 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IMetadataV2GraphProvider? v2Provider = null,
         ILogger<PostgresStorageMappedFeatureReader>? storageMappedReaderLogger = null,
         IRowLevelSecurityFilterSource? rlsFilterSource = null,
-        IFieldMaskSource? fieldMaskSource = null)
+        IFieldMaskSource? fieldMaskSource = null,
+        string? managedFeatureSchema = null,
+        PostgresBoundConnectionProvider? boundConnectionProvider = null,
+        bool? preferSerialBoundedSpatialReads = null,
+        bool disableJitForSourceSpatialCounts = false,
+        bool? preferSerialSourceSpatialCounts = null,
+        IRequestSecretReferenceResolver? secretReferenceResolver = null,
+        IResolvedConnectionStringValidator? resolvedConnectionStringValidator = null)
     {
+        _secretReferenceResolver = secretReferenceResolver;
+        _resolvedConnectionStringValidator = resolvedConnectionStringValidator;
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _v2Provider = v2Provider;
         _connectionProvider = connectionProvider;
+        _boundConnectionProvider = boundConnectionProvider;
         _dictionaryPool = dictionaryPool;
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
         _storageMappedReaderLogger = storageMappedReaderLogger;
+        _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
+        _preferSerialBoundedSpatialReads = preferSerialBoundedSpatialReads;
+        _disableJitForSourceSpatialCounts = disableJitForSourceSpatialCounts;
+        _preferSerialSourceSpatialCounts = preferSerialSourceSpatialCounts;
         _rlsFilterSource = rlsFilterSource;
         _fieldMaskSource = fieldMaskSource;
+        _readSecurity = new LayerReadSecurityResolver(v2Provider, filterExpressionService, rlsFilterSource, fieldMaskSource);
     }
 
     public string ProviderName => DataProviderNames.Postgis;
@@ -122,7 +146,14 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             _storageMappedReaderLogger,
             _filterExpressionService,
             _rlsFilterSource,
-            _fieldMaskSource);
+            _fieldMaskSource,
+            _managedFeatureSchema,
+            _boundConnectionProvider,
+            _preferSerialBoundedSpatialReads,
+            _disableJitForSourceSpatialCounts,
+            preferSerialSourceSpatialCounts: _preferSerialSourceSpatialCounts,
+            secretReferenceResolver: _secretReferenceResolver,
+            resolvedConnectionStringValidator: _resolvedConnectionStringValidator);
     }
 
     public ITileProvider CreateTileProviderForBinding(FeatureProviderBinding binding)
@@ -221,6 +252,32 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             query,
             layerId,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlySet<long>> QueryPreChangeObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        IReadOnlyCollection<long> changeIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(changeIds);
+        if (changeIds.Count == 0)
+        {
+            return new HashSet<long>();
+        }
+
+        // The enforced read policy (permanent filter, row-level security) is stamped exactly as for a live
+        // read, so a pre-change image the caller could not read never matches.
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        query = query with { Limit = null, Offset = null, OrderBy = null };
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var objectIdsQuery = _queryBuilder.BuildPreChangeObjectIdsQuery(layerId, query, changeIds, geometryStorageType);
+        var objectIds = await _dataAccess.ExecuteSelectObjectIdsQueryAsync(
+            objectIdsQuery,
+            query,
+            layerId,
+            cancellationToken).ConfigureAwait(false);
+        return objectIds.ToHashSet();
     }
 
     public async Task<ImmutableArray<ProjectedPoint>> QueryProjectedPointsAsync(
@@ -548,6 +605,12 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         // Enforce the layer's permanent (row-visibility) filter so hidden rows do
         // not leak their min/max temporal values through the extent.
         var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        if (query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } maskedFields &&
+            maskedFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         var temporalQuery = query.EnforcedSqlFilter is not null && _queryBuilder is FeatureQueryBuilder postgresQueryBuilder
             ? postgresQueryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType, query)
             : _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
@@ -598,6 +661,42 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
+        editBatch = await PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        editBatch = await PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, receipt, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+    {
+        var inner = await _dataAccess.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+        return new SecuredWriterTransaction(this, inner);
+    }
+
+    /// <summary>
+    /// Stamps the request-scoped write policy onto a batch before it reaches the provider
+    /// transaction: masked fields for precondition-preserving updates, and the caller's
+    /// row-level security predicate as the <c>WITH CHECK</c> every written row must satisfy
+    /// (honua-server#6103). Every protocol (GeoServices, OGC API Features, WFS-T, OData,
+    /// gRPC, forms, replica sync) writes through this store, so the check is enforced once
+    /// here rather than per adapter. A caller-supplied predicate is always replaced.
+    /// </summary>
+    private async Task<FeatureEditBatch> PrepareEditBatchAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        CancellationToken cancellationToken)
+    {
         if (!editBatch.Preconditions.IsDefaultOrEmpty)
         {
             // Preserve omitted masked fields inside the provider transaction; the
@@ -611,13 +710,37 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             };
         }
 
-        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+        var writeCheck = await _readSecurity
+            .ResolveRowLevelSecurityFilterAsync(layerId, cancellationToken)
+            .ConfigureAwait(false);
+        return editBatch with { RowSecurityWriteCheck = writeCheck };
     }
 
-    public Task<IFeatureWriterTransaction> BeginTransactionAsync(
-        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
-        CancellationToken cancellationToken = default)
-        => _dataAccess.BeginTransactionAsync(isolationLevel, cancellationToken);
+    /// <summary>
+    /// Cross-layer writer transaction that stamps each layer's write policy (see
+    /// <see cref="PrepareEditBatchAsync"/>) before delegating to the provider transaction.
+    /// </summary>
+    private sealed class SecuredWriterTransaction(
+        PostgresFeatureStoreRefactored owner,
+        IFeatureWriterTransaction inner) : IFeatureWriterTransaction
+    {
+        public async Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+        {
+            editBatch = await owner.PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            return await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        }
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
+            => inner.CommitAsync(cancellationToken);
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+            => inner.RollbackAsync(cancellationToken);
+
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+    }
 
     #endregion
 
@@ -751,7 +874,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return await executeOptimized(layerId, query, geometryStorageType, cancellationToken);
         }
 
-        // Fallback to original pattern for unlimited queries where count optimization isn't beneficial
+        // Distinct and distance projections also use this fallback, even with a page limit.
         var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
         var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
 
@@ -760,10 +883,18 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return QueryResult<T>.Empty();
         }
 
-        var selectQuery = buildSelect(layerId, query, geometryStorageType);
-        var features = await executeSelect(selectQuery, query, layerId, cancellationToken);
+        var requestedLimit = query.Limit.GetValueOrDefault();
+        var probePage = query.Limit.HasValue && requestedLimit >= 0 && requestedLimit < int.MaxValue;
+        var pageQuery = probePage ? query with { Limit = requestedLimit + 1 } : query;
+        var selectQuery = buildSelect(layerId, pageQuery, geometryStorageType);
+        var features = await executeSelect(selectQuery, pageQuery, layerId, cancellationToken);
 
-        return QueryResult<T>.Create(totalCount, features, false);
+        // A source-row count cannot establish whether another DISTINCT projection exists.
+        // Probe one projected row, as QueryPageAsync does, and keep the existing total-count
+        // and output contracts. The extra row must never leak into the returned page.
+        var hasMoreResults = probePage && features.Length > requestedLimit;
+        var items = hasMoreResults ? features.Take(requestedLimit).ToImmutableArray() : features;
+        return QueryResult<T>.Create(totalCount, items, hasMoreResults);
     }
 
     /// <summary>
@@ -975,145 +1106,19 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         return fallbackCount;
     }
 
-    private async Task<FeatureQuery> ApplyPermanentFilterAsync(
+    // The enforcement itself lives in LayerReadSecurityResolver so the spatial analytics
+    // reader applies exactly the same permanent filter, RLS predicate and field masks.
+    private Task<FeatureQuery> ApplyPermanentFilterAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
-    {
-        // Resolve each concern independently. A nested caller may already carry one
-        // enforced value, but that must not suppress resolution of the other concern.
-        if (query.EnforcedSqlFilter is null)
-        {
-            var enforcedFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (enforcedFilter is not null)
-            {
-                query = query with { EnforcedSqlFilter = enforcedFilter };
-            }
-        }
+        => _readSecurity.ApplyAsync(layerId, query, cancellationToken);
 
-        if (query.EnforcedMaskedFields is null)
-        {
-            var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (!maskedFields.IsDefaultOrEmpty)
-            {
-                query = query with { EnforcedMaskedFields = maskedFields };
-            }
-        }
+    private Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(int layerId, CancellationToken cancellationToken)
+        => _readSecurity.ResolveMaskedFieldsAsync(layerId, cancellationToken);
 
-        FeatureQuerySecurity.Validate(query);
-        return query;
-    }
-
-    /// <summary>
-    /// Resolves the request-scoped field-level-security (column masking) set (#1940) for
-    /// the layer, or an empty set when no masking applies (no policy, no request context).
-    /// Best-effort metadata lookup so a missing resource never throws here; the field-mask
-    /// source itself returns an empty set when nothing matches.
-    /// </summary>
-    private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(int layerId, CancellationToken cancellationToken)
-    {
-        if (_fieldMaskSource is null || _v2Provider is null)
-        {
-            return ImmutableArray<string>.Empty;
-        }
-
-        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
-        {
-            return ImmutableArray<string>.Empty;
-        }
-
-        return await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Resolves the layer's enforced (row-visibility) filter to a parameterized SQL
-    /// fragment, or null when no filter applies. Combines two independent sources with
-    /// AND so both are honored on every read surface:
-    /// <list type="bullet">
-    ///   <item>the layer's metadata-v2 <em>permanent filter</em> (server-declared,
-    ///   always-on), and</item>
-    ///   <item>the request-scoped <em>row-level security (RLS)</em> predicate (#502),
-    ///   derived from the caller's roles/claims and the layer's RLS policies.</item>
-    /// </list>
-    /// Both fragments are independently parameterized; RLS placeholders are renumbered
-    /// so the merged fragment stays positionally consistent for the provider.
-    /// </summary>
-    private async Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var permanentFilter = await PermanentFilterResolver
-            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
-            .ConfigureAwait(false);
-
-        var rlsFilter = await ResolveRlsFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-
-        return CombineEnforcedFilters(permanentFilter, rlsFilter);
-    }
-
-    /// <summary>
-    /// Resolves the request-scoped RLS predicate for the layer, or null when no RLS
-    /// applies (no policy, or no request context). Best-effort metadata lookup so a
-    /// missing resource never throws here; the RLS source itself fails secure.
-    /// </summary>
-    private async Task<SqlFragment?> ResolveRlsFilterAsync(int layerId, CancellationToken cancellationToken)
-    {
-        if (_rlsFilterSource is null || _v2Provider is null)
-        {
-            return null;
-        }
-
-        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
-        {
-            return null;
-        }
-
-        return await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// AND-combines the permanent filter and RLS fragments. Either may be null.
-    /// The RLS fragment's <c>@pN</c> placeholders are shifted past the permanent
-    /// filter's parameters so the merged parameter list lines up positionally.
-    /// </summary>
-    private static SqlFragment? CombineEnforcedFilters(SqlFragment? permanentFilter, SqlFragment? rlsFilter)
-    {
-        if (permanentFilter is null)
-        {
-            return rlsFilter;
-        }
-
-        if (rlsFilter is null)
-        {
-            return permanentFilter;
-        }
-
-        var offset = permanentFilter.Parameters.Count;
-        var shiftedRlsSql = ShiftNamedParameters(rlsFilter.Sql, offset);
-        var parameters = new List<object?>(permanentFilter.Parameters);
-        parameters.AddRange(rlsFilter.Parameters);
-        return new SqlFragment($"({permanentFilter.Sql}) AND ({shiftedRlsSql})", parameters);
-    }
-
-    private static string ShiftNamedParameters(string sql, int offset)
-    {
-        if (offset == 0)
-        {
-            return sql;
-        }
-
-        return System.Text.RegularExpressions.Regex.Replace(
-            sql,
-            @"@p(\d+)",
-            match =>
-            {
-                var index = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-                return $"@p{index + offset}";
-            },
-            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-    }
+    private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(int layerId, CancellationToken cancellationToken)
+        => _readSecurity.ResolveEnforcedSqlFilterAsync(layerId, cancellationToken);
 
     private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {

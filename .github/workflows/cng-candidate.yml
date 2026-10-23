@@ -1,0 +1,88 @@
+name: Candidate CNG qualification
+run-name: CNG candidate from release manifest ${{ inputs.release_ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Full honua-release commit containing the frozen platform-manifest.yaml
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      harness_ref:
+        description: Full honua-server commit containing this qualification harness
+        required: true
+        type: string
+      release_ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cng-candidate-${{ inputs.release_ref }}
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    outputs:
+      harness_ref: ${{ steps.identity.outputs.harness_ref }}
+      server_image: ${{ steps.identity.outputs.server_image }}
+      source_sha: ${{ steps.identity.outputs.source_sha }}
+      candidate_cut_at: ${{ steps.identity.outputs.candidate_cut_at }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.harness_ref || github.sha }}
+      - name: Require an immutable release manifest ref
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          [[ "$RELEASE_REF" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-release
+          ref: ${{ inputs.release_ref }}
+          path: release-manifest
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install PyYAML==6.0.2
+      - name: Resolve the frozen candidate as one identity
+        id: identity
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          echo "harness_ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          test "$(git -C release-manifest rev-parse HEAD)" = "$RELEASE_REF"
+          python3 scripts/conformance/cng/artifact-gen/candidate_identity.py \
+            release-manifest/platform-manifest.yaml > candidate-identity.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          for key, value in json.load(open("candidate-identity.json")).items():
+              print(f"{key}={value}")
+          PY
+          echo "Manifest: honua-io/honua-release@$RELEASE_REF" >> "$GITHUB_STEP_SUMMARY"
+          cat candidate-identity.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cng-candidate-identity
+          path: |
+            candidate-identity.json
+            release-manifest/platform-manifest.yaml
+          retention-days: 90
+
+  conformance:
+    needs: identity
+    uses: ./.github/workflows/cng-conformance.yml
+    with:
+      harness_ref: ${{ needs.identity.outputs.harness_ref }}
+      server_image: ${{ needs.identity.outputs.server_image }}
+      source_sha: ${{ needs.identity.outputs.source_sha }}
+      candidate_cut_at: ${{ needs.identity.outputs.candidate_cut_at }}

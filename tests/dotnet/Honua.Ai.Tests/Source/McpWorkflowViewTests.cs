@@ -15,12 +15,16 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Views;
+using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -45,6 +49,64 @@ public sealed class McpWorkflowViewTests
     // ------------------------------------------------------------------
     // Derivation from the canonical live catalog
     // ------------------------------------------------------------------
+
+    [UnitTest]
+    public async Task SetupView_EligibleLifecycleOperationAddedAndRemoved_RefreshesMembership()
+    {
+        McpDataAccessSurface Surface(params IMcpToolSource[] sources) => new(
+            McpTaxonomyAlignmentTests.BuildTools().Where(tool => tool.Name != "honua_studio_reopen_version"),
+            [], NullLogger<McpDataAccessSurface>.Instance, toolSources: sources);
+        var before = await ListToolsAsync(Surface(), McpWorkflowViewCatalog.SetupViewName);
+        var after = await ListToolsAsync(
+            Surface(new StubToolSource("honua_studio_reopen_version")), McpWorkflowViewCatalog.SetupViewName);
+        after.Names.Should().Contain("honua_studio_reopen_version");
+        after.MembershipDigestOf().Should().NotBe(before.MembershipDigestOf());
+        var removed = await ListToolsAsync(Surface(), McpWorkflowViewCatalog.SetupViewName);
+        removed.MembershipDigestOf().Should().Be(before.MembershipDigestOf());
+    }
+
+    [UnitTest]
+    public async Task SetupView_LiveStudioOperationCatalog_IncludesEditingSaveAndReopenWithinBudget()
+    {
+        var catalog = new Honua.Core.Features.Operations.Services.OperationCatalog(
+            [new Honua.Server.Features.Operations.ServerOperationDescriptorProvider()], TimeProvider.System);
+        var descriptors = Honua.Server.Features.Operations.StudioDraftOperations.BuildDescriptors();
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: descriptors.Select(descriptor =>
+                new Honua.Server.Features.Operations.StudioDraftApprovalRequestMapper(descriptor.OperationId)));
+        var surface = BuildFullSurface(source);
+        var view = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
+        var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
+
+        view.Names.Should().Contain([
+            "honua_studio_update_draft",
+            "honua_studio_save_version",
+            "honua_studio_reopen_version"]);
+        view.Names.Should().NotContain(name => name.StartsWith("honua_op_studio_", StringComparison.Ordinal),
+            "generic gated and destructive operations do not belong to the executable setup path");
+        foreach (var descriptor in view.Tools)
+        {
+            var canonical = full.Tools.Single(tool => tool.GetProperty("name").GetString() ==
+                descriptor.GetProperty("name").GetString());
+            descriptor.GetRawText().Should().Be(canonical.GetRawText());
+        }
+
+        var aggregate = Encoding.UTF8.GetBytes("[" + string.Join(",", view.Tools.Select(tool => tool.GetRawText())) + "]");
+        var bytes = aggregate.Length;
+        view.Meta.GetProperty("descriptorBytes").GetInt32().Should().Be(bytes);
+        view.Meta.GetProperty("descriptorDigest").GetString().Should().Be(
+            "sha256:" + Convert.ToHexStringLower(SHA256.HashData(aggregate)));
+        view.Meta.GetProperty("estimatedTokens").GetInt32().Should().Be(bytes / 4);
+        var largest = view.Tools.Max(tool => Encoding.UTF8.GetByteCount(tool.GetRawText()));
+        view.NextCursor.Should().BeNull();
+        view.Tools.Length.Should().BeLessThanOrEqualTo(48);
+        bytes.Should().BeLessThanOrEqualTo(128 * 1024);
+        largest.Should().BeLessThanOrEqualTo(16 * 1024);
+        _output.WriteLine($"Live setup catalog: {view.Tools.Length} descriptors, {bytes} bytes, ~{bytes / 4} tokens, largest {largest} bytes.");
+    }
 
     [UnitTest]
     public async Task ToolsList_WithSetupView_ReturnsOnlyServerSelectedDescriptors()
@@ -96,10 +158,27 @@ public sealed class McpWorkflowViewTests
             "honua_list_jobs",
             "honua_studio_create_draft",
             "honua_studio_validate_draft",
+            "honua_studio_get_draft",
+            "honua_studio_update_draft",
+            "honua_studio_preview_draft",
+            "honua_studio_save_version",
+            "honua_studio_get_version",
+            "honua_studio_reopen_version",
+            "honua_studio_add_layer",
+            "honua_studio_remove_layer",
+            "honua_studio_set_layer_style",
+            "honua_studio_set_layer_visibility",
+            "honua_studio_set_view",
+            "honua_studio_add_widget",
+            "honua_studio_remove_widget",
+            "honua_studio_bind_interaction",
+            "honua_studio_remove_interaction",
+            "honua_studio_add_control",
+            "honua_studio_remove_control",
             "honua_studio_propose_publication",
             "honua_supported_operation_kinds",
         ]);
-        view.Names.Should().HaveCountLessThanOrEqualTo(20);
+        view.Names.Should().HaveCount(37);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -167,6 +246,27 @@ public sealed class McpWorkflowViewTests
         classification.GetProperty("family").GetString().Should().Be("honua.studio.composition");
         classification.GetProperty("view").GetString().Should().Be(McpWorkflowViewCatalog.SetupViewName);
         classification.GetProperty("revision").GetString().Should().Be(McpWorkflowViewCatalog.Setup.Revision);
+
+        foreach (var name in new[]
+                 {
+                     "honua_studio_add_layer",
+                     "honua_studio_set_view",
+                     "honua_studio_add_widget",
+                     "honua_studio_bind_interaction",
+                     "honua_studio_add_control",
+                     "honua_studio_get_version",
+                 })
+        {
+            var fullDescriptor = full.Tools.Single(t => t.GetProperty("name").GetString() == name);
+            var viewDescriptor = view.Tools.Single(t => t.GetProperty("name").GetString() == name);
+            fullDescriptor.GetRawText().Should().Be(viewDescriptor.GetRawText());
+            var studio = fullDescriptor.GetProperty("_meta").GetProperty("honua.studio");
+            studio.GetProperty("family").GetString().Should().Be("honua.studio.composition");
+            studio.GetProperty("view").GetString().Should().Be(McpWorkflowViewCatalog.SetupViewName);
+            studio.GetProperty("revision").GetString().Should().Be(McpWorkflowViewCatalog.Setup.Revision);
+            McpWorkflowViewCatalog.Setup.FindStageIndex(name).Should().Be(
+                McpWorkflowViewCatalog.Setup.Stages.ToList().FindIndex(stage => stage.Id == "compose"));
+        }
 
         fullStudio.GetProperty("annotations").ValueKind.Should().Be(JsonValueKind.Object);
         fullStudio.GetProperty("outputSchema").ValueKind.Should().Be(JsonValueKind.Object);
@@ -390,12 +490,14 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public void PublishedTaskViews_AreBoundedToTwentyTools()
+    public void PublishedTaskViews_StayInsideTheDescriptorBudget()
     {
         foreach (var definition in McpWorkflowViewCatalog.All.Values)
         {
             McpWorkflowViewProjector.Project(definition, BuildCatalogEntries()).Members
-                .Should().HaveCountLessThanOrEqualTo(20, $"view '{definition.Name}' must remain task-bounded");
+                .Should().HaveCountLessThanOrEqualTo(
+                    McpWorkflowViewBudget.MaxDescriptors,
+                    $"view '{definition.Name}' must remain inside the 48-descriptor budget");
         }
     }
 
@@ -574,7 +676,7 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCountLessThanOrEqualTo(20);
+        after.Names.Should().HaveCount(37);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -607,7 +709,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCountLessThanOrEqualTo(20);
+        names.Should().HaveCount(37);
     }
 
     [UnitTest]
@@ -645,7 +747,7 @@ public sealed class McpWorkflowViewTests
 
         response!.Error.Should().BeNull();
         var tools = response.Result!.Value.GetProperty("tools");
-        tools.GetArrayLength().Should().BeLessThanOrEqualTo(20);
+        tools.GetArrayLength().Should().Be(37);
         tools.EnumerateArray().Select(t => t.GetProperty("name").GetString())
             .Should().NotContain(name => name!.StartsWith("honua_op_import_", StringComparison.Ordinal));
     }
@@ -741,8 +843,9 @@ public sealed class McpWorkflowViewTests
             .EnumerateArray()
             .ToArray();
 
-        views.Select(v => v.GetProperty("name").GetString()).Should().Equal("default", "setup");
-        views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= 20);
+        views.Select(v => v.GetProperty("name").GetString()).Should().Equal(
+            "analyze", "configure", "default", "operate", "setup");
+        views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= McpWorkflowViewBudget.MaxDescriptors);
     }
 
     // ------------------------------------------------------------------
@@ -808,6 +911,72 @@ public sealed class McpWorkflowViewTests
             McpWorkflowViewBudget.MaxAggregateDescriptorBytes);
         projection.LargestDescriptorBytes.Should().BeLessThanOrEqualTo(McpWorkflowViewBudget.MaxDescriptorBytes);
         projection.EmptyStageIds.Should().BeEmpty("every stage of the bounded path must resolve to live tools");
+    }
+
+    [UnitTest]
+    public async Task ConfigureOperateAndAnalyze_SelectTheOperatorPath_WithinBudget()
+    {
+        McpWorkflowViewCatalog.Configure.FindStageIndex("honua_studio_get_version").Should().BeGreaterThanOrEqualTo(0);
+        McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_get_version").Should().BeGreaterThanOrEqualTo(0,
+            "the terminal setup view includes the saved-version read the map path calls");
+        McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_add_layer").Should().BeGreaterThanOrEqualTo(0);
+        McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_propose_publication").Should().BeGreaterThanOrEqualTo(0);
+        McpWorkflowViewCatalog.Setup.Stages.Single(stage => stage.Id == "compose").Exclusions
+            .Should().Contain(rule => rule.Value == "honua_studio_propose_publication");
+
+        var catalog = await LiveCatalogAsync();
+        foreach (var definition in new[]
+                 {
+                     McpWorkflowViewCatalog.Configure,
+                     McpWorkflowViewCatalog.Operate,
+                     McpWorkflowViewCatalog.Analyze,
+                 })
+        {
+            var projection = McpWorkflowViewProjector.Project(definition, catalog);
+            projection.BudgetViolations.Should().BeEmpty(
+                $"view '{definition.Name}' must stay inside the descriptor budget; split a stage instead of raising it");
+            projection.Members.Should().NotBeEmpty();
+            projection.EmptyStageIds.Should().BeEmpty($"every stage of '{definition.Name}' must resolve to a live tool");
+            projection.Members.Count.Should().BeLessThanOrEqualTo(McpWorkflowViewBudget.MaxDescriptors);
+            projection.AggregateCanonicalBytes.Should().BeLessThanOrEqualTo(McpWorkflowViewBudget.MaxAggregateDescriptorBytes);
+            projection.LargestDescriptorBytes.Should().BeLessThanOrEqualTo(McpWorkflowViewBudget.MaxDescriptorBytes);
+            _output.WriteLine(
+                $"{definition.Name}: {projection.Members.Count} descriptors, {projection.AggregateCanonicalBytes:N0} bytes, "
+                + $"largest {projection.LargestDescriptorBytes:N0}");
+        }
+
+        var configure = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Configure, catalog);
+        configure.Members.Select(member => member.ToolName).Should().Contain(
+        [
+            "honua_admin_connections_create",
+            "honua_admin_layer_publish",
+            "honua_studio_add_layer",
+            "honua_studio_get_version",
+            "honua_studio_propose_publication",
+            "honua_publish_service",
+            "honua_ingest_dataset",
+        ]);
+        var operate = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Operate, catalog);
+        operate.Members.Select(member => member.ToolName).Should().Contain(["honua_ops_health", "honua_propose_finding"]);
+        var analyze = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Analyze, catalog);
+        analyze.Members.Select(member => member.ToolName).Should().Contain(["honua_execute_plan", "honua_geocode_address"]);
+    }
+
+    private static async Task<(McpToolDescriptor Descriptor, bool IsDynamic)[]> LiveCatalogAsync()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>());
+        services.AddOperationsToolset(configuration, environment);
+        services.AddAdminAccessOperations();
+        McpServiceCollectionExtensions.AddMcpPublishedOperationTools(services, configuration);
+        await using var provider = services.BuildServiceProvider();
+        var surface = BuildFullSurface(provider.GetServices<IMcpToolSource>().ToArray());
+        var tools = await surface.GetAllToolsAsync();
+        return tools.Select(tool => (McpWorkflowViewDescriptorClassifier.Describe(tool), tool is PublishedOperationTool)).ToArray();
     }
 
     [UnitTest]

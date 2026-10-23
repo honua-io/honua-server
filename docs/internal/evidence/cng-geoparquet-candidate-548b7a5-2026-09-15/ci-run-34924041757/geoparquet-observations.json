@@ -1,0 +1,150 @@
+{
+  "candidate": {
+    "cut_at": "2026-09-14T22:40:00Z",
+    "image_digest": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "source_sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf"
+  },
+  "geoparquet_observations": [
+    {
+      "artifact_producer": "honua",
+      "auth_policy_revision": "anonymous-v1",
+      "budget_profile": "geoparquet",
+      "canonical_client": "PyArrow",
+      "client_lane": "pyarrow-geoparquet",
+      "client_version": "25.0.1",
+      "completed_at": "2026-09-15T03:19:06.998645Z",
+      "contract_revision": "geoparquet-1.1",
+      "deployment_target": "local-docker",
+      "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+      "evidence_receipt": null,
+      "evidence_uri": "https://evidence.honua.io/data/sha256/12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+      "executed": true,
+      "facet_results": {
+        "media-schema": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        },
+        "metadata": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        },
+        "positive": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        }
+      },
+      "failure_reason": "ArrowInvalid: Could not open Parquet input source 'cng-results/artifacts/cng.parquet': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.",
+      "fixture_revision": "docker/cng/seed.sql@f820af6712d2dfb093b8c1893730abddb503846b",
+      "hard_gated": false,
+      "honua_in_loop": true,
+      "image_digest": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+      "lane": "pyarrow-geoparquet",
+      "operation": "feature-read",
+      "producer_source_sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "result": "fail",
+      "scenario_facets": [
+        "positive",
+        "metadata",
+        "media-schema"
+      ],
+      "skip_reason": null,
+      "source_sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "started_at": "2026-09-15T03:19:06.991509Z",
+      "surface": "geoparquet"
+    },
+    {
+      "artifact_producer": "honua",
+      "auth_policy_revision": "anonymous-v1",
+      "budget_profile": "geoparquet",
+      "canonical_client": "GeoPandas",
+      "client_lane": "geopandas-geoparquet",
+      "client_version": "1.1.4",
+      "completed_at": "2026-09-15T03:19:06.999016Z",
+      "contract_revision": "geoparquet-1.1",
+      "deployment_target": "local-docker",
+      "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+      "evidence_receipt": null,
+      "evidence_uri": "https://evidence.honua.io/data/sha256/12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+      "executed": true,
+      "facet_results": {
+        "crs-axis": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        },
+        "metadata": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        },
+        "positive": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        }
+      },
+      "failure_reason": "ArrowInvalid: Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.",
+      "fixture_revision": "docker/cng/seed.sql@f820af6712d2dfb093b8c1893730abddb503846b",
+      "hard_gated": false,
+      "honua_in_loop": true,
+      "image_digest": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+      "lane": "geopandas-geoparquet",
+      "operation": "geometry-read",
+      "producer_source_sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "result": "fail",
+      "scenario_facets": [
+        "positive",
+        "metadata",
+        "crs-axis"
+      ],
+      "skip_reason": null,
+      "source_sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "started_at": "2026-09-15T03:19:06.998679Z",
+      "surface": "geoparquet"
+    },
+    {
+      "artifact_producer": "honua",
+      "auth_policy_revision": "anonymous-v1",
+      "budget_profile": "geoparquet",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal-geoparquet",
+      "client_version": "3.14.0",
+      "completed_at": "2026-09-15T03:19:42.638764Z",
+      "contract_revision": "geoparquet-1.1",
+      "deployment_target": "local-docker",
+      "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+      "evidence_receipt": null,
+      "evidence_uri": "https://evidence.honua.io/data/sha256/12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+      "executed": true,
+      "facet_results": {
+        "media-schema": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        },
+        "metadata": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        },
+        "positive": {
+          "evidence_digest": "sha256:12c4e3fc0156f9d17e0a4a2b9ec81f5f8426ede60447a471e5402d5f3c90191d",
+          "result": "fail"
+        }
+      },
+      "failure_reason": "CalledProcessError: Command '('docker', 'run', '--rm', '--network', 'none', '--volume', '/home/runner/work/honua-server/honua-server/cng-results/artifacts:/data:ro', 'ghcr.io/osgeo/gdal@sha256:323828a57fd01e2f0a96ece1b2caf6b4ad41e2e47458386836697418fd67665c', 'ogrinfo', '-al', '-so', '/data/cng.parquet')' returned non-zero exit status 1.\nUnable to find image 'ghcr.io/osgeo/gdal@sha256:323828a57fd01e2f0a96ece1b2caf6b4ad41e2e47458386836697418fd67665c' locally\nghcr.io/osgeo/gdal@sha256:323828a57fd01e2f0a96ece1b2caf6b4ad41e2e47458386836697418fd67665c: Pulling from osgeo/gdal\n617772c7d19b: Pulling fs layer\na7fb98a8eddd: Pulling fs layer\n4f4fb700ef54: Pulling fs layer\n0024731d2b93: Pulling fs layer\n3dc4895cdea9: Pulling fs layer\n4004289e56c5: Pulling fs layer\n471a85d0a862: Pulling fs layer\n73ef32873d63: Pulling fs layer\nd9c70ca6bd64: Pulling fs layer\nfcfc97ecf7a1: Pulling fs layer\nc78e07e5ef49: Pulling fs layer\nb20875f20fd7: Pulling fs layer\n077872853889: Pulling fs layer\n2dd41e454c28: Pulling fs layer\n4afd1df5af94: Pulling fs layer\nc17efa58bca1: Pulling fs layer\nea6140996f0c: Pulling fs layer\nde25d9f15422: Pulling fs layer\nde9f7eb11bc1: Pulling fs layer\na8e27e2a59f0: Pulling fs layer\n3bb45f321f41: Pulling fs layer\ned537763de50: Pulling fs layer\n2dd41e454c28: Waiting\n4afd1df5af94: Waiting\nc17efa58bca1: Waiting\n4004289e56c5: Waiting\nea6140996f0c: Waiting\nde25d9f15422: Waiting\n471a85d0a862: Waiting\n73ef32873d63: Waiting\nde9f7eb11bc1: Waiting\na8e27e2a59f0: Waiting\n3bb45f321f41: Waiting\ned537763de50: Waiting\n0024731d2b93: Waiting\n3dc4895cdea9: Waiting\nc78e07e5ef49: Waiting\nd9c70ca6bd64: Waiting\nfcfc97ecf7a1: Waiting\n077872853889: Waiting\n4f4fb700ef54: Verifying Checksum\n4f4fb700ef54: Download complete\na7fb98a8eddd: Verifying Checksum\na7fb98a8eddd: Download complete\n617772c7d19b: Verifying Checksum\n617772c7d19b: Download complete\n3dc4895cdea9: Verifying Checksum\n3dc4895cdea9: Download complete\n471a85d0a862: Download complete\n617772c7d19b: Pull complete\n4004289e56c5: Verifying Checksum\n4004289e56c5: Download complete\nd9c70ca6bd64: Verifying Checksum\nd9c70ca6bd64: Download complete\nfcfc97ecf7a1: Download complete\nc78e07e5ef49: Verifying Checksum\nc78e07e5ef49: Download complete\n0024731d2b93: Verifying Checksum\n0024731d2b93: Download complete\n077872853889: Verifying Checksum\n077872853889: Download complete\nb20875f20fd7: Verifying Checksum\nb20875f20fd7: Download complete\n2dd41e454c28: Download complete\nc17efa58bca1: Verifying Checksum\nc17efa58bca1: Download complete\n4afd1df5af94: Verifying Checksum\n4afd1df5af94: Download complete\nea6140996f0c: Verifying Checksum\nea6140996f0c: Download complete\nde25d9f15422: Verifying Checksum\nde25d9f15422: Download complete\na8e27e2a59f0: Verifying Checksum\na8e27e2a59f0: Download complete\na7fb98a8eddd: Pull complete\n3bb45f321f41: Verifying Checksum\n3bb45f321f41: Download complete\ned537763de50: Verifying Checksum\ned537763de50: Download complete\n4f4fb700ef54: Pull complete\nde9f7eb11bc1: Verifying Checksum\nde9f7eb11bc1: Download complete\n73ef32873d63: Verifying Checksum\n73ef32873d63: Download complete\n0024731d2b93: Pull complete\n3dc4895cdea9: Pull complete\n4004289e56c5: Pull complete\n471a85d0a862: Pull complete\n73ef32873d63: Pull complete\nd9c70ca6bd64: Pull complete\nfcfc97ecf7a1: Pull complete\nc78e07e5ef49: Pull complete\nb20875f20fd7: Pull complete\n077872853889: Pull complete\n2dd41e454c28: Pull complete\n4afd1df5af94: Pull complete\nc17efa58bca1: Pull complete\nea6140996f0c: Pull complete\nde25d9f15422: Pull complete\nde9f7eb11bc1: Pull complete\na8e27e2a59f0: Pull complete\n3bb45f321f41: Pull complete\ned537763de50: Pull complete\nDigest: sha256:323828a57fd01e2f0a96ece1b2caf6b4ad41e2e47458386836697418fd67665c\nStatus: Downloaded newer image for ghcr.io/osgeo/gdal@sha256:323828a57fd01e2f0a96ece1b2caf6b4ad41e2e47458386836697418fd67665c\nERROR 4: `/data/cng.parquet' not recognized as being in a supported file format.\nogrinfo failed - unable to open '/data/cng.parquet'.",
+      "fixture_revision": "docker/cng/seed.sql@f820af6712d2dfb093b8c1893730abddb503846b",
+      "hard_gated": false,
+      "honua_in_loop": true,
+      "image_digest": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+      "lane": "gdal-geoparquet",
+      "operation": "feature-read",
+      "producer_source_sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "result": "fail",
+      "scenario_facets": [
+        "positive",
+        "metadata",
+        "media-schema"
+      ],
+      "skip_reason": null,
+      "source_sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+      "started_at": "2026-09-15T03:19:06.999035Z",
+      "surface": "geoparquet"
+    }
+  ]
+}

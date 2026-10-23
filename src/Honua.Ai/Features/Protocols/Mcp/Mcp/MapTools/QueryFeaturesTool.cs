@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
@@ -99,9 +100,14 @@ internal sealed class QueryFeaturesTool : IMcpTool
         // silently returning nothing (#2808).
         var bboxWarnings = BuildBboxCrsWarnings(argument.Bbox, argument.BboxSrid, layer);
 
+        // Publisher-hidden fields are not part of the public schema (#6118): default
+        // projection lists only visible attributes, an explicit outFields name is
+        // refused, and where is translated against the public schema so a hidden
+        // column cannot be filtered.
+        var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
         var query = new FeatureQuery
         {
-            OutFields = ToOutFields(argument.OutFields),
+            OutFields = ResolveOutFields(argument.OutFields, layer.Resource),
             Limit = limit,
             ResultOffset = offset,
             OutputSrid = outSrid,
@@ -144,9 +150,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var mcpFeatures = new List<JsonNode>(result.Items.Length);
         foreach (var feature in result.Items)
         {
-            var geoJsonFeature = ToGeoJsonFeature(feature, geometryService, returnGeometry, geometryPrecision);
+            var geoJsonFeature = ToGeoJsonFeature(feature, geometryService, returnGeometry, geometryPrecision, hiddenFields);
             geoJsonFeatures.Add(geoJsonFeature);
-            mcpFeatures.Add(ToMcpFeature(feature, geoJsonFeature));
+            mcpFeatures.Add(ToMcpFeature(feature, geoJsonFeature, hiddenFields));
         }
 
         var nextOffset = result.HasMoreResults ? offset + geoJsonFeatures.Count : (int?)null;
@@ -349,20 +355,48 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return offset;
     }
 
-    private static ImmutableArray<string>? ToOutFields(IReadOnlyList<string>? outFields)
+    private static ImmutableArray<string> ResolveOutFields(IReadOnlyList<string>? outFields, MetadataV2Resource resource)
     {
-        if (outFields is null || outFields.Count == 0)
+        var visibleAttributes = resource.VisibleSchemaFields()
+            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .ToArray();
+        var requested = outFields?
+            .Where(static field => !string.IsNullOrWhiteSpace(field))
+            .Select(static field => field.Trim())
+            .ToArray();
+        if (requested is not { Length: > 0 })
         {
-            return null;
+            return visibleAttributes
+                .Select(static field => field.Name)
+                .ToImmutableArray();
         }
 
-        var builder = ImmutableArray.CreateBuilder<string>(outFields.Count);
-        foreach (var field in outFields.Where(field => !string.IsNullOrWhiteSpace(field)))
+        var selected = ImmutableArray.CreateBuilder<string>(requested.Length);
+        var allVisible = false;
+        foreach (var field in requested)
         {
-            builder.Add(field.Trim());
+            if (field == "*")
+            {
+                allVisible = true;
+                continue;
+            }
+
+            var visible = visibleAttributes.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, field, StringComparison.OrdinalIgnoreCase));
+            if (visible is null)
+            {
+                throw new GeoprocessingValidationException($"Field '{field}' is not available.");
+            }
+
+            selected.Add(visible.Name);
         }
 
-        return builder.Count == 0 ? null : builder.ToImmutable();
+        // The storage-mapped reader matches literal field names. Passing "*" through
+        // would match nothing and yield an empty attribute object. Expand it against
+        // the public schema here, while the reader retains principal field masks.
+        return allVisible
+            ? visibleAttributes.Select(static field => field.Name).ToImmutableArray()
+            : selected.ToImmutable();
     }
 
     private static SqlFragment? BuildAttributeFilter(
@@ -382,7 +416,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
                 $"Invalid 'where' clause: {parse.ErrorMessage ?? "could not be parsed."}");
         }
 
-        var translation = filterService.Translate(parse.Expression, layer.Resource);
+        var translation = filterService.Translate(parse.Expression, layer.Resource.WithoutHiddenSchemaFields());
         if (!translation.IsSuccess)
         {
             throw new GeoprocessingValidationException(
@@ -444,7 +478,8 @@ internal sealed class QueryFeaturesTool : IMcpTool
         Feature feature,
         IGeometryService geometryService,
         bool returnGeometry,
-        int geometryPrecision)
+        int geometryPrecision,
+        IReadOnlySet<string> hiddenFields)
     {
         JsonNode? geometryNode = null;
         if (returnGeometry)
@@ -457,11 +492,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
             }
         }
 
-        var properties = new JsonObject();
-        foreach (var pair in feature.Attributes)
-        {
-            properties[pair.Key] = ToJsonValue(pair.Value);
-        }
+        var properties = ProjectAttributes(feature, hiddenFields);
 
         return new JsonObject
         {
@@ -472,13 +503,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
         };
     }
 
-    private static JsonObject ToMcpFeature(Feature feature, JsonObject geoJsonFeature)
+    private static JsonObject ToMcpFeature(Feature feature, JsonObject geoJsonFeature, IReadOnlySet<string> hiddenFields)
     {
-        var attributes = new JsonObject();
-        foreach (var pair in feature.Attributes)
-        {
-            attributes[pair.Key] = ToJsonValue(pair.Value);
-        }
+        var attributes = ProjectAttributes(feature, hiddenFields);
 
         return new JsonObject
         {
@@ -486,6 +513,22 @@ internal sealed class QueryFeaturesTool : IMcpTool
             ["attributes"] = attributes,
             ["geometry"] = geoJsonFeature["geometry"]?.DeepClone()
         };
+    }
+
+    private static JsonObject ProjectAttributes(Feature feature, IReadOnlySet<string> hiddenFields)
+    {
+        var attributes = new JsonObject();
+        foreach (var pair in feature.Attributes)
+        {
+            if (hiddenFields.Contains(pair.Key))
+            {
+                continue;
+            }
+
+            attributes[pair.Key] = ToJsonValue(pair.Value);
+        }
+
+        return attributes;
     }
 
     /// <summary>

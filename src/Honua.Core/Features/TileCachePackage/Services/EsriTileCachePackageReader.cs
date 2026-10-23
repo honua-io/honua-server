@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Globalization;
 using System.IO.Compression;
@@ -39,6 +40,24 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
     private const int CompactV2IndexSize = CompactV2IndexEntries * 8;                  // 131072
     private const long CompactV2OffsetMask = 0xFF_FFFF_FFFFL; // low 40 bits
 
+    /// <summary>Maximum uncompressed Compact Cache V2 bundle.</summary>
+    internal const int MaxBundleBytes = 256 * 1024 * 1024;
+
+    /// <summary>Maximum uncompressed exploded tile.</summary>
+    internal const int MaxExplodedTileBytes = 8 * 1024 * 1024;
+
+    /// <summary>Maximum uncompressed root.json or conf.xml.</summary>
+    internal const int MaxDescriptorBytes = 4 * 1024 * 1024;
+
+    /// <summary>Running decompressed-byte budget for one descriptor or tile read.</summary>
+    internal const long MaxDecompressedBytes = 2L * 1024 * 1024 * 1024;
+
+    private sealed class DecompressionBudget
+    {
+        public long Remaining;
+        public DecompressionBudget(long remaining) => Remaining = remaining;
+    }
+
     /// <inheritdoc />
     public bool CanRead(string fileName)
     {
@@ -61,7 +80,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         ArgumentNullException.ThrowIfNull(package);
 
         using var archive = new ZipArchive(package, ZipArchiveMode.Read, leaveOpen: true);
-        var descriptor = ReadDescriptorCore(archive, cancellationToken);
+        var descriptor = ReadDescriptorCore(archive, new DecompressionBudget(MaxDecompressedBytes), cancellationToken);
         return Task.FromResult(descriptor);
     }
 
@@ -77,11 +96,12 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         ArgumentNullException.ThrowIfNull(descriptor);
 
         using var archive = new ZipArchive(package, ZipArchiveMode.Read, leaveOpen: true);
+        var budget = new DecompressionBudget(MaxDecompressedBytes);
 
         IEnumerable<TileCachePackageTile> tiles = descriptor.StorageFormat switch
         {
-            TileCacheStorageFormat.CompactV2 => ReadCompactV2Tiles(archive, descriptor, minZoom, maxZoom, cancellationToken),
-            TileCacheStorageFormat.Exploded => ReadExplodedTiles(archive, descriptor, minZoom, maxZoom, cancellationToken),
+            TileCacheStorageFormat.CompactV2 => ReadCompactV2Tiles(archive, descriptor, minZoom, maxZoom, budget, cancellationToken),
+            TileCacheStorageFormat.Exploded => ReadExplodedTiles(archive, descriptor, minZoom, maxZoom, budget, cancellationToken),
             _ => throw new NotSupportedException($"Unsupported tile-cache storage format: {descriptor.StorageFormat}.")
         };
 
@@ -93,7 +113,10 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         }
     }
 
-    private static TileCachePackageDescriptor ReadDescriptorCore(ZipArchive archive, CancellationToken cancellationToken)
+    private static TileCachePackageDescriptor ReadDescriptorCore(
+        ZipArchive archive,
+        DecompressionBudget budget,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -102,14 +125,14 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         var rootEntry = FindEntry(archive, "root.json");
         if (rootEntry != null)
         {
-            return ReadCompactV2Descriptor(archive, rootEntry, cancellationToken);
+            return ReadCompactV2Descriptor(rootEntry, budget, cancellationToken);
         }
 
         // Fall back to conf.xml (older exploded raster .tpk).
         var confEntry = FindEntry(archive, "conf.xml");
         if (confEntry != null)
         {
-            return ReadExplodedDescriptor(archive, confEntry, cancellationToken);
+            return ReadExplodedDescriptor(confEntry, budget, cancellationToken);
         }
 
         throw new InvalidDataException(
@@ -117,15 +140,13 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
     }
 
     private static TileCachePackageDescriptor ReadCompactV2Descriptor(
-        ZipArchive archive,
         ZipArchiveEntry rootEntry,
+        DecompressionBudget budget,
         CancellationToken cancellationToken)
     {
-        EsriRootJson? root;
-        using (var stream = rootEntry.Open())
-        {
-            root = JsonSerializer.Deserialize(stream, TileCachePackageJsonContext.Default.EsriRootJson);
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        var bytes = ReadBounded(rootEntry, MaxDescriptorBytes, budget);
+        var root = JsonSerializer.Deserialize(bytes, TileCachePackageJsonContext.Default.EsriRootJson);
 
         if (root?.TileInfo is null)
         {
@@ -147,6 +168,13 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             ?? 0;
 
         var (minLevel, maxLevel) = ResolveLevels(root.TileInfo.Lods);
+        var tileSize = root.TileInfo.Cols ?? root.TileInfo.Rows ?? 256;
+        var scheme = TileCachePackageScheme.Resolve(
+            wkid,
+            root.TileInfo.Origin?.X,
+            root.TileInfo.Origin?.Y,
+            tileSize,
+            ToLodSamples(root.TileInfo.Lods));
 
         // The directory prefix the .bundle files sit under, relative to the archive
         // root. root.json carries it relative to its own location (e.g. "./tile"); we
@@ -159,29 +187,44 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             StorageFormat = TileCacheStorageFormat.CompactV2,
             DataType = dataType,
             ContentType = contentType,
-            TileMatrixSetIdentifier = ResolveTileMatrixSet(wkid),
+            TileMatrixSetIdentifier = scheme.Identifier,
             Wkid = wkid,
-            TileSize = root.TileInfo.Cols ?? root.TileInfo.Rows ?? 256,
+            TileSize = tileSize,
             MinLevel = minLevel,
             MaxLevel = maxLevel,
             Title = string.IsNullOrWhiteSpace(root.Name) ? null : root.Name,
-            TileBundlesPath = bundlesPath
+            TileBundlesPath = bundlesPath,
+            Assumption = scheme.Assumption
         };
     }
 
+    private static bool TryParseScalarTileOrigin(string text, out double x, out double y)
+    {
+        x = 0;
+        y = 0;
+        var parts = text.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 2
+            && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x)
+            && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
+    }
+
     private static TileCachePackageDescriptor ReadExplodedDescriptor(
-        ZipArchive archive,
         ZipArchiveEntry confEntry,
+        DecompressionBudget budget,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         string? format = null;
         int? wkid = null;
+        int? latestWkid = null;
         int? tileCols = null;
-        var levels = new List<int>();
+        double? originX = null;
+        double? originY = null;
+        var lods = new List<TileCacheLodSample>();
 
-        using (var stream = confEntry.Open())
+        var bytes = ReadBounded(confEntry, MaxDescriptorBytes, budget);
+        using (var stream = new MemoryStream(bytes, writable: false))
         {
             using var reader = XmlReader.Create(stream, new XmlReaderSettings
             {
@@ -201,27 +244,112 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                 switch (reader.LocalName)
                 {
                     case "CacheTileFormat":
-                        format = reader.ReadElementContentAsString();
+                        format = ReadElementText(reader);
                         break;
                     case "WKID":
-                    case "LatestWKID":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedWkid))
+                        if (int.TryParse(ReadElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedWkid))
                         {
                             wkid = parsedWkid;
                         }
 
                         break;
+                    case "LatestWKID":
+                        if (int.TryParse(ReadElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedLatest))
+                        {
+                            latestWkid = parsedLatest;
+                        }
+
+                        break;
                     case "TileCols":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCols))
+                        if (int.TryParse(ReadElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCols))
                         {
                             tileCols = parsedCols;
                         }
 
                         break;
-                    case "LevelID":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var levelId))
+                    case "TileOrigin":
+                        using (var origin = reader.ReadSubtree())
                         {
-                            levels.Add(levelId);
+                            var scalar = string.Empty;
+                            while (origin.Read())
+                            {
+                                if (origin.NodeType is XmlNodeType.Text or XmlNodeType.CDATA)
+                                {
+                                    scalar += origin.Value;
+                                    continue;
+                                }
+
+                                if (origin.NodeType != XmlNodeType.Element)
+                                {
+                                    continue;
+                                }
+
+                                if (origin.LocalName == "X" &&
+                                    double.TryParse(ReadElementText(origin), NumberStyles.Float, CultureInfo.InvariantCulture, out var x))
+                                {
+                                    originX = x;
+                                }
+                                else if (origin.LocalName == "Y" &&
+                                         double.TryParse(ReadElementText(origin), NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+                                {
+                                    originY = y;
+                                }
+                            }
+
+                            // Honua's own tile-package writer emits "x y" text. Esri conf.xml
+                            // emits nested X and Y elements. Either form is a real origin.
+                            if (originX is null && originY is null &&
+                                TryParseScalarTileOrigin(scalar, out var scalarX, out var scalarY))
+                            {
+                                originX = scalarX;
+                                originY = scalarY;
+                            }
+                        }
+
+                        break;
+                    case "LODInfo":
+                        int? level = null;
+                        double? resolution = null;
+                        double? scale = null;
+                        using (var lod = reader.ReadSubtree())
+                        {
+                            while (lod.Read())
+                            {
+                                if (lod.NodeType != XmlNodeType.Element)
+                                {
+                                    continue;
+                                }
+
+                                switch (lod.LocalName)
+                                {
+                                    case "LevelID":
+                                        if (int.TryParse(ReadElementText(lod), NumberStyles.Integer, CultureInfo.InvariantCulture, out var levelId))
+                                        {
+                                            level = levelId;
+                                        }
+
+                                        break;
+                                    case "Resolution":
+                                        if (double.TryParse(ReadElementText(lod), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedResolution))
+                                        {
+                                            resolution = parsedResolution;
+                                        }
+
+                                        break;
+                                    case "Scale":
+                                        if (double.TryParse(ReadElementText(lod), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedScale))
+                                        {
+                                            scale = parsedScale;
+                                        }
+
+                                        break;
+                                }
+                            }
+                        }
+
+                        if (level.HasValue)
+                        {
+                            lods.Add(new TileCacheLodSample(level.Value, resolution, scale));
                         }
 
                         break;
@@ -235,22 +363,25 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             throw new NotSupportedException("Exploded tile caches are raster-only; vector packages must use Compact Cache V2 (.vtpk).");
         }
 
-        var resolvedWkid = wkid ?? 0;
-        var minLevel = levels.Count == 0 ? 0 : levels.Min();
-        var maxLevel = levels.Count == 0 ? 0 : levels.Max();
+        var resolvedWkid = latestWkid ?? wkid ?? 0;
+        var tileSize = tileCols ?? 256;
+        var scheme = TileCachePackageScheme.Resolve(resolvedWkid, originX, originY, tileSize, lods);
+        var minLevel = lods.Count == 0 ? 0 : lods.Min(static lod => lod.Level);
+        var maxLevel = lods.Count == 0 ? 0 : lods.Max(static lod => lod.Level);
 
         return new TileCachePackageDescriptor
         {
             StorageFormat = TileCacheStorageFormat.Exploded,
             DataType = dataType,
             ContentType = contentType,
-            TileMatrixSetIdentifier = ResolveTileMatrixSet(resolvedWkid),
+            TileMatrixSetIdentifier = scheme.Identifier,
             Wkid = resolvedWkid,
-            TileSize = tileCols ?? 256,
+            TileSize = tileSize,
             MinLevel = minLevel,
             MaxLevel = maxLevel,
             Title = null,
-            TileBundlesPath = string.Empty
+            TileBundlesPath = string.Empty,
+            Assumption = scheme.Assumption
         };
     }
 
@@ -259,6 +390,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         TileCachePackageDescriptor descriptor,
         int minZoom,
         int maxZoom,
+        DecompressionBudget budget,
         CancellationToken cancellationToken)
     {
         var prefix = descriptor.TileBundlesPath.Length == 0
@@ -290,16 +422,10 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             }
 
             // Compact Cache V2 bundles must be read with random access; ZIP entry
-            // streams are forward-only, so materialize the (already bounded) bundle.
-            byte[] bundle;
-            using (var stream = entry.Open())
-            {
-                using var buffer = new MemoryStream();
-                stream.CopyTo(buffer);
-                bundle = buffer.ToArray();
-            }
+            // streams are forward-only, so materialize the bundle under the byte cap.
+            var bundle = ReadBounded(entry, MaxBundleBytes, budget);
 
-            foreach (var tile in DecodeCompactV2Bundle(bundle, level, baseRow, baseCol, cancellationToken))
+            foreach (var tile in DecodeCompactV2Bundle(bundle, level, baseRow, baseCol, budget, cancellationToken))
             {
                 yield return tile;
             }
@@ -311,6 +437,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         int level,
         int baseRow,
         int baseCol,
+        DecompressionBudget budget,
         CancellationToken cancellationToken)
     {
         if (bundle.Length < CompactV2HeaderSize + CompactV2IndexSize)
@@ -318,6 +445,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             yield break;
         }
 
+        var entries = new List<CompactV2IndexEntry>(64);
         for (var i = 0; i < CompactV2IndexEntries; i++)
         {
             if ((i & 0x3FF) == 0)
@@ -342,12 +470,20 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                 continue;
             }
 
-            // Index is row-major within the 128x128 block.
-            var rowInBlock = i / CompactV2BlockEdge;
-            var colInBlock = i % CompactV2BlockEdge;
+            entries.Add(new CompactV2IndexEntry(i, offset, size));
+        }
 
-            var content = new byte[size];
-            Array.Copy(bundle, offset, content, 0, size);
+        RejectAliasedBundleEntries(entries, budget);
+
+        foreach (var entry in entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Index is row-major within the 128x128 block.
+            var rowInBlock = entry.Index / CompactV2BlockEdge;
+            var colInBlock = entry.Index % CompactV2BlockEdge;
+            var content = new byte[entry.Size];
+            Array.Copy(bundle, entry.Offset, content, 0, entry.Size);
 
             yield return new TileCachePackageTile
             {
@@ -359,21 +495,57 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         }
     }
 
+    /// <summary>
+    /// Overlapping index ranges alias the same bundle bytes into many tile rows.
+    /// Reject them, and charge every accepted tile against the package budget,
+    /// before any copy is allocated (#6176).
+    /// </summary>
+    private static void RejectAliasedBundleEntries(
+        List<CompactV2IndexEntry> entries,
+        DecompressionBudget budget)
+    {
+        var ordered = entries.ToArray();
+        Array.Sort(ordered, static (left, right) =>
+        {
+            var byOffset = left.Offset.CompareTo(right.Offset);
+            return byOffset != 0 ? byOffset : left.Index.CompareTo(right.Index);
+        });
+
+        long coveredEnd = 0;
+        long tileBytes = 0;
+        foreach (var entry in ordered)
+        {
+            if (entry.Offset < coveredEnd)
+            {
+                throw new InvalidDataException(
+                    "Compact Cache V2 bundle index contains overlapping tile ranges.");
+            }
+
+            coveredEnd = entry.Offset + entry.Size;
+            tileBytes += entry.Size;
+            if (tileBytes > budget.Remaining)
+            {
+                throw new InvalidDataException(
+                    $"Tile-cache package exceeds the {MaxDecompressedBytes}-byte decompressed limit.");
+            }
+        }
+
+        budget.Remaining -= tileBytes;
+    }
+
+    private readonly record struct CompactV2IndexEntry(int Index, long Offset, int Size);
+
     private static IEnumerable<TileCachePackageTile> ReadExplodedTiles(
         ZipArchive archive,
         TileCachePackageDescriptor descriptor,
         int minZoom,
         int maxZoom,
+        DecompressionBudget budget,
         CancellationToken cancellationToken)
     {
         foreach (var entry in archive.Entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (entry.Length == 0)
-            {
-                continue;
-            }
 
             if (!TryParseExplodedTilePath(entry.FullName, out var level, out var row, out var col))
             {
@@ -385,13 +557,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                 continue;
             }
 
-            byte[] content;
-            using (var stream = entry.Open())
-            {
-                using var buffer = new MemoryStream();
-                stream.CopyTo(buffer);
-                content = buffer.ToArray();
-            }
+            var content = ReadBounded(entry, MaxExplodedTileBytes, budget);
 
             yield return new TileCachePackageTile
             {
@@ -475,16 +641,112 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         return (min, max);
     }
 
-    private static string ResolveTileMatrixSet(int wkid) => wkid switch
+    private static List<TileCacheLodSample> ToLodSamples(EsriLod[]? lods)
     {
-        // Geographic WGS84.
-        4326 => "WorldCRS84Quad",
-        // Web Mercator family (3857 and its aliases) and unknown/missing WKIDs both map to
-        // WebMercatorQuad: Esri basemap caches are overwhelmingly 3857 and unknown WKIDs are far
-        // more likely Mercator than CRS84. The alias set is no longer enumerated here (#2732); the
-        // shared default already covers it.
-        _ => "WebMercatorQuad"
-    };
+        var samples = new List<TileCacheLodSample>(lods?.Length ?? 0);
+        if (lods is null)
+        {
+            return samples;
+        }
+
+        foreach (var lod in lods)
+        {
+            samples.Add(new TileCacheLodSample(lod.Level, lod.Resolution, lod.Scale));
+        }
+
+        return samples;
+    }
+
+    /// <summary>
+    /// Copies a ZIP entry into memory only when its declared length and the bytes
+    /// actually inflated both stay inside the per-entry cap and the running budget.
+    /// A declared length of zero is still copied under the cap, so a length-less
+    /// deflate stream cannot expand without bound.
+    /// </summary>
+    /// <summary>
+    /// Reads the current element's text through a subtree so the caller's Read() loop lands on
+    /// the next sibling. ReadElementContentAsString already advances past the end tag, so a
+    /// following Read() would silently skip an adjacent element (Y after X, Resolution after
+    /// LevelID, LatestWKID after WKID).
+    /// </summary>
+    private static string ReadElementText(XmlReader reader)
+    {
+        using var element = reader.ReadSubtree();
+        element.Read();
+        return element.ReadElementContentAsString();
+    }
+
+    private static byte[] ReadBounded(ZipArchiveEntry entry, int maxEntryBytes, DecompressionBudget budget)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentNullException.ThrowIfNull(budget);
+        return ReadBounded(entry.Open, entry.Length, entry.FullName, maxEntryBytes, budget);
+    }
+
+    internal static byte[] ReadBounded(Stream stream, long declaredLength, int maxEntryBytes, ref long remainingBudget)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var budget = new DecompressionBudget(remainingBudget);
+        var bytes = ReadBounded(() => stream, declaredLength, "entry", maxEntryBytes, budget);
+        remainingBudget = budget.Remaining;
+        return bytes;
+    }
+
+    private static byte[] ReadBounded(
+        Func<Stream> open,
+        long declaredLength,
+        string entryName,
+        int maxEntryBytes,
+        DecompressionBudget budget)
+    {
+        if (declaredLength < 0)
+        {
+            throw new InvalidDataException($"Tile-cache entry '{entryName}' has an invalid size.");
+        }
+
+        if (declaredLength > maxEntryBytes)
+        {
+            throw new InvalidDataException(
+                $"Tile-cache entry '{entryName}' is {declaredLength} bytes, which exceeds the {maxEntryBytes}-byte limit.");
+        }
+
+        if (declaredLength > budget.Remaining)
+        {
+            throw new InvalidDataException(
+                $"Tile-cache package exceeds the {MaxDecompressedBytes}-byte decompressed limit.");
+        }
+
+        var hardCap = declaredLength > 0
+            ? (int)Math.Min(declaredLength, Math.Min(maxEntryBytes, budget.Remaining))
+            : (int)Math.Min(maxEntryBytes, budget.Remaining);
+
+        using var stream = open();
+        using var buffer = new MemoryStream(declaredLength > 0 && declaredLength <= hardCap ? (int)declaredLength : 0);
+        var rented = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            int read;
+            long total = 0;
+            while ((read = stream.Read(rented, 0, rented.Length)) > 0)
+            {
+                total += read;
+                if (total > hardCap || total > budget.Remaining)
+                {
+                    throw new InvalidDataException(
+                        $"Tile-cache entry '{entryName}' exceeds the {maxEntryBytes}-byte limit.");
+                }
+
+                buffer.Write(rented, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+
+        budget.Remaining -= buffer.Length;
+        return buffer.ToArray();
+    }
 
     /// <summary>
     /// Resolve the bundle directory prefix relative to the archive root from the

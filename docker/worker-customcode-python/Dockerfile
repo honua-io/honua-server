@@ -20,13 +20,13 @@
 
 # Pinned GDAL "full" base — ships python3 + osgeo bindings + the full driver set.
 # Tag verified available on ghcr.io/osgeo/gdal (ubuntu-full-<gdal-version>).
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
 
 FROM ${GDAL_BASE_IMAGE} AS runtime
 
 # Pin the SDK + geo stack so the image is reproducible and matches
-# harness/pyproject.toml (honua-sdk==0.1.4).
-ARG HONUA_SDK_VERSION=0.1.4
+# harness/pyproject.toml (honua-sdk==0.1.16).
+ARG HONUA_SDK_VERSION=0.1.16
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \

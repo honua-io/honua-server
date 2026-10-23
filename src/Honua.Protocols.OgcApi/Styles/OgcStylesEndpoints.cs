@@ -267,7 +267,7 @@ public static class OgcStylesEndpoints
             return accessError;
         }
 
-        var stylesheet = await projection.GetStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
+        var stylesheet = await projection.GetPublishedStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
         if (stylesheet is null)
         {
             var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
@@ -275,7 +275,13 @@ public static class OgcStylesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
         }
 
-        return Results.Content(stylesheet.Content, stylesheet.MediaType, Encoding.UTF8);
+        // MapLibre sources/sprite/glyphs must be absolute (TileJSON 3.0.0 §3.2, #5442);
+        // the derived SLD and drawingInfo encodings carry no endpoint URLs.
+        var content = stylesheet.Encoding == OgcStyleEncoding.MapboxStyle
+            ? StyleEndpointUrlResolver.Resolve(stylesheet.Content, BaseUrlResolver.GetBaseUrl(context), context.Request)
+            : stylesheet.Content;
+
+        return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);
     }
 
     /// <summary>
@@ -354,15 +360,18 @@ public static class OgcStylesEndpoints
         CancellationToken cancellationToken)
         => await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false) is null;
 
-    private static async Task<IResult?> AuthorizeStyleAsync(
+    internal static async Task<IResult?> AuthorizeStyleAsync(
         HttpContext context,
         string styleId,
         IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // Ordinal, matching OgcStyleProjection.ResolveResourceAsync. A case-variant
+        // name is a different resource; authorizing the first ignore-case hit would
+        // check one layer and serve another's stylesheet.
         var resource = snapshot.Graph.Resources.FirstOrDefault(resource =>
-            string.Equals(resource.Metadata.Name, styleId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
         if (resource is null)
         {
             // Standalone catalog styles have no layer policy and retain their existing

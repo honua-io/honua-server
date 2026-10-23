@@ -47,7 +47,8 @@ internal static partial class GdalToolExecution
         string completedPhase,
         CancellationToken cancellationToken)
     {
-        await GdalCommandLog.LogCommandAsync(context, tool, args, workspace, cancellationToken).ConfigureAwait(false);
+        var restrictedArgs = GdalRasterDriverAllowlist.Prefix(tool, args, options);
+        await GdalCommandLog.LogCommandAsync(context, tool, restrictedArgs, workspace, cancellationToken).ConfigureAwait(false);
 
         using var timeoutCts = new CancellationTokenSource(options.ToolTimeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -55,7 +56,7 @@ internal static partial class GdalToolExecution
         GdalCommandResult result;
         try
         {
-            result = await runner.RunAsync(tool, args, workspace, linked.Token).ConfigureAwait(false);
+            result = await runner.RunAsync(tool, restrictedArgs, workspace, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {

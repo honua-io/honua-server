@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -93,6 +95,30 @@ public sealed class ConfigurationValidationServiceTests
             error.Contains("Host validation is enabled", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData(null, "https://alias.honua.test", false)]
+    [InlineData("", "https://alias.honua.test", false)]
+    [InlineData(" \t ", "https://alias.honua.test", false)]
+    [InlineData("https://primary.honua.test", "not-a-url", false)]
+    [InlineData("not-a-url", "https://alias.honua.test", true)]
+    [InlineData("", "ftp://alias.honua.test", true)]
+    public void ValidateConfiguration_StrictHostValidation_PublicUrlAliasPreservesResolutionContract(
+        string? primaryUrl, string aliasUrl, bool expectedError)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["HostValidation:RequireExplicitHosts"] = "true",
+            ["Public:BaseUrl"] = primaryUrl,
+            ["PUBLIC_BASE_URL"] = aliasUrl
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Any(error => error.Contains("Host validation is enabled", StringComparison.OrdinalIgnoreCase))
+            .Should().Be(expectedError);
+    }
+
     [Fact]
     public void ValidateConfiguration_Development_WithDevAuthEnabled_ReturnsError()
     {
@@ -112,13 +138,193 @@ public sealed class ConfigurationValidationServiceTests
             error.Contains("test environment", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData("quickstart-admin-password")]
+    [InlineData("scale-test-admin-password")]
+    [InlineData("CiteAdminPassword123!")]
+    public void ValidateConfiguration_NonDevelopment_WithShippedAdminPasswordLiteral_ReturnsError(string literal)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["HONUA_ADMIN_PASSWORD"] = literal
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Should().Contain(error =>
+            error.Contains("HONUA_ADMIN_PASSWORD", StringComparison.Ordinal) &&
+            error.Contains("placeholder", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("Security:ConnectionEncryption:MasterKey", "honua-compose-dev-master-key-0123456789")]
+    [InlineData("Security:ConnectionEncryption:MasterKey", "test-master-key-that-is-at-least-32-characters-long-for-security")]
+    [InlineData("Security:ConnectionEncryption:Salt", "aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2")]
+    [InlineData("ConnectionStrings:DefaultConnection", "Host=postgres;Database=honua;Username=honua;Password=studio_receipt_password")]
+    [InlineData("ConnectionStrings:honua", "Host=postgres;Database=honua;Username=honua;Password=studio_receipt_password")]
+    [InlineData("Operations:SecretChannel:KeyRingCertificatePassword", "StudioReceiptKeyRing")]
+    [InlineData("Oidc:TokenValidation:SymmetricSigningKey", "studio-dashboard-receipt-signing-key-2026-1")]
+    public void ValidateConfiguration_NonDevelopment_WithShippedSecretLiteral_ReturnsError(string path, string literal)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            [path] = literal
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Should().Contain(error =>
+            error.Contains(path.Replace(":", "__", StringComparison.Ordinal), StringComparison.Ordinal) &&
+            error.Contains("placeholder", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void ValidateConfiguration_RelaxedEnvironment_WithShippedSecretLiteral_IsPermitted(bool isDevelopment, bool isTest)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["HONUA_ADMIN_PASSWORD"] = "quickstart-admin-password",
+            ["Security:ConnectionEncryption:MasterKey"] = "honua-compose-dev-master-key-0123456789",
+            ["Security:ConnectionEncryption:Salt"] = "aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2"
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment, isTest);
+
+        errors.Should().NotContain(error =>
+            error.Contains("placeholder", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Drift guard: every credential-shaped literal this repository ships in a compose
+    /// file, an <c>.env*.example</c> file, or a CI harness default must already be denied
+    /// at production startup. A new harness that introduces a fresh literal fails here
+    /// instead of quietly becoming a value a deployment can keep.
+    /// </summary>
+    [Fact]
+    public void KnownPlaceholderSecrets_CoversCredentialLiteralsInShippedFiles()
+    {
+        var root = FindRepositoryRoot();
+
+        var undenied = ShippedSecretLiteralScanner
+            .Scan(root)
+            .Where(finding => !ConfigurationValidationService.KnownPlaceholderSecrets.Contains(finding.Value))
+            .OrderBy(finding => finding.Value, StringComparer.Ordinal)
+            .ThenBy(finding => finding.Location, StringComparer.Ordinal)
+            .ToList();
+
+        undenied.Should().BeEmpty(
+            "every credential literal shipped in this repository must be listed in " +
+            "ConfigurationValidationService.KnownPlaceholderSecrets so production startup refuses it. " +
+            "Undenied: " + string.Join("; ", undenied.Select(finding =>
+                $"'{finding.Value}' ({finding.Key} at {finding.Location})")));
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            // False positive: "Honua.sln" is a fixed relative literal, never absolute.
+            if (File.Exists(Path.Join(directory.FullName, "Honua.sln")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate repository root from test output directory.");
+    }
+
+    // The PKCS#12 material holds the private key that decrypts the data-protection key
+    // ring. Before this rule existed a literal bundle in appsettings*.json passed startup
+    // validation silently, while the password for that same certificate was rejected - so
+    // the key itself could reach source control and the password could not.
+    //
+    // The value has to arrive through a JSON file: IsExternalConfigurationValue treats
+    // anything a non-file provider supplies as already external, so an environment
+    // variable or an in-memory value is legitimately exempt. appsettings*.json is the
+    // case the rule exists for.
+    [UnitTheory]
+    [InlineData("MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK")]
+    [InlineData("{\"pkcs12\":\"MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK\"}")]
+    public void ValidateConfiguration_NonDevelopment_WithLiteralKeyRingMaterialInAFile_ReturnsError(string literal)
+    {
+        var file = WriteKeyRingMaterialJson(literal);
+        try
+        {
+            var errors = ConfigurationValidationService.ValidateConfiguration(
+                BuildConfigurationFromJsonFile(file), NullLogger.Instance, isDevelopment: false);
+
+            errors.Should().Contain(error =>
+                error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal) &&
+                error.Contains("secret reference", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    // The same file, carrying a reference instead of the bundle, is what the Lambda
+    // deployment actually ships - so it must not be an error.
+    [UnitTheory]
+    [InlineData("aws:secretsmanager:honua/operations/keyring")]
+    [InlineData("env:HONUA_OPERATION_KEYRING_PKCS12")]
+    public void ValidateConfiguration_NonDevelopment_WithKeyRingMaterialReferenceInAFile_IsPermitted(string reference)
+    {
+        var file = WriteKeyRingMaterialJson(reference);
+        try
+        {
+            var errors = ConfigurationValidationService.ValidateConfiguration(
+                BuildConfigurationFromJsonFile(file), NullLogger.Instance, isDevelopment: false);
+
+            errors.Should().NotContain(error =>
+                error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    private static string WriteKeyRingMaterialJson(string material)
+    {
+        var file = Path.Join(
+            Path.GetTempPath(), $"honua-keyring-validation-{Guid.NewGuid():N}.json");
+        File.WriteAllText(file, JsonSerializer.Serialize(new
+        {
+            Operations = new { SecretChannel = new { KeyRingCertificatePkcs12 = material } }
+        }));
+        return file;
+    }
+
+    // Mirrors BuildConfiguration's baseline so unrelated rules stay quiet, but layers the
+    // key under test on top through a real file provider.
+    private static IConfiguration BuildConfigurationFromJsonFile(string filePath)
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua;Username=honua;Password=Sh1pp3d-Nowhere",
+                ["HONUA_ADMIN_PASSWORD"] = "StrongAdminPassword123!",
+                ["Security:ConnectionEncryption:MasterKey"] = "unit-test-master-key-not-a-shipped-literal-0001",
+                ["HostValidation:Enabled"] = "true"
+            })
+            .AddJsonFile(filePath, optional: false)
+            .Build();
+
     private static IConfiguration BuildConfiguration(IDictionary<string, string?>? overrides = null)
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
-            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua;Username=honua;Password=secret",
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua;Username=honua;Password=Sh1pp3d-Nowhere",
             ["HONUA_ADMIN_PASSWORD"] = "StrongAdminPassword123!",
-            ["Security:ConnectionEncryption:MasterKey"] = "0123456789abcdef0123456789abcdef",
+            ["Security:ConnectionEncryption:MasterKey"] = "unit-test-master-key-not-a-shipped-literal-0001",
             ["HostValidation:Enabled"] = "true"
         };
 

@@ -62,6 +62,28 @@ public sealed record QueryablesSchema
     /// </summary>
     [JsonPropertyName("additionalProperties")]
     public bool AdditionalProperties { get; init; } = false;
+
+    /// <summary>
+    /// Optional draft Part 3 property index for older desktop clients. Modern
+    /// clients use <see cref="Properties"/>; both describe the same queryables.
+    /// </summary>
+    [JsonPropertyName("queryables")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<LegacyQueryable>? LegacyQueryables { get; init; }
+}
+
+/// <summary>
+/// Draft Part 3 queryable descriptor consumed by GDAL 3.8.
+/// </summary>
+public sealed record LegacyQueryable
+{
+    /// <summary>The queryable property name.</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    /// <summary>The property's JSON type.</summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
 }
 
 /// <summary>

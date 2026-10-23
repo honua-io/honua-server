@@ -52,4 +52,8 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Import.UnitTests" />
+    <InternalsVisibleTo Include="Honua.CloudIntegration.Tests" />
+  </ItemGroup>
 </Project>

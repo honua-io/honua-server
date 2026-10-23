@@ -9,6 +9,8 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.RateLimiting;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +23,44 @@ namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 [Collection("RateLimitingCapacity")]
 public sealed class RateLimitingMiddlewareTests
 {
+    [UnitTheory]
+    [InlineData("valid", 1)]
+    [InlineData("spoofed", 2)]
+    [InlineData("wrong-key", 2)]
+    [InlineData("wrong-tenant", 2)]
+    [InlineData("wrong-path", 2)]
+    [InlineData("wrong-method", 2)]
+    [InlineData("remote", 2)]
+    public async Task InvokeAsync_AdmittedImportLoopback_AccountsOnlyValidatedExecution(string scenario, int checks)
+    {
+        var policies = Substitute.For<IRateLimitPolicyStore>();
+        var limiter = CreateMiddleware(policyStore: policies);
+        var actor = Guid.NewGuid().ToString("N");
+        var original = CreateContext("198.51.100.241", subject: actor, tenantId: "tenant-a");
+        await limiter.InvokeAsync(original);
+        original.Features.Get<RateLimitAdmission>().Should().NotBeNull();
+        var credential = Guid.NewGuid();
+        var store = new OperationLineageAttestationStore(TimeProvider.System);
+        var token = store.Issue(new OperationPolicyContext { OperationInstanceId = "opinst-a" },
+            new OperationLoopbackAdmission(credential, "POST", "/api/v1/admin/import/upload-url", "tenant-a"));
+        var inner = CreateContext(scenario == "remote" ? "198.51.100.242" : "127.0.0.1",
+            subject: credential.ToString(), tenantId: scenario == "wrong-tenant" ? "tenant-b" : "tenant-a",
+            httpMethod: scenario == "wrong-method" ? "GET" : "POST");
+        ((ClaimsIdentity)inner.User.Identity!).AddClaim(new Claim("api_key_id",
+            scenario == "wrong-key" ? Guid.NewGuid().ToString() : credential.ToString()));
+        inner.Request.Path = scenario == "wrong-path" ? "/api/v1/admin/import/upload" : "/api/v1/admin/import/upload-url";
+        inner.Request.Headers[OperationLineageHeaders.Attestation] = scenario == "spoofed" ? "caller-invented" : token;
+        var attest = new OperationLineageAttestationMiddleware(limiter.InvokeAsync);
+        await attest.InvokeAsync(inner, store);
+        inner.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        await policies.Received(checks).ListPoliciesAsync(Arg.Any<CancellationToken>());
+
+        // The original caller still spent its sole permit, regardless of internal execution.
+        var retry = CreateContext("198.51.100.241", subject: actor, tenantId: "tenant-a");
+        await limiter.InvokeAsync(retry);
+        retry.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+    }
+
     [UnitTest]
     public async Task InvokeAsync_WithSpoofedForwardedHeaders_UsesRemoteIpAddressForRateLimitKey()
     {
@@ -282,6 +322,89 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_JwtPrincipalNamedLikeApiKey_UsesPlanNotApiKeyQuota()
+    {
+        var store = new TestRateLimitPolicyStore(
+            new RateLimitPolicy
+            {
+                Name = "partner-feed-key",
+                Scope = RateLimitScopes.ApiKey,
+                Key = "partner-feed",
+                RequestsPerWindow = 100_000,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            },
+            new RateLimitPolicy
+            {
+                Name = "standard-plan",
+                Scope = RateLimitScopes.Plan,
+                Key = "standard",
+                RequestsPerWindow = 1,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            });
+        var middleware = CreateMiddleware(limit: 50, policyStore: store);
+
+        var first = CreateContext(
+            "198.51.100.131",
+            user: "partner-feed",
+            authenticationType: "Bearer",
+            extraClaims: [new Claim("plan", "standard")]);
+        await middleware.InvokeAsync(first);
+        var second = CreateContext(
+            "198.51.100.131",
+            user: "partner-feed",
+            authenticationType: "Bearer",
+            extraClaims: [new Claim("plan", "standard")]);
+        await middleware.InvokeAsync(second);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        first.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("1");
+        second.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        second.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("1");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_ApiKeyPrincipal_MatchesQuotaByApiKeyIdNotName()
+    {
+        var apiKeyId = Guid.NewGuid().ToString("D");
+        var store = new TestRateLimitPolicyStore(
+            new RateLimitPolicy
+            {
+                Name = "by-name",
+                Scope = RateLimitScopes.ApiKey,
+                Key = "partner-feed",
+                RequestsPerWindow = 1,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            },
+            new RateLimitPolicy
+            {
+                Name = "by-id",
+                Scope = RateLimitScopes.ApiKey,
+                Key = apiKeyId,
+                RequestsPerWindow = 5,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            });
+        var middleware = CreateMiddleware(limit: 1, policyStore: store);
+
+        var first = CreateContext(
+            "198.51.100.132",
+            user: "partner-feed",
+            authenticationType: "ApiKey",
+            extraClaims: [new Claim("api_key_id", apiKeyId)]);
+        await middleware.InvokeAsync(first);
+        var second = CreateContext(
+            "198.51.100.132",
+            user: "partner-feed",
+            authenticationType: "ApiKey",
+            extraClaims: [new Claim("api_key_id", apiKeyId)]);
+        await middleware.InvokeAsync(second);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        first.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("5");
+        second.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        second.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("5");
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_PartitionsByEndpointPolicy_DoesNotDrainAnotherEndpointAllowance()
     {
         // Global limit is generous; each endpoint declares its own 1/min override. A single
@@ -532,6 +655,44 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_AnonymousIpv6_SharesASlash64AndLeavesIpv4Distinct()
+    {
+        var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var counters = (System.Collections.IDictionary)field.GetValue(null)!;
+        var previous = counters.Keys.Cast<object>()
+            .Select(key => new System.Collections.DictionaryEntry(key, counters[key])).ToArray();
+        counters.Clear();
+        try
+        {
+            var middleware = CreateMiddleware(limit: 1);
+            async Task<int> RequestAsync(string remoteIp)
+            {
+                var context = CreateContext(remoteIp);
+                using var services = (IDisposable)context.RequestServices;
+                using var body = context.Response.Body;
+                await middleware.InvokeAsync(context);
+                return context.Response.StatusCode;
+            }
+
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("2001:db8:1:2::1"));
+            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("2001:db8:1:2::abcd"));
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("2001:db8:1:3::1"));
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("198.51.100.20"));
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("198.51.100.21"));
+            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("198.51.100.20"));
+        }
+        finally
+        {
+            counters.Clear();
+            foreach (var entry in previous)
+            {
+                counters.Add(entry.Key, entry.Value);
+            }
+        }
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_RedisOutage_HardBoundsLocalCountersWithoutResettingExistingBudgets()
     {
         // This collection runs alone because the process-local store is shared.
@@ -576,10 +737,12 @@ public sealed class RateLimitingMiddlewareTests
             var burst = await Task.WhenAll(Enumerable.Range(0, 128)
                 .Select(i => Task.Run(() => RequestAsync("burst-" + i))));
 
-            Assert.Equal(10, burst.Count(status => status == StatusCodes.Status200OK));
-            Assert.Equal(118, burst.Count(status => status == StatusCodes.Status429TooManyRequests));
+            Assert.Equal(128, burst.Count(status => status == StatusCodes.Status200OK));
+            Assert.DoesNotContain(StatusCodes.Status429TooManyRequests, burst);
             Assert.Equal(10_000, counters.Count);
-            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("existing-0"));
+            // existing-9989 is the most recently used pre-burst subject, so eviction
+            // must not have reset its one-request budget.
+            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("existing-9989"));
         }
         finally
         {
@@ -624,7 +787,9 @@ public sealed class RateLimitingMiddlewareTests
         string? tenantId = null,
         string? endpointName = null,
         int endpointLimit = 0,
-        string httpMethod = "GET")
+        string httpMethod = "GET",
+        string authenticationType = "Test",
+        IReadOnlyList<Claim>? extraClaims = null)
     {
         var context = new DefaultHttpContext();
         context.Request.Method = httpMethod;
@@ -663,9 +828,14 @@ public sealed class RateLimitingMiddlewareTests
                 claims.Add(new Claim("iss", issuer));
             }
 
+            if (extraClaims is not null)
+            {
+                claims.AddRange(extraClaims);
+            }
+
             var identity = new ClaimsIdentity(
                 claims,
-                authenticationType: "Test");
+                authenticationType: authenticationType);
             context.User = new ClaimsPrincipal(identity);
         }
 

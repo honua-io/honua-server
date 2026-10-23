@@ -223,6 +223,27 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             args.Add("reprojection");
             args.Add(string.Create(CultureInfo.InvariantCulture, $"--filters.reprojection.in_srs={NormalizeSrs(sourceSrs)}"));
             args.Add(string.Create(CultureInfo.InvariantCulture, $"--filters.reprojection.out_srs={TargetSrs}"));
+
+            // Output is EPSG:4979 degrees, so the source's own scale (metres, for a projected
+            // source) would be meaningless here. Pin a scale fine enough for geographic
+            // coordinates — 1e-7 degrees is ~1 cm — and let the writer centre the integer range
+            // on the data with an automatic offset so the int32 point records cannot overflow.
+            args.Add("--writers.las.scale_x=0.0000001");
+            args.Add("--writers.las.scale_y=0.0000001");
+            args.Add("--writers.las.scale_z=0.001");
+            args.Add("--writers.las.offset_x=auto");
+            args.Add("--writers.las.offset_y=auto");
+            args.Add("--writers.las.offset_z=auto");
+        }
+        else
+        {
+            // honua-server#4401: without this, `pdal translate` writes the LAS with its DEFAULT
+            // scale of 0.01 rather than the source's, silently quantising the decompressed cloud.
+            // For a geographic source that is 0.01 degrees — roughly 1.1 km of horizontal error on
+            // a verbatim "decompress only" conversion. Forwarding scale and offset preserves
+            // exactly the resolution the producer chose, whatever CRS the source is in. Found by
+            // the first test that ever executed real PDAL (PdalPointCloudRealCliTests).
+            args.Add("--writers.las.forward=scale,offset");
         }
 
         // Force an uncompressed LAS writer regardless of the output extension so

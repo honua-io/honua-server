@@ -97,6 +97,67 @@ internal static class CsvFormatReader
         => ReadStreamingAsync(stream, delimiterOverride, diagnostics, options: null, cancellationToken);
 
     /// <summary>
+    /// Reads the SRID embedded in the first geometry value (EWKT <c>SRID=n;</c> or EWKB),
+    /// the same signal <c>.wkt</c> detection uses. Returns null when the sample has no
+    /// embedded SRID so the caller can keep the geographic default. Malformed samples
+    /// return null rather than failing detection; the streaming reader still reports them.
+    /// </summary>
+    internal static async Task<int?> TryDetectGeometrySridAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(
+            stream,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true,
+            leaveOpen: true);
+
+        List<string> sampleRecords;
+        try
+        {
+            sampleRecords = await ReadSampleRecordsAsync(reader, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+        {
+            return null;
+        }
+
+        if (sampleRecords.Count < 2)
+        {
+            return null;
+        }
+
+        var delimiter = DetectDelimiter(sampleRecords);
+        var headers = NormalizeHeaders(ParseCsvRecord(sampleRecords[0], delimiter));
+        var mapping = BuildMapping(headers, options: null);
+        if (!mapping.WktIndex.HasValue)
+        {
+            return null;
+        }
+
+        var wktReader = new WKTReader();
+        var wkbReader = GeometryValueParser.CreateWkbReader();
+        for (var i = 1; i < sampleRecords.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fields = ParseCsvRecord(sampleRecords[i], delimiter);
+            var value = GetField(fields, mapping.WktIndex.Value);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var geometry = GeometryValueParser.TryParse(value, wktReader, wkbReader);
+            if (geometry is { SRID: > 0 })
+            {
+                return geometry.SRID;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Stream features from a CSV file with optional explicit <see cref="CsvImportOptions"/>.
     /// When the options carry explicit longitude/latitude column names they replace the
     /// header auto-detection heuristics; when they carry an address column, each row's
@@ -195,7 +256,7 @@ internal static class CsvFormatReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(reader, cancellationToken);
+            var record = await ReadCsvRecordAsync(reader, delimiter, cancellationToken);
             if (record == null)
             {
                 break;
@@ -251,12 +312,21 @@ internal static class CsvFormatReader
         // geometry to NULL and reporting success (data loss), preserve the raw value as an
         // attribute so it is never discarded and record the occurrence so the import surfaces
         // a warning. Mirrors GeoParquet's skip/warn behaviour for null geometry.
-        if (geometry == null && unparseableGeometryValue != null)
+        // Coordinate columns that failed to parse are restored the same way, including
+        // heuristic lat/lon pairs. Blank cells stay a null geometry with no warning (#6172).
+        var coordinatesUnparseable = geometry == null && HasUnparseableCoordinates(fields, mapping);
+        if (geometry == null && (unparseableGeometryValue != null || coordinatesUnparseable))
         {
             diagnostics?.RecordUnparseableGeometry();
-            if (mapping.WktIndex.HasValue)
+            if (unparseableGeometryValue != null && mapping.WktIndex.HasValue)
             {
                 attributes.Add(headers[mapping.WktIndex.Value], unparseableGeometryValue);
+            }
+
+            if (coordinatesUnparseable)
+            {
+                RestoreUnparseableCoordinate(attributes, headers, fields, mapping.LongitudeIndex);
+                RestoreUnparseableCoordinate(attributes, headers, fields, mapping.LatitudeIndex);
             }
         }
 
@@ -310,15 +380,6 @@ internal static class CsvFormatReader
                 unparseableGeometryValue = null;
                 return geometryFactory.CreatePoint(new Coordinate(longitude, latitude));
             }
-
-            // Caller-specified coordinate columns that carried values but failed to parse
-            // are surfaced (heuristic mappings keep the historical silent-null behavior so
-            // attribute-only CSVs do not suddenly emit warnings).
-            if (mapping.ExplicitCoordinates
-                && (!string.IsNullOrWhiteSpace(longitudeValue) || !string.IsNullOrWhiteSpace(latitudeValue)))
-            {
-                unparseableGeometryValue = $"{longitudeValue},{latitudeValue}".Trim();
-            }
         }
 
         return null;
@@ -360,6 +421,14 @@ internal static class CsvFormatReader
             {
                 latitudeIndex = i;
             }
+        }
+
+        // A point needs both axes. One coordinate-like header (an "x" score, a "long"
+        // description, a lat column with no longitude) is an ordinary attribute (#6172).
+        if (longitudeIndex.HasValue != latitudeIndex.HasValue)
+        {
+            longitudeIndex = null;
+            latitudeIndex = null;
         }
 
         return new CsvColumnMapping(wktIndex, longitudeIndex, latitudeIndex);
@@ -444,6 +513,38 @@ internal static class CsvFormatReader
     private static bool IsGeometrySourceColumn(int index, CsvColumnMapping mapping)
         => mapping.WktIndex == index || mapping.LongitudeIndex == index || mapping.LatitudeIndex == index;
 
+    private static bool HasUnparseableCoordinates(IReadOnlyList<string> fields, CsvColumnMapping mapping)
+    {
+        if (mapping.LongitudeIndex is not { } longitudeIndex || mapping.LatitudeIndex is not { } latitudeIndex)
+        {
+            return false;
+        }
+
+        var longitudeValue = GetField(fields, longitudeIndex);
+        var latitudeValue = GetField(fields, latitudeIndex);
+        if (string.IsNullOrWhiteSpace(longitudeValue) && string.IsNullOrWhiteSpace(latitudeValue))
+        {
+            return false;
+        }
+
+        return !double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
+            || !double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+    }
+
+    private static void RestoreUnparseableCoordinate(
+        AttributesTable attributes,
+        string[] headers,
+        IReadOnlyList<string> fields,
+        int? index)
+    {
+        if (index is not { } column || attributes.Exists(headers[column]))
+        {
+            return;
+        }
+
+        attributes.Add(headers[column], GetField(fields, column));
+    }
+
     private static string GetField(IReadOnlyList<string> fields, int index)
         => index < fields.Count ? fields[index] : string.Empty;
 
@@ -486,7 +587,7 @@ internal static class CsvFormatReader
         while (sampleRecords.Count < DelimiterProbeRecordCount)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(reader, cancellationToken);
+            var record = await ReadCsvRecordAsync(reader, delimiter: null, cancellationToken);
             if (record == null)
             {
                 break;
@@ -558,6 +659,7 @@ internal static class CsvFormatReader
         var fields = new List<string>();
         var current = new StringBuilder(record.Length);
         var inQuotes = false;
+        var atFieldStart = true;
 
         for (var i = 0; i < record.Length; i++)
         {
@@ -582,6 +684,7 @@ internal static class CsvFormatReader
                     current.Append(ch);
                 }
 
+                atFieldStart = false;
                 continue;
             }
 
@@ -589,24 +692,32 @@ internal static class CsvFormatReader
             {
                 fields.Add(current.ToString());
                 current.Clear();
+                atFieldStart = true;
                 continue;
             }
 
-            if (ch == '"')
+            // A quote opens a field only when it is the first character of that field.
+            // A stray inch-mark in 12" is literal text, not a multi-line quoted field (#6173).
+            if (ch == '"' && atFieldStart)
             {
                 quotedFields?.Add(fields.Count);
                 inQuotes = true;
+                atFieldStart = false;
                 continue;
             }
 
             current.Append(ch);
+            atFieldStart = false;
         }
 
         fields.Add(current.ToString());
         return fields;
     }
 
-    private static async Task<string?> ReadCsvRecordAsync(StreamReader reader, CancellationToken cancellationToken)
+    private static async Task<string?> ReadCsvRecordAsync(
+        StreamReader reader,
+        char? delimiter,
+        CancellationToken cancellationToken)
     {
         var line = await reader.ReadLineAsync(cancellationToken);
         if (line == null)
@@ -614,10 +725,18 @@ internal static class CsvFormatReader
             return null;
         }
 
+        // Quote state advances once per physical line. Rescanning the accumulated
+        // record made one multi-line field quadratic in its length (#6174).
+        var cursor = CsvQuoteCursor.Start.Advance(line, delimiter);
+        if (!cursor.InQuotes)
+        {
+            return line;
+        }
+
         var builder = new StringBuilder(line);
         var currentSize = Encoding.UTF8.GetByteCount(line);
 
-        while (!IsCompleteRecord(builder))
+        while (cursor.InQuotes)
         {
             var nextLine = await reader.ReadLineAsync(cancellationToken);
             if (nextLine == null)
@@ -641,32 +760,79 @@ internal static class CsvFormatReader
             builder.Append('\n');
             builder.Append(nextLine);
             currentSize += additionalSize;
+            cursor = cursor.Advance(nextLine, delimiter);
         }
 
         return builder.ToString();
     }
 
-    private static bool IsCompleteRecord(StringBuilder record)
+    /// <summary>
+    /// Quote state for one CSV record. A double quote opens a field only at the
+    /// start of that field; any other quote is literal. A null delimiter means every
+    /// probe candidate can separate fields, used before the delimiter is chosen.
+    /// </summary>
+    private readonly struct CsvQuoteCursor
     {
-        var inQuotes = false;
-        for (var i = 0; i < record.Length; i++)
+        public bool InQuotes { get; private init; }
+
+        public bool AtFieldStart { get; private init; }
+
+        public static CsvQuoteCursor Start => new() { AtFieldStart = true };
+
+        public CsvQuoteCursor Advance(ReadOnlySpan<char> text, char? delimiter)
         {
-            if (record[i] != '"')
+            var inQuotes = InQuotes;
+            var atFieldStart = AtFieldStart;
+            for (var i = 0; i < text.Length; i++)
             {
-                continue;
+                var ch = text[i];
+                if (inQuotes)
+                {
+                    if (ch == '"')
+                    {
+                        var hasEscapedQuote = i + 1 < text.Length && text[i + 1] == '"';
+                        if (hasEscapedQuote)
+                        {
+                            i++;
+                        }
+                        else
+                        {
+                            inQuotes = false;
+                        }
+                    }
+
+                    atFieldStart = false;
+                    continue;
+                }
+
+                if (IsFieldDelimiter(ch, delimiter))
+                {
+                    atFieldStart = true;
+                    continue;
+                }
+
+                if (ch == '"' && atFieldStart)
+                {
+                    inQuotes = true;
+                    atFieldStart = false;
+                    continue;
+                }
+
+                atFieldStart = false;
             }
 
-            var hasEscapedQuote = inQuotes && i + 1 < record.Length && record[i + 1] == '"';
-            if (hasEscapedQuote)
-            {
-                i++;
-                continue;
-            }
+            return new CsvQuoteCursor { InQuotes = inQuotes, AtFieldStart = atFieldStart };
+        }
+    }
 
-            inQuotes = !inQuotes;
+    private static bool IsFieldDelimiter(char ch, char? delimiter)
+    {
+        if (delimiter.HasValue)
+        {
+            return ch == delimiter.Value;
         }
 
-        return !inQuotes;
+        return ch is ',' or '\t' or ';' or '|';
     }
 
     private static string NormalizeColumnName(string value)

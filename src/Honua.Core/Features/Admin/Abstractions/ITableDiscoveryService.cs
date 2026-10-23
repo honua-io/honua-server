@@ -30,4 +30,19 @@ public interface ITableDiscoveryService
     Task<List<TableInfo>> DiscoverPostGisTablesAsync(
         DbConnection connection,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Discover an attribute-only relational table using the provider's publication exclusions.
+    /// Providers that do not support nonspatial discovery return null.
+    /// </summary>
+    /// <param name="connection">Open database connection.</param>
+    /// <param name="schema">Requested table schema.</param>
+    /// <param name="table">Requested table name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The discovered table, or null when unavailable or excluded.</returns>
+    Task<TableInfo?> DiscoverNonSpatialTableAsync(
+        DbConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<TableInfo?>(null);
 }

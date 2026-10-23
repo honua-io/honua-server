@@ -2,14 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Sockets;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
-using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -25,13 +24,20 @@ namespace Honua.Core.Features.Migration.Services;
 /// </summary>
 public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationScanner
 {
-    private const string DisallowedNetworkAddressMessage = "OGC service URL resolves to a disallowed network address.";
 
     private readonly HttpClient _httpClient;
     private readonly ICrsRegistry _crsRegistry;
     private readonly ILogger<OgcServiceMigrationScanner> _logger;
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _hostAddressResolver;
     private static readonly AsyncLocal<bool> UnsafeLocalUrlsAllowed = new();
+
+    private static readonly MigrationServiceUrlPolicy ServiceUrlPolicy = new(
+        "OGC service URL must be a valid HTTP or HTTPS URL.",
+        "OGC service URL must be a valid HTTPS URL.",
+        "OGC service URL must not include embedded credentials.",
+        "OGC service URL resolves to a disallowed network address.",
+        "Unable to establish a connection to the OGC service host.");
+
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OgcServiceMigrationScanner"/> class.
@@ -67,7 +73,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             AllowAutoRedirect = false,
             MaxConnectionsPerServer = 16,
             ConnectCallback = (context, cancellationToken) =>
-                ConnectWithPinnedDnsAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, cancellationToken)
+                MigrationPinnedDns.ConnectAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, ServiceUrlPolicy, cancellationToken)
         };
     }
 
@@ -106,15 +112,11 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
 
         var normalizedServiceType = NormalizeServiceType(request.ServiceType);
         var sourceKind = GetSourceKind(normalizedServiceType);
-        var serviceUri = ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls);
+        var serviceUri = MigrationPinnedDns.ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls, ServiceUrlPolicy);
 
         try
         {
-            _ = await ResolveAllowedAddressesAsync(
-                    serviceUri.DnsSafeHost,
-                    _hostAddressResolver,
-                    request.AllowUnsafeLocalUrls,
-                    cancellationToken)
+            _ = await MigrationPinnedDns.ResolveAllowedAddressesAsync(serviceUri.DnsSafeHost, _hostAddressResolver, request.AllowUnsafeLocalUrls, ServiceUrlPolicy, cancellationToken)
                 .ConfigureAwait(false);
 
             var capabilitiesUrl = BuildCapabilitiesUrl(serviceUri, normalizedServiceType, request.Version);
@@ -161,10 +163,21 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
     /// arbitrary operator-supplied services, so an unbounded <c>GetStringAsync</c> would let a
     /// hostile or broken source stream a multi-GB document into memory.
     /// </summary>
-    private async Task<string> GetBoundedStringAsync(Uri url, CancellationToken cancellationToken)
+    private async Task<string> GetBoundedStringAsync(
+        Uri url,
+        OgcServiceScanRequest request,
+        CancellationToken cancellationToken)
     {
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrWhiteSpace(request.Username))
+        {
+            var token = Convert.ToBase64String(
+                Encoding.ASCII.GetBytes($"{request.Username}:{request.Password ?? string.Empty}"));
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Basic", token);
+        }
+
         using var response = await _httpClient
-            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await MigrationHttpContentReader
@@ -179,7 +192,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         Uri capabilitiesUrl,
         CancellationToken cancellationToken)
     {
-        var capabilitiesXml = await GetBoundedStringAsync(capabilitiesUrl, cancellationToken).ConfigureAwait(false);
+        var capabilitiesXml = await GetBoundedStringAsync(capabilitiesUrl, request, cancellationToken).ConfigureAwait(false);
         var capabilities = XDocument.Parse(capabilitiesXml, LoadOptions.None);
         return normalizedServiceType switch
         {
@@ -218,6 +231,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         foreach (var coverageId in coverageIds)
         {
             var description = await TryDescribeCoverageAsync(
+                    request,
                     serviceUri,
                     version,
                     coverageId,
@@ -248,7 +262,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         CancellationToken cancellationToken)
     {
         var collectionsUri = BuildOgcApiCoveragesCollectionsUrl(serviceUri);
-        var payload = await GetBoundedStringAsync(collectionsUri, cancellationToken).ConfigureAwait(false);
+        var payload = await GetBoundedStringAsync(collectionsUri, request, cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
         var serviceMetadata = new OgcCoverageServiceMetadata
@@ -322,7 +336,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var resourceId = $"feature-type:{ToStableId(name)}";
             var crsValues = ReadWfsCrsValues(featureType);
             var spatialReferences = await BuildSpatialReferencesAsync(crsValues, cancellationToken).ConfigureAwait(false);
-            var schema = await TryDescribeFeatureTypeAsync(serviceUri, request.Version ?? version, name, request.TimeoutSeconds, cancellationToken)
+            var schema = await TryDescribeFeatureTypeAsync(request, serviceUri, request.Version ?? version, name, request.TimeoutSeconds, cancellationToken)
                 .ConfigureAwait(false);
 
             if (!schema.Success)
@@ -719,6 +733,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         };
 
     private async Task<(bool Success, MigrationInventoryField[] Fields, string Warning)> TryDescribeFeatureTypeAsync(
+        OgcServiceScanRequest request,
         Uri serviceUri,
         string version,
         string featureTypeName,
@@ -730,7 +745,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var url = BuildDescribeFeatureTypeUrl(serviceUri, version, featureTypeName);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
-            var schemaXml = await GetBoundedStringAsync(url, timeout.Token).ConfigureAwait(false);
+            var schemaXml = await GetBoundedStringAsync(url, request, timeout.Token).ConfigureAwait(false);
             var schema = XDocument.Parse(schemaXml, LoadOptions.None);
             var fields = ExtractFields(schema, featureTypeName);
             return (fields.Length > 0, fields, fields.Length > 0 ? string.Empty : "DescribeFeatureType returned no importable field metadata.");
@@ -742,6 +757,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
     }
 
     private async Task<OgcCoverageDescription> TryDescribeCoverageAsync(
+        OgcServiceScanRequest request,
         Uri serviceUri,
         string version,
         string coverageId,
@@ -754,7 +770,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var url = BuildDescribeCoverageUrl(serviceUri, version, coverageId);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
-            var coverageXml = await GetBoundedStringAsync(url, timeout.Token).ConfigureAwait(false);
+            var coverageXml = await GetBoundedStringAsync(url, request, timeout.Token).ConfigureAwait(false);
             var document = XDocument.Parse(coverageXml, LoadOptions.None);
             return BuildCoverageDescription(coverageId, document, serviceFormats);
         }
@@ -1721,114 +1737,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             _ => $"ogc-{normalizedServiceType.ToLowerInvariant()}"
         };
 
-    private static Uri ValidateServiceUri(string serviceUrl, bool allowUnsafeLocalUrls)
-    {
-        if (!Uri.TryCreate(serviceUrl, UriKind.Absolute, out var uri) ||
-            (allowUnsafeLocalUrls
-                ? uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps
-                : uri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new HttpRequestException(allowUnsafeLocalUrls
-                ? "OGC service URL must be a valid HTTP or HTTPS URL."
-                : "OGC service URL must be a valid HTTPS URL.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
-        {
-            throw new HttpRequestException("OGC service URL must not include embedded credentials.");
-        }
-
-        if (!allowUnsafeLocalUrls &&
-            (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-             uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return uri;
-    }
-
-    private static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
-        string host,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (!allowUnsafeLocalUrls && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(DisallowedNetworkAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-        catch (ArgumentException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (!allowUnsafeLocalUrls && addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return addresses;
-    }
-
-    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
-        SocketsHttpConnectionContext context,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await ResolveAllowedAddressesAsync(
-                context.DnsEndPoint.Host,
-                hostAddressResolver,
-                allowUnsafeLocalUrls,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
-
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a connection to the OGC service host.", lastException);
-    }
 
     private static Uri BuildCapabilitiesUrl(Uri serviceUri, string serviceType, string? version)
     {

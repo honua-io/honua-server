@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -15,6 +16,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using System.Text.Json;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Licensing.Domain;
@@ -1045,6 +1048,85 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_OgcFilterEncoding_MatchesEquivalentFesFilter()
+    {
+        const string fesFilter = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>test</fes:Literal></fes:PropertyIsEqualTo>
+            </fes:Filter>
+            """;
+        const string ogcFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+              <ogc:PropertyIsEqualTo><ogc:PropertyName>category</ogc:PropertyName><ogc:Literal>test</ogc:Literal></ogc:PropertyIsEqualTo>
+            </ogc:Filter>
+            """;
+
+        var fesMatched = await GetMatchedCountAsync(fesFilter);
+        var ogcMatched = await GetMatchedCountAsync(ogcFilter);
+        var unfilteredMatched = await GetMatchedCountAsync(filter: null);
+
+        fesMatched.Should().BePositive();
+        fesMatched.Should().BeLessThan(unfilteredMatched, "the filter must be applied by the server");
+        ogcMatched.Should().Be(fesMatched);
+
+        async Task<int> GetMatchedCountAsync(string? filter)
+        {
+            var filterParameter = filter is null ? string.Empty : $"&FILTER={Uri.EscapeDataString(filter)}";
+            var response = await _fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESULTTYPE=hits{filterParameter}");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            var numberMatched = XDocument.Parse(content).Root!.Attribute("numberMatched")!.Value;
+            return int.Parse(numberMatched, System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_UnsupportedFilterOperator_ReportsOperatorWithoutEchoingInput()
+    {
+        const string fesFilter = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsSimilarTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>value-not-reported</fes:Literal></fes:PropertyIsSimilarTo>
+            </fes:Filter>
+            """;
+        const string ogcFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+              <ogc:PropertyIsSimilarTo><ogc:PropertyName>name</ogc:PropertyName><ogc:Literal>value-not-reported</ogc:Literal></ogc:PropertyIsSimilarTo>
+            </ogc:Filter>
+            """;
+        var requests = new[]
+        {
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(fesFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(ogcFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&FILTER={Uri.EscapeDataString(fesFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&FILTER={Uri.EscapeDataString(ogcFilter)}",
+        };
+
+        foreach (var requestUri in requests)
+        {
+            var response = await _fixture.Client.GetAsync(requestUri);
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{requestUri}: {content}");
+            content.Should().Contain("exceptionCode=\"InvalidParameterValue\"", requestUri);
+            var exceptionText = XDocument.Parse(content)
+                .Descendants()
+                .Single(element => element.Name.LocalName == "ExceptionText")
+                .Value;
+            exceptionText.Should().Be("Unsupported filter operator 'PropertyIsSimilarTo'.", requestUri);
+            content.Should().NotContain("value-not-reported", requestUri);
+            content.Should().NotContain("see logs", requestUri);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
@@ -1605,7 +1687,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
-    public async Task Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac()
+    public async Task Wfs_Transaction_AllowAnonymousWritePolicy_AllowsInsertWithoutRbac()
     {
         // V2 cutover (#1035 72/N): per-resource access policy now lives on
         // MetadataV2Resource.AccessPolicy. Seed it directly via the test fixture.
@@ -1914,6 +1996,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_Transaction_Replace_ReturnsReplaceSummaryAndUpdatesFeature()
     {
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace Original");
+        var reader = _fixture.GetService<IFeatureReader>();
+        var original = (await reader.GetAsync(WebAppFixture.TestLayerId, featureId))!.Value;
+        await _fixture.GetService<IFeatureWriter>().UpdateAsync(WebAppFixture.TestLayerId,
+            original with
+            {
+                Geometry = new WKBWriter().Write(new Point(-157.8, 21.3) { SRID = 4326 }),
+                Attributes = original.Attributes.SetItem("population", 12345L)
+            });
         var replacementIdentifier = Guid.NewGuid().ToString();
 
         var requestBody = $$"""
@@ -1944,6 +2034,13 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
         content.Should().Contain("<wfs:ReplaceResults>");
         content.Should().Contain($"rid=\"test_layer.{featureId}\"");
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT NOT (attributes ? 'population') AND geometry IS NULL FROM features WHERE layer_id = @layerId AND objectid = @objectId";
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("objectId", featureId);
+        (await command.ExecuteScalarAsync()).Should().Be(true);
 
         var queryResponse = await _fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
@@ -2752,6 +2849,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry()
     {
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, spatial: new MetadataV2ResourceSpatial
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            GeometryType = MetadataV2GeometryType.LineString,
+            PrimaryGeometryField = "shape",
+            SupportedCrs = [MetadataV2SpatialReference.Wgs84]
+        });
+
         // 2-vertex 3D LineString: x1 y1 z1 x2 y2 z2 → 6 ordinates.
         // Before the fix these were mis-parsed as 3 2D points with the wrong coordinates.
         const string requestBody = """
@@ -2797,9 +2902,30 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             .GetProperty("geometry")
             .GetProperty("coordinates");
 
-        // A correct 2-point LineString has exactly 2 coordinate pairs.
+        // Check the stored vertex order independently of GeoJSON output normalization.
+        var featureId = long.Parse(rid.AsSpan("test_layer.".Length), System.Globalization.CultureInfo.InvariantCulture);
+        var stored = await _fixture.GetService<IFeatureReader>().GetAsync(WebAppFixture.TestLayerId, featureId);
+        stored.Should().NotBeNull();
+        var storedLine = new WKBReader().Read(stored!.Value.Geometry)
+            .Should().BeOfType<LineString>().Subject;
+        storedLine.NumPoints.Should().Be(2);
+        storedLine.GetCoordinateN(0).X.Should().BeApproximately(-122.1, 1e-9);
+        storedLine.GetCoordinateN(0).Y.Should().BeApproximately(37.1, 1e-9);
+        storedLine.GetCoordinateN(1).X.Should().BeApproximately(-122.2, 1e-9);
+        storedLine.GetCoordinateN(1).Y.Should().BeApproximately(37.2, 1e-9);
+
+        // PostGIS ST_ForcePolygonCCW in the GeoJSON projection can reverse a line.
+        // Require both correct XY pairs without coupling the stride regression to that order.
         coordinates.GetArrayLength().Should().Be(2,
             "a 3D GML posList with 2 vertices must produce a 2-point LineString, not 3");
+        var returnedVertices = coordinates.EnumerateArray()
+            .Select(coordinate => (X: coordinate[0].GetDouble(), Y: coordinate[1].GetDouble()))
+            .OrderBy(coordinate => coordinate.X)
+            .ToArray();
+        returnedVertices[0].X.Should().BeApproximately(-122.2, 1e-9, queryContent);
+        returnedVertices[0].Y.Should().BeApproximately(37.2, 1e-9, queryContent);
+        returnedVertices[1].X.Should().BeApproximately(-122.1, 1e-9, queryContent);
+        returnedVertices[1].Y.Should().BeApproximately(37.1, 1e-9, queryContent);
     }
 
     private static string?[] ReadGeoJsonFeatureNames(string responseBody)

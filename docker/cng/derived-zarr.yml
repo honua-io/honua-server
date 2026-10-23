@@ -1,0 +1,32 @@
+# Explicit engineering rehearsal only; the default CNG composition is unchanged.
+services:
+  honua-server:
+    environment:
+      Licensing__DevGrantEdition: Pro
+  redis:
+    command: [redis-server, --appendonly, "yes", --appendfsync, always, --save, "", --maxmemory-policy, noeviction]
+  localstack:
+    ports:
+      - "127.0.0.1:4595:4566"
+  zarr-worker:
+    profiles: [derived-zarr]
+    image: ${HONUA_CNG_WORKER_IMAGE:?explicit rehearsal requires an immutable worker image}
+    environment:
+      DOTNET_ENVIRONMENT: Test
+      ConnectionStrings__Redis: redis:6379
+      GdalWorker__ScratchRoot: /tmp/honua-cng-zarr
+      GdalWorker__ToolTimeout: 00:03:00
+      FileStorage__Provider: AwsS3
+      FileStorage__AwsS3__BucketName: honua-cng-fixtures
+      FileStorage__AwsS3__Region: us-east-1
+      FileStorage__AwsS3__ServiceUrl: http://localstack:4566
+      FileStorage__AwsS3__ForcePathStyle: "true"
+      FileStorage__AwsS3__AccessKeyId: test
+      FileStorage__AwsS3__SecretAccessKey: test
+      FileStorage__AwsS3__EnableServerSideEncryption: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    networks: [cng-network]

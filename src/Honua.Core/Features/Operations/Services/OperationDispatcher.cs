@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 
@@ -84,33 +84,49 @@ public sealed class OperationDispatcher : IOperationInvoker
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // A descriptor can remain discoverable while its secret-aware actuator is deliberately
+        // withheld. Such a submission must not create a handle or approval proposal at all,
+        // because both are durable records of an operation that can never legitimately run.
+        // Every other unregistered operation keeps its existing failed-handle contract below.
+        if (AdminMcpOperationExclusions.RequiresSecretAwareRuntime(request.OperationId) &&
+            !_executors.ContainsKey(request.OperationId))
+        {
+            throw new OperationUnavailableException(
+                request.OperationId,
+                $"Operation '{request.OperationId}' handles one-time secret material and has no "
+                + "secret-aware executor composed in this runtime.");
+        }
+
+        context = BindProvisioningRoot(request, context);
         var createdAt = _clock.GetUtcNow();
         OperationHandle envelope;
         var invocationContext = context;
 
+        // A scope-governed bearer is constrained on EVERY submission, not only on approved
+        // replay: read-only operations execute directly and never reach the replay branch, so
+        // enforcing there alone let a discover/create-only bearer invoke sensitive inventories.
+        if (OperationScopeMapping.ExceedsScopeAuthority(request, context))
+        {
+            return new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+                OperationId = request.OperationId,
+                CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+                Status = OperationHandleStatus.Denied,
+                PolicyDecision = PolicyDecisionKind.Deny,
+                AuthorizationOutcome = OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
+                RootProvisioningOperationId = context.RootProvisioningOperationId,
+                CreatedAt = createdAt,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = string.IsNullOrWhiteSpace(context.ApprovedProposalId)
+                    ? "Operation exceeds the caller's OAuth scope authority."
+                    : "Approved replay operation exceeds the sealed OAuth scope authority.",
+            };
+        }
+
         string? acceptanceAuditId;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
-            if (context.ScopeGoverned &&
-                (context.RecognizedScopes.Count == 0 ||
-                 context.RecognizedScopes.Any(scope =>
-                     !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal)) ||
-                 !OperationScopeMapping.TryResolve(request, out var requiredOperation) ||
-                 !OperatorScopeCatalog.PermitsOperation(
-                     context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation)))
-            {
-                return new OperationHandle
-                {
-                    OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
-                    OperationId = request.OperationId,
-                    CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
-                    Status = OperationHandleStatus.Failed,
-                    CreatedAt = createdAt,
-                    UpdatedAt = _clock.GetUtcNow(),
-                    Reason = "Approved replay operation exceeds the sealed OAuth scope authority.",
-                };
-            }
-
             if (string.IsNullOrWhiteSpace(context.OperationInstanceId) ||
                 string.IsNullOrWhiteSpace(context.ApprovedPlanHash) ||
                 _approvalReplayVerifier is null ||
@@ -127,6 +143,7 @@ public sealed class OperationDispatcher : IOperationInvoker
                     OperationId = request.OperationId,
                     CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
                     Status = OperationHandleStatus.Failed,
+                    RootProvisioningOperationId = context.RootProvisioningOperationId,
                     CreatedAt = createdAt,
                     UpdatedAt = _clock.GetUtcNow(),
                     Reason = "Approved replay proof did not match the durable proposal authority.",
@@ -146,9 +163,35 @@ public sealed class OperationDispatcher : IOperationInvoker
                         ? $"corr-{Guid.NewGuid():N}"
                         : context.CorrelationId,
                     Status = OperationHandleStatus.Failed,
+                    RootProvisioningOperationId = context.RootProvisioningOperationId,
                     CreatedAt = createdAt,
                     UpdatedAt = _clock.GetUtcNow(),
                     Reason = "Approved replay could not resolve the original durable operation instance.",
+                };
+            }
+
+            try
+            {
+                RootProvisioningOperationIds.RejectRelabel(
+                    existing.RootProvisioningOperationId,
+                    context.RootProvisioningOperationId);
+            }
+            catch (ResourceConflictException ex)
+            {
+                return existing with
+                {
+                    Status = OperationHandleStatus.Failed,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = ex.Message,
+                    Result = new OperationResultSummary
+                    {
+                        Summary = ex.Message,
+                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["statusCode"] = "409",
+                            ["errorKind"] = "conflict",
+                        },
+                    },
                 };
             }
 
@@ -248,10 +291,14 @@ public sealed class OperationDispatcher : IOperationInvoker
 
         if (!validation.IsValid)
         {
+            // A blocking validation verdict is terminal and never reaches policy routing, so it
+            // must be able to carry its own taxonomy: without it every pre-policy rejection is
+            // indistinguishable from an internal fault at the caller-facing surface.
             return await PersistFailureAsync(
                     envelope,
                     string.Join(" ", validation.Messages),
-                    cancellationToken)
+                    cancellationToken,
+                    validation.ErrorKind)
                 .ConfigureAwait(false);
         }
 
@@ -307,7 +354,11 @@ public sealed class OperationDispatcher : IOperationInvoker
                         createdAt,
                         cancellationToken)
                     .ConfigureAwait(false);
-                var projected = decided with { AuditId = decided.AuditId ?? acceptanceAuditId };
+                var projected = decided with
+                {
+                    AuditId = decided.AuditId ?? acceptanceAuditId,
+                    EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, decided.EvidenceRefs),
+                };
                 return projected.Status == OperationHandleStatus.RequiresApproval
                     ? await PersistApprovalDecisionAsync(projected, cancellationToken).ConfigureAwait(false)
                     : await PersistAsync(projected, cancellationToken).ConfigureAwait(false);
@@ -315,6 +366,19 @@ public sealed class OperationDispatcher : IOperationInvoker
             catch (OperationCanceledException)
             {
                 await PersistPreActuationCancellationAsync(envelope).ConfigureAwait(false);
+                throw;
+            }
+            catch (CapabilityUnavailableException)
+            {
+                // The approval lane needs a capability this host never composed (the Redis-backed
+                // proposal control plane, honua-server#5733). Record the failed envelope, then keep
+                // the structured dependency receipt so REST and MCP refuse with the typed
+                // capability-unavailable outcome rather than a generic failed handle.
+                await PersistFailureAsync(
+                        envelope,
+                        "Operation approval requires an unavailable capability.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 throw;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -337,7 +401,11 @@ public sealed class OperationDispatcher : IOperationInvoker
                 .ConfigureAwait(false);
         }
 
-        if (request.DryRun)
+        // Only executors that declare a real dry-run route are invoked. A deferred wrapper
+        // reports ExecutesDryRun from the actuator it resolves, so the production DI graph
+        // still reaches that route. Other SupportsDryRun descriptors keep the synthetic
+        // completed result so a dry-run flag cannot actuate them.
+        if (request.DryRun && executor is not IOperationDryRunExecutor { ExecutesDryRun: true })
         {
             executed = envelope with
             {
@@ -370,6 +438,18 @@ public sealed class OperationDispatcher : IOperationInvoker
                     Reason = "Actuation was canceled after it began; side effects may have committed.",
                 };
             }
+            catch (CapabilityUnavailableException)
+            {
+                // A frozen host refuses a large layer publish (honua-server#5948). Record the
+                // failed envelope, then keep the structured dependency receipt so the operations
+                // endpoint can answer the typed 503 instead of a generic failed handle.
+                await PersistFailureAsync(
+                        envelope,
+                        "Operation actuation requires an unavailable capability.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                throw;
+            }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 return await PersistFailureAsync(
@@ -378,6 +458,19 @@ public sealed class OperationDispatcher : IOperationInvoker
                         cancellationToken)
                     .ConfigureAwait(false);
             }
+        }
+
+        if (executed.RootProvisioningOperationId is not null &&
+            !string.Equals(
+                executed.RootProvisioningOperationId,
+                envelope.RootProvisioningOperationId,
+                StringComparison.Ordinal))
+        {
+            return await PersistFailureAsync(
+                    envelope,
+                    "The actuation substituted a different provisioning root.",
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var completed = executed with
@@ -391,6 +484,8 @@ public sealed class OperationDispatcher : IOperationInvoker
             UpdatedAt = _clock.GetUtcNow(),
             AuthorizationOutcome = invocationContext.AuthorizationOutcome,
             PolicyDecision = PolicyDecisionKind.Allow,
+            RootProvisioningOperationId = envelope.RootProvisioningOperationId,
+            EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, executed.EvidenceRefs),
         };
         string? terminalAuditId;
         using var terminalAuditTimeout = new CancellationTokenSource(PostActuationPersistenceTimeout);
@@ -466,13 +561,24 @@ public sealed class OperationDispatcher : IOperationInvoker
     private async Task<OperationHandle> PersistFailureAsync(
         OperationHandle envelope,
         string reason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? errorKind = null)
     {
-        var failed = envelope with
+        var failed = MarkInstanceDurability(envelope) with
         {
             Status = OperationHandleStatus.Failed,
             UpdatedAt = _clock.GetUtcNow(),
             Reason = reason,
+            Result = string.IsNullOrWhiteSpace(errorKind)
+                ? envelope.Result
+                : new OperationResultSummary
+                {
+                    Summary = reason,
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["errorKind"] = errorKind,
+                    },
+                },
         };
         try
         {
@@ -532,6 +638,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         OperationHandle envelope,
         CancellationToken cancellationToken)
     {
+        envelope = MarkInstanceDurability(envelope);
         await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
         return await _instanceStore.GetAsync(envelope.OperationInstanceId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The persisted operation instance could not be reloaded.");
@@ -563,6 +670,28 @@ public sealed class OperationDispatcher : IOperationInvoker
             "The approval transition was refused because the operation instance version changed.");
     }
 
+    /// <summary>
+    /// Whether the instance record was accepted by the invocation-scoped non-durable store a
+    /// Redis-off host composes for direct configuration operations (owner decision 20).
+    /// </summary>
+    private bool IsNonDurableInstance(string? operationInstanceId)
+        => _instanceStore is NonDurableDirectOperationInstanceStore direct
+            && direct.IsNonDurable(operationInstanceId);
+
+    /// <summary>
+    /// Stamps <see cref="NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef"/> on a
+    /// handle whose instance record lives only in process memory, so every adapter can tell the
+    /// caller the handle cannot be read back through the operation status surfaces.
+    /// </summary>
+    private OperationHandle MarkInstanceDurability(OperationHandle envelope)
+        => !IsNonDurableInstance(envelope.OperationInstanceId)
+            || envelope.EvidenceRefs.Contains(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef, StringComparer.Ordinal)
+                ? envelope
+                : envelope with
+                {
+                    EvidenceRefs = [.. envelope.EvidenceRefs, NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef],
+                };
+
     private static bool IsTerminal(OperationHandleStatus status)
         => status is OperationHandleStatus.Completed
             or OperationHandleStatus.Denied
@@ -589,8 +718,21 @@ public sealed class OperationDispatcher : IOperationInvoker
             Action = action,
             Outcome = outcome,
             CorrelationId = envelope.CorrelationId,
-            Details = $"operationId={envelope.OperationId};status={envelope.Status}",
+            Details = IsNonDurableInstance(envelope.OperationInstanceId)
+                ? $"operationId={envelope.OperationId};status={envelope.Status};instanceRecord=non-durable"
+                : $"operationId={envelope.OperationId};status={envelope.Status}",
         }, cancellationToken);
+
+    private static OperationPolicyContext BindProvisioningRoot(OperationRequest request, OperationPolicyContext context)
+    {
+        var root = RootProvisioningOperationIds.PreferCanonical(
+            context.RootProvisioningOperationId,
+            request.GatewayRequest?.RootProvisioningOperationId,
+            RootProvisioningOperationIds.FromParameters(request.Parameters));
+        return string.Equals(root, context.RootProvisioningOperationId, StringComparison.Ordinal)
+            ? context
+            : context with { RootProvisioningOperationId = root };
+    }
 
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)
@@ -664,6 +806,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             UpdatedAt = _clock.GetUtcNow(),
             AuthorizationOutcome = context.AuthorizationOutcome,
             PolicyDecision = decision.Kind,
+            RootProvisioningOperationId = context.RootProvisioningOperationId,
 
             // Only RequireApproval routes to an approval lane; Deny/DryRunFirst carry none.
             ApprovalLane = decision.Kind == PolicyDecisionKind.RequireApproval

@@ -66,9 +66,10 @@ public sealed record RasterImportRequest
 
     /// <summary>
     /// Power-of-two reduction factors for persisted overview pyramids (2 = half resolution,
-    /// 4 = quarter, ...). The dynamic tile read path reuses the closest persisted level instead
-    /// of recomputing an <c>ST_Rescale</c> reduction on every low-zoom request (#1836). Empty to
-    /// skip overview persistence. Requires a known CRS (SRID &gt; 0) just like tile pre-generation.
+    /// 4 = quarter, ...). Empty skips overview persistence. Dynamic tile reads sample the
+    /// original raster: persisted overviews have no native-source lineage proof (#5848), so a
+    /// default import must not build levels nothing reads (#5856). A caller that sets factors
+    /// still needs a known CRS (SRID &gt; 0), the same as tile pre-generation.
     /// </summary>
-    public int[] OverviewFactors { get; init; } = [2, 4, 8, 16];
+    public int[] OverviewFactors { get; init; } = [];
 }

@@ -57,7 +57,8 @@ internal static class AuditLogServiceCollectionExtensions
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             return new PostgresAuditLog(
                 connectionProvider,
-                loggerFactory.CreateLogger<PostgresAuditLog>());
+                loggerFactory.CreateLogger<PostgresAuditLog>(),
+                chainKey: sp.GetService<AuditChainKeySnapshot>()?.Key ?? ReadOnlyMemory<byte>.Empty);
         });
 
         return services;

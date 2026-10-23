@@ -12,6 +12,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -23,8 +24,8 @@ namespace Honua.Ai.Protocols.Mcp;
 /// (diagnose/tune/upgrade-planning with rollback gates) lives in the private
 /// <c>honua-devops</c> operator surface, not here.
 /// Hosts the tool and resource catalogs, routes <c>initialize</c>,
-/// <c>notifications/initialized</c>, <c>tools/list</c>, <c>tools/call</c>,
-/// <c>resources/list</c>, <c>resources/templates/list</c>,
+/// <c>ping</c>, <c>notifications/initialized</c>, <c>tools/list</c>,
+/// <c>tools/call</c>, <c>resources/list</c>, <c>resources/templates/list</c>,
 /// <c>resources/read</c>, <c>prompts/list</c>, and <c>prompts/get</c> methods,
 /// and converts domain exceptions into JSON-RPC errors via
 /// <see cref="McpErrorMapper"/>.
@@ -53,13 +54,15 @@ internal sealed class McpDataAccessSurface
     private readonly IReadOnlyList<IMcpResource> _resources;
     private readonly McpSurfaceLimits _limits;
     private readonly ILogger<McpDataAccessSurface> _logger;
+    private readonly ProposalEvidenceVerifier? _proposalEvidenceVerifier;
 
     public McpDataAccessSurface(
         IEnumerable<IMcpTool> tools,
         IEnumerable<IMcpResource> resources,
         ILogger<McpDataAccessSurface> logger,
         McpSurfaceLimits? limits = null,
-        IEnumerable<IMcpToolSource>? toolSources = null)
+        IEnumerable<IMcpToolSource>? toolSources = null,
+        ProposalEvidenceVerifier? proposalEvidenceVerifier = null)
     {
         _tools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         // Dynamic, runtime-published tools (#2483). None composed by default, so the
@@ -68,6 +71,7 @@ internal sealed class McpDataAccessSurface
         _resources = resources.ToList();
         _limits = limits ?? McpSurfaceLimits.Default;
         _logger = logger;
+        _proposalEvidenceVerifier = proposalEvidenceVerifier;
 
         McpLog.SurfaceInitialized(
             _logger,
@@ -157,7 +161,7 @@ internal sealed class McpDataAccessSurface
 
         // Tag the ambient activity with the MCP protocol and JSON-RPC method as
         // early as possible so every dispatched method — including the handler-
-        // less ones (initialize, tools/list, resources/list,
+        // less ones (initialize, ping, tools/list, resources/list,
         // resources/templates/list) and the anonymous auth short-circuits in
         // CallToolAsync / ReadResourceAsync — shows up alongside gRPC and
         // GPServer traffic. Concrete tool and resource handlers override the
@@ -170,6 +174,7 @@ internal sealed class McpDataAccessSurface
             return request.Method switch
             {
                 "initialize" => HandleInitialize(httpContext, request),
+                "ping" => Ping(request),
                 "tools/list" => await ListToolsAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => ListResources(request),
@@ -258,23 +263,43 @@ internal sealed class McpDataAccessSurface
         httpContext.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = requestedView;
 
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
+        // list_changed is delivered only on the optional GET /mcp stream. Advertising
+        // it while that stream is off (the default) tells clients a notification
+        // channel exists that this transport can never send (honua-server#5629).
+        var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
+            ?.Value.ServerInitiatedStreamEnabled == true;
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
-            // honua-server#1954: the server now emits notifications/tools/list_changed
-            // and notifications/resources/list_changed over the session SSE stream
-            // (e.g. when a publish mutates the catalog), so advertise the listChanged
-            // capability instead of leaving the flags inert. The prompt catalog stays
-            // static, so prompts.listChanged remains false.
+            // honua-server#1954: when the stream is enabled the server emits
+            // notifications/tools/list_changed and notifications/resources/list_changed.
+            // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
             {
-                Tools = new McpCapabilityFlag { ListChanged = true },
-                Resources = new McpCapabilityFlag { ListChanged = true },
+                Tools = new McpCapabilityFlag { ListChanged = listChanged },
+                Resources = new McpCapabilityFlag { ListChanged = listChanged },
                 Prompts = new McpCapabilityFlag { ListChanged = false }
-            }
+            },
+
+            // State how the issued session is kept so a client or harness can record
+            // the topology that answered it (shared, stateless, or in-memory).
+            Meta = httpContext.RequestServices?.GetService<McpSessionManager>() is { } sessions
+                ? new McpInitializeResultMeta { SessionMode = SessionModeName(sessions.Mode) }
+                : null
         };
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpInitializeResult);
     }
+
+    /// <summary>
+    /// Wire name of a <see cref="McpSessionMode"/> for
+    /// <c>_meta["honua.io/session-mode"]</c>.
+    /// </summary>
+    internal static string SessionModeName(McpSessionMode mode) => mode switch
+    {
+        McpSessionMode.Shared => "shared",
+        McpSessionMode.Stateless => "stateless",
+        _ => "in-memory"
+    };
 
     /// <summary>
     /// Returns <c>true</c> when the client's <c>initialize</c> capabilities object
@@ -553,6 +578,12 @@ internal sealed class McpDataAccessSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
+        // A JSON-RPC batch reuses one HttpContext. Drop any evidence left by an
+        // earlier element before this call resolves a tool, and again in the
+        // invoke finally so the next element cannot seal it.
+        httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+        httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
+
         // Per docs/developer/MCP_SERVER.md the authenticated principal gate
         // precedes any protocol-level param or tool-name validation so an
         // anonymous caller sees the `unauthenticated` reauthentication signal
@@ -643,15 +674,47 @@ internal sealed class McpDataAccessSurface
         McpToolsCallResult result;
         try
         {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = tool.Name;
+            if (tool is IEvidenceBoundProposalTool)
+            {
+                var tenant = httpContext.RequestServices.GetService<ITenantContext>();
+                if (_proposalEvidenceVerifier is null
+                    || tenant is null
+                    || !tenant.RequireTenantId(out var tenantId, out _))
+                {
+                    throw new GeoprocessingValidationException(
+                        "The signed proposal-evidence verifier or authenticated tenant is unavailable.");
+                }
+
+                var sessionId = httpContext.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    throw new GeoprocessingValidationException(
+                        "A bound MCP session is required for governed proposal calls.");
+                }
+
+                httpContext.Items[ProposalEvidenceVerifier.HttpContextItemKey] =
+                    await _proposalEvidenceVerifier.VerifyAsync(
+                        tool,
+                        parameters.Arguments,
+                        parameters.Meta,
+                        tenantId,
+                        sessionId,
+                        request.Id,
+                        cancellationToken).ConfigureAwait(false);
+            }
+            else if (parameters.Meta is { ValueKind: JsonValueKind.Object } suppliedMeta
+                && suppliedMeta.TryGetProperty(ProposalEvidenceVerifier.MetaProperty, out _))
+            {
+                throw new GeoprocessingValidationException(
+                    "Signed model output may select only a catalog-owned proposal tool.");
+            }
+
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
-            // Contract-first stubs return a structured `not_implemented` payload.
-            // Tag telemetry with that status so dashboards can distinguish stubs
-            // from functional tools without inspecting response bodies.
-            var completionStatus = tool is IStubMcpTool
-                ? McpTelemetry.Status.NotImplemented
-                : McpTelemetry.Status.Ok;
+            var completionStatus = McpTelemetry.Status.Ok;
             McpTelemetry.ToolCallCount.Add(
                 1,
                 new KeyValuePair<string, object?>("tool_name", tool.Name),
@@ -684,6 +747,11 @@ internal sealed class McpDataAccessSurface
             {
                 McpLog.ToolFailedUnexpected(_logger, tool.Name, ex);
             }
+        }
+        finally
+        {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
         }
 
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
@@ -886,12 +954,7 @@ internal sealed class McpDataAccessSurface
                 return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
             }
 
-            // Contract-first stub resources return `not_implemented` envelopes.
-            // Tag the counter accordingly so dashboards can separate stub reads
-            // from functional reads.
-            var completionStatus = handler is IStubMcpResource
-                ? McpTelemetry.Status.NotImplemented
-                : McpTelemetry.Status.Ok;
+            var completionStatus = McpTelemetry.Status.Ok;
             McpTelemetry.ResourceReadCount.Add(
                 1,
                 new KeyValuePair<string, object?>("resource_family", resourceFamily),
@@ -948,6 +1011,21 @@ internal sealed class McpDataAccessSurface
         }
 
         return McpErrorMapper.Codes.Internal;
+    }
+
+    /// <summary>
+    /// MCP <c>ping</c> is a liveness check. The result must be a successful
+    /// JSON-RPC response whose <c>result</c> is an empty object, not
+    /// method-not-found.
+    /// </summary>
+    private static McpJsonRpcResponse Ping(McpJsonRpcRequest request)
+    {
+        using var document = JsonDocument.Parse("{}");
+        return new McpJsonRpcResponse
+        {
+            Id = request.Id,
+            Result = document.RootElement.Clone()
+        };
     }
 
     private static McpJsonRpcResponse SuccessResponse<T>(

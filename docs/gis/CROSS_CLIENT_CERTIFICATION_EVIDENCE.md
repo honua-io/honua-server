@@ -218,7 +218,7 @@ The full scheduled matrix is contractually complete only when these 16
 The lane → `client_lane` mapping is intentional:
 
 - `cesium` lane → `client_lane: "js-cesium"` (separate from the umbrella `js` lane so the Docker matrix can be diff-baselined independently of the merge-blocking Esri Leaflet / MapLibre lanes that ride on `ci.yml`)
-- `arcgis-stub` lane → `client_lane: "arcgis-stub"` (REST-only stub; the FeatureServer-applicable render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and the visual / style slice IDs `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are recorded as `skip` with note `pending: licensed-arcgis-runner` rather than `pass`. `CERT-RNDR-SPR-01` is MVT-only per the [matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#common-core-test-cases) and is recorded as `not-applicable` for this lane); both `featureserver` and `mapserver` envelopes are emitted from the same run
+- `arcgis-stub` lane → `client_lane: "arcgis-stub"` (REST-only stub; the FeatureServer-applicable render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and the visual / style slice IDs `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are recorded as `skip` with note `evidence id desktop-arcgis` rather than `pass`. `CERT-RNDR-SPR-01` is MVT-only per the [matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#common-core-test-cases) and is recorded as `not-applicable` for this lane); both `featureserver` and `mapserver` envelopes are emitted from the same run
 - `pyqgis` lane → `client_lane: "desktop-qgis"` (same lane as the standalone `pyqgis-client-compat-nightly.yml`)
 - `openlayers` lane → `client_lane: "js"` (same lane as the in-tree OpenLayers Vitest tests)
 - `gdal` lane → emits the raw `gdal-ogr-results.json` for human inspection plus per-protocol cert envelopes via `scripts/client-compat/convert-gdal-results.py` under `client_lane: "cli"` (`oapif`→`ogc-features`, `wfs`→`wfs`); the converter projects the GDAL test category labels many-to-one onto CERT-* IDs with worst-status aggregation (`fail > pass > skip > not-applicable`): `discovery` and `feature_count` → CERT-DISC-01; `schema_introspection` → CERT-SCHM-01; `feature_read`/`read` → CERT-CONN-01; `attribute_query`/`spatial_query`/`query` → CERT-QFLT-01. The `export_geojson`/`export_gpkg`/`export_csv`/`export` categories are intentionally **unmapped** — they exercise ogr2ogr serialization paths and the [matrix CLI/SDK lane row](CROSS_CLIENT_CERTIFICATION_MATRIX.md#client-lane-coverage) excludes CERT-RNDR for this lane, so a passing GDAL export does not certify CERT-RNDR-01 in the cert envelope (the raw `gdal-ogr-results.json` still records the export pass/fail status). The remaining 24-ID common-core IDs are seeded as `skip` (applicable but not exercised) or `not-applicable`; CERT-RNDR-01 / CERT-RNDR-02 and the visual / style slice IDs always appear as `not-applicable` for this lane. Unknown category labels emit a stderr warning so newly-added test categories stay visible until `CATEGORY_MAP` is updated.
@@ -247,8 +247,8 @@ This section describes how each evidence source will map to the evidence envelop
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
 | Playwright MapLibre suite | JS (MVT) | Automated: `tests/js-browser/maplibre/` renders MapLibre GL JS against live TileJSON/MVT endpoints and emits a `<run-id>-js-mvt.cert.json` envelope via the custom reporter. See [MapLibre MVT automated workflow](#maplibre-mvt-automated-workflow) below. A manual fallback remains documented for ad-hoc visual verification. |
 | Playwright CesiumJS suite | JS — Cesium (`js-cesium`) | Automated: `tests/js-browser/cesium/` exercises CesiumJS imagery providers (WMS, WMTS, OGC API Tiles, OGC API Maps) under `docker/client-compat/cesium/` in `client-interop-nightly.yml`; emits one envelope per protocol (`<run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps}.cert.json`). Vector-feature CERT-\* IDs and the visual / style slice IDs are recorded as `not-applicable` because Cesium imagery providers consume server-rendered raster output. |
-| ArcGIS Pro REST stub | `arcgis-stub` | Automated stub: `docker/client-compat/arcgis-stub/stub_runner.py` issues both the FeatureServer and MapServer REST sequences Pro itself emits and writes one envelope per protocol (`*-arcgis-stub-featureserver.cert.json` and `*-arcgis-stub-mapserver.cert.json`). The FeatureServer-applicable render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and the visual / style slice IDs `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are recorded as `skip` with note `pending: licensed-arcgis-runner` until a licensed Windows runner is provisioned. `CERT-RNDR-SPR-01` is MVT-only per the matrix and is emitted as `not-applicable` for this lane. |
-| Licensed ArcGIS Pro desktop runner | `desktop-arcgis` | Maintained externally in [`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat), where the licensed Windows runner can execute without coupling this repository's nightly schedule to unavailable self-hosted capacity. The retained local runner contract, `scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py`, emits `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`, captures logs/screenshots/project artifacts, exports render evidence through an active view or headless layout/map-frame fallback, writes an `artifact-manifest.json`, and keeps this evidence distinct from the REST-only `arcgis-stub` lane. Ordinary PR gates validate only the fixture/envelope contract; they do not require ArcGIS Pro. See [Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md). |
+| ArcGIS Pro REST stub | `arcgis-stub` | REST-only lane, distinct from a desktop client. Evidence identifiers: `*-arcgis-stub-featureserver.cert.json` and `*-arcgis-stub-mapserver.cert.json`. FeatureServer render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are `skip`. `CERT-RNDR-SPR-01` is `not-applicable` (MVT-only). |
+| ArcGIS Pro desktop client | `desktop-arcgis` | Certification detail stays in [`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat) (ruling R30). Evidence identifiers: `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`, distinct from `arcgis-stub`. Ordinary PR gates do not require ArcGIS Pro. No successful desktop run is linked. See [Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md). |
 | GDAL/OGR pytest suite | CLI (`cli` via converter) | Automated: `tests/python/gdal_ogr/conftest.py:EvidenceCollector` writes `gdal-ogr-results.json`; the `gdal` lane runner invokes `scripts/client-compat/convert-gdal-results.py` to emit one cert envelope per protocol (`<run-id>-cli-gdal-ogc-features.cert.json`, `<run-id>-cli-gdal-wfs.cert.json`). The converter maps the GDAL category labels many-to-one onto CERT-* IDs with worst-status aggregation (`fail > pass > skip > not-applicable`): `discovery`/`feature_count` → CERT-DISC-01, `schema_introspection` → CERT-SCHM-01, `feature_read`/`read` → CERT-CONN-01, `attribute_query`/`spatial_query`/`query` → CERT-QFLT-01. The `export_*` categories are intentionally unmapped per the matrix CLI/SDK lane row (which excludes CERT-RNDR), so CERT-RNDR-01 and CERT-RNDR-02 are recorded as `not-applicable` rather than certified by an ogr2ogr export. Unknown labels surface as `::warning::` so test-side additions stay visible. |
 
 ### Manual Lane Workflow
@@ -358,6 +358,115 @@ This manual workflow predates the automated suite above and remains as a fallbac
 6. For JS lane extensions: record JS-EXT-01 (PBF/MVT decode fidelity) and JS-EXT-02 (tile load pipeline) in the `extensions` array.
 7. Save as `<run-id>-js-mvt.cert.json`.
 
+## Release-tier receipts
+
+The envelope above is the **nightly** contract: it answers this repository's own
+baseline diff, and it is what every committed baseline under
+`tests/baselines/client-compat/` records.
+
+The 2026.1 release gate answers a different consumer — the `client-interop-cert-v1`
+normalizer in
+[`honua-io/honua-evidence`](https://github.com/honua-io/honua-evidence)
+(`scripts/fetch-certification-producers.py`). That normalizer admits a receipt only
+when the receipt itself binds the exact candidate, and it rejects the **whole**
+receipt on any single divergence rather than downgrading the offending row. The
+governed field list is mirrored into this repository at
+[`certification/client-protocol-requirements.v1.json`](../../certification/client-protocol-requirements.v1.json)
+under `receiptContract`, so producers and checks read one in-repo copy of it.
+
+A release-tier receipt is the nightly envelope plus these bindings:
+
+| Field | Contract |
+|---|---|
+| `producer_source_sha` | Exact 40-character commit of the workflow run that produced the receipt. |
+| `image_digest` | Exact `sha256:` digest of the candidate image the run executed against. A locally built image cannot produce a release receipt. |
+| `auth_policy_revision` | Governed auth-policy revision, alongside the existing `fixture_revision` and `server_config_revision`. |
+| `client_id` | Governed canonical client name (for example `OWSLib`). Not interchangeable with the CI runner lane. |
+| `runner_lane` | The CI lane, carried separately from `client_id`. |
+| `protocol_profile` | The exercised wire contract profile. |
+| `deployment_target` | The governed execution context (`local-docker` for every bounded-roster row today). Stricter than the consumer, which reads the target from the requirement: naming it on the receipt stops evidence from one execution context certifying a cell governed for another. |
+| `results[].performed_by` | The application client that performed the request. A generic HTTP probe may not stand in for it. |
+| `results[].request_url` | Absolute URL carrying no credentials — neither in userinfo nor in a query parameter such as `?token=` or `?api_key=`. `null` only for a `skip`, where no request was made. |
+| `results[].exercised_capabilities` | The governed scenario facets the observation genuinely exercised. A `pass` may not claim a facet absent from this list. |
+
+The release lane supplies the bindings it alone knows through the environment:
+`HONUA_CANDIDATE_IMAGE_DIGEST`, `HONUA_PRODUCER_SOURCE_SHA`,
+`HONUA_AUTH_POLICY_REVISION`, `HONUA_DEPLOYMENT_TARGET`, and — because the governed
+denominator names *symbolic* revisions such as `docker/cng/seed.sql@<source_sha>` and
+`cog-1.0` rather than content digests, and the join compares them exactly —
+`HONUA_FIXTURE_REVISION` and `HONUA_SERVER_CONFIG_REVISION`. Every one of them is
+unset at nightly and developer tier, where the revisions stay content digests.
+
+Three differences from the nightly envelope are deliberate:
+
+- **Status vocabulary.** The governed vocabulary is `pass`, `fail`, `skip`,
+  `not_applicable` — underscored. The nightly envelope, the baseline diff and the
+  matrix documentation all use the hyphenated `not-applicable`. The translation
+  happens once, in `build_release_receipt`, so the nightly contract is untouched.
+- **Nonpassing observations take precedence.** For a repeated test ID, release
+  emission selects failure before skip before pass, for common-core and extension
+  observations alike. A passing invocation cannot erase a skipped invocation.
+  Nightly skip/pass selection retains its existing behavior.
+- **Omission over invention.** A passing observation that cannot name the request it
+  performed, that recorded a `client_identity` other than the governed client, or
+  that did not name the facets it exercised, is omitted from the release receipt and
+  listed under `unsubstantiated`. The governed aggregator emits a requirement it
+  sees no observation for as a `skip`, which the release gate fails closed on, so
+  publishing a malformed row would cost the entire receipt. An observed failure or
+  skip without valid provenance rejects emission entirely: omitting that negative
+  could let a different test credit the same governed operation. Automatically
+  generated placeholders for cases with no observation remain unsubstantiated.
+  `summary` is recomputed over what the receipt actually publishes, so an omitted
+  observation cannot leave a pass count the receipt does not support.
+
+`shared.cert_envelope.CertificationEvidenceCollector.build_release_receipt` produces
+these receipts and refuses to emit at all when the candidate bindings are missing or
+when the server was source-built. The bounded roster they answer, and the fail-closed
+verdict over them, live in
+[`certification/client-protocol-requirements.v1.json`](../../certification/client-protocol-requirements.v1.json)
+and `scripts/certification/verify-client-certification-receipts.py`
+([#3434](https://github.com/honua-io/honua-server/issues/3434)).
+
+### Whole-receipt admission and conflicting observations
+
+The bounded verifier requires every executable result in both `results` and
+`extensions` to resolve to exactly one governed requirement. An unknown test ID
+rejects the whole receipt: absence from the local mirror does not establish that
+the full denominator admits it. For a full-profile receipt, pass
+`--full-requirements /path/to/protocol-certification-requirements.v1.json` to the
+verifier. Every bounded requirement must appear unchanged exactly once in that
+full denominator. The verifier then validates every observation against the full
+denominator, including provenance and revision checks for observations outside the
+mirror, while reporting only the bounded cells. The nightly common-core envelope
+remains separate.
+
+A cell must have exactly one admitted receipt. Multiple tests in that receipt may
+substantiate the same operation: any failure makes the cell fail, otherwise any
+skip makes it skip, and the cell passes only if all matching observations pass.
+Every observation must independently meet the governed provenance/facet rules;
+the verifier does not invent facets by combining insufficient observations. In
+particular, a leading pass cannot hide a later failure or skip. Malformed extension
+arrays and test IDs reject the receipt; a `tls` facet requires an HTTPS request.
+The CLI returns nonzero and writes a non-green verdict for these cases.
+
+These rules enforce the 2026.1 promise that missing, skipped, stale, mismatched and
+source-built required client evidence cannot pass the release gate. The regression
+fixtures test receipt admission, not external-client execution or candidate
+certification. Candidate-dependent criteria 2, 3 (execution), and 4 of #3434 remain
+released for the reason recorded in PR #4442: an immutable candidate is required
+before those executions and their candidate-bound receipts can exist.
+
+The remaining pre-cut producer reconciliation is still open. The upstream
+[denominator at `0150f767aa000aa1b029bddb8a058d60385954c9`](https://github.com/honua-io/honua-release/blob/0150f767aa000aa1b029bddb8a058d60385954c9/certification/protocol-certification-requirements.v1.json),
+checked on 2026-09-08 UTC, has the same 59 bounded rows as the frozen mirror and
+no `test_ids` on any of them. Its required lane, surface and version bindings also
+remain unresolved against the committed producers: 55 lane mismatches, two
+missing QGIS surfaces, and two QGIS version mismatches. These are blocking cells,
+not exclusions or waived pre-cut work. Reconcile the governed operation/test IDs
+with the actual client producers before emitting joining receipts; do not relabel
+an OpenLayers observation as MapLibre, a different QGIS version as `3.40`, or a
+generic HTTP probe as an application client.
+
 ## Evidence Version
 
 | Version | Date | Change |
@@ -385,7 +494,9 @@ This manual workflow predates the automated suite above and remains as a fallbac
 | 1.0.20 | 2026-04-26 | `diff-baselines.py` accepts `--client-lanes` to scope strict mode to a workflow_dispatch lane subset; the `prepare` job emits a `client_lanes` filter that mirrors the matrix selection, so a manual subset dispatch no longer fails strict against the full-matrix manifest. GDAL converter recognises the actual category labels emitted by `tests/python/gdal_ogr/test_*.py` (`feature_read`, `attribute_query`, `spatial_query`, `export_geojson`/`export_gpkg`/`export_csv`, `schema_introspection`, `feature_count`) and aggregates many-to-one statuses with `fail > pass > skip > not-applicable`; previously the converter dropped passed evidence as `skip`. `scripts/client-compat/refresh-baselines.sh` iterates lanes sequentially with `--exit-code-from <lane>` instead of `--profile matrix --abort-on-container-exit` so partial baselines no longer slip through when the first lane completes (#806) |
 | 1.0.21 | 2026-04-26 | Align GDAL converter with the matrix CLI/SDK lane contract (matrix line 99 — "All CERT-\* except CERT-RNDR"): `export_geojson`/`export_gpkg`/`export_csv`/`export` categories are no longer mapped to CERT-RNDR-01 (the raw `gdal-ogr-results.json` still records their pass/fail); CERT-RNDR-01 / CERT-RNDR-02 / visual-style slice IDs now appear as `not-applicable` for the GDAL lane. `schema_introspection` now maps to CERT-SCHM-01 (the schema-coverage ID) instead of CERT-DISC-01. `diff-baselines.py write_gap_report` no longer prints the "No deviations from baseline ✅" success section when expected-pair gap sections were also written, so a strict-mode failure for an absent or never-baselined expected pair is no longer contradicted by a green checkmark in the same gap report (#806) |
 | 1.0.22 | 2026-04-26 | Stabilise the docker/client-compat `gdal` and `pyqgis` lanes against the read-only `tests/` bind mount. The GDAL lane now honours `HONUA_BASE_URL` to skip the local `honua_server`/`postgis` fixture chain (which cannot start inside the read-only image), targets the seeded `test_service`/layer 0 pair via `HONUA_GDAL_SERVICE_ID` / `HONUA_GDAL_COLLECTION_ID`, and writes its raw `gdal-ogr-results.json` to `HONUA_GDAL_RESULTS_PATH` (set to `/output/gdal-ogr-results.json` by `docker/client-compat/gdal/run.sh`). The PyQGIS lane writes its `.cert.json` envelopes to `HONUA_PYQGIS_OUTPUT_DIR` (set to `/output` by `docker/client-compat/pyqgis/run.sh`). The seed-data note now records that both lanes share `test_service`/layer 0; behaviour change is testing-only and the envelope schema is unchanged (#806) |
-| 1.0.23 | 2026-04-26 | Narrow the `arcgis-stub` lane's render-coverage wording in the Real-Client Interop Matrix Workflow Output bullet, the Integration Mapping row, and `docs/gis/gap-report.md` to match the actual envelope: the FeatureServer-applicable render IDs (`CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01`) are recorded as `skip` with `pending: licensed-arcgis-runner`, while `CERT-RNDR-SPR-01` is MVT-only per the matrix and is emitted as `not-applicable`. No code change — `docker/client-compat/arcgis-stub/stub_runner.py` already emits this contract; only the docs were over-broad (#806) |
+| 1.0.23 | 2026-04-26 | Narrow the `arcgis-stub` render-coverage wording to the envelope: FeatureServer-applicable render IDs (`CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01`) are `skip`; `CERT-RNDR-SPR-01` is `not-applicable`. Desktop substantiation is evidence identifier `desktop-arcgis` in honua-esri-compat (#806) |
 | 1.0.24 | 2026-05-07 | Record the restored #938 release-evidence contract for `client-interop-nightly.yml`: the full scheduled matrix requires one current envelope with a committed baseline for every pair in `expected-pairs.json`, the compose runtime includes Redis and split HTTP/gRPC ports, lane failures upload `lane-exit-code.txt` and `compose.log`, and manual dispatch subsets are scoped by `--client-lanes`. |
-| 1.0.25 | 2026-05-18 | Add the licensed ArcGIS Pro desktop evidence scaffold for `client_lane: "desktop-arcgis"`: manual/scheduled self-hosted Windows workflow, ArcPy runner, artifact/redaction guardrails, and fixture-only contract tests. This is distinct from `arcgis-stub` and does not require ArcGIS Pro in ordinary PR gates (#1019). |
-| 1.0.26 | 2026-05-18 | Tighten the `desktop-arcgis` licensed runner contract with headless layout/map-frame PNG export, strict live-artifact validation, and an artifact manifest covering envelopes, screenshots, logs, and project artifacts (#1019). |
+| 1.0.25 | 2026-05-18 | Name `client_lane: "desktop-arcgis"` as distinct from `arcgis-stub`. Desktop procedure stays in honua-esri-compat. Ordinary PR gates do not require ArcGIS Pro (#1019). |
+| 1.0.26 | 2026-05-18 | `desktop-arcgis` remains an evidence identifier only. Runner and artefact layout stay in honua-esri-compat (#1019). |
+| 1.0.27 | 2026-09-07 | Document the release-tier receipt contract for the bounded 2026.1 external-client roster: the candidate/producer/auth bindings, the governed client identity and per-result request provenance the `client-interop-cert-v1` consumer requires, the underscored `not_applicable` status vocabulary, and the omit-rather-than-invent rule. The nightly envelope is unchanged (#3434). |
+| 1.0.28 | 2026-10-16 | The public `arcgis-stub` render skip note is `evidence id desktop-arcgis`. It no longer restates a desktop runner. Status values are unchanged (#5408). |

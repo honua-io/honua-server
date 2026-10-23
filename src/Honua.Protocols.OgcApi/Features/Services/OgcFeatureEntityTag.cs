@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
@@ -19,6 +20,21 @@ internal static class OgcFeatureEntityTag
 {
     private const string RepresentationTagPrefix = "of-";
 
+    /// <summary>
+    /// Picks the feature whose bytes are hashed into the entity tag.
+    /// The same CRS uses the response feature so the tag and the payload are one read.
+    /// A different response CRS uses the storage snapshot, which is what writes hash.
+    /// </summary>
+    public static Feature SelectEntitySnapshot(
+        int responseSrid,
+        int storageSrid,
+        Feature responseFeature,
+        Feature? storageSnapshot,
+        Feature resolvedFeature)
+        => responseSrid == storageSrid
+            ? responseFeature
+            : storageSnapshot ?? resolvedFeature;
+
     public static string Compute(Feature feature, IETagService etagService)
     {
         ArgumentNullException.ThrowIfNull(etagService);
@@ -29,7 +45,13 @@ internal static class OgcFeatureEntityTag
             ["geometry"] = feature.Geometry is { Length: > 0 }
                 ? Convert.ToBase64String(feature.Geometry)
                 : null,
-            ["attributes"] = NormalizeForEtag(feature.Attributes)
+            // Provider projections materialize absent declared fields as null; edit snapshots
+            // keep sparse stored attributes. They represent the same visible feature.
+            // Normalize only top-level field absence, retaining nested JSON distinctions.
+            ["attributes"] = NormalizeForEtag(feature.Attributes
+                .Where(entry => entry.Value is not null &&
+                    entry.Value is not JsonElement { ValueKind: JsonValueKind.Null })
+                .ToImmutableDictionary())
         };
 
         var buffer = new ArrayBufferWriter<byte>();

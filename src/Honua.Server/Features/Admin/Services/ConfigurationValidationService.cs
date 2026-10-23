@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Data.Common;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Helpers;
@@ -122,6 +123,8 @@ internal static class ConfigurationValidationService
         ValidateHostValidationConfiguration(configuration, errors, warnings, isRelaxedEnvironment);
 
         ValidateConnectionEncryptionConfiguration(configuration, errors, warnings, isRelaxedEnvironment);
+
+        ValidateNoShippedPlaceholderSecrets(configuration, errors, isRelaxedEnvironment);
 
         // Log configuration summary
         LogConfigurationSummary(configuration, logger);
@@ -357,7 +360,7 @@ internal static class ConfigurationValidationService
 
     private static void ValidateAdminPassword(string password, List<string> errors)
     {
-        if (_knownPlaceholderPasswords.Contains(password))
+        if (KnownPlaceholderSecrets.Contains(password))
         {
             errors.Add("HONUA_ADMIN_PASSWORD is set to a known placeholder value. Please set a strong, unique password before deploying to production.");
         }
@@ -366,6 +369,93 @@ internal static class ConfigurationValidationService
         {
             errors.Add("HONUA_ADMIN_PASSWORD must be at least 12 characters long in production.");
         }
+    }
+
+    /// <summary>
+    /// Refuses any secret-bearing configuration value that still carries a credential literal
+    /// this repository ships in an example or harness file. Development and Test keep their
+    /// existing behaviour: those environments are exactly where the shipped values belong.
+    /// </summary>
+    /// <param name="configuration">The configuration to screen.</param>
+    /// <param name="errors">Collected validation errors.</param>
+    /// <param name="isRelaxedEnvironment">Whether this is a Development or Test host.</param>
+    private static void ValidateNoShippedPlaceholderSecrets(
+        IConfiguration configuration,
+        List<string> errors,
+        bool isRelaxedEnvironment)
+    {
+        if (isRelaxedEnvironment)
+        {
+            return;
+        }
+
+        foreach (var path in _secretValidationRules.Keys.Concat(_additionalPlaceholderScreenedPaths))
+        {
+            // The admin password reports its own, more specific placeholder error.
+            if (string.Equals(path, "HONUA_ADMIN_PASSWORD", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var value = configuration[path];
+            if (string.IsNullOrWhiteSpace(value) ||
+                !GetSecretCandidates(path, value).Any(candidate => KnownPlaceholderSecrets.Contains(candidate)))
+            {
+                continue;
+            }
+
+            errors.Add(
+                $"'{path.Replace(":", "__", StringComparison.Ordinal)}' is set to a placeholder value that ships in this " +
+                "repository's example and harness files. Set a unique secret before deploying to production.");
+        }
+    }
+
+    private static IEnumerable<string> GetSecretCandidates(string path, string value)
+    {
+        yield return value.Trim();
+
+        if (!path.Contains("ConnectionString", StringComparison.OrdinalIgnoreCase))
+        {
+            yield break;
+        }
+
+        DbConnectionStringBuilder builder = new();
+        try
+        {
+            builder.ConnectionString = value;
+        }
+        catch (ArgumentException)
+        {
+            yield break;
+        }
+
+        foreach (string key in builder.Keys)
+        {
+            if (!IsCompoundSecretKey(key))
+            {
+                continue;
+            }
+
+            var candidate = builder[key]?.ToString();
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                yield return candidate.Trim();
+            }
+        }
+    }
+
+    private static bool IsCompoundSecretKey(string key)
+    {
+        return key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("pwd", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("apikey", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("api_key", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("accesskey", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("access_key", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("signingkey", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("signing_key", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("salt", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ValidateConnectionEncryptionConfiguration(
@@ -438,7 +528,7 @@ internal static class ConfigurationValidationService
             return;
         }
 
-        if (HasConfiguredHostAllowlist(configuration) || HasValidPublicBaseUrl(configuration))
+        if (HasConfiguredHostAllowlist(configuration) || BaseUrlResolver.TryGetConfiguredBaseUrl(configuration, out _))
         {
             return;
         }
@@ -483,19 +573,6 @@ internal static class ConfigurationValidationService
         return configuredHosts.Any(IsExplicitAllowedHost);
     }
 
-    private static bool HasValidPublicBaseUrl(IConfiguration configuration)
-    {
-        var value = configuration["Public:BaseUrl"] ?? configuration["PUBLIC_BASE_URL"];
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) &&
-               (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static bool IsExplicitAllowedHost(string? hostEntry)
     {
         if (string.IsNullOrWhiteSpace(hostEntry))
@@ -506,15 +583,97 @@ internal static class ConfigurationValidationService
         return !string.Equals(hostEntry.Trim(), "*", StringComparison.Ordinal);
     }
 
-    private static readonly FrozenSet<string> _knownPlaceholderPasswords = new[]
+    /// <summary>
+    /// Credential-shaped literals that ship in this repository's example and harness
+    /// files (compose files, <c>.env*.example</c>, <c>docker/**</c>, CI harness defaults)
+    /// and in operator documentation templates. They are public values, so a non-relaxed
+    /// deployment still carrying one of them is refused at startup.
+    /// </summary>
+    /// <remarks>
+    /// <c>ConfigurationValidationServiceTests.KnownPlaceholderSecrets_CoversCredentialLiteralsInShippedFiles</c>
+    /// re-scans those files and fails when a literal appears that is not listed here, so
+    /// the list cannot silently rot as harnesses are added.
+    /// </remarks>
+    internal static readonly FrozenSet<string> KnownPlaceholderSecrets = new[]
         {
+            // Generic placeholders.
             "CHANGE_ME_BEFORE_USE",
             "changeme",
             "password",
             "admin",
-            "secret"
+            "secret",
+
+            // Quickstart, example and documentation templates.
+            "quickstart-admin-password",
+            "honua-compose-dev-master-key-0123456789",
+            "aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2",
+            "replace-with-random-string-of-32-plus-characters",
+            "your_password_here",
+            "minioadmin",
+            "Replace-With-A-Strong-Admin-Password1!",
+            "replace-with-at-least-32-random-characters",
+            "replace-me",
+
+            // Conformance (CITE) harnesses.
+            "CiteAdminPassword123!",
+            "cite_password",
+            "cite_testing_master_key_for_testing_only_not_secure",
+
+            // Client-compatibility harness.
+            "ClientCompatAdmin123!",
+            "compat_password",
+            "client-compat-certification-signing-key-2026-wave-1",
+
+            // Cloud-native / geoprocessing / studio-receipt harnesses.
+            "CngAdminPassword123!",
+            "cng_password",
+            "gp-reliability-admin",
+            "honua-gp-reliability-master-key-0123456789",
+            "aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==",
+            "honua-gp-local-signing-key-0123456789",
+            "StudioReceiptAdmin123!",
+            "StudioReceiptKeyRing",
+            "studio_receipt_password",
+            "studio-receipt-master-key-at-least-32-characters-long",
+            "c3R1ZGlvLXJlY2VpcHQtc2FsdC1mb3ItdGhlLTM0MjktcmVjZWlwdA==",
+            "studio-dashboard-receipt-signing-key-2026-1",
+
+            // Scale, load and soak harnesses.
+            "scale-test-admin-password",
+            "scale-test-master-key-that-is-at-least-32-characters-long",
+            "c2NhbGUtdGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3Rpbmc=",
+            "Load-Soak-Admin-Pass1!",
+            "test-master-key-32-chars-long-000000",
+            "Capacity-Soak-Admin-Pass1!",
+            "capacity-soak-master-key-at-least-32-characters-long",
+            "soak-candidate-db-password",
+
+            // CI harness defaults.
+            "ci-admin-password",
+            "ci-docker-admin-password",
+            "ci-aot-boundary-password",
+            "Security-Nightly-Admin-Pass1!",
+            "security-nightly-master-key-at-least-32-chars",
+            "test-master-key-that-is-at-least-32-characters-long-for-security",
+            "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=",
+            "0123456789abcdef0123456789abcdef",
+
+            // Harness database credentials.
+            "honua",
+            "honua_password",
+            "postgres",
+            "test",
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Secret-bearing configuration paths that are additionally screened against
+    /// <see cref="KnownPlaceholderSecrets"/>, beyond those in <see cref="_secretValidationRules"/>.
+    /// </summary>
+    private static readonly string[] _additionalPlaceholderScreenedPaths =
+    [
+        "Security:ConnectionEncryption:Salt",
+    ];
 
     private enum StorageProvider
     {
@@ -543,13 +702,23 @@ internal static class ConfigurationValidationService
             ["HONUA_ADMIN_PASSWORD"] = _connectionSecretPrefixes,
             ["Security:ConnectionEncryption:MasterKey"] = _connectionSecretPrefixes,
             ["ConnectionStrings:DefaultConnection"] = _connectionSecretPrefixes,
+            ["ConnectionStrings:honua"] = _connectionSecretPrefixes,
             ["ConnectionStrings:redis"] = _envOnlyPrefixes,
             ["Oidc:AzureAd:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Google:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Generic:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:Okta:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:Auth0:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:TokenValidation:SymmetricSigningKey"] = _envOnlyPrefixes,
             ["FileStorage:AwsS3:AccessKeyId"] = _envOnlyPrefixes,
             ["FileStorage:AwsS3:SecretAccessKey"] = _envOnlyPrefixes,
             ["FileStorage:AzureBlob:ConnectionString"] = _envOnlyPrefixes,
+            ["Operations:SecretChannel:KeyRingCertificatePassword"] = _envOnlyPrefixes,
+            // The PKCS#12 material carries the private key that decrypts the data-protection
+            // key ring, so a literal bundle in appsettings*.json is at least as dangerous as
+            // the password above. External sources only; aws/azure are allowed as well as env
+            // because the point of the key is to reference a secret bundle Lambda can read.
+            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = _connectionSecretPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Email:Password"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Slack:WebhookUrl"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Url"] = _envOnlyPrefixes,

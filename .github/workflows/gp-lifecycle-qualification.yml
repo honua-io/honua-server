@@ -1,6 +1,30 @@
 name: GP Lifecycle Qualification
 
 on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'scripts/qualification/gp-lifecycle-harness.sh'
+      - 'scripts/qualification/test_gp_lifecycle_harness.py'
+      - 'scripts/qualification/gp_native_observer.py'
+      - 'docker/worker-gdal/Dockerfile'
+      - 'docker/worker-gdal/native-entry.c'
+      - 'src/Honua.Worker.Gdal/Execution/NativeEntryQualification.cs'
+      - 'src/Honua.Worker.Gdal/Execution/ProcessGdalCommandRunner.cs'
+      - 'scripts/qualification/mcp/**'
+      - '.github/workflows/gp-lifecycle-qualification.yml'
+  push:
+    branches: [trunk]
+    paths:
+      - 'scripts/qualification/gp-lifecycle-harness.sh'
+      - 'scripts/qualification/test_gp_lifecycle_harness.py'
+      - 'scripts/qualification/gp_native_observer.py'
+      - 'docker/worker-gdal/Dockerfile'
+      - 'docker/worker-gdal/native-entry.c'
+      - 'src/Honua.Worker.Gdal/Execution/NativeEntryQualification.cs'
+      - 'src/Honua.Worker.Gdal/Execution/ProcessGdalCommandRunner.cs'
+      - 'scripts/qualification/mcp/**'
+      - '.github/workflows/gp-lifecycle-qualification.yml'
   workflow_dispatch:
     inputs:
       server_image:
@@ -21,7 +45,70 @@ permissions:
   packages: read
 
 jobs:
+  mcp-adapter-controls:
+    name: Durable GP installed MCP adapter controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fetch reviewed canonical-client lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/geospatial-mcp
+          ref: 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          path: .mcp-client
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Install pinned official MCP SDK
+        working-directory: .mcp-client/certification
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
+          npm ci --ignore-scripts
+          ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" "${GITHUB_WORKSPACE}/scripts/qualification/mcp/node_modules"
+      - name: Run installed-SDK wire and lifecycle refusal controls
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          mkdir -p artifacts/gp-mcp-controls
+          node --test scripts/qualification/mcp/*.test.mjs | tee artifacts/gp-mcp-controls/wire.tap
+          python3 -m unittest discover -s scripts/qualification -p test_gp_lifecycle_harness.py -v 2>&1 | tee artifacts/gp-mcp-controls/harness.log
+          python3 - <<'PYTHON'
+          import json, os, re
+          from pathlib import Path
+          text = Path('artifacts/gp-mcp-controls/wire.tap').read_text()
+          counts = {key: int(value) for key, value in re.findall(r'^# (tests|pass|fail|skipped|cancelled) (\d+)$', text, re.M)}
+          assert counts.get('tests', 0) >= 12, counts
+          assert counts.get('pass') == counts['tests'], counts
+          assert all(counts.get(key) == 0 for key in ('fail', 'skipped', 'cancelled')), counts
+          log = Path('artifacts/gp-mcp-controls/harness.log').read_text()
+          match = re.search(r'Ran (\d+) tests? in ', log)
+          assert match and int(match[1]) >= 15 and re.search(r'^OK$', log, re.M), log[-1000:]
+          Path('artifacts/gp-mcp-controls/source-and-counts.json').write_text(json.dumps({
+              'schema': 'honua.gp-mcp-controls/v1', 'candidateQualified': False,
+              'serverSource': os.environ['EXPECTED_SOURCE'], 'sdkSource': '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4',
+              'sdkVersion': '1.32.1', 'wire': counts, 'harnessTests': int(match[1])}, indent=2) + '\n')
+          PYTHON
+      - name: Retain controls separately from candidate qualification
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gp-mcp-controls-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/gp-mcp-controls/
+          if-no-files-found: error
+          retention-days: 30
+
   lifecycle:
+    if: github.event_name == 'workflow_dispatch'
+    needs: mcp-adapter-controls
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -31,7 +118,25 @@ jobs:
       HONUA_GP_LANE: lifecycle
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-lifecycle
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Fetch reviewed canonical-client lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/geospatial-mcp
+          ref: 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          path: .mcp-client
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Install pinned official MCP SDK
+        working-directory: .mcp-client/certification
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
+          npm ci --ignore-scripts
+          ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" "${GITHUB_WORKSPACE}/scripts/qualification/mcp/node_modules"
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -41,7 +146,7 @@ jobs:
         run: scripts/qualification/gp-lifecycle-harness.sh
       - name: Retain scenario receipts, including findings
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: gp-lifecycle-receipts-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-lifecycle/*.json
@@ -55,7 +160,7 @@ jobs:
           sha256sum "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz" > "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz.sha256"
       - name: Retain immutable lifecycle evidence pack
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: gp-lifecycle-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz*

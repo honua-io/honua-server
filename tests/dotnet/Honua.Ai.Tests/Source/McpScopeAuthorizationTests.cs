@@ -8,10 +8,13 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -157,6 +160,47 @@ public sealed class McpScopeAuthorizationTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
 
         IsToolError(result).Should().BeFalse("honua.mcp.full permits every operation");
+    }
+
+    [Theory]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    [InlineData("honua.mcp.read", true)]
+    [InlineData("honua.mcp.discover", false)]
+    [InlineData("unrecognized.scope", false)]
+    [InlineData(null, false)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
+    public async Task ResourcesRead_ArtifactOwnerIsStillBoundByBearerReadScope(string? scope, bool allowed)
+    {
+        // The same signed subject owns the artifact and holds the admin role in
+        // every case. Only OAuth scope narrowing distinguishes these outcomes.
+        var owner = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "operator-123")], "fixture"));
+        var bytes = new byte[] { 137, 80, 78, 71 };
+        var store = _fixture.Services.GetRequiredService<ITemporaryFileService>();
+        var uri = await store.StoreTemporaryFileAsync(bytes, "image/png", principal: owner);
+        var alias = TemporaryFileResource.UriPrefix + uri[(uri.LastIndexOf('/') + 1)..];
+        foreach (var resourceUri in new[] { uri, alias })
+        {
+            var request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"resources/read\",\"params\":{\"uri\":"
+                + JsonSerializer.Serialize(resourceUri) + "}}";
+            using var response = await CallAsync(request, CreateToken(scope));
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadJsonAsync(response);
+            if (allowed)
+            {
+                document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+                var content = document.RootElement.GetProperty("result").GetProperty("contents")[0];
+                Convert.FromBase64String(content.GetProperty("blob").GetString()!).Should().Equal(bytes);
+            }
+            else
+            {
+                document.RootElement.TryGetProperty("result", out _).Should().BeFalse();
+                document.RootElement.GetProperty("error").GetProperty("data").GetProperty("code")
+                    .GetString().Should().Be("insufficient_scope");
+            }
+        }
     }
 
     private static bool IsToolError(JsonElement result)

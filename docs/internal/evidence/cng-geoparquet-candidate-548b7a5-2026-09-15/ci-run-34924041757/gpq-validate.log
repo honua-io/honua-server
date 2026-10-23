@@ -1,0 +1,1 @@
+gpq: error: validation failed: failed to create parquet reader from "cng-results/artifacts/cng.parquet": parquet: file is smaller than indicated metadata size

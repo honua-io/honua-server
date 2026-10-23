@@ -92,6 +92,13 @@ public sealed record MigrationBatchStartRequest
     /// published (issue #1256). Ignored when <see cref="ManifestBody"/> is null.
     /// </summary>
     public bool ApplyRelationships { get; init; }
+
+    /// <summary>
+    /// When true, the batch is not started if the pre-apply construct accounting finds a blocking
+    /// construct (an unselected layer or table, an unsupported service type or construct, a selection the
+    /// manifest never discovered) or cannot run for lack of a readable manifest (issue #4600).
+    /// </summary>
+    public bool RequireFullFidelity { get; init; }
 }
 
 /// <summary>

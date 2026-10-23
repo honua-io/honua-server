@@ -21,6 +21,13 @@ public sealed class SchemaSearchPathTests
     [InlineData("tenant\"; DROP SCHEMA public; --")]
     [InlineData("tenant, public")]
     [InlineData("tenant.name")]
+    [InlineData("tenant\n")]
+    [InlineData("tenant\r")]
+    [InlineData("tenant\0")]
+    [InlineData("ténant")]
+    [InlineData("9tenant")]
+    [InlineData("tenant--comment")]
+    [InlineData("tenant/*comment*/")]
     public void ValidateAndQuote_RejectsInputThatCouldChangeSearchPath(string schemaName)
     {
         var action = () => SchemaSearchPath.ValidateAndQuote(schemaName);
@@ -60,5 +67,15 @@ public sealed class SchemaSearchPathTests
         var action = () => SchemaSearchPath.ApplyAsync(connection, schemaName + "b", schemaName + "b");
 
         await action.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ValidateAndQuote_PreservesMaximumLengthIdentityAndRejectsOverflow()
+    {
+        var schemaName = "Tenant_" + new string('a', 56);
+        SchemaSearchPath.ValidateAndQuote(schemaName).Should().Be('"' + schemaName + '"');
+
+        var action = () => SchemaSearchPath.ValidateAndQuote(schemaName + "b");
+        action.Should().Throw<InvalidOperationException>();
     }
 }

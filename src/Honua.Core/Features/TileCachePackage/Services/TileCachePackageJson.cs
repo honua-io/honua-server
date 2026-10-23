@@ -53,6 +53,10 @@ internal sealed record EsriTileInfo
     [JsonPropertyName("spatialReference")]
     public EsriSpatialReference? SpatialReference { get; init; }
 
+    /// <summary>Tiling-scheme origin. WebMercatorQuad is about (-20037508.34, 20037508.34).</summary>
+    [JsonPropertyName("origin")]
+    public EsriPoint? Origin { get; init; }
+
     /// <summary>Levels of detail.</summary>
     [JsonPropertyName("lods")]
     public EsriLod[]? Lods { get; init; }
@@ -76,6 +80,24 @@ internal sealed record EsriLod
     /// <summary>Level id.</summary>
     [JsonPropertyName("level")]
     public int Level { get; init; }
+
+    /// <summary>Map units per pixel at this level.</summary>
+    [JsonPropertyName("resolution")]
+    public double? Resolution { get; init; }
+
+    /// <summary>Scale denominator. Used for Web Mercator when resolution is absent.</summary>
+    [JsonPropertyName("scale")]
+    public double? Scale { get; init; }
+}
+
+/// <summary>Point used for the tile-scheme origin.</summary>
+internal sealed record EsriPoint
+{
+    [JsonPropertyName("x")]
+    public double? X { get; init; }
+
+    [JsonPropertyName("y")]
+    public double? Y { get; init; }
 }
 
 /// <summary>Storage info block.</summary>
@@ -96,6 +118,7 @@ internal sealed record EsriStorageInfo
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(EsriRootJson))]
+[JsonSerializable(typeof(EsriPoint))]
 internal sealed partial class TileCachePackageJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

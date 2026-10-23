@@ -1,0 +1,4 @@
+honua-server-1  |       Request starting "HTTP/1.1" "GET" "http"://"localhost:18947""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - null null
+honua-server-1  |       Query "query_parquet" executed: "cng"/FeatureServer/1000 in 28.9122 ms
+honua-server-1  |       HTTP "GET" "/rest/services/cng/FeatureServer/1000/query" responded 200 in 54.5367 ms
+honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:18947""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - 200 4947 "application/vnd.apache.parquet" 55.358ms

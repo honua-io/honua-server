@@ -60,7 +60,7 @@ internal static class MapToolLayerResolver
     /// <see cref="GeoprocessingValidationException"/> so they flow through the
     /// shared MCP error mapper.
     /// </summary>
-    public static MapToolLayerContext Resolve(
+    private static MapToolLayerContext Resolve(
         MetadataV2GraphSnapshot snapshot,
         string? serviceId,
         int? layerId)

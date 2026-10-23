@@ -76,6 +76,11 @@ public sealed class RoutingConfigurationValidator : IValidateOptions<RoutingConf
             errors.Add("Routing:MaxDemandPoints must be greater than 0.");
         }
 
+        if (options.MaxSolvePairs <= 0)
+        {
+            errors.Add("Routing:MaxSolvePairs must be greater than 0.");
+        }
+
         if (string.IsNullOrWhiteSpace(options.NetworkDatasetId))
         {
             errors.Add("Routing:NetworkDatasetId is required.");

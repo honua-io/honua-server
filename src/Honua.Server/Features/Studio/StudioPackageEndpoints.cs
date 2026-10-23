@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -208,12 +209,16 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(id, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: id.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: id.ToString("D"),
                 isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
             if (authResult is not null)
@@ -264,6 +269,11 @@ internal static class StudioPackageEndpoints
                     return NotFound(context, result.Detail ?? "Studio content item was not found.");
                 case StudioDeliverableExportStatus.KindMismatch:
                     return BadRequest(context, result.Detail ?? "Requested kind does not match the package family.");
+                case StudioDeliverableExportStatus.RenderUnavailable:
+                    return ServiceUnavailable(
+                        context,
+                        result.Detail ?? "The deliverable could not be rendered on this host.",
+                        result.Code ?? "studio_deliverable/no_renderable_typeface");
             }
 
             var artifact = result.Artifact!;
@@ -496,7 +506,7 @@ internal static class StudioPackageEndpoints
                 {
                     var authResult = await EnsureAuthorizedAsync(
                         authorization, context,
-                        StudioAuthorizationOperation.CreateDraft, existingPointers.OwnerId,
+                        StudioAuthorizationOperation.CreateDraft, existingPointers.OwnerId, existingPointers.TenantId,
                         resourceType: "studio-content-item", resourceId: existingItemId.ToString("D")).ConfigureAwait(false);
                     if (authResult is not null)
                     {
@@ -505,7 +515,7 @@ internal static class StudioPackageEndpoints
                 }
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
 
             if (!authorization.IsAdmin(context.User)
                 && authorization.IsEndUserAuthorizationEnabled
@@ -552,6 +562,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioPackageDraft>.CreateSuccess(draft),
                 StudioApiJsonContext.Default.ApiResponseStudioPackageDraft,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (ArgumentException ex)
         {
@@ -603,6 +617,9 @@ internal static class StudioPackageEndpoints
                     Families = families,
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
                     OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
+                    // Tenant scoping is forced from the request's resolved tenant, never from a
+                    // client parameter (honua-server#4905).
+                    Tenant = authorization.CreateTenantScopeFilter(context.User),
                     SearchTerm = NormalizeOptionalQueryValue(q),
                     Cursor = cursor,
                     Limit = ClampListLimit(limit),
@@ -638,12 +655,16 @@ internal static class StudioPackageEndpoints
             var draft = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (draft is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadDraft, draft.OwnerId,
+                StudioAuthorizationOperation.ReadDraft, draft.OwnerId, draft.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -680,12 +701,16 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.UpdateDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.UpdateDraft, existing.OwnerId,
+                StudioAuthorizationOperation.UpdateDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -710,7 +735,7 @@ internal static class StudioPackageEndpoints
 
             var ownerId = request.OwnerId;
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.UpdateAsync(
                 draftId,
                 new UpdateStudioPackageDraftCommand
@@ -737,6 +762,10 @@ internal static class StudioPackageEndpoints
             return Results.Json(
                 ApiResponse<StudioPackageDraft>.CreateSuccess(draft),
                 StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (ArgumentException ex)
         {
@@ -766,12 +795,16 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.DeleteDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.DeleteDraft, existing.OwnerId,
+                StudioAuthorizationOperation.DeleteDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -780,7 +813,7 @@ internal static class StudioPackageEndpoints
 
             var receipt = await mutationRuntime.DeleteAsync(
                 draftId,
-                BuildMutationContext(context, ConsolePrincipal.ResolveActorId(context.User)),
+                BuildMutationContext(context, authorization.ResolveCallerId(context.User)),
                 context.RequestAborted).ConfigureAwait(false);
             SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
@@ -794,6 +827,10 @@ internal static class StudioPackageEndpoints
                     ApiResponse<object>.SuccessWithMessage("Studio package draft deleted."),
                     StudioApiJsonContext.Default.ApiResponseObject)
                 : NotFound(context, "Studio package draft was not found.");
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -873,19 +910,23 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ValidateDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
+                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.ValidateAsync(
                 draftId,
                 actor,
@@ -902,6 +943,10 @@ internal static class StudioPackageEndpoints
             return Results.Json(
                 ApiResponse<StudioValidationSummary>.CreateSuccess(validation),
                 StudioApiJsonContext.Default.ApiResponseStudioValidationSummary);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (InvalidOperationException ex)
         {
@@ -927,19 +972,23 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ValidateDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
+                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.PreviewAsync(
                 draftId,
                 actor,
@@ -957,6 +1006,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioPreviewPlan>.CreateSuccess(plan),
                 StudioApiJsonContext.Default.ApiResponseStudioPreviewPlan);
         }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(context, ex.Message);
@@ -970,13 +1023,14 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleCreateContentVersion(
         Guid draftId,
-        SaveStudioContentVersionRequest request,
+        SaveStudioContentVersionRequest? request,
         [FromServices] IStudioPackageLifecycleService service,
         [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
+        request ??= new SaveStudioContentVersionRequest();
         if (!TryValidateRequest(request, out var validationError))
         {
             return BadRequest(context, validationError);
@@ -987,12 +1041,16 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.CreateVersion,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.CreateVersion, existing.OwnerId,
+                StudioAuthorizationOperation.CreateVersion, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1006,19 +1064,23 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(existing.ItemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.CreateVersion,
+                    resourceType: "studio-content-item", resourceId: existing.ItemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var itemAuthResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.CreateVersion, pointers.OwnerId,
+                StudioAuthorizationOperation.CreateVersion, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: existing.ItemId.ToString("D")).ConfigureAwait(false);
             if (itemAuthResult is not null)
             {
                 return itemAuthResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.SaveVersionAsync(
                 draftId,
                 existing.Generation,
@@ -1043,6 +1105,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioContentVersion>.CreateSuccess(version),
                 StudioApiJsonContext.Default.ApiResponseStudioContentVersion,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (ArgumentException ex)
         {
@@ -1102,6 +1168,9 @@ internal static class StudioPackageEndpoints
                     Families = families,
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
                     OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
+                    // Tenant scoping is forced from the request's resolved tenant, never from a
+                    // client parameter (honua-server#4905).
+                    Tenant = authorization.CreateTenantScopeFilter(context.User),
                     States = states,
                     SearchTerm = NormalizeOptionalQueryValue(q),
                     Cursor = cursor,
@@ -1402,12 +1471,14 @@ internal static class StudioPackageEndpoints
             {
                 var authResult = await EnsureAuthorizedAsync(
                     authorization, context,
-                    StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
+                    StudioAuthorizationOperation.ReadContentItem, version.OwnerId, version.TenantId,
                     resourceType: "studio-content-version", resourceId: version.VersionId.ToString("D"),
                     isPubliclyReadable: pointers?.PublishedVersionId == version.VersionId).ConfigureAwait(false);
                 if (authResult is null)
                 {
-                    visibleVersions.Add(version);
+                    // The canonical hash input (honua-server#5449) is a single-version read: an
+                    // enumeration would otherwise carry every envelope twice.
+                    visibleVersions.Add(version with { ContentHashInput = null });
                 }
                 else
                 {
@@ -1448,13 +1519,17 @@ internal static class StudioPackageEndpoints
             var version = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
             if (version is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, version.OwnerId, version.TenantId,
                 resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
                 isPubliclyReadable: pointers?.PublishedVersionId == versionId).ConfigureAwait(false);
             if (authResult is not null)
@@ -1498,18 +1573,26 @@ internal static class StudioPackageEndpoints
             var left = await service.GetVersionAsync(itemId, request.LeftVersionId, context.RequestAborted).ConfigureAwait(false);
             if (left is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var right = await service.GetVersionAsync(itemId, request.RightVersionId, context.RequestAborted).ConfigureAwait(false);
             if (right is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var leftAuthResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, left.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, left.OwnerId, left.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (leftAuthResult is not null)
             {
@@ -1518,7 +1601,7 @@ internal static class StudioPackageEndpoints
 
             var rightAuthResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, right.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, right.OwnerId, right.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (rightAuthResult is not null)
             {
@@ -1566,7 +1649,11 @@ internal static class StudioPackageEndpoints
             var targetVersion = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
             if (targetVersion is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.PublishRequest,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             // PR #3018 review, round 5, item 1: publish-request moves the ITEM's
@@ -1579,22 +1666,27 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.PublishRequest,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.PublishRequest, pointers.OwnerId,
+                StudioAuthorizationOperation.PublishRequest, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.CreatePublicationRequestAsync(
                 itemId,
                 versionId,
+                targetVersion.ContentHash,
                 request.Intent,
                 request.WarningAcknowledgement,
                 actor,
@@ -1621,6 +1713,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioPublicationRequest>.CreateSuccess(publication),
                 StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (ArgumentException ex)
         {
@@ -1657,12 +1753,16 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
                 isPubliclyReadable: false).ConfigureAwait(false);
             if (authResult is not null)
@@ -1699,19 +1799,23 @@ internal static class StudioPackageEndpoints
             var targetVersion = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
             if (targetVersion is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReopenVersion,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReopenVersion, targetVersion.OwnerId,
+                StudioAuthorizationOperation.ReopenVersion, targetVersion.OwnerId, targetVersion.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.ReopenVersionAsync(
                 itemId,
                 versionId,
@@ -1734,6 +1838,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioPackageDraft>.CreateSuccess(draft),
                 StudioApiJsonContext.Default.ApiResponseStudioPackageDraft,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (InvalidOperationException ex)
         {
@@ -1772,7 +1880,11 @@ internal static class StudioPackageEndpoints
             var targetVersion = await service.GetVersionAsync(itemId, request.TargetVersionId, context.RequestAborted).ConfigureAwait(false);
             if (targetVersion is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.Rollback,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             // PR #3018 review, round 5, item 1: rollback moves the ITEM's current/published
@@ -1783,19 +1895,23 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.Rollback,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.Rollback, pointers.OwnerId,
+                StudioAuthorizationOperation.Rollback, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.RollbackAsync(
                 itemId,
                 request.TargetVersionId,
@@ -1825,6 +1941,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioRollbackRequest>.CreateSuccess(rollback),
                 StudioApiJsonContext.Default.ApiResponseStudioRollbackRequest,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (ArgumentException ex)
         {
@@ -1859,6 +1979,7 @@ internal static class StudioPackageEndpoints
             authorization, context,
             StudioAuthorizationOperation.Generate,
             resourceOwnerId: authorization.ResolveCallerId(context.User),
+            resourceTenantId: StudioEndpointAuthorization.ResolveRequestTenantId(context),
             resourceType: resourceType,
             resourceId: null);
 
@@ -1869,11 +1990,36 @@ internal static class StudioPackageEndpoints
     /// having already recorded the denial to the audit log (REQ-003/item 5). Elevated
     /// (operator-grant-gated) allow decisions are also audited.
     /// </summary>
+    /// <summary>
+    /// Answers a lookup miss without disclosing whether the resource exists (#3429): the caller is
+    /// first authorized against an ownerless target, so a non-owner receives the same governed
+    /// denial for an unknown id as for another owner's resource. Only a caller entitled to act on
+    /// that target (an admin or a matching delegate grant) learns that it was not found.
+    /// </summary>
+    private static async Task<IResult> NotFoundAfterAuthorizationAsync(
+        StudioEndpointAuthorization authorization,
+        HttpContext context,
+        StudioAuthorizationOperation operation,
+        string resourceType,
+        string? resourceId,
+        string detail)
+    {
+        var authResult = await EnsureAuthorizedAsync(
+            authorization, context, operation,
+            resourceOwnerId: null,
+            // A lookup miss carries the caller's own tenant so the tenant boundary is a no-op
+            // here and the existing ownerless-target denial keeps deciding the response.
+            resourceTenantId: StudioEndpointAuthorization.ResolveRequestTenantId(context),
+            resourceType, resourceId).ConfigureAwait(false);
+        return authResult ?? NotFound(context, detail);
+    }
+
     private static async Task<IResult?> EnsureAuthorizedAsync(
         StudioEndpointAuthorization authorization,
         HttpContext context,
         StudioAuthorizationOperation operation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         string resourceType,
         string? resourceId,
         bool isPubliclyReadable = false)
@@ -1882,6 +2028,7 @@ internal static class StudioPackageEndpoints
             context,
             operation,
             resourceOwnerId,
+            resourceTenantId,
             resourceType,
             resourceId,
             isPubliclyReadable).ConfigureAwait(false);
@@ -1889,6 +2036,17 @@ internal static class StudioPackageEndpoints
         if (decision.IsAllowed)
         {
             return null;
+        }
+
+        // A cross-tenant target is answered as a lookup miss (honua-server#4905): a 403 would
+        // confirm that another tenant's item/version/draft id exists. The machine-readable code
+        // is still carried so a client can distinguish it from an ordinary 404.
+        if (string.Equals(decision.Code, StudioAuthorizationService.CrossTenantDeniedCode, StringComparison.Ordinal))
+        {
+            return NotFound(
+                context,
+                decision.Reason ?? "The Studio resource was not found.",
+                StudioAuthorizationService.CrossTenantDeniedCode);
         }
 
         return Forbidden(context, decision.Reason ?? "The caller is not authorized to perform this operation.", decision.Code ?? "studio_authorization/denied");
@@ -1948,11 +2106,41 @@ internal static class StudioPackageEndpoints
     private static IResult NotFound(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail);
 
+    /// <summary>
+    /// Builds a Studio <c>404 Not Found</c> problem carrying a machine-readable <c>code</c>
+    /// member, used by the tenant boundary so a refusal stays diagnosable without disclosing
+    /// that another tenant's resource exists (honua-server#4905).
+    /// </summary>
+    private static IResult NotFound(HttpContext context, string detail, string code)
+        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail, code);
+
     private static IResult Conflict(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status409Conflict, "Conflict", detail);
 
+    // honua-server#5733: a Redis-off host composes draft state (volatile outside Production) but
+    // not the governed proposal control plane. A mutation that needs it -- publish-request's
+    // separate-principal approval, or any mutation on a fail-closed Production store -- refuses
+    // with the shared typed capability-unavailable problem, never a 409 or 500 that drops the
+    // missingDependency receipt.
+    private static IResult CapabilityUnavailable(HttpContext context, CapabilityUnavailableException exception)
+        => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+            context,
+            exception.Message,
+            exception.MissingDependency,
+            exception.Remediation,
+            exception.RemediationRef,
+            exception.Capability);
+
     private static IResult ServerError(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status500InternalServerError, "Internal Server Error", detail);
+
+    /// <summary>
+    /// Builds the deliverable-render-unavailable RFC 7807 problem (honua-server#4908): a machine-
+    /// readable <c>code</c> member so a caller can distinguish "no renderable typeface on this
+    /// host" from a generic 503, rather than receiving a 200 over a blank artifact.
+    /// </summary>
+    private static IResult ServiceUnavailable(HttpContext context, string detail, string code)
+        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status503ServiceUnavailable, "Service Unavailable", detail, code);
 
     internal sealed class StudioPackageEndpointsMarker;
 }

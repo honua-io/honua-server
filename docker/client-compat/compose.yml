@@ -92,8 +92,25 @@ services:
       PGUSER: postgres
       PGPASSWORD: compat_password
       PGDATABASE: honua_compat
+      # The three publishers at the end of run.sh create derived artifacts - the
+      # PMTiles archive, the COG and the 3D Tiles / I3S scene - through the running
+      # server, because LocalFileStorage indexes its objects once at construction and
+      # cannot see a file written to disk afterwards. That publish is authenticated,
+      # and compose does not inherit this from the sibling honua service, so without
+      # it the publishers skip, run.sh treats the skip as non-fatal, and the pmtiles,
+      # cog and 3d-tiles cells fail on a 404 that looks like a missing feature.
+      # Matches HONUA_ADMIN_PASSWORD on the honua service above.
+      HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      HONUA_BASE_URL: http://honua:5000
+      # Certification probes the advertised identity. Override this when that
+      # identity is not the in-network host. publish-scene.py refuses to skip
+      # when this URL does not serve the tileset (#5218).
+      HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL: ${HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL:-http://honua:5000}
+    # The real server must own schema creation and its migration journal.
+    # Seeding first creates migration-owned tables without journal entries,
+    # which correctly makes startup/readiness reject the fixture (#4731/#4735).
     depends_on:
-      postgres:
+      honua:
         condition: service_healthy
     networks:
       - compat
@@ -123,6 +140,9 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      # The scene publisher and both client read surfaces are opt-in routes.
+      Capabilities__Experimental__serve.3d-tiles-scene__Enabled: "true"
+      Capabilities__Experimental__serve.i3s-scene__Enabled: "true"
       # Deterministic local OIDC verifier for certification auth breadth. No
       # external IdP is contacted: client lanes mint short-lived HS256 tokens
       # against this test-only issuer/audience/signing-key tuple.
@@ -169,8 +189,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      seed:
-        condition: service_completed_successfully
     networks:
       - compat
     healthcheck:
@@ -233,6 +251,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
       gdal-worker:
         condition: service_started
       multidim-object-seed:
@@ -246,12 +266,15 @@ services:
       context: ../..
       dockerfile: docker/client-compat/gdal/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_GDAL_SERVICE_ID: test_service
       HONUA_GDAL_COLLECTION_ID: "0"
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -269,12 +292,16 @@ services:
       context: ../..
       dockerfile: docker/client-compat/pyqgis/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
+      HONUA_PYQGIS_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_PYQGIS_SERVICE_ID: test_service
       HONUA_PYQGIS_COLLECTION_ID: "0"
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -287,12 +314,16 @@ services:
       context: ../..
       dockerfile: docker/client-compat/openlayers/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_SERVICE_ID: browser_compat
       HONUA_LAYER_ID: "2000"
+      HONUA_PAGING_COLLECTION_ID: "0"
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -305,10 +336,13 @@ services:
       context: ../..
       dockerfile: docker/client-compat/cesium/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -321,6 +355,7 @@ services:
       context: ../..
       dockerfile: docker/client-compat/arcgis-stub/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       ARCGIS_STUB_SERVICE_NAME: browser_compat
       ARCGIS_STUB_LAYER_ID: "2000"
@@ -332,6 +367,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -358,7 +395,7 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_GEOPANDAS_SERVICE_ID: test_service
       HONUA_GEOPANDAS_COLLECTION_ID: "0"
-      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "2011"
       HONUA_CERT_API_KEY: ClientCompatAdmin123!
       HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
       HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
@@ -373,6 +410,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -393,7 +432,7 @@ services:
       # consumes, so the two lanes certify the same rendered surface.
       HONUA_OWSLIB_RASTER_SERVICE_ID: browser_compat
       HONUA_OWSLIB_RASTER_LAYER_ID: "2000"
-      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "2011"
       HONUA_CERT_RASTER_SERVICE_ID: cert_auth_raster
       HONUA_CERT_RASTER_LAYER_ID: "2010"
       HONUA_CERT_API_KEY: ClientCompatAdmin123!
@@ -410,6 +449,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -435,6 +476,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -460,6 +503,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -488,6 +533,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:

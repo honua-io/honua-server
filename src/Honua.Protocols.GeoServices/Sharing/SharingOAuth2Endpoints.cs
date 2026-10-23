@@ -3,8 +3,10 @@
 
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -35,7 +37,11 @@ internal static class SharingOAuth2Endpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var oauthGroup = endpoints.MapGroup(string.Empty)
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance, CredentialResponseCacheMetadata.Instance)
+            // NoCache is required (SEC-20): every route in this group either issues or
+            // consumes a caller-bound credential, so none of the responses is a pure
+            // function of the request URL the shared output cache keys on.
+            .CacheOutput(static policy => policy.NoCache());
 
         oauthGroup.MapGet(PortalOAuthRoutes.AuthorizePath, HandleAuthorizeAsync)
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
@@ -100,12 +106,13 @@ internal static class SharingOAuth2Endpoints
             .WithDisplayName("ArcGIS Portal OAuth2 Token Revocation")
             .WithName("SharingRestOAuth2Revoke")
             .WithSummary("RFC 7009 per-token revocation for opaque and JWT access tokens and refresh tokens")
-            .WithDescription("Immediately invalidates the presented access or refresh token so it fails every subsequent authorization check. Per RFC 7009 Â§2.2 a revocation request always returns 200, even for an unknown or already-revoked token. The presented token value is the authorization to revoke it (#2155).")
+            .WithDescription("Immediately invalidates the presented access or refresh token so it fails every subsequent authorization check. Per RFC 7009 Â§2.2 a revocation request returns 200 for an unknown or already-revoked token. If the authoritative store cannot confirm deletion, the endpoint returns 503 so the caller can retry (#6164). The presented token value is the authorization to revoke it (#2155).")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
 
         oauthGroup.MapPost(PortalOAuthRoutes.IntrospectPath, HandleIntrospectAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token Introspection")
@@ -154,7 +161,20 @@ internal static class SharingOAuth2Endpoints
             return OAuth2Error("invalid_request", "token is required.");
         }
 
-        await revocationService.RevokeAsync(token, tokenTypeHint, context.RequestAborted).ConfigureAwait(false);
+        try
+        {
+            await revocationService.RevokeAsync(token, tokenTypeHint, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (ServiceUnavailableException)
+        {
+            // The shared store could not confirm deletion. 200 here would leave the
+            // token valid cluster-wide while telling the holder it was revoked
+            // (honua-server#6164). 503 is retryable; the body stays generic.
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Token revocation is temporarily unavailable.",
+                retryable: true);
+        }
 
         // RFC 7009 Â§2.2: the authorization server responds with HTTP 200 for a
         // successful revocation as well as for an unknown/already-revoked token, so a
@@ -313,11 +333,24 @@ internal static class SharingOAuth2Endpoints
 
         var query = context.Request.Query;
 
-        // Surface an IdP-side error verbatim shape but do not leak details.
+        // An IdP denial still carries the combined state. Recover the broker session
+        // and send the error to the allow-listed client redirect. A missing or
+        // unknown session stays a JSON 400 so the error cannot choose its own target.
         var idpError = ReadFirst(query["error"]);
         if (idpError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Authentication failed with the identity provider.");
+            var errorResult = await broker.RedirectIdpErrorAsync(
+                ReadFirst(query["state"]),
+                idpError,
+                context.RequestAborted).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(errorResult.RedirectUri))
+            {
+                return Results.Redirect(errorResult.RedirectUri);
+            }
+
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Authentication failed with the identity provider.");
         }
 
         var result = await broker
@@ -328,14 +361,16 @@ internal static class SharingOAuth2Endpoints
                 context.RequestAborted)
             .ConfigureAwait(false);
 
-        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.RedirectUri))
+        // A validated client redirect (success or a post-session failure) is
+        // delivered to that URI. Failures before the redirect is known stay here.
+        if (!string.IsNullOrWhiteSpace(result.RedirectUri))
         {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                result.ErrorDescription ?? "Authorization could not be completed.");
+            return Results.Redirect(result.RedirectUri);
         }
 
-        return Results.Redirect(result.RedirectUri);
+        return StandardErrorHelpers.CreateBadRequest(
+            context,
+            result.ErrorDescription ?? "Authorization could not be completed.");
     }
 
     private static async Task<IResult> HandleTokenAsync(
@@ -426,10 +461,19 @@ internal static class SharingOAuth2Endpoints
 
     private static async Task<string?> ReadUserInfoTokenAsync(HttpContext context)
     {
+        // OIDC Core 5.3.1 makes the Authorization header the PREFERRED way to present
+        // the access token and the form body an alternative, so a form-encoded POST
+        // that carries a bearer header must still be accepted. Returning early on the
+        // form values alone rejected exactly that request with invalid_request, which
+        // is the shape ArcGIS Pro and the portal-sharing matrix case both send.
         if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-            return ReadFirst(form["access_token"]) ?? ReadFirst(form["token"]);
+            var fromForm = ReadFirst(form["access_token"]) ?? ReadFirst(form["token"]);
+            if (!string.IsNullOrWhiteSpace(fromForm))
+            {
+                return fromForm;
+            }
         }
 
         return ReadBearerToken(context.Request.Headers["Authorization"])

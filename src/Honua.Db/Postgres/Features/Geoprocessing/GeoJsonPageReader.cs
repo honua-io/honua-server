@@ -125,7 +125,8 @@ internal static class GeoJsonPageReader
     private static object? ConvertScalar(JsonElement value) => value.ValueKind switch
     {
         JsonValueKind.String => value.GetString(),
-        JsonValueKind.Number => value.TryGetInt64(out var l) ? l : value.GetDouble(),
+        // Box before the conditional can promote Int64 to Double and round large IDs.
+        JsonValueKind.Number => value.TryGetInt64(out var l) ? (object)l : value.GetDouble(),
         JsonValueKind.True => true,
         JsonValueKind.False => false,
         JsonValueKind.Null or JsonValueKind.Undefined => null,

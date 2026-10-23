@@ -36,6 +36,13 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
     /// </summary>
     public const string PartitionKeyParameterKey = "admission.partitionKey";
 
+    /// <summary>
+    /// Total attempts spent on the active-job snapshot read before the submission is refused.
+    /// One retry: a StackExchange.Redis command timeout has already burned its own deadline, so
+    /// the elapsed timeout is the backoff and a second immediate attempt adds no extra delay.
+    /// </summary>
+    private const int ActiveJobReadAttempts = 2;
+
     private const string GlobalPartitionSentinel = "__global__";
     private const string AnonymousPrincipalSentinel = "__anonymous__";
 
@@ -99,8 +106,28 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
 
         if (_jobStore != null)
         {
-            var active = await _jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var active = await ReadActiveJobsAsync(cancellationToken).ConfigureAwait(false);
+            if (active == null)
+            {
+                // The active-job snapshot backs the backpressure, concurrency and cost gates. When
+                // the store cannot be read and any of them is configured, refuse with a retryable
+                // backpressure denial rather than admitting past a limit we cannot evaluate — the
+                // same fail-closed rule the shared rate limit follows (#3853).
+                if (options.MaxConcurrentJobsGlobal > 0
+                    || options.MaxConcurrentJobsPerPartition > 0
+                    || options.MaxCostWeightPerPartition > 0)
+                {
+                    return Deny(
+                        ExecutionAdmissionDimension.Backpressure,
+                        $"backpressure:{request.JobKind.ToString().ToLowerInvariant()}:active-state-unavailable",
+                        "Shared active-job state is unavailable; retry later.",
+                        options.DefaultRetryAfterSeconds,
+                        new ExecutionAdmissionSnapshot(), request, activity, partitionTag, principalTag);
+                }
+
+                active = [];
+            }
+
             activeGlobal = active.Count;
 
             foreach (var job in active)
@@ -164,7 +191,19 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         // Claim a slot so concurrent requests from the same principal cannot both pass.
         if (options.MaxSubmissionsPerWindow > 0 && !string.IsNullOrWhiteSpace(request.PrincipalId))
         {
-            var (claimed, postClaimCount) = await TryClaimSubmissionAsync(request, options).ConfigureAwait(false);
+            var (claimed, postClaimCount, sharedUnavailable) = await TryClaimSubmissionAsync(request, options).ConfigureAwait(false);
+            if (sharedUnavailable)
+            {
+                // A shared rate limit is never silently replaced by a per-node bucket: each node
+                // would grant the full window and a restart would reset it (#3853).
+                return Deny(
+                    ExecutionAdmissionDimension.Backpressure,
+                    $"backpressure:{request.JobKind.ToString().ToLowerInvariant()}:shared-rate-unavailable",
+                    "Shared submission rate state is unavailable; retry later.",
+                    options.DefaultRetryAfterSeconds,
+                    snapshot, request, activity, partitionTag, principalTag);
+            }
+
             if (!claimed)
             {
                 var rateSnapshot = snapshot with { SubmissionsInWindow = postClaimCount };
@@ -330,6 +369,40 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         return 1.0;
     }
 
+    /// <summary>
+    /// Reads the active-job snapshot, retrying once when the store faults transiently.
+    /// Returns <c>null</c> when both attempts fail.
+    /// </summary>
+    /// <remarks>
+    /// The read is a side-effect-free count of the shared active set, so re-issuing it is safe.
+    /// A Redis command that times out is not a connection failure, so the multiplexer's own
+    /// <c>ConnectRetry</c>/<c>ReconnectRetryPolicy</c> never covers it: before this retry a single
+    /// timed-out SMEMBERS escaped <see cref="EvaluateAsync"/> as an unhandled exception and failed
+    /// the whole submission, which is how a CPU-contended CI runner turned one 5.6 s stall into a
+    /// red GPServer submitJob (honua-server trunk run 35039723809).
+    /// </remarks>
+    private async Task<IReadOnlyList<ExecutionJobRecord>?> ReadActiveJobsAsync(CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await _jobStore!.ListActiveAsync(kind: null, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not OperationCanceledException)
+            {
+                if (attempt >= ActiveJobReadAttempts)
+                {
+                    ExecutionAdmissionLog.ActiveStateUnavailable(_logger, attempt, ex);
+                    return null;
+                }
+
+                ExecutionAdmissionLog.ActiveStateReadRetrying(_logger, attempt, ex);
+            }
+        }
+    }
+
     private int PeekSubmissions(ExecutionAdmissionRequest request, ExecutionAdmissionOptions options)
     {
         if (string.IsNullOrWhiteSpace(request.PrincipalId) || options.MaxSubmissionsPerWindow <= 0)
@@ -346,7 +419,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         return bucket.Count(_timeProvider.GetUtcNow(), TimeSpan.FromSeconds(options.RateWindowSeconds));
     }
 
-    private async Task<(bool Claimed, int Count)> TryClaimSubmissionAsync(
+    private async Task<(bool Claimed, int Count, bool SharedUnavailable)> TryClaimSubmissionAsync(
         ExecutionAdmissionRequest request, ExecutionAdmissionOptions options)
     {
         var key = BuildRateKey(request);
@@ -363,11 +436,14 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
                 var nowMs = now.ToUnixTimeMilliseconds();
                 var result = (long)await _redis.ScriptEvaluateAsync(script, [new RedisKey(redisKey)],
                     [nowMs, (long)window.TotalMilliseconds, options.MaxSubmissionsPerWindow, $"{nowMs}:{Guid.NewGuid():N}"]).ConfigureAwait(false);
-                return (result >= 0, (int)Math.Abs(result));
+                return (result >= 0, (int)Math.Abs(result), false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                // Fail closed (#3853): the process-local bucket below is only exact on a single
+                // node, so it must never stand in for a configured shared limit.
                 ExecutionAdmissionLog.RedisUnavailable(_logger, ex);
+                return (false, 0, true);
             }
         }
         var bucket = _rateBuckets.GetOrAdd(key, static _ => new RateBucket());
@@ -382,7 +458,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             SweepIdleBuckets(now, window);
         }
 
-        return (claimed, count);
+        return (claimed, count, false);
     }
 
     private int _claimCount;
@@ -403,8 +479,9 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
 
     /// <summary>
     /// Sliding-window counter. Tracks timestamps of recent submissions and admits
-    /// up to <c>limit</c> claims within the window. Distributed coordination is a
-    /// follow-on; see <see cref="ExecutionAdmissionOptions"/> default rationale.
+    /// up to <c>limit</c> claims within the window. Used only when no Redis multiplexer is
+    /// composed (a single node); with Redis the shared sorted-set claim is authoritative and an
+    /// unreachable Redis fails closed rather than falling back here (#3853).
     /// </summary>
     private sealed class RateBucket
     {

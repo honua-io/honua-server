@@ -127,10 +127,11 @@ export CITE_PROFILE="$PROFILE"
 export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
 
-if [[ "$VERBOSE" == "true" ]]; then
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d
-else
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d > /dev/null 2>&1
+# Compose rejects a failed migration/seed dependency before the readiness wait.
+# Retain its full diagnostic, including the exact missing migration name.
+if ! $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server seed cite-teamengine; then
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server seed postgres >&2 || true
+    exit 1
 fi
 
 echo -e "${YELLOW}Waiting for services to be ready...${NC}"
@@ -196,7 +197,7 @@ fi
 
 echo -e "${YELLOW}Running WFS 1.0 CITE tests...${NC}"
 set +e
-timeout "$CITE_TIMEOUT" $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up --abort-on-container-exit --exit-code-from cite-runner cite-runner
+timeout "$CITE_TIMEOUT" $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up --no-deps --abort-on-container-exit --exit-code-from cite-runner cite-runner
 TEST_EXIT_CODE=$?
 set -e
 

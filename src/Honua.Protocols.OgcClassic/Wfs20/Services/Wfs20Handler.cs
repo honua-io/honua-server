@@ -15,6 +15,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -31,6 +32,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
+using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
@@ -62,6 +64,7 @@ internal sealed partial class Wfs20Handler
 
     private readonly ILogger<Wfs20Handler> _logger;
     private readonly IFeatureReader _featureReader;
+    private readonly FeatureProviderQueryRouter? _providerQueryRouter;
     private readonly IFeatureWriter _featureWriter;
     private readonly IGmlFeatureStore _gmlFeatureStore;
     private readonly IMetadataV2GraphProvider _metadataV2GraphProvider;
@@ -88,6 +91,7 @@ internal sealed partial class Wfs20Handler
         _logger = logger;
 
         _featureReader = queryServices.FeatureReader;
+        _providerQueryRouter = queryServices.ProviderQueryRouter;
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _metadataV2GraphProvider = queryServices.MetadataV2GraphProvider;
         _filterExpressionService = queryServices.FilterExpressionService;
@@ -163,8 +167,9 @@ internal sealed partial class Wfs20Handler
                 cancellationToken: cancellationToken,
                 wfsVersion: wfsVersion);
 
-            var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
-            return (featureType, query, layerMatched);
+            var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
+            var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+            return (featureType, query, layerMatched, reader);
         })).ConfigureAwait(false);
 
         // Known limitation (BH2-006): the per-type COUNT results above are snapshots taken at
@@ -178,7 +183,7 @@ internal sealed partial class Wfs20Handler
         var remainingCount = count;
         long totalMatched = 0;
 
-        foreach (var (featureType, query, layerMatched) in perTypeResults)
+        foreach (var (featureType, query, layerMatched, reader) in perTypeResults)
         {
             totalMatched += layerMatched;
 
@@ -212,7 +217,8 @@ internal sealed partial class Wfs20Handler
                 featureType,
                 query with { Offset = layerOffset, Limit = layerLimit },
                 layerMatched,
-                srsName));
+                srsName,
+                reader));
 
             remainingCount -= layerLimit;
         }
@@ -273,9 +279,28 @@ internal sealed partial class Wfs20Handler
             throw new ArgumentException(validation.ErrorMessage ?? "Invalid WFS query parameters.");
         }
 
-        return _queryProcessor.ToFeatureQuery(unifiedQuery, resource);
+        return _queryProcessor.ToFeatureQuery(unifiedQuery, resource) with
+        {
+            // Providers may interpret empty OutFields as all columns. Preserve an
+            // explicit geometry-only projection through the shared exclusion flag.
+            ExcludeAttributes = projectedFields is { Length: 0 }
+        };
     }
 
+
+    /// <summary>
+    /// Client-facing text for a request validation failure. A filter parse failure carries an
+    /// authored reason (for example the unsupported operator's name), which is returned as is.
+    /// Other validation exceptions can originate deeper in the stack, so their message stays in
+    /// the server log and the client gets fixed text.
+    /// </summary>
+    internal static string DescribeValidationFailure(Exception exception)
+        => exception switch
+        {
+            Fes20ParseException { ClientReason: { } reason } => reason,
+            Fes20ParseException => UnreportableFilterErrorMessage,
+            _ => GeneralizedValidationErrorMessage,
+        };
 
     private SqlFragment? TranslateFesFilter(MetadataV2Resource resource, string? filter)
     {
@@ -286,6 +311,10 @@ internal sealed partial class Wfs20Handler
 
         // Default filter geometry without an explicit srsName to the queried feature type's
         // storage CRS rather than an unconditional EPSG:4326 assumption (#2737).
+        resource = resource with
+        {
+            SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
+        };
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var expression = Fes20Parser.ParseFilter(filter, defaultSrid);
         expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
@@ -311,6 +340,7 @@ internal sealed partial class Wfs20Handler
         string? filter,
         string? resourceId)
     {
+        filter = NormalizeOgcFilterEncoding(filter);
         if (!TryExtractStandaloneResourceIds(filter, out var normalizedFilter, out var filterResourceIds))
         {
             return (filter, resourceId);
@@ -409,12 +439,26 @@ internal sealed partial class Wfs20Handler
         }
 
         var resolved = ImmutableArray.CreateBuilder<string>();
+        var geometryField = resource.FindPrimaryGeometryField();
         foreach (var requestedProperty in requestedProperties)
         {
-            var fieldName = WfsPropertyNameResolver.Resolve(resource, requestedProperty, allowGeometryAlias: true)
-                ?? throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{resource.Metadata.Name}'.");
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, requestedProperty, allowGeometryAlias: true);
+            if (fieldName is null)
+            {
+                // A spatial resource with no geometry schema field still advertises a geometry
+                // property (ResolveGeometryPropertyName), and DescribeFeatureType and the GML
+                // writers both emit it. Field resolution has no field to match, so accept the
+                // advertised property here instead of rejecting the request as unknown.
+                if (geometryField is null &&
+                    ResolveGeometryPropertyName(resource) is { } fallbackGeometryProperty &&
+                    WfsPropertyNameResolver.MatchesGeometryProperty(requestedProperty, fallbackGeometryProperty))
+                {
+                    continue;
+                }
 
-            var geometryField = resource.FindPrimaryGeometryField();
+                throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{resource.Metadata.Name}'.");
+            }
+
             if (geometryField != null &&
                 fieldName.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
@@ -568,7 +612,8 @@ internal sealed partial class Wfs20Handler
             EnvelopeMinX = minX <= maxX ? minX : null,
             EnvelopeMinY = minX <= maxX ? minY : null,
             EnvelopeMaxX = minX <= maxX ? maxX : null,
-            EnvelopeMaxY = minX <= maxX ? maxY : null
+            EnvelopeMaxY = minX <= maxX ? maxY : null,
+            AntimeridianSplit = crsDefinition.IsGeographic && minX > maxX
         };
     }
 
@@ -966,8 +1011,8 @@ internal sealed partial class Wfs20Handler
 
         foreach (var plan in planSet.Plans)
         {
-            var result = await _gmlFeatureStore.QueryGmlAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
-            queryResults.Add((plan, result.Items));
+            var features = await QueryGmlFeaturesAsync(plan, cancellationToken).ConfigureAwait(false);
+            queryResults.Add((plan, features));
         }
 
         var returnedCount = queryResults.Sum(entry => entry.Features.Length);
@@ -1008,7 +1053,6 @@ internal sealed partial class Wfs20Handler
         CancellationToken cancellationToken)
     {
         var features = new List<GeoJsonFeature>();
-        var geoJsonFeatureStore = _featureReader as IGeoJsonFeatureStore;
 
         foreach (var plan in planSet.Plans)
         {
@@ -1016,8 +1060,14 @@ internal sealed partial class Wfs20Handler
             // OutputAxisOrder applies only to GML serialization.
             const AxisOrder axisOrder = AxisOrder.EastNorth;
             var projectedProperties = GetProjectedProperties(plan.Query);
+            var buildOptions = GeoJsonFeatureBaseBuilder.PrepareOptions(plan.Descriptor.Resource,
+                new GeoJsonFeatureBuildOptions(
+                    ProjectedProperties: projectedProperties,
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(plan.Descriptor.Resource),
+                    IdFactory: featureId => BuildFeatureId(plan.Descriptor, featureId)));
+            var reader = ReaderFor(plan);
 
-            if (geoJsonFeatureStore is not null)
+            if (reader is IGeoJsonFeatureStore geoJsonFeatureStore)
             {
                 var result = await geoJsonFeatureStore.QueryGeoJsonAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
                 foreach (var feature in result.Items)
@@ -1026,22 +1076,20 @@ internal sealed partial class Wfs20Handler
                         feature,
                         plan.Descriptor.Resource,
                         axisOrder,
-                        projectedProperties,
-                        featureId => BuildFeatureId(plan.Descriptor, featureId)));
+                        buildOptions));
                 }
 
                 continue;
             }
 
-            var fallbackResult = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
+            var fallbackResult = await reader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in fallbackResult.Items)
             {
                 features.Add(CreateGeoJsonFeature(
                     feature,
                     plan.Descriptor.Resource,
                     axisOrder,
-                    projectedProperties,
-                    featureId => BuildFeatureId(plan.Descriptor, featureId)));
+                    buildOptions));
             }
         }
 
@@ -1058,11 +1106,12 @@ internal sealed partial class Wfs20Handler
         WfsFeatureTypeDescriptor descriptor,
         FeatureQuery query,
         string normalizedFormat,
+        IFeatureReader reader,
         CancellationToken cancellationToken)
     {
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
         {
-            if (_featureReader is not IPagedFeatureReader pagedFeatureReader)
+            if (reader is not IPagedFeatureReader pagedFeatureReader)
             {
                 throw new InvalidOperationException("Paged feature queries are not supported by the configured feature store.");
             }
@@ -1122,35 +1171,36 @@ internal sealed partial class Wfs20Handler
 
         var features = new List<GeoJsonFeature>();
         long? totalCount = null;
+        var buildOptions = GeoJsonFeatureBaseBuilder.PrepareOptions(descriptor.Resource,
+            new GeoJsonFeatureBuildOptions(
+                ProjectedProperties: GetProjectedProperties(query),
+                IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(descriptor.Resource),
+                IdFactory: featureId => BuildFeatureId(descriptor, featureId)));
 
-        if (_featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
+        if (reader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
         {
             var result = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(descriptor.StorageLayerId, query, cancellationToken);
             totalCount = result.TotalCount;
-            var projectedProperties = GetProjectedProperties(query);
             foreach (var feature in result.Items)
             {
                 features.Add(CreateGeoJsonFeature(
                     feature,
                     descriptor.Resource,
                     AxisOrder.EastNorth,
-                    projectedProperties,
-                    featureId => BuildFeatureId(descriptor, featureId)));
+                    buildOptions));
             }
         }
-        else if (_featureReader is IPagedFeatureReader pagedFeatureReader)
+        else if (reader is IPagedFeatureReader pagedFeatureReader)
         {
             var result = await pagedFeatureReader.QueryPageAsync(descriptor.StorageLayerId, query, cancellationToken);
             totalCount = result.TotalCount;
-            var projectedProperties = GetProjectedProperties(query);
             foreach (var feature in result.Items)
             {
                 features.Add(CreateGeoJsonFeature(
                     feature,
                     descriptor.Resource,
                     AxisOrder.EastNorth,
-                    projectedProperties,
-                    featureId => BuildFeatureId(descriptor, featureId)));
+                    buildOptions));
             }
         }
         else
@@ -1191,7 +1241,7 @@ internal sealed partial class Wfs20Handler
             // The CSV geometry column is GeoJSON, which is always longitude,latitude
             // (RFC 7946 §3.1.1); OutputAxisOrder applies only to GML serialization.
             const AxisOrder axisOrder = AxisOrder.EastNorth;
-            var result = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
+            var result = await ReaderFor(plan).QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in result.Items)
             {
                 var row = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
@@ -1450,17 +1500,13 @@ internal sealed partial class Wfs20Handler
         EncodedGeoJsonFeature feature,
         MetadataV2Resource resource,
         AxisOrder axisOrder,
-        IReadOnlySet<string>? projectedProperties,
-        Func<long, object?> idFactory)
+        GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder);
         return GeoJsonFeatureBaseBuilder.Create(
                 feature,
                 resource,
-                new GeoJsonFeatureBuildOptions(
-                    ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory))
+                buildOptions)
             .ToOgcGeoJsonFeature(geometry);
     }
 
@@ -1468,17 +1514,13 @@ internal sealed partial class Wfs20Handler
         Feature feature,
         MetadataV2Resource resource,
         AxisOrder axisOrder,
-        IReadOnlySet<string>? projectedProperties,
-        Func<long, object?> idFactory)
+        GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return GeoJsonFeatureBaseBuilder.Create(
                 feature,
                 resource,
-                new GeoJsonFeatureBuildOptions(
-                    ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory))
+                buildOptions)
             .ToOgcGeoJsonFeature(geometry);
     }
 
@@ -1752,7 +1794,7 @@ internal sealed partial class Wfs20Handler
 
     private static IEnumerable<MetadataV2Field> GetVisibleAttributeFields(MetadataV2Resource resource)
         => resource.SchemaFields.Where(field =>
-            field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
+            !field.Hidden && field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
 
     private static bool HasGeometry(MetadataV2Resource resource)
         => resource.FindPrimaryGeometryField() is not null ||
@@ -1975,25 +2017,26 @@ internal sealed partial class Wfs20Handler
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 
-    private bool ShouldUsePagedGetFeatureFastPath(
+    private bool CanAttemptPagedGetFeatureFastPath(
         IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
-        string normalizedFormat,
         bool isHitsRequest,
         int maxFeatures)
+        => _wfs20Options.NumberMatchedPolicy == Wfs20NumberMatchedPolicy.UnknownWhenExpensive
+            && !isHitsRequest
+            && selectedTypes.Count == 1
+            && maxFeatures > 0;
+
+    /// <summary>
+    /// True when <paramref name="reader"/> can serve the paged GetFeature fast path for
+    /// <paramref name="normalizedFormat"/>. Callers must pass the reader the request will
+    /// actually query, not the injected store.
+    /// </summary>
+    internal static bool ReaderSupportsPagedGetFeatureFastPath(IFeatureReader reader, string normalizedFormat)
     {
-        if (_wfs20Options.NumberMatchedPolicy != Wfs20NumberMatchedPolicy.UnknownWhenExpensive)
-        {
-            return false;
-        }
-
-        if (isHitsRequest || selectedTypes.Count != 1 || maxFeatures <= 0)
-        {
-            return false;
-        }
-
+        ArgumentNullException.ThrowIfNull(reader);
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
         {
-            return _featureReader is IPagedFeatureReader;
+            return reader is IPagedFeatureReader;
         }
 
         var isJsonFormat =
@@ -2005,7 +2048,7 @@ internal sealed partial class Wfs20Handler
             return false;
         }
 
-        return _featureReader is IPagedGeoJsonFeatureStore || _featureReader is IPagedFeatureReader;
+        return reader is IPagedGeoJsonFeatureStore || reader is IPagedFeatureReader;
     }
 
     private static string FormatNumberMatched(long? totalCount)
@@ -2019,13 +2062,73 @@ internal sealed partial class Wfs20Handler
         string QualifiedName,
         string LocalName,
         string NamespacePrefix,
-        string NamespaceUri);
+        string NamespaceUri,
+        MetadataV2GraphSnapshot Snapshot);
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,
         FeatureQuery Query,
         long MatchedCount,
-        string? RequestedSrsName = null);
+        string? RequestedSrsName = null,
+        IFeatureReader? Reader = null);
+
+    private IFeatureReader ReaderFor(LayerQueryPlan plan) => plan.Reader ?? _featureReader;
+
+    private async Task<IFeatureReader> ResolveQueryReaderAsync(
+        WfsFeatureTypeDescriptor descriptor,
+        CancellationToken cancellationToken)
+    {
+        var publication = descriptor.Publication;
+        if (_providerQueryRouter is null ||
+            descriptor.Service is null ||
+            publication is null ||
+            string.IsNullOrEmpty(publication.StorageBindingId))
+        {
+            return _featureReader;
+        }
+
+        var read = await StorageBoundFeatureReader.ResolveAsync(
+                _featureReader,
+                _providerQueryRouter,
+                descriptor.Snapshot,
+                descriptor.Service,
+                descriptor.Resource,
+                publication,
+                descriptor.StorageLayerId,
+                FeatureProviderReadOperation.Query,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return read.UseInjectedReader ? _featureReader : read.Reader;
+    }
+
+    private async Task<ImmutableArray<GmlFeature>> QueryGmlFeaturesAsync(
+        LayerQueryPlan plan,
+        CancellationToken cancellationToken)
+    {
+        var reader = ReaderFor(plan);
+        if (reader is IGmlFeatureStore gmlFeatureStore)
+        {
+            var result = await gmlFeatureStore.QueryGmlAsync(
+                    plan.Descriptor.StorageLayerId,
+                    plan.Query,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return result.Items;
+        }
+
+        var features = await reader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken)
+            .ConfigureAwait(false);
+        var builder = ImmutableArray.CreateBuilder<GmlFeature>(features.Items.Length);
+        foreach (var feature in features.Items)
+        {
+            builder.Add(GmlFeature.Create(
+                feature.Id,
+                BuildGeometryGmlFragment(feature.Geometry, plan, Wfs20Utilities.GmlNamespace),
+                feature.Attributes));
+        }
+
+        return builder.ToImmutable();
+    }
 
     private readonly record struct LayerQueryPlanSet(
         ImmutableArray<LayerQueryPlan> Plans,

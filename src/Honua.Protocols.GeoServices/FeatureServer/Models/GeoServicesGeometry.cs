@@ -72,16 +72,19 @@ public sealed class GeoServicesGeometry
     /// <summary>
     /// MultiPoint coordinates
     /// </summary>
+    [JsonConverter(typeof(EsriVertexListJsonConverter))]
     public double[][]? Points { get; init; }
 
     /// <summary>
     /// Polyline paths
     /// </summary>
+    [JsonConverter(typeof(EsriVertexListsJsonConverter))]
     public double[][][]? Paths { get; init; }
 
     /// <summary>
     /// Polygon rings
     /// </summary>
+    [JsonConverter(typeof(EsriVertexListsJsonConverter))]
     public double[][][]? Rings { get; init; }
 
     /// <summary>

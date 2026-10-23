@@ -56,6 +56,9 @@ docs/
 scripts/*
 !scripts/docker/
 !scripts/docker/restore-dotnet-with-github-packages.sh
+!scripts/qualification/
+scripts/qualification/*
+!scripts/qualification/gp_native_observer.py
 
 # Local artifacts not needed for app image builds
 tests/

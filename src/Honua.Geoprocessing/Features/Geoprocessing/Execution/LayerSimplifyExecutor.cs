@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -29,8 +30,9 @@ internal sealed class LayerSimplifyExecutor : LayerSourcedFeatureExecutor
     public LayerSimplifyExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger<LayerSimplifyExecutor> logger)
-        : base(serviceScopeFactory, options, logger)
+        ILogger<LayerSimplifyExecutor> logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
+        : base(serviceScopeFactory, options, logger, limitsOptions)
     {
     }
 
@@ -44,6 +46,8 @@ internal sealed class LayerSimplifyExecutor : LayerSourcedFeatureExecutor
         var tolerance = ReadTolerance(inputs);
         var preserveTopology = ReadBool(inputs, "preserveTopology", defaultValue: true);
 
+        var vertices = LayerComputationBudget.CountVertices(source);
+        LayerComputationBudget.EnsureTopologyWork(vertices, vertices, Options.CurrentValue.MaxTopologyWork);
         var output = new List<IFeature>(source.Count);
         foreach (var feature in source)
         {

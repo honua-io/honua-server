@@ -9,17 +9,29 @@
 //   - PMTiles v3 archive    <- PMTilesWriter             (-> `pmtiles verify`)
 //   - 3D Tiles tileset.json <- TilesetDocumentWriter     (-> `3d-tiles-validator`)
 //   - glTF 2.0 GLB content  <- GeometryTileBuilder        (-> `gltf_validator`)
+//   - GeoTIFF COG tile      <- CogMetadataExtractor +    (-> rasterio / rio-cogeo
+//                              CogTiffTileEncoder            / gdalinfo)
+//   - Decoded Zarr subset   <- ZarrSubsetReader          (-> numpy oracle)
+//
+// The last two exist because the lane's COG and Zarr cells previously validated
+// `rio_cogeo` and `xarray` output with no Honua code in the loop (#4398). Honua
+// now consumes those third-party fixtures over counted HTTP range requests and
+// the canonical clients validate what Honua emitted.
 //
 // GeoParquet here additionally cross-checks the same writer the live
 // FeatureServer `f=parquet` path uses, so the lane can compare the offline and
 // HTTP encodings if needed; the lane's primary GeoParquet/FlatGeobuf evidence is
 // still fetched live from the seeded store-backed FeatureServer.
 //
-// Usage: dotnet run --project <this> -- <output-directory>
+// Usage: dotnet run --project <this> -- <output-directory> [canonical-fixture-directory]
 // Emits: <out>/honua.parquet, <out>/honua.pmtiles,
-//        <out>/3dtiles/tileset.json, <out>/3dtiles/content.glb
+//        <out>/3dtiles/tileset.json, <out>/3dtiles/content.glb,
+//        <out>/honua.cog.tif, <out>/honua-consumer-evidence.json
 
 using System.Collections.Immutable;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Honua.Cng.ArtifactGen;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -31,14 +43,39 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
 var outDir = args.Length > 0 ? args[0] : "cng-artifacts";
+var fixtureDir = args.Length > 1 ? args[1] : outDir;
 Directory.CreateDirectory(outDir);
 
 GenerateGeoParquet(Path.Combine(outDir, "honua.parquet"));
 await GeneratePMTilesAsync(Path.Combine(outDir, "honua.pmtiles")).ConfigureAwait(false);
 GenerateThreeDTiles(Path.Combine(outDir, "3dtiles"));
+await GenerateConsumerArtifactsAsync(fixtureDir, outDir).ConfigureAwait(false);
 
 Console.WriteLine($"CNG artifacts written to {Path.GetFullPath(outDir)}");
 return 0;
+
+// --- Honua-consumed cloud-native artifacts --------------------------------
+
+// Fails loudly rather than silently degrading: a missing canonical input means
+// the lane would fall back to validating third-party output for COG and Zarr,
+// which is exactly the false proof #4398 was filed for.
+static async Task GenerateConsumerArtifactsAsync(string fixtures, string outputDirectory)
+{
+    var cogSource = Path.Combine(fixtures, HonuaConsumerArtifacts.CogSourceKey);
+    if (!File.Exists(cogSource))
+    {
+        throw new FileNotFoundException(
+            $"Canonical COG input '{cogSource}' is missing. Run generate-canonical-fixtures.py before the artifact generator.",
+            cogSource);
+    }
+
+    var evidence = await HonuaConsumerArtifacts.GenerateAsync(fixtures, outputDirectory).ConfigureAwait(false);
+    var evidencePath = Path.Combine(outputDirectory, "honua-consumer-evidence.json");
+    await File.WriteAllTextAsync(
+        evidencePath,
+        evidence.ToJsonString(new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
+    Console.WriteLine($"Honua consumer evidence: {evidencePath}");
+}
 
 // --- GeoParquet 1.1.0 -----------------------------------------------------
 

@@ -223,12 +223,22 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
                 FunctionVersion = "41"
             }
         };
-        var backend = new AwsLambdaGitOpsDeployBackend(aliasClient, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
+        var backend = new AwsLambdaGitOpsDeployBackend(
+            aliasClient,
+            NullLogger<AwsLambdaGitOpsDeployBackend>.Instance,
+            RollbackDataPlaneTestSupport.HealthyProbe());
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["lambda.alias_name"] = "live",
+            ["target.resource_id"] = "arn:aws:lambda:us-east-1:123456789012:function:honua-prod-lambda"
+        };
+        RollbackDataPlaneTestSupport.AddProof(parameters);
 
         var observation = await backend.ObserveAsync(CreateOperation(
             desiredRevision: "42",
             currentRevision: "41",
-            status: WorkflowOperationStatus.RollbackRequested));
+            status: WorkflowOperationStatus.RollbackRequested,
+            parameters: parameters));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         observation.ObservedRevision.Should().Be("41");
@@ -317,6 +327,10 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
         // win so the client targets the emulator endpoint.
         client.Config.ServiceURL.Should().Be("http://localhost:4566/");
         client.Config.RegionEndpoint.Should().BeNull();
+
+        // Without a pinned signing region the SDK resolves one from the ambient chain, ending in
+        // EC2 instance metadata, which hangs every request inside a container (#4998).
+        client.Config.AuthenticationRegion.Should().Be("us-east-1");
     }
 
     [Fact]

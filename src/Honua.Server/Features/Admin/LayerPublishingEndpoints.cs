@@ -8,6 +8,8 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -27,6 +29,7 @@ internal static class LayerPublishingEndpoints
     private const string LayerPublishingValidationMessage = "Layer publishing request is invalid.";
     private const string LayerPublishingConflictMessage = "Layer publishing operation conflicted with existing data.";
     private const string LayerPublishingNotFoundMessage = "The requested resource was not found.";
+    private const string LayerPublishingConcurrencyMessage = "The catalog was updated concurrently. Retry the request.";
 
     internal sealed class LayerPublishingEndpointsLog;
 
@@ -46,11 +49,19 @@ internal static class LayerPublishingEndpoints
             .WithDisplayName("Publish Layer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PublishedLayerSummary>>(StatusCodes.Status201Created)
+            .Produces<ApiResponse<LayerPublishAcceptedResponse>>(StatusCodes.Status202Accepted)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
             .Produces<ApiResponse<object>>(StatusCodes.Status409Conflict)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/jobs/{jobId}", HandleGetLayerPublishJob)
+            .WithDisplayName("Get Layer Publish Job")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<ApiResponse<LayerPublishJobStatusResponse>>(StatusCodes.Status200OK)
+            .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound);
 
         group.MapPut("/{layerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
@@ -94,7 +105,7 @@ internal static class LayerPublishingEndpoints
             .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleListLayers(
             string id,
             string? serviceName,
@@ -105,13 +116,19 @@ internal static class LayerPublishingEndpoints
     {
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var layers = await publishingService.ListPublishedLayersAsync(
                 connectionString,
                 serviceName ?? "default",
+                connectionId,
                 context.RequestAborted);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(layers));
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (LayerPublishingException ex)
         {
@@ -127,6 +144,10 @@ internal static class LayerPublishingEndpoints
         {
             LayerPublishingLog.LayerListConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerListInvalidOperation, ex);
         }
         catch (InvalidOperationException ex)
         {
@@ -148,7 +169,7 @@ internal static class LayerPublishingEndpoints
             string id,
             PublishLayerRequest request,
             [FromServices] ISecureConnectionResolver resolver,
-            [FromServices] ILayerPublishingService publishingService,
+            [FromServices] ILayerPublishJobs jobs,
             [FromServices] IDatabaseMigrationRunner migrationRunner,
             HttpContext context,
             [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
@@ -165,16 +186,45 @@ internal static class LayerPublishingEndpoints
             return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
         }
 
+        if (!LayerPublicationNamespace.IsValid(request.Namespace))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: namespace must contain 1-128 ASCII letters, digits, '.', '_' or '-'."));
+        }
+
+        if (request.Namespace is not null && string.IsNullOrWhiteSpace(context.RequestServices
+                .GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: namespaced publication requires a resolved tenant."));
+        }
+
         if (!LayerSourceGovernance.TryCreate(
                 request.License,
                 request.Attribution,
                 request.Publisher,
                 request.LicenseUrl,
                 request.SourceUrl,
-                out var sourceGovernance,
+                out _,
                 out var governanceError))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {governanceError}"));
+        }
+
+        if (!TryParseStorageMode(request.StorageMode, out _))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: storageMode must be 'source' or 'managed'."));
+        }
+
+        // Captured source metadata is held to the import capture caps before any database work.
+        if (!LayerPublishSourceMetadataBounds.TryValidate(
+                request.FieldDomains,
+                request.Subtypes,
+                request.AttributeRules,
+                out var sourceMetadataError))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {sourceMetadataError}"));
         }
 
         try
@@ -194,28 +244,34 @@ internal static class LayerPublishingEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
-            var publishRequest = new LayerPublishRequest
-            {
-                Schema = request.Schema,
-                Table = request.Table,
-                LayerName = request.LayerName,
-                Description = request.Description,
-                GeometryColumn = request.GeometryColumn,
-                GeometryType = request.GeometryType,
-                Srid = request.Srid,
-                PrimaryKey = request.PrimaryKey,
-                Fields = request.Fields ?? Array.Empty<string>(),
-                ServiceName = request.ServiceName,
-                ConnectionId = connectionId,
-                Enabled = request.Enabled,
-                SourceGovernance = sourceGovernance
-            };
-
-            var result = await publishingService.PublishLayerAsync(
+            var tenantId = context.RequestServices
+                .GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId;
+            var publishRequest = LayerPublishRequestMapper.CreateDomain(request, connectionId, tenantId);
+            var admission = await jobs.SubmitAsync(
                 connectionString,
+                connectionId,
                 publishRequest,
-                context.RequestAborted);
+                id,
+                context.RequestAborted).ConfigureAwait(false);
+            if (admission.Kind == LayerPublishAdmissionKind.Unavailable)
+            {
+                return LayerPublishRefusals.ToResult(context);
+            }
 
+            if (admission.Kind == LayerPublishAdmissionKind.Queued)
+            {
+                return TypedResults.Accepted(
+                    admission.StatusUrl,
+                    ApiResponse<LayerPublishAcceptedResponse>.CreateSuccess(new LayerPublishAcceptedResponse
+                    {
+                        JobId = admission.JobId!,
+                        StatusUrl = admission.StatusUrl!,
+                        RowsTotal = admission.RowsTotal,
+                        Status = "Queued",
+                    }));
+            }
+
+            var result = admission.Layer!;
             await InvalidateServiceCatalogCacheAsync(
                 context,
                 result.ServiceName,
@@ -250,6 +306,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerPublishConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerPublishInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerPublishInvalidOperation(logger, ex);
@@ -261,6 +321,47 @@ internal static class LayerPublishingEndpoints
         catch (UnauthorizedAccessException)
         {
             return TypedResults.Forbid();
+        }
+    }
+
+    private static bool TryParseStorageMode(string? value, out LayerStorageMode storageMode)
+        => LayerPublishRequestMapper.TryParseStorageMode(value, out storageMode);
+
+    private static async Task<IResult> HandleGetLayerPublishJob(
+        string id,
+        string jobId,
+        [FromServices] ILayerPublishJobs jobs,
+        HttpContext context)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+
+        try
+        {
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var progress = await jobs.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+            if (progress is null
+                || (progress.ConnectionId != connectionId
+                    && !string.Equals(progress.ConnectionKey, id, StringComparison.OrdinalIgnoreCase)))
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+            }
+
+            return TypedResults.Ok(ApiResponse<LayerPublishJobStatusResponse>.CreateSuccess(new LayerPublishJobStatusResponse
+            {
+                JobId = progress.OperationId,
+                Status = progress.Status.ToString(),
+                RowsMaterialized = progress.RowsMaterialized,
+                RowsTotal = progress.RowsTotal,
+                LayerId = progress.LayerId,
+                ErrorMessage = progress.ErrorMessage,
+            }));
+        }
+        catch (ResourceNotFoundException)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
     }
 
@@ -282,7 +383,8 @@ internal static class LayerPublishingEndpoints
 
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var validationRequest = new TablePublishValidationRequest
             {
                 Schema = request.Schema,
@@ -324,6 +426,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerListConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerPublishInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerPublishInvalidOperation(logger, ex);
@@ -355,7 +461,8 @@ internal static class LayerPublishingEndpoints
 
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -373,6 +480,7 @@ internal static class LayerPublishingEndpoints
             var result = await publishingService.RefreshLayerExtentsAsync(
                 connectionString,
                 serviceName ?? "default",
+                connectionId,
                 context.RequestAborted);
 
             if (result == null)
@@ -410,6 +518,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerExtentRefreshConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerExtentRefreshInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerExtentRefreshInvalidOperation(logger, ex);
@@ -441,7 +553,8 @@ internal static class LayerPublishingEndpoints
 
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -459,6 +572,7 @@ internal static class LayerPublishingEndpoints
             var result = await publishingService.RefreshMaterializedFeaturesAsync(
                 connectionString,
                 layerId,
+                connectionId,
                 context.RequestAborted);
 
             if (result == null)
@@ -490,6 +604,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerFeatureRefreshConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerFeatureRefreshInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerFeatureRefreshInvalidOperation(logger, ex);
@@ -504,7 +622,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetLayerEnabled(
             string id,
             int layerId,
@@ -518,7 +636,8 @@ internal static class LayerPublishingEndpoints
     {
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -535,6 +654,7 @@ internal static class LayerPublishingEndpoints
                 layerId,
                 serviceName ?? "default",
                 request.Enabled,
+                connectionId,
                 context.RequestAborted);
 
             if (result == null)
@@ -549,6 +669,10 @@ internal static class LayerPublishingEndpoints
                 logger).ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<PublishedLayerSummary>.CreateSuccess(result));
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (LayerPublishingException ex)
         {
@@ -565,6 +689,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerToggleConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerToggleInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerToggleInvalidOperation(logger, ex);
@@ -579,7 +707,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetServiceLayersEnabled(
             string id,
             LayerEnabledRequest request,
@@ -592,7 +720,8 @@ internal static class LayerPublishingEndpoints
     {
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -608,6 +737,7 @@ internal static class LayerPublishingEndpoints
                 connectionString,
                 serviceName ?? "default",
                 request.Enabled,
+                connectionId,
                 context.RequestAborted);
 
             var cacheServiceName = !string.IsNullOrWhiteSpace(serviceName)
@@ -620,6 +750,10 @@ internal static class LayerPublishingEndpoints
                 logger).ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(result));
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (LayerPublishingException ex)
         {
@@ -636,6 +770,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerBulkToggleConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerBulkToggleInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerBulkToggleInvalidOperation(logger, ex);
@@ -650,17 +788,13 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<string> ResolveConnectionStringAsync(
-        string id,
-        ISecureConnectionResolver resolver,
-        CancellationToken cancellationToken)
+    private static Conflict<ApiResponse<object>> CatalogConcurrencyConflict(
+        ILogger<LayerPublishingEndpointsLog> logger,
+        Action<ILogger, Exception> log,
+        MetadataV2GraphConcurrencyException exception)
     {
-        if (Guid.TryParse(id, out var connectionId))
-        {
-            return await resolver.ResolveConnectionStringAsync(connectionId, cancellationToken);
-        }
-
-        return await resolver.ResolveConnectionStringAsync(id, cancellationToken);
+        log(logger, exception);
+        return TypedResults.Conflict(ApiResponse<object>.Failure(LayerPublishingConcurrencyMessage));
     }
 
     private static async Task<Guid> ResolveConnectionIdAsync(string id, HttpContext context)

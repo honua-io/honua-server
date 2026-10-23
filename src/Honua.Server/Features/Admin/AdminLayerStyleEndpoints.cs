@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -120,7 +121,8 @@ internal static class AdminLayerStyleEndpoints
             context,
             layerId,
             scope: AccessScope.Write,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken,
+            operation: AuthorizationOperation.Admin).ConfigureAwait(false);
         if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;

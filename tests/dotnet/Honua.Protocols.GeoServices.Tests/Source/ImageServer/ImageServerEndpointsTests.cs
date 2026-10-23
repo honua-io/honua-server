@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net;
+using System.Collections.Immutable;
 using System.IO.Compression;
+using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -21,6 +23,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -348,12 +351,188 @@ public class ImageServerEndpointsTests
         return store;
     }
 
+    [IntegrationTheory]
+    [InlineData("query", "where=1%3D1&outFields=*")]
+    [InlineData("100", "")]
+    [InlineData("find", "toGeometry=%7B%22x%22%3A0%2C%22y%22%3A0%7D&maxCount=1")]
+    [InlineData("identify", "geometry=0,0&sr=4326&returnCatalogItems=true")]
+    [InlineData("measure", "measureOperation=esriMensurationPoint&geometryType=esriGeometryPoint&fromGeometry=0,0")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/find")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/query")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}")]
+    public async Task CatalogSecondaryRead_MaskedFields_AreAbsent(string operation, string query)
+    {
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("nAmE", "ACQUISITIONdate", "centerX", "MAXps"));
+        var rasters = CreateRasterStoreSubstitute();
+        rasters.IdentifyAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
+                Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 0,
+                Y = 0,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 42d }
+            });
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(rasters);
+            services.AddSingleton(masks);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/{operation}?f=json&{query}");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            using var json = JsonDocument.Parse(content);
+            var root = json.RootElement;
+            if (operation is "query" or "100")
+            {
+                var feature = operation == "query" ? root.GetProperty("features")[0] : root;
+                var attributes = feature.GetProperty("attributes");
+                attributes.TryGetProperty("Name", out _).Should().BeFalse();
+                attributes.TryGetProperty("AcquisitionDate", out _).Should().BeFalse();
+                attributes.GetProperty("OBJECTID").GetInt64().Should().Be(100);
+                if (operation == "query")
+                {
+                    root.GetProperty("fields").EnumerateArray()
+                        .Select(field => field.GetProperty("name").GetString())
+                        .Should().NotContain(["Name", "AcquisitionDate"]);
+                }
+            }
+            else if (operation == "find")
+            {
+                var image = root.GetProperty("images")[0];
+                image.TryGetProperty("uri", out _).Should().BeFalse();
+                image.TryGetProperty("acquisitionDate", out _).Should().BeFalse();
+                image.TryGetProperty("center", out _).Should().BeFalse();
+                image.TryGetProperty("pixelSize", out _).Should().BeFalse();
+                rasters.ClearReceivedCalls();
+                using var oracle = await fixture.Client.GetAsync(
+                    $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry=%7B%22x%22%3A0%2C%22y%22%3A0%7D&where=Name%20LIKE%20%27a%25%27");
+                oracle.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var oracleJson = JsonDocument.Parse(await oracle.Content.ReadAsStringAsync());
+                oracleJson.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+                await rasters.DidNotReceive().QueryCatalogAsync(
+                    Arg.Any<int>(), Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>());
+            }
+            else
+            {
+                root.TryGetProperty("name", out _).Should().BeFalse();
+                if (operation == "identify")
+                {
+                    var attributes = root.GetProperty("catalogItems").GetProperty("features")[0].GetProperty("attributes");
+                    attributes.TryGetProperty("Name", out _).Should().BeFalse();
+                    attributes.GetProperty("OBJECTID").GetInt64().Should().Be(100);
+                }
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore)
     {
         var fixture = new WebAppFixture()
             .ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         return fixture;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task Tile_MissingWithoutBlankFallback_ReturnsHttp404ForBothRoutes()
+    {
+        var store = CreateRasterStoreSubstitute();
+        var raster = await store.GetPrimaryRasterInfoAsync(TestLayerId, CancellationToken.None)
+            ?? throw new InvalidOperationException("The raster substitute must provide its primary raster.");
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            string[] paths =
+            [
+                $"/rest/services/{TestLayerId}/ImageServer/tile/9/197/79",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/tile/9/197/79"
+            ];
+            string[] queries = ["", "?blankTile=true", "?blankTile=false"];
+            for (var selection = 0; selection < 2; selection++)
+            {
+                RasterInfo[] selectedRasters = selection == 0 ? [] : [raster];
+                store.QueryRastersAsync(default, default, default)
+                    .ReturnsForAnyArgs(selectedRasters);
+                foreach (var path in paths)
+                {
+                    foreach (var query in queries)
+                    {
+                        using var response = await fixture.Client.GetAsync(path + query);
+                        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+                        response.Headers.Contains("blank-tile").Should().BeFalse();
+                        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                        body.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+                            .Should().Be(StatusCodes.Status404NotFound);
+                    }
+                }
+            }
+
+            await store.Received(6).GetImageTileAsync(
+                TestLayerId, 100, 9, 197, 79, RasterFormat.PNG, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task Tile_Available_ReturnsUnchangedImageBytesForBothRoutes()
+    {
+        var store = CreateRasterStoreSubstitute();
+        byte[] bytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        store.GetImageTileAsync(
+                TestLayerId, 100, 9, 196, 79, RasterFormat.PNG, Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = bytes,
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 3857
+            });
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            string[] paths =
+            [
+                $"/rest/services/{TestLayerId}/ImageServer/tile/9/196/79",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/tile/9/196/79"
+            ];
+            foreach (var path in paths)
+            {
+                using var response = await fixture.Client.GetAsync(path);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+                (await response.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
+                response.Headers.Contains("blank-tile").Should().BeFalse();
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private static async Task<WebAppFixture> CreateFixtureAsync(
@@ -594,6 +773,139 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata, Operations.Identify, Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/identify")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeStatisticsHistograms")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/getSamples")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/legend")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/keyProperties")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WMTS")]
+    [Endpoint("GET /rest/services/{id}/ImageServer")]
+    public async Task ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex()
+    {
+        // #4065: the service route resolves the aliased publication (layerIndex 41) to its storage
+        // layer (TestLayerId). A second service publishes a DIFFERENT storage layer under
+        // layerIndex == TestLayerId. Handlers used to re-resolve the storage id as a LayerIndex, so
+        // they either 404'd or answered with the colliding publication's name.
+        const int aliasedLayerIndex = 41;
+        const int collidingStorageLayerId = 7;
+        const string serviceId = "aliased-image";
+        const string collidingServiceId = "colliding-image";
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        var provider = new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder()
+                .AddResource("aliased-image-resource", "Aliased image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+                .AddStorageBinding("aliased-image-binding", "aliased-image-resource", "raster_data",
+                    storageType: MetadataV2StorageType.RelationalTable, storageLayerId: TestLayerId)
+                .AddService("aliased-image-service", serviceId,
+                    protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
+                .AddPublication("aliased-image-publication", "aliased-image-service", "aliased-image-resource",
+                    layerIndex: aliasedLayerIndex, storageBindingId: "aliased-image-binding",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .AddResource("colliding-image-resource", "Colliding image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+                .AddStorageBinding("colliding-image-binding", "colliding-image-resource", "raster_data_other",
+                    storageType: MetadataV2StorageType.RelationalTable, storageLayerId: collidingStorageLayerId)
+                .AddService("colliding-image-service", collidingServiceId,
+                    protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
+                .AddPublication("colliding-image-publication", "colliding-image-service", "colliding-image-resource",
+                    layerIndex: TestLayerId, storageBindingId: "colliding-image-binding",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .Build());
+        var rasterStore = CreateSamplingRasterStoreSubstitute();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            var serviceBase = $"/rest/services/{serviceId}/ImageServer";
+
+            using (var info = await GetGeoServicesJsonAsync(fixture, $"{serviceBase}?f=json"))
+            {
+                info.RootElement.GetProperty("name").GetString().Should().Be("aliased-image-publication");
+            }
+
+            // The numeric route addresses storage layers, so it binds the same way.
+            using (var numericInfo = await GetGeoServicesJsonAsync(fixture, $"/rest/services/{TestLayerId}/ImageServer?f=json"))
+            {
+                numericInfo.RootElement.GetProperty("name").GetString().Should().Be("aliased-image-publication");
+            }
+
+            using (var collidingInfo = await GetGeoServicesJsonAsync(fixture, $"/rest/services/{collidingServiceId}/ImageServer?f=json"))
+            {
+                collidingInfo.RootElement.GetProperty("name").GetString().Should().Be("colliding-image-publication");
+            }
+
+            using (var identify = await GetGeoServicesJsonAsync(
+                       fixture, $"{serviceBase}/identify?f=json&geometryType=esriGeometryPoint&geometry=0,0"))
+            {
+                identify.RootElement.GetProperty("value").GetString().Should().Be("42");
+            }
+
+            var envelope = Uri.EscapeDataString(
+                """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+            using (var statistics = await GetGeoServicesJsonAsync(
+                       fixture, $"{serviceBase}/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={envelope}"))
+            {
+                statistics.RootElement.GetProperty("statistics")[0].GetProperty("max").GetDouble().Should().Be(255);
+            }
+
+            var points = Uri.EscapeDataString("""{"points":[[0,0]],"spatialReference":{"wkid":4326}}""");
+            using (var samples = await GetGeoServicesJsonAsync(
+                       fixture, $"{serviceBase}/getSamples?f=json&geometryType=esriGeometryMultipoint&geometry={points}"))
+            {
+                samples.RootElement.GetProperty("samples")[0].GetProperty("value").GetString().Should().Be("42");
+            }
+
+            using (var legend = await GetGeoServicesJsonAsync(fixture, $"{serviceBase}/legend?f=json"))
+            {
+                legend.RootElement.GetProperty("layers")[0].GetProperty("layerName").GetString()
+                    .Should().Be("aliased-image-publication");
+            }
+
+            using (await GetGeoServicesJsonAsync(fixture, $"{serviceBase}/keyProperties?f=json"))
+            {
+            }
+
+            using (var featureInfo = await GetGeoServicesJsonAsync(
+                       fixture,
+                       $"{serviceBase}/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={serviceId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128&INFOFORMAT=application/json"))
+            {
+                featureInfo.RootElement.GetProperty("hasData").GetBoolean().Should().BeTrue();
+                featureInfo.RootElement.GetProperty("bands")[0].GetProperty("value").GetInt32().Should().Be(42);
+            }
+
+            // Every pixel read targets the aliased publication's storage layer, never the
+            // colliding one or the publication index.
+            await rasterStore.DidNotReceive().QueryRastersAsync(
+                aliasedLayerIndex, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
+            await rasterStore.Received().IdentifyAsync(
+                TestLayerId, Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
+                Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<JsonDocument> GetGeoServicesJsonAsync(WebAppFixture fixture, string uri)
+    {
+        using var response = await fixture.Client.GetAsync(uri);
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"{uri}: {content}");
+        var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse($"{uri}: {content}");
+        return document;
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_WithStretchRenderingRule_AppliesStretchAndReturnsPng()
@@ -791,12 +1103,63 @@ public class ImageServerEndpointsTests
             restfulResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var restfulContent = await restfulResponse.Content.ReadAsStringAsync();
             restfulContent.Should().Contain($"<ows:Identifier>{serviceId}</ows:Identifier>");
-            restfulContent.Should().Contain("/ImageServer/WMTS/{Layer}/{Style}/{TileMatrixSet}");
+            restfulContent.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
         }
         finally
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}")]
+    [Operation(Operations.Metadata)]
+    public async Task Issue5522_GetCapabilities_ResourceUrlUsesLiteralLayerIdentifier()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var serviceId = WebAppFixture.TestServiceId;
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            content.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
+            content.Should().NotContain("/ImageServer/WMTS/{Layer}/");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [UnitTest]
+    public void Issue5522_GetCapabilities_ResourceUrlPercentEncodesReservedServiceId()
+    {
+        // Route values arrive decoded, so a service requested as imagery%23west must be
+        // re-escaped in both the WMTS base path and the literal layer segment; a raw '#'
+        // would turn the rest of the template into a fragment.
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection()
+                .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+                .BuildServiceProvider(),
+        };
+        context.Request.Scheme = "https";
+        context.Request.Path = "/rest/services/imagery#west/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml";
+        context.Request.QueryString = new QueryString("?token=abc");
+
+        var xml = Honua.Protocols.GeoServices.ImageServer.Handlers.ImageServerWmtsHandler.BuildCapabilitiesXml(
+            context,
+            "imagery#west",
+            timeExtent: null,
+            additionalGrids: []);
+
+        xml.Should().Contain(
+            "/rest/services/imagery%23west/ImageServer/WMTS/imagery%23west/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png?token=abc");
+        xml.Should().Contain("<ows:Identifier>imagery#west</ows:Identifier>");
+        xml.Should().NotContain("imagery#west/");
     }
 
     [IntegrationTest]
@@ -963,6 +1326,97 @@ public class ImageServerEndpointsTests
             bands.GetArrayLength().Should().Be(1);
             bands[0].GetProperty("band").GetInt32().Should().Be(1);
             bands[0].GetProperty("value").GetInt32().Should().Be(42);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.Identify)]
+    public async Task Wmts_GetFeatureInfo_JsonIsGeoJsonForDataNoDataAndEmpty(bool hasData, bool empty)
+    {
+        var store = CreateSamplingRasterStoreSubstitute();
+        store.IdentifyAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
+                Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 0,
+                Y = 0,
+                Srid = 3857,
+                HasData = hasData,
+                BandValues = new Dictionary<int, object?> { [1] = hasData ? 33.5 : null, [2] = double.NaN }
+            });
+        if (empty)
+        {
+            store.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<RasterInfo>());
+        }
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128&INFOFORMAT=application/json");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = json.RootElement;
+            root.GetProperty("type").GetString().Should().Be("FeatureCollection");
+            var features = root.GetProperty("features");
+            features.GetArrayLength().Should().Be(empty ? 0 : 1);
+            if (!empty)
+            {
+                var feature = features[0];
+                feature.GetProperty("type").GetString().Should().Be("Feature");
+                feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+                var coordinates = feature.GetProperty("geometry").GetProperty("coordinates");
+                coordinates[0].GetDouble().Should().BeInRange(-180, 180);
+                coordinates[1].GetDouble().Should().BeInRange(-90, 90);
+                var properties = feature.GetProperty("properties");
+                properties.GetProperty("band2").ValueKind.Should().Be(JsonValueKind.Null);
+                if (hasData)
+                {
+                    properties.GetProperty("band1").GetDouble().Should().Be(33.5);
+                }
+                else
+                {
+                    properties.GetProperty("band1").ValueKind.Should().Be(JsonValueKind.Null);
+                }
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/legend")]
+    [Operation(Operations.GetMetadata)]
+    public async Task Wmts_GetCapabilities_AdvertisedLegend_ResolvesToPngWithLegendSwatches()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var capabilities = System.Xml.Linq.XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var legendUrl = capabilities.Descendants().Single(element => element.Name.LocalName == "LegendURL")
+                .Attribute(System.Xml.Linq.XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value;
+            legendUrl.Should().Contain("/legend?f=png").And.NotContain("GetTile");
+            using var legend = await fixture.Client.GetAsync(new Uri(legendUrl).PathAndQuery);
+            legend.StatusCode.Should().Be(HttpStatusCode.OK);
+            legend.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+            using var bitmap = SkiaSharp.SKBitmap.Decode(await legend.Content.ReadAsByteArrayAsync());
+            bitmap.Should().NotBeNull();
+            bitmap.Height.Should().BeLessThan(256);
+            bitmap.GetPixel(10, 10).Alpha.Should().BeGreaterThan(0);
         }
         finally
         {
@@ -1757,12 +2211,12 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Area.Should().NotBeNull();
-            // 10x5 EPSG:3857 envelope near the equator: ground area/perimeter ≈ the map-unit
-            // values (Web Mercator scale ≈ 1 at the equator), now measured geodesically (#2734).
-            measure.Area!.Value.Should().BeApproximately(50d, 0.2d);
+            // Independent PROJ WGS84 geodesic reference after inverse EPSG:3857 projection.
+            // Web Mercator's spherical northing differs from ellipsoidal ground distance.
+            measure.Area!.Value.Should().BeApproximately(49.665281d, 0.2d);
             measure.Area.Unit.Should().Be("esriSquareMeters");
             measure.Perimeter.Should().NotBeNull();
-            measure.Perimeter!.Value.Should().BeApproximately(30d, 0.1d);
+            measure.Perimeter!.Value.Should().BeApproximately(29.933056d, 0.1d);
             measure.Perimeter.Unit.Should().Be("esriMeters");
         }
         finally
@@ -1839,8 +2293,8 @@ public class ImageServerEndpointsTests
         // #2734: a 3857 (Web Mercator) segment must be measured as TRUE GROUND distance, not the
         // planar map-unit length. The two points are lon 0° and lon 1° at lat 60°N, expressed in
         // Web-Mercator meters (y = 8399737.89 is the Mercator ordinate of 60°N; x = 111319.49 is
-        // the Mercator abscissa of lon 1°). The great-circle ground distance between them is
-        // 55597.01 m on the mean-radius sphere (R = 6371008.8 m). The buggy planar
+        // the Mercator abscissa of lon 1°). The WGS84 ellipsoidal ground distance between them is
+        // 55799.470393 m (independent PROJ geodesic reference). The buggy planar
         // sqrt(dx²+dy²) would report 111319.49 m — ~2x overstated, exactly 1/cos(60°).
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -1857,7 +2311,7 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Distance.Should().NotBeNull();
-            measure.Distance!.Value.Should().BeApproximately(55597.01d, 1d);
+            measure.Distance!.Value.Should().BeApproximately(55799.470393d, 1d);
             measure.Distance.Unit.Should().Be("esriMeters");
             // Guard against a regression back to the planar (2x overstated) value.
             measure.Distance.Value.Should().BeLessThan(60000d);
@@ -1871,11 +2325,11 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
     [Operation(Operations.Distance)]
-    public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesGreatCircleBearing()
+    public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesEllipsoidalBearing()
     {
         // #2734: azimuth for geographic inputs must include cos(lat) longitude scaling. From
-        // (lon 0, lat 60°N) to (lon 1, lat 61°N) the great-circle initial bearing is 25.78°
-        // (standard atan2 initial-bearing formula; radius-independent), consistent with the
+        // (lon 0, lat 60°N) to (lon 1, lat 61°N) the WGS84 initial bearing is 25.819476°
+        // (independent PROJ geodesic reference), consistent with the
         // geodesic distance in the same response. The buggy planar atan2(dLon, dLat) reported
         // 45° regardless of latitude.
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
@@ -1893,7 +2347,7 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.AzimuthAngle.Should().NotBeNull();
-            measure.AzimuthAngle!.Value.Should().BeApproximately(25.7824d, 1e-3);
+            measure.AzimuthAngle!.Value.Should().BeApproximately(25.819476d, 1e-3);
             measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
             // Guard against a regression to the cos(lat)-free planar bearing (45°).
             measure.AzimuthAngle.Value.Should().BeLessThan(40d);
@@ -2511,6 +2965,77 @@ public class ImageServerEndpointsTests
             json.RootElement.GetProperty("statistics")[0].GetProperty("max").GetDouble().Should().Be(255);
             json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
             json.RootElement.GetProperty("histograms")[0].GetProperty("counts").GetArrayLength().Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query, Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeHistograms")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task BandIds_ZeroBasedOnStatisticsHistogramsAndExportImage_AddressTheSameBand()
+    {
+        // #4068: exportImage bandIds is 0-based (Esri). computeStatisticsHistograms and
+        // computeHistograms used to reject bandIds=0 and read bandIds=1 as a different band. The
+        // same selection must now reach the raster store as the same 1-based band on all three.
+        var store = CreateRasterStoreSubstitute(bandCount: 3);
+        RasterQuery? exportQuery = null;
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                exportQuery = call.ArgAt<RasterQuery>(2);
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+                    ContentType = "image/png",
+                    Width = 256,
+                    Height = 256,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var geometry = Uri.EscapeDataString(
+                """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+            var analysisQuery = $"f=json&geometryType=esriGeometryEnvelope&geometry={geometry}&bandIds=0";
+
+            var statistics = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?{analysisQuery}");
+            var statisticsContent = await statistics.Content.ReadAsStringAsync();
+            statistics.StatusCode.Should().Be(HttpStatusCode.OK);
+            statisticsContent.Should().NotContain("\"error\"", statisticsContent);
+
+            var histograms = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?{analysisQuery}");
+            var histogramsContent = await histograms.Content.ReadAsStringAsync();
+            histograms.StatusCode.Should().Be(HttpStatusCode.OK);
+            histogramsContent.Should().NotContain("\"error\"", histogramsContent);
+
+            var export = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&bandIds=0");
+            export.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await store.Received().GetClippedStatisticsAsync(
+                Arg.Is(TestLayerId), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(),
+                Arg.Is<int[]?>(bands => bands != null && bands.Length == 1 && bands[0] == 1),
+                Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+            await store.Received().GetClippedHistogramsAsync(
+                Arg.Is(TestLayerId), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(),
+                Arg.Is<int[]?>(bands => bands != null && bands.Length == 1 && bands[0] == 1),
+                Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+            exportQuery.Should().NotBeNull();
+            exportQuery!.Value.Bands.Should().Equal(1);
+
+            // A negative index is still invalid on the analysis operations.
+            var negative = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}&bandIds=-1");
+            (await negative.Content.ReadAsStringAsync()).Should().Contain("bandIds");
         }
         finally
         {
@@ -3906,13 +4431,12 @@ public class ImageServerEndpointsTests
         measure!.Name.Should().Be("test-raster");
         measure.SensorName.Should().Be("Unknown");
         measure.Distance.Should().NotBeNull();
-        // (0,0)->(3,4) in EPSG:3857 near the equator: the ground distance is ~5 m (Web Mercator
-        // scale ≈ 1 at the equator), computed geodesically on the mean-radius sphere (#2734).
-        measure.Distance!.Value.Should().BeApproximately(5d, 0.05d);
+        // Independent PROJ WGS84 inverse after transforming (0,0)->(3,4) from EPSG:3857.
+        measure.Distance!.Value.Should().BeApproximately(4.978604d, 0.05d);
         measure.Distance.Unit.Should().Be("esriMeters");
         measure.AzimuthAngle.Should().NotBeNull();
-        // 3-east / 4-north near the equator still gives atan(3/4) ≈ 36.87° true bearing.
-        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-4);
+        // Spherical Web Mercator northing requires ellipsoidal correction even at the equator.
+        measure.AzimuthAngle!.Value.Should().BeApproximately(37.05479786d, 1e-4);
         measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
     }
 

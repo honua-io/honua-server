@@ -161,6 +161,14 @@ internal static class MultidimCoverageScanJob
                 metadata = GdalInfoCoverageEnricher.Enrich(metadata, info.GetRawText());
             }
 
+            // The classic raster view can normalize NetCDF rows to north-up.
+            // Explicit coordinate endpoints describe the preserved Zarr row order.
+            if (root.TryGetProperty("yAxisAscending", out var ascending) &&
+                ascending.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                metadata = metadata with { YAxisAscending = ascending.GetBoolean(), HasYAxisOrientation = true };
+            }
+
             return metadata;
         }
         catch (JsonException)
@@ -333,7 +341,8 @@ internal static class MultidimCoverageScanJob
             TemporalDimension = tDim,
             Temporal = sourceMetadata.Temporal ?? zarrMetadata.Temporal,
             Axes = axes,
-            YAxisAscending = hasSourceGrid ? sourceMetadata.YAxisAscending : zarrMetadata.YAxisAscending,
+            YAxisAscending = sourceMetadata.HasYAxisOrientation || hasSourceGrid
+                ? sourceMetadata.YAxisAscending : zarrMetadata.YAxisAscending,
         };
     }
 

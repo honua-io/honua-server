@@ -57,13 +57,21 @@ internal static class RasterMosaicUtilities
             try
             {
                 using var document = JsonDocument.Parse(candidate);
-                if (document.RootElement.TryGetProperty("mergeStrategy", out var mergeStrategyProperty))
+                var root = document.RootElement;
+                if (TryReadStringProperty(root, "mergeStrategy", out var mergeStrategy) &&
+                    !string.IsNullOrWhiteSpace(mergeStrategy))
                 {
-                    candidate = mergeStrategyProperty.GetString() ?? string.Empty;
+                    candidate = mergeStrategy;
                 }
-                else if (document.RootElement.TryGetProperty("operation", out var operationProperty))
+                else if (TryReadStringProperty(root, "operation", out var operation) &&
+                    !string.IsNullOrWhiteSpace(operation))
                 {
-                    candidate = operationProperty.GetString() ?? string.Empty;
+                    candidate = operation;
+                }
+                else if (TryReadStringProperty(root, "mosaicOperation", out var mosaicOperation) &&
+                    !string.IsNullOrWhiteSpace(mosaicOperation))
+                {
+                    candidate = mosaicOperation;
                 }
             }
             catch (JsonException)
@@ -79,8 +87,8 @@ internal static class RasterMosaicUtilities
     {
         strategy = value.Trim().ToLowerInvariant() switch
         {
-            "newest" or "latest" or "last" or "mt_last" => RasterMergeStrategy.Newest,
-            "oldest" or "first" or "mt_first" => RasterMergeStrategy.Oldest,
+            "newest" or "latest" or "first" or "mt_first" => RasterMergeStrategy.Newest,
+            "oldest" or "last" or "mt_last" => RasterMergeStrategy.Oldest,
             "average" or "avg" or "mean" or "mt_mean" => RasterMergeStrategy.Average,
             "max" or "maximum" or "mt_max" => RasterMergeStrategy.Max,
             "min" or "minimum" or "mt_min" => RasterMergeStrategy.Min,
@@ -88,8 +96,8 @@ internal static class RasterMosaicUtilities
         };
 
         return value.Trim().ToLowerInvariant() is
-            "newest" or "latest" or "last" or "mt_last" or
-            "oldest" or "first" or "mt_first" or
+            "newest" or "latest" or "first" or "mt_first" or
+            "oldest" or "last" or "mt_last" or
             "average" or "avg" or "mean" or "mt_mean" or
             "max" or "maximum" or "mt_max" or
             "min" or "minimum" or "mt_min";

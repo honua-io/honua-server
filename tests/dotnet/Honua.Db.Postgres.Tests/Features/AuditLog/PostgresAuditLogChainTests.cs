@@ -11,6 +11,10 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Honua.Core.Features.AuditLog;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
@@ -22,6 +26,31 @@ namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 [Collection("Database")]
 public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
 {
+    [Fact]
+    public void VerifierResolution_AfterInvalidReload_KeepsStartupKey()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua_test;Username=honua",
+                ["AuditLog:ChainVerification:Key"] = Convert.ToBase64String(ChainKey),
+            }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
+        services.AddSingleton(Substitute.For<IAdoNetDatabaseConnectionProvider>());
+        using var provider = services.BuildServiceProvider();
+        using var first = provider.CreateScope();
+        first.ServiceProvider.GetRequiredService<IAuditLogIntegrityVerifier>();
+
+        configuration["AuditLog:ChainVerification:Key"] = "invalid-base64";
+        configuration.Reload();
+
+        using var second = provider.CreateScope();
+        second.ServiceProvider.GetRequiredService<IAuditLogIntegrityVerifier>();
+        second.ServiceProvider.GetRequiredService<AuditChainKeySnapshot>().Key.ToArray().Should().Equal(ChainKey);
+    }
+
     [IntegrationTest]
     public async Task RecordAsync_BuildsLinkedHashChain_AndVerifies()
     {
@@ -29,7 +58,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
 
             for (var i = 0; i < 3; i++)
             {
@@ -46,7 +75,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
             rows[2].PrevHash.Should().Be(rows[1].EntryHash);
             rows.Select(r => r.EntryHash).Should().OnlyHaveUniqueItems();
 
-            var report = await Verifier(schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeTrue();
             report.RowsChecked.Should().Be(3);
             report.UnhashedRows.Should().Be(0);
@@ -65,11 +94,11 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
             await sink.RecordAsync(Event("corr-a", "auth.success"));
             await sink.RecordAsync(Event("corr-b", "auth.success"));
 
-            (await Verifier(schema).VerifyAsync()).Verified.Should().BeTrue();
+            (await KeyedVerifier(schema).VerifyAsync()).Verified.Should().BeTrue();
 
             // Simulate a privileged tamper that bypassed the append-only rules:
             // drop the rule, mutate the action of the first row, restore the rule.
@@ -80,10 +109,67 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
                 CREATE RULE audit_log_no_update AS ON UPDATE TO "{schema}".audit_log DO INSTEAD NOTHING;
                 """);
 
-            var report = await Verifier(schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeFalse("the entry_hash no longer matches the mutated row");
             report.FirstBrokenAuditId.Should().NotBeNull();
             report.FailureReason.Should().Contain("entry_hash");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Verify_RejectsMissingHash_AfterAHashedRow()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            await sink.RecordAsync(Event("corr-a", "auth.failure"));
+
+            // A later row with no hash. Leading unhashed rows (written before the
+            // chain existed) stay acceptable; a gap after the chain has started does not.
+            await ExecuteAsync(schema, $$"""
+                INSERT INTO "{{schema}}".audit_log (
+                    timestamp, event_type, actor, actor_type, resource_type, resource_id,
+                    action, outcome, correlation_id, remote_ip, user_agent, details,
+                    prev_hash, entry_hash)
+                VALUES (
+                    NOW(), 'Authentication', 'user-1', 'UserId', 'session', '/sharing/rest/generateToken',
+                    'auth.token.issue', 'Failure', 'corr-suffix', '10.0.0.1', 'agent/1.0', '{}',
+                    NULL, NULL);
+                """);
+
+            var report = await Verifier(schema).VerifyAsync();
+            report.Verified.Should().BeFalse("a missing hash after a hashed row is not a legacy prefix");
+            report.FailureReason.Should().Contain("unhashed");
+            report.RowsChecked.Should().Be(2);
+            report.UnhashedRows.Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Verify_HashedRows_WithoutChainKey_DoesNotVerify()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            await sink.RecordAsync(Event("corr-auth", "auth.failure"));
+            await sink.RecordAsync(Event("corr-token", "auth.token.issue"));
+
+            var report = await Verifier(schema).VerifyAsync();
+            report.Verified.Should().BeFalse("a hashed chain with no key configured does not verify");
+            report.FailureReason.Should().Contain("key");
+            report.RowsChecked.Should().Be(2);
         }
         finally
         {
@@ -98,7 +184,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
             await sink.RecordAsync(Event("corr-a", "auth.success"));
             await sink.RecordAsync(Event("corr-b", "auth.success"));
             await sink.RecordAsync(Event("corr-c", "auth.success"));
@@ -111,7 +197,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
                 CREATE RULE audit_log_no_delete AS ON DELETE TO "{schema}".audit_log DO INSTEAD NOTHING;
                 """);
 
-            var report = await Verifier(schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeFalse("a deleted row breaks the prev_hash chain link");
             report.FailureReason.Should().Contain("prev_hash");
         }
@@ -174,9 +260,17 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         Details = "{}",
     };
 
+    private static readonly byte[] ChainKey = Enumerable.Repeat((byte)0x21, 32).ToArray();
+
     private TestConnectionProvider Provider(string schema) => new(fixture.DataSource, schema);
 
+    private PostgresAuditLog KeyedSink(string schema)
+        => new(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema, ChainKey);
+
     private PostgresAuditLogIntegrityVerifier Verifier(string schema) => new(Provider(schema), schema);
+
+    private PostgresAuditLogIntegrityVerifier KeyedVerifier(string schema)
+        => new(Provider(schema), schema, ChainKey);
 
     private static async Task<List<AuditEventRecord>> CollectAsync(IAsyncEnumerable<AuditEventRecord> source)
     {

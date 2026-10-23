@@ -75,7 +75,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
     private static readonly TimeSpan _completedJobRetention = TimeSpan.FromHours(24);
     private static readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(5);
     private long _lastCleanupTick = Environment.TickCount64;
-    private bool _disposed;
+    private int _disposed;
 
     public InMemoryImportJobService(
         IFileImportService importService,
@@ -147,6 +147,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         {
             tempFilePath = request.LocalFilePath;
         }
+        else if (request.UsesObjectStore)
+        {
+            backgroundRequest = request;
+        }
         else if (!request.UsesCloudStorage)
         {
             // Copy stream to a temp file for background processing
@@ -173,27 +177,33 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 {
                     await request.FileStream.CopyToAsync(tempStream, cancellationToken);
                 }
+
+                var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
+                {
+                    Mode = FileMode.Open,
+                    Access = FileAccess.Read,
+                    Share = FileShare.Read,
+                    BufferSize = 64 * 1024,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                });
+
+                backgroundRequest = request with
+                {
+                    FileStream = backgroundStream,
+                    CloudFileId = null
+                };
             }
             catch
             {
                 TryDeleteTempFile(tempFilePath);
+                _jobs.TryRemove(jobId, out _);
+                if (_cancellationTokens.TryRemove(jobId, out var registeredCts))
+                {
+                    registeredCts.Dispose();
+                }
+
                 throw;
             }
-
-            var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
-            {
-                Mode = FileMode.Open,
-                Access = FileAccess.Read,
-                Share = FileShare.Read,
-                BufferSize = 64 * 1024,
-                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-            });
-
-            backgroundRequest = request with
-            {
-                FileStream = backgroundStream,
-                CloudFileId = null
-            };
         }
 
         // Start background processing
@@ -254,6 +264,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 }
             });
 
+            if (request.UsesObjectStore)
+            {
+                throw new InvalidOperationException(
+                    "Object-store imports are opened by the universal import runner at execution time.");
+            }
+
             var result = await _importService.ImportFileAsync(request, progress, cancellationToken);
 
             if (_jobs.TryGetValue(jobId, out state))
@@ -262,7 +278,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 featureCount = result.FeatureCount;
                 failedFeatures = state.Progress.FailedFeatures;
                 errorMessage = result.ErrorMessage;
-                var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
+                var clientErrorMessage = result.Success ? result.ErrorMessage
+                    : result.ErrorCode == ImportTableOwnershipException.Code
+                        ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
+                        : SafeImportFailureMessage;
 
                 state.Progress = state.Progress with
                 {
@@ -270,11 +289,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     FeaturesProcessed = result.FeatureCount,
                     CompletedAt = DateTimeOffset.UtcNow,
                     ErrorMessage = clientErrorMessage,
+                    ErrorCode = result.ErrorCode,
                     Warnings = result.Warnings,
                     DetectedSrid = result.DetectedSrid,
                     CurrentPhase = result.Success ? "Import completed" : "Import failed"
                 };
-                state.Result = result.Success ? result : result with { ErrorMessage = SafeImportFailureMessage };
+                state.Result = result.Success ? result : result with { ErrorMessage = clientErrorMessage };
 
                 if (result.Success)
                 {
@@ -334,16 +354,20 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 RecordJobMetrics(status, state.Format, state.FileSize, featureCount, failedFeatures, stopwatch.Elapsed);
             }
 
+            // Unpublish first, then release the source with a using scoped to this block,
+            // before stream cleanup. A Dispose call after that cleanup is skipped when cleanup
+            // throws, and a disposed source must not stay visible to observers.
+            if (_cancellationTokens.TryRemove(jobId, out var cts))
+            {
+                using var _ = cts;
+            }
+
             if (stream != null)
             {
                 await stream.DisposeAsync();
             }
 
             TryDeleteTempFile(tempFilePath);
-            if (_cancellationTokens.TryRemove(jobId, out var cts))
-            {
-                using var _ = cts;
-            }
 
             CleanupCompletedJobsIfNeeded();
         }
@@ -501,19 +525,29 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        foreach (var cts in _cancellationTokens.Values)
+        foreach (var entry in _cancellationTokens)
         {
-            cts.Cancel();
+            if (!_cancellationTokens.TryRemove(entry.Key, out var cts))
+            {
+                continue;
+            }
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // A stale source must not prevent the remaining jobs from being torn down.
+            }
+
             cts.Dispose();
         }
 
-        _cancellationTokens.Clear();
         _jobs.Clear();
-
-        _disposed = true;
     }
 
     private static partial class ImportJobLog

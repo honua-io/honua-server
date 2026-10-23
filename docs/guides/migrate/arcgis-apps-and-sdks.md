@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Repoint ArcGIS apps and SDKs at Honua"
+description: "You'll move existing ArcGIS client applications — web apps, ArcGIS Pro, and the ArcGIS Maps SDKs — onto Honua-served endpoints without rewriting them."
+---
 # Repoint ArcGIS apps and SDKs at Honua
 
 You'll move existing ArcGIS client applications — web apps, ArcGIS Pro, and the ArcGIS Maps SDKs — onto Honua-served endpoints without rewriting them.
@@ -10,7 +15,13 @@ Honua serves the GeoServices REST API at `/rest/services/{serviceId}/FeatureServ
 
 ### 1. Map the service URLs
 
-List the published services and layers with the supported data-plane CLI:
+List the published services and layers with the JavaScript SDK's `honua` CLI:
+
+> `honua` here is the JavaScript SDK's CLI, which is the one with `query`. Install it with
+> `npm i -g @honua/sdk-js`, or run it ad hoc as `npx -p @honua/sdk-js honua …` — the `-p`
+> matters, because npx otherwise looks for a binary named `sdk-js`. The PyPI `honua-sdk`
+> distribution installs an executable with the same name and no `query` subcommand, so on a
+> machine with both, prefer the `npx -p` form.
 
 ```bash
 export HONUA_BASE_URL="$HONUA_URL"
@@ -39,7 +50,7 @@ const layer = new FeatureLayerCompat({
 const result = await layer.queryFeatures({ where: "1=1" });
 ```
 
-`FeatureLayerCompat` supports the common constructor options (`id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `opacity`, `visible`, `minScale`, `maxScale`) plus paged helpers like `queryFeaturesAll()` and `queryFeaturesStream()`; `MapImageLayerCompat` covers `exportImage`, `identify`, `find`, `getLegend`, and sublayer queries. The full supported-option list per class is in the [SDK guide](https://github.com/honua-io/honua-sdk-js/blob/main/docs/guide.md).
+`FeatureLayerCompat` supports the common constructor options (`id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `opacity`, `visible`, `minScale`, `maxScale`) plus paged helpers like `queryFeaturesAll()` and `queryFeaturesStream()`; `MapImageLayerCompat` covers `exportImage`, `identify`, `find`, `getLegend`, and sublayer queries. The full supported-option list per class is in the [SDK guide](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/guide.md).
 
 ### 3. Run the JavaScript migration engine
 

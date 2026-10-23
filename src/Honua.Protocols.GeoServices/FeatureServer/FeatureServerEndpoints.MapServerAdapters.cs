@@ -1,21 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 //
-// MapServer reuse shims. These are thin, additive forwarders that let the
-// MapServer protocol surface invoke the existing FeatureServer generateRenderer
-// and queryRelatedRecords handlers *as-is* without duplicating their request
-// parsing, validation, or renderer/related-records logic.
-//
-// IMPORTANT FOR SIBLING BRANCHES: this file only forwards to the existing
-// private handlers in FeatureServerRequestHandlers.Renderer.cs and
-// FeatureServerRequestHandlers.RelatedRecords.cs. It does not change their
-// behavior. It exists as a *new* file so the MapServer adapter branch does not
-// have to edit the FeatureServer handler files themselves (avoiding merge
-// conflicts with a concurrent FeatureServer branch). The MapServer routes pass
-// the same {serviceId} and {layerId:int} route values the FeatureServer
-// handlers read, so the FeatureServer handlers resolve the service/layer
-// identically. Protocol validation runs against the shared service record,
-// which enables both FeatureServer and MapServer.
+// MapServer reuse shims. These forwarders let the MapServer protocol surface
+// invoke the existing FeatureServer generateRenderer and queryRelatedRecords
+// handlers without duplicating their request parsing or validation. The
+// MapServer routes pass the same {serviceId} and {layerId:int} route values
+// those handlers read.
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -50,7 +40,7 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context,
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
-        => HandleQueryRelatedRecordsGet(serviceId, layerId, context, relatedRecordsHandler);
+        => HandleQueryRelatedRecordsGetCore(serviceId, layerId, context, relatedRecordsHandler, "MapServer");
 
     /// <summary>
     /// MapServer adapter entry point that reuses the FeatureServer
@@ -61,5 +51,5 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context,
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
-        => HandleQueryRelatedRecordsPost(serviceId, layerId, context, relatedRecordsHandler);
+        => HandleQueryRelatedRecordsPostCore(serviceId, layerId, context, relatedRecordsHandler, "MapServer");
 }

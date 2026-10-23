@@ -110,7 +110,7 @@ internal static partial class ScimEndpoints
 
     private static readonly ScimServiceProviderConfig ServiceProviderConfig = new()
     {
-        DocumentationUri = "https://docs.honua.io/reference/compatibility/idp-conformance-matrix",
+        DocumentationUri = "https://honua.io/docs/reference/compatibility/idp-conformance-matrix/",
         Patch = new ScimSupported { Supported = true },
         Bulk = new ScimBulkConfig { Supported = false, MaxOperations = 0, MaxPayloadSize = 0 },
         Filter = new ScimFilterConfig { Supported = true, MaxResults = MaxPageSize },

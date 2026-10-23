@@ -1,3 +1,8 @@
+---
+type: index
+title: "Reference"
+description: "Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts."
+---
 # Reference
 
 Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts. Task-oriented walkthroughs live in [guides](../guides/README.md).
@@ -6,7 +11,7 @@ Lookup material for Honua's public surfaces: protocols, the admin API, configura
 
 | Section | Contents |
 | --- | --- |
-| [Protocols](protocols/ogc-apis.md) | Per-protocol references: OGC APIs, classic OGC (WMS/WFS/WCS/WMTS), GeoServices REST, OData, STAC, vector tiles, [cloud-native formats (COG, PMTiles, Zarr, HDF5/NetCDF)](protocols/cloud-native-formats.md), terrain, 3D Tiles/scenes, gRPC. MCP for AI agents is covered in the [MCP guide](../guides/connect/ai-agents-mcp.md) and [protocol overview](../concepts/protocols.md#mcp). |
+| [Protocols](protocols/ogc-apis.md) | Per-protocol references: OGC APIs, classic OGC (WMS/WFS/WCS/WMTS), GeoServices REST, OData, STAC, vector tiles, [cloud-native formats (COG, PMTiles, Zarr, HDF5/NetCDF)](protocols/cloud-native-formats.md), terrain, 3D Tiles/scenes, gRPC. MCP for AI agents is covered in the [MCP guide](../guides/connect/ai-agents-mcp.md) and [protocol matrix](../concepts/protocols.md). |
 | [Admin API](admin-api/overview.md) | Control-plane usage: connections and layers, imports and jobs, styles, forms, users/roles/licensing. |
 | [Configuration](configuration/environment-variables.md) | The canonical [environment variable reference](configuration/environment-variables.md) and [data source providers](configuration/data-sources/README.md). |
 | [Compatibility](compatibility/ogc-conformance.md) | [OGC conformance](compatibility/ogc-conformance.md), [GeoServices parity](compatibility/geoservices-parity.md), [client compatibility](compatibility/clients.md). |
@@ -15,9 +20,13 @@ Lookup material for Honua's public surfaces: protocols, the admin API, configura
 
 | Page | One-liner |
 | --- | --- |
+| [Open Knowledge Format](../okf/README.md) | How this documentation is shaped for agents: one page per concept, frontmatter that says what a page is, and capability keys as identity. |
+| [Capability concepts](../okf/capabilities/README.md) | One concept per capability the server declares, keyed by `honua://capability/<key>`. |
 | [Data formats](data-formats.md) | Import and export format matrix per surface, with size limits. |
 | [CQL2 and filtering](cql2-and-filtering.md) | CQL2 text/JSON, GeoServices `where`, and OData `$filter`, side by side. |
 | [Geoprocessing operations](geoprocessing-operations.md) | Catalog of built-in processes by family with parameters. |
+| [GP process release descriptor and lock](gp-process-release.md) | `honua-gp.yaml`, the immutable release lock, its canonical digest, and `honua-gp-devkit release`. |
+| [GP harness events](gp-harness-events.v1.md) | The `honua.gp.events/v1` journal every custom-code, local, and devkit run writes: kinds, bounds, truncation, measured vs inferred timing. |
 | [Spec engine](spec-engine.md) | Plan/apply engine: endpoints, cache modes, diagnostics. |
 | [OpenAPI and the explorer](openapi-and-explorer.md) | Runtime OpenAPI endpoints, `/docs`, and the pinned spec bundles. |
 | [Versioning and support](versioning-and-support.md) | Admin API versioning, deprecation lifecycle, protocol and gRPC stability. |

@@ -1,6 +1,14 @@
+---
+type: reference
+title: "3D Tiles and scenes"
+description: "Hosted OGC 3D Tiles serving, scene discovery, the admin scene registry, Enterprise CityGML and point-cloud ingest, and the I3S SceneServer adapter."
+resource: "honua://capability/serve.3d-tiles-scene"
+resources:
+  - "honua://capability/serve.i3s-scene"
+  - "honua://capability/scene.bim-ingest"
+  - "honua://capability/scene.pointcloud-ingest"
+---
 # 3D Tiles and scenes
-
-The canonical representation, discovery, authentication, I3S projection, and terrain boundaries are defined by [ADR-0078](../../internal/contributor/adr/0078-3d-scene-architecture.md).
 
 Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + assets) for CesiumJS and `<honua-scene>` clients, with an SDK-facing discovery API, an Esri I3S SceneServer adapter, and an admin registry for dataset lifecycle.
 
@@ -27,13 +35,27 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 
 `{sceneId}` is the registered URL slug (`[a-z0-9-]{1,64}`). Protected datasets (`requiresAuth`) refuse anonymous access; caching follows the dataset's `cachePolicy` (`maxAgeSeconds` bounded to `[0, 86400]`, or `noStore`).
 
-The I3S adapter's 2026.1 production surface is a metadata preview: descriptors,
-node pages, and per-field statistics are available under both the canonical
-`/rest/services/{sceneId}/SceneServer/...` family and the `/scenes` alias.
-Renderable node geometry and geometry-backed attribute routes are registered
-only by protocol test hosts that provide the deferred geometry seam; production
-does not advertise them. All shipped I3S routes require the Enterprise
-`serve.i3s-scene` entitlement and return HTTP `402` when it is unavailable.
+The I3S adapter derives descriptors, node pages, geometry, scalar attributes,
+statistics, materials, and available PNG/JPEG textures from persisted B3DM/GLB
+mesh content under both the canonical `/rest/services/{sceneId}/SceneServer/...`
+family and the `/scenes` alias. Each advertised mesh resource belongs to the
+same validated source revision. Malformed assets or unsupported mesh encodings
+make that revision unavailable; the descriptor does not advertise resources
+that cannot be decoded. This remains Experimental, and source implementation
+does not establish stock ArcGIS certification. All shipped I3S routes require
+the Enterprise `serve.i3s-scene` entitlement and return HTTP `402` when it is
+unavailable.
+
+The serving LOD conversion uses a 16-pixel screen-space error target and the
+enclosing sphere of each actual mesh subtree: `lodThreshold = pi * (radius *
+16 / geometricError)^2`, in projected square pixels. Multi-material leaves
+are supported; multi-material replacement parents with refinement children
+must be baked into compatible LOD meshes before publication. Additive parent
+content remains in a persistent sibling branch; added content can appear
+earlier at distance than a 3D Tiles client's SSE traversal. Scalar metadata
+normalization, scale/offset, noData/default declarations and reflective mesh
+transforms must be baked before publication; this adapter rejects them rather
+than silently changing values or winding.
 
 > Open `https://server.example.com/api/scenes/downtown/resolve`, `https://server.example.com/scenes/downtown/tileset.json` in a browser.
 
@@ -51,7 +73,7 @@ All routes require admin authorization and return `application/problem+json` err
 | GET | `/api/v1/admin/scenes/{id}/resolve` | Serving metadata plus CesiumJS / `<honua-scene>` embed snippets. |
 | POST | `/api/v1/admin/scenes/generate` | Run the 3D Tiles generation pipeline; auto-registers the produced tileset. |
 
-Key record fields: `id` (URL slug), `name` (globally unique), `assetRoot` (server-side directory; traversal and shell metacharacters rejected), `tilesetFileName` (default `tileset.json`), `datasetType` (`hosted_tiles` or `terrain`), `extent` (WGS 84 bbox, all four bounds or none), `crs`, `cachePolicy`, `requiresAuth`/`isPublic` (exactly one true), `allowedRoles`, `status`, `revision`. Full field and validation contract: [scene dataset registry](../../internal/admin-api/scene-dataset-registry.md).
+Key record fields: `id` (URL slug), `name` (globally unique), `assetRoot` (server-side directory; traversal and shell metacharacters rejected), `tilesetFileName` (default `tileset.json`), `datasetType` (`hosted_tiles` or `terrain`), `extent` (WGS 84 bbox, all four bounds or none), `crs`, `cachePolicy`, `requiresAuth`/`isPublic` (exactly one true), `allowedRoles`, `status`, `revision`.
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/scenes` with `{"id":"downtown","name":"Downtown massing model","assetRoot":"/data/scenes/downtown","isPublic":true}`.
 
@@ -88,23 +110,19 @@ Hosted tilesets follow the OGC 3D Tiles 1.x content format; the serving routes t
 
 ## Capability truth table
 
-Counts below are proving xUnit links in `capability-matrix.v1.json`, not CITE
-results. The routes stay shipped, but the 2026.1 release claim defers the 3D
-slice to 2026.2; this table records runtime truth without promoting it.
+The routes stay shipped, but the 2026.1 release claim defers the 3D slice to 2026.2;
+this table records runtime truth without promoting it.
 
-| Capability key | Edition | Route/surface | Unlicensed result | Proving tests |
-|---|---|---|---|---:|
-| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated | 60 |
-| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptor/node/statistics metadata-preview routes | `402` | 26 |
-| `scene.catalog` | Community | `/api/scenes*` | Not edition-gated | 4 |
-| `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response | 6 |
-| `scene.pointcloud-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/pointcloud` | `402` entitlement response | 10 |
-| `serve.elevation` | Community | Elevation profile/value routes | Not edition-gated | 29 |
-| `raster.terrain-rgb` | Community | Terrain-RGB tiles | Not edition-gated | 14 |
+| Capability key | Edition | Route/surface | Unlicensed result |
+|---|---|---|---|
+| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated |
+| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptors and persisted node geometry/attribute/texture/statistics resources | `402` |
+| `scene.catalog` | Community | `/api/scenes*` | Not edition-gated |
+| `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response |
+| `scene.pointcloud-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/pointcloud` | `402` entitlement response |
+| `serve.elevation` | Community | Elevation profile/value routes | Not edition-gated |
+| `raster.terrain-rgb` | Community | Terrain-RGB tiles | Not edition-gated |
 
-The call-site-less SLPK conversion helpers are not a keyed or routed product
-surface. Adding or removing that experimental conversion path is deferred with
-the 2026.2 3D decision; no SLPK import is claimed here.
 
 ## Guides that use this
 

@@ -32,6 +32,8 @@ using Microsoft.Extensions.Primitives;
 using CoreSpatialReference = Honua.Core.Features.Shared.Models.SpatialReference;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
+using Honua.Protocols.GeoServices;
+
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 /// <summary>
@@ -58,6 +60,7 @@ internal sealed class ImageServerExportTilesHandler
         RasterFormat RasterFormat,
         string TileExtension,
         DateTimeOffset? Timestamp,
+        DateTimeOffset? TimeStart,
         bool TilePackage);
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -231,6 +234,7 @@ internal sealed class ImageServerExportTilesHandler
                             Geometry = tileGeometry,
                             GeometrySrid = 3857,
                             Timestamp = plan.Timestamp,
+                            TimeStart = plan.TimeStart,
                         },
                         token).ConfigureAwait(false);
 
@@ -419,7 +423,7 @@ internal sealed class ImageServerExportTilesHandler
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resolved = publicationId is null
-            ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+            ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
             : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {
@@ -466,19 +470,19 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format."));
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter."));
         }
 
-        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
         if (editionError != null)
         {
             return (null, editionError);
         }
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
-        if (!TryParseExportTileLevels(
+        if (!ExportTilesRequestParser.TryParseExportTileLevels(
                 GetString(values, "levels"),
                 GetString(values, "minZoom"),
                 GetString(values, "maxZoom"),
@@ -528,7 +532,7 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
         }
 
-        if (!TryResolveExportTilesPackage(
+        if (!ExportTilesRequestParser.TryResolveExportTilesPackage(
                 GetString(values, "tilePackage"),
                 GetString(values, "storageFormat") ?? GetString(values, "exportBy"),
                 out var tilePackage,
@@ -549,55 +553,10 @@ internal sealed class ImageServerExportTilesHandler
             rasterFormat,
             tileExtension,
             timestamp,
+            timeStart,
             tilePackage), null);
     }
 
-    /// <summary>
-    /// Resolves whether the request asked for an Esri tile package (TPK).
-    /// Accepts <c>tilePackage=true</c> or <c>storageFormat=tpk</c> for the
-    /// exploded-cache package; <c>zip</c>/empty selects the flat ZIP archive.
-    /// The proprietary compact (TPKX) form is rejected with a 400.
-    /// </summary>
-    private static bool TryResolveExportTilesPackage(
-        string? tilePackageValue,
-        string? storageFormatValue,
-        out bool tilePackage,
-        out string? error)
-    {
-        tilePackage = false;
-        error = null;
-
-        if (!string.IsNullOrWhiteSpace(tilePackageValue) &&
-            bool.TryParse(tilePackageValue.Trim(), out var parsedFlag))
-        {
-            tilePackage = parsedFlag;
-        }
-
-        if (string.IsNullOrWhiteSpace(storageFormatValue))
-        {
-            return true;
-        }
-
-        switch (storageFormatValue.Trim().ToLowerInvariant())
-        {
-            case "tpk":
-            case "esritpk":
-            case "exploded":
-                tilePackage = true;
-                return true;
-            case "zip":
-            case "":
-                return true;
-            case "tpkx":
-            case "compact":
-            case "compactv2":
-                error = "storageFormat 'tpkx'/'compact' (Esri compact bundle cache) is not supported. Use storageFormat=tpk for an exploded tile package or storageFormat=zip for a flat archive.";
-                return false;
-            default:
-                error = $"storageFormat '{storageFormatValue}' is not supported. Use tpk or zip.";
-                return false;
-        }
-    }
 
     private static string ResolveEsriCacheFormat(RasterFormat format)
         => format switch
@@ -608,136 +567,6 @@ internal sealed class ImageServerExportTilesHandler
             _ => "PNG",
         };
 
-    private static bool TryParseExportTileLevels(
-        string? levelsValue,
-        string? minZoomValue,
-        string? maxZoomValue,
-        TileLimits limits,
-        out int[] levels,
-        out int minZoom,
-        out int maxZoom,
-        out string? error)
-    {
-        levels = [];
-        minZoom = limits.MinTileZoom;
-        maxZoom = limits.MinTileZoom;
-        error = null;
-
-        var parsed = new SortedSet<int>();
-        if (!string.IsNullOrWhiteSpace(levelsValue))
-        {
-            foreach (var rangeParts in (levelsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).Select(token => token.Split('-', StringSplitOptions.TrimEntries)))
-            {
-                if (rangeParts.Length == 1)
-                {
-                    if (!TryAddExportTilesLevel(rangeParts[0], limits, parsed, out error))
-                    {
-                        return false;
-                    }
-                }
-                else if (rangeParts.Length == 2)
-                {
-                    if (!int.TryParse(rangeParts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var start) ||
-                        !int.TryParse(rangeParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var end) ||
-                        start > end)
-                    {
-                        error = "Invalid levels range.";
-                        return false;
-                    }
-
-                    for (var level = start; level <= end; level++)
-                    {
-                        if (!TryAddExportTilesLevel(level.ToString(CultureInfo.InvariantCulture), limits, parsed, out error))
-                        {
-                            return false;
-                        }
-                    }
-                }
-                else
-                {
-                    error = "Invalid levels parameter.";
-                    return false;
-                }
-            }
-        }
-
-        if (parsed.Count == 0)
-        {
-            if (!TryParseOptionalZoom(minZoomValue, limits.MinTileZoom, limits, out minZoom, out error) ||
-                !TryParseOptionalZoom(maxZoomValue, minZoom, limits, out maxZoom, out error))
-            {
-                return false;
-            }
-
-            if (minZoom > maxZoom)
-            {
-                error = "minZoom must be less than or equal to maxZoom.";
-                return false;
-            }
-
-            for (var level = minZoom; level <= maxZoom; level++)
-            {
-                parsed.Add(level);
-            }
-        }
-
-        levels = [.. parsed];
-        minZoom = levels[0];
-        maxZoom = levels[^1];
-        return true;
-    }
-
-    private static bool TryAddExportTilesLevel(
-        string value,
-        TileLimits limits,
-        SortedSet<int> levels,
-        out string? error)
-    {
-        error = null;
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var level))
-        {
-            error = "Invalid levels parameter.";
-            return false;
-        }
-
-        if (level < limits.MinTileZoom || level > limits.MaxTileZoom)
-        {
-            error = $"Tile level {level} is outside supported range ({limits.MinTileZoom}-{limits.MaxTileZoom}).";
-            return false;
-        }
-
-        levels.Add(level);
-        return true;
-    }
-
-    private static bool TryParseOptionalZoom(
-        string? value,
-        int defaultValue,
-        TileLimits limits,
-        out int zoom,
-        out string? error)
-    {
-        zoom = defaultValue;
-        error = null;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return true;
-        }
-
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out zoom))
-        {
-            error = "Invalid zoom parameter.";
-            return false;
-        }
-
-        if (zoom < limits.MinTileZoom || zoom > limits.MaxTileZoom)
-        {
-            error = $"Zoom level {zoom} is outside supported range ({limits.MinTileZoom}-{limits.MaxTileZoom}).";
-            return false;
-        }
-
-        return true;
-    }
 
     private static bool TryParseExportTilesMaxTiles(
         string? value,
@@ -1316,7 +1145,7 @@ internal sealed class ImageServerExportTilesHandler
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resolved = publicationId is null
-            ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+            ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
             : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {
@@ -1354,19 +1183,19 @@ internal sealed class ImageServerExportTilesHandler
                 context, "Compact Cache V2 tile export supports only png or jpeg tile formats."));
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter."));
         }
 
-        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
         if (editionError is not null)
         {
             return (null, editionError);
         }
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
-        if (!TryParseExportTileLevels(
+        if (!ExportTilesRequestParser.TryParseExportTileLevels(
                 GetString(values, "levels"),
                 GetString(values, "minZoom"),
                 GetString(values, "maxZoom"),

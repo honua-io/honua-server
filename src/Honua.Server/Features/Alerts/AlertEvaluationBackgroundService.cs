@@ -13,6 +13,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
     private readonly ILeaderElectionStrategy _leaderElection;
     private readonly AlertOptions _options;
     private readonly AlertPipelineMetrics _metrics;
+    private readonly TimeProvider _time;
     private readonly ILogger<AlertEvaluationBackgroundService> _logger;
 
     private volatile bool _isRunning;
@@ -25,13 +26,15 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         ILeaderElectionStrategy leaderElection,
         IOptions<AlertOptions> options,
         AlertPipelineMetrics metrics,
-        ILogger<AlertEvaluationBackgroundService> logger)
+        ILogger<AlertEvaluationBackgroundService> logger,
+        TimeProvider? time = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _leaderElection = leaderElection ?? throw new ArgumentNullException(nameof(leaderElection));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _time = time ?? TimeProvider.System;
     }
 
     /// <inheritdoc />
@@ -67,10 +70,11 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         }
 
         var workerName = _options.Evaluation.WorkerName;
-        var checkpoint = await GetCheckpointAsync(workerName, stoppingToken).ConfigureAwait(false);
+        AlertWorkerCheckpoint? checkpoint = null;
+        var leading = false;
 
-        LogStarting(_logger, workerName, checkpoint.LastGeneration);
-
+        // The checkpoint read stays inside the loop. A database blip at startup must
+        // retry here instead of escaping ExecuteAsync and stopping the host (#6190).
         _isRunning = true;
         try
         {
@@ -80,28 +84,41 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 {
                     // Heartbeat every iteration so the health check can prove the loop is alive
                     // independently of whether this node currently leads.
-                    Interlocked.Exchange(ref _lastHeartbeatAtTicks, DateTimeOffset.UtcNow.UtcTicks);
+                    Interlocked.Exchange(ref _lastHeartbeatAtTicks, _time.GetUtcNow().UtcTicks);
 
                     var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
                     UpdateLeaderAcquisitionState();
                     if (!isLeader)
                     {
+                        leading = false;
                         await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
                         continue;
+                    }
+
+                    AlertWorkerCheckpoint activeCheckpoint;
+                    if (leading && checkpoint is not null)
+                    {
+                        activeCheckpoint = checkpoint;
+                    }
+                    else
+                    {
+                        activeCheckpoint = await GetCheckpointAsync(workerName, stoppingToken).ConfigureAwait(false);
+                        leading = true;
+                        LogStarting(_logger, workerName, activeCheckpoint.LastGeneration);
                     }
 
                     await using var scope = _scopeFactory.CreateAsyncScope();
                     var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
                     var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
 
-                    var previousGeneration = checkpoint.LastGeneration;
+                    var previousGeneration = activeCheckpoint.LastGeneration;
+                    var now = _time.GetUtcNow();
                     var nextGeneration = await pipeline
-                        .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
+                        .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, now, stoppingToken)
                         .ConfigureAwait(false);
 
-                    var now = DateTimeOffset.UtcNow;
-                    var shouldSweep = !checkpoint.LastDwellSweepAt.HasValue ||
-                        now - checkpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
+                    var shouldSweep = !activeCheckpoint.LastDwellSweepAt.HasValue ||
+                        now - activeCheckpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
 
                     if (shouldSweep)
                     {
@@ -109,18 +126,20 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                             .SweepDwellAsync(now, _options.Evaluation.ChangeBatchSize, stoppingToken)
                             .ConfigureAwait(false);
                         LogDwellSweep(_logger, evaluated);
-                        checkpoint = checkpoint with { LastDwellSweepAt = now };
+                        activeCheckpoint = activeCheckpoint with { LastDwellSweepAt = now };
                     }
 
                     if (nextGeneration != previousGeneration || shouldSweep)
                     {
-                        checkpoint = checkpoint with { LastGeneration = nextGeneration };
-                        await checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
+                        activeCheckpoint = activeCheckpoint with { LastGeneration = nextGeneration };
+                        await checkpointStore.SetAsync(activeCheckpoint, stoppingToken).ConfigureAwait(false);
                     }
+
+                    checkpoint = activeCheckpoint;
 
                     // Record a productive leader-pass heartbeat: this node holds leadership and
                     // completed a pass, so a stale value here means the leader is wedged.
-                    Interlocked.Exchange(ref _lastLeaderPassAtTicks, DateTimeOffset.UtcNow.UtcTicks);
+                    Interlocked.Exchange(ref _lastLeaderPassAtTicks, _time.GetUtcNow().UtcTicks);
 
                     // Delay only when the batch made no progress; a productive batch loops
                     // immediately so a change backlog drains at full speed.
@@ -164,7 +183,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         if (_leaderElection.LastAcquireFaulted)
         {
             // Start the window on the first fault; keep the original start on subsequent faults.
-            Interlocked.CompareExchange(ref _leaderAcquisitionFailingSinceTicks, DateTimeOffset.UtcNow.UtcTicks, 0);
+            Interlocked.CompareExchange(ref _leaderAcquisitionFailingSinceTicks, _time.GetUtcNow().UtcTicks, 0);
             _metrics.RecordEvaluationLeaderAcquisitionFailing(true);
         }
         else

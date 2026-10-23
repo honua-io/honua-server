@@ -27,11 +27,11 @@ from owslib.ogcapi.features import Features
 from owslib.util import ServiceException, http_get, openURL
 from owslib.wms import WebMapService
 from PIL import Image
-
 from shared import canonical_fixture as fx
 from shared.cert_envelope import CertificationEvidenceCollector
 
 from .conftest import AdminProbe, LaneConfig, Timer, web_mercator
+from .transport import record_transport
 
 pytestmark = pytest.mark.owslib_client
 
@@ -113,17 +113,8 @@ def test_conn01_capabilities(wms: WebMapService, wms_collector: CertificationEvi
 
 
 @pytest.mark.cert("CERT-CONN-02")
-def test_conn02_transport(base_url: str, wms_collector: CertificationEvidenceCollector) -> None:
-    assert base_url.split("://", 1)[0] == "http"
-    wms_collector.record(
-        "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
-        notes=(
-            "Transport verified as plain http on the compose client-compat network, which "
-            "terminates no TLS. TLS handshake behaviour is exercised in the release tier, where "
-            "the same lane runs against the HTTPS candidate."
-        ),
-        evidence_ref=base_url,
-    )
+def test_conn02_transport(base_url: str, wms, wms_collector: CertificationEvidenceCollector) -> None:
+    record_transport(base_url, wms, wms_collector, "WMS")
 
 
 @pytest.mark.cert("CERT-AUTH-01")

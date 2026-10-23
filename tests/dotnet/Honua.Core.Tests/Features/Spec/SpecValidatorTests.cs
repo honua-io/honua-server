@@ -37,6 +37,7 @@ public sealed class SpecValidatorTests
         return new StaticSpecCatalogSnapshot($"test-{entries.Length}-{Guid.NewGuid()}", dict);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_HappyPath_HasNoErrors()
     {
@@ -67,6 +68,7 @@ public sealed class SpecValidatorTests
         result.IsValid.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnknownReference_Reports()
     {
@@ -84,6 +86,7 @@ public sealed class SpecValidatorTests
             d.Message.Contains("@missing", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DuplicateSourceId_Reports()
     {
@@ -98,6 +101,7 @@ public sealed class SpecValidatorTests
         result.Diagnostics.Should().Contain(d => d.Code == SpecDiagnosticCode.DuplicateIdentifier);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnknownOperator_Reports()
     {
@@ -112,6 +116,7 @@ public sealed class SpecValidatorTests
         result.Diagnostics.Should().Contain(d => d.Code == SpecDiagnosticCode.UnknownOperator);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_MissingRequiredParam_OnBuffer_Reports()
     {
@@ -129,6 +134,7 @@ public sealed class SpecValidatorTests
             d.Message.Contains("distance", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_TypeMismatch_DistanceWhereStringExpected()
     {
@@ -146,6 +152,7 @@ public sealed class SpecValidatorTests
             d.Severity == SpecDiagnosticSeverity.Error);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_CrsWarning_WhenDistanceHasNoCrs()
     {
@@ -163,6 +170,7 @@ public sealed class SpecValidatorTests
             d.Severity == SpecDiagnosticSeverity.Warning);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_CrsError_WhenGeographicCrsPairedWithDistance()
     {
@@ -183,6 +191,7 @@ public sealed class SpecValidatorTests
             d.Severity == SpecDiagnosticSeverity.Error);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnsupportedGrammarVersion_MajorDrift_Reports()
     {
@@ -197,6 +206,7 @@ public sealed class SpecValidatorTests
             d.Code == SpecDiagnosticCode.UnsupportedGrammarVersion);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnsupportedGrammarVersion_MinorDrift_Reports()
     {
@@ -211,6 +221,7 @@ public sealed class SpecValidatorTests
             d.Code == SpecDiagnosticCode.UnsupportedGrammarVersion);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_MissingGrammarDirective_Reports()
     {
@@ -224,6 +235,7 @@ public sealed class SpecValidatorTests
             d.Code == SpecDiagnosticCode.UnsupportedGrammarVersion);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_CatalogUnavailable_EmitsSingleWarning()
     {
@@ -241,6 +253,7 @@ public sealed class SpecValidatorTests
             .Should().HaveCount(1, "a single warning is sufficient — per-source noise obscures real errors");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DiagnosticsCarryLineAndColumn()
     {

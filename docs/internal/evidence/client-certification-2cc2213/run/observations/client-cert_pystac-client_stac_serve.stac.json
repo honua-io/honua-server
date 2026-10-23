@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/pystac-client/stac/serve.stac",
+  "canonical_client": "PySTAC-Client",
+  "client_lane": "py-pystac",
+  "client_version": "pystac=1.15.2;pystac-client=0.9.0",
+  "client_version_detail": "pystac==1.15.2;pystac-client==0.9.0",
+  "surface": "stac",
+  "operation": "serve.stac",
+  "protocol_version": "STAC API 1.0.0",
+  "protocol_profile": "core+collections+item-search+ogcapi-features",
+  "started_at": "2026-09-16T21:42:11.568003Z",
+  "finished_at": "2026-09-16T21:42:12.174526Z",
+  "duration_ms": 606,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "pagination",
+    "limit",
+    "media-schema"
+  ],
+  "summary": "all 6 checks passed across 6 governed facets",
+  "primary_request_url": "http://honua:5000/stac/search",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "open the catalog, read a collection and search its items",
+      "outcome": "pass",
+      "detail": "catalog honua-stac-catalog; collection 0 extent [-122.5, 37.7, -122.35, 37.84]; search returned 10 items; located items inside the extent; null-geometry items ['10']",
+      "request_url": null,
+      "duration_ms": 127
+    },
+    {
+      "facet": "pagination",
+      "name": "item search follows next links to every item exactly once",
+      "outcome": "pass",
+      "detail": "4 pages of 3 -> 10 unique items; matched() 10",
+      "request_url": null,
+      "duration_ms": 103
+    },
+    {
+      "facet": "limit",
+      "name": "limit bounds each page and max_items bounds the result",
+      "outcome": "pass",
+      "detail": "limit=4 -> page of 4; max_items=6 -> 6 items; limit=0 -> Exception",
+      "request_url": null,
+      "duration_ms": 67
+    },
+    {
+      "facet": "negative",
+      "name": "unknown collection and invalid bbox raise APIError problems",
+      "outcome": "pass",
+      "detail": "{'unknown-collection': 404, 'latitude-out-of-range': 400}",
+      "request_url": null,
+      "duration_ms": 26
+    },
+    {
+      "facet": "auth",
+      "name": "protected collection is hidden and challenged without a valid credential",
+      "outcome": "pass",
+      "detail": "(listed, get_collection status) {'anonymous': (False, 401), 'wrong-api-key': (False, 401), 'expired-bearer': (False, 401), 'api-key': (True, 200), 'oidc-bearer': (True, 200)}; authenticated mirror search 10 items",
+      "request_url": null,
+      "duration_ms": 237
+    },
+    {
+      "facet": "media-schema",
+      "name": "catalog, collection and items deserialize as STAC 1.0 objects",
+      "outcome": "pass",
+      "detail": "catalog stac_version 1.0.0; collection license 'proprietary'; 5 items round-trip through pystac.Item; asset media types ['application/geo+json']",
+      "request_url": null,
+      "duration_ms": 46
+    }
+  ]
+}

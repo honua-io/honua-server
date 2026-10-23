@@ -5,7 +5,9 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -18,6 +20,8 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.Protocols.GeoServices.Models;
+using Honua.Protocols.GeoServices.VectorTileServer.Models;
+using Honua.Protocols.GeoServices.VectorTileServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -28,7 +32,13 @@ internal static partial class MapServerEndpoints
 {
     private const string DefaultMapServerCapabilities = "Map,Query,Data,Extract";
 
-    private sealed record MapServerMetadataLayerDescriptor(
+    /// <summary>
+    /// Spatial reference of the WebMercatorQuad cache advertised by every MapServer.
+    /// Service <c>spatialReference</c>, extents, and omitted export SR parameters use it.
+    /// </summary>
+    internal const int CachedMapSpatialReferenceId = 3857;
+
+    internal sealed record MapServerMetadataLayerDescriptor(
         int PublicLayerId,
         int StorageLayerId,
         string Name,
@@ -79,18 +89,17 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                publishedLayers.Select(static layer => layer.Resource),
-                service);
+                publishedLayers,
+                static layer => layer.Resource,
+                service,
+                AuthorizationOperation.Metadata,
+                cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
             }
-
-            var visibleLayers = publishedLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
-                .ToArray();
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -104,12 +113,22 @@ internal static partial class MapServerEndpoints
                     featureReader,
                     logger,
                     cancellationToken))).ConfigureAwait(false);
+            var transformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
+            var serviceExtent = await ResolveCachedServiceExtentAsync(
+                service,
+                visibleLayers,
+                transformService,
+                cancellationToken).ConfigureAwait(false);
             var response = MapServiceToMapServerResponse(
                 service,
                 visibleLayers,
+                serviceExtent,
                 limitsOptions.Query.MaxRecordCount,
                 limitsOptions.Tiles.MaxTileZoom,
-                MergeServiceTimeInfo(timeInfos));
+                limitsOptions.Tiles.MaxTilesPerRequest,
+                MergeServiceTimeInfo(timeInfos),
+                await BuildSupportedFeatureExtensionsAsync(
+                    context, resourceValidator, serviceId, service, snapshot, cancellationToken).ConfigureAwait(false));
 
             stopwatch.Stop();
             scope.SetSuccess(visibleLayers.Length);
@@ -178,7 +197,8 @@ internal static partial class MapServerEndpoints
             var publication = serviceLayerResult.Publication!;
             var resource = serviceLayerResult.Resource!;
 
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, AuthorizationOperation.Metadata, service, cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
@@ -200,12 +220,17 @@ internal static partial class MapServerEndpoints
                 logger,
                 cancellationToken).ConfigureAwait(false);
 
+            var mapExtent = await ResolveCachedExtentAsync(
+                service, [resource],
+                context.RequestServices.GetRequiredService<ICoordinateTransformService>(),
+                cancellationToken).ConfigureAwait(false);
             var response = MapLayerToMapServerLayerResponse(
                 service,
                 publication,
                 resource,
                 snapshot,
                 limitsOptions.Query.MaxRecordCount,
+                mapExtent,
                 drawingInfo,
                 timeInfo: timeInfo);
 
@@ -250,24 +275,26 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static MapServerResponse MapServiceToMapServerResponse(
+    internal static MapServerResponse MapServiceToMapServerResponse(
         MetadataV2Service service,
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
+        EsriExtent serviceExtent,
         int maxRecordCount,
         int maxTileZoom,
-        FeatureServerTimeInfo? timeInfo)
+        int maxExportTilesCount,
+        FeatureServerTimeInfo? timeInfo,
+        string supportedExtensions)
     {
-        var serviceSpatialReference = ResolveServiceSpatialReference(service, layers);
-        var serviceExtent = ResolveServiceExtent(layers, serviceSpatialReference);
         var visibleFeatureLayers = layers.Where(static layer => HasMapServerGeometry(layer.Resource)).ToArray();
         var visibleTables = layers.Where(static layer => !HasMapServerGeometry(layer.Resource)).ToArray();
+        var cachedDrawing = MetadataV2MapServerDrawing.UsesCachedDrawing(service);
 
         return new MapServerResponse
         {
             ServiceDescription = service.Metadata.Description,
             MapName = service.Metadata.Name,
             Description = service.Metadata.Description,
-            SpatialReference = ToEsriSpatialReference(serviceSpatialReference),
+            SpatialReference = serviceExtent.SpatialReference,
             Layers = [.. visibleFeatureLayers.Select(layer => new MapServerLayerInfo
             {
                 Id = layer.PublicLayerId,
@@ -294,9 +321,12 @@ internal static partial class MapServerEndpoints
             // The current MapServer implementation only accepts a narrow dynamicLayers subset
             // for interoperability; do not advertise the full ArcGIS dynamic-layer contract.
             SupportsDynamicLayers = false,
-            SingleFusedMapCache = false,
-            Units = ResolveMapUnits(serviceSpatialReference),
+            SingleFusedMapCache = cachedDrawing,
+            ExportTilesAllowed = cachedDrawing,
+            MaxExportTilesCount = cachedDrawing ? maxExportTilesCount : 0,
+            Units = "esriMeters",
             Capabilities = BuildMapServerCapabilities(),
+            SupportedExtensions = supportedExtensions,
             FullExtent = serviceExtent,
             InitialExtent = serviceExtent,
             MaxImageWidth = service.Settings?.MaxImageWidth ?? 4096,
@@ -314,8 +344,47 @@ internal static partial class MapServerEndpoints
                 Subject = service.Metadata.Publisher ?? "",
                 Credits = service.Metadata.Attribution ?? ""
             },
-            TileInfo = BuildTileInfo(maxTileZoom)
+            TileInfo = cachedDrawing ? BuildTileInfo(maxTileZoom) : null
         };
+    }
+
+    private static async Task<string> BuildSupportedFeatureExtensionsAsync(
+        HttpContext context, IResourceValidator resourceValidator, string serviceId,
+        MetadataV2Service service, MetadataV2GraphSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        // GeoServices clients treat {name}/FeatureServer and {name}/VersionManagementServer as
+        // extensions of the {name}/MapServer service and read this list to decide whether the
+        // feature service is a versioned workspace. When the MapServer route resolves a map-only
+        // service that shares its name with the feature service, describe the extensions of the
+        // service the sibling FeatureServer route actually serves (#5036).
+        if (!service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase))
+        {
+            var featureService = await resourceValidator
+                .ValidateServiceV2Async(serviceId, ServiceProtocols.FeatureServer, cancellationToken)
+                .ConfigureAwait(false);
+            if (!featureService.IsValid)
+            {
+                return string.Empty;
+            }
+
+            service = featureService.Resource!;
+        }
+
+        // FeatureServer itself remains available for external/non-versioned readers. The
+        // companion VMS requires the exact bound publication capability and its own gate.
+        var (publications, error) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
+            context, FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot),
+            static pair => pair.Resource, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+        if (error != null || publications.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var branchVersioning = await FeatureServerEndpoints.HasAccessibleBranchVersionedPublicationsAsync(
+            context, service, snapshot, cancellationToken).ConfigureAwait(false);
+        return FeatureServerEndpoints.IsVersionManagementAvailable(context, branchVersioning)
+            ? "FeatureServer,VersionManagementServer"
+            : "FeatureServer";
     }
 
     private static TileInfo BuildTileInfo(int maxTileZoom)
@@ -362,12 +431,13 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private static MapServerLayerResponse MapLayerToMapServerLayerResponse(
+    internal static MapServerLayerResponse MapLayerToMapServerLayerResponse(
         MetadataV2Service service,
         MetadataV2Publication publication,
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot,
         int maxRecordCount,
+        EsriExtent mapExtent,
         JsonElement? drawingInfo = null,
         int? publicLayerIdOverride = null,
         string? layerNameOverride = null,
@@ -388,8 +458,6 @@ internal static partial class MapServerEndpoints
             : layerNameOverride;
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayField(resource, objectIdField);
-        var serviceLayers = ResolveMapServerMetadataLayers(snapshot, service);
-        var serviceExtent = ResolveServiceExtent(serviceLayers, ResolveServiceSpatialReference(service, serviceLayers));
         var layerCapabilities = BuildMapServerLayerCapabilities(resource);
         var hasGeometry = HasMapServerGeometry(resource);
         var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
@@ -409,8 +477,9 @@ internal static partial class MapServerEndpoints
             Publisher = governance.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
             GeometryType = hasGeometry ? MapGeometryTypeToEsri(resource.ReadGeometryType()) : null,
-            SpatialReference = ToEsriSpatialReference(ResolveLayerSpatialReference(resource)),
-            Extent = ResolveLayerExtent(resource, serviceExtent),
+            SpatialReference = mapExtent.SpatialReference,
+            SourceSpatialReference = ToEsriSpatialReference(ResolveLayerSpatialReference(resource)),
+            Extent = mapExtent,
             DisplayField = displayField,
             ObjectIdField = objectIdField,
             Fields =
@@ -421,11 +490,11 @@ internal static partial class MapServerEndpoints
             Capabilities = layerCapabilities,
             SupportsAdvancedQueries = true,
             // Mirror hasAttachments + relationships from the same source the FeatureServer
-            // layer metadata uses (annotation-driven attachments + the canonical resource
+            // layer metadata uses (canonical attachment capability + the canonical resource
             // relationships) so a MapServer sublayer advertises the related records and
             // attachments the equivalent FeatureServer layer does (#1923).
             HasAttachments = FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource),
-            Relationships = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot),
+            Relationships = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot, service),
             MinScale = resource.Display?.MinScale ?? 0,
             MaxScale = resource.Display?.MaxScale ?? 0,
             DefaultVisibility = resource.Display?.DefaultVisibility ?? true,
@@ -583,6 +652,71 @@ internal static partial class MapServerEndpoints
         return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
+    /// <summary>
+    /// Unions accessible resource bboxes and projects them into the advertised tile CRS.
+    /// A bbox that cannot be projected is left out. When none remain, the tile-scheme
+    /// world is used so the extent stays in the same spatial reference as <c>tileInfo</c>.
+    /// </summary>
+    private static async Task<EsriExtent> ResolveCachedServiceExtentAsync(
+        MetadataV2Service service,
+        IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
+        ICoordinateTransformService transformService,
+        CancellationToken cancellationToken)
+        => await ResolveCachedExtentAsync(service, layers.Select(static layer => layer.Resource),
+            transformService, cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<EsriExtent> ResolveCachedExtentAsync(
+        MetadataV2Service service,
+        IEnumerable<MetadataV2Resource> resources,
+        ICoordinateTransformService transformService,
+        CancellationToken cancellationToken)
+    {
+        var spatialReference = new EsriSpatialReference
+        {
+            Wkid = CachedMapSpatialReferenceId,
+            LatestWkid = CachedMapSpatialReferenceId
+        };
+        var projected = await VectorTileServerExtentResolver.ResolveAsync(
+            resources,
+            service.SpatialReference,
+            new VectorTileSpatialReference
+            {
+                Wkid = CachedMapSpatialReferenceId,
+                LatestWkid = CachedMapSpatialReferenceId
+            },
+            transformService,
+            cancellationToken).ConfigureAwait(false);
+        // WebMercatorMaxLatitude projects a few ulps past the closed 3857 square.
+        // A cache client rejects that layer extent and does not open the sublayer
+        // as a dataset (#5556).
+        if (projected is { } extent
+            && double.IsFinite(extent.Xmin)
+            && double.IsFinite(extent.Ymin)
+            && double.IsFinite(extent.Xmax)
+            && double.IsFinite(extent.Ymax))
+        {
+            var limit = SpatialConstants.WebMercatorExtent;
+            return new EsriExtent
+            {
+                Xmin = Math.Clamp(extent.Xmin, -limit, limit),
+                Ymin = Math.Clamp(extent.Ymin, -limit, limit),
+                Xmax = Math.Clamp(extent.Xmax, -limit, limit),
+                Ymax = Math.Clamp(extent.Ymax, -limit, limit),
+                SpatialReference = spatialReference
+            };
+        }
+
+        var world = SpatialConstants.WebMercatorExtent;
+        return new EsriExtent
+        {
+            Xmin = -world,
+            Ymin = -world,
+            Xmax = world,
+            Ymax = world,
+            SpatialReference = spatialReference
+        };
+    }
+
     private static EsriExtent? ResolveLayerExtent(MetadataV2Resource resource, EsriExtent? serviceExtent)
     {
         var layerSpatialReference = ResolveLayerSpatialReference(resource);
@@ -703,7 +837,7 @@ internal static partial class MapServerEndpoints
         return new()
         {
             Name = field.Name,
-            Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServicesV2(field.Type),
+            Type = isObjectId ? "esriFieldTypeOID" : GeoServicesFieldConventions.MapFieldType(field.Type),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients require a positive length on string fields (a null length is
             // mapped to 0 and breaks inserts/updates). Fall back to the Esri-conventional
@@ -714,28 +848,9 @@ internal static partial class MapServerEndpoints
             Nullable = field.Nullable && !isObjectId,
             Editable = field.Editable && !isObjectId
                 && field.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography,
-            DefaultValue = field.DefaultValue.HasValue ? field.DefaultValue.Value : null
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field)
         };
     }
-
-    private static string MapFieldTypeToGeoServicesV2(MetadataV2FieldType type)
-        => type switch
-        {
-            MetadataV2FieldType.String => "esriFieldTypeString",
-            MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
-            MetadataV2FieldType.Double => "esriFieldTypeDouble",
-            MetadataV2FieldType.Float => "esriFieldTypeSingle",
-            MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
-            MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDate",
-            MetadataV2FieldType.Time => "esriFieldTypeString",
-            MetadataV2FieldType.Json => "esriFieldTypeString",
-            MetadataV2FieldType.Binary => "esriFieldTypeBlob",
-            MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
-            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => "esriFieldTypeGeometry",
-            _ => "esriFieldTypeString"
-        };
 
     private static string BuildMapServerCapabilities()
         => DefaultMapServerCapabilities;

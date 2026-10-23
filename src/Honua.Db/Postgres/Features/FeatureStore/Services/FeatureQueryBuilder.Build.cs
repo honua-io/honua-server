@@ -6,6 +6,7 @@ using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -71,7 +72,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             else if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = DatumTransformSql.BuildTransformExpression(pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
+                pointGeometry = DatumTransformSql.BuildTransformExpression(
+                    pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
             }
 
             if (query.RasterPointGrid is { } pointGrid)
@@ -175,7 +177,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = DatumTransformSql.BuildTransformExpression(pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
+                pointGeometry = DatumTransformSql.BuildTransformExpression(
+                    pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
             }
 
             var pointX = BuildPointCoordinateExpression(pointGeometry, "X");
@@ -283,13 +286,30 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             var paramIndex = 2;
             var parameters = new List<object>();
-            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
 
-            sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            if (query.Distinct)
+            {
+                // Count distinct attribute tuples, matching the select path's projection.
+                // Bind attribute parameters before the versioned source so $n lines up
+                // with BuildAttributesSelectExpression's appearance order.
+                var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
+                var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"SELECT COUNT(*) FROM (SELECT DISTINCT {attributesSelect} AS attributes FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                sql.Append(") AS distinct_values");
+            }
+            else
+            {
+                var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
+                sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -323,6 +343,64 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
             AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
             AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    /// <summary>
+    /// Object-id query over the pre-change row images the change-tracking trigger recorded for
+    /// <paramref name="changeIds"/> (migration 121, #4879). The images are exposed as a subquery with the
+    /// base table's column shape, like the branch-version overlay, so the same where-clause, enforced
+    /// read policy and spatial filter SQL applies unchanged. Changes without a recorded image never match.
+    /// </summary>
+    public CoreParameterizedQuery BuildPreChangeObjectIdsQuery(
+        int layerId,
+        FeatureQuery query,
+        IReadOnlyCollection<long> changeIds,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        ArgumentNullException.ThrowIfNull(changeIds);
+        GuardVersionedReadSupported(query, "pre-change image");
+        if (query.SpatialFilter is { } spatial &&
+            (spatial.SpatialRelationship == SpatialRelationship.NearestNeighbor || spatial.ReturnDistance))
+        {
+            // These shapes bind a geometry ahead of the WHERE parameters, which would collide with the
+            // change-id parameter emitted by the source below.
+            throw new NotSupportedException("Nearest-neighbor or distance-returning reads of pre-change images are not supported.");
+        }
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var changeIdsParam = paramIndex++;
+            parameters.Add(changeIds.ToArray());
+
+            var objectId = DatabaseSchema.ObjectIdColumn;
+            var layerIdColumn = DatabaseSchema.LayerIdColumn;
+            var geometryImage = geometryStorageType switch
+            {
+                CoreGeometryStorageType.Geography => "c.pre_geometry::geography",
+                CoreGeometryStorageType.Bytea => "ST_AsEWKB(c.pre_geometry)",
+                _ => "c.pre_geometry"
+            };
+
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT {objectId} FROM (SELECT c.{objectId}, c.{layerIdColumn}, {geometryImage} AS {DatabaseSchema.GeometryColumn}, " +
+                $"c.pre_attributes AS {DatabaseSchema.AttributesColumn}, " +
+                $"c.pre_created_at AS created_at, c.pre_updated_at AS updated_at FROM honua.feature_changes c " +
+                $"WHERE c.change_id = ANY(${changeIdsParam}) AND c.pre_attributes IS NOT NULL) AS features " +
+                $"WHERE {layerIdColumn} = $1");
+
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -395,23 +473,29 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var effectiveQuery = query ?? new FeatureQuery();
         var extentExpression = _geometryProcessor.GetGeometryOperand(geometryStorageType, null, effectiveQuery.SpatialReferenceSrid);
 
+        // PostGIS can resolve the source CRS from each stored geometry. An output CRS
+        // must still transform coordinates when the caller has no source-CRS hint.
         if (effectiveQuery.OutputSrid.HasValue &&
-            effectiveQuery.SpatialReferenceSrid.HasValue &&
-            effectiveQuery.OutputSrid.Value != effectiveQuery.SpatialReferenceSrid.Value)
+            effectiveQuery.OutputSrid != effectiveQuery.SpatialReferenceSrid)
         {
-            extentExpression = DatumTransformSql.BuildTransformExpression(extentExpression, effectiveQuery.OutputSrid.Value, effectiveQuery.OutputDatumTransformation);
+            extentExpression = DatumTransformSql.BuildTransformExpression(
+                extentExpression,
+                effectiveQuery.OutputSrid.Value,
+                effectiveQuery.OutputDatumTransformation,
+                effectiveQuery.SpatialReferenceSrid);
         }
 
         var sql = _stringBuilderPool.Get();
         try
         {
+            // PostgreSQL does not fold repeated PostGIS calls. Selecting the decoded or
+            // reprojected geometry once in a materialized CTE keeps ST_Extent and the SRID
+            // aggregates from evaluating that expression up to six times per row (#6070).
             sql.Append(CultureInfo.InvariantCulture, $@"
-            SELECT
-                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
-            FROM (
-                SELECT ST_Extent({extentExpression}) as extent
+            WITH extent_rows AS MATERIALIZED (
+                SELECT {extentExpression} AS geom
                 FROM {_tableName}
-                WHERE {DatabaseSchema.LayerIdColumn} = $1 AND {extentExpression} IS NOT NULL");
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             var paramIndex = 2;
             var parameters = new List<object>();
@@ -420,7 +504,18 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendTemporalFilter(sql, effectiveQuery, ref paramIndex, parameters);
             AppendSpatialFilter(sql, effectiveQuery, geometryStorageType, ref paramIndex, parameters);
 
-            sql.Append(") AS extent_query");
+            sql.Append(@"
+            )
+            SELECT
+                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent),
+                min_srid, max_srid
+            FROM (
+                SELECT ST_Extent(geom) as extent,
+                    MIN(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom)) as min_srid,
+                    MAX(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom)) as max_srid
+                FROM extent_rows
+                WHERE geom IS NOT NULL
+            ) AS extent_query");
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
         finally
@@ -563,13 +658,25 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 var layerSrid = query.Value.SpatialReferenceSrid.Value;
                 if (layerSrid != targetTileSrid)
                 {
-                    geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
-                    tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
+                    // Route through the shared clamp so a polar vertex in a geographic layer
+                    // cannot abort the Web Mercator tile statement (#6109). The catalog
+                    // selection is the grid whose area contains this tile (#5194).
+                    var selection = TileDatumSelection(query, layerSrid, targetTileSrid, tileBounds);
+                    geometryForTile = DatumTransformSql.BuildTransformExpression(
+                        geometryOperand, targetTileSrid, selection, layerSrid);
+                    tileEnvelopeForFilter = selection is null
+                        ? $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})"
+                        : DatumTransformSql.BuildTransformExpression(
+                            tileEnvelopeWithBuffer,
+                            layerSrid,
+                            DatumOutputSelection.Inverse(selection),
+                            targetTileSrid);
                 }
             }
             else
             {
-                geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+                // Layer SRID unknown: clamp geographic rows by their runtime SRID (#6109).
+                geometryForTile = DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
                 filterGeometryOperand = geometryForTile;
             }
 
@@ -686,13 +793,25 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.
-            var geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+            // A geographic layer aimed at a Web Mercator gridset is clamped first (#6109).
+            // The catalog selection matches feature query output (#5194).
+            var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid, tileBounds);
+            var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
+                ? DatumTransformSql.BuildTransformExpression(
+                    geometryOperand, targetTileSrid, selection, storageSrid)
+                : DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
             string filterGeometryOperand;
             string tileEnvelopeForFilter;
             if (query.HasValue && query.Value.SpatialReferenceSrid is { } layerSrid && layerSrid != targetTileSrid)
             {
                 filterGeometryOperand = geometryOperand;
-                tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
+                tileEnvelopeForFilter = selection is null
+                    ? $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})"
+                    : DatumTransformSql.BuildTransformExpression(
+                        tileEnvelopeWithBuffer,
+                        layerSrid,
+                        DatumOutputSelection.Inverse(selection),
+                        targetTileSrid);
             }
             else if (query.HasValue && query.Value.SpatialReferenceSrid is { } sameSrid && sameSrid == targetTileSrid)
             {
@@ -761,4 +880,30 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
     private static string SqlDouble(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Catalog pipeline for a tile reprojection. An explicit query selection wins.
+    /// The tile envelope picks the catalog area (Alaska, not CONUS). No single area,
+    /// and no catalog entry, stays null so the SQL keeps two-argument <c>ST_Transform</c>.
+    /// </summary>
+    private static DatumTransformationSelection? TileDatumSelection(
+        FeatureQuery? query,
+        int? layerSrid,
+        int targetSrid,
+        TileBounds tileBounds)
+    {
+        if (query?.OutputDatumTransformation is { } chosen)
+        {
+            return chosen;
+        }
+
+        if (layerSrid is not int from || from == targetSrid)
+        {
+            return null;
+        }
+
+        var area = DatumOutputSelection.AreaForTile(
+            tileBounds.XMin, tileBounds.YMin, tileBounds.XMax, tileBounds.YMax, targetSrid);
+        return DatumOutputSelection.Resolve(DatumCatalog.Shared, from, targetSrid, area);
+    }
 }

@@ -61,6 +61,17 @@ internal static partial class ExecutionAdmissionLog
     public static partial void RateBucketEvicted(ILogger logger, string rateKey);
 
     [LoggerMessage(8026, LogLevel.Warning,
-        "Distributed execution-admission rate limiting unavailable; using process-local fallback.")]
+        "Distributed execution-admission rate limiting unavailable; rejecting with backpressure instead of a per-node fallback.")]
     public static partial void RedisUnavailable(ILogger logger, Exception exception);
+
+    // Event IDs 8027-8030 live on ExecutionAdmissionLeaseLog in Honua.Hosting, beside the
+    // shared lease. A LoggerMessage partial class cannot span assemblies.
+
+    [LoggerMessage(8031, LogLevel.Warning,
+        "Active-job snapshot read failed on attempt {Attempt}; retrying before the admission decision.")]
+    public static partial void ActiveStateReadRetrying(ILogger logger, int attempt, Exception exception);
+
+    [LoggerMessage(8032, LogLevel.Warning,
+        "Active-job snapshot unavailable after {Attempts} attempts; rejecting the submission with backpressure.")]
+    public static partial void ActiveStateUnavailable(ILogger logger, int attempts, Exception exception);
 }

@@ -1,0 +1,87 @@
+{
+  "finished_at": "2026-10-22T10:22:36.435282+00:00",
+  "pro_version": "3.7.2",
+  "product": "ArcView",
+  "started_at": "2026-10-22T10:21:37.391101+00:00",
+  "steps": [
+    {
+      "observed": {
+        "is_raster_layer": true,
+        "layer_created": true
+      },
+      "seconds": 12.6,
+      "status": "pass",
+      "step": "MakeImageServerLayer"
+    },
+    {
+      "observed": {
+        "band_count": 1,
+        "data_type": "RasterLayer"
+      },
+      "seconds": 0.3,
+      "status": "pass",
+      "step": "Describe"
+    },
+    {
+      "observed": {
+        "band_count": 1,
+        "cell_size": [
+          0.0010937499999998934,
+          0.0010937499999998934
+        ],
+        "dimension_names": [
+          "latitude",
+          "longitude",
+          "time"
+        ],
+        "extent": [
+          -122.45,
+          37.730000000000004,
+          -122.38000000000001,
+          37.8
+        ],
+        "height": 64,
+        "is_multidimensional": true,
+        "no_data_value": 0.0,
+        "pixel_type": "U8",
+        "spatial_reference_wkid": 4326,
+        "variable_attributes": {
+          "Description": "Sea Surface Temperature",
+          "Unit": "degC"
+        },
+        "variables": [
+          "sea_surface_temperature(latitude=0, longitude=0, time=0)"
+        ],
+        "width": 64
+      },
+      "seconds": 5.6,
+      "status": "pass",
+      "step": "RasterProperties"
+    },
+    {
+      "observed": {
+        "layer_created": true
+      },
+      "seconds": 40.6,
+      "status": "pass",
+      "step": "MakeMultidimensionalRasterLayer"
+    },
+    {
+      "error_codes": [],
+      "error_frame": "dimension_values",
+      "error_type": "RuntimeError",
+      "seconds": 0.0,
+      "status": "fail",
+      "step": "DimensionValues"
+    },
+    {
+      "error_codes": [],
+      "error_frame": "RasterToNumPyArray",
+      "error_type": "RuntimeError",
+      "seconds": 0.0,
+      "status": "fail",
+      "step": "RasterRead"
+    }
+  ],
+  "variable": "sea_surface_temperature"
+}

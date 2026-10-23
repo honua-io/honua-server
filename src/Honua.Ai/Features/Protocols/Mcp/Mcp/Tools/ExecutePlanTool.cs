@@ -9,6 +9,7 @@ using Honua.Geoprocessing;
 using Honua.Infrastructure.Licensing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
@@ -110,10 +111,12 @@ internal sealed class ExecutePlanTool : IMcpTool
             .SubmitJobAsync(plan, idempotencyKey, principal, metadata, cancellationToken)
             .ConfigureAwait(false);
 
-        // honua-server#1954: when the call is part of a streamable-HTTP session,
-        // stream the job's progress to the session's GET /mcp SSE channel instead
-        // of forcing the client to poll honua://jobs/{id}. Resolved leniently so a
-        // lightweight test host (no session services registered) keeps working.
+        // honua-server#1954: when the call is part of a streamable-HTTP session
+        // and the server-initiated stream is on, stream the job's progress to the
+        // session's GET /mcp SSE channel. The stream is off by default, and a
+        // job-store poll then has no channel that can deliver the frames
+        // (honua-server#5629). Resolved leniently so a lightweight test host
+        // (no session services registered) keeps working.
         StartProgressStreaming(httpContext, jobRecord.OperationId, principal);
 
         var output = new McpExecuteOutput
@@ -143,7 +146,15 @@ internal sealed class ExecutePlanTool : IMcpTool
         }
 
         sessions.AssociateJob(sessionId, jobId);
-        bridge.Track(sessionId, jobId, principal);
+
+        // The job-to-session index is recorded above. The background job-store
+        // poll only starts when GET /mcp can deliver notifications/progress.
+        var streamEnabled = httpContext.RequestServices.GetService<IOptions<McpOptions>>()
+            ?.Value.ServerInitiatedStreamEnabled == true;
+        if (streamEnabled)
+        {
+            bridge.Track(sessionId, jobId, principal);
+        }
     }
 
     private static void EnforceGuardrails(HttpContext httpContext)

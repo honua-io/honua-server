@@ -164,7 +164,14 @@ public static class HonuaTelemetry
     {
         _exportExceptionDetails = exportDetails;
         _includeExceptionStackTraces = includeStackTraces;
-        _maxExceptionDetailLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
+        var maxLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
+        _maxExceptionDetailLength = maxLength;
+
+        // Span-event attributes are fixed once added, so providers that record exception text on
+        // events (retry callbacks) apply this same policy at construction (#5475).
+        TelemetryExceptionDetailPolicy.Configure(exportDetails
+            ? message => SanitizeTelemetryText(message, maxLength)
+            : static _ => null);
     }
 
     /// <summary>
@@ -538,6 +545,9 @@ public static class HonuaTelemetry
 
         /// <summary>OGC Web Feature Service 2.0.</summary>
         public const string Wfs20 = "WFS-2.0";
+
+        /// <summary>OGC Web Coverage Service 1.0.0.</summary>
+        public const string Wcs10 = "WCS-1.0.0";
 
         /// <summary>OGC Web Coverage Service 2.0.1.</summary>
         public const string Wcs20 = "WCS-2.0.1";

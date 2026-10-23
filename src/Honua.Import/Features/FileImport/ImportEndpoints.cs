@@ -123,11 +123,20 @@ internal static partial class ImportEndpoints
 
         _ = group.MapMethods("/upload-url", [HttpMethods.Post], HandleImportFileFromUrl)
             .WithName($"ImportFileFromUrl{nameSuffix}")
+            .WithMetadata(new UrlImportOperationMetadata())
             .WithSummary("Import geospatial data from a public object URL")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         _ = group.MapMethods("/upload-url", NonPostMethods, HandlePostMethodNotAllowed)
             .WithName($"ImportFileFromUrl{nameSuffix}MethodNotAllowed")
             .WithSummary("Import geospatial data from a public object URL method not allowed");
+
+        _ = group.MapMethods("/upload-object", [HttpMethods.Post], HandleImportFileFromObjectStore)
+            .WithName($"ImportFileFromObjectStore{nameSuffix}")
+            .WithSummary("Import geospatial data from an allow-listed s3 object using the host identity")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        _ = group.MapMethods("/upload-object", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"ImportFileFromObjectStore{nameSuffix}MethodNotAllowed")
+            .WithSummary("Import geospatial data from an allow-listed s3 object method not allowed");
 
         // Get upload progress
         _ = group.MapMethods("/uploads/{uploadId}/progress", [HttpMethods.Get], HandleGetUploadProgress)
@@ -316,13 +325,8 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        if (!await ImportAdminAuthorization.IsAuthorizedAsync(
-                context, context.User, cancellationToken).ConfigureAwait(false))
+        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
         {
-            var denial = context.User.Identity?.IsAuthenticated == true
-                ? Results.Forbid()
-                : Results.Unauthorized();
-            await denial.ExecuteAsync(context);
             return;
         }
 
@@ -352,6 +356,13 @@ internal static partial class ImportEndpoints
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (ImportJobQueueFullException)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Import job queue is full. Retry later.",
+                StatusCodes.Status429TooManyRequests);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
@@ -469,6 +480,11 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var request = await JsonSerializer.DeserializeAsync(
             context.Request.Body,
             ImportJsonContext.Default.ImportUrlImportRequest,
@@ -508,6 +524,26 @@ internal static partial class ImportEndpoints
                 context,
                 "Invalid target schema. Use only letters, numbers, and underscores.",
                 StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!ImportValidationHelpers.IsPermittedTargetSchema(request.TargetSchema, context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        // A forced background import on a host without a runner is refused before the download
+        // (honua-server#5916); a size-triggered one is refused once the size is known.
+        if (request.ForceBackground && !CanAcceptBackgroundImports(context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                BackgroundImportUnavailableMessage,
+                StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
@@ -554,6 +590,13 @@ internal static partial class ImportEndpoints
         {
             throw;
         }
+        catch (ImportJobQueueFullException)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Import job queue is full. Retry later.",
+                StatusCodes.Status429TooManyRequests);
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -571,14 +614,58 @@ internal static partial class ImportEndpoints
         }
     }
 
+    private static async Task<bool> AuthorizeImportMutationAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        if (await ImportAdminAuthorization.IsAuthorizedAsync(context, context.User, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        var denial = context.User.Identity?.IsAuthenticated == true
+            ? Results.Forbid()
+            : Results.Unauthorized();
+        await denial.ExecuteAsync(context);
+        return false;
+    }
+
+    internal const string BackgroundImportUnavailableMessage =
+        "Background import service not available. File is too large for synchronous import.";
+
+    /// <summary>
+    /// Whether this host accepts a background import: a job service is registered and the
+    /// runner resolved at composition (<see cref="IBackgroundImportRunnerInfo"/>) is not
+    /// <c>unavailable</c>.
+    /// </summary>
+    internal static bool CanAcceptBackgroundImports(IServiceProvider services)
+        => services.GetService<IImportJobService>() is not null
+            && services.GetService<IBackgroundImportRunnerInfo>() is not { AcceptsBackgroundImports: false };
+
     private static async Task ExecuteStagedImportAsync(
         HttpContext context,
         ImportExecutionRequest request,
         CancellationToken cancellationToken)
     {
+        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var limits = importService.Limits;
         var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
+
+        // honua-server#5916: decide before staging anything whether this host can run a background
+        // import at all. A Lambda host without a durable runner (and any host without a job
+        // service) refuses with the typed 503 instead of accepting work it cannot finish.
+        if (shouldQueueBackground && !CanAcceptBackgroundImports(context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                BackgroundImportUnavailableMessage,
+                StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         var deleteLocalFile = true;
         string? cloudFileId = null;
@@ -635,7 +722,7 @@ internal static partial class ImportEndpoints
                 {
                     await AdminResponseWriter.WriteErrorAsync(
                         context,
-                        "Background import service not available. File is too large for synchronous import.",
+                        BackgroundImportUnavailableMessage,
                         StatusCodes.Status503ServiceUnavailable);
                     return;
                 }
@@ -698,14 +785,23 @@ internal static partial class ImportEndpoints
             // a refresh failure must not fail the import that already succeeded.
             if (importResult.Success)
             {
+                var snapshotSchema = string.IsNullOrWhiteSpace(importResult.Schema)
+                    ? importRequest.TargetSchema
+                    : importResult.Schema;
+                var snapshotTable = string.IsNullOrWhiteSpace(importResult.PhysicalTableName)
+                    ? ResolvePhysicalImportedTableName(importRequest.TableName)
+                    : importResult.PhysicalTableName;
                 await TryRefreshPublishedSnapshotAsync(
                     context,
-                    importRequest.TargetSchema,
-                    ResolvePhysicalImportedTableName(importRequest.TableName),
-                    cancellationToken);
+                    snapshotSchema,
+                    snapshotTable,
+                    CancellationToken.None);
             }
 
-            IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult);
+            IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult,
+                statusCode: !importResult.Success && importResult.ErrorCode == ImportTableOwnershipException.Code
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status200OK);
             await syncResult.ExecuteAsync(context);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1025,6 +1121,14 @@ internal static partial class ImportEndpoints
                 MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
                 return MultipartImportParseResult.Failure(
                     "Invalid target schema. Use only letters, numbers, and underscores.",
+                    StatusCodes.Status400BadRequest);
+            }
+
+            if (!ImportValidationHelpers.IsPermittedTargetSchema(targetSchema, context.RequestServices))
+            {
+                MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
+                return MultipartImportParseResult.Failure(
+                    ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
                     StatusCodes.Status400BadRequest);
             }
 
@@ -1513,6 +1617,11 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        if (!await AuthorizeImportMutationAsync(context, context.RequestAborted).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var jobId = context.GetRouteValue("jobId")?.ToString();
         if (string.IsNullOrWhiteSpace(jobId))
         {
@@ -1623,6 +1732,9 @@ internal static partial class ImportEndpoints
         /// <param name="layerCount">Number of published layers whose snapshot was rebuilt.</param>
         [LoggerMessage(EventId = 3306, Level = LogLevel.Information, Message = "Rebuilt published feature snapshot for {LayerCount} layer(s) after importing table {TableName}")]
         public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
+
+        [LoggerMessage(EventId = 3307, Level = LogLevel.Warning, Message = "Failed to record the object-store import audit event")]
+        public static partial void AuditRecordFailed(ILogger logger, Exception exception);
     }
 
     private static string? ReadLineageHeader(HttpContext context, string name)
@@ -1690,7 +1802,8 @@ internal sealed record ImportUrlImportRequest
     public required string TableName { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
-    public int TargetSrid { get; init; } = 4326;
+    // A setter preserves the initializer when .NET 10 source-generated JSON omits this field.
+    public int TargetSrid { get; set; } = 4326;
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
     public bool TrackProgress { get; init; }

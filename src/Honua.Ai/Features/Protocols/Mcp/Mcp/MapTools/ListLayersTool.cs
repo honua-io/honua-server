@@ -42,7 +42,8 @@ internal sealed class ListLayersTool : IMcpTool
     {
         Name = ToolName,
         Title = "List layers",
-        Description = "List the published services and layers available to query or render, with geometry type, extent, and a short description. Use the returned serviceId/layerId with honua_query_features and honua_render_map.",
+        Description = "List the published services and layers available to query or render, with geometry type, extent, and a short description. Use the returned serviceId/layerId with honua_query_features and honua_render_map. "
+            + "For a catalog-backed Studio draft copy studioSourceId into layer.sourceId; layer.id is a separate composition identity.",
         InputSchema = MapToolSchemas.ListLayersArgumentSchema,
         OutputSchema = McpToolOutputSchemas.ListLayersOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("List layers")
@@ -94,6 +95,8 @@ internal sealed class ListLayersTool : IMcpTool
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var layers = new List<McpLayerSummary>();
+        var identities = new Dictionary<(string ServiceId, int LayerId),
+            (string ResourceId, string? BindingId, McpLayerSummary Summary)>();
         foreach (var service in snapshot.Graph.Services)
         {
             var publications = snapshot.PublicationsForService(service.Metadata.Id);
@@ -114,6 +117,25 @@ internal sealed class ListLayersTool : IMcpTool
                 }
 
                 var summary = ToSummary(service, publication, resource!, layerIndex);
+                var identity = (service.Metadata.Id, layerIndex);
+                var bindingId = snapshot.ResolveStorageBinding(publication)?.Metadata.Id;
+                // A layer can have several protocol publications. Authorize each
+                // before grouping so a denied publication cannot hide an allowed one.
+                if (identities.TryGetValue(identity, out var existing))
+                {
+                    if (existing.ResourceId != resource!.Metadata.Id || existing.BindingId != bindingId
+                        || !JsonElement.DeepEquals(
+                            JsonSerializer.SerializeToElement(existing.Summary, MapToolJsonContext.Default.McpLayerSummary),
+                            JsonSerializer.SerializeToElement(summary, MapToolJsonContext.Default.McpLayerSummary)))
+                    {
+                        throw new GeoprocessingValidationException(
+                            "Published layer metadata is ambiguous for a service/layer identity.");
+                    }
+
+                    continue;
+                }
+
+                identities.Add(identity, (resource!.Metadata.Id, bindingId, summary));
                 if (filter is null || Matches(summary, service, filter))
                 {
                     layers.Add(summary);
@@ -124,7 +146,13 @@ internal sealed class ListLayersTool : IMcpTool
         layers.Sort(static (a, b) =>
         {
             var byService = string.CompareOrdinal(a.ServiceName, b.ServiceName);
-            return byService != 0 ? byService : a.LayerId.CompareTo(b.LayerId);
+            if (byService != 0)
+            {
+                return byService;
+            }
+
+            var byServiceId = string.CompareOrdinal(a.ServiceId, b.ServiceId);
+            return byServiceId != 0 ? byServiceId : a.LayerId.CompareTo(b.LayerId);
         });
 
         var totalCount = layers.Count;

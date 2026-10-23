@@ -1,11 +1,27 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
+using Honua.Cloud.Aws.Features;
 
 namespace Honua.ControlPlane;
+
+/// <summary>
+/// One CloudWatch signal read: the newest finite datapoint, or none. <see cref="SeriesAbsent"/> is
+/// set only when <c>GetMetricData</c> completed and the expression matched no series or returned no
+/// datapoints, which is how CloudWatch reports an error-count metric (ALB
+/// <c>HTTPCode_Target_5XX_Count</c>, Lambda <c>Errors</c>) for an error-free window. A partial or
+/// failed result, or a non-finite datapoint, is never <see cref="SeriesAbsent"/>.
+/// </summary>
+internal readonly record struct CloudWatchSignalReading(double? Value, bool SeriesAbsent)
+{
+    /// <summary>A completed read that matched no series or returned no datapoints.</summary>
+    public static CloudWatchSignalReading Absent { get; } = new(null, SeriesAbsent: true);
+
+    /// <summary>A read that produced no usable value and no proof that the series is empty.</summary>
+    public static CloudWatchSignalReading Unavailable { get; } = new(null, SeriesAbsent: false);
+}
 
 /// <summary>
 /// Thin seam over the AWS CloudWatch <c>GetMetricData</c> API so the deploy telemetry gate can be
@@ -16,9 +32,9 @@ internal interface ICloudWatchMetricClient
 {
     /// <summary>
     /// Evaluates a single CloudWatch metric-math expression over the supplied window and returns
-    /// the most recent datapoint, or <c>null</c> when CloudWatch returned no datapoints.
+    /// the most recent datapoint, or no value when CloudWatch returned no datapoints.
     /// </summary>
-    Task<double?> GetExpressionValueAsync(
+    Task<CloudWatchSignalReading> GetExpressionReadingAsync(
         string? region,
         string expression,
         DateTime startUtc,
@@ -30,7 +46,7 @@ internal interface ICloudWatchMetricClient
 
 internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
 {
-    public async Task<double?> GetExpressionValueAsync(
+    public async Task<CloudWatchSignalReading> GetExpressionReadingAsync(
         string? region,
         string expression,
         DateTime startUtc,
@@ -59,14 +75,62 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
             },
             cancellationToken).ConfigureAwait(false);
 
-        var result = response.MetricDataResults?.FirstOrDefault();
-        if (result?.Values is { Count: > 0 } values)
+        return SelectSignalReading(response);
+    }
+
+    /// <summary>
+    /// Reads the single signal value out of a <c>GetMetricData</c> response. Visible for testing.
+    /// </summary>
+    internal static double? SelectSignalValue(GetMetricDataResponse response)
+        => SelectSignalReading(response).Value;
+
+    /// <summary>
+    /// Reads the single signal out of a <c>GetMetricData</c> response and classifies an empty answer.
+    /// Visible for testing.
+    /// </summary>
+    internal static CloudWatchSignalReading SelectSignalReading(GetMetricDataResponse response)
+    {
+        // More data pages mean this page is not the whole answer; never read it as an empty series.
+        if (!string.IsNullOrEmpty(response.NextToken))
         {
-            // ScanBy.TimestampDescending orders datapoints newest-first.
-            return values[0];
+            return CloudWatchSignalReading.Unavailable;
         }
 
-        return null;
+        var results = response.MetricDataResults;
+        if (results is not { Count: > 0 })
+        {
+            // A SEARCH that matches no metric (no error-count metric was published for the window)
+            // can come back with no result for the query at all.
+            return CloudWatchSignalReading.Absent;
+        }
+
+        // The request carries one query, so more than one result means the expression resolved to
+        // several time series (a SEARCH or a GROUP BY Metrics Insights query). Reading the first one
+        // would promote or hold a deploy on an arbitrary series (#4617), exactly as for a Prometheus
+        // vector or a Log Analytics table with several rows.
+        if (results.Count > 1)
+        {
+            throw new InvalidOperationException(
+                $"Telemetry query resolved to {results.Count} series; expected exactly one. " +
+                "Aggregate the expression to a single time series.");
+        }
+
+        var result = results[0];
+        if (result.Values is { Count: > 0 } values)
+        {
+            // ScanBy.TimestampDescending orders datapoints newest-first. Metric-math over an
+            // undefined ratio (for example 0/0) can yield NaN/Infinity; treat that the same as no
+            // datapoint rather than a real reading that could silently satisfy a threshold (#4617).
+            return double.IsFinite(values[0])
+                ? new CloudWatchSignalReading(values[0], SeriesAbsent: false)
+                : CloudWatchSignalReading.Unavailable;
+        }
+
+        // No datapoints is an empty series only when CloudWatch reports the result complete. A
+        // PartialData, InternalError or Forbidden status is a failed read, not proof of zero.
+        return result.StatusCode is null || result.StatusCode == StatusCode.Complete
+            ? CloudWatchSignalReading.Absent
+            : CloudWatchSignalReading.Unavailable;
     }
 
     // Visible for testing. Applies an opt-in, config-driven ServiceURL override (for example a
@@ -76,18 +140,9 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
     {
         var config = new AmazonCloudWatchConfig();
 
-        if (!string.IsNullOrWhiteSpace(region))
-        {
-            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
-        }
-
-        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
-        // precedence for the actual request URL while the region (when set) still provides the
-        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
-        if (!string.IsNullOrWhiteSpace(serviceUrl))
-        {
-            config.ServiceURL = serviceUrl;
-        }
+        // An explicit endpoint takes precedence for the request URL while the region (when set)
+        // stays the SigV4 signing region. Unset = default regional endpoint.
+        AwsClientEndpoint.Apply(config, region, serviceUrl);
 
         return new AmazonCloudWatchClient(config);
     }
@@ -122,7 +177,8 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
         {
             throw new InvalidOperationException(
                 $"Telemetry connection '{connection.ConnectionId}' uses the cloudwatch provider, which requires explicit " +
-                "telemetry.error_rate.query / telemetry.latency_p95.query / telemetry.sample_count.query CloudWatch metric-math expressions.");
+                "telemetry.error_rate.query (or telemetry.error_count.query) / telemetry.latency_p95.query / " +
+                "telemetry.sample_count.query CloudWatch metric-math expressions.");
         }
 
         var region = ResolveRegion(connection);
@@ -130,9 +186,11 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
         var endUtc = DateTime.UtcNow;
         var startUtc = endUtc.AddSeconds(-WindowSeconds);
 
+        // Every signal reads the same [startUtc, endUtc) window, so an error count and the sample
+        // count it is divided by describe the same traffic.
         var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
             ? (double?)null
-            : await metricClient.GetExpressionValueAsync(region, policy.MinimumSampleQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
+            : (await metricClient.GetExpressionReadingAsync(region, policy.MinimumSampleQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false)).Value;
 
         if (policy.MinimumSampleCount.HasValue && (!sampleCount.HasValue || sampleCount.Value < policy.MinimumSampleCount.Value))
         {
@@ -142,19 +200,30 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
         double? errorRate = null;
         if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
         {
-            errorRate = await metricClient.GetExpressionValueAsync(region, policy.ErrorRateQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
+            errorRate = (await metricClient.GetExpressionReadingAsync(region, policy.ErrorRateQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false)).Value;
+        }
+
+        // An error-count numerator (honua-server#6474) keeps the "matched no series" outcome so the
+        // shared gate can read it as zero errors against a floor-meeting sample count. An empty
+        // error-RATE result stays missing evidence: a ratio cannot tell no errors from no traffic.
+        var errorCount = CloudWatchSignalReading.Unavailable;
+        if (!string.IsNullOrWhiteSpace(policy.ErrorCountQuery) && policy.ErrorRateThreshold.HasValue)
+        {
+            errorCount = await metricClient.GetExpressionReadingAsync(region, policy.ErrorCountQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
         }
 
         double? latencyP95 = null;
         if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
         {
-            latencyP95 = await metricClient.GetExpressionValueAsync(region, policy.LatencyP95Query, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
+            latencyP95 = (await metricClient.GetExpressionReadingAsync(region, policy.LatencyP95Query, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false)).Value;
         }
 
         return new DeployTelemetryReadings
         {
             SampleCount = sampleCount,
             ErrorRate = errorRate,
+            ErrorCount = errorCount.Value,
+            ErrorCountSeriesAbsent = errorCount.SeriesAbsent,
             LatencyP95 = latencyP95
         };
     }

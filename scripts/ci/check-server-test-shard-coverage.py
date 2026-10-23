@@ -87,6 +87,8 @@ TEST_PROJECT_DIRS = {
         "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",
     "tests/dotnet/Honua.Protocols.GeoServices.Tests":
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+    "tests/dotnet/Honua.Protocols.OData.UnitTests":
+        "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj",
     "tests/dotnet/Honua.Protocols.OData.Tests":
         "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
     "tests/dotnet/Honua.Protocols.OgcApi.Tests":
@@ -104,6 +106,12 @@ TEST_PROJECT_DIRS = {
     "tests/dotnet/Honua.Geoprocessing.Cli.Tests":
         "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",
 }
+
+# Every isolated unit assembly is independently routed; retain legacy integration
+# mappings and discover new units from the reviewed catalog.
+for project, entry in json.loads((REPO_ROOT / ".github/test-projects.json").read_text())["projects"].items():
+    if entry.get("shardRouted"):
+        TEST_PROJECT_DIRS[str(Path(project).parent)] = project
 
 # Namespaces that ci-shards.json intentionally leaves to a non-PR lane and so
 # are exempt from the "must be claimed by a shard" rule. Keep this list TINY and
@@ -284,7 +292,7 @@ def _method_name_after(text: str, index: int) -> str | None:
 
 @functools.cache
 def enumerate_classes() -> dict[str, dict]:
-    """Return {fully_qualified_class_name: {"csproj", "src", "methods"}} for
+    """Return {"csproj::fully_qualified_class_name": {"fqn", "csproj", "src", "methods"}} for
     EVERY top-level class in the test projects.
 
     Only TOP-LEVEL (namespace-scoped) classes count — xUnit reports a test's
@@ -335,6 +343,7 @@ def enumerate_classes() -> dict[str, dict]:
             declared: list[str] = []
             test_methods: dict[str, set[str]] = {}
             attribute_seen: set[str] = set()
+            unresolved_methods: set[str] = set()
             i = 0
             n = len(text)
             while i < n:
@@ -392,19 +401,23 @@ def enumerate_classes() -> dict[str, dict]:
                         method = _method_name_after(text, i)
                         if method:
                             test_methods.setdefault(current_top_class, set()).add(method)
+                        else:
+                            unresolved_methods.add(current_top_class)
                 i += 1
 
             rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
             for cls in declared:
                 fqn = f"{namespace}.{cls}"
                 entry = classes.setdefault(
-                    fqn,
-                    {"csproj": csproj, "src": [], "methods": set(), "has_tests": False},
+                    f"{csproj}::{fqn}",
+                    {"fqn": fqn, "csproj": csproj, "src": [], "methods": set(), "has_tests": False,
+                     "unresolved_methods": False},
                 )
                 if rel not in entry["src"]:
                     entry["src"].append(rel)
                 entry["methods"].update(test_methods.get(cls, ()))
                 entry["has_tests"] = entry["has_tests"] or cls in attribute_seen
+                entry["unresolved_methods"] |= cls in unresolved_methods
     return classes
 
 
@@ -431,14 +444,14 @@ def enumerate_test_classes() -> dict[str, dict]:
 
 
 def unresolved_method_classes(all_classes: dict[str, dict]) -> list[str]:
-    """Classes carrying a test attribute whose method name never resolved.
+    """Classes carrying any test attribute whose method name did not resolve.
 
     Non-empty means the enumerator saw a declaration shape it cannot read, so
     method-level filter clauses could be judged dead against an incomplete pool.
     """
     return sorted(
         fqn for fqn, entry in all_classes.items()
-        if entry["has_tests"] and not entry["methods"]
+        if entry["has_tests"] and (not entry["methods"] or entry.get("unresolved_methods", False))
     )
 
 
@@ -570,6 +583,12 @@ def iter_clauses(node) -> list[tuple[str, str, str]]:
     return [(node[1], node[2], node[3])]
 
 
+def claiming_shards(entry: dict, parsed: dict, shard_csproj: dict) -> list[str]:
+    """Resolve one assembly's class without merging identical names elsewhere."""
+    return [name for name, node in parsed.items()
+            if shard_csproj[name] == entry["csproj"] and _eval(node, entry["fqn"])]
+
+
 def selection_pool(classes: dict[str, dict], csproj: str) -> list[str]:
     """Every runnable test FullyQualifiedName xUnit can report for `csproj`.
 
@@ -581,7 +600,7 @@ def selection_pool(classes: dict[str, dict], csproj: str) -> list[str]:
     for fqn, entry in classes.items():
         if entry["csproj"] != csproj:
             continue
-        pool.extend(f"{fqn}.{method}" for method in entry["methods"])
+        pool.extend(f"{entry.get('fqn', fqn)}.{method}" for method in entry["methods"])
     return pool
 
 
@@ -701,7 +720,7 @@ def evaluate_assertion(
         # strings; matching them proves nothing about the class. Look the class
         # up in the sources so a typo'd, renamed or deleted class fails here
         # instead of reporting a passing assertion for a class that is gone.
-        entry = all_classes.get(fqn)
+        entry = all_classes.get(f"{csproj}::{fqn}") or all_classes.get(fqn)
         if entry is None:
             return AssertionResult(
                 1,
@@ -733,6 +752,26 @@ def evaluate_assertion(
     return AssertionResult(
         0, f"{kind} assertion passed: {fqn} -> {shard_name} [{csproj}]"
     )
+
+
+def partition_claim_errors(parent_name, parent_filter, children, parsed, fqn,
+                           methods, granularity="class", unresolved_methods=False) -> list[str]:
+    """Require exact parent/child coverage at the declared selection granularity."""
+    if granularity == "method" and (not methods or unresolved_methods):
+        return [f"{parent_name}: {fqn} has an empty or incomplete runnable-method inventory"]
+    subjects = ([f"{fqn}.{method}" for method in sorted(methods)]
+                if granularity == "method" else [fqn])
+    errors = []
+    for subject in subjects:
+        parent_claims = _eval(parent_filter, subject)
+        child_claims = [child for child in children if _eval(parsed[child], subject)]
+        if parent_claims and len(child_claims) != 1:
+            errors.append(f"{parent_name}: {subject} expected exactly one child, got "
+                          f"{', '.join(child_claims) or '(none)'}")
+        elif not parent_claims and child_claims:
+            errors.append(f"{parent_name}: {subject} leaks outside parent via "
+                          f"{', '.join(child_claims)}")
+    return errors
 
 
 def main() -> int:
@@ -785,6 +824,11 @@ def main() -> int:
     for partition in config.get("shard_partitions", []):
         name = partition.get("name", "")
         children = partition.get("children", [])
+        granularity = partition.get("granularity", "class")
+        if granularity not in ("class", "method"):
+            print(f"::error::partition {name!r} has invalid granularity {granularity!r}",
+                  file=sys.stderr)
+            return 2
         if not name or not isinstance(children, list) or not children:
             print(
                 f"::error::invalid shard partition {partition!r}: name and children are required",
@@ -840,7 +884,7 @@ def main() -> int:
         # claimed by the MCP shard — so comparing on FQN alone would demand a
         # child claim a class its `dotnet test <csproj>` can never discover.
         parsed_partitions.append(
-            (name, parent_filter, children, next(iter(child_projects)))
+            (name, parent_filter, children, next(iter(child_projects)), granularity)
         )
 
     # ONE walk feeds both the assertions and the coverage halves below, so the
@@ -865,10 +909,10 @@ def main() -> int:
     classes = runnable_classes(all_classes)
     unresolved = unresolved_method_classes(all_classes)
     if unresolved:
-        # These classes carry a test attribute the enumerator recognises but no
-        # method name it could parse, so selection_pool() has no runnable FQN for
-        # them and a live method-level filter clause could be misreported as
-        # dead. That is a defect in THIS script, not in the shard map, so it
+        # At least one recognised test attribute did not resolve to a method.
+        # Even if other methods parsed, selection_pool() is incomplete and a
+        # method partition could silently miss a runnable test. This is a
+        # defect in THIS script, not in the shard map, so it
         # fails as a tool error rather than a coverage error.
         print(f"::error::{len(unresolved)} class(es) carry a test attribute whose "
               "method declaration this script could not parse — fix "
@@ -886,37 +930,28 @@ def main() -> int:
     multi: list[tuple[str, list[str]]] = []
     partition_errors: list[str] = []
     claim_map: dict[str, list[str]] = {}
-    for fqn in sorted(classes):
+    for key in sorted(classes):
+        fqn = classes[key]["fqn"]
         if is_exempt(fqn):
             continue
-        cls_csproj = classes[fqn]["csproj"]
+        cls_csproj = classes[key]["csproj"]
         # A shard can only discover/run a class if it targets that class's
         # assembly AND its filter matches the FQN.
-        claiming = [
-            name for name, node in parsed.items()
-            if shard_csproj[name] == cls_csproj and _eval(node, fqn)
-        ]
-        claim_map[fqn] = claiming
+        claiming = claiming_shards(classes[key], parsed, shard_csproj)
+        claim_map[key] = claiming
         if not claiming:
-            orphans.append(fqn)
+            orphans.append(key)
         elif len(claiming) > 1:
-            multi.append((fqn, claiming))
+            multi.append((key, claiming))
 
-        for parent_name, parent_filter, children, parent_csproj in parsed_partitions:
+        for parent_name, parent_filter, children, parent_csproj, granularity in parsed_partitions:
             if cls_csproj != parent_csproj:
                 continue
-            parent_claims = _eval(parent_filter, fqn)
-            child_claims = [child for child in children if child in claiming]
-            if parent_claims and len(child_claims) != 1:
-                partition_errors.append(
-                    f"{parent_name}: {fqn} expected exactly one child, got "
-                    f"{', '.join(child_claims) or '(none)'}"
-                )
-            elif not parent_claims and child_claims:
-                partition_errors.append(
-                    f"{parent_name}: {fqn} leaks outside parent via "
-                    f"{', '.join(child_claims)}"
-                )
+            partition_errors.extend(partition_claim_errors(
+                parent_name, parent_filter, children, parsed, fqn,
+                classes[key]["methods"], granularity,
+                classes[key].get("unresolved_methods", False),
+            ))
 
     if args.report:
         for fqn in sorted(claim_map):

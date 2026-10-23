@@ -86,6 +86,27 @@ internal sealed class AuditingFeatureWriter(
         }
     }
 
+    /// <inheritdoc />
+    public async Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var application = await _inner.ApplyEditsAsync(layerId, editBatch, receipt, cancellationToken)
+                .ConfigureAwait(false);
+            await EmitBulkEditAsync(layerId, editBatch, application.Result, cancellationToken).ConfigureAwait(false);
+            return application;
+        }
+        catch
+        {
+            await EmitBulkEditFailureAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     public async Task<IFeatureWriterTransaction> BeginTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)

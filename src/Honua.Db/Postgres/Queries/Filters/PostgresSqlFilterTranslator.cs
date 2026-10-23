@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Queries.Filters;
@@ -20,7 +21,7 @@ namespace Honua.Db.Postgres.Queries.Filters;
 /// this subclass owns the Postgres / PostGIS specifics (JSONB attribute access,
 /// PostGIS function names, geography casts, range types).
 /// </summary>
-internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
+internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
 
@@ -183,7 +184,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         }
 
         var nullSafe = $"NULLIF({baseExpression}, '')";
-        if (castType is "timestamptz" or "date" or "time")
+        if (castType is "timestamptz" or "date")
         {
             return BuildEpochAwareTemporalCast(nullSafe, castType);
         }
@@ -253,6 +254,15 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             : TranslateGeometryExpression(spatial.Right, context);
         var distance = TranslateExpression(spatial.Distance, context);
 
+        // Geography measures metres. The planar path measures in the layer CRS's own unit, so a
+        // distance the parser already normalised to metres (FES uom) is converted to that unit:
+        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS (#5462). Distances without a unit
+        // keep their native planar-in-CRS reading.
+        if (!useGeography && spatial.DistanceInMeters)
+        {
+            distance = $"({distance} / {PostgresCrsUnitSql.MetersPerProjectedUnit(context.Wkid)})";
+        }
+
         return spatial.Operator switch
         {
             SpatialOperator.DWithin => $"ST_DWithin({left}, {right}, {distance})",
@@ -278,13 +288,15 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
     // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
     // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
-    // it drops 4619 (SWEREF99) and adds 4617 (NAD83(CSRS)) / 4759 (NAD83(NSRS2007)); the primary
+    // it drops 4619 (SWEREF99) and 4267 (NAD27) and adds 4617 (NAD83(CSRS)) / 4759
+    // (NAD83(NSRS2007)); the primary
     // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
     // fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
-    private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
+    /// <summary>Resolves a spatial operand, allowing entity adapters to supply canonical geometry properties.</summary>
+    protected virtual string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
@@ -296,7 +308,13 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
                     var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
                     if (geometry.Srid != context.Wkid)
                     {
-                        geometryExpression = $"ST_Transform({geometryExpression}, {context.Wkid})";
+                        // A geographic literal at latitude ±90 aborts ST_Transform into Web Mercator.
+                        // The shared helper clamps that band; other CRS pairs stay a bare transform (#6186).
+                        geometryExpression = DatumTransformSql.BuildTransformExpression(
+                            geometryExpression,
+                            context.Wkid,
+                            selection: null,
+                            fromSrid: geometry.Srid);
                     }
 
                     return geometryExpression;
@@ -480,6 +498,22 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return TranslateGeoLength(function, context);
         }
 
+        if (string.Equals(function.FunctionName, "ST_RELATE", StringComparison.OrdinalIgnoreCase))
+        {
+            if (function.Arguments.Count != 3)
+            {
+                throw new ArgumentException("ST_RELATE requires three arguments");
+            }
+
+            // Geometry literals are spatial operands, not scalar AST literals.
+            // Use the virtual geometry path so entity-specific property mappings
+            // and CRS conversion are retained; the DE-9IM pattern stays bound.
+            var left = TranslateGeometryExpression(function.Arguments[0], context);
+            var right = TranslateGeometryExpression(function.Arguments[1], context);
+            var pattern = TranslateExpression(function.Arguments[2], context);
+            return $"ST_Relate({left}, {right}, {pattern})";
+        }
+
         // CAST resolves its target type from the AST literal rather than a bound
         // parameter: the type name is a SQL keyword, not a value, so it must never
         // become a parameter placeholder. The allowlisted switch in TranslateCast
@@ -553,8 +587,16 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
                 ? $"EXTRACT(MINUTE FROM {args[0]})"
                 : throw new ArgumentException("MINUTE requires one argument"),
             "SECOND" => args.Length == 1
-                ? $"EXTRACT(SECOND FROM {args[0]})"
+                ? $"FLOOR(EXTRACT(SECOND FROM {args[0]}))"
                 : throw new ArgumentException("SECOND requires one argument"),
+            "FRACTIONALSECONDS" => args.Length == 1
+                ? $"(EXTRACT(SECOND FROM {args[0]}) - FLOOR(EXTRACT(SECOND FROM {args[0]})))"
+                : throw new ArgumentException("FRACTIONALSECONDS requires one argument"),
+            "DATE" => args.Length == 1 ? $"({args[0]})::date" : throw new ArgumentException("DATE requires one argument"),
+            "TIME" => args.Length == 1 ? $"({args[0]})::time" : throw new ArgumentException("TIME requires one argument"),
+            "TOTALOFFSETMINUTES" => args.Length == 1 ? $"(EXTRACT(TIMEZONE FROM {args[0]}) / 60)" : throw new ArgumentException("TOTALOFFSETMINUTES requires one argument"),
+            "MINDATETIME" => args.Length == 0 ? "'-infinity'::timestamptz" : throw new ArgumentException("MINDATETIME requires no arguments"),
+            "MAXDATETIME" => args.Length == 0 ? "'infinity'::timestamptz" : throw new ArgumentException("MAXDATETIME requires no arguments"),
 
             // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
             // allowlist (never user text), so it is interpolated while the source operand
@@ -843,7 +885,8 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     private static bool CanTranslateAsGeography(FilterExpression expression)
         => expression is GeometryLiteral or PropertyReference;
 
-    private string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
+    /// <summary>Resolves an operand for shared WGS84 geodesic operations.</summary>
+    protected virtual string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
@@ -1260,7 +1303,9 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         {
             MetadataV2FieldType.Integer => "integer",
             MetadataV2FieldType.BigInteger => "bigint",
-            MetadataV2FieldType.Float => "real",
+            // Numeric literals are bound as double precision. Compare JSONB single values
+            // at that same precision rather than widening an already-rounded real value.
+            MetadataV2FieldType.Float => "double precision",
             MetadataV2FieldType.Double => "double precision",
             MetadataV2FieldType.Boolean => "boolean",
             MetadataV2FieldType.DateTime => "timestamptz",

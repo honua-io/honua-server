@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Alerts.Domain;
 
@@ -489,6 +490,19 @@ public readonly record struct AlertChange
 
     /// <summary>Approved proposal identity, when applicable.</summary>
     public string? ProposalId { get; init; }
+
+    /// <summary>
+    /// Feature row committed by this generation. Null for deletes, for changes recorded
+    /// before the committed image was captured, and for images that are loaded separately
+    /// so a metadata read does not buffer every geometry in the batch.
+    /// </summary>
+    public Feature? CommittedFeature { get; init; }
+
+    /// <summary>
+    /// True when this generation stored a committed image. The image itself is loaded
+    /// only if a rule will evaluate the change.
+    /// </summary>
+    public bool HasCommittedImage { get; init; }
 }
 
 /// <summary>

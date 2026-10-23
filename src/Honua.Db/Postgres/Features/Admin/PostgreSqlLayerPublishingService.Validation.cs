@@ -73,7 +73,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         if (string.IsNullOrWhiteSpace(discoveredGeometryColumn))
         {
-            checks.Add(Error("geometry-column", "Source table does not expose a geometry column."));
+            checks.Add(string.IsNullOrWhiteSpace(requestedGeometryColumn)
+                ? Pass("geometry-column", "Attribute-only table has no geometry column.")
+                : Error("geometry-column", "Source table does not expose the requested geometry column."));
             return geometryColumn;
         }
 
@@ -101,6 +103,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         TableInfo tableInfo,
         List<TablePublishValidationCheck> checks)
     {
+        if (string.IsNullOrWhiteSpace(tableInfo.GeometryColumn))
+        {
+            return null;
+        }
+
         if (string.IsNullOrWhiteSpace(tableInfo.GeometryType))
         {
             checks.Add(Error("geometry-type", "Source table does not report a geometry type."));
@@ -128,9 +135,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         List<ColumnInfo> columns,
         List<ColumnInfo> selectedColumns,
         string? requestedPrimaryKey,
+        bool managedStore,
         List<TablePublishValidationCheck> checks)
     {
         var primaryKeyName = ResolvePrimaryKeyName(selectedColumns, requestedPrimaryKey);
+        if (managedStore)
+        {
+            return ResolveManagedSourceKeyForValidation(columns, requestedPrimaryKey, primaryKeyName, checks);
+        }
+
         if (string.IsNullOrWhiteSpace(primaryKeyName))
         {
             checks.Add(Error(
@@ -223,7 +236,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private static void AddGeometryHealthChecks(
         GeometryHealth? health,
-        List<TablePublishValidationCheck> checks)
+        List<TablePublishValidationCheck> checks,
+        bool allowEmptyTable)
     {
         if (health is not { } value)
         {
@@ -231,7 +245,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return;
         }
 
-        if (value.FeatureCount == 0)
+        if (value.FeatureCount == 0 && !allowEmptyTable)
         {
             checks.Add(Error("feature-count", "Source table is empty."));
         }
@@ -293,7 +307,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         TableInfo? tableInfo,
         ResolvedPublishValidation? resolved,
         GeometryHealth? geometryHealth,
-        IReadOnlyCollection<TablePublishValidationCheck> checks)
+        IReadOnlyCollection<TablePublishValidationCheck> checks,
+        long? nonSpatialRowCount = null)
     {
         var hasErrors = checks.Any(check => check.Severity == SeverityError);
         var hasWarnings = checks.Any(check => check.Severity == SeverityWarning);
@@ -314,7 +329,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ServiceSrid = resolved?.ServiceSrid,
             TargetSrid = resolved?.TargetSrid,
             EstimatedRows = tableInfo?.EstimatedRows,
-            FeatureCount = geometryHealth?.FeatureCount,
+            FeatureCount = geometryHealth?.FeatureCount ?? nonSpatialRowCount,
             NullGeometryCount = geometryHealth?.NullGeometryCount,
             InvalidGeometryCount = geometryHealth?.InvalidGeometryCount,
             Fields = BuildValidationFields(tableInfo?.Columns ?? [], request.Fields),
@@ -322,10 +337,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static void ThrowIfPublishValidationFailed(TablePublishValidationResult validation)
+    private static void ThrowIfPublishValidationFailed(TablePublishValidationResult validation, bool createEditableCopy)
     {
         var errors = validation.Checks
-            .Where(check => check.Severity == SeverityError)
+            // A managed copy reads the existing source into a new managed layer.
+            // Only that explicit operation may reuse an already published table;
+            // all field, geometry, identity and target-binding checks still apply.
+            .Where(check => check.Severity == SeverityError
+                && (!createEditableCopy || check.Code != LayerConflictCheckCode))
             .ToArray();
         if (errors.Length == 0)
         {
@@ -538,6 +557,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var normalized = raw.Replace("_", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace(" ", string.Empty, StringComparison.OrdinalIgnoreCase)
             .ToUpperInvariant();
+
+        // PostGIS discovery may include an ordinate suffix (notably POINTM).
+        // The canonical geometry type describes topology; HasZ/HasM are carried
+        // separately in the publication metadata.
+        if (normalized.EndsWith("ZM", StringComparison.Ordinal))
+            normalized = normalized[..^2];
+        else if (normalized.EndsWith('Z') || normalized.EndsWith('M'))
+            normalized = normalized[..^1];
 
         var mapped = normalized switch
         {

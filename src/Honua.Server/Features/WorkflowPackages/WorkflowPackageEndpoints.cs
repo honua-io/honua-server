@@ -103,6 +103,19 @@ internal static class WorkflowPackageEndpoints
             .WithSummary("List workflow package publications")
             .Produces<ApiResponse<WorkflowPublicationListResponse>>();
 
+        group.MapDelete("/workflow-publications/{publicationId}", HandleDeletePublication)
+            .WithName("DeleteWorkflowPublication")
+            .WithSummary("Delete a workflow package publication and its schedule definition")
+            .Produces<ApiResponse<WorkflowPublication>>()
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/workflow-publications/{publicationId}/status", HandleSetPublicationStatus)
+            .WithName("SetWorkflowPublicationStatus")
+            .WithSummary("Enable or disable a workflow package publication and its schedule definition")
+            .Accepts<SetWorkflowPublicationStatusRequest>("application/json")
+            .Produces<ApiResponse<WorkflowPublication>>()
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapPost("/workflow-publications/{publicationId}/runs", HandleRunPublication)
             .WithName("RunWorkflowPublication")
             .WithSummary("Start a run from a workflow package publication")
@@ -305,6 +318,33 @@ internal static class WorkflowPackageEndpoints
                     .ConfigureAwait(false);
                 return TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(publication));
             }).ConfigureAwait(false);
+
+    private static async Task<IResult> HandleDeletePublication(
+        HttpContext context,
+        string publicationId,
+        WorkflowPackageService service,
+        CancellationToken cancellationToken)
+    {
+        SetNoStore(context);
+        var deleted = await service.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        return deleted is null
+            ? NotFound(context, $"Workflow publication '{publicationId}' was not found.")
+            : TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(deleted));
+    }
+
+    private static async Task<IResult> HandleSetPublicationStatus(
+        HttpContext context,
+        string publicationId,
+        SetWorkflowPublicationStatusRequest request,
+        WorkflowPackageService service,
+        CancellationToken cancellationToken)
+    {
+        SetNoStore(context);
+        var updated = await service.SetPublicationStatusAsync(publicationId, request.Status, cancellationToken).ConfigureAwait(false);
+        return updated is null
+            ? NotFound(context, $"Workflow publication '{publicationId}' was not found.")
+            : TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(updated));
+    }
 
     private static async Task<IResult> HandleListPublications(
         HttpContext context,

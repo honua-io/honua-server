@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-08-31
+> Last updated: 2026-09-11
 
 ## Tier Definitions
 
@@ -23,7 +23,7 @@
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
 
-   **Named exceptions — `PR Gate` and `Review Gate`.** Together, `PR Gate` and `Review Gate` are the required PR lane on `trunk`: the former is unprivileged verification and the latter is trusted exact-head admission. `PR Gate` is deterministic and author-actionable, but it does not meet the sub-5-minute bar because its whole-solution warnings-as-errors build dominates runtime. That is accepted deliberately, because the only cheaper option is to gate no code verification and the only stricter option is the full CI matrix (every server-test shard in `.github/ci-shards.json` plus the AOT/Docker/browser/MCP/provider lanes) whose per-PR fan-out caused the 2026-06-18 runner-starvation spiral. Judge it on **runner count (one, service-free)**, not wall-clock. `Review Gate` is a short GitHub-evidence evaluation and adds no build runner. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
+   **Named exceptions — `PR Gate` and `Review Gate`.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses a managed build producer, a downstream test/runtime consumer, and the existing independent format and CI-router jobs. Selected shard consumers reuse the same verified outputs. The test consumer retains real PostGIS-backed governance and execution proofs. Full collector compilation and runtime proofs remain the deliberate exception to the sub-five-minute rule. `Review Gate` adds no build runner. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
 
 5. **AOT verification is full-CI only until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs in the full scheduled/manual integration lane or on PRs explicitly labeled `ci/full`, not on routine PRs or merge-to-trunk pushes, because its current failures are not consistently fast or author-actionable within the default PR lane.
 
@@ -35,18 +35,18 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission tier: every tracked text blob must decode as UTF-8 (#3321). Then one runner: affected-scope warnings-as-errors build, solution-wide `dotnet format --verify-no-changes`, `Tier=Fast` unit smoke, architecture-enforcement tests (incl. the `feature-catalog.json` drift guard). Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`; the only input that differs is `build-scope` (`affected` here, `full` there — see [Affected-scope gate build](#affected-scope-gate-build)). | None — a required context must never be path-filtered, or non-matching PRs block forever waiting for a status that will not report |
+| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; a downstream consumer runs Fast units, source architecture and full collector architecture, MCP/governance checks, and the existing HTTP/PostGIS, GDAL/PDAL proofs. Independent format and CI-router jobs remain required. `required.needs` includes `pr-gate`, `pr-gate-tests`, `format`, and `ci-router-validation`. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
 | `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger** (deliberate — see the header comment). PR template compliance, CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility all run on the train's `train/batch/*` `workflow_dispatch` and the nightly schedule. Its aggregator context `CI Gate` is produced by the batch CI only and never appears on a PR. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `import-fidelity-scorecard-governance.yml` | Import-fidelity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
-| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute `docs.honua.io` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL in a scanned source root that the manifest does not list is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. | `docs/**`, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
+| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. | `docs/**`, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
 
 ### Affected-scope gate build
 
-`PR Gate` is the only gate a change must clear before a human looks at it, so its
-wall-clock is the tax on every PR in the repo. On the 2026-08-26 baseline the
+The following timings are historical context, not a measurement of the current
+producer/consumer topology. On the 2026-08-26 baseline the
 shared lean gate was 18m09s, split roughly:
 
 | Step | Duration |
@@ -58,7 +58,13 @@ shared lean gate was 18m09s, split roughly:
 | Governance/Drift (Testcontainers PostGIS, warm; moved to trailing trunk) | 1m15s |
 | Fixtures, policy checks, restore | ~1m |
 
-Two of those are addressed here.
+The build is now separated from test execution. Pristine outputs are packaged
+once before tests or coverage can modify them. Downstream consumers verify the
+same-run source, SDK, platform and build-property identity, then compile only
+missing projects as one scoped fallback graph. Both architecture suites run
+after projection regeneration; the full collector remains intact. Full CI also
+uses a managed producer and an independent, required full-solution format job.
+See the [managed artifact contract](server-test-binary-artifacts.md).
 
 **Build scope.** `.github/actions/lean-gate` takes a `build-scope` input.
 `PR Gate` passes `affected`; `Merge Queue Gate` keeps `full`.
@@ -67,9 +73,10 @@ holding the union of
 
 1. `scripts/ci/compute-affected-projects.sh` — the changed projects plus their
    reverse-dependency (consumer) closure, and
-2. the leaf test projects the gate's own `dotnet test --no-build` steps execute
-   (`Honua.Server.Tests`, `Honua.Architecture.Tests`, `Honua.Ai.Tests`), which
-   must be compiled even for a docs-only diff.
+2. the catalogued test projects used by the Fast, source-architecture, full
+   architecture, governance and execution-proof steps, and
+3. the selected non-advisory shard projects supplied by the managed producer
+   plan. Documentation-only exits skip compilation inside the jobs.
 
 MSBuild resolves each listed project's `<ProjectReference>` graph itself, so
 forward dependencies are built without being enumerated. A filter is used rather
@@ -77,46 +84,41 @@ than a project list because `dotnet build a.csproj b.csproj` is rejected outrigh
 (MSB1008); the filter also keeps the build to a single MSBuild invocation with
 full cross-project parallelism.
 
-The floor is the forward closure of those three test projects: 53 of the 83
-`.csproj` in the tree. The ~30 projects a narrowed gate stops compiling are
-sibling test assemblies (`Honua.Core.Tests`, the provider test projects,
-`Honua.LoadTests`, …) plus `Honua.AppHost`, `Honua.Analyzers`,
-`Honua.ControlPlane.Lambda`, the geoprocessing CLI and the custom-code harness —
-none of which any step of this gate consumes. **Expect a meaningful but bounded
-saving, not a step change**: the gate still compiles `Honua.Server` and its whole
-dependency graph on every PR, because its own tests need them.
+The current build floor is the forward dependency closure of that explicit
+producer plan, rather than a fixed count of test projects. Isolated unit projects
+and component hosts retain their own runtime ownership; the full architecture
+collector still requires its complete test-assembly graph.
 
 *Miss-risk contract.* Anything that could invalidate the closure forces a full
 build: `compute-affected-projects.sh` force-fulls on `Directory.*.props`,
 `Honua.sln`, `global.json`, `NuGet.config`, `.github/` and `scripts/ci/`, and the
 scope script force-fulls on any event without a trustworthy diff base, any
 checkout too shallow to hold the base commit, and any failure of the underlying
-script. A residual miss is caught by the merge train's full-solution build
-**before the change lands** — it is fixed forward from the train and never
-reaches trunk unverified. This is why `Merge Queue Gate` and the train's `build`
-job must stay full-solution; do not "align" them with `PR Gate`.
+script. Routine per-PR landings retain the required PR checks and trailing full
+CI; a deterministic trunk failure pauses routine landing for fix-forward repair.
+Explicit batch validation can run before landing. `Merge Queue Gate` retains its
+full-solution build. The full CI producer keeps its affected/full decision and
+unions every planned consumer root into an affected build graph.
 
 `pr-gate.yml` must check out with `fetch-depth: 2`. The checked-out ref is
 `refs/pull/N/merge` and its first parent is the current `trunk` tip, which is the
 diff base. At the default depth 1 those parent commits are absent, the scope
 computation force-fulls, and the optimization silently never fires.
 
-**Format scope.** `dotnet format` is deliberately left solution-wide even though
-it is co-dominant with the build. It takes exactly one workspace — a project or a
-solution, never a list — and most of its cost is loading that workspace rather
-than analysing documents, so narrowing it is a separate, measured change rather
-than a free win.
+**Format scope.** The PR's existing independent format job retains its affected
+or full document selection and complete formatter restore context. Full CI runs
+an independent full-solution format job; `CI Gate` requires it when build inputs
+are selected, without making test consumers wait for formatting.
 
-**Governance/drift relocation.** The complete `Category=Architecture` set in
-`Honua.Server.Tests` still runs against the real store-gated host and its
-Testcontainers PostgreSQL. It now runs as the trunk-only
-`Server Governance/Drift` job in `ci.yml`; `Test Suite Summary` requires that
-leaf job, so a failure makes `CI Gate` red and engages the fleet brake. The
-operator-approved trade is detection after landing with fix-forward handling,
-instead of blocking the PR. `scripts/ci/prepull-testcontainers-postgis.sh` still
-reads the image tag from `Honua.TestKit/PostgresFixture.cs`, starts the pull
-before restore/build, and awaits it immediately before the test. Every helper
-failure remains a no-op so Testcontainers can perform its normal pull fallback.
+**Governance and runtime proofs.** The PR test consumer retains the complete
+`Category=Architecture` governance set in `Honua.Server.Tests`, the real
+store-gated host and Testcontainers PostgreSQL, and the existing remote-source,
+raster, layer, geometry/calculate-field, imagery and PDAL proofs. The required
+boot/migration smoke runs on the producer after pristine artifact publication,
+using the canonical host output without duplicating it in test artifacts.
+Moving compilation to the producer does not remove these checks or move them to
+an advisory lane. Source architecture and full collector architecture remain
+separate required executions after fresh projections.
 
 ### Import-fidelity gates: correctness and performance
 
@@ -138,6 +140,62 @@ carries two independent gate lanes per sampled operation:
   scorecard shape are covered offline by `GeoServicesPerfParityGateTests` and smoke-tested on every PR
   via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
   `geoservices-import-fidelity-external.yml` (on-demand).
+
+## Verification receipts and batch landing (quality-contract amendment, 2026-09)
+
+The fleet lander (honua-flow `tools/land-ready-prs.sh`, `tools/land-batch.sh`)
+is the only landing authority. Its verification rules are part of this gate
+model:
+
+1. **A verified baseline advances only with a receipt.** The last verified
+   trunk head (`trunk-lastgreen`, the `selective_base` of every later trailing
+   or batch run) moves forward only when a receipt `verified-<sha>` exists,
+   and never backwards. A receipt records the candidate tree, the
+   `selective_base`, the run id, the blob ids of `.github/workflows/ci.yml`,
+   `.github/ci-shards.json` and `scripts/ci/honua-server-targeted-tests.sh` at
+   the verified revision, the shard manifest (the `Server Tests (<shard>)`
+   matrix the run instantiated), the conclusion of every required
+   compatibility lane — Postgres Compatibility, AOT Build Verification, Docker
+   Build & Integration Test, Python Integration Tests, JavaScript Integration
+   Tests, Esri Leaflet Browser Tests, MapLibre GL JS Browser Compatibility,
+   MCP Certification, Honua.Core Package Compatibility, Quickstart Console
+   Compose Smoke; a matrix lane aggregates every variant, so one red Postgres
+   image makes the lane red — and the `CI Gate` conclusion.
+2. **Full proof** = `CI Gate` success, the manifest equals the full shard list
+   at that revision, and every required lane is success. **Selective proof** =
+   `CI Gate` success, the manifest is a subset of the full list and a superset
+   of the uncapped router's shards over exactly the diff the run selected on
+   (`selective_base..tip`), and every lane is success or was skipped by the
+   run's own diff gating. Job counts are reported and never authoritative; the
+   trunk-red brake clears only on full proof.
+3. **Batch candidates** live on `land/batch/<base7>/<id>` refs, run
+   `ci.yml` as `CI lander-batch-<id>`, and are never trunk verdicts. Members
+   that change CI plumbing (`.github/workflows/`, `.github/ci-shards.json`,
+   the router, `scripts/ci/compute-affected-*`) take the per-PR path.
+4. **A failed batch quarantines; it never falls back.** After at most one
+   rerun for an infrastructure-class failure (cancelled, timed out, runner
+   loss, no test result), every member is quarantined at its current head and
+   the batch is bisected into verified subsets (halves, member order kept,
+   down to single members). A member is released only by a verified green
+   candidate that contains it. Shard ownership orders which half runs first;
+   it never releases anyone. Non-members keep landing per-PR.
+5. **Stop at the first uncertain merge.** Every merge is preceded by a
+   merge-intent record and followed by a merge-confirmed record. A refusal,
+   moved head, closed PR or HTTP 5xx stops the batch; an unknown outcome is
+   resolved against GitHub, never assumed. Remaining members are rebuilt on
+   the new trunk tip and re-verified — never landed on the strength of the old
+   run. After landing, the last member's merge commit must carry the verified
+   tree; otherwise a trailing matrix is owed.
+6. **Durable state.** Batch state changes follow an explicit transition table
+   under one lock shared with the trunk watcher, and every lander start
+   reconciles unconfirmed intents, vanished refs/runs and the owed trailing
+   matrix against GitHub before deciding anything.
+
+Rollout: shadow first (assemble, dispatch, judge, receipt; nothing merged).
+Live two-PR batches follow only after at least three days and ten shadow
+batches meet the plan's exit criteria (assembly under 120 s, no lander
+timeouts, at least 80 % of batch runs green or uniquely attributable, every
+would-land set's later per-PR landings reproducing the recorded tree).
 
 ## Nightly Lane
 
@@ -184,6 +242,7 @@ These workflows run on schedule and can be dispatched manually:
 | `deploy.yml` | Tags / manual | Environment promotion |
 | `deploy-platform-images.yml` | Tags / manual | Platform image deployment |
 | `cloud-post-apply-validation.yml` | Workflow call / manual | Post-deploy validation |
+| `cloud-post-apply-validation-nightly.yml` | Nightly (03:00 UTC) / manual | Post-apply contract against a local target; caller for the above |
 
 ## Maintenance Lane
 
@@ -293,3 +352,23 @@ Before adding a new workflow or check:
 3. **Document the new check** in this file and in `workflow-inventory.md`.
 4. **Use path filters** for PR-lane checks that only apply to specific code areas.
 5. **Follow artifact conventions** from `config-conventions.md`.
+
+### Positive execution for server shards
+
+`run-server-test-shard.sh` enables VSTest `RunConfiguration.TreatNoTestsAsError`
+for every catalogued shard and removes only that invocation's named TRX before
+launch. A successful process exit also requires the existing TRX tripwire to
+find at least one passing case, no failed/unknown outcomes, and declared counters
+consistent with actual result rows. All-skipped, absent, empty or malformed TRX
+cannot pass; legitimate partial skips retain their existing policy. A child
+failure or timeout retains its original exit code even if partial TRX contains
+passing cases.
+
+The retained `*.timing.json` includes `execution` with actual result counts,
+TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
+record retains the effective filter and original shard status. Its count status
+can be positive while the overall shard fails (for example a killed child after
+partial passing results); consumers must require the overall successful outcome
+as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
+as such and do not qualify a candidate. These files are diagnostic provenance;
+local files alone do not constitute a trusted release attestation.

@@ -1,10 +1,10 @@
 name: Real Multidimensional Raster Fixture
 
-# Hardening pillar 2 for the licensed Esri chain: continuously prove that the
+# Hardening pillar 2 for the portable raster chain: continuously prove that the
 # canonical fixture is backed by real NetCDF bytes, scanned by the native GDAL
 # worker, materialized as Zarr in LocalStack/S3, and readable as a selected
-# ImageServer slice. The licensed ArcGIS Pro SOAP A/B remains in its Windows
-# lane; this workflow owns the portable production-path prerequisite.
+# ImageServer slice. Desktop evidence is identifier desktop-arcgis in
+# honua-esri-compat. This workflow owns the portable production-path prerequisite.
 
 on:
   schedule:
@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Run composed fixture
         shell: bash
@@ -45,7 +45,7 @@ jobs:
         run: |
           docker compose -f docker/client-compat/compose.yml \
             --profile multidim-fixture \
-            logs --no-color --tail=500 \
+            logs --no-color \
             > artifacts/multidim-raster-fixture/compose.log 2>&1 || true
 
       - name: Upload verification evidence

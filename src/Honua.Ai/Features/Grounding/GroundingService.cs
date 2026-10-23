@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Ai.Discovery;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
@@ -122,7 +123,20 @@ internal sealed class GroundingService : IGroundingService
         // promoted to the front instead of being trimmed and then rejected
         // as invalid_argument. The contract pins against the post-
         // authorization ranking (see docs/developer/GROUNDING.md).
-        var processes = _processCatalog.ListProcesses();
+        //
+        // A grounded process.selection candidate is what a caller places into
+        // an AnalysisPlan step and submits to the job runtime, so the
+        // candidate pool is restricted to processes the runtime will actually
+        // accept before the engine ever scores them — never to a
+        // protocol-only or workflow-only operation that
+        // DirectSubmitPlanValidator/GeoprocessingJobService.EnsurePlanExecutable
+        // is guaranteed to reject (honua-server#4454). This is enforced
+        // independent of which IGroundingEngine implementation is scoring, and
+        // pinned against ProcessDefinition.SupportedEntryPoints rather than a
+        // hard-coded id list via ProcessExecutionEligibility.IsJobCallable.
+        var processes = _processCatalog.ListProcesses()
+            .Where(ProcessExecutionEligibility.IsJobCallable)
+            .ToArray();
         var processCandidates = _engine.ScoreProcesses(request, processes);
         processCandidates = await _authorizationFilter
             .FilterAsync(principal, processCandidates, cancellationToken)
@@ -138,7 +152,7 @@ internal sealed class GroundingService : IGroundingService
         // prompt for explicit inputs. Authorization and pin application
         // both run before the shortlist cap for the same reasons as
         // processes above.
-        var datasetCandidates = await RankDatasetsAsync(request, cancellationToken).ConfigureAwait(false);
+        var datasetCandidates = await RankDatasetsAsync(request, principal, cancellationToken).ConfigureAwait(false);
         datasetCandidates = await _authorizationFilter
             .FilterAsync(principal, datasetCandidates, cancellationToken)
             .ConfigureAwait(false);
@@ -241,36 +255,33 @@ internal sealed class GroundingService : IGroundingService
 
     private async Task<IReadOnlyList<GroundingCandidate>> RankDatasetsAsync(
         GroundingRequest request,
+        ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        // Direct-provider path for unit tests that inject a substituted
-        // Metadata V2 graph provider without a scope factory.
-        if (_metadataGraphProvider is not null)
-        {
-            return await ScoreDatasetsFromGraphAsync(_metadataGraphProvider, request, cancellationToken).ConfigureAwait(false);
-        }
-
-        // Production path: resolve the scoped graph provider inside a fresh
-        // DI scope so database connections cycle per request instead of
-        // being captured by the singleton GroundingService.
         if (_serviceScopeFactory is null)
         {
-            return [];
+            // Direct-provider test compositions still observe catalog failures, but
+            // cannot expose catalog entries without an access evaluation context.
+            return _metadataGraphProvider is null
+                ? []
+                : await ScoreDatasetsFromGraphAsync(_metadataGraphProvider, request, null, cancellationToken).ConfigureAwait(false);
         }
 
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
+        var graphProvider = _metadataGraphProvider ?? scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
         if (graphProvider is null)
         {
             return [];
         }
 
-        return await ScoreDatasetsFromGraphAsync(graphProvider, request, cancellationToken).ConfigureAwait(false);
+        var context = ReadableMetadataCatalog.CreateAccessContext(scope.ServiceProvider, principal);
+        return await ScoreDatasetsFromGraphAsync(graphProvider, request, context, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<GroundingCandidate>> ScoreDatasetsFromGraphAsync(
         IMetadataV2GraphProvider graphProvider,
         GroundingRequest request,
+        HttpContext? context,
         CancellationToken cancellationToken)
     {
         // An injected graph provider is the caller's contract that catalog metadata
@@ -300,10 +311,16 @@ internal sealed class GroundingService : IGroundingService
                 ex);
         }
 
-        var layerCandidates = MetadataV2GroundingCatalog.BuildLayers(snapshot)
+        IReadOnlyList<ReadableMetadataPublication> publications = context is null
+            ? []
+            : await ReadableMetadataCatalog.GetPublicationsAsync(context, snapshot, cancellationToken).ConfigureAwait(false);
+        var layerCandidates = MetadataV2GroundingCatalog.BuildLayers(snapshot, publications)
             .Select(l => new LayerCandidate(l.LayerId, l.Name, l.Description))
             .ToArray();
-        var serviceCandidates = snapshot.Graph.Services
+        IReadOnlyList<MetadataV2Service> services = context is null
+            ? []
+            : await ReadableMetadataCatalog.GetServicesAsync(context, publications, cancellationToken).ConfigureAwait(false);
+        var serviceCandidates = services
             .Select(s => new ServiceCandidate(s.Metadata.Name, s.Metadata.Description))
             .Where(s => !string.IsNullOrWhiteSpace(s.Name))
             .ToArray();

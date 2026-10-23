@@ -6,8 +6,11 @@ using Honua.Core.Configuration;
 namespace Honua.Core.Features.Import.Domain;
 
 /// <summary>
-/// Configuration limits for file import operations.
-/// Controls batch sizes, memory usage, and background job thresholds.
+/// Pipeline limits for file import, bound from <c>Import:Limits:*</c> by the hand parser in
+/// the Postgres composition root. Not the <c>Limits:Imports:*</c> size ceilings
+/// (<see cref="Honua.Core.Configuration.ImportSizeLimits"/>). Shared names such as <c>BatchSize</c>,
+/// <c>MaxPreviewFeatures</c>, and <c>MaxPreviewCountScan</c> are separate settings with
+/// separate defaults; the pipeline uses this record (#3346).
 /// </summary>
 public sealed record ImportLimits
 {
@@ -28,6 +31,13 @@ public sealed record ImportLimits
     /// Default: 100MB (104857600 bytes).
     /// </summary>
     public long BackgroundJobThresholdBytes { get; init; } = FileSizeConstants.OneHundredMB;
+
+    /// <summary>
+    /// Maximum object size accepted from an allow-listed customer object store (<c>s3://</c>).
+    /// Independent of the in-request staging cap. An object above this limit is refused
+    /// before any byte is read. Default: 50 GiB.
+    /// </summary>
+    public long MaxObjectStoreImportBytes { get; init; } = 50 * FileSizeConstants.OneGB;
 
     /// <summary>
     /// Maximum file size allowed for preview operations in bytes.
@@ -146,6 +156,23 @@ public sealed record ImportLimits
     /// Default: 200.
     /// </summary>
     public double MaxArchiveCompressionRatio { get; init; } = 200;
+
+    /// <summary>
+    /// Maximum number of entries in a ZIP/KMZ/FileGDB archive. Includes directory
+    /// and zero-length entries. Default: 10000.
+    /// </summary>
+    public int MaxArchiveEntries { get; init; } = 10_000;
+
+    /// <summary>
+    /// Maximum number of background import jobs executing at once. Default: 2.
+    /// </summary>
+    public int MaxConcurrentBackgroundJobs { get; init; } = 2;
+
+    /// <summary>
+    /// Maximum number of background import jobs waiting for an execution slot.
+    /// Zero disables queuing beyond the running jobs. Default: 16.
+    /// </summary>
+    public int MaxBackgroundJobQueueDepth { get; init; } = 16;
 
     /// <summary>
     /// Whether to skip invalid geometries or fail the import.

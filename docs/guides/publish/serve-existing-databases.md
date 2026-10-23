@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Serve existing databases"
+description: "You'll have tables you already own served as live layers, without copying data, in about 10 minutes."
+---
 # Serve existing databases
 
 You'll have tables you already own served as live layers, without copying data, in about 10 minutes.
@@ -14,7 +19,7 @@ Honua connects in place to existing databases. PostGIS is the full read/write ba
 | DuckDB | Read/query only | `DataSource:Provider=duckdb` + `DuckDB` config section | Embedded single file; layers declared in config; good for GeoParquet/analytical and air-gapped serving. See [DuckDB](../../reference/configuration/data-sources/duckdb.md). |
 | SQL Server | Read/query only | `SqlServer` config section alongside the primary backend | `geometry`/`geography` tables, SQL Server 2016+/Azure SQL. No edits, statistics, or native MVT. See [SQL Server](../../reference/configuration/data-sources/sql-server.md). |
 | Oracle | Read/query only | Oracle provider config alongside the primary backend | Standard `SDO_GEOMETRY` tables (12c+). ArcSDE `ST_Geometry` and versioned tables are detected and refused. See [Oracle](../../reference/configuration/data-sources/oracle.md). |
-| MySQL / MariaDB | Read/query only | MySQL provider config alongside the primary backend | MySQL 8.0.11+ / MariaDB 10.6+. No edits, statistics, temporal filters, KNN, or cross-SRID transforms. See [MySQL/MariaDB](../../reference/configuration/data-sources/mysql-mariadb.md). |
+| MySQL / MariaDB | Read/query only | MySQL provider config alongside the primary backend | MySQL 8.0.12+ / MariaDB 10.6+. No edits, statistics, temporal filters, KNN, or cross-SRID transforms. See [MySQL/MariaDB](../../reference/configuration/data-sources/mysql-mariadb.md). |
 
 For the read-only providers, follow the linked reference page to configure the provider section and restart the server — the rest of this guide covers the PostGIS admin-API path.
 
@@ -36,7 +41,7 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 }
 ```
 
-Credentials are encrypted at rest and never returned by the API. Use `secretReference` + `secretType` instead of `password` to pull credentials from a secret manager.
+Credentials are encrypted at rest and never returned by the API. Use `secretReference` + `secretType` instead of `password` to pull credentials from a secret manager. The reference must be a whole `provider:identifier` value (for example `aws:secretsmanager:honua/connections/warehouse`) that the operator has permitted under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)); a literal connection string is not accepted in `secretReference`.
 
 ### 2. Test the connection
 
@@ -78,6 +83,7 @@ Open `http://localhost:8080/ogc/features/collections` in a browser and confirm t
 
 - **Connection test fails** — verify host/port reachability from the server container and that `sslMode` matches the database TLS setup (`Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`).
 - **`Cannot specify both Password and SecretReference` (400)** — supply exactly one credential mechanism.
+- **`secretReference` rejected (400)** — the value is not a whole `provider:identifier` reference, or the operator has not permitted it under `Security__RequestSecretReferences__*`.
 - **Table missing from discovery** — discovery lists tables with a registered geometry column; confirm the table has a typed geometry column and the connection user has SELECT on it.
 - **Publish returns `409 Conflict`** — a layer with that name already exists in the target service; pick another `layerName`.
 - **Read-only provider table cannot be edited** — DuckDB, SQL Server, Oracle, and MySQL providers reject edits by design; copy data into PostGIS for editable layers.

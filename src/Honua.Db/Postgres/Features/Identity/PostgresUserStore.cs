@@ -34,6 +34,19 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
     private const string UserColumns =
         "u.user_id, u.external_id, u.external_issuer, u.display_name, u.email, u.provisioning_source, u.provider_id, u.is_active, u.created_at, u.updated_at";
 
+    // Parentheses are required: AND binds tighter than OR, but the issuer-less
+    // predicate must be one disjunct. The rank expression is COALESCE'd because
+    // PostgreSQL sorts NULL first under DESC, which would prefer a user_id match
+    // whose external_id comparison is NULL over the external-subject row.
+    internal const string IssuerlessPrincipalWhere =
+        "WHERE (u.external_id = @id AND u.external_issuer IS NULL) OR LOWER(u.user_id) = LOWER(@id)";
+
+    internal const string IssuerScopedPrincipalWhere =
+        "WHERE (u.external_id = @id AND u.external_issuer = @issuer)";
+
+    internal const string PrincipalExternalIdRank =
+        "ORDER BY COALESCE(u.external_id = @id, false) DESC";
+
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _usersTable;
     private readonly string _rolesTable;
@@ -200,11 +213,11 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
         var normalizedIssuer = NormalizeIssuer(issuer);
         var where = normalizedIssuer is null
-            ? "WHERE u.external_id = @id AND u.external_issuer IS NULL OR LOWER(u.user_id) = LOWER(@id)"
-            : "WHERE u.external_id = @id AND u.external_issuer = @issuer";
+            ? IssuerlessPrincipalWhere
+            : IssuerScopedPrincipalWhere;
         var sql = $"""
             {SelectUsersSql(where)}
-            ORDER BY (u.external_id = @id) DESC
+            {PrincipalExternalIdRank}
             LIMIT 1
             """;
 

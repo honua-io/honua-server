@@ -16,6 +16,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
 
@@ -45,6 +46,35 @@ internal sealed partial class GeoservicesImportService
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // #4600: one import per target table, for the whole job. A retry submitted while the original
+        // job is still running, or two imports aimed at the same table, would otherwise race: the loser
+        // blocks on the winner's uncommitted catalog rows and then fails opaquely, or replaces the table
+        // the winner just committed, or is still publishing, copying attachments into, or reconciling.
+        // The lease is session-level so it survives the data commit; the finally below releases it, and a
+        // dropped connection (a crashed worker) releases it too.
+        if (!await TryAcquireTargetImportLockAsync(connection, targetSchema, request.TableName, cancellationToken))
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            stopwatch.Stop();
+            Log.TargetImportInProgress(_logger, request.TableName);
+            return GeoservicesImportResult.CreateFailure(
+                request.TableName,
+                request.ServiceUrl,
+                request.LayerId,
+                $"Another import is already writing target table '{request.TableName}'; this job did not modify it. "
+                + "Wait for that import to finish, then retry.",
+                stopwatch.Elapsed) with
+            {
+                ServiceName = request.ServiceName
+            };
+        }
+
+        // #4827: the step a top-level failure happened in, so the job reports where it failed and
+        // whether imported rows had already been committed. The counters are outside the try so a
+        // cancellation after commit can still report how many rows landed.
+        var stage = ImportFailureStage.DiscoveringLayer;
+        var featuresProcessed = 0;
+        var failedFeatures = 0;
         try
         {
             // Phase 1: Discover layer metadata
@@ -61,23 +91,70 @@ internal sealed partial class GeoservicesImportService
 
             Log.LayerDiscovered(_logger, layerInfo.Name, layerInfo.Fields.Length, layerInfo.FeatureCount);
 
+            foreach (var column in GeoservicesImportColumns.Map(layerInfo).Columns)
+            {
+                if (!column.Renamed)
+                {
+                    continue;
+                }
+
+                warnings.Add(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Source field '{column.Field.Name}' was imported as column '{column.ColumnName}' because '{column.SanitizedName}' is reserved or already used."));
+            }
+
             var totalFeatures = layerInfo.FeatureCount;
             var batchSize = request.BatchSize ?? layerInfo.MaxRecordCount ?? 1000;
 
+            // #4600: an import that is not a replacement says so instead of failing inside CREATE TABLE.
+            // A job restarted after its data committed lands here too, so the message names that case.
+            var targetExists = await RelationExistsAsync(connection, targetSchema, request.TableName, cancellationToken);
+            if (targetExists && !request.OverwriteExisting)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                stopwatch.Stop();
+                return BuildTargetUnavailableResult(
+                    request,
+                    layerInfo,
+                    $"Target table '{request.TableName}' already exists and overwriteExisting is false, so it was not modified. "
+                    + "Set overwriteExisting to replace it. A job restarted after its data was committed also reports this; "
+                    + "the existing table holds that earlier run's result.",
+                    stopwatch.Elapsed);
+            }
+
+            // #4600: a replacement must never trade a complete prior target for a weaker one. It loads
+            // into a staging table and swaps it in just before commit, so the live target stays readable
+            // and unlocked for the whole transfer. The staging table is created inside the import
+            // transaction: a failure, a refused replacement, a cancellation or a crashed worker all remove
+            // it with the rollback, and the prior target is never touched.
+            var replacingExistingTarget = request.OverwriteExisting && targetExists;
+            var loadTable = replacingExistingTarget
+                ? BuildStagingTableName(request.TableName, jobId)
+                : request.TableName;
+            if (replacingExistingTarget)
+            {
+                // Readers keep the prior rows during the transfer; writers wait for the swap rather than
+                // committing edits the swap would silently discard.
+                await ImportTableOwnership.AssertExistingOwnedAsync(connection, targetSchema, request.TableName, cancellationToken);
+                await FenceTargetWritesAsync(connection, targetSchema, request.TableName, cancellationToken);
+            }
+
             // Phase 2: Create table
+            stage = ImportFailureStage.CreatingTable;
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.CreatingTable, request,
                 "Creating PostGIS table", 0, totalFeatures, layerInfo.Name);
 
-            await CreateTableAsync(connection, targetSchema, request.TableName, layerInfo, request.TargetSrid,
-                request.OverwriteExisting, cancellationToken);
+            await CreateTableAsync(connection, targetSchema, loadTable, layerInfo, request.TargetSrid, cancellationToken);
 
             // Phase 3: Retrieve and insert features
-            var featuresProcessed = 0;
-            var failedFeatures = 0;
+            stage = ImportFailureStage.TransferringFeatures;
             var offset = 0;
             var batchNumber = 0;
             var hasMore = true;
             var objectIdMap = new Dictionary<long, long>();
+            var absentGeometryTargetIds = new HashSet<long>();
+            var unconvertedGeometryTargetIds = new HashSet<long>();
+            var invalidSourceGeometryTargetIds = new HashSet<long>();
             var seenSourceObjectIds = new HashSet<long>();
             var sourceObjectIds = layerInfo.SupportsPagination == false
                 ? await _restClient.QueryObjectIdsAsync(
@@ -97,13 +174,23 @@ internal sealed partial class GeoservicesImportService
                 : sourceObjectIds.Chunk(Math.Max(1, objectIdWindowSize)).ToArray();
             const int maxImportPages = 100_000;
 
+            // #4600: the source population the transfer starts from, with the import's filter applied. It
+            // is compared with the population after the last page, so a source edited mid-transfer is
+            // reported rather than implied to be a snapshot, and it is the baseline a filtered import is
+            // reconciled against (the discovery count is always unfiltered).
+            long? sourceCountBeforeTransfer = sourceObjectIds is not null
+                ? sourceObjectIds.Length
+                : string.IsNullOrWhiteSpace(request.WhereClause)
+                    ? layerInfo.FeatureCount
+                    : await TryCountSourceFeaturesAsync(request, cancellationToken);
+
             while (hasMore && !cancellationToken.IsCancellationRequested &&
                    (objectIdWindows is null || batchNumber < objectIdWindows.Length))
             {
                 batchNumber++;
                 if (batchNumber > maxImportPages)
                 {
-                    throw new InvalidOperationException(
+                    throw new GeoservicesImportAbortedException(
                         $"ArcGIS import stopped after {maxImportPages} pages because the source did not make pagination progress.");
                 }
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.RetrievingFeatures, request,
@@ -138,7 +225,7 @@ internal sealed partial class GeoservicesImportService
                 {
                     if (queryResult.ExceededTransferLimit)
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             $"ArcGIS object-id window {batchNumber} exceeded the source transfer limit; the import was not completed.");
                     }
 
@@ -148,13 +235,13 @@ internal sealed partial class GeoservicesImportService
                             !TryReadSourceObjectId(feature, objectIdField, out var returnedObjectId)
                             || !returnedObjectIds.Add(returnedObjectId)))
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             $"ArcGIS object-id window {batchNumber} did not return identifiable source object IDs.");
                     }
 
                     if (objectIdWindows[batchNumber - 1].Any(objectId => !returnedObjectIds.Contains(objectId)))
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             $"ArcGIS object-id window {batchNumber} did not return every requested source object ID.");
                     }
                 }
@@ -168,11 +255,11 @@ internal sealed partial class GeoservicesImportService
                 {
                     if (objectIdWindows is null)
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             "ArcGIS import stopped because the source returned no pagination progress.");
                     }
 
-                    throw new InvalidOperationException(
+                    throw new GeoservicesImportAbortedException(
                         $"ArcGIS object-id window {batchNumber} returned no requested features.");
                 }
 
@@ -180,7 +267,7 @@ internal sealed partial class GeoservicesImportService
                     connection,
                     transaction,
                     targetSchema,
-                    request.TableName,
+                    loadTable,
                     layerInfo,
                     newFeatures,
                     request.TargetSrid,
@@ -194,9 +281,28 @@ internal sealed partial class GeoservicesImportService
                     objectIdMap[entry.Key] = entry.Value;
                 }
 
+                if (batchInsert.AbsentGeometryTargetIds is { Count: > 0 })
+                {
+                    absentGeometryTargetIds.UnionWith(batchInsert.AbsentGeometryTargetIds);
+                }
+
+                if (batchInsert.UnconvertedGeometryTargetIds is { Count: > 0 })
+                {
+                    unconvertedGeometryTargetIds.UnionWith(batchInsert.UnconvertedGeometryTargetIds);
+                }
+
+                if (batchInsert.InvalidSourceGeometryTargetIds is { Count: > 0 })
+                {
+                    invalidSourceGeometryTargetIds.UnionWith(batchInsert.InvalidSourceGeometryTargetIds);
+                }
+
                 if (batchInsert.Failed > 0)
                 {
-                    warnings.Add($"Batch {batchNumber}: {batchInsert.Failed} features failed to insert");
+                    // #4827: keep the (redacted) reason the database gave, so a rejected geometry or value
+                    // is diagnosable from the job rather than only from the server log.
+                    warnings.Add(batchInsert.FirstFailureReason is { } reason
+                        ? $"Batch {batchNumber}: {batchInsert.Failed} features failed to insert; first rejection: {reason}"
+                        : $"Batch {batchNumber}: {batchInsert.Failed} features failed to insert");
                 }
 
                 Log.BatchCompleted(_logger, batchNumber, batchInsert.Inserted, batchInsert.Failed, featuresProcessed);
@@ -207,19 +313,65 @@ internal sealed partial class GeoservicesImportService
                     : queryResult.ExceededTransferLimit || queryResult.Features.Length == batchSize;
             }
 
+            // #4600: the loop stops polling the source once the token fires. Surface that as a
+            // cancellation (rolled back below, so a replaced target is retained) rather than letting it
+            // read as a generic incomplete transfer.
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (objectIdWindows is { } && batchNumber < objectIdWindows.Length)
             {
-                throw new InvalidOperationException("ArcGIS object-id window import did not process all source object IDs.");
+                throw new GeoservicesImportAbortedException("ArcGIS object-id window import did not process all source object IDs.");
+            }
+
+            if (replacingExistingTarget && failedFeatures > 0)
+            {
+                // #4600: refuse the swap. Committing here would replace a complete prior target with
+                // one missing the records that failed to load; the rollback discards the staging table
+                // and the prior target was never touched.
+                await transaction.RollbackAsync(CancellationToken.None);
+                stopwatch.Stop();
+                Log.ReplacementRefused(_logger, request.TableName, failedFeatures);
+                return BuildReplacementRefusedResult(
+                    request, layerInfo, featuresProcessed, failedFeatures, warnings, stopwatch.Elapsed);
+            }
+
+            stage = ImportFailureStage.Finalizing;
+
+            // The per-window buffers are finished with. Release them before the source is enumerated
+            // again, so the comparison adds at most one object-ID array to the import's footprint.
+            seenSourceObjectIds.Clear();
+            seenSourceObjectIds.TrimExcess();
+            objectIdWindows = null;
+
+            // #4600: close the bracket around the transfer before committing, so a source that changed
+            // while it was being read is recorded against exactly the data being committed.
+            var sourceSnapshot = await CaptureSourceSnapshotAsync(
+                request,
+                sourceObjectIds,
+                sourceCountBeforeTransfer,
+                cancellationToken);
+
+            if (replacingExistingTarget)
+            {
+                await SwapStagingIntoTargetAsync(connection, targetSchema, loadTable, request.TableName, cancellationToken);
             }
 
             // Phase 4: Create spatial index
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+            // #4600: a nonspatial ArcGIS table is created without a geom column (BuildCreateTableSql), so
+            // indexing it unconditionally failed every table import with 42703.
+            if (!string.IsNullOrEmpty(layerInfo.GeometryType))
+            {
+                await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+            }
+
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
+            stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
+            stage = ImportFailureStage.AfterCommit;
 
             PublishedLayerSummary? publishedLayer = null;
             if (request.AutoPublish)
@@ -234,18 +386,25 @@ internal sealed partial class GeoservicesImportService
                     startedAt,
                     featuresProcessed,
                     _connectionProvider.GetConnectionString(),
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null,
+                    replacingExistingTarget: replacingExistingTarget,
+                    replacedSourceObjectIds: replacingExistingTarget ? objectIdMap : null,
+                    importedAttachmentStore: _attachmentStore as IImportedAttachmentStore)
+                    .ConfigureAwait(false);
             }
 
+            // #4600: attachment accounting is kept on its own evidence (advertised / copied / failed /
+            // unreadable-inventory) so attachment parity is decided independently of feature counts.
+            MigrationFidelityAttachmentInput? attachmentFidelity = null;
             var attachmentCount = 0;
             var failedAttachments = 0;
-            if (layerInfo.HasAttachments
+            if ((layerInfo.HasAttachments || replacingExistingTarget)
                 && request.ImportAttachments
                 && publishedLayer != null
-                && _attachmentStore != null
-                && objectIdMap.Count > 0)
+                && _attachmentStore != null)
             {
-                (attachmentCount, failedAttachments) = await CopyAttachmentsAsync(
+                var attachmentOutcome = await CopyAttachmentsAsync(
                     request,
                     layerInfo,
                     publishedLayer.LayerId,
@@ -256,11 +415,27 @@ internal sealed partial class GeoservicesImportService
                     startedAt,
                     featuresProcessed,
                     cancellationToken).ConfigureAwait(false);
+
+                attachmentCount = attachmentOutcome.Copied;
+                failedAttachments = attachmentOutcome.Failed;
+                attachmentFidelity = new MigrationFidelityAttachmentInput
+                {
+                    Advertised = attachmentOutcome.Advertised,
+                    Copied = attachmentOutcome.Copied,
+                    Failed = attachmentOutcome.Failed,
+                    UnverifiedParents = attachmentOutcome.UnverifiedParents,
+                    TargetUnverified = attachmentOutcome.TargetUnverified
+                };
             }
             else if (layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore == null)
             {
                 warnings.Add(
                     "Layer advertises attachments, but no attachment store is registered; attachments were not copied.");
+                attachmentFidelity = new MigrationFidelityAttachmentInput { CopySkipped = true };
+            }
+            else if (layerInfo.HasAttachments)
+            {
+                attachmentFidelity = new MigrationFidelityAttachmentInput { CopySkipped = true };
             }
 
             // Phase 5: Validating â€” reconcile the published layer against the apply-time source
@@ -276,22 +451,80 @@ internal sealed partial class GeoservicesImportService
                     featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.LayerId,
                     attachmentsProcessed: attachmentCount, failedAttachments: failedAttachments);
 
+                // #4600 AC6: a filtered import is reconciled against the filtered source. The discovery
+                // count is always unfiltered, so the transfer's filtered baseline stands in for it.
+                var reconciliationSource = string.IsNullOrWhiteSpace(request.WhereClause)
+                    ? layerInfo
+                    : layerInfo with
+                    {
+                        FeatureCount = sourceCountBeforeTransfer is { } filteredCount ? (int)filteredCount : null
+                    };
+
+                var queriedSourceExtent = string.IsNullOrEmpty(layerInfo.GeometryType)
+                    ? null
+                    : await TryQuerySourceExtentAsync(request, cancellationToken).ConfigureAwait(false);
                 reconciliation = await _layerPublicationService.RunReconciliationGateAsync(
                     request,
                     jobId,
-                    layerInfo,
+                    reconciliationSource,
                     publishedLayer,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = absentGeometryTargetIds,
+                        UnconvertedTargetFeatureIds = unconvertedGeometryTargetIds,
+                        InvalidTargetFeatureIds = invalidSourceGeometryTargetIds
+                    },
+                    queriedSourceExtent).ConfigureAwait(false);
             }
 
             stopwatch.Stop();
 
-            if (reconciliation.NeedsReview)
+            if (unconvertedGeometryTargetIds.Count > 0)
             {
-                Log.ReconciliationGateBlocked(_logger, request.TableName, reconciliation.ReviewReason ?? "reconciliation failed");
+                warnings.Add(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{unconvertedGeometryTargetIds.Count} feature(s) were saved with a null geometry because the source geometry could not be converted."));
+            }
+
+            // #4600: one verdict, not two. Data-movement reconciliation, catalog (schema/domain/
+            // identifier/subtype) reconciliation, dropped records, lost attachments and deferred
+            // relationships all fold into a single fidelity evaluation. Any blocking difference
+            // routes the run to NeedsReview; a check that never executed downgrades the run to
+            // 'unverified' rather than letting it be reported as a full-fidelity migration.
+            var fidelity = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
+            {
+                LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
+                DataReconciliation = reconciliation.Artifact,
+                DataReconciliationExecuted = reconciliation.DataCheckExecuted,
+                CatalogReconciliation = reconciliation.CatalogReport,
+                CatalogReconciliationExecuted = reconciliation.CatalogCheckExecuted,
+                PublishedTarget = publishedLayer is not null,
+                PublishRequested = request.AutoPublish,
+                FailedFeatures = failedFeatures,
+                FeaturesProcessed = featuresProcessed,
+                SourceCountBeforeTransfer = sourceCountBeforeTransfer,
+                UnconvertedGeometryCount = unconvertedGeometryTargetIds.Count,
+                Attachments = attachmentFidelity,
+                Relationships = request.DeferRelationshipApplyToBatch
+                    ? []
+                    : DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.LayerId),
+                SourceSnapshot = sourceSnapshot
+            });
+
+            foreach (var difference in fidelity.Differences)
+            {
+                Log.FidelityDifference(_logger, request.TableName, difference.Code, difference.Severity, difference.Summary);
+            }
+
+            if (fidelity.IsBlocking)
+            {
+                var reviewReason = fidelity.BlockingReason
+                    ?? "Post-publish reconciliation reported a blocking discrepancy.";
+                Log.ReconciliationGateBlocked(_logger, request.TableName, reviewReason);
 
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.NeedsReview, request,
-                    "Import published but requires operator review (reconciliation gate)",
+                    "Import published but requires operator review (fidelity gate)",
                     featuresProcessed,
                     featuresProcessed,
                     layerInfo.Name,
@@ -299,7 +532,9 @@ internal sealed partial class GeoservicesImportService
                     attachmentsProcessed: attachmentCount,
                     failedAttachments: failedAttachments,
                     reconciliationArtifact: reconciliation.Artifact,
-                    catalogReconciliationReport: reconciliation.CatalogReport);
+                    catalogReconciliationReport: reconciliation.CatalogReport,
+                    fidelityVerdict: fidelity.Verdict,
+                    fidelityDifferences: fidelity.Differences);
 
                 return GeoservicesImportResult.CreateNeedsReview(
                     request.TableName,
@@ -316,7 +551,9 @@ internal sealed partial class GeoservicesImportService
                     failedAttachments,
                     reconciliation.Artifact,
                     reconciliation.CatalogReport,
-                    reconciliation.ReviewReason ?? "Post-publish reconciliation reported a blocking discrepancy.");
+                    reviewReason,
+                    fidelity.Verdict,
+                    fidelity.Differences);
             }
 
             Log.ImportCompleted(_logger, request.TableName, featuresProcessed, failedFeatures,
@@ -332,7 +569,9 @@ internal sealed partial class GeoservicesImportService
                 attachmentsProcessed: attachmentCount,
                 failedAttachments: failedAttachments,
                 reconciliationArtifact: reconciliation.Artifact,
-                catalogReconciliationReport: reconciliation.CatalogReport);
+                catalogReconciliationReport: reconciliation.CatalogReport,
+                fidelityVerdict: fidelity.Verdict,
+                fidelityDifferences: fidelity.Differences);
 
             return GeoservicesImportResult.CreateSuccess(
                 request.TableName,
@@ -348,19 +587,46 @@ internal sealed partial class GeoservicesImportService
                 attachmentCount: attachmentCount,
                 failedAttachments: failedAttachments,
                 reconciliationArtifact: reconciliation.Artifact,
-                catalogReconciliationReport: reconciliation.CatalogReport);
+                catalogReconciliationReport: reconciliation.CatalogReport,
+                fidelityVerdict: fidelity.Verdict,
+                fidelityDifferences: fidelity.Differences);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (stage == ImportFailureStage.AfterCommit)
+            {
+                // Publishing, attachment copy and reconciliation run after the data commit.
+                // A caller cancel here must not be reported as if the rows were rolled back.
+                stopwatch.Stop();
+                Log.ImportCancelled(_logger, request.TableName);
+                warnings.Add(
+                    "Import was cancelled after the data was committed. Imported rows were already committed; check the target table, its publication, and any partial attachment copy before retrying.");
+                return GeoservicesImportResult.CreateFailure(
+                    request.TableName,
+                    request.ServiceUrl,
+                    request.LayerId,
+                    "Import was cancelled after the data was committed. Imported rows were already committed; check the target table, its publication, and any partial attachment copy before retrying.",
+                    stopwatch.Elapsed) with
+                {
+                    NeedsReview = true,
+                    DataCommitted = true,
+                    FeatureCount = featuresProcessed,
+                    FailedFeatures = failedFeatures,
+                    Warnings = warnings,
+                    ServiceName = request.ServiceName
+                };
+            }
+
+            await RollbackAfterFailureAsync(transaction, stage, request.TableName);
             Log.ImportCancelled(_logger, request.TableName);
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Top-level import failure: roll back, log, and map to a sanitized failure result via
-            // BuildImportFailureMessage rather than leaking the raw exception to the caller.
-            await transaction.RollbackAsync(CancellationToken.None);
+            // BuildImportFailureMessage rather than leaking the raw exception to the caller. #4827: the
+            // rollback is guarded, so a failed cleanup can never replace the error being reported.
+            await RollbackAfterFailureAsync(transaction, stage, request.TableName);
             stopwatch.Stop();
             Log.ImportFailed(_logger, request.TableName, ex);
 
@@ -368,15 +634,97 @@ internal sealed partial class GeoservicesImportService
                 request.TableName,
                 request.ServiceUrl,
                 request.LayerId,
-                BuildImportFailureMessage(ex),
-                stopwatch.Elapsed);
+                BuildImportFailureMessage(ex, stage),
+                stopwatch.Elapsed) with
+            {
+                ErrorCode = ex is ImportTableOwnershipException ? ImportTableOwnershipException.Code : null,
+                DataCommitted = stage == ImportFailureStage.AfterCommit,
+                FeatureCount = featuresProcessed,
+                FailedFeatures = failedFeatures,
+                Warnings = warnings,
+                ServiceName = request.ServiceName
+            };
+        }
+        finally
+        {
+            // #4600: every path out of the job ends the target lease, after its transaction has committed
+            // or rolled back. A failure here only means the connection is gone, which releases it anyway.
+            try
+            {
+                await ReleaseTargetImportLockAsync(connection, targetSchema, request.TableName);
+            }
+            catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException)
+            {
+                Log.TargetLeaseReleaseFailed(_logger, request.TableName, ex);
+            }
         }
     }
 
-    private static string BuildImportFailureMessage(Exception exception)
-        => exception switch
+    /// <summary>
+    /// The import step a top-level failure happened in. It words the failure reason and records
+    /// whether the imported rows had already been committed when the failure happened.
+    /// </summary>
+    internal enum ImportFailureStage
+    {
+        /// <summary>Reading the source layer's metadata.</summary>
+        DiscoveringLayer,
+
+        /// <summary>Creating the target (or staging) table.</summary>
+        CreatingTable,
+
+        /// <summary>Reading source pages and inserting them.</summary>
+        TransferringFeatures,
+
+        /// <summary>Re-reading the source population, swapping and indexing.</summary>
+        Finalizing,
+
+        /// <summary>Sending COMMIT; a lost acknowledgement leaves the durable outcome unknown.</summary>
+        Committing,
+
+        /// <summary>After the data commit: publication, attachments and reconciliation.</summary>
+        AfterCommit
+    }
+
+    /// <summary>
+    /// Rolls back the import transaction on a failure path. #4827: this runs while another error
+    /// is being handled, so it never throws. A committed transaction has nothing to roll back, and
+    /// a lost session cannot run the rollback at all (the server discards the transaction with the
+    /// session); either way the originating error stays the one reported.
+    /// </summary>
+    private async Task RollbackAfterFailureAsync(NpgsqlTransaction transaction, ImportFailureStage stage, string tableName)
+    {
+        if (stage == ImportFailureStage.AfterCommit)
         {
-            ArcGisAuthenticationException auth => auth.Kind switch
+            return;
+        }
+
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+        }
+        catch (Exception rollbackException) when (rollbackException is not OutOfMemoryException)
+        {
+            Log.ImportRollbackFailed(_logger, tableName, rollbackException);
+        }
+    }
+
+    /// <summary>
+    /// Maps a top-level import failure to the job's failure reason: a stable code, the step that
+    /// failed, and a category the operator can act on. #4827: provider and HTTP exception text can
+    /// carry SQL, hosts, URLs, tokens or credentials, so it is never echoed; only the SQLSTATE or
+    /// HTTP status is. Reasons the importer authored itself (<see cref="GeoservicesImportAbortedException"/>)
+    /// are reported as written.
+    /// </summary>
+    internal static string BuildImportFailureMessage(Exception exception, ImportFailureStage stage)
+    {
+        if (exception is ImportTableOwnershipException ownership)
+        {
+            return ownership.Message;
+        }
+
+        if (exception is ArcGisAuthenticationException auth)
+        {
+            return auth.Kind switch
             {
                 ArcGisAuthenticationFailureKind.CredentialExpired =>
                     $"{ImportCompatibilityCodes.ArcGisTokenExpired}: ArcGIS credentials are expired. Provide a refreshed token or credential reference and retry.",
@@ -384,9 +732,276 @@ internal sealed partial class GeoservicesImportService
                     $"{ImportCompatibilityCodes.ArcGisAccessDenied}: ArcGIS rejected the supplied credentials. Verify access to the layer and retry.",
                 _ =>
                     $"{ImportCompatibilityCodes.ArcGisTokenRequired}: ArcGIS service requires authentication. Provide a token or credential reference and retry."
-            },
-            _ => "Import from ArcGIS service failed."
+            };
+        }
+
+        if (exception is GeoservicesImportAbortedException aborted)
+        {
+            return $"{ImportCompatibilityCodes.ArcGisImportAborted}: {aborted.Message}";
+        }
+
+        var step = stage switch
+        {
+            ImportFailureStage.DiscoveringLayer => "discovering source layer metadata",
+            ImportFailureStage.CreatingTable => "creating the target table",
+            ImportFailureStage.TransferringFeatures => "transferring source features",
+            ImportFailureStage.Finalizing => "finalizing the imported table",
+            ImportFailureStage.Committing => "committing the imported table",
+            _ => "publishing the imported layer"
         };
+        // A command-level ERROR acknowledges rejection. Session loss and PostgreSQL's
+        // explicit unknown-completion states cannot establish the durable outcome.
+        var databaseFailure = UnwrapDatabaseFailure(exception);
+        var commitRejected = databaseFailure is PostgresException postgresFailure
+            && postgresFailure.InvariantSeverity == "ERROR"
+            && !postgresFailure.SqlState.StartsWith("08", StringComparison.Ordinal)
+            && postgresFailure.SqlState != "40003";
+        var outcome = stage switch
+        {
+            ImportFailureStage.AfterCommit =>
+                "Imported rows were already committed; check the target table and its publication before retrying.",
+            // Cancellation-safe commit prevents caller cancellation from interrupting the round-trip,
+            // but a connection failure can still hide a successful server-side commit.
+            ImportFailureStage.Committing when !commitRejected =>
+                "The commit outcome could not be confirmed; check the target table and its publication before retrying.",
+            _ => "No imported data was committed, and any existing target table was left unchanged."
+        };
+
+        // A lost or broken session surfaces as an ObjectDisposedException/InvalidOperationException from
+        // Npgsql that wraps the server's own error, so classify on the first database exception in the
+        // chain rather than on the wrapper the cleanup path produced.
+        return databaseFailure switch
+        {
+            PostgresException postgres when IsGeometryRejection(postgres) =>
+                $"{ImportCompatibilityCodes.ArcGisImportGeometryRejected}: The target database rejected a source geometry while {step} "
+                + $"(SQLSTATE {postgres.SqlState}). Check that the layer's advertised geometry type and Z/M flags match the source coordinates. {outcome}",
+            PostgresException postgres when IsDatabaseUnavailable(postgres.SqlState) =>
+                $"{ImportCompatibilityCodes.ArcGisImportDatabaseUnavailable}: The target database connection was lost or refused while {step} "
+                + $"(SQLSTATE {postgres.SqlState}). {outcome}",
+            PostgresException postgres =>
+                $"{ImportCompatibilityCodes.ArcGisImportDatabaseError}: The target database rejected the import while {step} "
+                + $"(SQLSTATE {postgres.SqlState}). {outcome}",
+            NpgsqlException or TimeoutException =>
+                $"{ImportCompatibilityCodes.ArcGisImportDatabaseUnavailable}: The target database connection failed while {step}. {outcome}",
+            HttpRequestException { StatusCode: { } status } =>
+                $"{ImportCompatibilityCodes.ArcGisServiceError}: The ArcGIS service request failed with HTTP {(int)status} while {step}. {outcome}",
+            HttpRequestException =>
+                $"{ImportCompatibilityCodes.ArcGisServiceError}: The ArcGIS service could not be reached while {step}. {outcome}",
+            OperationCanceledException =>
+                $"{ImportCompatibilityCodes.ArcGisServiceError}: An ArcGIS service request timed out while {step}. {outcome}",
+            _ =>
+                $"{ImportCompatibilityCodes.ArcGisImportFailed}: Import from ArcGIS service failed while {step}. {outcome}"
+        };
+    }
+
+    /// <summary>
+    /// Redacted reason a single feature row was rejected, carried into the batch warning. Like
+    /// <see cref="BuildImportFailureMessage"/>, it names the category and SQLSTATE only.
+    /// </summary>
+    internal static string DescribeFeatureInsertFailure(Exception exception)
+        => UnwrapDatabaseFailure(exception) switch
+        {
+            PostgresException postgres when IsGeometryRejection(postgres) =>
+                $"geometry rejected by the target database (SQLSTATE {postgres.SqlState})",
+            PostgresException postgres =>
+                $"value rejected by the target database (SQLSTATE {postgres.SqlState})",
+            _ => "row could not be converted for insert"
+        };
+
+    private static Exception UnwrapDatabaseFailure(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException or NpgsqlException)
+            {
+                return current;
+            }
+        }
+
+        return exception;
+    }
+
+    // PostGIS reports malformed or dimensionally inconsistent geometry (for example "can not mix
+    // dimensionality in a geometry", "Column has Z dimension but geometry does not") as XX000 or
+    // 22023. The message is classified here and never forwarded.
+    private static bool IsGeometryRejection(PostgresException exception)
+        => exception.SqlState is "XX000" or "22023"
+            && (exception.MessageText.Contains("geometry", StringComparison.OrdinalIgnoreCase)
+                || exception.MessageText.Contains("dimension", StringComparison.OrdinalIgnoreCase));
+
+    // Connection exception (08), insufficient resources (53) and operator intervention (57,
+    // including a terminated session) mean the database could not run the import at all.
+    private static bool IsDatabaseUnavailable(string sqlState)
+        => sqlState.StartsWith("08", StringComparison.Ordinal)
+            || sqlState.StartsWith("53", StringComparison.Ordinal)
+            || sqlState.StartsWith("57", StringComparison.Ordinal);
+
+    private static GeoservicesImportResult BuildReplacementRefusedResult(
+        GeoservicesImportRequest request,
+        GeoservicesLayerInfo layerInfo,
+        int loadedFeatures,
+        int failedFeatures,
+        List<string> warnings,
+        TimeSpan duration)
+    {
+        // The evaluator supplies the same records-lost difference a completed run would carry, so the
+        // refusal is actionable from the persisted result rather than only from the message text.
+        var fidelity = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
+        {
+            LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
+            FailedFeatures = failedFeatures
+        });
+
+        var message = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Replacement refused: {failedFeatures} of {loadedFeatures + failedFeatures} source record(s) failed to load, "
+            + $"so the existing target table '{request.TableName}' was retained unchanged. Resolve the failing records and retry the import.");
+
+        return GeoservicesImportResult.CreateFailure(
+            request.TableName,
+            request.ServiceUrl,
+            request.LayerId,
+            message,
+            duration) with
+        {
+            FailedFeatures = failedFeatures,
+            SourceLayerName = layerInfo.Name,
+            ServiceName = request.ServiceName,
+            Warnings = warnings,
+            FidelityDifferences = fidelity.Differences
+        };
+    }
+
+    private static GeoservicesImportResult BuildTargetUnavailableResult(
+        GeoservicesImportRequest request,
+        GeoservicesLayerInfo layerInfo,
+        string message,
+        TimeSpan duration)
+        => GeoservicesImportResult.CreateFailure(
+            request.TableName,
+            request.ServiceUrl,
+            request.LayerId,
+            message,
+            duration) with
+        {
+            SourceLayerName = layerInfo.Name,
+            ServiceName = request.ServiceName
+        };
+
+    /// <summary>
+    /// Counts the source records matching the import filter, or <c>null</c> when the source cannot
+    /// answer. Cancellation propagates; any other failure only leaves the source snapshot unverified.
+    /// </summary>
+    private async Task<BoundingBox?> TryQuerySourceExtentAsync(
+        GeoservicesImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _restClient.QueryFeatureExtentAsync(
+                request.ServiceUrl,
+                request.LayerId,
+                request.WhereClause,
+                request.RequestTimeoutSeconds,
+                request.MaxRetries,
+                cancellationToken,
+                request.Credentials).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsUnreadableSourceFailure(ex, cancellationToken))
+        {
+            Log.SourceExtentUnavailable(_logger, request.TableName, ex);
+            return null;
+        }
+    }
+
+    private async Task<long?> TryCountSourceFeaturesAsync(
+        GeoservicesImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _restClient.QueryFeatureCountAsync(
+                request.ServiceUrl,
+                request.LayerId,
+                request.WhereClause,
+                request.RequestTimeoutSeconds,
+                request.MaxRetries,
+                cancellationToken,
+                request.Credentials).ConfigureAwait(false);
+        }
+        // Intentionally generic: an unreadable count is an evidence gap, not an import failure. The
+        // fidelity verdict records it as unverified.
+        catch (Exception ex) when (IsUnreadableSourceFailure(ex, cancellationToken))
+        {
+            Log.SourcePopulationUnavailable(_logger, request.TableName, ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Only the caller's own cancellation propagates. A per-request timeout also surfaces as
+    /// <see cref="OperationCanceledException"/> (the REST client's linked <c>CancelAfter</c>) and, like
+    /// any other source failure, only leaves the source snapshot unverified.
+    /// </summary>
+    private static bool IsUnreadableSourceFailure(Exception exception, CancellationToken cancellationToken)
+        => exception is not OutOfMemoryException
+            && !(exception is OperationCanceledException && cancellationToken.IsCancellationRequested);
+
+    /// <summary>
+    /// Reads the source population again after the last page. The object-ID window path compares the
+    /// object-ID sets it enumerated; the paged path compares filtered counts.
+    /// </summary>
+    private async Task<MigrationFidelitySourceSnapshotInput> CaptureSourceSnapshotAsync(
+        GeoservicesImportRequest request,
+        long[]? sourceObjectIds,
+        long? countBeforeTransfer,
+        CancellationToken cancellationToken)
+    {
+        if (sourceObjectIds is null)
+        {
+            return new MigrationFidelitySourceSnapshotInput
+            {
+                CountBeforeTransfer = countBeforeTransfer,
+                CountAfterTransfer = await TryCountSourceFeaturesAsync(request, cancellationToken).ConfigureAwait(false)
+            };
+        }
+
+        long[]? objectIdsAfterTransfer;
+        try
+        {
+            objectIdsAfterTransfer = await _restClient.QueryObjectIdsAsync(
+                request.ServiceUrl,
+                request.LayerId,
+                request.WhereClause,
+                request.RequestTimeoutSeconds,
+                request.MaxRetries,
+                cancellationToken,
+                request.Credentials).ConfigureAwait(false);
+        }
+        // Intentionally generic, as in TryCountSourceFeaturesAsync.
+        catch (Exception ex) when (IsUnreadableSourceFailure(ex, cancellationToken))
+        {
+            Log.SourcePopulationUnavailable(_logger, request.TableName, ex);
+            objectIdsAfterTransfer = null;
+        }
+
+        // Sorted in place and compared span by span, so no set is built over either list. The transfer
+        // windows were cut from copies, so reordering the enumerated source list here is safe.
+        var membershipChanged = false;
+        if (objectIdsAfterTransfer is not null)
+        {
+            Array.Sort(sourceObjectIds);
+            Array.Sort(objectIdsAfterTransfer);
+            membershipChanged = !sourceObjectIds.AsSpan().SequenceEqual(objectIdsAfterTransfer);
+        }
+
+        return new MigrationFidelitySourceSnapshotInput
+        {
+            CountBeforeTransfer = sourceObjectIds.Length,
+            CountAfterTransfer = objectIdsAfterTransfer?.Length,
+            MembershipChanged = membershipChanged
+        };
+    }
 
     private async Task CreateTableAsync(
         NpgsqlConnection connection,
@@ -394,19 +1009,11 @@ internal sealed partial class GeoservicesImportService
         string tableName,
         GeoservicesLayerInfo layerInfo,
         int targetSrid,
-        bool overwriteExisting,
         CancellationToken cancellationToken)
     {
-        if (overwriteExisting)
-        {
-            await using var dropCmd = connection.CreateCommand();
-            dropCmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} CASCADE";
-            await dropCmd.ExecuteNonQueryAsync(cancellationToken);
-        }
-
         var createSql = BuildCreateTableSql(schemaName, tableName, layerInfo, targetSrid);
         await using var createCmd = connection.CreateCommand();
-        createCmd.CommandText = createSql;
+        createCmd.CommandText = createSql + ImportTableOwnership.MarkSql(schemaName, tableName);
         await createCmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.TableCreated(_logger, tableName);
@@ -420,10 +1027,11 @@ internal sealed partial class GeoservicesImportService
         };
 
         // Add attribute fields (objectid/geometry fields are handled separately above/below).
-        foreach (var field in layerInfo.Fields.Where(field => !field.IsObjectId && !IsGeometryField(field)))
+        // Reserved and colliding names are renamed so CREATE TABLE cannot fail with 42701.
+        foreach (var column in GeoservicesImportColumns.Map(layerInfo).Columns)
         {
-            var pgType = MapEsriTypeToPgType(field.Type, field.Length);
-            columns.Add($"\"{field.Name.SanitizeFieldName()}\" {pgType}");
+            var pgType = MapEsriTypeToPgType(column.Field.Type, column.Field.Length);
+            columns.Add($"\"{column.ColumnName}\" {pgType}");
         }
 
         // Add geometry column if the layer has geometry

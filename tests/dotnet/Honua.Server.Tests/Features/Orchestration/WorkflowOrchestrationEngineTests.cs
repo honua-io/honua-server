@@ -24,6 +24,35 @@ public sealed class WorkflowOrchestrationEngineTests
         new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "tester") }, "TestAuth"));
 
     [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileWorkflowRun_ObservesChildInPersistedTenant_ReachesTerminalSuccess()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var requester = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "analyst"), new Claim("tenant_id", "tenant-b")], "TestAuth"));
+        var accesses = 0;
+        harness.JobService.OnJobAccess = principal =>
+        {
+            // A missing tenant models the production service's non-disclosing denial.
+            if (principal.FindFirst("tenant_id")?.Value != "tenant-b")
+            {
+                throw new KeyNotFoundException("foreign job");
+            }
+            accesses++;
+        };
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, requester);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = await harness.RunStore.GetAsync(run.RunId);
+        harness.JobService.Complete(submitted!.StepStates[0].JobId!);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var terminal = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Succeeded, terminal!.Status);
+        Assert.True(accesses >= 2, "observation and result retrieval both use the persisted tenant");
+    }
+
+    [Fact]
     public async Task CreateRun_MutatingStepWithoutRequestingPrincipalTier_ThrowsAndPersistsNoRun()
     {
         // #2798: the reconcile loop submits step jobs under an admin-bypassing orchestrator

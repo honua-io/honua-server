@@ -10,7 +10,9 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Caching;
 using Honua.Db.Postgres.Features.SpatialAnalytics;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,8 +33,13 @@ internal static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <param name="schemaName">Optional database schema name</param>
+    /// <param name="preferSerialBoundedSpatialReads">Null enables automatic serial plans for small first-page source-backed point bbox reads; false opts out.</param>
+    /// <param name="disableJitForSourceSpatialCounts">Opt in to disabling JIT within source-backed point bbox count queries.</param>
+    /// <param name="preferSerialSourceSpatialCounts">Null scopes serial plans to counts associated with eligible bounded reads; true also enables standalone spatial counts.</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null)
+    public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null,
+        bool? preferSerialBoundedSpatialReads = null, bool disableJitForSourceSpatialCounts = false,
+        bool? preferSerialSourceSpatialCounts = null)
     {
         var poolProvider = new DefaultObjectPoolProvider();
 
@@ -78,10 +85,13 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<IOptions<LimitsOptions>>(),
                 provider.GetService<IPerformanceMonitor>(),
                 schemaName,
-                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>());
+                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>(),
+                provider.GetService<IFeatureAttachmentCleanup>());
 
             return new FeatureDataAccess(dependencies);
         });
+
+        services.AddScoped<PostgresBoundConnectionProvider>();
 
         // Register the main feature store implementation.
         services.AddScoped<PostgresFeatureStoreRefactored>(provider =>
@@ -96,14 +106,28 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<IMetadataV2GraphProvider>(),
                 provider.GetService<ILogger<PostgresStorageMappedFeatureReader>>(),
                 provider.GetService<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource>(),
-                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>(),
+                schemaName,
+                provider.GetRequiredService<PostgresBoundConnectionProvider>(),
+                preferSerialBoundedSpatialReads,
+                disableJitForSourceSpatialCounts,
+                preferSerialSourceSpatialCounts: preferSerialSourceSpatialCounts,
+                secretReferenceResolver: provider.GetService<Honua.Core.Features.Security.Abstractions.IRequestSecretReferenceResolver>(),
+                resolvedConnectionStringValidator: provider.GetService<Honua.Core.Features.Security.Abstractions.IResolvedConnectionStringValidator>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
-        services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        // Related-record queries that involve a source-backed resource (e.g. an imported table) are
+        // routed through the storage-bound readers; managed relationships keep the managed store.
+        services.AddScoped<IRelationshipStore>(provider => new SourceBackedRelationshipStore(
+            provider.GetRequiredService<PostgresFeatureStoreRefactored>(),
+            provider.GetService<IMetadataV2GraphProvider>(),
+            provider.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
+            provider.GetService<IFilterExpressionService>(),
+            provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
         services.AddScoped<IGeoJsonFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGeobufFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
@@ -113,16 +137,19 @@ internal static class ServiceCollectionExtensions
         // Spatial analytics reader (clustering, spatial join, buffer aggregate, density).
         // Composes the existing query builder + data access pipeline so all observability
         // (slow-query logging, metrics, telemetry) flows through the same code path as
-        // statistics, date bins and H3 aggregation. The optional metadata/filter services
-        // let the reader enforce metadata-v2 permanent (row-visibility) filters like the
-        // main feature store does.
+        // statistics, date bins and H3 aggregation. The reader receives the same optional
+        // metadata/filter services and request-scoped RLS / field-mask sources as the main
+        // feature store, and resolves them through the same LayerReadSecurityResolver, so
+        // analytics enforce the read policy a direct query does.
         services.AddScoped<ISpatialAnalyticsReader>(provider =>
             new PostgresSpatialAnalyticsReader(
                 provider.GetRequiredService<IFeatureQueryBuilder>(),
                 provider.GetRequiredService<IFeatureDataAccess>(),
                 provider.GetRequiredService<IFeatureCacheManager>(),
                 provider.GetService<IMetadataV2GraphProvider>(),
-                provider.GetService<IFilterExpressionService>()));
+                provider.GetService<IFilterExpressionService>(),
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource>(),
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
 
         // Feature-change transactional outbox (#692). PostgreSQL is the canonical
         // mutation-capable provider so it owns the outbox repository implementation and

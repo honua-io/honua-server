@@ -92,9 +92,9 @@ internal static class StacConstants
         public static readonly HashSet<string> SearchGet = new(StringComparer.OrdinalIgnoreCase)
         {
             // "offset" is a Honua extension kept for backward compatibility.
-            // "token" is the STAC API-aligned pagination parameter (same opaque
-            // token format emitted by the POST next link body).
-            "f", "limit", "offset", "token", "bbox", "datetime", "collections", "ids",
+            // "next" carries the offset:N cursor. "token" stays allowed so an
+            // ArcGIS portal credential on the query string is not rejected.
+            "f", "limit", "offset", "token", "next", "bbox", "datetime", "collections", "ids",
             "intersects", "fields", "sortby", "filter", "filter-lang", "filter-crs"
         };
     }

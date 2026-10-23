@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -12,6 +13,10 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
+using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -249,7 +254,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 Phase = "Reproject",
                 Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["command"] = "gdalwarp -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-running/input.tif /tmp/honua-gdal-worker/job-running/out.tif",
+                    ["gdal.command"] = "gdalwarp --config AWS_SECRET_ACCESS_KEY worker-secret -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-running/input.tif /tmp/honua-gdal-worker/job-running/out.tif",
                     ["targetSrs"] = "EPSG:3857"
                 }
             },
@@ -269,6 +274,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         var rawBody = await response.Content.ReadAsStringAsync();
         // The unsanitized worker filesystem path must NEVER leak over HTTP.
         rawBody.Should().NotContain("honua-gdal-worker");
+        rawBody.Should().NotContain("worker-secret");
         rawBody.Should().NotContain("/tmp/");
 
         using var doc = JsonDocument.Parse(rawBody);
@@ -291,6 +297,33 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         // Command keys are not duplicated into the generic metadata bag.
         first.GetProperty("metadata").GetProperty("targetSrs").GetString().Should().Be("EPSG:3857");
         first.GetProperty("metadata").TryGetProperty("command", out _).Should().BeFalse();
+        first.GetProperty("metadata").TryGetProperty("gdal.command", out _).Should().BeFalse();
+        first.GetProperty("timingSource").GetString().Should().Be("inferred");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetJobSteps_SanitizesFallbackCurrentPhase()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-phase-secret", ExecutionJobStatus.Running, now, "corr-phase") with
+        {
+            CurrentPhase = "token=fallback-secret-value /tmp/worker/phase"
+        });
+        _logStore.SetLogs("job-phase-secret", new ExecutionLogEntry
+        {
+            Timestamp = now,
+            Level = ExecutionLogLevel.Info,
+            Message = "Running",
+            Phase = ""
+        });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-phase-secret/steps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("fallback-secret-value");
+        body.Should().NotContain("/tmp/");
+        body.Should().Contain("[REDACTED]");
     }
 
     [IntegrationTest]
@@ -300,10 +333,33 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         // The shared class fixture runs with dev-auth bypass (so the admin-keyed client used by
         // the other tests is always allowed), which means an anonymous call against it returns
         // 200. Admin gating (endpoints call .RequireAdminAuthorization()) is only exercised when
-        // real gating is enabled, so stand up a dedicated fixture with HONUA_DEV_AUTH=false and
-        // prove the endpoint rejects an unauthenticated caller.
+        // real gating is enabled, so stand up a dedicated fixture with HONUA_DEV_AUTH=false.
+        // The same seeded in-memory stores are registered on it, so the steps the anonymous
+        // caller is refused are real data an admin key can read back on the SAME host — which
+        // is what separates "correctly refused" from "endpoint broken for everyone".
+        const string GatedAdminPassword = "console-job-steps-admin-key";
+        _logStore.SetLogs("job-running",
+            new ExecutionLogEntry
+            {
+                Timestamp = DateTimeOffset.UtcNow.AddMinutes(-2),
+                Level = ExecutionLogLevel.Info,
+                Message = "Reproject complete",
+                Phase = "Reproject"
+            });
+
         var gatedFixture = new WebAppFixture()
-            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", GatedAdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.RemoveAll<IExecutionLogStore>();
+                services.AddSingleton<IExecutionJobStore>(_jobStore);
+                services.AddSingleton<IExecutionLogStore>(_logStore);
+            });
         await gatedFixture.InitializeAsync();
         try
         {
@@ -311,12 +367,121 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
             var response = await anonymous.GetAsync("/api/v1/admin/jobs/job-running/steps");
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+            // The admin policy names the ApiKey scheme, so an unauthenticated caller is
+            // challenged: exactly 401, never 403 (authenticated-but-unprivileged) and never
+            // 404 (which would leak whether the job exists).
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+            // Nothing is disclosed: no step envelope, no correlation id, no phase names.
+            var body = await response.Content.ReadAsStringAsync();
+            foreach (var marker in new[] { "\"steps\"", "corr-running", "Reproject" })
+            {
+                body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+            }
+
+            // Every response carries a per-request correlation id; the denial must not carry
+            // the JOB's, which would confirm the job exists.
+            if (response.Headers.TryGetValues("X-Correlation-Id", out var correlationIds))
+            {
+                correlationIds.Should().NotContain(
+                    "corr-running",
+                    "the denial must not echo the job's own correlation id");
+            }
+
+            // The admin principal reads the same job's steps off the SAME host, so the denial
+            // above is a refusal of the caller and not an endpoint broken for everyone.
+            using var admin = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", GatedAdminPassword));
+            var adminResponse = await admin.GetAsync("/api/v1/admin/jobs/job-running/steps");
+            var adminBody = await adminResponse.Content.ReadAsStringAsync();
+            adminResponse.StatusCode.Should().Be(HttpStatusCode.OK, adminBody);
+            using var adminDoc = JsonDocument.Parse(adminBody);
+            adminDoc.RootElement.GetProperty("steps").GetArrayLength().Should().Be(1);
+            adminDoc.RootElement.GetProperty("steps")[0].GetProperty("phase").GetString().Should().Be("Reproject");
         }
         finally
         {
             await gatedFixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs")]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
+    public async Task ListAndGetJob_ScopedAdminReadKeys_HonourReadGrantWithoutWideningExecute()
+    {
+        // Regression for #4981: admin:read (with or without admin:approve) must read
+        // durable jobs like every other admin GET, while cancel/retry (Execute) stays
+        // denied for a read-only scoped key. The shared class fixture runs with
+        // dev-auth bypass, which would authenticate any X-API-Key as full admin and
+        // never exercise a scoped key's real role/grants, so this stands up a
+        // dedicated gated fixture (HONUA_DEV_AUTH=false) with its own seeded job.
+        const string AdminPassword = "console-jobs-admin-bootstrap-key";
+        var jobStore = new InMemoryJobStore();
+        var now = DateTimeOffset.UtcNow;
+        jobStore.Set(CreateJob("job-scoped-read", ExecutionJobStatus.Succeeded, now.AddMinutes(-5), "corr-scoped-read") with
+        {
+            CompletedAt = now.AddMinutes(-3),
+            CurrentPhase = "Completed"
+        });
+
+        var gatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.AddSingleton<IExecutionJobStore>(jobStore);
+            });
+        await gatedFixture.InitializeAsync();
+        try
+        {
+            using var adminClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var readKey = await CreateApiKeyAsync(adminClient, "console-jobs-read-only", ["admin:read"]);
+            var readApproveKey = await CreateApiKeyAsync(
+                adminClient, "console-jobs-read-approve", ["admin:read", "admin:approve"]);
+            var nonAdminKey = await CreateApiKeyAsync(adminClient, "console-jobs-write-only", ["write:parcels"]);
+
+            using var readClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", readKey.Key));
+            using var readApproveClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", readApproveKey.Key));
+            using var nonAdminClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", nonAdminKey.Key));
+
+            (await readClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await readClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+            (await readApproveClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await readApproveClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode
+                .Should().Be(HttpStatusCode.OK);
+
+            (await nonAdminClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var cancel = await readClient.PostAsync("/api/v1/admin/jobs/job-scoped-read/cancel", null);
+            cancel.StatusCode.Should().Be(HttpStatusCode.Forbidden, "a read-only scoped key must not execute job control actions");
+        }
+        finally
+        {
+            await gatedFixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
+        HttpClient client, string name, IReadOnlyList<string> permissions)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = name, Permissions = permissions });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<AdminApiKeySecretResponse>>();
+        return result!.Data!;
     }
 
     [IntegrationTest]
@@ -345,6 +510,57 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         items["expired"].Should().Be("Expired");
         items["data-uri"].Should().Be("Redacted");
         items["provider-error"].Should().Be("ProviderError");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
+    public async Task GetArtifacts_DirectReferencesRemainUsableWithMetadataProvider()
+    {
+        var job = (await _jobStore.GetAsync("job-artifacts"))!;
+        var references = new[]
+        {
+            "https://example.test/results/output.json", "staging/job/a1/result/output.tif",
+            "data:text/plain,private-inline", "https://example.test/output?token=private-value",
+            "{\"outputType\":\"future\",\"storeReference\":\"private-store\"}",
+            "https://fixture-user:749@example.test/output", "https://example.test/out\tput"
+        };
+        await _jobStore.SetAsync(job with { ArtifactReferences = references });
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-artifacts/artifacts?limit=10");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var items = doc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        items.Should().HaveCount(7);
+        for (var i = 0; i < 2; i++)
+        {
+            items[i].GetProperty("availability").GetString().Should().Be("Available");
+            items[i].GetProperty("providerLink").GetString().Should().Be(references[i]);
+        }
+        foreach (var item in items.Skip(2))
+        {
+            item.GetProperty("availability").GetString().Should().Be("Redacted");
+        }
+        body.Should().NotContain("private-inline").And.NotContain("private-value").And.NotContain("private-store")
+            .And.NotContain("fixture-user");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
+    public async Task GetArtifacts_ProviderFailureDoesNotEchoUnsafeReference()
+    {
+        var job = (await _jobStore.GetAsync("job-artifacts"))!;
+        await _jobStore.SetAsync(job with
+        {
+            ArtifactReferences = ["https://provider-error.test/output?token=private-error-value"]
+        });
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-artifacts/artifacts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var item = doc.RootElement.GetProperty("items")[0];
+        item.GetProperty("availability").GetString().Should().Be("ProviderError");
+        item.GetProperty("artifactId").GetString().Should().StartWith("redacted-");
+        body.Should().NotContain("private-error-value");
     }
 
     [IntegrationTest]
@@ -459,6 +675,446 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         var item = doc.RootElement.GetProperty("items")[0];
         item.GetProperty("operationId").GetString().Should().Be("job-running");
         item.GetProperty("correlationId").GetString().Should().Be("corr-running");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetSteps_NoisyJob_ReturnsBoundedTailWithAbsoluteOrdinalsAndTruncation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-steps-bounded", ExecutionJobStatus.Running, now, "corr-steps"));
+        _logStore.SetLogs("job-steps-bounded", Enumerable.Range(0, 603).Select(index => new ExecutionLogEntry
+        {
+            Timestamp = now.AddSeconds(index),
+            Level = ExecutionLogLevel.Info,
+            Message = $"event {index}"
+        }).ToArray());
+        var fullReads = _logStore.FullReads;
+        using var response = await _client.GetAsync("/api/v1/admin/jobs/job-steps-bounded/steps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = await ReadJsonAsync(response);
+        body.RootElement.GetProperty("steps").GetArrayLength().Should().Be(500);
+        body.RootElement.GetProperty("steps")[0].GetProperty("ordinal").GetInt32().Should().Be(103);
+        body.RootElement.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        body.RootElement.GetProperty("totalCount").GetInt32().Should().Be(603);
+        _logStore.FullReads.Should().Be(fullReads);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_PagesRetainedEventsWithoutReadingTheWholeStream()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-diag-paged", ExecutionJobStatus.Succeeded, now, "corr-paged") with { CompletedAt = now.AddMinutes(20) });
+        _logStore.SetLogs("job-diag-paged", Enumerable.Range(0, 603).Select(i => new ExecutionLogEntry
+        {
+            Timestamp = now.AddSeconds(i),
+            Level = ExecutionLogLevel.Info,
+            Message = $"event {i}",
+            Phase = "Run",
+        }).ToArray());
+        var fullReads = _logStore.FullReads;
+        using var tailResponse = await _client.GetAsync("/api/v1/admin/jobs/job-diag-paged/diagnostics?events=2");
+        tailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var tail = await ReadJsonAsync(tailResponse);
+        tail.RootElement.GetProperty("events").GetProperty("items")[0].GetProperty("message").GetString().Should().Be("event 601");
+        tail.RootElement.GetProperty("steps").GetArrayLength().Should().Be(500);
+        tail.RootElement.GetProperty("evidence").GetProperty("truncated").EnumerateArray()
+            .Select(x => x.GetString()).Should().Contain(x => x!.StartsWith("steps and failure details:", StringComparison.Ordinal));
+        var cursor = tail.RootElement.GetProperty("events").GetProperty("firstCursor").GetString();
+        var messages = new List<string>();
+        do
+        {
+            using var response = await _client.GetAsync("/api/v1/admin/jobs/job-diag-paged/diagnostics?events=200&eventCursor=" + Uri.EscapeDataString(cursor!));
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var page = await ReadJsonAsync(response);
+            var events = page.RootElement.GetProperty("events");
+            events.GetProperty("mode").GetString().Should().Be("page");
+            events.GetProperty("totalCount").GetInt32().Should().Be(603);
+            messages.AddRange(events.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("message").GetString()!));
+            cursor = events.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
+        }
+        while (cursor is not null);
+
+        messages.Should().Equal(Enumerable.Range(0, 603).Select(i => $"event {i}"));
+        _logStore.FullReads.Should().Be(fullReads, "diagnostics must never materialize the complete log stream");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_RejectsMalformedEventCursor()
+    {
+        using var response = await _client.GetAsync("/api/v1/admin/jobs/job-failed/diagnostics?eventCursor=invalid!");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_ForFailedJob_ProjectsSanitizedFailureAndDisclosesMissingProvenance()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _logStore.SetLogs("job-failed",
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-5),
+                Level = ExecutionLogLevel.Info,
+                Message = "Resolving inputs",
+                Phase = "Prepare"
+            },
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-4),
+                Level = ExecutionLogLevel.Error,
+                Message = "gdalwarp failed for /tmp/honua-gdal-worker/job-failed/input.tif",
+                Phase = "Reproject",
+                Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["error.code"] = "GDAL_WARP_FAILED",
+                    ["native.exit_code"] = "2",
+                    ["stderr"] = "ERROR 1: PROJ: token=worker-secret could not open /tmp/honua-gdal-worker/job-failed/input.tif",
+                    ["gdal.command"] = "gdalwarp -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-failed/input.tif out.tif"
+                }
+            });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-failed/diagnostics");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        response.Headers.GetValues("X-Correlation-Id").Should().Contain("corr-failed");
+
+        var rawBody = await response.Content.ReadAsStringAsync();
+        rawBody.Should().NotContain("honua-gdal-worker");
+        rawBody.Should().NotContain("worker-secret");
+        rawBody.Should().NotContain("/tmp/");
+
+        using var doc = JsonDocument.Parse(rawBody);
+        var root = doc.RootElement;
+        root.GetProperty("schema").GetString().Should().Be("honua.job-diagnostics/v1");
+        root.GetProperty("view").GetString().Should().Be("operator");
+        root.GetProperty("lifecycle").GetProperty("phase").GetString().Should().Be("failed");
+        root.GetProperty("lifecycle").GetProperty("timingSource").GetString().Should().Be("inferred");
+        root.GetProperty("worker").GetProperty("liveness").GetString().Should().Be("finished");
+
+        var failure = root.GetProperty("failure");
+        failure.GetProperty("classification").GetString().Should().Be("execution_failed");
+        failure.GetProperty("phase").GetString().Should().Be("Reproject");
+        failure.GetProperty("stepOrdinal").GetInt32().Should().Be(1);
+        failure.GetProperty("errorCode").GetString().Should().Be("GDAL_WARP_FAILED");
+        failure.GetProperty("nativeExitCode").GetInt32().Should().Be(2);
+        failure.GetProperty("stderrExcerpt").GetString().Should().Contain("[REDACTED]");
+        failure.GetProperty("stderrExcerpt").GetString().Should().Contain("<path>");
+        failure.GetProperty("recovery").GetString().Should().Contain("retry");
+
+        var attempt = root.GetProperty("attempt");
+        attempt.GetProperty("number").GetInt32().Should().Be(1);
+        attempt.GetProperty("maxAttempts").GetInt32().Should().Be(3);
+        attempt.GetProperty("retry").GetProperty("allowed").GetBoolean().Should().BeTrue();
+        attempt.GetProperty("retry").GetProperty("wouldRepeat").GetString().Should().Contain("attempt 2 of 3");
+
+        // The managed job carries a plan and process definitions, so its release identity is
+        // the server release plus that workflow binding: nothing is missing.
+        var release = root.GetProperty("release");
+        release.GetProperty("state").GetString().Should().Be("complete");
+        release.GetProperty("planId").GetString().Should().Be("plan-failed");
+        release.GetProperty("processDefinitions")[0].GetString().Should().Be("geometry.buffer");
+        release.GetProperty("serverVersion").GetString().Should().NotBeNullOrWhiteSpace();
+
+        root.GetProperty("steps").GetArrayLength().Should().Be(2);
+        root.GetProperty("steps")[1].GetProperty("command").GetString().Should().Contain("<path>");
+        root.GetProperty("events").GetProperty("totalCount").GetInt32().Should().Be(2);
+        root.GetProperty("events").GetProperty("truncated").GetBoolean().Should().BeFalse();
+        root.GetProperty("artifacts").GetProperty("state").GetString().Should().Be("none");
+        root.GetProperty("links").GetProperty("diagnostics").GetString().Should().EndWith("/api/v1/admin/jobs/job-failed/diagnostics");
+
+        // The job record never recorded a claim, so the projection says the timings are
+        // inferred instead of inventing a queue delay.
+        var missing = root.GetProperty("evidence").GetProperty("missing").EnumerateArray().Select(e => e.GetString()).ToArray();
+        missing.Should().Contain(m => m!.StartsWith("lifecycle.claimedAt", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_WithHarnessEvents_PreservesMeasuredAndInferredStepTiming()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _logStore.SetLogs("job-failed",
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-5),
+                Level = ExecutionLogLevel.Info,
+                Message = "Executing tool",
+                Phase = "Execute",
+                Metadata = new Dictionary<string, string>
+                {
+                    [HarnessEvents.ElapsedKey] = "100"
+                }
+            },
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-4),
+                Level = ExecutionLogLevel.Error,
+                Message = "Tool failed",
+                Phase = "Execute",
+                Metadata = new Dictionary<string, string>
+                {
+                    [HarnessEvents.ElapsedKey] = "600"
+                }
+            });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-failed/diagnostics");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = await ReadJsonAsync(response);
+        var steps = doc.RootElement.GetProperty("steps");
+        steps[0].GetProperty("durationMs").GetInt64().Should().Be(500);
+        steps[0].GetProperty("timingSource").GetString().Should().Be("measured");
+        steps[1].GetProperty("timingSource").GetString().Should().Be("inferred");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_ForRunningJobs_JudgesWorkerLivenessByHeartbeatPolicy()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(
+            CreateJob("job-diag-alive", ExecutionJobStatus.Running, now.AddMinutes(-3), "corr-diag-alive") with
+            {
+                CurrentPhase = "Executing buffer",
+                ClaimedBy = "worker-a",
+                ClaimedAt = now.AddMinutes(-2),
+                LastHeartbeatAt = now.AddSeconds(-5),
+                AttemptCount = 1
+            },
+            CreateJob("job-diag-lost", ExecutionJobStatus.Running, now.AddMinutes(-10), "corr-diag-lost") with
+            {
+                CurrentPhase = "Uploading results",
+                ClaimedBy = "worker-b",
+                ClaimedAt = now.AddMinutes(-9),
+                LastHeartbeatAt = now.AddMinutes(-5),
+                HeartbeatPolicy = new JobHeartbeatPolicy { Interval = TimeSpan.FromSeconds(30), Timeout = TimeSpan.FromSeconds(90) },
+                CancellationRequestedAt = now.AddMinutes(-1)
+            });
+
+        var alive = await _client.GetAsync("/api/v1/admin/jobs/job-diag-alive/diagnostics");
+        alive.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(alive))
+        {
+            var root = doc.RootElement;
+            root.GetProperty("lifecycle").GetProperty("phase").GetString().Should().Be("executing");
+            root.GetProperty("lifecycle").GetProperty("timingSource").GetString().Should().Be("measured");
+            root.GetProperty("lifecycle").GetProperty("queueDelayMs").GetInt64().Should().BeInRange(59_000, 61_000);
+            root.GetProperty("worker").GetProperty("liveness").GetString().Should().Be("alive");
+            root.GetProperty("worker").GetProperty("claimedBy").GetString().Should().Be("worker-a");
+            root.GetProperty("attempt").GetProperty("retry").GetProperty("allowed").GetBoolean().Should().BeFalse();
+            root.GetProperty("attempt").GetProperty("retry").GetProperty("disabledReason").GetString().Should().Contain("not terminal");
+            root.TryGetProperty("failure", out _).Should().BeFalse();
+        }
+
+        var lost = await _client.GetAsync("/api/v1/admin/jobs/job-diag-lost/diagnostics");
+        lost.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(lost))
+        {
+            var root = doc.RootElement;
+            root.GetProperty("lifecycle").GetProperty("phase").GetString().Should().Be("publishing-results");
+            root.GetProperty("worker").GetProperty("liveness").GetString().Should().Be("lost");
+            root.GetProperty("worker").GetProperty("livenessReason").GetString().Should().Contain("90s heartbeat timeout");
+            root.GetProperty("worker").GetProperty("heartbeatTimeoutSeconds").GetDouble().Should().Be(90);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("https://user:token=repo-secret@git.example.com/org/tools.git")]
+    [InlineData("https://user:opaque-value@git.example.com/org/tools.git")]
+    [InlineData("https://opaque-value@git.example.com/org/tools.git")]
+    [InlineData("https://user:p%40ss%3Aword@git.example.com/org/tools.git")]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_ForCustomCodeJob_ReportsCompleteReleaseIdentityWithoutCredentials(string repositoryUrl)
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-diag-customcode", ExecutionJobStatus.Failed, now.AddMinutes(-20), "corr-diag-customcode") with
+        {
+            CompletedAt = now.AddMinutes(-18),
+            ClaimedAt = now.AddMinutes(-19),
+            ClaimedBy = "worker-c",
+            CurrentPhase = "Failed (heartbeat expired)",
+            ErrorMessage = "Worker heartbeat expired after 3 attempt(s).",
+            AttemptCount = 3,
+            RetryPolicy = new JobRetryPolicy { MaxAttempts = 3 },
+            Spec = CreateSpec("customcode-workload", new Dictionary<string, string>
+            {
+                [CustomCodeJobContract.RuntimeParam] = "python",
+                [CustomCodeJobContract.RepoUrlParam] = repositoryUrl,
+                [CustomCodeJobContract.GitRefParam] = "0123456789abcdef0123456789abcdef01234567",
+                [CustomCodeJobContract.EntrypointParam] = "tools.buffer:execute",
+                [CustomCodeJobContract.DepsManifestParam] = "requirements.lock",
+                [GpProcessReleaseAdmission.ReleaseProcessParam] = "buffer-features",
+                [GpProcessReleaseAdmission.ReleaseVersionParam] = "1.2.3",
+                [GpProcessReleaseAdmission.ReleaseLockDigestParam] = "sha256:" + new string('a', 64),
+                [GpProcessReleaseAdmission.ReleaseBindingVersionParam] = "4",
+                [GpProcessReleaseAdmission.WorkflowVersionParam] = "workflow-v2",
+                [GpProcessReleaseAdmission.DependencyDigestParam] = "sha256:" + new string('b', 64),
+                [GpProcessReleaseAdmission.WorkerImageParam] = "registry/worker@sha256:" + new string('c', 64)
+            }) with
+            {
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile
+            }
+        });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-diag-customcode/diagnostics");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rawBody = await response.Content.ReadAsStringAsync();
+        rawBody.Should().NotContain("repo-secret");
+
+        using var doc = JsonDocument.Parse(rawBody);
+        var root = doc.RootElement;
+        var release = root.GetProperty("release");
+        release.GetProperty("sourceRepository").GetString().Should().Be("[REDACTED]");
+        release.GetProperty("state").GetString().Should().Be("complete");
+        release.GetProperty("runtime").GetString().Should().Be("python");
+        release.GetProperty("sourceRef").GetString().Should().Be("0123456789abcdef0123456789abcdef01234567");
+        release.GetProperty("entrypoint").GetString().Should().Be("tools.buffer:execute");
+        release.GetProperty("processRelease").GetString().Should().Be("buffer-features");
+        release.GetProperty("processVersion").GetString().Should().Be("1.2.3");
+        release.GetProperty("bindingVersion").GetString().Should().Be("4");
+        release.GetProperty("lockDigest").GetString().Should().Be("sha256:" + new string('a', 64));
+        release.GetProperty("dependencyLockDigest").GetString().Should().Be("sha256:" + new string('b', 64));
+        release.GetProperty("workerImage").GetString().Should().EndWith("@sha256:" + new string('c', 64));
+        release.GetProperty("missing").GetArrayLength().Should().Be(0);
+        root.GetProperty("identity").GetProperty("runtimeProfile").GetString().Should().Be("custom-code");
+
+        var failure = root.GetProperty("failure");
+        failure.GetProperty("classification").GetString().Should().Be("worker_lost");
+        failure.GetProperty("recovery").GetString().Should().Contain("retry budget is exhausted");
+        root.GetProperty("attempt").GetProperty("number").GetInt32().Should().Be(3);
+        root.GetProperty("attempt").GetProperty("retry").GetProperty("allowed").GetBoolean().Should().BeFalse();
+        root.GetProperty("lifecycle").GetProperty("executionMs").GetInt64().Should().BeInRange(59_000, 61_000);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_DisclosesEventTruncationAndHistoricalJobsWithoutProvenance()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-diag-historical", ExecutionJobStatus.Succeeded, now.AddDays(-30), "corr-diag-historical") with
+        {
+            CompletedAt = now.AddDays(-30).AddMinutes(4),
+            CurrentPhase = "Completed",
+            ArtifactReferences = ["expired", "available"]
+        });
+        _logStore.SetLogs("job-diag-historical",
+            Enumerable.Range(0, 5).Select(i => new ExecutionLogEntry
+            {
+                Timestamp = now.AddDays(-30).AddSeconds(i),
+                Level = ExecutionLogLevel.Info,
+                Message = $"event {i}",
+                Phase = "Run"
+            }).ToArray());
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-diag-historical/diagnostics?events=2");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = await ReadJsonAsync(response);
+        var root = doc.RootElement;
+
+        var events = root.GetProperty("events");
+        events.GetProperty("totalCount").GetInt32().Should().Be(5);
+        events.GetProperty("items").GetArrayLength().Should().Be(2);
+        events.GetProperty("items")[1].GetProperty("message").GetString().Should().Be("event 4");
+        events.GetProperty("truncated").GetBoolean().Should().BeTrue();
+
+        root.GetProperty("release").GetProperty("state").GetString().Should().Be("unavailable");
+        root.GetProperty("release").GetProperty("missing").EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("release.planId");
+        root.GetProperty("artifacts").GetProperty("state").GetString().Should().Be("partial");
+        root.GetProperty("artifacts").GetProperty("expiredCount").GetInt32().Should().Be(1);
+
+        var evidence = root.GetProperty("evidence");
+        evidence.GetProperty("truncated").EnumerateArray().Select(e => e.GetString()!)
+            .Should().Contain(t => t.StartsWith("events:", StringComparison.Ordinal));
+        evidence.GetProperty("missing").EnumerateArray().Select(e => e.GetString()!)
+            .Should().Contain(m => m.StartsWith("release.planId", StringComparison.Ordinal))
+            .And.Contain(m => m.StartsWith("artifacts: 1 artifact(s) expired", StringComparison.Ordinal));
+
+        var invalid = await _client.GetAsync("/api/v1/admin/jobs/job-diag-historical/diagnostics?events=0");
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var unknown = await _client.GetAsync("/api/v1/admin/jobs/job-does-not-exist/diagnostics");
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_ScopedReadKey_ReceivesOwnerViewWithoutInfrastructureIdentities()
+    {
+        // Same gated-fixture pattern as the scoped admin read-key test above: a read-only
+        // scoped key can read the projection, but the worker and provider identities that
+        // only an execute-scoped operator needs are withheld and the view says so.
+        const string AdminPassword = "console-job-diagnostics-admin-bootstrap-key";
+        var jobStore = new InMemoryJobStore();
+        var now = DateTimeOffset.UtcNow;
+        jobStore.Set(CreateJob("job-diag-owner", ExecutionJobStatus.Running, now.AddMinutes(-2), "corr-diag-owner") with
+        {
+            CurrentPhase = "Running",
+            ClaimedBy = "worker-internal-7",
+            ClaimedAt = now.AddMinutes(-1),
+            LastHeartbeatAt = now,
+            ProviderOperationId = "provider-op-7",
+            Spec = CreateSpec("private-workload", new Dictionary<string, string>
+            {
+                [GpProcessReleaseAdmission.WorkerImageParam] = "private.example/worker@sha256:" + new string('c', 64),
+                [GpProcessReleaseAdmission.ReleaseLockDigestParam] = "sha256:" + new string('a', 64)
+            })
+        });
+
+        var gatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.RemoveAll<IExecutionLogStore>();
+                services.AddSingleton<IExecutionJobStore>(jobStore);
+                services.AddSingleton<IExecutionLogStore>(new InMemoryLogStore());
+            });
+        await gatedFixture.InitializeAsync();
+        try
+        {
+            using var admin = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var readKey = await CreateApiKeyAsync(admin, "console-job-diagnostics-read-only", ["admin:read"]);
+
+            using var reader = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", readKey.Key));
+            var response = await reader.GetAsync("/api/v1/admin/jobs/job-diag-owner/diagnostics");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            body.Should().NotContain("worker-internal-7");
+            body.Should().NotContain("provider-op-7");
+            body.Should().NotContain("private.example/worker");
+
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            root.GetProperty("view").GetString().Should().Be("owner");
+            root.GetProperty("worker").GetProperty("liveness").GetString().Should().Be("alive");
+            root.GetProperty("worker").TryGetProperty("claimedBy", out _).Should().BeFalse();
+            root.GetProperty("identity").TryGetProperty("providerOperationId", out _).Should().BeFalse();
+            root.GetProperty("release").TryGetProperty("workerImage", out _).Should().BeFalse();
+            root.GetProperty("release").GetProperty("lockDigest").GetString().Should().Be("sha256:" + new string('a', 64));
+            root.GetProperty("evidence").GetProperty("notes").EnumerateArray().Select(e => e.GetString()!)
+                .Should().Contain(n => n.StartsWith("owner view", StringComparison.Ordinal));
+
+            var operatorResponse = await admin.GetAsync("/api/v1/admin/jobs/job-diag-owner/diagnostics");
+            using var operatorDoc = await ReadJsonAsync(operatorResponse);
+            operatorDoc.RootElement.GetProperty("view").GetString().Should().Be("operator");
+            operatorDoc.RootElement.GetProperty("worker").GetProperty("claimedBy").GetString().Should().Be("worker-internal-7");
+            operatorDoc.RootElement.GetProperty("release").GetProperty("workerImage").GetString()
+                .Should().Be("private.example/worker@sha256:" + new string('c', 64));
+        }
+        finally
+        {
+            await gatedFixture.DisposeAsync();
+        }
     }
 
     private void SeedJobs()
@@ -701,6 +1357,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     private sealed class InMemoryLogStore : IExecutionLogStore
     {
+        public int FullReads { get; private set; }
+
         private readonly Dictionary<string, ExecutionLogEntry[]> _logs = new(StringComparer.Ordinal);
 
         public void SetLogs(string operationId, params ExecutionLogEntry[] entries) => _logs[operationId] = entries;
@@ -713,7 +1371,10 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         }
 
         public Task<IReadOnlyList<ExecutionLogEntry>> GetLogsAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(_logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>());
+        {
+            FullReads++;
+            return Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(_logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>());
+        }
 
         public Task<ExecutionLogTail> TailAsync(
             string operationId,
@@ -737,7 +1398,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             return Task.FromResult(new ExecutionLogPage
             {
                 Items = hasMore ? page.Take(query.Limit).ToArray() : page,
-                NextCursor = hasMore ? EncodeOffset(offset + query.Limit) : null
+                NextCursor = hasMore ? EncodeOffset(offset + query.Limit) : null,
+                TotalCount = entries.Length
             });
         }
 
@@ -841,12 +1503,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
         public Task<Artifact?> GetAsync(string artifactId, CancellationToken cancellationToken = default)
         {
-            if (artifactId == "provider-error")
+            if (artifactId == "provider-error" || artifactId.StartsWith("https://provider-error.test/", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("provider failed");
             }
 
-            if (artifactId == "missing")
+            if (artifactId == "missing" || artifactId.Contains('/') || artifactId.StartsWith("data:", StringComparison.Ordinal) || artifactId.StartsWith('{'))
             {
                 return Task.FromResult<Artifact?>(null);
             }

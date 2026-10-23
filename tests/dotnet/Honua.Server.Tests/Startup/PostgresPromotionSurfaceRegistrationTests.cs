@@ -50,4 +50,35 @@ public sealed class PostgresPromotionSurfaceRegistrationTests
             typeof(PromotionSurfaceIndexResource)
         });
     }
+
+    [UnitTest]
+    public void GraphProviderWithoutPromotionStores_AdvertisesOnlyCatalogPublicationResources()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
+
+        services.AddServerFeatures(configuration);
+
+        services.Any(descriptor => descriptor.ServiceType ==
+            typeof(Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore)).Should().BeFalse();
+        services.Any(descriptor => descriptor.ServiceType ==
+            typeof(Honua.Core.Features.Deployment.Abstractions.IDeploymentStore)).Should().BeFalse();
+        var catalogFactories = services.Where(descriptor =>
+            descriptor.ServiceType == typeof(IMcpResource) && descriptor.ImplementationFactory is not null).ToArray();
+        catalogFactories.Should().HaveCount(2);
+        using var provider = services.BuildServiceProvider();
+        var resources = catalogFactories
+            .Select(descriptor => (IMcpResource)descriptor.ImplementationFactory!(provider)!)
+            .ToArray();
+        resources.Select(resource => resource.GetType()).Should().BeEquivalentTo(
+            new[] { typeof(PublishedServiceResource), typeof(PromotionSurfaceIndexResource) });
+        resources.SelectMany(resource => resource.Describe()).Select(descriptor => descriptor.Uri)
+            .Should().Equal("honua://published-services");
+        resources.Any(resource => resource.CanHandle("honua://deployments")).Should().BeFalse();
+        resources.Any(resource => resource.CanHandle("honua://map-packages")).Should().BeFalse();
+        resources.Any(resource => resource.CanHandle("honua://app-packages")).Should().BeFalse();
+    }
 }

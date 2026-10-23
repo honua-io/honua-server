@@ -171,7 +171,9 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
     {
         await _fixture.InitializeAsync();
         _adminClient = _fixture.CreateAdminClient();
-        _schema = _fixture.CurrentSchema ?? await _fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportFidelityIntegrationTests));
+        // Imports land in the default operational schema; the fixture's isolated schema holds its
+        // catalog, which is not an import target. Imported tables are dropped in DisposeAsync.
+        _schema = "honua_data";
     }
 
     public async Task DisposeAsync()

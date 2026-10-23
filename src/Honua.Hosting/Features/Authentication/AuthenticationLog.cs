@@ -191,4 +191,14 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Debug,
         Message = "Studio lifecycle authorization denied: caller is not admin and Studio:EndUserAuthorization:Enabled is false")]
     public static partial void StudioEndUserModeDenied(ILogger logger);
+
+    /// <summary>
+    /// Logs when the managed API-key store cannot be reached. Authentication falls through to
+    /// the bootstrap admin password and otherwise fails closed instead of throwing.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4117,
+        Level = LogLevel.Error,
+        Message = "Admin API key store is unavailable; bootstrap admin password remains the break-glass credential")]
+    public static partial void AdminApiKeyStoreUnavailable(ILogger logger, Exception exception);
 }

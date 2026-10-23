@@ -8,11 +8,17 @@ CREATE EXTENSION IF NOT EXISTS postgis_raster;
 
 CREATE SCHEMA IF NOT EXISTS honua;
 
+-- Mirrors src/Honua.Server/Migrations/001_CreateHonuaSchema.sql exactly. On a
+-- server-migrated database this CREATE is a no-op and the migrated shape wins; on a
+-- fresh database (docker/client-compat) it must produce that same shape, so it must
+-- not declare columns the server no longer has. `max_record_count` was such a column:
+-- the migrations never create it and nothing in the server reads it (the paging cap
+-- comes from Limits:Query configuration and, in Metadata v2, from the service
+-- settings slot), so it is not carried here or in the INSERT below.
 CREATE TABLE IF NOT EXISTS honua.services (
     service_name VARCHAR(64) PRIMARY KEY,
     description TEXT NOT NULL DEFAULT '',
     srid INT NOT NULL DEFAULT 4326,
-    max_record_count INT NOT NULL DEFAULT 1000,
     supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
     capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
     service_extent GEOMETRY,
@@ -129,8 +135,12 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
     band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
     pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
-    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED,
+    second_band_is_alpha BOOLEAN NOT NULL DEFAULT FALSE
 );
+-- Migration-owned storage policy (055_SetRasterDataExternalStorage.sql); the core schema
+-- guard rejects a raster table without it on the next server boot (#4889).
+ALTER TABLE honua.raster_data ALTER COLUMN raster SET STORAGE EXTERNAL;
 
 CREATE TABLE IF NOT EXISTS honua.raster_statistics (
     id BIGSERIAL PRIMARY KEY,
@@ -157,6 +167,7 @@ CREATE TABLE IF NOT EXISTS honua.raster_tiles (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
 );
+ALTER TABLE honua.raster_tiles ALTER COLUMN tile_data SET STORAGE EXTERNAL;
 
 CREATE TABLE IF NOT EXISTS honua.attachments (
     id BIGSERIAL PRIMARY KEY,
@@ -423,6 +434,15 @@ BEGIN
                         ))
                     ELSE NULL
                 END AS layer_temporal,
+                -- Canonical Metadata v2 resource annotations carried through from v1
+                -- layer metadata. The GeoServices FeatureServer reads attachment support
+                -- off `resource.metadata.annotations['honua.io/attachments']`
+                -- (FeatureServerEndpoints.ResourceSupportsAttachmentsV2), so a layer that
+                -- declares it here compiles into a layer that advertises
+                -- hasAttachments/supportsQueryAttachments and serves the attachment routes.
+                -- Hard-coding '{}' here made every compiled layer attachment-incapable
+                -- regardless of what was seeded.
+                COALESCE(l.metadata -> 'annotations', '{}'::jsonb) AS layer_annotations,
                 l.srid,
                 ST_XMin(l.extent)::double precision AS west,
                 ST_YMin(l.extent)::double precision AS south,
@@ -443,7 +463,7 @@ BEGIN
                         'title', layer_name,
                         'description', layer_description,
                         'labels', '{}'::jsonb,
-                        'annotations', '{}'::jsonb,
+                        'annotations', layer_annotations,
                         'keywords', '[]'::jsonb,
                         'themes', '[]'::jsonb
                     ),
@@ -501,7 +521,39 @@ BEGIN
                         FROM honua.layer_fields lf
                         WHERE lf.layer_id = layer_rows.layer_id
                     ), '[]'::jsonb),
-                    'relationships', '[]'::jsonb,
+                    -- Canonical Metadata v2 relationships compiled from the v1 honua.relationships
+                    -- table (migration 003), which is the only place a v1 graph can express a
+                    -- layer-to-layer relationship. The GeoServices FeatureServer reads
+                    -- `resource.relationships` for BOTH the layer-metadata `relationships[]` array
+                    -- and queryRelatedRecords (FeatureServerRelatedRecordsHandler resolves the
+                    -- relationship by its Esri id off this list), so hard-coding '[]' here left
+                    -- every compiled layer unable to declare or serve related records no matter
+                    -- what was seeded into honua.relationships.
+                    'relationships', COALESCE((
+                        SELECT jsonb_agg(
+                            jsonb_strip_nulls(jsonb_build_object(
+                                'id', 'rel-' || r.layer_id::text || '-' || r.relationship_id::text,
+                                'name', r.name,
+                                'description', r.description,
+                                'relatedResourceId', 'res-layer-' || r.related_layer_id::text,
+                                -- v1 stores the Esri role token; v2 carries the bare role.
+                                'role', CASE r.relationship_type
+                                    WHEN 'esriRelRoleOrigin' THEN 'origin'
+                                    WHEN 'esriRelRoleDestination' THEN 'destination'
+                                    ELSE 'any'
+                                END,
+                                -- v1 has no cardinality column; the Esri default an origin/destination
+                                -- foreign-key pair implies is one-to-many.
+                                'cardinality', 'one-to-many',
+                                'originField', r.origin_foreign_key,
+                                'destinationField', r.destination_foreign_key,
+                                'esriRelationshipId', r.relationship_id
+                            ))
+                            ORDER BY r.relationship_id
+                        )
+                        FROM honua.relationships r
+                        WHERE r.layer_id = layer_rows.layer_id
+                    ), '[]'::jsonb),
                     'styleResourceIds', '[]'::jsonb,
                     'spatial', jsonb_build_object(
                         'spatialReference', jsonb_build_object(
@@ -914,11 +966,11 @@ END;
 $$;
 
 INSERT INTO honua.services (
-    service_name, description, srid, max_record_count,
+    service_name, description, srid,
     supported_formats, capabilities, service_extent
 )
 VALUES (
-    'test_service', 'Client compatibility certification service', 4326, 1000,
+    'test_service', 'Client compatibility certification service', 4326,
     ARRAY['JSON', 'GeoJSON'],
     ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete', 'Sync'],
     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326)
@@ -926,7 +978,6 @@ VALUES (
 ON CONFLICT (service_name) DO UPDATE SET
     description = EXCLUDED.description,
     srid = EXCLUDED.srid,
-    max_record_count = EXCLUDED.max_record_count,
     supported_formats = EXCLUDED.supported_formats,
     capabilities = EXCLUDED.capabilities,
     service_extent = EXCLUDED.service_extent,
@@ -1100,5 +1151,191 @@ FROM (VALUES
     (12, 'owslib-delete-target')
 ) AS scratch(layer_id, feature_name)
 WHERE NOT EXISTS (SELECT 1 FROM features existing WHERE existing.layer_id = scratch.layer_id);
+
+-- Keep layer 0's COG source aligned with the ImageServer/Maps fixture in
+-- base-schema.sql. The standalone PyQGIS workflow applies this SQL directly,
+-- while the Docker seed publishes cog/0/1.tif before its client cells run.
+WITH inserted_raster AS (
+    INSERT INTO honua.raster_data (layer_id, name, description, raster)
+    SELECT
+        0,
+        'Test Raster',
+        'Deterministic raster for client compatibility tests',
+        ST_AddBand(
+            ST_MakeEmptyRaster(64, 64, -122.5, 37.84, 0.00234375, -0.0021875, 0, 0, 4326),
+            '8BUI'::text,
+            128,
+            0)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM honua.raster_data
+        WHERE layer_id = 0 AND name = 'Test Raster'
+    )
+    RETURNING id
+),
+target_raster AS (
+    SELECT id FROM inserted_raster
+    UNION ALL
+    SELECT id FROM honua.raster_data
+    WHERE layer_id = 0 AND name = 'Test Raster'
+    LIMIT 1
+)
+INSERT INTO honua.raster_statistics (
+    raster_data_id, band_number, min_value, max_value, mean_value,
+    std_dev, valid_pixel_count, nodata_pixel_count
+)
+SELECT id, 1, 128, 128, 128, 0, 4096, 0
+FROM target_raster
+ON CONFLICT (raster_data_id, band_number) DO UPDATE SET
+    min_value = EXCLUDED.min_value,
+    max_value = EXCLUDED.max_value,
+    mean_value = EXCLUDED.mean_value,
+    std_dev = EXCLUDED.std_dev,
+    valid_pixel_count = EXCLUDED.valid_pixel_count,
+    nodata_pixel_count = EXCLUDED.nodata_pixel_count,
+    computed_at = NOW();
+
+-- Additive desktop fixtures in a separate service: existing test_service layers
+-- and read counts remain unchanged. Both relationship endpoints share a service.
+INSERT INTO honua.services (
+    service_name, description, srid, supported_formats, capabilities, service_extent, metadata
+)
+VALUES (
+    'cert_relations', 'Desktop attachment and related-record fixtures', 4326,
+    ARRAY['JSON', 'GeoJSON'], ARRAY['Query', 'Create', 'Update', 'Delete'],
+    ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326),
+    jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+)
+ON CONFLICT (service_name) DO NOTHING;
+
+INSERT INTO honua.layers (
+    layer_id, layer_name, description, table_name,
+    geometry_type, srid, extent, temporal_column, default_visibility
+)
+VALUES
+    (20, 'Attachment Fixture', 'Attachment-enabled certification layer',
+     'features', 'Point', 4326,
+     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), NULL, true),
+    (21, 'Related Assets', 'Related-records origin certification layer',
+     'features', 'Point', 4326,
+     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), NULL, true),
+    (22, 'Related Inspections', 'Related-records destination certification layer',
+     'features', 'Point', 4326,
+     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), NULL, true)
+ON CONFLICT (layer_id) DO UPDATE SET
+    layer_name = EXCLUDED.layer_name,
+    description = EXCLUDED.description,
+    table_name = EXCLUDED.table_name,
+    geometry_type = EXCLUDED.geometry_type,
+    srid = EXCLUDED.srid,
+    extent = EXCLUDED.extent,
+    temporal_column = EXCLUDED.temporal_column,
+    default_visibility = EXCLUDED.default_visibility;
+
+-- Layer 20 opts into attachments through the canonical Metadata v2 resource
+-- annotation the FeatureServer reads (ResourceSupportsAttachmentsV2 accepts
+-- 'honua.io/attachments' or the legacy 'supportsAttachments' spelling).
+-- Anonymous write is granted for the same reason layers 10-12 have it: the
+-- attachment mutation routes (addAttachment / updateAttachment /
+-- deleteAttachments) are part of what a client lane certifies and the fixture
+-- has no credentialed principal.
+UPDATE honua.layers
+SET metadata = jsonb_build_object(
+    'accessPolicy', jsonb_build_object('allowAnonymous', true, 'allowAnonymousWrite', true),
+    'annotations', jsonb_build_object('honua.io/attachments', 'true')
+)
+WHERE layer_id = 20;
+
+UPDATE honua.layers
+SET metadata = jsonb_build_object(
+    'accessPolicy', jsonb_build_object('allowAnonymous', true)
+)
+WHERE layer_id IN (21, 22);
+
+INSERT INTO honua.layer_fields (
+    layer_id, field_name, field_type, field_order,
+    max_length, nullable, default_value, description
+)
+VALUES
+    (20, 'objectid', 'Integer', 0, NULL, false, NULL, 'Object ID'),
+    (20, 'name', 'String', 1, 255, true, NULL, 'Name'),
+    (20, 'shape', 'Geometry', 2, NULL, true, NULL, 'Geometry'),
+    (21, 'objectid', 'Integer', 0, NULL, false, NULL, 'Object ID'),
+    (21, 'asset_id', 'String', 1, 64, false, NULL, 'Asset identifier'),
+    (21, 'name', 'String', 2, 255, true, NULL, 'Name'),
+    (21, 'shape', 'Geometry', 3, NULL, true, NULL, 'Geometry'),
+    (22, 'objectid', 'Integer', 0, NULL, false, NULL, 'Object ID'),
+    (22, 'asset_id', 'String', 1, 64, false, NULL, 'Asset identifier'),
+    (22, 'note', 'String', 2, 255, true, NULL, 'Inspection note'),
+    (22, 'shape', 'Geometry', 3, NULL, true, NULL, 'Geometry')
+ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+VALUES
+    ('cert_relations', 20, 20),
+    ('cert_relations', 21, 21),
+    ('cert_relations', 22, 22)
+ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+-- Attachment parents. The attachment rows themselves are created through the
+-- server's own addAttachment route by docker/client-compat/seed/run.sh: an
+-- attachment is two halves -- the honua.attachments row AND the bytes in the
+-- configured file storage -- and only the server can write the second half, so
+-- a SQL-only seed would advertise attachments whose download path 404s.
+INSERT INTO features (objectid, layer_id, geometry, attributes)
+VALUES
+    (9001, 20, ST_SetSRID(ST_MakePoint(-122.4200, 37.7600), 4326),
+     jsonb_build_object('name', 'attachment-parent-a')),
+    (9002, 20, ST_SetSRID(ST_MakePoint(-122.4100, 37.7650), 4326),
+     jsonb_build_object('name', 'attachment-parent-b'))
+ON CONFLICT (objectid) DO NOTHING;
+
+INSERT INTO features (objectid, layer_id, geometry, attributes)
+VALUES
+    (9101, 21, ST_SetSRID(ST_MakePoint(-122.4300, 37.7700), 4326),
+     jsonb_build_object('asset_id', 'A-100', 'name', 'pump-station-a')),
+    (9102, 21, ST_SetSRID(ST_MakePoint(-122.4250, 37.7750), 4326),
+     jsonb_build_object('asset_id', 'A-200', 'name', 'pump-station-b'))
+ON CONFLICT (objectid) DO NOTHING;
+
+-- Two inspections for A-100 and one for A-200, so a relatedRecords response that
+-- ignores the foreign key (returning every row, or one row per origin) is
+-- distinguishable from a correct one.
+INSERT INTO features (objectid, layer_id, geometry, attributes)
+VALUES
+    (9201, 22, ST_SetSRID(ST_MakePoint(-122.4300, 37.7710), 4326),
+     jsonb_build_object('asset_id', 'A-100', 'note', 'annual inspection')),
+    (9202, 22, ST_SetSRID(ST_MakePoint(-122.4300, 37.7720), 4326),
+     jsonb_build_object('asset_id', 'A-100', 'note', 'follow-up inspection')),
+    (9203, 22, ST_SetSRID(ST_MakePoint(-122.4250, 37.7760), 4326),
+     jsonb_build_object('asset_id', 'A-200', 'note', 'annual inspection'))
+ON CONFLICT (objectid) DO NOTHING;
+
+-- Both sides of the relationship are declared so each layer advertises it and
+-- queryRelatedRecords answers from either direction (an Esri client reads the
+-- origin's relationships[] to offer "related records", and the destination's to
+-- walk back to its parent).
+INSERT INTO honua.relationships (
+    layer_id, relationship_id, name, related_layer_id,
+    relationship_type, origin_foreign_key, destination_foreign_key, description
+)
+VALUES
+    (21, 1, 'InspectionsByAsset', 22,
+     'esriRelRoleOrigin', 'asset_id', 'asset_id',
+     'Inspections recorded against an asset'),
+    (22, 1, 'AssetForInspection', 21,
+     'esriRelRoleDestination', 'asset_id', 'asset_id',
+     'Asset an inspection was recorded against')
+ON CONFLICT (layer_id, relationship_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    related_layer_id = EXCLUDED.related_layer_id,
+    relationship_type = EXCLUDED.relationship_type,
+    origin_foreign_key = EXCLUDED.origin_foreign_key,
+    destination_foreign_key = EXCLUDED.destination_foreign_key,
+    description = EXCLUDED.description;
+
+-- Explicit fixture ids must not collide with later sequence-assigned client edits.
+SELECT setval(pg_get_serial_sequence('features', 'objectid'),
+              GREATEST((SELECT max(objectid) FROM features),
+                       (SELECT last_value FROM features_objectid_seq)));
 
 SELECT honua.seed_metadata_v2_compat_snapshot();

@@ -36,6 +36,30 @@ public sealed class FeatureChangeRetryQueueTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ReadQueuedIdsAsync_Recovery_RemovesExpiredBroadcastIds()
+    {
+        var tracker = new CompletedBroadcastTracker(TimeSpan.Zero);
+        tracker.MarkCompleted("expired-event");
+        using var queue = new FeatureChangeRetryQueue(
+            null,
+            Channel.CreateUnbounded<PendingFeatureChangeSignal>(),
+            new RecordingFeatureChangeEventStore(),
+            _sessionManager,
+            NullLogger<FeatureChangeRetryQueue>.Instance);
+        typeof(FeatureChangeRetryQueue)
+            .GetField("_completedBroadcasts", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(queue, tracker);
+        var pendingId = await queue.EnqueueAsync(CreateRequest("req-recovery-cleanup"));
+
+        await using var enumerator = queue.ReadQueuedIdsAsync().GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+
+        Assert.Equal(pendingId, enumerator.Current);
+        Assert.Equal(0, tracker.Count);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ReadQueuedIdsAsync_WithPersistedPendingPublish_RecoversPendingId()
     {
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));

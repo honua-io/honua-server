@@ -4,6 +4,8 @@
 
 Accepted (2026-07)
 
+Clarified (2026-10): the local developer loop below is separate from server job execution.
+
 ## Context
 
 Honua lets an operator register a **custom geoprocessing tool** — user-authored
@@ -72,6 +74,23 @@ Concretely:
 This does not narrow where *built-in* GP runs (ADR-0057 / ADR-0060 are
 unchanged); it constrains only the untrusted `custom-code` profile.
 
+### Trusted local authoring
+
+A developer may explicitly run their own trusted source or compiled tool through
+the standalone Python/.NET harness on their workstation for debugging. This is
+ordinary local program execution, with the developer's filesystem permissions;
+it is not a sandbox or a server execution backend. The local harness constructs
+no job-scoped cloud client, fetches no remote source, accepts explicit local
+inputs, and writes local artifacts and diagnostic receipts.
+
+Product CLI adapters may invoke the separately installed developer tooling.
+They must not add a local execution selector to server submission APIs, convert
+remote custom-code submissions into local runs, or bypass the workload validator
+and runtime claim fence. SDK data-plane methods remain server clients.
+
+This clarification supports the approved GP developer experience without
+sanctioning custom-code dispatch on Kubernetes, Azure, or the server host.
+
 ## How this is enforced
 
 1. **Startup configuration gate (primary).**
@@ -88,24 +107,29 @@ unchanged); it constrains only the untrusted `custom-code` profile.
    custom-code job that is ever claimed by an in-process worker, so even if a job
    reached a host worker it would fail loudly instead of running untrusted code in
    the server process.
-3. **Sanctioned-container defense-in-depth.** The AWS Batch custom-code worker
-   images run as a **non-root** user (`USER 1001:1001`) and the harness **scrubs
-   `HONUA_JOB_TOKEN`** and the AWS ambient-credential env vars
-   (`AWS_CONTAINER_CREDENTIALS_*`, `ECS_CONTAINER_METADATA_URI*`, static keys)
-   **before importing user code**, leaving the tool only a least-privilege,
-   job-bound scoped client. These guards are asserted by tests
-   (`docker/worker-customcode-python/harness/tests`: `test_sandbox.py` for the
-   token scrub, `test_dockerfile_guards.py` for the non-root `USER` in both worker
-   Dockerfiles) so they cannot silently regress. The isolation expectation is that
-   the Batch job's network egress and task-role scope are restricted by the
-   deployment IaC; user code is denied the task role by the scrub regardless.
-4. **SDK exposes no local-execution path.** `honua-sdk-python` has **no**
+3. **Credential-free Fargate boundary.** Custom-code definitions must use Fargate,
+   the sanctioned non-root user (`1001:1001`), no task `jobRoleArn`, no injected
+   secrets or mounted volumes, and no cloud credential environment. Dispatch reads
+   the exact AWS definition revision and refuses other shapes. The provider-only
+   execution role supplies image pulls and logging; it is not handed to the task.
+   EC2 Batch is refused because instance-profile metadata would add ambient IAM.
+   The entrypoint rejects cloud credential environments before restoring dependencies
+   and launches a sanitized child. Environment deletion is defense in depth, **not**
+   a hostile-code security boundary: initial values can survive in `/proc`.
+   User code deliberately holds a Honua capability limited to its frozen resource
+   scope, job and dispatch attempt. Artifacts and the failure journal go through the
+   authenticated, bounded server broker; no direct S3 credential transport is used.
+   Changing worker images/server/IaC is a coordinated upgrade. Source and CI checks
+   establish these enforced guards; live Fargate/IAM qualification remains required
+   before claiming hostile multi-tenant production qualification.
+4. **SDK exposes no local server-job execution path.** `honua-sdk-python` has **no**
    custom-code job-submission surface and cannot influence backend selection
    (backend is server configuration). Its ArcPy/ModelBuilder migration codemod
    translates recognized tools only to **built-in server processes**
    (`EXECUTABLE_PROCESS_IDS`); unrecognized tools become `manual-review`, never an
    auto-submitted custom-code job. A tripwire test locks in the absence of any
-   custom-code/local-execution surface in the SDK.
+   custom-code submission or backend-selection surface in the SDK. The explicit
+   developer CLI adapter described above is separate from this server contract.
 
 ## Consequences
 
@@ -129,3 +153,6 @@ unchanged); it constrains only the untrusted `custom-code` profile.
 - [ADR-0060: Two-Plane Operability Architecture — substrate-neutral executors](0060-two-plane-operability-architecture.md)
 - honua-io/honua-server#2672 (`LocalProcessCustomCodeBackend`) — evaluated and **closed** as a no-go (local-process custom-code execution)
 - Sanctioned worker images: `docker/worker-customcode-python`, `docker/worker-customcode-dotnet`
+
+The [custom-code runtime contract](../../../reference/gp-customcode-runtime.md) describes
+the broker transport, attempt preparation, retained-log limits and qualification scope.

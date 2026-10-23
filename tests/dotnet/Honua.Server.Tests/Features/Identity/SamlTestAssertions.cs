@@ -22,6 +22,9 @@ internal static class SamlTestAssertions
     public const string Issuer = "https://idp.example.com/metadata";
     public const string Audience = "https://honua.example.com/sp";
 
+    /// <summary>Assertion consumer service URL the fixtures and the SP options agree on.</summary>
+    public const string AcsUrl = Audience + "/saml/acs";
+
     /// <summary>Creates a self-signed RSA certificate to act as the IdP signing certificate.</summary>
     public static X509Certificate2 CreateSigningCertificate()
     {
@@ -49,10 +52,72 @@ internal static class SamlTestAssertions
         string displayName,
         IReadOnlyList<string> roles,
         DateTimeOffset? notOnOrAfter = null,
-        DateTimeOffset? notBefore = null)
+        DateTimeOffset? notBefore = null,
+        string? recipient = null,
+        string? responseInResponseTo = null,
+        string? confirmationInResponseTo = null,
+        bool includeConditions = true,
+        bool includeAudience = true,
+        bool includeNotOnOrAfter = true,
+        bool includeDestination = true)
     {
-        var xml = BuildResponseXml(nameId, email, displayName, roles, notBefore, notOnOrAfter);
+        var xml = BuildResponseXml(
+            nameId,
+            email,
+            displayName,
+            roles,
+            notBefore,
+            notOnOrAfter,
+            recipient,
+            responseInResponseTo,
+            confirmationInResponseTo,
+            includeConditions,
+            includeAudience,
+            includeNotOnOrAfter,
+            includeDestination);
         var signed = SignAssertion(xml, certificate);
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
+    }
+
+    /// <summary>
+    /// Signed response whose <c>saml</c>, <c>xs</c>, and <c>xsi</c> prefixes are declared only
+    /// on the Response. Keycloak and SimpleSAMLphp emit this shape; exclusive C14N must keep
+    /// those ancestor declarations when the assertion is detached for the digest.
+    /// </summary>
+    public static string CreateSignedPrefixedAncestorResponse(X509Certificate2 certificate, string nameId)
+    {
+        const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
+        const string samlp = "urn:oasis:names:tc:SAML:2.0:protocol";
+        const string xs = "http://www.w3.org/2001/XMLSchema";
+        const string xsi = "http://www.w3.org/2001/XMLSchema-instance";
+        var now = DateTimeOffset.UtcNow;
+        var noa = now.AddMinutes(5).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var nb = now.AddMinutes(-5).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var issueInstant = now.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var xml = $"""
+            <samlp:Response xmlns:samlp="{samlp}" xmlns:saml="{saml}" xmlns:xs="{xs}" xmlns:xsi="{xsi}" ID="_respPrefixed" Version="2.0" IssueInstant="{issueInstant}" Destination="{AcsUrl}">
+              <saml:Issuer>{Issuer}</saml:Issuer>
+              <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
+              <saml:Assertion ID="_assertionPrefixed" Version="2.0" IssueInstant="{issueInstant}">
+                <saml:Issuer>{Issuer}</saml:Issuer>
+                <saml:Subject>
+                  <saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">{nameId}</saml:NameID>
+                  <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+                    <saml:SubjectConfirmationData NotOnOrAfter="{noa}" Recipient="{AcsUrl}"/>
+                  </saml:SubjectConfirmation>
+                </saml:Subject>
+                <saml:Conditions NotBefore="{nb}" NotOnOrAfter="{noa}">
+                  <saml:AudienceRestriction><saml:Audience>{Audience}</saml:Audience></saml:AudienceRestriction>
+                </saml:Conditions>
+                <saml:AttributeStatement>
+                  <saml:Attribute Name="Role">
+                    <saml:AttributeValue xsi:type="xs:string">viewer</saml:AttributeValue>
+                  </saml:Attribute>
+                </saml:AttributeStatement>
+              </saml:Assertion>
+            </samlp:Response>
+            """;
+        var signed = SignElement(xml, "_assertionPrefixed", certificate);
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
@@ -141,7 +206,14 @@ internal static class SamlTestAssertions
         string displayName,
         IReadOnlyList<string> roles,
         DateTimeOffset? notBefore,
-        DateTimeOffset? notOnOrAfter)
+        DateTimeOffset? notOnOrAfter,
+        string? recipient = null,
+        string? responseInResponseTo = null,
+        string? confirmationInResponseTo = null,
+        bool includeConditions = true,
+        bool includeAudience = true,
+        bool includeNotOnOrAfter = true,
+        bool includeDestination = true)
         => BuildResponseXml(
             nameId,
             new (string, IReadOnlyList<string>)[]
@@ -151,13 +223,27 @@ internal static class SamlTestAssertions
                 ("Role", roles),
             },
             notBefore,
-            notOnOrAfter);
+            notOnOrAfter,
+            recipient,
+            responseInResponseTo,
+            confirmationInResponseTo,
+            includeConditions,
+            includeAudience,
+            includeNotOnOrAfter,
+            includeDestination);
 
     private static string BuildResponseXml(
         string nameId,
         IReadOnlyList<(string Name, IReadOnlyList<string> Values)> attributes,
         DateTimeOffset? notBefore,
-        DateTimeOffset? notOnOrAfter)
+        DateTimeOffset? notOnOrAfter,
+        string? recipient = null,
+        string? responseInResponseTo = null,
+        string? confirmationInResponseTo = null,
+        bool includeConditions = true,
+        bool includeAudience = true,
+        bool includeNotOnOrAfter = true,
+        bool includeDestination = true)
     {
         const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
         const string samlp = "urn:oasis:names:tc:SAML:2.0:protocol";
@@ -166,6 +252,23 @@ internal static class SamlTestAssertions
         var nb = (notBefore ?? now.AddMinutes(-5)).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         var noa = (notOnOrAfter ?? now.AddMinutes(5)).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         var issueInstant = now.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var acs = recipient ?? AcsUrl;
+        var destinationAttr = includeDestination ? $" Destination=\"{AcsUrl}\"" : string.Empty;
+        var responseInResponseToAttr = responseInResponseTo is null ? string.Empty : $" InResponseTo=\"{responseInResponseTo}\"";
+        var confirmationInResponseToAttr = confirmationInResponseTo is null
+            ? string.Empty
+            : $" InResponseTo=\"{confirmationInResponseTo}\"";
+        var notOnOrAfterAttr = includeNotOnOrAfter ? $" NotOnOrAfter=\"{noa}\"" : string.Empty;
+        var audienceXml = includeAudience
+            ? $"<AudienceRestriction><Audience>{Audience}</Audience></AudienceRestriction>"
+            : string.Empty;
+        var conditionsXml = includeConditions
+            ? $"""
+                <Conditions NotBefore="{nb}"{notOnOrAfterAttr}>
+                  {audienceXml}
+                </Conditions>
+                """
+            : string.Empty;
 
         var attributesXml = new StringBuilder();
         foreach (var (name, values) in attributes)
@@ -180,7 +283,7 @@ internal static class SamlTestAssertions
         }
 
         return $"""
-            <samlp:Response xmlns:samlp="{samlp}" xmlns="{saml}" ID="_resp1" Version="2.0" IssueInstant="{issueInstant}">
+            <samlp:Response xmlns:samlp="{samlp}" xmlns="{saml}" ID="_resp1" Version="2.0" IssueInstant="{issueInstant}"{destinationAttr}{responseInResponseToAttr}>
               <Issuer>{Issuer}</Issuer>
               <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
               <Assertion ID="_assertion1" Version="2.0" IssueInstant="{issueInstant}">
@@ -188,12 +291,10 @@ internal static class SamlTestAssertions
                 <Subject>
                   <NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">{nameId}</NameID>
                   <SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
-                    <SubjectConfirmationData NotOnOrAfter="{noa}" Recipient="{SamlTestAssertions.Audience}/acs"/>
+                    <SubjectConfirmationData NotOnOrAfter="{noa}" Recipient="{acs}"{confirmationInResponseToAttr}/>
                   </SubjectConfirmation>
                 </Subject>
-                <Conditions NotBefore="{nb}" NotOnOrAfter="{noa}">
-                  <AudienceRestriction><Audience>{Audience}</Audience></AudienceRestriction>
-                </Conditions>
+                {conditionsXml}
                 <AuthnStatement AuthnInstant="{issueInstant}">
                   <AuthnContext><AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password</AuthnContextClassRef></AuthnContext>
                 </AuthnStatement>

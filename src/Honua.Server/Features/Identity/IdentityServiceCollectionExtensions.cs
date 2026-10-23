@@ -6,6 +6,8 @@ using Honua.Server.Features.Identity.Scim;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Identity;
 
@@ -38,8 +40,13 @@ public static class IdentityServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddOptions<SamlAuthenticationOptions>()
-            .Bind(configuration.GetSection(SamlAuthenticationOptions.SectionName));
-
+            .Bind(configuration.GetSection(SamlAuthenticationOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddSingleton<IValidateOptions<SamlAuthenticationOptions>, SamlAuthenticationOptionsValidator>();
+        services.TryAddSingleton<ISamlAssertionReplayCache>(static services =>
+            new SamlAssertionReplayCache(
+                services.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+                services.GetService<IConnectionMultiplexer>()));
         services.TryAddSingleton<ISamlAssertionValidator, SamlAssertionValidator>();
 
         return services;

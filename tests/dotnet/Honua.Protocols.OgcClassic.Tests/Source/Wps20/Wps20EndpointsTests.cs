@@ -54,8 +54,57 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         xml.Should().Contain("processVersion=\"1.0.0\"");
         advertisedProcessIds.Should().NotContain("source.geojson");
         advertisedProcessIds.Should().NotContain("analytics.cluster");
-        advertisedProcessIds.Should().NotContain("raster.interpolate-kriging");
+        var krigingProcess = document
+            .Descendants(wps + "ProcessSummary")
+            .Single(summary => summary.Element(ows + "Identifier")?.Value == "raster.interpolate-kriging");
+        krigingProcess.Attribute("jobControlOptions")?.Value.Should().Be("async-execute");
         xml.Should().NotContain("Operation name=\"Dismiss\"").And.NotContain("jobControlOptions=\"sync-execute\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wps202, "DescribeProcess")]
+    public async Task Discovery_RequiresExplicitJobEntryPoint()
+    {
+        var undeclared = new ProcessDefinition
+        {
+            ProcessId = "test.undeclared",
+            Title = "Undeclared",
+            Description = "An asynchronous job without a declared entry point.",
+            Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async,
+            Parameters = [],
+            OutputArtifactKinds = []
+        };
+        var declared = undeclared with
+        {
+            ProcessId = "test.declared",
+            SupportedEntryPoints = ProcessEntryPoints.Job
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.ListProcesses().Returns(new[] { undeclared, declared });
+        catalog.GetProcess(undeclared.ProcessId).Returns(undeclared);
+        catalog.GetProcess(declared.ProcessId).Returns(declared);
+        await using var fixture = new WebAppFixture().ReplaceService(catalog);
+        await fixture.InitializeAsync();
+
+        using var capabilities = await fixture.Client.GetAsync("/wps?service=WPS&request=GetCapabilities&version=2.0.0");
+        var xml = await capabilities.Content.ReadAsStringAsync();
+        capabilities.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        XDocument.Parse(xml).Descendants(wps + "ProcessSummary")
+            .Select(summary => summary.Element(ows + "Identifier")?.Value)
+            .Should().Equal(declared.ProcessId);
+
+        using var excluded = await fixture.Client.GetAsync($"/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier={undeclared.ProcessId}");
+        excluded.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await excluded.Content.ReadAsStringAsync()).Should().Contain("NoSuchProcess");
+        using var included = await fixture.Client.GetAsync($"/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier={declared.ProcessId}");
+        included.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -377,6 +426,38 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /wps")]
     [InterfaceOperation(TestProtocols.Wps202, "GetStatus")]
+    public async Task GetStatus_CanonicalRunningJob_ReturnsIdentityAndProgress()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.GetJobAsync("wps-running-job", Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobRecord
+            {
+                OperationId = "wps-running-job",
+                Status = ExecutionJobStatus.Running,
+                PercentComplete = 42,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "geometry.buffer" }
+            });
+        await using var fixture = new WebAppFixture().ReplaceService(jobs);
+        await fixture.InitializeAsync();
+
+        var response = await fixture.Client.GetAsync("/wps?service=WPS&request=GetStatus&version=2.0.0&jobId=wps-running-job");
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        document.Root!.Name.Should().Be(wps + "StatusInfo");
+        document.Root.Element(wps + "JobID")?.Value.Should().Be("wps-running-job");
+        document.Root.Element(wps + "Status")?.Value.Should().Be("Running");
+        document.Root.Element(wps + "PercentCompleted")?.Value.Should().Be("42");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "GetStatus")]
     public async Task GetStatus_UnknownJob_ReturnsOwsExceptionReport()
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
@@ -504,6 +585,79 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<testElement>hello_complex</testElement>");
     }
+
+    [IntegrationTheory]
+    [InlineData("crs='urn:ogc:def:crs:OGC:1.3:CRS84'", "2")]
+    [InlineData("", "2")]
+    [InlineData("", "02")]
+    [InlineData("", "+2")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_Crs84BoundingBox_PreservesAsymmetricAxisOrder(string crsAttribute, string dimensions)
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        var box = $"<ows:BoundingBox {crsAttribute} dimensions='{dimensions}'><ows:LowerCorner>-123.5 37.25</ows:LowerCorner><ows:UpperCorner>-121.75 39.5</ows:UpperCorner></ows:BoundingBox>";
+        using var body = new StringContent(BoundingBoxExecute(box), Encoding.UTF8, "application/xml");
+        using var response = await fixture.Client.PostAsync("/wps", body);
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        document.Root!.Name.Should().Be(wps + "Result");
+        var output = document.Root.Elements(wps + "Output").Single();
+        output.Element(ows + "Identifier")!.Value.Should().Be("boundingBoxOutput");
+        var actual = output.Element(wps + "Data")!.Elements().Single();
+        actual.Name.Should().Be(ows + "BoundingBox");
+        actual.Attribute("crs")!.Value.Should().Be("urn:ogc:def:crs:OGC:1.3:CRS84");
+        actual.Element(ows + "LowerCorner")!.Value.Should().Be("-123.5 37.25");
+        actual.Element(ows + "UpperCorner")!.Value.Should().Be("-121.75 39.5");
+    }
+
+    [IntegrationTheory]
+    [InlineData("<ows:BoundingBox crs='urn:unsupported'><ows:LowerCorner>-123 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox>unexpected<ows:LowerCorner>-123 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox crs='urn:ogc:def:crs:OGC:1.3:CRS84'><ows:LowerCorner>-123 37</ows:LowerCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox crs='urn:ogc:def:crs:OGC:1.3:CRS84'><ows:LowerCorner>37 -123</ows:LowerCorner><ows:UpperCorner>39 -121</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox crs='urn:ogc:def:crs:OGC:1.3:CRS84'><ows:LowerCorner>NaN 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<BoundingBox xmlns='urn:lookalike' crs='urn:ogc:def:crs:OGC:1.3:CRS84'><LowerCorner>-123 37</LowerCorner><UpperCorner>-121 39</UpperCorner></BoundingBox>")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_MalformedBoundingBox_ReturnsOwsException(string box)
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        using var body = new StringContent(BoundingBoxExecute(box), Encoding.UTF8, "application/xml");
+        using var response = await fixture.Client.PostAsync("/wps", body);
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, xml);
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        var exception = XDocument.Parse(xml).Descendants(ows + "Exception").Single();
+        exception.Attribute("exceptionCode")!.Value.Should().Be("InvalidParameterValue");
+        exception.Attribute("locator")!.Value.Should().Be("boundingBoxInput");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_ComplexBoundingBoxLookalike_RemainsComplex()
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        const string box = "<BoundingBox xmlns='urn:lookalike'><LowerCorner>uninterpreted text</LowerCorner></BoundingBox>";
+        var request = BoundingBoxExecute(box).Replace("boundingBoxInput", "complexInput", StringComparison.Ordinal)
+            .Replace("boundingBoxOutput", "complexOutput", StringComparison.Ordinal);
+        using var body = new StringContent(request, Encoding.UTF8, "application/xml");
+        using var response = await fixture.Client.PostAsync("/wps", body);
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        XNamespace lookalike = "urn:lookalike";
+        XDocument.Parse(xml).Descendants(lookalike + "LowerCorner").Single().Value.Should().Be("uninterpreted text");
+    }
+
+    private static string BoundingBoxExecute(string box) =>
+        $"<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='boundingBoxInput'><wps:Data>{box}</wps:Data></wps:Input><wps:Output id='boundingBoxOutput' transmission='value'/></wps:Execute>";
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -669,6 +823,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     [Endpoint("GET /wps")]
+    [Endpoint("GET /wps/conformance/results/{token}")]
     public async Task ConformanceEcho_ConfiguredPublicBaseUrl_IsUsedForLinks()
     {
         await using var fixture = CreateConformanceFixture(publicBaseUrl: "https://cite.example.test/root");
@@ -683,6 +838,16 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         capabilities.Should().Contain("https://cite.example.test/root/wps");
         resultXml.Should().Contain("https://cite.example.test/root/wps/conformance/results/");
         capabilities.Should().NotContain("http://localhost/wps");
+        const string marker = "/wps/conformance/results/";
+        var markerIndex = resultXml.IndexOf(marker, StringComparison.Ordinal);
+        markerIndex.Should().BeGreaterThanOrEqualTo(0, resultXml);
+        var tokenStart = markerIndex + marker.Length;
+        var tokenEnd = resultXml.IndexOfAny(['"', '<', '&'], tokenStart);
+        tokenEnd.Should().BeGreaterThan(tokenStart, resultXml);
+        var token = resultXml[tokenStart..tokenEnd];
+        var reference = await fixture.Client.GetAsync($"/wps/conformance/results/{token}");
+        reference.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await reference.Content.ReadAsStringAsync()).Should().Be("aloha");
         Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEcho.MaxConcurrentReferenceFetches.Should().Be(4);
     }
 

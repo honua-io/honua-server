@@ -44,6 +44,7 @@ public sealed class YarpRollingDeployBackendTests
         capabilities.RequiresOutOfBandMigrations.Should().BeTrue();
         capabilities.SupportsProgressPolling.Should().BeTrue();
         capabilities.SupportsRevisionPinning.Should().BeTrue();
+        capabilities.StagesCandidateWithoutTraffic.Should().BeTrue("the standby replica serves no traffic until the proxy swap");
     }
 
     [Fact]
@@ -88,6 +89,106 @@ public sealed class YarpRollingDeployBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_MountsOperatorSuppliedFilesIntoTheReplica()
+    {
+        // A 2026.1 image that connects to Redis outside Development/Test refuses to start until
+        // Operations:SecretChannel:KeyRingCertificatePath names a real certificate (#4722, #4885).
+        // That is a file, so env vars alone cannot roll such an image out at all (#4617).
+        var keyRing = Directory.CreateTempSubdirectory("honua-rolling-mount-test");
+        try
+        {
+            var backend = CreateBackend(out var runtime, out _, out _);
+            var spec = CreateSpec();
+            spec = spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [SelfHostedDeployParameterKeys.MountPrefix + "/keyring"] = keyRing.FullName,
+                    [SelfHostedDeployParameterKeys.EnvironmentPrefix + "Operations__SecretChannel__KeyRingCertificatePath"] =
+                        "/keyring/operation-keyring.pfx"
+                }
+            };
+
+            await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted, spec));
+
+            var request = runtime.RunRequests.Should().ContainSingle().Subject;
+            request.Mounts.Should().ContainSingle();
+            request.Mounts[0].HostPath.Should().Be(keyRing.FullName);
+            request.Mounts[0].ContainerPath.Should().Be("/keyring");
+            request.Environment["Operations__SecretChannel__KeyRingCertificatePath"]
+                .Should().Be("/keyring/operation-keyring.pfx");
+        }
+        finally
+        {
+            keyRing.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PlanAsync_MountHostPathMissing_BlocksBeforeAnyMutation()
+    {
+        // Rejecting at plan time keeps a configuration error from surfacing later as "the candidate
+        // never passed the backend health gate", which is what a replica that exits at startup looks
+        // like from the outside.
+        var backend = CreateBackend(out var runtime, out _, out _);
+        var missing = Path.Join(Path.GetTempPath(), $"honua-rolling-absent-{Guid.NewGuid():N}");
+        var spec = CreateSpec() with
+        {
+            Parameters = new Dictionary<string, string>
+            {
+                [SelfHostedDeployParameterKeys.MountPrefix + "/keyring"] = missing
+            }
+        };
+
+        var plan = await backend.PlanAsync(spec);
+
+        plan.IsReadyToSubmit.Should().BeFalse();
+        plan.BlockingReasons.Should().Contain(reason => reason.Contains(missing, StringComparison.Ordinal));
+
+        var result = await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted, spec));
+
+        result.Status.Should().Be(WorkflowOperationStatus.Failed, "a submit that slipped past the plan must still not launch a replica");
+        runtime.RunRequests.Should().BeEmpty("no replica may start without the file the image requires");
+    }
+
+    [Theory]
+    [InlineData("/keyring", "")]
+    [InlineData("/keyring", "   ")]
+    [InlineData("", "C:/does-not-matter")]
+    public async Task PlanAsync_MountMissingEitherHalf_BlocksBeforeAnyMutation(string containerPath, string hostPath)
+    {
+        var backend = CreateBackend(out var runtime, out _, out _);
+        var spec = CreateSpec() with
+        {
+            Parameters = new Dictionary<string, string>
+            {
+                [SelfHostedDeployParameterKeys.MountPrefix + containerPath] = hostPath
+            }
+        };
+
+        var plan = await backend.PlanAsync(spec);
+
+        plan.IsReadyToSubmit.Should().BeFalse();
+        plan.BlockingReasons.Should().Contain(reason =>
+            reason.Contains(SelfHostedDeployParameterKeys.MountPrefix, StringComparison.Ordinal));
+
+        var result = await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted, spec));
+
+        result.Status.Should().Be(WorkflowOperationStatus.Failed);
+        runtime.RunRequests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StartAsync_WithoutMountParameters_RequestsNoMounts()
+    {
+        var backend = CreateBackend(out var runtime, out _, out _);
+
+        await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
+
+        runtime.RunRequests.Should().ContainSingle().Which.Mounts.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ObserveAsync_StandbyUnhealthy_DoesNotRecommendPromotion()
     {
         var backend = CreateBackend(out var runtime, out _, out var probe);
@@ -114,8 +215,11 @@ public sealed class YarpRollingDeployBackendTests
     }
 
     [Fact]
-    public async Task PromoteAsync_SwapsProxyAndStopsOldReplica_ReturnsSucceeded()
+    public async Task PromoteAsync_SwapsProxyAndRetainsOldReplica_ReturnsSucceeded()
     {
+        // honua-server#4618: the old replica must survive cutover so the durable post-activation
+        // observation window has something to recover to. Stopping it here (the pre-fix behavior)
+        // disconnected the advertised rollback protection window from reality.
         var backend = CreateBackend(out var runtime, out var proxy, out var probe);
         probe.Healthy = true;
         runtime.SeedActive(ActiveContainerName(), CurrentRevision);
@@ -126,19 +230,139 @@ public sealed class YarpRollingDeployBackendTests
         observation.Status.Should().Be(WorkflowOperationStatus.Succeeded);
         observation.ObservedRevision.Should().Be(DesiredRevision);
         proxy.ActiveDestinationAddress.Should().Be(StandbyAddress);
-        runtime.StopRequests.Should().Contain(ActiveContainerName());
+        runtime.StopRequests.Should().NotContain(ActiveContainerName(), "the old replica is retained through the observation window, not stopped at cutover");
+    }
+
+    [Fact]
+    public async Task CompleteProtectionAsync_StopsRetainedOldReplica_ReturnsSucceeded()
+    {
+        var backend = CreateBackend(out var runtime, out var proxy, out var probe);
+        probe.Healthy = true;
+        runtime.SeedActive(ActiveContainerName(), CurrentRevision);
+        await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
+        await backend.PromoteAsync(CreateOperation(WorkflowOperationStatus.Reconciling));
+        runtime.StopRequests.Should().NotContain(ActiveContainerName());
+
+        var operation = CreateOperation(WorkflowOperationStatus.Reconciling) with
+        {
+            Deploy = CreateSpec() with
+            {
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = CurrentRevision,
+                    CandidateRevision = DesiredRevision,
+                    FirstExposureAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddSeconds(-1),
+                    PolicyDigest = "test-digest"
+                }
+            }
+        };
+
+        var finalized = await backend.CompleteProtectionAsync(operation);
+
+        finalized.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        runtime.StopRequests.Should().Contain(ActiveContainerName(), "the observation window elapsed, so the retained old replica must now be retired");
+        proxy.ActiveDestinationAddress.Should().Be(StandbyAddress, "the finalize step must not touch proxy routing, only retained capacity");
+    }
+
+    [Fact]
+    public async Task RollbackAsync_AfterCutoverDuringObservationWindow_RepointsToStillRunningOldReplica()
+    {
+        // With retention, the "old replica gone, relaunch from image" fallback should not be needed
+        // for a rollback triggered while the observation window is still open: the previous replica is
+        // still running, so recovery is a fast proxy repoint rather than a relaunch.
+        var backend = CreateBackend(out var runtime, out var proxy, out var probe);
+        probe.Healthy = true;
+        runtime.SeedActive(ActiveContainerName(), CurrentRevision);
+        await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
+        await backend.PromoteAsync(CreateOperation(WorkflowOperationStatus.Reconciling));
+
+        var operationWithProtection = CreateOperation(WorkflowOperationStatus.RollbackRequested) with
+        {
+            Deploy = CreateSpec() with
+            {
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = CurrentRevision,
+                    CandidateRevision = DesiredRevision,
+                    FirstExposureAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddMinutes(9),
+                    PolicyDigest = "test-digest"
+                }
+            }
+        };
+
+        var observation = await backend.RollbackAsync(operationWithProtection);
+
+        observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        proxy.ActiveDestinationAddress.Should().Be(ActiveAddress);
+        runtime.RunRequests.Should().NotContain(r => r.ContainerName == ActiveContainerName(), "the retained old replica is still running, so no relaunch is needed to recover");
+    }
+
+    [Fact]
+    public async Task RollbackAsync_PostRestartDuringObservationWindow_DurableProtectionProvesAlreadyPromoted()
+    {
+        // honua-server#4618 ground-truth fix: once the old replica is retained (not removed) at
+        // cutover, BOTH replicas are running throughout the whole observation window — container
+        // labels alone cannot tell "still baking, pre-cutover" from "cutover done, retained for
+        // recovery" after a front-process restart resets in-memory proxy state. The durable
+        // Deploy.Protection record (persisted independently of this process) is what disambiguates it.
+        // Getting this wrong would misclassify the rollback as pre-cutover and stop the standby — the
+        // replica actually serving live traffic — causing an outage instead of a recovery.
+        var runtime = new FakeContainerRuntimeClient();
+        runtime.SeedActive(ActiveContainerName(), CurrentRevision);
+        var probe = new FakeLocalReplicaHealthProbe();
+        var options = ReconstructionIOptions();
+
+        var backendBeforeRestart = new YarpRollingDeployBackend(
+            runtime, new FakeProxyStateSwapper(true, ActiveAddress), probe, options, NullLogger<YarpRollingDeployBackend>.Instance);
+        await backendBeforeRestart.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
+        await backendBeforeRestart.PromoteAsync(CreateOperation(WorkflowOperationStatus.Reconciling));
+        // Retention means both replicas are still running post-promotion: no manual removal here,
+        // unlike the pre-retention `RollbackAsync_PostRestartAfterCutover_ClassifiedAsPromoted` test.
+
+        // Simulate a front-process restart: a fresh backend and a fresh proxy (in-memory address reset
+        // to the configured active port) over the same live container state.
+        var restartedProxy = new FakeProxyStateSwapper(true, ActiveAddress);
+        var backendAfterRestart = new YarpRollingDeployBackend(
+            runtime, restartedProxy, probe, options, NullLogger<YarpRollingDeployBackend>.Instance);
+
+        var operationWithProtection = CreateOperation(WorkflowOperationStatus.RollbackRequested) with
+        {
+            Deploy = CreateSpec() with
+            {
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = CurrentRevision,
+                    CandidateRevision = DesiredRevision,
+                    FirstExposureAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddMinutes(9),
+                    PolicyDigest = "test-digest"
+                }
+            }
+        };
+
+        var observation = await backendAfterRestart.RollbackAsync(operationWithProtection);
+
+        observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        restartedProxy.ActiveDestinationAddress.Should().Be(ActiveAddress);
+        runtime.RunRequests.Should().NotContain(r => r.ContainerName == ActiveContainerName(), "the retained old replica is still running; a restart must not trigger a relaunch");
+        runtime.StopRequests.Should().Contain(StandbyContainerName(), "the failed candidate must drain and stop, not the durable operation's proof of promotion");
     }
 
     [Fact]
     public async Task RollbackAsync_BeforeCutover_StopsStandbyOnly()
     {
-        var backend = CreateBackend(out var runtime, out var proxy, out _);
+        var backend = CreateBackend(out var runtime, out var proxy, out var probe);
+        probe.Body = RollbackDataPlaneTestSupport.PriorMarker;
+        probe.Reached = true;
         runtime.SeedActive(ActiveContainerName(), CurrentRevision);
         await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
 
-        var observation = await backend.RollbackAsync(CreateOperation(WorkflowOperationStatus.RollbackRequested));
+        var observation = await backend.RollbackAsync(CreateProvenRollbackOperation());
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        observation.ObservedRevision.Should().Be(CurrentRevision);
         runtime.StopRequests.Should().Contain(StandbyContainerName());
         runtime.StopRequests.Should().NotContain(ActiveContainerName());
         // Proxy was never repointed because the old replica was never touched.
@@ -196,6 +420,56 @@ public sealed class YarpRollingDeployBackendTests
     public void ResolveRunningDestination_NoRunningReplica_ReturnsNull()
     {
         SelfHostedProxyReconstruction.ResolveRunningDestination([], ReconstructionOptions()).Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveRunningDestination_BothRunningNoDurableRecord_PrefersActive()
+    {
+        // honua-server#4618: with retention, both replicas are legitimately running for the entire
+        // observation window, not just pre-cutover. Without a durable operation to disambiguate, the
+        // container-only heuristic must keep its pre-existing, conservative default (prefer active) —
+        // it must never guess standby, which would blackhole traffic on a still-baking candidate.
+        var options = ReconstructionOptions();
+        IReadOnlyList<ContainerSummary> containers =
+        [
+            RunningContainer(ActiveContainerName(), YarpRollingDeployBackend.RoleActive, CurrentRevision),
+            RunningContainer(StandbyContainerName(), YarpRollingDeployBackend.RoleStandby, DesiredRevision)
+        ];
+
+        SelfHostedProxyReconstruction.ResolveRunningDestination(containers, options).Should().Be(ActiveAddress);
+    }
+
+    [Fact]
+    public void ResolveRunningDestination_BothRunningWithProvenPromotion_PrefersStandby()
+    {
+        // The durable Deploy.Protection record is unambiguous proof that cutover already completed for
+        // this target, even though the retained previous replica is still running alongside it.
+        var options = ReconstructionOptions();
+        IReadOnlyList<ContainerSummary> containers =
+        [
+            RunningContainer(ActiveContainerName(), YarpRollingDeployBackend.RoleActive, CurrentRevision),
+            RunningContainer(StandbyContainerName(), YarpRollingDeployBackend.RoleStandby, DesiredRevision)
+        ];
+        IReadOnlyList<WorkflowOperationRecord> activeDeployOperations =
+        [
+            CreateOperation(WorkflowOperationStatus.Reconciling) with
+            {
+                Deploy = CreateSpec() with
+                {
+                    Protection = new DeployProtectionState
+                    {
+                        PreviousRevision = CurrentRevision,
+                        CandidateRevision = DesiredRevision,
+                        FirstExposureAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+                        ObservationDeadline = DateTimeOffset.UtcNow.AddMinutes(9),
+                        PolicyDigest = "test-digest"
+                    }
+                }
+            }
+        ];
+
+        SelfHostedProxyReconstruction.ResolveRunningDestination(containers, options, activeDeployOperations)
+            .Should().Be(StandbyAddress);
     }
 
     [Fact]
@@ -300,6 +574,22 @@ public sealed class YarpRollingDeployBackendTests
         };
 
     private static WorkflowOperationRecord CreateOperation(WorkflowOperationStatus status)
+        => CreateOperation(status, CreateSpec());
+
+    private static WorkflowOperationRecord CreateProvenRollbackOperation()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [SelfHostedDeployParameterKeys.Image] = DesiredRevision,
+            [SelfHostedDeployParameterKeys.ActivePort] = "18080",
+            [SelfHostedDeployParameterKeys.StandbyPort] = "18081",
+            [SelfHostedDeployParameterKeys.ContainerPort] = "8080"
+        };
+        RollbackDataPlaneTestSupport.AddProof(parameters);
+        return CreateOperation(WorkflowOperationStatus.RollbackRequested, CreateSpec() with { Parameters = parameters });
+    }
+
+    private static WorkflowOperationRecord CreateOperation(WorkflowOperationStatus status, DeployOperationSpec spec)
     {
         var now = DateTimeOffset.UtcNow;
         return new WorkflowOperationRecord
@@ -310,7 +600,7 @@ public sealed class YarpRollingDeployBackendTests
             CreatedAt = now,
             UpdatedAt = now,
             ProviderOperationId = "container-standby",
-            Deploy = CreateSpec()
+            Deploy = spec
         };
     }
 
@@ -392,6 +682,10 @@ public sealed class YarpRollingDeployBackendTests
     {
         public bool Healthy { get; set; } = true;
 
+        public bool Reached { get; set; } = true;
+
+        public string? Body { get; set; }
+
         public Task<LocalReplicaHealthResult> ProbeAsync(
             string url,
             int samples,
@@ -402,6 +696,8 @@ public sealed class YarpRollingDeployBackendTests
             {
                 Attempts = samples,
                 Failures = Healthy ? 0 : samples,
+                Reached = Reached,
+                Body = Body,
                 Detail = Healthy ? "healthy" : "unhealthy"
             });
     }

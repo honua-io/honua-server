@@ -37,16 +37,68 @@ public readonly record struct HavingCondition
     public required HavingComparisonOperator Operator { get; init; }
 
     /// <summary>
-    /// The numeric literal compared against the aggregate. Bound as a query
-    /// parameter rather than concatenated into SQL.
+    /// The numeric literal compared against a numeric aggregate. Bound as a query
+    /// parameter rather than concatenated into SQL. Min/max on a string or temporal
+    /// field leaves this unused and sets the matching typed literal instead.
     /// </summary>
     public required double Value { get; init; }
+
+    /// <summary>
+    /// Quoted string compared against min/max of a string field.
+    /// </summary>
+    public string? TextValue { get; init; }
+
+    /// <summary>
+    /// Timestamp compared against min/max of a datetime field.
+    /// </summary>
+    public DateTimeOffset? TimestampValue { get; init; }
+
+    /// <summary>
+    /// Calendar date compared against min/max of a date field.
+    /// </summary>
+    public DateOnly? DateValue { get; init; }
+
+    /// <summary>
+    /// Time of day compared against min/max of a time field.
+    /// </summary>
+    public TimeOnly? TimeValue { get; init; }
 
     /// <summary>
     /// Optional field type hint used to emit correctly typed aggregates for
     /// JSON-backed fields, mirroring <see cref="StatisticDefinition.FieldType"/>.
     /// </summary>
     public MetadataV2FieldType? FieldType { get; init; }
+
+    /// <summary>
+    /// The comparison literal bound into SQL. Numeric aggregates use <see cref="Value"/>.
+    /// Min/max on a string or temporal field uses that field's literal so the provider
+    /// does not compare the aggregate to a double.
+    /// </summary>
+    /// <returns>The parameter value for this condition.</returns>
+    public object BoundValue()
+    {
+        if (TextValue is not null)
+        {
+            return TextValue;
+        }
+
+        if (TimestampValue is { } timestamp)
+        {
+            return timestamp;
+        }
+
+        if (DateValue is { } date)
+        {
+            return date;
+        }
+
+        if (TimeValue is { } time)
+        {
+            return time;
+        }
+
+        return Value;
+    }
 }
 
 /// <summary>

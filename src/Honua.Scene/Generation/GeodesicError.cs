@@ -16,9 +16,10 @@ public static class GeodesicError
     /// Computes the root geometric error (meters) as the 3D diagonal of an extent.
     /// </summary>
     /// <remarks>
-    /// The longitude span is converted to meters with a <c>cos(midLatitude)</c>
-    /// correction so an east-west-wide extent at high latitude is not overstated by
-    /// ~1/cos(lat); the latitude span uses the meridian arc. The vertical
+    /// A longitude span with the western bound greater than the eastern bound is
+    /// measured the short way across the antimeridian. Longitude meters use the
+    /// prime-vertical radius at mid-latitude; latitude meters use the meridional
+    /// radius. The vertical
     /// (min/max height) extent is included in the diagonal so a tall, geographically
     /// small dataset (e.g. a single skyscraper or a cliff mesh) is not understated.
     /// The result is rounded to 6 decimals (AwayFromZero) for deterministic output
@@ -42,12 +43,19 @@ public static class GeodesicError
         double minHeight,
         double maxHeight)
     {
-        var lonSpanRad = (east - west) * Math.PI / 180.0;
+        var lonSpanDegrees = east >= west ? east - west : east + 360.0 - west;
+        var lonSpanRad = lonSpanDegrees * Math.PI / 180.0;
         var latSpanRad = (north - south) * Math.PI / 180.0;
         var midLatRad = (south + north) * 0.5 * Math.PI / 180.0;
+        var sinMid = Math.Sin(midLatRad);
+        var eccentricitySquared = EcefCoordinateTransform.WgsEccentricitySquared;
+        var curvature = Math.Pow(1.0 - (eccentricitySquared * sinMid * sinMid), 1.5);
+        var primeVertical = EcefCoordinateTransform.WgsSemiMajorAxis
+            / Math.Sqrt(1.0 - (eccentricitySquared * sinMid * sinMid));
+        var meridional = EcefCoordinateTransform.WgsSemiMajorAxis * (1.0 - eccentricitySquared) / curvature;
 
-        var lonMeters = Math.Abs(lonSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis * Math.Cos(midLatRad);
-        var latMeters = Math.Abs(latSpanRad) * EcefCoordinateTransform.WgsSemiMajorAxis;
+        var lonMeters = Math.Abs(lonSpanRad) * primeVertical * Math.Cos(midLatRad);
+        var latMeters = Math.Abs(latSpanRad) * meridional;
         var heightMeters = Math.Max(0.0, maxHeight - minHeight);
 
         var diagonal = Math.Sqrt(lonMeters * lonMeters + latMeters * latMeters + heightMeters * heightMeters);

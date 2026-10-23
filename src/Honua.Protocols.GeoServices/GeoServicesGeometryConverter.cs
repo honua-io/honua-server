@@ -3,9 +3,12 @@
 
 using System.Buffers.Binary;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NetTopologySuite;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -18,6 +21,20 @@ namespace Honua.Protocols.GeoServices;
 /// </summary>
 internal static partial class GeoServicesGeometryConverter
 {
+    /// <summary>
+    /// Curve-expansion budget used when a caller has no configured limit. Matches the
+    /// <see cref="GeometryLimits.MaxVerticesPerGeometry"/> property default.
+    /// </summary>
+    internal const int DefaultMaxCurveVertices = 50_000;
+
+    /// <summary>
+    /// Highest curve-expansion budget conversion will allocate. This is the inclusive upper
+    /// bound of <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (<c>[Range(1, 100000)]</c>).
+    /// A configured value inside that range is honored; a larger request is clamped here so a
+    /// caller cannot pass <see cref="int.MaxValue"/> and reintroduce unbounded densification.
+    /// </summary>
+    internal const int AbsoluteMaxCurveVertices = 100_000;
+
     private readonly record struct FastPointGeometry(
         double X,
         double Y,
@@ -148,19 +165,79 @@ internal static partial class GeoServicesGeometryConverter
     }
 
     /// <summary>
-    /// Converts GeoServices geometry to WKB.
+    /// Curve-expansion budget for query filters, GeometryServer, GPServer, and ImageServer.
+    /// Uses <see cref="GeometryLimits.MaxVerticesPerGeometry"/>, the same knob query admission
+    /// passes to <see cref="GeoServicesQueryGeometryMetadata"/>. Null or non-positive configuration
+    /// stays at <see cref="DefaultMaxCurveVertices"/>.
     /// </summary>
-    public static byte[] ConvertGeoServicesGeometryToWkb(GeoServicesGeometry geometry, int? srid = null)
+    internal static int ResolveCurveVertexBudget(int? configuredVertices)
+    {
+        if (configuredVertices is null or <= 0)
+        {
+            return DefaultMaxCurveVertices;
+        }
+
+        return Math.Min(configuredVertices.Value, AbsoluteMaxCurveVertices);
+    }
+
+    /// <summary>
+    /// Curve-expansion budget for stored edits. GeometryValidator rejects WKB above the
+    /// stricter of <see cref="GeometryLimits.MaxVerticesPerGeometry"/> and
+    /// <see cref="GeometryValidationOptions.MaxVertices"/>, so conversion stops at that same
+    /// minimum instead of allocating vertices the edit will discard.
+    /// </summary>
+    internal static int ResolveEditCurveVertexBudget(int? geometryMaxVertices, int? validationMaxVertices)
+    {
+        var geometryBudget = ResolveCurveVertexBudget(geometryMaxVertices);
+        if (validationMaxVertices is null or <= 0)
+        {
+            return geometryBudget;
+        }
+
+        return Math.Min(geometryBudget, validationMaxVertices.Value);
+    }
+
+    internal static int ResolveConfiguredCurveVertexBudget(IServiceProvider? services)
+        => ResolveCurveVertexBudget(
+            services?.GetService<IOptions<LimitsOptions>>()?.Value.Geometry.MaxVerticesPerGeometry);
+
+    internal static int ResolveConfiguredEditCurveVertexBudget(IServiceProvider? services)
+    {
+        var limits = services?.GetService<IOptions<LimitsOptions>>()?.Value;
+        if (limits is null)
+        {
+            return DefaultMaxCurveVertices;
+        }
+
+        return ResolveEditCurveVertexBudget(
+            limits.Geometry.MaxVerticesPerGeometry,
+            limits.Validation.MaxVertices);
+    }
+
+    /// <summary>
+    /// Converts GeoServices geometry to WKB. True curves are densified with
+    /// <paramref name="maxCurveVertices"/>, or <see cref="DefaultMaxCurveVertices"/> when that
+    /// argument is null. Values above <see cref="AbsoluteMaxCurveVertices"/> are clamped to that
+    /// supported maximum.
+    /// </summary>
+    /// <param name="geometry">GeoServices geometry to convert.</param>
+    /// <param name="srid">Optional SRID written into the WKB. Falls back to the geometry spatial reference.</param>
+    /// <param name="maxCurveVertices">Vertex budget for true-curve densification.</param>
+    public static byte[] ConvertGeoServicesGeometryToWkb(
+        GeoServicesGeometry geometry,
+        int? srid = null,
+        int? maxCurveVertices = null)
     {
         ArgumentNullException.ThrowIfNull(geometry);
 
         // True curves (curvePaths/curveRings) are densified into linear paths/rings up front so the
         // rest of the pipeline only ever deals with linear geometry. NTS/WKB cannot represent a true
         // curve, so densification is the storage representation (#1877 Part A; storage-linearization
-        // limitation documented on CurveGeometryConverter).
+        // limitation documented on CurveGeometryConverter). The budget is the caller-supplied
+        // configured limit, not a second hard-coded cap below that limit.
         if (HasTrueCurves(geometry))
         {
-            geometry = DensifyCurves(geometry);
+            geometry = DensifyCurves(geometry, ResolveCurveVertexBudget(maxCurveVertices));
         }
 
         if (IsEmptyGeometry(geometry))
@@ -285,11 +362,17 @@ internal static partial class GeoServicesGeometryConverter
         double maxX,
         double maxY)
     {
-        if (IsGeographicSrid(factory.SRID) && minX > maxX)
+        if (IsGeographicSrid(factory.SRID)
+            && GeographicEnvelope.TryNormalize(minX, minY, maxX, maxY, out var parts, out _))
         {
-            var eastHemisphere = CreateEnvelopePolygon(factory, minX, minY, 180.0, maxY);
-            var westHemisphere = CreateEnvelopePolygon(factory, -180.0, minY, maxX, maxY);
-            return factory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+            if (parts.CrossesAntimeridian)
+            {
+                var eastHemisphere = CreateEnvelopePolygon(factory, parts.West, parts.South, 180.0, parts.North);
+                var westHemisphere = CreateEnvelopePolygon(factory, -180.0, parts.South, parts.East, parts.North);
+                return factory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+            }
+
+            return CreateEnvelopePolygon(factory, parts.West, parts.South, parts.East, parts.North);
         }
 
         return factory.ToGeometry(new Envelope(minX, maxX, minY, maxY));
@@ -391,6 +474,27 @@ internal static partial class GeoServicesGeometryConverter
         return coords;
     }
 
+    private static LinearRing? FindSmallestCoveringShell(
+        List<LinearRing> shells,
+        GeometryFactory factory,
+        Func<Polygon, bool> covers)
+    {
+        LinearRing? smallestShell = null;
+        var smallestArea = double.PositiveInfinity;
+
+        foreach (var shell in shells)
+        {
+            var shellPolygon = factory.CreatePolygon(shell);
+            if (shellPolygon.Area < smallestArea && covers(shellPolygon))
+            {
+                smallestShell = shell;
+                smallestArea = shellPolygon.Area;
+            }
+        }
+
+        return smallestShell;
+    }
+
     private static Geometry CreatePolygonalGeometry(double[][][] rings, GeometryFactory factory, bool? hasZ, bool? hasM)
     {
         var shells = new List<LinearRing>();
@@ -438,17 +542,18 @@ internal static partial class GeoServicesGeometryConverter
 
         foreach (var hole in holes)
         {
-            var holePoint = factory.CreatePoint(hole.Coordinate);
-            LinearRing? assignedShell = null;
+            // Assign the hole to the smallest shell that covers the whole hole ring. Testing a single
+            // interior point is not enough: with concentric rings that point can also fall inside a
+            // nested island shell that is smaller than the hole itself.
+            var holePolygon = factory.CreatePolygon(hole);
+            var assignedShell = FindSmallestCoveringShell(shells, factory, shellPolygon => shellPolygon.Covers(holePolygon));
 
-            foreach (var shell in shells)
+            // Slightly malformed input (a hole that crosses its shell boundary) is not covered by any
+            // shell; fall back to the smallest shell that covers the hole's interior point.
+            if (assignedShell == null)
             {
-                var shellPolygon = factory.CreatePolygon(shell);
-                if (shellPolygon.Covers(holePoint))
-                {
-                    assignedShell = shell;
-                    break;
-                }
+                var holePoint = holePolygon.InteriorPoint;
+                assignedShell = FindSmallestCoveringShell(shells, factory, shellPolygon => shellPolygon.Covers(holePoint));
             }
 
             if (assignedShell == null)
@@ -783,7 +888,7 @@ internal static partial class GeoServicesGeometryConverter
         writer.WriteEndObject();
     }
 
-    private static GeoServicesSpatialReference? CreateSpatialReference(int? srid)
+    internal static GeoServicesSpatialReference? CreateSpatialReference(int? srid)
         => srid.HasValue && srid.Value > 0
             ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
             : null;
@@ -808,7 +913,7 @@ internal static partial class GeoServicesGeometryConverter
         for (var i = 0; i < multiPoint.NumGeometries; i++)
         {
             var point = (Point)multiPoint.GetGeometryN(i);
-            points[i] = BuildCoordinateArray(point.CoordinateSequence, 0);
+            points[i] = BuildCoordinateArray(point.CoordinateSequence, 0, hasZ, hasM);
         }
 
         return new GeoServicesGeometry
@@ -827,7 +932,7 @@ internal static partial class GeoServicesGeometryConverter
         {
             HasZ = hasZ,
             HasM = hasM,
-            Paths = [BuildLineCoordinates(lineString)],
+            Paths = [BuildLineCoordinates(lineString, hasZ, hasM)],
             SpatialReference = spatialReference
         };
     }
@@ -838,7 +943,7 @@ internal static partial class GeoServicesGeometryConverter
         var paths = new double[multiLineString.NumGeometries][][];
         for (var i = 0; i < multiLineString.NumGeometries; i++)
         {
-            paths[i] = BuildLineCoordinates((LineString)multiLineString.GetGeometryN(i));
+            paths[i] = BuildLineCoordinates((LineString)multiLineString.GetGeometryN(i), hasZ, hasM);
         }
 
         return new GeoServicesGeometry
@@ -857,7 +962,7 @@ internal static partial class GeoServicesGeometryConverter
         {
             HasZ = hasZ,
             HasM = hasM,
-            Rings = BuildPolygonRings(polygon).ToArray(),
+            Rings = BuildPolygonRings(polygon, hasZ, hasM).ToArray(),
             SpatialReference = spatialReference
         };
     }
@@ -869,7 +974,7 @@ internal static partial class GeoServicesGeometryConverter
         for (var i = 0; i < multiPolygon.NumGeometries; i++)
         {
             var polygon = (Polygon)multiPolygon.GetGeometryN(i);
-            rings.AddRange(BuildPolygonRings(polygon));
+            rings.AddRange(BuildPolygonRings(polygon, hasZ, hasM));
         }
 
         return new GeoServicesGeometry
@@ -935,11 +1040,11 @@ internal static partial class GeoServicesGeometryConverter
         return null;
     }
 
-    private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon)
+    private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon, bool hasZ, bool hasM)
     {
         if (polygon.ExteriorRing != null && !polygon.ExteriorRing.IsEmpty)
         {
-            yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true);
+            yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true, hasZ, hasM);
         }
 
         for (var i = 0; i < polygon.NumInteriorRings; i++)
@@ -947,14 +1052,14 @@ internal static partial class GeoServicesGeometryConverter
             var interiorRing = polygon.GetInteriorRingN(i);
             if (interiorRing != null && !interiorRing.IsEmpty)
             {
-                yield return BuildRingCoordinates(interiorRing, clockwise: false);
+                yield return BuildRingCoordinates(interiorRing, clockwise: false, hasZ, hasM);
             }
         }
     }
 
-    private static double[][] BuildRingCoordinates(LineString ring, bool clockwise)
+    private static double[][] BuildRingCoordinates(LineString ring, bool clockwise, bool hasZ, bool hasM)
     {
-        var coords = BuildLineCoordinates(ring);
+        var coords = BuildLineCoordinates(ring, hasZ, hasM);
         if (coords.Length < 4)
         {
             return coords;
@@ -969,13 +1074,13 @@ internal static partial class GeoServicesGeometryConverter
         return coords;
     }
 
-    private static double[][] BuildLineCoordinates(LineString lineString)
+    private static double[][] BuildLineCoordinates(LineString lineString, bool hasZ, bool hasM)
     {
         var sequence = lineString.CoordinateSequence;
         var coords = new double[sequence.Count][];
         for (var i = 0; i < sequence.Count; i++)
         {
-            coords[i] = BuildCoordinateArray(sequence, i);
+            coords[i] = BuildCoordinateArray(sequence, i, hasZ, hasM);
         }
 
         return coords;
@@ -1022,27 +1127,27 @@ internal static partial class GeoServicesGeometryConverter
     private const string UnsupportedGeometryMessage =
         "Invalid GeoServices JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)";
 
-    private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index)
+    /// <summary>
+    /// Builds one Esri JSON vertex. The Z and M slots are positional and follow the geometry's
+    /// <c>hasZ</c>/<c>hasM</c> flags, not the vertex: a vertex without a Z in a ZM geometry keeps a NaN Z
+    /// slot (serialized as null) so its M is not read back as the elevation.
+    /// </summary>
+    private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index, bool hasZ, bool hasM)
     {
-        var values = new List<double>(4)
+        var values = new double[2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0)];
+        values[0] = sequence.GetX(index);
+        values[1] = sequence.GetY(index);
+        if (hasZ)
         {
-            sequence.GetX(index),
-            sequence.GetY(index)
-        };
-
-        var z = sequence.GetOrdinate(index, Ordinate.Z);
-        if (!double.IsNaN(z))
-        {
-            values.Add(z);
+            values[2] = sequence.GetOrdinate(index, Ordinate.Z);
         }
 
-        var m = sequence.GetOrdinate(index, Ordinate.M);
-        if (!double.IsNaN(m))
+        if (hasM)
         {
-            values.Add(m);
+            values[hasZ ? 3 : 2] = sequence.GetOrdinate(index, Ordinate.M);
         }
 
-        return values.ToArray();
+        return values;
     }
 
 }

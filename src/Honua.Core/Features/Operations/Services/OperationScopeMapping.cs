@@ -18,6 +18,9 @@ public static class OperationScopeMapping
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (TryResolveAdminAccessOperation(request.OperationId, out operation))
+            return true;
+
         if (request.GatewayRequest is { } gateway)
         {
             operation = gateway.Kind switch
@@ -41,11 +44,13 @@ public static class OperationScopeMapping
         {
             "service.publish" or "style.apply-preset" => OperatorOperation.Publish,
             "control-plane.deploy.rollback" or "control-plane.coordinated-release.rollback" => OperatorOperation.Rollback,
-            "studio.draft.create" => OperatorOperation.Create,
-            "studio.draft.update" or "studio.draft.save-version" => OperatorOperation.Update,
-            "studio.draft.delete" => OperatorOperation.Delete,
+            "studio.draft.create" or "studio.draft.update" or "studio.draft.save-version" or
+                "studio.draft.delete" or "studio.draft.validate" or "studio.draft.preview-plan" or
+                "studio.content.reopen-version" or "studio.content.create-publication-request" or
+                "studio.content.rollback" => ResolveStudioOperation(request.OperationId),
             "admin.layer.publish" => OperatorOperation.Publish,
-            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" => OperatorOperation.Create,
+            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" or
+                "admin.import.upload-object" => OperatorOperation.Create,
             "admin.connections.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,
             "admin.layer.set-enabled" or "admin.layer.fields.set" or "admin.layer.filter.set" or
                 "admin.layer.popup-info.set" or "admin.layer.drawing-info.set" or
@@ -59,16 +64,83 @@ public static class OperationScopeMapping
         return operation != default;
     }
 
-    private static bool IsStudioOperation(string operationId)
-        => operationId is "studio.draft.create" or "studio.draft.update" or
-            "studio.draft.save-version" or "studio.draft.delete";
+    /// <summary>
+    /// Whether a scope-governed caller lacks the OAuth authority this operation requires.
+    /// An operation with no scope mapping is refused rather than allowed: a bearer cannot
+    /// invoke authority the scope catalog does not describe.
+    /// </summary>
+    public static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        return context.ScopeGoverned
+            && (context.RecognizedScopes.Count == 0
+                || context.RecognizedScopes.Any(scope =>
+                    !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
+                || !TryResolve(request, out var requiredOperation)
+                || !OperatorScopeCatalog.PermitsOperation(
+                    context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation));
+    }
 
+    private static bool IsStudioOperation(string operationId)
+        => ResolveStudioOperation(operationId) != default;
+
+    // Every Studio mutation routed through the canonical runtime needs a mapping: the dispatcher
+    // refuses any scope-governed submission it cannot map (#4722), so an unmapped identity made
+    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed
+    // (#3429). The operations mirror StudioAuthorizationService's scope ceiling.
     private static OperatorOperation ResolveStudioOperation(string operationId)
         => operationId switch
         {
-            "studio.draft.create" => OperatorOperation.Create,
+            "studio.draft.create" or "studio.content.reopen-version" => OperatorOperation.Create,
             "studio.draft.update" or "studio.draft.save-version" => OperatorOperation.Update,
             "studio.draft.delete" => OperatorOperation.Delete,
+            "studio.draft.validate" or "studio.draft.preview-plan" => OperatorOperation.Read,
+            "studio.content.create-publication-request" => OperatorOperation.Publish,
+            "studio.content.rollback" => OperatorOperation.Rollback,
             _ => default,
         };
+
+    private static bool TryResolveAdminAccessOperation(string operationId, out OperatorOperation operation)
+    {
+        var isAccessFamily = operationId.StartsWith("admin.api-key.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.role.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.user.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.tenant.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.oidc-provider.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.oauth-client.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.oauth-scope.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.rate-limit-policy.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.field-mask-policy.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.rls-policy.", StringComparison.Ordinal);
+        if (!isAccessFamily)
+        {
+            operation = default;
+            return false;
+        }
+
+        // Access-family reads expose key, user, tenant and provider inventories, so a
+        // scope-governed bearer needs read authority for them and not merely discover/create.
+        if (operationId.EndsWith(".list", StringComparison.Ordinal) ||
+            operationId.EndsWith(".get", StringComparison.Ordinal) ||
+            operationId.EndsWith(".status", StringComparison.Ordinal) ||
+            operationId.EndsWith(".test", StringComparison.Ordinal) ||
+            operationId.EndsWith(".export", StringComparison.Ordinal) ||
+            operationId.EndsWith(".effective-permissions", StringComparison.Ordinal) ||
+            operationId.EndsWith(".permissions.get", StringComparison.Ordinal))
+        {
+            operation = OperatorOperation.Read;
+            return true;
+        }
+
+        operation = operationId.EndsWith(".create", StringComparison.Ordinal) ||
+            operationId.EndsWith(".register", StringComparison.Ordinal)
+                ? OperatorOperation.Create
+                : operationId.EndsWith(".delete", StringComparison.Ordinal) ||
+                  operationId.EndsWith(".revoke", StringComparison.Ordinal) ||
+                  operationId.EndsWith(".deprovision", StringComparison.Ordinal)
+                    ? OperatorOperation.Delete
+                    : OperatorOperation.Update;
+        return true;
+    }
 }

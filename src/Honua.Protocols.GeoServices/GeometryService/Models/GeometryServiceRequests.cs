@@ -103,7 +103,18 @@ internal sealed class DensifyParameters
     public required string[] GeometryJsonStrings { get; init; }
     public string? GeometryType { get; init; }
     public int SR { get; init; }
+
+    /// <summary>
+    /// Maximum segment length. Ground meters when <see cref="Geodesic"/> is true;
+    /// spatial-reference units when it is false.
+    /// </summary>
     public double MaxSegmentLength { get; init; }
+
+    /// <summary>
+    /// When true, vertices are inserted along the WGS 84 spheroid and the result
+    /// is returned in <see cref="SR"/>. When false, densify stays planar in SR units.
+    /// </summary>
+    public bool Geodesic { get; init; }
 }
 
 /// <summary>
@@ -248,10 +259,10 @@ internal enum MeasurementCalculationType
     Geodesic,
 
     /// <summary>
-    /// Esri <c>preserveShape</c>. Honua treats this as equivalent to <see cref="Geodesic"/>:
-    /// both route through the geography measurement pipeline, so preserveShape produces a true
-    /// ground measure rather than a distinct shape-preserving projection. Documented divergence
-    /// (#2742).
+    /// Esri <c>preserveShape</c>. Edges are densified along the spheroid at about 10 km
+    /// (tighter when the geometry is smaller), transformed back to the request SR, and
+    /// measured with the planar length and area conversion. <see cref="Geodesic"/> stays
+    /// vertex-only geography measurement, so a long projected edge is one geodesic.
     /// </summary>
     PreserveShape
 }

@@ -7,11 +7,11 @@ using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
@@ -272,11 +272,18 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         int layerId,
         string fieldName,
         TemporalPropertyType propertyType)
+        => BuildTemporalExtentQuery(layerId, fieldName, propertyType, new FeatureQuery());
+
+    public ParameterizedQuery BuildTemporalExtentQuery(
+        int layerId,
+        string fieldName,
+        TemporalPropertyType propertyType,
+        FeatureQuery query)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
         ValidateFieldName(fieldName);
 
-        var fieldExpression = $"\"{fieldName}\"";
+        var fieldExpression = DuckDBExternalSourceSql.QuoteIdentifier(fieldName);
 
         var sb = new StringBuilder();
         sb.Append(CultureInfo.InvariantCulture,
@@ -286,7 +293,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             WHERE {fieldExpression} IS NOT NULL
             """);
 
-        return new ParameterizedQuery(sb.ToString(), []);
+        var parameters = new List<object>();
+        var paramIndex = 1;
+        AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
+        return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
     /// <inheritdoc />
@@ -313,7 +323,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             foreach (var field in query.GroupByFields.Value)
             {
                 ValidateFieldName(field);
-                groupByColumns.Add($"\"{field}\"");
+                groupByColumns.Add(DuckDBExternalSourceSql.QuoteIdentifier(field));
             }
         }
 
@@ -377,7 +387,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
             {
                 ValidateFieldName(stat.OutStatisticFieldName);
-                return $"\"{stat.OutStatisticFieldName}\"";
+                return DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
             }
         }
 
@@ -388,7 +398,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
                 if (groupByField.Equals(field, StringComparison.OrdinalIgnoreCase))
                 {
                     ValidateFieldName(groupByField);
-                    return $"\"{groupByField}\"";
+                    return DuckDBExternalSourceSql.QuoteIdentifier(groupByField);
                 }
             }
         }
@@ -425,13 +435,13 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         var geometryExpr = BuildGeometryWkbExpression(mapping, query);
         var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
-        var partitionFields = string.Join(", ", topFilter.GroupByFields.Select(f => $"\"{f}\""));
+        var partitionFields = string.Join(", ", topFilter.GroupByFields.Select(DuckDBExternalSourceSql.QuoteIdentifier));
 
         var orderByExprs = new List<string>();
         foreach (var orderBy in topFilter.OrderByFields)
         {
             var dir = orderBy.Ascending ? "ASC" : "DESC";
-            orderByExprs.Add($"\"{orderBy.Field}\" {dir}");
+            orderByExprs.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(orderBy.Field)} {dir}");
         }
 
         var orderByStr = string.Join(", ", orderByExprs);
@@ -475,7 +485,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var paramIndex = 1;
 
         ValidateFieldName(dateBin.BinField);
-        var fieldExpr = $"\"{dateBin.BinField}\"";
+        var fieldExpr = DuckDBExternalSourceSql.QuoteIdentifier(dateBin.BinField);
 
         string binExpr;
         if (dateBin.IsCalendarBin && dateBin.CalendarUnit != null)
@@ -531,7 +541,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var paramIndex = 1;
 
         ValidateFieldName(binDefinition.Field);
-        var fieldExpr = $"\"{binDefinition.Field}\"";
+        var fieldExpr = DuckDBExternalSourceSql.QuoteIdentifier(binDefinition.Field);
 
         if (binDefinition.Type == BinType.Date && binDefinition.DateBin is { } dateBinDef)
         {
@@ -763,18 +773,24 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             return string.Empty;
         }
 
+        // Null/default OutFields projects every column. An explicit empty array projects
+        // none. IsEmpty throws on a default ImmutableArray, so test IsDefault first.
         IEnumerable<string> columns;
-        if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+        if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
+        {
+            columns = mapping.AttributeColumns;
+        }
+        else if (query.OutFields.Value.IsEmpty)
+        {
+            return string.Empty;
+        }
+        else
         {
             var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
             columns = mapping.AttributeColumns.Where(c => requested.Contains(c));
         }
-        else
-        {
-            columns = mapping.AttributeColumns;
-        }
 
-        return string.Join(", ", columns.Select(c => $"\"{c}\""));
+        return string.Join(", ", columns.Select(DuckDBExternalSourceSql.QuoteAttribute));
     }
 
     private static void AppendWhereClause(
@@ -787,7 +803,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         if (query.TextSearch is { } search)
         {
             var searchIndex = paramIndex;
-            var predicate = FeatureTextSearchSql.Build(search, field => { EnsureFieldIsConfigured(field, mapping); ValidateFieldName(field); return "\u0022" + field + "\u0022"; }, text =>
+            var predicate = FeatureTextSearchSql.Build(search, field => { EnsureFieldIsConfigured(field, mapping); ValidateFieldName(field); return DuckDBExternalSourceSql.QuoteIdentifier(field); }, text =>
             {
                 var marker = "$" + (searchIndex++).ToString(CultureInfo.InvariantCulture);
                 parameters.Add(text);
@@ -1048,8 +1064,8 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         {
             ValidateFieldName(stat.OnStatisticField);
             ValidateFieldName(stat.OutStatisticFieldName);
-            var fieldExpr = $"\"{stat.OnStatisticField}\"";
-            var alias = $"\"{stat.OutStatisticFieldName}\"";
+            var fieldExpr = DuckDBExternalSourceSql.QuoteIdentifier(stat.OnStatisticField);
+            var alias = DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
             var statExpr = stat.StatisticType switch
             {
                 StatisticType.Count => $"COUNT({fieldExpr})",
@@ -1180,7 +1196,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
     {
         // Use direct column references for DuckDB (no JSONB path expressions)
         // Delegate to shared WHERE parsing with DuckDB column mapping
-        var expressions = SplitOnAnd(whereClause);
+        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
         if (expressions.Count == 0)
         {
             throw new ArgumentException("WHERE clause format not supported.");
@@ -1214,7 +1230,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
                 EnsureFieldIsConfigured(field, mapping);
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                parameterizedExpressions.Add($"\"{field}\" IS {notClause}NULL");
+                parameterizedExpressions.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(field)} IS {notClause}NULL");
                 continue;
             }
 
@@ -1229,7 +1245,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
                 var valueToken = compMatch.Groups["value"].Value;
                 var value = ParseValueToken(valueToken);
 
-                parameterizedExpressions.Add($"\"{field}\" {op} ${paramIndex++}");
+                parameterizedExpressions.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(field)} {op} ${paramIndex++}");
                 parameters.Add(value);
                 continue;
             }
@@ -1278,61 +1294,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return valueToken;
     }
 
-    private static List<string> SplitOnAnd(string whereClause)
-    {
-        var parts = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var i = 0; i < whereClause.Length; i++)
-        {
-            var c = whereClause[i];
-            if (!inQuotes && c == '\'')
-            {
-                inQuotes = true;
-                current.Append(c);
-            }
-            else if (inQuotes && c == '\'')
-            {
-                if (i + 1 < whereClause.Length && whereClause[i + 1] == '\'')
-                {
-                    current.Append("''");
-                    i++;
-                }
-                else
-                {
-                    inQuotes = false;
-                    current.Append(c);
-                }
-            }
-            else if (!inQuotes && i + 3 <= whereClause.Length &&
-                     whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
-            {
-                parts.Add(current.ToString());
-                current.Clear();
-                i += 2;
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-
-        if (current.Length > 0)
-        {
-            parts.Add(current.ToString());
-        }
-
-        return parts;
-    }
-
-    // Identifier-boundary helper used by SplitOnAnd. Mirrors the regex character class
-    // for SQL/column identifiers: letters, digits, and underscore. This prevents splitting
-    // on embedded 'and' inside column names such as 'start_and_end'.
-    private static bool IsIdentifierChar(char c)
-        => char.IsLetterOrDigit(c) || c == '_';
 
     /// <summary>
     /// Builds the SQL expression for a spatial filter geometry parameter, transforming

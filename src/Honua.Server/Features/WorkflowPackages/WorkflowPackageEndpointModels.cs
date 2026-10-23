@@ -24,6 +24,11 @@ internal sealed record PublishWorkflowPackageRequest
     public bool Enabled { get; init; } = true;
 }
 
+internal sealed record SetWorkflowPublicationStatusRequest
+{
+    public required WorkflowPublicationStatus Status { get; init; }
+}
+
 internal sealed record RunWorkflowPublicationRequest
 {
     public string? IdempotencyKey { get; init; }

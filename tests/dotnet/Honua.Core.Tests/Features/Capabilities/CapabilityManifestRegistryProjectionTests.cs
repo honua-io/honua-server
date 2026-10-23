@@ -70,6 +70,9 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "publication.metadata-release",
         "upload.file",
         "edit.features",
+        "collaboration.feature-locks",
+        "collaboration.feature-locks.cross-node",
+        "edit.geoservices-version-tokens",
         "versioning.branch",
         "operate.status",
     ];
@@ -79,6 +82,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
             && !descriptor.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal)
             && !descriptor.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal);
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("serve.geoservices-imageserver")]
     [InlineData("serve.wmts")]
@@ -91,6 +95,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         Registry.Resolve(id, CapabilityGateContext.Default).Enabled.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_ManifestDescriptors_MatchFrozenRosterInOrder()
     {
@@ -141,6 +146,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "serve.ogc-api-coverages",
     ];
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_ExperimentalManifestDescriptors_AreOmittedWhenFlagOff()
     {
@@ -161,6 +167,60 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
+    // Declared 2026.1 implementation gaps (#4402): present in the manifest roster on
+    // purpose so a client can read the gap off `capabilities[]`, but never served.
+    private static readonly string[] KnownGapManifestCapabilityIds =
+    [
+        "collaboration.feature-locks.cross-node",
+        "edit.geoservices-version-tokens",
+    ];
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Registry_KnownGapManifestDescriptors_AreDeclaredAndAlwaysRefused()
+    {
+        foreach (var id in KnownGapManifestCapabilityIds)
+        {
+            var descriptor = Registry.Find(id);
+            descriptor.Should().NotBeNull($"{id} is declared so the gap is discoverable");
+            descriptor!.Maturity.Should().Be(CapabilityMaturity.Planned, $"{id} is not built in 2026.1");
+            descriptor.ImplementationStatus.Should().Be(
+                CapabilityImplementationStatus.KnownGap,
+                $"{id} must be refused by every gate, not merely undocumented");
+
+            // Flags on or off, a declared gap can never be turned into a served capability.
+            foreach (var context in new[]
+            {
+                CapabilityGateContext.Default,
+                new CapabilityGateContext { ExperimentalFlags = new CapabilityFlagOptions { Enabled = true } },
+            })
+            {
+                var resolution = CapabilityGateResolver.Resolve(descriptor, context);
+                resolution.Enabled.Should().BeFalse($"{id} is a declared implementation gap");
+                resolution.ReasonCode.Should().Be(CapabilityReasonCodes.NotImplemented);
+            }
+        }
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Registry_NonGapManifestDescriptors_AreAllServed()
+    {
+        // The KnownGap status is granted by maturity == Planned, so nothing else in the
+        // roster may quietly acquire it.
+        var gaps = KnownGapManifestCapabilityIds.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var descriptor in Registry.All.Where(IsManifestCapability))
+        {
+            descriptor.ImplementationStatus.Should().Be(
+                gaps.Contains(descriptor.Id)
+                    ? CapabilityImplementationStatus.KnownGap
+                    : CapabilityImplementationStatus.Served,
+                $"{descriptor.Id}");
+        }
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_InReleaseManifestDescriptors_StayImplemented_AndAreNeverOmitted()
     {
@@ -170,10 +230,13 @@ public sealed class CapabilityManifestRegistryProjectionTests
         var context = CapabilityGateContext.Default;
         var experimental = ExperimentalManifestCapabilityIds.ToHashSet(StringComparer.Ordinal);
         var preview = PreviewManifestCapabilityIds.ToHashSet(StringComparer.Ordinal);
+        var gaps = KnownGapManifestCapabilityIds.ToHashSet(StringComparer.Ordinal);
 
         foreach (var descriptor in Registry.All.Where(IsManifestCapability))
         {
-            if (experimental.Contains(descriptor.Id) || preview.Contains(descriptor.Id))
+            // Declared gaps are covered by Registry_KnownGapManifestDescriptors_AreDeclaredAndAlwaysRefused,
+            // which asserts the stronger property: they resolve DISABLED, always.
+            if (experimental.Contains(descriptor.Id) || preview.Contains(descriptor.Id) || gaps.Contains(descriptor.Id))
             {
                 continue;
             }
@@ -188,6 +251,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("package.metadata-v2", MetadataV2Constants.SchemaVersion)]
     [InlineData("package.release-package", MetadataV2Constants.ApiVersion)]
@@ -205,6 +269,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         descriptor.PackageSchemaVersion.Should().Be(expectedSchemaVersion);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_NonPackageManifestDescriptors_HaveNullPackageSchemaVersion()
     {
@@ -219,6 +284,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GateResolver_OmitMechanism_PresentWhenImplemented_AbsentWhenExperimentalFlagOff()
     {
@@ -236,6 +302,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         experimentalOff.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GateResolver_OmitMechanism_PresentWhenExperimentalFlagOn()
     {

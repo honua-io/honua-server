@@ -47,7 +47,12 @@ internal static class ConsoleSharePublicEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            // NoCache is required (SEC-20), matching the open-data sibling: the share
+            // token is the bearer of authorization and its tier, expiry and revocation
+            // are mutable, so a stored 200 would keep a revoked or downgraded link
+            // resolving for the cache TTL. Every request must re-resolve the token.
+            .CacheOutput(static policy => policy.NoCache());
 
         group.MapGet("/link/{token}", HandleResolvePublicLink)
             .WithDisplayName("Resolve Console Public-Link Token")
@@ -91,6 +96,15 @@ internal static class ConsoleSharePublicEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure(LinkDeniedMessage));
             }
 
+            // Public-indexed exposure follows membership. A later content update
+            // that narrows visibility must not keep resolving the anonymous link.
+            var effectiveTier = ConsoleShareMapper.CapToVisibility(resolution.AccessTier, item.Visibility);
+            if (!CoversPublicLink(effectiveTier))
+            {
+                ConsoleShareEndpointsLog.PublicLinkResolveDenied(logger);
+                return TypedResults.NotFound(ApiResponse<object>.Failure(LinkDeniedMessage));
+            }
+
             ConsoleShareEndpointsLog.PublicLinkResolveGranted(logger, resolution.TokenId, resolution.ItemId);
             return TypedResults.Ok(ApiResponse<ConsolePublicLinkResolutionResponse>.CreateSuccess(new ConsolePublicLinkResolutionResponse
             {
@@ -98,7 +112,7 @@ internal static class ConsoleSharePublicEndpoints
                 ItemType = item.ItemType,
                 Title = item.Title,
                 Summary = item.Description,
-                AccessTier = resolution.AccessTier,
+                AccessTier = effectiveTier,
                 Endpoints = ConsoleShareMapper.BuildEndpoints(item.Id),
             }));
         }

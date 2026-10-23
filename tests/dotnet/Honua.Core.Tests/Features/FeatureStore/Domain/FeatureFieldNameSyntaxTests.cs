@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
 public sealed class FeatureFieldNameSyntaxTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name")]
     [InlineData("field_2")]
@@ -19,6 +20,7 @@ public sealed class FeatureFieldNameSyntaxTests
         FeatureFieldNameSyntax.IsValid(fieldName).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]

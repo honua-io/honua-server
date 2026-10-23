@@ -161,7 +161,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
         // strong reference to them survives; without this list the GC is free to collect them
         // between creation and the /metrics scrape below, and every observable-kind entry would
         // silently drop out of the exposition — turning this guard green over metrics it never
-        // actually checked. Its contents are deliberately never read; do not "clean it up".
+        // actually checked. The list is read after the scrape so this reference stays live.
         var observableProbes = new List<object>();
 
         foreach (var entry in contract)
@@ -203,6 +203,10 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
 
         var response = await client.GetAsync("/metrics");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Read after the scrape so the state machine keeps every observable
+        // probe alive across the await. An empty anchor is valid when the
+        // contract has no observable instruments.
+        observableProbes.Should().OnlyContain(probe => probe != null);
         var exported = ParseSeriesNames(await response.Content.ReadAsStringAsync());
 
         var drifted = new List<string>();
@@ -253,6 +257,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
         var unresolved = new List<string>();
         var scanned = 0;
 
+        // codeql[cs/linq/missed-where]: counts every expression and records unresolved series references
         foreach (var (path, expression) in CommittedPromqlExpressions())
         {
             scanned++;
@@ -313,6 +318,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
     private static HashSet<string> ParseSeriesNames(string exposition)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-select]: skips blank and comment lines while collecting series names
         foreach (var raw in exposition.Split('\n'))
         {
             var line = raw.Trim();

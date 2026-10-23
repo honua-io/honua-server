@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -17,11 +18,16 @@ internal sealed class PostgresAuditLogIntegrityVerifier : IAuditLogIntegrityVeri
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
+    private readonly byte[] _chainKey;
 
-    public PostgresAuditLogIntegrityVerifier(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresAuditLogIntegrityVerifier(
+        IAdoNetDatabaseConnectionProvider connectionProvider,
+        string? schemaName = null,
+        ReadOnlyMemory<byte> chainKey = default)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _table = SchemaSearchPath.QualifyTable("audit_log", schemaName);
+        _chainKey = chainKey.ToArray();
     }
 
     public async Task<AuditIntegrityReport> VerifyAsync(CancellationToken cancellationToken = default)
@@ -38,93 +44,38 @@ internal sealed class PostgresAuditLogIntegrityVerifier : IAuditLogIntegrityVeri
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
-        long rowsChecked = 0;
-        long unhashedRows = 0;
-        string? expectedPrevHash = null;
-        var chainStarted = false;
+        var cursor = new AuditChainVerificationCursor();
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            rowsChecked++;
-
-            var auditId = reader.GetInt64(0);
-            var storedPrevHash = reader.IsDBNull(13) ? null : reader.GetString(13);
-            var storedEntryHash = reader.IsDBNull(14) ? null : reader.GetString(14);
-
-            if (storedEntryHash is null)
+            var link = new AuditChainLink
             {
-                // Row predates migration 069 — counted but not part of the chain.
-                unhashedRows++;
-                continue;
-            }
+                AuditId = reader.GetInt64(0),
+                Timestamp = reader.GetFieldValue<DateTimeOffset>(1),
+                EventType = ParseEnum(reader.GetString(2), AuditEventType.AdminAction),
+                Actor = reader.GetString(3),
+                ActorType = ParseEnum(reader.GetString(4), AuditActorType.Anonymous),
+                ResourceType = reader.GetString(5),
+                ResourceId = reader.IsDBNull(6) ? null : reader.GetString(6),
+                Action = reader.GetString(7),
+                Outcome = ParseEnum(reader.GetString(8), AuditOutcome.Failure),
+                CorrelationId = reader.GetString(9),
+                RemoteIp = reader.IsDBNull(10) ? null : reader.GetString(10),
+                UserAgent = reader.IsDBNull(11) ? null : reader.GetString(11),
+                Details = reader.IsDBNull(12) ? string.Empty : reader.GetString(12),
+                PreviousHash = reader.IsDBNull(13) ? null : reader.GetString(13),
+                EntryHash = reader.IsDBNull(14) ? null : reader.GetString(14),
+            };
 
-            // The prev_hash of each hashed row must link to the previous hashed
-            // row's entry_hash (or be NULL for the genesis hashed row). A break
-            // here means a row was deleted or reordered.
-            if (!chainStarted)
+            var failure = cursor.Observe(link, _chainKey);
+            if (failure is not null)
             {
-                chainStarted = true;
+                return failure;
             }
-            else if (!string.Equals(storedPrevHash, expectedPrevHash, StringComparison.Ordinal))
-            {
-                return Broken(rowsChecked, unhashedRows, auditId,
-                    $"prev_hash mismatch at audit_id {auditId}: chain link broken (row deleted or reordered).");
-            }
-
-            var timestamp = reader.GetFieldValue<DateTimeOffset>(1);
-            var eventType = ParseEnum(reader.GetString(2), AuditEventType.AdminAction);
-            var actor = reader.GetString(3);
-            var actorType = ParseEnum(reader.GetString(4), AuditActorType.Anonymous);
-            var resourceType = reader.GetString(5);
-            var resourceId = reader.IsDBNull(6) ? null : reader.GetString(6);
-            var action = reader.GetString(7);
-            var outcome = ParseEnum(reader.GetString(8), AuditOutcome.Failure);
-            var correlationId = reader.GetString(9);
-            var remoteIp = reader.IsDBNull(10) ? null : reader.GetString(10);
-            var userAgent = reader.IsDBNull(11) ? null : reader.GetString(11);
-            var details = reader.IsDBNull(12) ? string.Empty : reader.GetString(12);
-
-            var recomputed = AuditEntryHasher.ComputeEntryHash(
-                storedPrevHash,
-                timestamp,
-                eventType,
-                actor,
-                actorType,
-                resourceType,
-                resourceId,
-                action,
-                outcome,
-                correlationId,
-                remoteIp,
-                userAgent,
-                details);
-
-            if (!string.Equals(recomputed, storedEntryHash, StringComparison.Ordinal))
-            {
-                return Broken(rowsChecked, unhashedRows, auditId,
-                    $"entry_hash mismatch at audit_id {auditId}: row contents were altered after write.");
-            }
-
-            expectedPrevHash = storedEntryHash;
         }
 
-        return new AuditIntegrityReport
-        {
-            Verified = true,
-            RowsChecked = rowsChecked,
-            UnhashedRows = unhashedRows,
-        };
+        return cursor.Complete(_chainKey);
     }
-
-    private static AuditIntegrityReport Broken(long rowsChecked, long unhashedRows, long auditId, string reason)
-        => new()
-        {
-            Verified = false,
-            RowsChecked = rowsChecked,
-            UnhashedRows = unhashedRows,
-            FirstBrokenAuditId = auditId,
-            FailureReason = reason,
-        };
 
     private static TEnum ParseEnum<TEnum>(string value, TEnum fallback) where TEnum : struct
         => Enum.TryParse<TEnum>(value, ignoreCase: false, out var parsed) ? parsed : fallback;

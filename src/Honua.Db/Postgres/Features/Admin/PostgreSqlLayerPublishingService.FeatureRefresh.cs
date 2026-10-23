@@ -22,9 +22,16 @@ namespace Honua.Db.Postgres.Features.Admin;
 internal sealed partial class PostgreSqlLayerPublishingService
 {
     /// <inheritdoc/>
+    public Task<MaterializedFeatureRefreshResult?> RefreshMaterializedFeaturesAsync(
+        string connectionString,
+        int layerId,
+        CancellationToken cancellationToken = default)
+        => RefreshMaterializedFeaturesAsync(connectionString, layerId, null, cancellationToken);
+
     public async Task<MaterializedFeatureRefreshResult?> RefreshMaterializedFeaturesAsync(
         string connectionString,
         int layerId,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -39,15 +46,37 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        return await RebuildLayerSnapshotAsync(connectionString, metadata, cancellationToken)
+        var storageScope = new LayerStorageScope(connectionId,
+            metadata.IsManagedStore ? new HashSet<int> { layerId } : null);
+        await ValidateTenantAccessAsync(null, new HashSet<int> { layerId }, storageScope, cancellationToken).ConfigureAwait(false);
+
+        if (metadata.IsManagedStore)
+        {
+            // A managed-store layer has no source table: its rows ARE the managed store and
+            // carry the layer's edits, so rebuilding them would delete every edit
+            // (honua-server#4859).
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                $"Layer {layerId.ToString(CultureInfo.InvariantCulture)} keeps its features in the managed feature store and has no source table to refresh from.");
+        }
+
+        return await RebuildLayerSnapshotAsync(connectionString, metadata, connectionId, cancellationToken)
             .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
+    public Task<IReadOnlyList<MaterializedFeatureRefreshResult>> RefreshMaterializedFeaturesForSourceTableAsync(
+        string connectionString,
+        string? schema,
+        string table,
+        CancellationToken cancellationToken = default)
+        => RefreshMaterializedFeaturesForSourceTableAsync(connectionString, schema, table, null, cancellationToken);
+
     public async Task<IReadOnlyList<MaterializedFeatureRefreshResult>> RefreshMaterializedFeaturesForSourceTableAsync(
         string connectionString,
         string? schema,
         string table,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -64,10 +93,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return [];
         }
 
+        await ValidateTenantAccessAsync(null, layerMetadata.Select(metadata => metadata.LayerId).ToHashSet(), new LayerStorageScope(connectionId), cancellationToken)
+            .ConfigureAwait(false);
+
         var results = new List<MaterializedFeatureRefreshResult>(layerMetadata.Count);
         foreach (var metadata in layerMetadata)
         {
-            var result = await RebuildLayerSnapshotAsync(connectionString, metadata, cancellationToken)
+            var result = await RebuildLayerSnapshotAsync(connectionString, metadata, connectionId, cancellationToken)
                 .ConfigureAwait(false);
             if (result != null)
             {
@@ -81,8 +113,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<MaterializedFeatureRefreshResult?> RebuildLayerSnapshotAsync(
         string connectionString,
         MaterializeRefreshMetadata metadata,
-        CancellationToken cancellationToken)
+        Guid? connectionId, CancellationToken cancellationToken)
     {
+        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, new LayerStorageScope(connectionId), cancellationToken).ConfigureAwait(false);
         // Re-introspect the live source table so the rebuilt snapshot picks up any source
         // schema changes and so the projected attributes match what the layer published.
         var tableInfo = await ResolveTableInfoAsync(
@@ -105,7 +138,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // Keep delete-and-copy atomic, with one source snapshot across all pages.
+        await using var transaction = await connection.BeginTransactionAsync(
+            System.Data.IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
 
         await DeleteLayerFeaturesAsync(connection, transaction, metadata.LayerId, cancellationToken)
             .ConfigureAwait(false);
@@ -119,9 +154,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 metadata.GeometryColumn,
                 metadata.Srid,
                 attributeColumns,
+                featuresSchema: null,
                 cancellationToken)
             .ConfigureAwait(false);
 
+        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, new LayerStorageScope(connectionId), cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         Log.LayerSnapshotRefreshed(_logger, metadata.LayerId, materializedCount);
@@ -167,7 +204,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return selected;
     }
 
-    private static async Task DeleteLayerFeaturesAsync(
+    private async Task DeleteLayerFeaturesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
@@ -182,7 +219,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@layerId", layerId);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteSnapshotCommandAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<MaterializeRefreshMetadata?> ResolveMaterializeRefreshMetadataByIdAsync(
@@ -200,9 +237,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 table_schema,
                 table_name,
                 geometry_column,
-                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid
+                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
+                COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
-            WHERE layer_id = @layerId;
+            WHERE layer_id = @layerId
+              AND COALESCE(storage_options->>'managedCopy', 'false') <> 'true';
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -244,10 +283,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 table_schema,
                 table_name,
                 geometry_column,
-                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid
+                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
+                COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
             WHERE table_name = @table
               AND (@schema IS NULL OR table_schema = @schema)
+              AND NULLIF(geometry_column, '') IS NOT NULL
+              -- Managed-store layers own their rows; a source-table refresh must never
+              -- rebuild them (honua-server#4859).
+              AND COALESCE(storage_options ->> 'managedStore', 'false') <> 'true'
             ORDER BY layer_id;
             """;
 
@@ -313,6 +357,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetString(3),
             reader.GetString(4),
             reader.GetInt32(5),
+            reader.GetBoolean(6),
             []);
     }
 
@@ -347,5 +392,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string Table,
         string GeometryColumn,
         int Srid,
+        bool IsManagedStore,
         IReadOnlyList<string> FieldNames);
 }

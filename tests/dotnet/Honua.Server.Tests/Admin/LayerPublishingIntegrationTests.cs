@@ -7,21 +7,29 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Models;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using Honua.Core.Features.Licensing.Domain;
@@ -35,7 +43,7 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
+public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
 {
     private static readonly string[] _idNameFields = ["id", "name"];
     private static readonly string[] _idNamePopulationFields = ["id", "name", "population"];
@@ -55,13 +63,38 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     private string _tableName = string.Empty;
     private string _nonCanonicalIdTableName = string.Empty;
     private string _serviceName = string.Empty;
+    private string? _retainedSourceServiceName;
     private int? _layerId;
+    private bool _missingLayerSrid;
     private string? _importedTableName;
     private string? _importedTableSchema;
 
     public async Task InitializeAsync()
     {
+        _fixture.DecorateService<IFeatureCacheManager>(inner =>
+            new MissingSridCacheManager(inner, layerId => _missingLayerSrid && layerId == _layerId));
+        // Program skips provider infrastructure in Test, and WebAppFixture installs
+        // the graph provider after AddServerFeatures has run. Register the same
+        // catalog-only MCP surface after that fixture provider composition.
+        _fixture.ConfigureServices(services =>
+        {
+            services.AddMcpCatalogPublicationSurface();
+            // Publication metadata is stored in the canonical honua schema. Use its
+            // production attachment authority as well; the fixture's isolated feature
+            // schema is not a second attachment authority for these publications.
+            services.RemoveAll<PostgresAttachmentStore>();
+            services.AddScoped(serviceProvider => new PostgresAttachmentStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetService<ICloudFileStorage>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
+                schemaName: "honua",
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+                attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                    ?? new AttachmentLimits(),
+                migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
+        });
         await _fixture.InitializeAsync();
+        await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         _client = _fixture.CreateAdminClient();
         _schema = PublishSchema;
         _tableName = $"layer_{Guid.NewGuid():N}";
@@ -79,6 +112,114 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await DropPostGisTableAsync();
         await DropImportedTableAsync();
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData("", true)]
+    [InlineData(",\"enabled\":true", true)]
+    [InlineData(",\"enabled\":false", false)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task PublishLayer_RawEnabledProperty_PreservesDefaultAndActualReadback(
+        string enabledProperty, bool expectedEnabled)
+    {
+        var json = $$"""
+            {
+              "schema": "{{_schema}}",
+              "table": "{{_tableName}}",
+              "layerName": "Layer {{_tableName}}",
+              "serviceName": "{{_serviceName}}",
+              "geometryColumn": "geom",
+              "geometryType": "Point",
+              "srid": 4326,
+              "primaryKey": "id",
+              "fields": ["id", "name", "population"]{{enabledProperty}}
+            }
+            """;
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers", content);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {payload}");
+        var api = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions);
+        api.Should().NotBeNull();
+        api!.Success.Should().BeTrue();
+        api.Data.Should().NotBeNull();
+        var layer = api.Data!;
+        _layerId = layer.LayerId;
+
+        layer.Enabled.Should().Be(expectedEnabled);
+        layer.ServiceName.Should().Be(_serviceName);
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        if (expectedEnabled)
+        {
+            // The expected row and geometry come from our independent database seed.
+            await AssertPublishedCollectionServesSeedRowOnlyAsync(layer.LayerId);
+        }
+        else
+        {
+            using var itemsResponse = await _client.GetAsync(
+                $"/ogc/features/collections/{layer.LayerId}/items?f=json&limit=10");
+            itemsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                await itemsResponse.Content.ReadAsStringAsync());
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
+    public async Task QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership(bool managed)
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        var layer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = "Scoped mutation",
+            ServiceName = _serviceName,
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            StorageMode = managed ? "managed" : "source",
+            Enabled = true
+        });
+        _layerId = layer.LayerId;
+        var expectedConnection = managed ? null : _connectionId.ToString("D");
+        var before = _fixture.GetCurrentV2GraphSnapshot();
+        var binding = before.Graph.StorageBindings.Single(item =>
+            item.StorageLayerId == layer.LayerId && item.ConnectionId == expectedConnection);
+        var route = $"/api/v1/admin/connections/{_connectionId}/layers";
+
+        using var disabled = await _client.PutAsync($"{route}/{layer.LayerId}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
+        disabled.StatusCode.Should().Be(HttpStatusCode.OK, await disabled.Content.ReadAsStringAsync());
+        var retired = _fixture.GetCurrentV2GraphSnapshot();
+        retired.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        retired.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+
+        using var enabled = await _client.PutAsync($"{route}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = true }, options: _jsonOptions));
+        enabled.StatusCode.Should().Be(HttpStatusCode.OK, await enabled.Content.ReadAsStringAsync());
+        using var refreshed = await _client.PostAsync($"{route}/extents/refresh?serviceName={_serviceName}", null);
+        refreshed.StatusCode.Should().Be(HttpStatusCode.OK, await refreshed.Content.ReadAsStringAsync());
+        var active = _fixture.GetCurrentV2GraphSnapshot();
+        active.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).ConnectionId.Should().Be(expectedConnection);
+        active.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+        active.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Spatial!.Bbox.Should().NotBeNull();
     }
 
     [IntegrationTest]
@@ -607,7 +748,9 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
         failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        await SetPublishedStacStorageLayerIdAsync(storageLayerId);
+        // #5827: a plain TEXT stac_id column is not an item identity by name alone; the
+        // resource must declare it (extensions.stac.idField) for it to win over the key.
+        await SetPublishedStacStorageLayerIdAsync(storageLayerId, declaredStacIdField: "stac_id");
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
         await InsertCanonicalIdCollisionAsync();
 
@@ -671,8 +814,10 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 .Be(0);
         }
 
+        // #5827: a blank declared id publishes the object id; item_id is no longer a
+        // second-precedence identity.
         var blankCanonicalIdSearchResponse = await _client.GetAsync(
-            $"/stac/search?collections={collectionId}&ids=fallback-item&limit=10");
+            $"/stac/search?collections={collectionId}&ids=901&limit=10");
         var blankCanonicalIdSearchPayload = await blankCanonicalIdSearchResponse.Content.ReadAsStringAsync();
         blankCanonicalIdSearchResponse.StatusCode.Should().Be(
             HttpStatusCode.OK,
@@ -684,11 +829,11 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 .EnumerateArray()
                 .Select(feature => feature.GetProperty("id").ToString())
                 .Should()
-                .Equal("fallback-item");
+                .Equal("901");
         }
 
         var multipleIdSearchResponse = await _client.GetAsync(
-            $"/stac/search?collections={collectionId}&ids=123,fallback-item&limit=10");
+            $"/stac/search?collections={collectionId}&ids=123,901&limit=10");
         var multipleIdSearchPayload = await multipleIdSearchResponse.Content.ReadAsStringAsync();
         multipleIdSearchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {multipleIdSearchPayload}");
         using (var multipleIdSearchDocument = JsonDocument.Parse(multipleIdSearchPayload))
@@ -698,7 +843,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 .EnumerateArray()
                 .Select(feature => feature.GetProperty("id").ToString())
                 .Should()
-                .BeEquivalentTo(["123", "fallback-item"]);
+                .BeEquivalentTo(["123", "901"]);
         }
 
         var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
@@ -1195,6 +1340,28 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task RefreshMaterializedFeaturesForSourceTable_WithoutSchema_RebuildsPublishedSnapshot()
     {
+        // A same-named nonspatial publication sorts first. Skipping it must not
+        // terminate the refresh scan before the later spatial publication.
+        var nonSpatialSchema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Test schema was not initialized.");
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                CREATE TABLE "{nonSpatialSchema}"."{_tableName}" (id integer PRIMARY KEY, name text);
+                INSERT INTO "{nonSpatialSchema}"."{_tableName}" VALUES (1, 'Attribute-only parent');
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        var nonSpatial = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = nonSpatialSchema,
+            Table = _tableName,
+            LayerName = $"Table {_tableName}",
+            PrimaryKey = "id",
+            Fields = ["id", "name"],
+            ServiceName = _serviceName,
+            Enabled = true
+        });
         var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -1222,9 +1389,668 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             schema: null,
             _tableName);
 
+        nonSpatial.LayerId.Should().BeLessThan(layerId);
+        refreshed.Should().NotContain(result => result.LayerId == nonSpatial.LayerId);
         refreshed.Should().ContainSingle(result =>
             result.LayerId == layerId && result.MaterializedFeatureCount == 2);
         (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted()
+    {
+        // honua-server#4707. A published layer serves features from the live source table
+        // while the managed feature writer only ever writes the shared `features` table.
+        // An insert accepted on this collection therefore landed in the publish-time
+        // snapshot, answered 201 Created, and was never readable back through any protocol.
+        // The write surface now refuses it instead of acknowledging a lost write.
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "OGC API Features insert routing regression test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true
+        });
+        _layerId = publishedLayer.LayerId;
+
+        // Expected state computed from the fixture's own seed, not from a response snapshot:
+        // CreatePostGisTableAsync inserts exactly one row, ('Test Feature', 100, POINT(1 1)).
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+
+        const string insertBody = """
+            {
+              "type": "Feature",
+              "geometry": { "type": "Point", "coordinates": [2.5, 3.5] },
+              "properties": { "name": "Phantom Feature", "population": 999 }
+            }
+            """;
+        using var insertContent = new StringContent(insertBody, Encoding.UTF8, "application/geo+json");
+        var insertResponse = await _client.PostAsync(
+            $"/ogc/features/collections/{_layerId}/items",
+            insertContent);
+
+        var insertPayload = await insertResponse.Content.ReadAsStringAsync();
+        insertResponse.StatusCode.Should().NotBe(
+            HttpStatusCode.Created,
+            $"an insert this server cannot serve back must not be acknowledged; response: {insertPayload}");
+        insertResponse.StatusCode.Should().Be(
+            HttpStatusCode.MethodNotAllowed,
+            $"the publish path declares only [\"Query\",\"Extract\"] on the publication; response: {insertPayload}");
+
+        // Nothing was written anywhere: not to the live source table the protocols read, and
+        // not to the publish-time snapshot the tile path reads.
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        (await GetSourceRowCountAsync("Phantom Feature")).Should().Be(0);
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+
+        // And the collection still serves exactly the seeded row, unchanged.
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable()
+    {
+        // honua-server#4707, the case the capability contract alone does not cover: a
+        // deployment that declares Create on a layer published over a source table. The
+        // managed writer still cannot write that table, so the storage-routing guard — not
+        // the capability guard — must refuse the insert.
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "OGC API Features insert routing regression test (Create declared)",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true
+        });
+        _layerId = publishedLayer.LayerId;
+
+        _fixture.EnableV2ServiceEditingCapabilities(
+            _serviceName,
+            ["Query", "Extract", "Create", "Update", "Delete"]);
+
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+
+        const string insertBody = """
+            {
+              "type": "Feature",
+              "geometry": { "type": "Point", "coordinates": [2.5, 3.5] },
+              "properties": { "name": "Phantom Feature", "population": 999 }
+            }
+            """;
+        using var insertContent = new StringContent(insertBody, Encoding.UTF8, "application/geo+json");
+        var insertResponse = await _client.PostAsync(
+            $"/ogc/features/collections/{_layerId}/items",
+            insertContent);
+
+        var insertPayload = await insertResponse.Content.ReadAsStringAsync();
+        insertResponse.StatusCode.Should().Be(
+            HttpStatusCode.NotImplemented,
+            $"the declared capability is satisfied but the storage cannot be written through; response: {insertPayload}");
+
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        (await GetSourceRowCountAsync("Phantom Feature")).Should().Be(0);
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task PublishLayer_IntoManagedStoreDeclaringCreate_AcceptsOgcInsertAndReadsItBack()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+
+        // honua-server#4859: the product path to an editable collection. Publishing with
+        // storageMode=managed and a declared Create capability — through the admin API only,
+        // with no metadata or SQL seeding — yields a collection whose OGC API Features insert
+        // is accepted and reads back through OGC API Features and FeatureServer.
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Managed-store editable publication regression test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true,
+            StorageMode = "managed",
+            Capabilities = ["query", "Create", "Update", "Delete"]
+        });
+        _layerId = publishedLayer.LayerId;
+
+        publishedLayer.StorageMode.Should().Be("managed");
+        publishedLayer.Capabilities.Should().Equal("Query", "Create", "Update", "Delete");
+        publishedLayer.Table.Should().Be("features");
+        publishedLayer.PrimaryKey.Should().Be("objectid");
+
+        // The source row was copied into the managed store and is served from there.
+        (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(1);
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+
+        const string insertBody = """
+            {
+              "type": "Feature",
+              "geometry": { "type": "Point", "coordinates": [2.5, 3.5] },
+              "properties": { "name": "Managed Feature", "population": 250 }
+            }
+            """;
+        using var insertContent = new StringContent(insertBody, Encoding.UTF8, "application/geo+json");
+        var insertResponse = await _client.PostAsync(
+            $"/ogc/features/collections/{_layerId}/items",
+            insertContent);
+
+        var insertPayload = await insertResponse.Content.ReadAsStringAsync();
+        insertResponse.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            $"the publication declares Create and its storage is the managed store; response: {insertPayload}");
+        insertResponse.Headers.Location.Should().NotBeNull($"response: {insertPayload}");
+        var featureId = insertResponse.Headers.Location!.OriginalString
+            .Split('?')[0]
+            .TrimEnd('/')
+            .Split('/')[^1];
+        featureId.Should().NotBeNullOrWhiteSpace();
+
+        // Read back by id through OGC API Features.
+        var itemResponse = await _client.GetAsync(
+            $"/ogc/features/collections/{_layerId}/items/{featureId}?f=json");
+        var itemPayload = await itemResponse.Content.ReadAsStringAsync();
+        itemResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemPayload}");
+        using (var itemDocument = JsonDocument.Parse(itemPayload))
+        {
+            var item = itemDocument.RootElement;
+            var properties = item.GetProperty("properties");
+            properties.GetProperty("name").GetString().Should().Be("Managed Feature");
+            properties.GetProperty("population").GetDouble().Should().Be(250d);
+            var coordinates = item.GetProperty("geometry").GetProperty("coordinates");
+            coordinates[0].GetDouble().Should().Be(2.5d);
+            coordinates[1].GetDouble().Should().Be(3.5d);
+        }
+
+        // The collection now lists the copied row and the inserted one.
+        var itemsResponse = await _client.GetAsync(
+            $"/ogc/features/collections/{_layerId}/items?f=json&limit=10");
+        var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
+        itemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemsPayload}");
+        using (var itemsDocument = JsonDocument.Parse(itemsPayload))
+        {
+            itemsDocument.RootElement.GetProperty("features").EnumerateArray()
+                .Select(feature => feature.GetProperty("properties").GetProperty("name").GetString())
+                .Should().BeEquivalentTo("Test Feature", "Managed Feature");
+        }
+
+        // And through FeatureServer query, keyed by the managed object id.
+        var queryResponse = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false&resultRecordCount=10");
+        var queryPayload = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
+        using (var queryDocument = JsonDocument.Parse(queryPayload))
+        {
+            queryDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse($"response: {queryPayload}");
+            var inserted = queryDocument.RootElement.GetProperty("features").EnumerateArray()
+                .Select(feature => feature.GetProperty("attributes"))
+                .Where(attributes => attributes.GetProperty("name").GetString() == "Managed Feature")
+                .ToList();
+            inserted.Should().ContainSingle($"response: {queryPayload}");
+            inserted[0].GetProperty("objectid").GetRawText().Should().Be(featureId);
+            inserted[0].GetProperty("population").GetDouble().Should().Be(250d);
+        }
+
+        // The write landed in the managed store, never in the source table.
+        (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(2);
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        (await GetSourceRowCountAsync("Managed Feature")).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task HonuaServer5407_ApplyEditsAttributeOnlyUpdateOnManagedLayerPreservesGeometry()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true,
+            StorageMode = "managed",
+            Capabilities = ["Query", "Create", "Update", "Delete"]
+        });
+        _layerId = publishedLayer.LayerId;
+
+        // Model a missing catalog SRID without altering the shared catalog's NOT NULL
+        // constraint. The stored row and transform expression index still require a
+        // valid SRID even for an attribute-only UPDATE.
+        _missingLayerSrid = true;
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                CREATE INDEX "idx_srid_{_layerId}" ON "{_fixture.CurrentSchema}".features
+                    USING gist (ST_Transform(geometry, 3857)) WHERE layer_id = {_layerId};
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var cache = scope.ServiceProvider.GetRequiredService<IFeatureCacheManager>();
+            cache.InvalidateLayerCache(publishedLayer.LayerId);
+            (await cache.GetLayerSridAsync(publishedLayer.LayerId, CancellationToken.None)).Should().BeNull();
+        }
+
+        var queryPath = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
+        using var beforeResponse = await _client.GetAsync(queryPath);
+        beforeResponse.Be200Ok();
+        using var before = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
+        var original = before.RootElement.GetProperty("features").EnumerateArray().Single();
+        var objectId = original.GetProperty("attributes").GetProperty("objectid").GetInt64();
+        var originalGeometry = original.GetProperty("geometry").GetRawText();
+
+        using var edits = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["updates"] = $"[{{\"attributes\":{{\"objectid\":{objectId},\"population\":5407}}}}]"
+        });
+        using var updateResponse = await _client.PostAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/applyEdits", edits);
+        updateResponse.Be200Ok();
+        var updatePayload = await updateResponse.Content.ReadAsStringAsync();
+        using (var update = JsonDocument.Parse(updatePayload))
+        {
+            update.RootElement.GetProperty("updateResults").EnumerateArray().Single()
+                .GetProperty("success").GetBoolean().Should().BeTrue($"response: {updatePayload}");
+        }
+
+        using var afterResponse = await _client.GetAsync(queryPath);
+        afterResponse.Be200Ok();
+        using var after = JsonDocument.Parse(await afterResponse.Content.ReadAsStringAsync());
+        var updated = after.RootElement.GetProperty("features").EnumerateArray().Single();
+        updated.GetProperty("attributes").GetProperty("population").GetDouble().Should().Be(5407d);
+        updated.GetProperty("geometry").GetRawText().Should().Be(originalGeometry);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_UnserviceableEditableRequests_AreRejectedBeforePublishing()
+    {
+        // honua-server#4859 keeps the #4707/#4712 contract: a source-backed layer cannot be
+        // written through, so declaring an edit capability on one is refused at publish time
+        // instead of publishing a collection whose first insert answers 501.
+        var sourceBacked = await PostPublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Capabilities = ["Query", "Create"]
+        });
+        sourceBacked.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {sourceBacked.Payload}");
+        sourceBacked.Payload.Should().Contain("require storageMode managed");
+
+        var unknownMode = await PostPublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            PrimaryKey = "id",
+            ServiceName = _serviceName,
+            StorageMode = "writable"
+        });
+        unknownMode.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {unknownMode.Payload}");
+        unknownMode.Payload.Should().Contain("storageMode must be 'source' or 'managed'");
+
+        var missingQuery = await PostPublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            PrimaryKey = "id",
+            ServiceName = _serviceName,
+            StorageMode = "managed",
+            Capabilities = ["Create"]
+        });
+        missingQuery.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {missingQuery.Payload}");
+        missingQuery.Payload.Should().Contain("Capabilities must include Query");
+
+        // This test's connection has no search path to the fixture's server schema, so its
+        // `features` table is not the one the server's managed feature writer writes. A managed
+        // copy through it would serve none of its rows and its edits would land elsewhere, so
+        // the publish is refused.
+        var foreignStore = await PostPublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            StorageMode = "managed",
+            Capabilities = ["Query", "Create"]
+        });
+        foreignStore.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {foreignStore.Payload}");
+        foreignStore.Payload.Should().Contain("own feature database");
+
+        (await GetPublishedLayerRowCountAsync()).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task RefreshMaterializedFeatures_OnManagedStoreLayer_IsRefusedAndKeepsEdits()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+
+        // A managed-store layer's rows are its authoritative features. The source-snapshot
+        // refresh deletes and re-copies a layer's rows, which would erase every edit, so it
+        // must refuse a managed-store layer (honua-server#4859).
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            StorageMode = "managed",
+            Capabilities = ["Query", "Create"]
+        });
+        _layerId = publishedLayer.LayerId;
+
+        const string insertBody = """
+            {
+              "type": "Feature",
+              "geometry": { "type": "Point", "coordinates": [4, 5] },
+              "properties": { "name": "Kept Edit", "population": 7 }
+            }
+            """;
+        using var insertContent = new StringContent(insertBody, Encoding.UTF8, "application/geo+json");
+        var insertResponse = await _client.PostAsync(
+            $"/ogc/features/collections/{_layerId}/items",
+            insertContent);
+        insertResponse.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            await insertResponse.Content.ReadAsStringAsync());
+        (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(2);
+
+        var refreshResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/{_layerId}/features/refresh",
+            content: null);
+        var refreshPayload = await refreshResponse.Content.ReadAsStringAsync();
+        refreshResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {refreshPayload}");
+        refreshPayload.Should().Contain("no source table to refresh from");
+
+        (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(2);
+    }
+
+    /// <summary>
+    /// Re-registers the test's secure connection against the server's own feature database
+    /// schema. A deployment's publish connection reaches the database the server writes (its
+    /// managed <c>features</c> table resolves identically); this fixture isolates the server
+    /// in a per-test schema, so the connection must name that schema the same way
+    /// <see cref="PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile"/> does.
+    /// </summary>
+    private async Task UseServerFeatureStoreConnectionAsync()
+    {
+        await DeleteSecureConnectionAsync();
+        _connectionCreated = false;
+        var publishConnection = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            SearchPath = $"{_fixture.CurrentSchema},public"
+        };
+        await CreateSecureConnectionAsync(publishConnection.ConnectionString);
+    }
+
+    /// <summary>
+    /// Counts a layer's rows in the server's managed <c>features</c> table, the table the
+    /// managed feature writer writes for this fixture's isolated schema.
+    /// </summary>
+    private async Task<int> GetManagedStoreRowCountAsync(int layerId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT COUNT(*)::int FROM "{_fixture.CurrentSchema}".features WHERE layer_id = @layerId;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
+    public async Task PublishLayer_IntoManagedStoreOverPublishedTable_CopiesWithoutSourceKeyAndScopesExtents()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+
+        // A source-backed layer over the table already exists...
+        var sourceLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName
+        });
+        _layerId = sourceLayer.LayerId;
+
+        // ...and managed copies of the same table still publish, without selecting the source
+        // key: the managed store assigns the identity.
+        string[] attributeFields = ["name", "population"];
+        var first = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Managed A {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            Fields = attributeFields,
+            ServiceName = _serviceName,
+            StorageMode = "managed",
+            Capabilities = ["Query", "Create"]
+        });
+        first.PrimaryKey.Should().Be("objectid");
+
+        const string farInsert = """
+            {
+              "type": "Feature",
+              "geometry": { "type": "Point", "coordinates": [50, 40] },
+              "properties": { "name": "Far Edit", "population": 1 }
+            }
+            """;
+        using var farContent = new StringContent(farInsert, Encoding.UTF8, "application/geo+json");
+        var farResponse = await _client.PostAsync(
+            $"/ogc/features/collections/{first.LayerId}/items",
+            farContent);
+        farResponse.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            await farResponse.Content.ReadAsStringAsync());
+
+        var second = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Managed B {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            Fields = attributeFields,
+            ServiceName = _serviceName,
+            StorageMode = "managed",
+            Capabilities = ["Query"]
+        });
+
+        // Both managed layers share the features table. The second layer's extent covers only
+        // its own copied row at (1, 1), not the first layer's (50, 40) edit.
+        await AssertLayerExtentAsync(second.LayerId, 1d, 1d, 1d, 1d);
+
+        var refreshResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/extents/refresh?serviceName={_serviceName}",
+            content: null);
+        var refreshPayload = await refreshResponse.Content.ReadAsStringAsync();
+        refreshResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {refreshPayload}");
+
+        await AssertLayerExtentAsync(first.LayerId, 1d, 1d, 50d, 40d);
+        await AssertLayerExtentAsync(second.LayerId, 1d, 1d, 1d, 1d);
+    }
+
+    private async Task AssertLayerExtentAsync(int layerId, double xmin, double ymin, double xmax, double ymax)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
+            FROM honua.layers
+            WHERE layer_id = @layerId AND extent IS NOT NULL;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue($"layer {layerId} should have a persisted extent");
+        reader.GetDouble(0).Should().BeApproximately(xmin, 1e-9);
+        reader.GetDouble(1).Should().BeApproximately(ymin, 1e-9);
+        reader.GetDouble(2).Should().BeApproximately(xmax, 1e-9);
+        reader.GetDouble(3).Should().BeApproximately(ymax, 1e-9);
+    }
+
+    private async Task<(HttpStatusCode StatusCode, string Payload)> PostPublishLayerAsync(PublishLayerRequest request)
+    {
+        var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(request, options: _jsonOptions));
+        return (response.StatusCode, await response.Content.ReadAsStringAsync());
+    }
+
+    private async Task<int> GetPublishedLayerRowCountAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)::int
+            FROM honua.layers
+            WHERE layer_name = @layerName;
+            """;
+        command.Parameters.AddWithValue("layerName", $"Layer {_tableName}");
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Asserts the published collection serves exactly the single row
+    /// <see cref="CreatePostGisTableAsync()"/> seeds, including its attribute values and
+    /// ordinates. The expected values are the literals the fixture inserted, computed
+    /// independently of any server response.
+    /// </summary>
+    private async Task AssertPublishedCollectionServesSeedRowOnlyAsync(int layerId)
+    {
+        var itemsResponse = await _client.GetAsync(
+            $"/ogc/features/collections/{layerId}/items?f=json&limit=10");
+        var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
+        itemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemsPayload}");
+
+        using var document = JsonDocument.Parse(itemsPayload);
+        var features = document.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+
+        var feature = features[0];
+        var properties = feature.GetProperty("properties");
+        properties.GetProperty("name").GetString().Should().Be("Test Feature");
+        properties.GetProperty("population").GetInt32().Should().Be(100);
+
+        var geometry = feature.GetProperty("geometry");
+        geometry.GetProperty("type").GetString().Should().Be("Point");
+        var coordinates = geometry.GetProperty("coordinates");
+        coordinates.GetArrayLength().Should().Be(2);
+        coordinates[0].GetDouble().Should().Be(1d);
+        coordinates[1].GetDouble().Should().Be(1d);
+    }
+
+    /// <summary>
+    /// Counts rows in the live source table the published layer is served from, optionally
+    /// narrowed to a single feature name.
+    /// </summary>
+    private async Task<int> GetSourceRowCountAsync(string? name = null)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = name is null
+            ? $"SELECT COUNT(*)::int FROM public.{_tableName};"
+            : $"SELECT COUNT(*)::int FROM public.{_tableName} WHERE name = @name;";
+        if (name is not null)
+        {
+            command.Parameters.AddWithValue("name", name);
+        }
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private async Task<int> GetCanonicalSnapshotCountAsync(int layerId)
@@ -2364,7 +3190,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
-    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId)
+    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId, string? declaredStacIdField = null)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(publication =>
@@ -2383,10 +3209,27 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 : candidate)
             .ToArray();
 
+        var resources = snapshot.Graph.Resources;
+        if (declaredStacIdField is not null)
+        {
+            using var stacExtension = JsonDocument.Parse(
+                JsonSerializer.Serialize(new Dictionary<string, string> { ["idField"] = declaredStacIdField }));
+            var stac = stacExtension.RootElement.Clone();
+            resources = resources
+                .Select(candidate => candidate.Metadata.Id == publication.ResourceId
+                    ? candidate with
+                    {
+                        Extensions = new Dictionary<string, JsonElement>(candidate.Extensions) { ["stac"] = stac }
+                    }
+                    : candidate)
+                .ToArray();
+        }
+
         await SaveMetadataGraphAsync(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
             Publications = publications,
+            Resources = resources,
             StorageBindings = bindings
         });
     }
@@ -2634,7 +3477,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                    OR layer_id IN (
                         SELECT layer_id
                         FROM honua.service_layers
-                        WHERE service_name = @serviceName
+                        WHERE service_name = ANY(@serviceNames)
                    );
 
                 DELETE FROM honua.layers
@@ -2642,19 +3485,22 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                    OR layer_id IN (
                         SELECT layer_id
                         FROM honua.service_layers
-                        WHERE service_name = @serviceName
+                        WHERE service_name = ANY(@serviceNames)
                    );
                 """;
             command.Parameters.AddWithValue("hasLayerId", _layerId.HasValue);
             command.Parameters.AddWithValue("layerId", _layerId.GetValueOrDefault());
-            command.Parameters.AddWithValue("serviceName", _serviceName);
+            var serviceNames = _retainedSourceServiceName is null
+                ? new[] { _serviceName }
+                : new[] { _serviceName, _retainedSourceServiceName };
+            command.Parameters.AddWithValue("serviceNames", serviceNames);
             await command.ExecuteNonQueryAsync();
 
             if (!string.IsNullOrWhiteSpace(_serviceName))
             {
                 await using var serviceCommand = connection.CreateCommand();
-                serviceCommand.CommandText = "DELETE FROM honua.services WHERE service_name = @serviceName;";
-                serviceCommand.Parameters.AddWithValue("serviceName", _serviceName);
+                serviceCommand.CommandText = "DELETE FROM honua.services WHERE service_name = ANY(@serviceNames);";
+                serviceCommand.Parameters.AddWithValue("serviceNames", serviceNames);
                 await serviceCommand.ExecuteNonQueryAsync();
             }
         });
@@ -2811,5 +3657,29 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             DELETE FROM honua.layers;
             DELETE FROM honua.services;
             """);
+    }
+
+    private sealed class MissingSridCacheManager(
+        IFeatureCacheManager inner,
+        Func<int, bool> missingSrid) : IFeatureCacheManager
+    {
+        public Task<int?> GetLayerSridAsync(int layerId, CancellationToken cancellationToken)
+            => missingSrid(layerId) ? Task.FromResult<int?>(null) : inner.GetLayerSridAsync(layerId, cancellationToken);
+
+        public Task<GeometryStorageType> GetGeometryStorageTypeAsync(CancellationToken cancellationToken)
+            => inner.GetGeometryStorageTypeAsync(cancellationToken);
+
+        public Task<bool> IsLayerCatalogAvailableAsync(CancellationToken cancellationToken)
+            => inner.IsLayerCatalogAvailableAsync(cancellationToken);
+
+        public void RecordQueryMetrics(string operationType, long executionTimeMs, int? resultCount = null)
+            => inner.RecordQueryMetrics(operationType, executionTimeMs, resultCount);
+
+        public Dictionary<string, DatabaseOperationMetricsSnapshot> GetPerformanceStatistics()
+            => inner.GetPerformanceStatistics();
+
+        public void CleanupExpiredCacheEntries() => inner.CleanupExpiredCacheEntries();
+
+        public void InvalidateLayerCache(int layerId) => inner.InvalidateLayerCache(layerId);
     }
 }

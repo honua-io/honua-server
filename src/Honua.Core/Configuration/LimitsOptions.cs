@@ -53,6 +53,9 @@ public class LimitsOptions
     /// </summary>
     public QueryLimits Query { get; set; } = new();
 
+    /// <summary>Budgets for GeoParquet query encoding.</summary>
+    public GeoParquetLimits GeoParquet { get; set; } = new();
+
     /// <summary>
     /// Geometry limits for spatial operations.
     /// </summary>
@@ -84,9 +87,11 @@ public class LimitsOptions
     public ConnectionLimits Connections { get; set; } = new();
 
     /// <summary>
-    /// File import limits.
+    /// Upload and preview size ceilings from <c>Limits:Imports:*</c>. The import pipeline
+    /// reads <c>Import:Limits:*</c> into <see cref="Honua.Core.Features.Import.Domain.ImportLimits"/>,
+    /// which is a different type (#3346).
     /// </summary>
-    public ImportLimits Imports { get; set; } = new();
+    public ImportSizeLimits Imports { get; set; } = new();
 
     /// <summary>
     /// Spatial analytics limits.
@@ -97,6 +102,29 @@ public class LimitsOptions
     /// Elevation query and profile API limits.
     /// </summary>
     public ElevationLimits Elevation { get; set; } = new();
+
+    /// <summary>
+    /// Offline replica delivery limits (createReplica, extractChanges, synchronizeReplica).
+    /// </summary>
+    public ReplicaLimits Replica { get; set; } = new();
+}
+
+/// <summary>
+/// Limits for offline replica data delivery.
+/// </summary>
+public class ReplicaLimits
+{
+    /// <summary>
+    /// Maximum adds, updates, or deletes delivered for one layer in a single replica response. A
+    /// larger backlog is not rejected: it is delivered in consecutive change-generation windows, each
+    /// response setting <c>exceededTransferLimit</c> and reporting the generation it reached so the
+    /// client continues from there. A single committed generation is never split, so one generation
+    /// holding more changes than this (for example a pre-change-tracking baseline) is delivered whole.
+    /// Feature payloads are read in pages of <see cref="QueryLimits.MaxRecordCount"/>, so this limit is
+    /// independent of the query response cap.
+    /// </summary>
+    [Range(100, 1000000)]
+    public int MaxChangesPerLayer { get; set; } = 50000;
 }
 
 /// <summary>
@@ -199,6 +227,20 @@ public class QueryLimits
     public int MaxH3CellsPerQuery { get; set; } = 100000;
 
     /// <summary>
+    /// Default for <see cref="MaxMapLayersPerRequest"/>.
+    /// </summary>
+    public const int DefaultMaxMapLayersPerRequest = 50;
+
+    /// <summary>
+    /// Maximum number of layer tokens accepted in a single map request (WMS GetMap
+    /// <c>LAYERS</c>, GetFeatureInfo <c>LAYERS</c>/<c>QUERY_LAYERS</c>). Each distinct
+    /// layer costs one bounded feature scan and render, so the list is capped to keep one
+    /// request from monopolizing shared render capacity.
+    /// </summary>
+    [Range(1, 1000)]
+    public int MaxMapLayersPerRequest { get; set; } = DefaultMaxMapLayersPerRequest;
+
+    /// <summary>
     /// Query timeout duration.
     /// </summary>
     public TimeSpan QueryTimeout { get; set; } = TimeSpan.FromSeconds(30);
@@ -283,7 +325,10 @@ public class AttachmentLimits
     /// <summary>
     /// Allowed MIME types for attachments.
     /// </summary>
-    public string AllowedMimeTypes { get; set; } = "image/*,application/pdf";
+    // honua-server#5017: text notes, CSV tallies and JSON payloads are ordinary field attachments.
+    // FileUploadSecurity still scans .txt/.csv/.json uploads for script content after this check;
+    // that scan is keyed on the file extension, not on the declared MIME type.
+    public string AllowedMimeTypes { get; set; } = "image/*,application/pdf,text/plain,text/csv,application/json";
 }
 
 

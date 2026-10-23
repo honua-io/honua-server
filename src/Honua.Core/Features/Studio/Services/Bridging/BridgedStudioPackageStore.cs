@@ -137,7 +137,10 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         var bridged = await ResolveBridgedPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
-            return bridged.Pointers;
+            // honua-server#5825: only an item that actually resolved through the bridge gives up
+            // Studio route ownership. A same-family row that still lives in the inner store
+            // (for example a form saved before the native store existed) keeps the default.
+            return bridged.Pointers with { GovernsStudioRoutes = false };
         }
 
         return await _inner.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
@@ -213,6 +216,7 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     /// <inheritdoc />
     public async Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -220,10 +224,24 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         var bridged = await ResolveBridgedPointersAsync(request.ItemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
+            // honua-server#3980: a bridged family keeps its pointers in the native store, so the
+            // compare-and-set is asserted against the pointers just resolved from it. The native
+            // store owns the final write; this check stops an approval whose current pointer has
+            // already moved from reaching PublishAsync at all.
+            if (expectedCurrentVersionId is { } expectedCurrent &&
+                request.Status == StudioPublicationRequestStatus.Accepted &&
+                bridged.Pointers.CurrentVersionId != expectedCurrent)
+            {
+                throw new StudioPublicationPointerConflictException(
+                    request.ItemId, expectedCurrent, bridged.Pointers.CurrentVersionId);
+            }
+
             return await bridged.Bridge.PublishAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
-        return await _inner.CreatePublicationRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        return await _inner
+            .CreatePublicationRequestAsync(request, expectedCurrentVersionId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -233,6 +251,17 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         Guid requestId,
         CancellationToken cancellationToken = default)
         => _inner.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Bridged families publish into their native stores (a form publishes through the form
+    /// registry; analysis has no publish-request concept), so only natively persisted
+    /// publication requests govern a Studio route.
+    /// </remarks>
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+        => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
 
     /// <inheritdoc />
     public async Task<StudioRollbackRequest> RollbackAsync(
@@ -277,6 +306,15 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
 
         if (!string.IsNullOrWhiteSpace(query.OwnerId) &&
             !string.Equals(item.OwnerId ?? string.Empty, query.OwnerId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Bridged families persist in their own native stores, which record no Studio tenant.
+        // They are therefore treated exactly as a tenant-unassigned Studio row is
+        // (honua-server#4905): enumerable only by a caller whose scope covers the deployment's
+        // default tenant, never by another tenant.
+        if (query.Tenant is { IncludeUnassigned: false })
         {
             return false;
         }

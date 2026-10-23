@@ -177,12 +177,13 @@ internal static class CoreEndpoints
             type: "image/png",
             title: "Dataset map"));
 
-        // Vector tilesets list
+        // Dataset tilesets list: map (PNG) tiles, so tilesets-map. Per-collection vector
+        // tilesets are linked from each collection with tilesets-vector.
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tiles",
-            rel: RelationTypes.TilesetsVector,
+            rel: RelationTypes.TilesetsMap,
             type: MediaTypes.Json,
-            title: "Vector tilesets"));
+            title: "Dataset map tilesets"));
 
         var landingPage = new LandingPage
         {
@@ -228,15 +229,28 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
 
-                // OGC API Features Part 3 - Queryables. This is the only Part 3
-                // class promoted here because the exact-candidate lane validates
-                // the queryables schema, while its CQL2/filter probes are not a
-                // complete class suite.
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
+                // OGC API Features Part 2 - CRS by Reference. The ETS
+                // ogcapi-features-1.0 run by cite-evidence-report.yml executes
+                // the complete Part 2 class against the candidate image once it
+                // is declared, and the evidence bundle fails on any skipped test.
+                "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
 
-            // CRS, filtering, CQL2, and Part 4 remain implemented or
-            // test-covered in places, but are not advertised until an exact
-            // candidate conformance lane proves their complete classes.
+                // Part 3 discovery enables desktop clients to push filters into
+                // the shared CQL2 pipeline instead of downloading entire layers.
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+                "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
+
+                // Part 4 transactions are served (create, replace, update, delete).
+                // Clients that read /conformance will not attempt them unless these
+                // classes are declared (#5132).
+                "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete",
+                "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/update"
+
+            // Optional CQL2 extensions remain unadvertised pending complete class evidence.
             ).AddRange(OgcConformanceUris.Common)
               .AddRange(OgcConformanceUris.VendorExtensions),
             Links = OgcCoreMetadataUtilities.BuildConformanceLinks(

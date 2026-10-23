@@ -184,14 +184,40 @@ public sealed record MigrationReconciliationCountProbe
 /// </summary>
 public sealed record MigrationReconciliationGeometryProbe
 {
-    /// <summary>Number of features sampled (clamped by available rows).</summary>
+    /// <summary>
+    /// Features compared. A source census reads the filtered population; without one, this is the
+    /// configured sample.
+    /// </summary>
     public int Sampled { get; init; }
 
     /// <summary>Number of sampled features whose geometry was present and well-formed.</summary>
     public int Valid { get; init; }
 
-    /// <summary>Valid / Sampled, or <c>1</c> when nothing was sampled.</summary>
+    /// <summary>
+    /// Valid / Sampled when no source census is available. With a census, inherited absent
+    /// and topologically invalid source geometries are excluded from both terms. Returns <c>1</c>
+    /// when the denominator is zero.
+    /// </summary>
     public double Ratio { get; init; }
+
+    /// <summary>
+    /// Features whose source geometry was null or topologically invalid and whose target geometry
+    /// is still missing or not well-formed. Inherited source defects, not transfer loss (#4826).
+    /// Zero when the importer did not supply a geometry census.
+    /// </summary>
+    public int InheritedSourceDefects { get; init; }
+
+    /// <summary>
+    /// Source geometries that were present and valid and did not survive on the target, including
+    /// rows whose conversion stored null. Zero when the importer did not supply a geometry census.
+    /// </summary>
+    public int MigrationLosses { get; init; }
+
+    /// <summary>
+    /// Features whose source geometry was null or invalid and whose target geometry is well-formed.
+    /// The target value is not a successful repair of the source defect (#4826).
+    /// </summary>
+    public int SourceDefectRewrites { get; init; }
 
     /// <summary>Pass / warn / fail / skipped.</summary>
     public required string Classification { get; init; }
@@ -234,8 +260,26 @@ public sealed record MigrationReconciliationExtentProbe
     /// <summary>Source-side extent snapshot at apply time. <c>null</c> when none was advertised.</summary>
     public ExtentBox? Source { get; init; }
 
+    /// <summary>
+    /// Extent queried from the source features, when the importer requested one. Distinct from
+    /// <see cref="Source"/>, which is the extent the source service advertised.
+    /// </summary>
+    public ExtentBox? QueriedSource { get; init; }
+
+    /// <summary>
+    /// True when the advertised source extent disagrees with <see cref="QueriedSource"/> beyond
+    /// the configured tolerance. The target comparison then uses the queried extent.
+    /// </summary>
+    public bool AdvertisedExtentStale { get; init; }
+
     /// <summary>Target-side extent returned by Honua post-apply.</summary>
     public ExtentBox? Target { get; init; }
+
+    /// <summary>
+    /// Target-row extent queried in the source CRS for an approved reprojection. Native
+    /// source and target extents remain separately available for provenance.
+    /// </summary>
+    public ExtentBox? ComparisonTarget { get; init; }
 
     /// <summary>
     /// Absolute differences between source and target extents normalized by source dimension.

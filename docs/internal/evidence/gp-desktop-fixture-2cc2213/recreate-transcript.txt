@@ -1,0 +1,27 @@
+$ docs/internal/evidence/gp-desktop-fixture-2cc2213/recreate-fixture.sh sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51
+== pull ghcr.io/honua-io/honua-server@sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51
+== postgres (gpserver-4614-4616-postgres): PostGIS GDAL drivers
+   already set; starting
+== redis (gpserver-4614-548b7a5-redis)
+== server (gpserver-4614-4616-server) -> ghcr.io/honua-io/honua-server@sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51
+   captured 16 explicitly-set variables (values not printed)
+== tls proxy (gpserver-4614-4616-tls) and tracer (gpserver-4614-4616-tracer)
+== wait for health
+   running healthy
+# identity
+gpserver-4614-4616-server image=sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51 state=running health=healthy revision=2cc221388ea47d78c29e79eaee62737e4c792351
+gpserver-4614-4616-postgres POSTGIS_GDAL_ENABLED_DRIVERS=ENABLE_ALL
+gpserver-4614-4616-postgres POSTGIS_ENABLE_OUTDB_RASTERS=1
+# catalog schema
+latest applied migration: Honua.Server.Migrations.120_AddStudioTenantOwnership.sql (dbSchema 120)
+# TLS surface (https://127.0.0.1:18464, --cacert /home/mike/honua-io/gpserver-4614-4616-evidence/ca/root.crt)
+GET  /rest/info?f=json                                                                          -> HTTP 200 application/json 232 bytes
+GET  /services?wsdl                                                                             -> HTTP 200 text/xml; charset=utf-8 10418 bytes
+GET  /rest/services/desktop_ui_features/GPServer?f=json                                         -> HTTP 200 application/json 4540 bytes
+     desktop_ui_features GPServer tasks: 119
+POST /services/desktop_ui_features/GPServer                                                     -> HTTP 401 text/xml; charset=utf-8 258 bytes
+# ImageServer exportImage (#4975: needs the PostGIS GDAL drivers)
+GET  /rest/services/native_raster_public/ImageServer/exportImage?f=image&format=tiff&bbox=-122.44,37.74,-122.40,37.78&bboxSR=4326&imageSR=4326&size=256,256 -> HTTP 200 image/tiff 525068 bytes
+     attempt 1: body mime=image/tiff magic=49492a00
+READY: gpserver-4614-4616-server on sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51
+exit=0

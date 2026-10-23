@@ -71,6 +71,15 @@ public interface IWorkspaceLifecycleService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Publishes a stable operation/output identity under the storage write gate and
+    /// durable execution fence. Returns null if the fence rejects the publication.
+    /// Providers without atomic publication must report that limitation explicitly.
+    /// </summary>
+    Task<Artifact?> PublishArtifactAsync(WorkspaceArtifactPublication publication,
+        Func<CancellationToken, Task<bool>> publishReference, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic workspace publication is unavailable.");
+
+    /// <summary>
     /// Resolves the caller's workspace for a stable label, creating one when
     /// none exists yet. Used to map a caller-supplied identifier (e.g. GPServer's
     /// <c>env:workspace</c>) onto a durable <see cref="Workspace"/> without
@@ -84,6 +93,19 @@ public interface IWorkspaceLifecycleService
         string ownerId,
         string label,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves a named workspace in the existing optional scope. Implementations
+    /// without scoped storage must fail closed rather than reuse an unscoped workspace.
+    /// </summary>
+    Task<Workspace> GetOrCreateScopedWorkspaceAsync(
+        string ownerId,
+        string label,
+        string? scopeId,
+        CancellationToken cancellationToken = default)
+        => scopeId is null
+            ? GetOrCreateNamedWorkspaceAsync(ownerId, label, cancellationToken)
+            : throw new NotSupportedException("Scoped workspace storage is unavailable.");
 
     /// <summary>
     /// Promotes an artifact from a temporary workspace to a durable destination.

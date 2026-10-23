@@ -1,11 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Security.Domain;
@@ -16,6 +20,8 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -42,6 +48,173 @@ public sealed class FeatureServerAccessFilteringTests
         layers.ValueKind.Should().Be(JsonValueKind.Array);
         layers.GetArrayLength().Should().Be(1);
         layers[0].GetProperty("id").GetInt32().Should().Be(ServiceRbacTestFixture.AlphaLayerId);
+    }
+
+    /// <summary>
+    /// #4386: the disclosure question this fixture exists to answer, finally asked.
+    /// <para>
+    /// The three sibling tests above prove <b>metadata</b> filtering for the role-gated hidden
+    /// layer — it is absent from <c>getEstimates</c>, its domains are filtered, relationships to
+    /// it are hidden. None of them ever issued
+    /// <c>GET /rest/services/{svc}/FeatureServer/{hiddenLayerId}/query</c> as the <c>reader</c>
+    /// principal, so nothing proved that the layer's <i>rows</i> are refused rather than merely
+    /// its listing suppressed.
+    /// </para>
+    /// <para>
+    /// The entitled read runs first and is asserted to return the seeded rows and their markers.
+    /// That is the positive control: it establishes that this route, on this layer, with this
+    /// data, does return records — so the denial below measures the authorization decision and
+    /// not an empty layer, an unroutable path or a broken query.
+    /// </para>
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_HiddenLayerAsReader_ReturnsZeroRecordsWhileTheEntitledRoleReadsThem()
+    {
+        const string firstMarker = "hidden-audit-row-8601";
+        const string secondMarker = "hidden-audit-row-8602";
+
+        var serverLog = new CapturingLoggerProvider();
+
+        // TestFeatureStore is registered per-scope and keeps its rows in an instance field, so a
+        // row written through the root provider is invisible to every request. Pin one instance
+        // for this host, and seed the hidden layer through it, so the rows the denial refuses are
+        // the rows the query would actually read.
+        using var featureStore = new TestFeatureStore();
+        using var factory = CreateFactory(serverLog, featureStore);
+
+        foreach (var (auditId, marker) in new[] { (8601, firstMarker), (8602, secondMarker) })
+        {
+            await featureStore.CreateAsync(
+                ServiceRbacTestFixture.BetaLayerId,
+                Feature.Create(
+                    auditId,
+                    null,
+                    ImmutableDictionary<string, object?>.Empty
+                        .Add("objectid", auditId)
+                        .Add("audit_id", auditId)
+                        .Add("hidden_status", marker)),
+                CancellationToken.None);
+        }
+
+        var query =
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/"
+            + $"{ServiceRbacTestFixture.BetaLayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false";
+
+        // ---- positive control: the entitled principal reads the rows ----------------
+        using (var entitled = ServiceRbacTestFixture.CreateClient(factory, "reader", "hidden-reader"))
+        using (var allowed = await entitled.GetAsync(query))
+        {
+            var body = await allowed.Content.ReadAsStringAsync();
+            allowed.StatusCode.Should().Be(HttpStatusCode.OK, serverLog.Describe(body));
+
+            ReadFeatureCount(body).Should().Be(
+                2,
+                "the hidden layer really does hold the two seeded rows on this route; {0}",
+                serverLog.Describe(body));
+            body.Should().Contain(firstMarker);
+            body.Should().Contain(secondMarker);
+        }
+
+        // ---- the denied principal, same query, same rows ----------------------------
+        using (var reader = ServiceRbacTestFixture.CreateClient(factory, "reader"))
+        using (var denied = await reader.GetAsync(query))
+        {
+            var body = await denied.Content.ReadAsStringAsync();
+            await denied.AssertGeoServicesErrorAsync((int)HttpStatusCode.Forbidden);
+
+            ReadFeatureCount(body).Should().Be(
+                0,
+                "a principal without 'hidden-reader' must receive no record from the hidden layer; {0}",
+                serverLog.Describe(body));
+            body.Should().NotContain(firstMarker);
+            body.Should().NotContain(secondMarker);
+        }
+    }
+
+    /// <summary>
+    /// The number of records a FeatureServer <c>query</c> body actually carries. A body that is
+    /// not a success-shaped payload carries none, which is what the denial case asserts.
+    /// </summary>
+    private static int ReadFeatureCount(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return 0;
+        }
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(body);
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
+
+        using (document)
+        {
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("features", out var features)
+                && features.ValueKind == JsonValueKind.Array
+                ? features.GetArrayLength()
+                : 0;
+        }
+    }
+
+    /// <summary>
+    /// Captures the host's warning-and-above log records so a failing assertion reports the
+    /// server-side cause rather than only the generic GeoServices error envelope.
+    /// </summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly List<string> _records = [];
+
+        public string Describe(string body)
+        {
+            lock (_records)
+            {
+                return _records.Count == 0
+                    ? $"body: {body}"
+                    : $"body: {body}\nserver log:\n{string.Join("\n", _records)}";
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(CapturingLoggerProvider owner, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (!IsEnabled(logLevel))
+                {
+                    return;
+                }
+
+                var line = $"{logLevel} {category}: {formatter(state, exception)}"
+                    + (exception is null ? string.Empty : $" -> {exception}");
+                lock (owner._records)
+                {
+                    owner._records.Add(line);
+                }
+            }
+        }
     }
 
     [IntegrationTest]
@@ -167,6 +340,32 @@ public sealed class FeatureServerAccessFilteringTests
         => ServiceRbacTestFixture.CreateFactory(
             static () => new FeatureServerAccessFilteringCatalog(),
             static services => services.AddSingleton<IAttachmentStore, TestAttachmentStore>());
+
+    private static WebApplicationFactory<Program> CreateFactory(
+        ILoggerProvider serverLog,
+        TestFeatureStore featureStore)
+        => ServiceRbacTestFixture.CreateFactory(
+            static () => new FeatureServerAccessFilteringCatalog(),
+            services =>
+            {
+                services.AddSingleton<IAttachmentStore, TestAttachmentStore>();
+                services.AddSingleton(serverLog);
+
+                // One store for the whole host, so rows seeded by the test are the rows every
+                // request reads. These registrations run in ConfigureTestServices and therefore
+                // supersede the per-scope defaults.
+                services.AddSingleton(featureStore);
+                services.AddSingleton<IFeatureReader>(featureStore);
+                services.AddSingleton<IFeatureWriter>(featureStore);
+
+                // The RBAC fixture registers no data-source provider, and only the Postgres
+                // provider registers ICrsDetectionService — a mandatory scoped dependency of
+                // FeatureServerSpatialReferenceResolver. Without it the `query` route fails DI
+                // activation and answers 500 before any authorization decision is reachable,
+                // which is exactly what the sibling metadata-only tests never noticed. This is
+                // the same capability-scoped stub the DuckDB and MySQL providers register.
+                services.TryAddScoped<ICrsDetectionService, NoOpCrsDetectionService>();
+            });
 }
 
 /// <summary>

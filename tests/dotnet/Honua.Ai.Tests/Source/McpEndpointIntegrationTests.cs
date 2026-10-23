@@ -3,9 +3,11 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -919,6 +921,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         names.Should().Contain("hazard_assessment");
         names.Should().Contain("permit_review");
         names.Should().Contain("dashboard_scaffolding");
+        names.Should().Contain("setup_and_publish");
 
         var siteSelection = prompts.EnumerateArray()
             .Single(p => p.GetProperty("name").GetString() == "site_selection_analysis");
@@ -1075,27 +1078,20 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task Request_WithUnknownWellFormedSessionId_IsServedStatelessly()
+    public async Task Request_WithUnknownWellFormedSessionId_Returns404()
     {
-        // honua-server#3027: session state is per instance, so on a
-        // multi-instance deployment without sticky routing an id minted by one
-        // container is unknown to its peers. By default
-        // (Mcp:StatelessSessionFallback=true) a well-formed unknown id is served
-        // as if the request were session-less instead of the strict spec 404 —
-        // every POST is independently authenticated, so nothing rides the id.
+        // An id no instance holds must be refused with the Streamable-HTTP 404 so
+        // the client re-initializes, never served session-less with the default
+        // view (honua-release#531, journey stage 1.5). Serving it statelessly is
+        // the opt-in Mcp:StatelessSessionFallback development convenience (on by
+        // default only in Development), covered by
+        // McpStatelessSessionFallbackEnabledTests.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
             sessionId: "deadbeefdeadbeefdeadbeefdeadbeef");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        // Only initialize mints: a fallback-served request must not echo or
-        // issue a session id.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
-
-        using var document = await ReadJsonAsync(response);
-        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
-        document.RootElement.GetProperty("result").GetProperty("tools").ValueKind
-            .Should().Be(JsonValueKind.Array);
     }
 
     [IntegrationTest]
@@ -1120,10 +1116,10 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     public async Task Request_WithOverlongSessionId_Returns404()
     {
         // The stateless fallback (#3027) bounds the id length (server-minted ids
-        // are 64 hex chars); an overlong id keeps the strict 404.
+        // are 64 hex chars, stateless tokens at most 172); an overlong id keeps the strict 404.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
-            sessionId: new string('a', 129));
+            sessionId: new string('a', 257));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -1131,7 +1127,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("DELETE /mcp")]
-    public async Task Delete_TerminatesSession_AndSubsequentPostIsServedStatelessly()
+    public async Task Delete_TerminatesSession_AndSubsequentPostReturns404()
     {
         var sessionId = await InitializeAndGetSessionIdAsync();
 
@@ -1140,18 +1136,12 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         var deleteResponse = await _client.SendAsync(deleteRequest);
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // A terminated session validates as unknown; under the default stateless
-        // fallback (#3027) the well-formed id is therefore served statelessly
-        // (200, no session header) rather than the strict 404. Disable
-        // Mcp:StatelessSessionFallback to restore the pre-#3027 404 — covered by
-        // McpStatelessSessionFallbackDisabledTests.
+        // A terminated session validates as unknown and answers the strict spec
+        // 404 so the client re-initializes.
         var afterDelete = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":3,"method":"tools/list"}""",
             sessionId);
-        afterDelete.StatusCode.Should().Be(HttpStatusCode.OK);
-        afterDelete.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
-        using var document = await ReadJsonAsync(afterDelete);
-        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        afterDelete.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -1271,6 +1261,35 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = await ReadJsonAsync(response);
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
+    public async Task ResourcesRead_TemporaryArtifact_ReturnsOriginalPngThroughRegisteredHttpHandler()
+    {
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+        var store = _fixture.Services.GetRequiredService<ITemporaryFileService>();
+        // Match the fixture's password-authenticated admin principal. The real
+        // temporary store binds this artifact to its existing ownership policy.
+        var owner = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "admin")], "test"));
+        var uri = await store.StoreTemporaryFileAsync(png, "image/png", principal: owner);
+        var sessionId = await InitializeAndGetSessionIdAsync();
+        using var response = await PostRpcAsync(
+            $$"""{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":{{JsonSerializer.Serialize(uri)}} } }""", sessionId);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        var content = document.RootElement.GetProperty("result").GetProperty("contents")[0];
+        content.GetProperty("uri").GetString().Should().Be(uri);
+        content.GetProperty("mimeType").GetString().Should().Be("image/png");
+        Convert.FromBase64String(content.GetProperty("blob").GetString()!).Should().Equal(png);
+        content.TryGetProperty("text", out _).Should().BeFalse();
+        using var httpArtifact = await _client.GetAsync(uri);
+        httpArtifact.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await httpArtifact.Content.ReadAsByteArrayAsync()).Should().Equal(png);
     }
 
     private async Task<string> InitializeAndGetSessionIdAsync()

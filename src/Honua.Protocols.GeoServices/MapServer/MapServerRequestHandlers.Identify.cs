@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -24,6 +25,7 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
 using static Honua.Infrastructure.Helpers.DelimitedParameterHelpers;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -250,7 +252,7 @@ internal static partial class MapServerEndpoints
             // ({"xmin":..,"ymin":..,"xmax":..,"ymax":..,"spatialReference":..}).
             // Normalize that to the comma form before the shared bbox parser, which
             // also keeps the existing "xmin,ymin,xmax,ymax" string form working.
-            if (!TryNormalizeIdentifyMapExtent(mapExtentValue, out var normalizedMapExtent, out var mapExtentError))
+            if (!TryNormalizeMapEnvelope(mapExtentValue, "mapExtent", out var normalizedMapExtent, out var mapExtentError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, mapExtentError ?? "Invalid mapExtent parameter. Expected format: xmin,ymin,xmax,ymax");
             }
@@ -288,22 +290,32 @@ internal static partial class MapServerEndpoints
             var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
             var maxIdentifyResults = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
 
-            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(mapExtent, imageWidth, imageDpi, geometrySrid);
+            var linearUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+                context.RequestServices.GetService<ICrsRegistry>(),
+                geometrySrid,
+                cancellationToken).ConfigureAwait(false);
+            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(
+                mapExtent, imageWidth, imageDpi, geometrySrid, linearUnitFactor);
             var identifyAccessCandidates = ResolveIdentifyAccessCandidateLayers(
                 publishedLayers,
                 layersParam,
                 dynamicLayers,
                 scaleDenominator);
-            var identifyAccessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var identifyAccess = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
-                identifyAccessCandidates.Select(static layer => layer.Resource),
-                service);
+                publishedLayers.Select(static layer => layer.Resource)
+                    .Concat(identifyAccessCandidates.Select(static layer => layer.Resource)),
+                service,
+                AuthorizationOperation.Query,
+                cancellationToken).ConfigureAwait(false);
+            var identifyAccessError = identifyAccess.RequireAny(
+                identifyAccessCandidates.Select(static layer => layer.Resource));
             if (identifyAccessError != null)
             {
                 return identifyAccessError;
             }
 
-            var identifySelection = ResolveIdentifyLayers(publishedLayers, service, layersParam, dynamicLayers, context, scaleDenominator);
+            var identifySelection = ResolveIdentifyLayers(publishedLayers, identifyAccess, layersParam, dynamicLayers, scaleDenominator);
 
             var searchTolerance = CoordinateTransformer.PixelToMapUnits(tolerance, mapExtent, imageWidth);
             if (!TryBuildIdentifySpatialFilter(
@@ -394,12 +406,12 @@ internal static partial class MapServerEndpoints
                 // right layer is access-policy gated exactly like the left layer; a denied right
                 // layer fails the whole identify rather than silently dropping the join.
                 DynamicJoinLookup? joinLookup = null;
+                var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
                 if (renderLayer.Join is { } join)
                 {
                     if (!TryResolveIdentifyJoinRightLayer(
                             publishedLayers,
-                            service,
-                            context,
+                            identifyAccess,
                             join,
                             out var rightLayer,
                             out var joinError))
@@ -407,9 +419,23 @@ internal static partial class MapServerEndpoints
                         return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
                     }
 
+                    // A join keyed on a publisher-hidden field would turn row matching into a
+                    // value oracle for that field, so hidden keys are refused (#6098).
+                    if (layer.Resource.IsHiddenSchemaField(join.LeftKey) ||
+                        rightLayer!.Resource.IsHiddenSchemaField(join.RightKey))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context, "dynamicLayers join references an unavailable key field.");
+                    }
+
+                    foreach (var field in GeoServicesFieldConventions.ResolveTemporalFieldTypes(rightLayer!.Resource))
+                    {
+                        temporalFieldTypes[$"{join.RightQualifier}.{field.Key}"] = field.Value;
+                    }
+
                     joinLookup = await DynamicJoinLookup.BuildAsync(
                         featureReader,
                         rightLayer!.StorageLayerId,
+                        rightLayer.Resource.HiddenSchemaFieldNames(),
                         join.RightKey,
                         ExtractJoinKeyValues(queryResult.Items, join.LeftKey),
                         maxIdentifyResults,
@@ -418,10 +444,9 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
-                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
-                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
-                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
-                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
+                var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
+                // Normalize both left and qualified right temporal fields using the
+                // same calendar-date/timestamp conventions as query.
 
                 foreach (var feature in queryResult.Items)
                 {
@@ -445,15 +470,15 @@ internal static partial class MapServerEndpoints
                     var attributes = new Dictionary<string, object?>();
                     foreach (var kvp in sourceAttributes)
                     {
-                        if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                        if (!IsPublicAttribute(kvp.Key, hiddenFields))
                         {
                             continue;
                         }
 
-                        attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
+                        attributes[kvp.Key] = GeoServicesAttributeProjection.ToEsriValue(kvp.Value);
                     }
 
-                    GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+                    GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
 
                     object? geometryResult = null;
                     if (returnGeometry && feature.Geometry != null)
@@ -623,6 +648,27 @@ internal static partial class MapServerEndpoints
         int serviceSrid,
         out int srid,
         out string? error)
+        => TryResolveMapServerRequestSrid(
+            srValue,
+            geometry.LatestWkid,
+            geometry.Wkid,
+            serviceSrid,
+            out srid,
+            out error);
+
+    /// <summary>
+    /// Resolves the output spatial reference for MapServer identify and find.
+    /// An explicit <c>sr</c> wins, then the geometry's latestWkid or wkid. When both
+    /// are omitted the service advertises Web Mercator (3857), so the output uses
+    /// that CRS rather than the native layer CRS.
+    /// </summary>
+    internal static bool TryResolveMapServerRequestSrid(
+        string? srValue,
+        int? geometryLatestWkid,
+        int? geometryWkid,
+        int serviceSrid,
+        out int srid,
+        out string? error)
     {
         error = null;
 
@@ -640,78 +686,20 @@ internal static partial class MapServerEndpoints
             return true;
         }
 
-        if (geometry.LatestWkid is { } latestWkid && latestWkid > 0)
+        if (geometryLatestWkid is > 0)
         {
-            srid = latestWkid;
+            srid = geometryLatestWkid.Value;
             return true;
         }
 
-        if (geometry.Wkid is { } wkid && wkid > 0)
+        if (geometryWkid is > 0)
         {
-            srid = wkid;
+            srid = geometryWkid.Value;
             return true;
         }
 
-        srid = serviceSrid;
+        srid = CachedMapSpatialReferenceId;
         return true;
-    }
-
-    /// <summary>
-    /// Normalizes a mapExtent value into the comma-delimited "xmin,ymin,xmax,ymax"
-    /// form. Accepts both the legacy comma string and the Esri JSON envelope object
-    /// ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}) that the ArcGIS JS SDK and arcpy emit.
-    /// </summary>
-    private static bool TryNormalizeIdentifyMapExtent(
-        string? mapExtentValue,
-        out string? normalized,
-        out string? error)
-    {
-        normalized = mapExtentValue;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(mapExtentValue))
-        {
-            return true;
-        }
-
-        var trimmed = mapExtentValue.TrimStart();
-        if (!trimmed.StartsWith('{'))
-        {
-            // Legacy comma form (or anything else) — let the shared bbox parser decide.
-            return true;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(mapExtentValue);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                error = "Invalid mapExtent parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.";
-                return false;
-            }
-
-            var root = doc.RootElement;
-            var xmin = TryGetDouble(root, "xmin");
-            var ymin = TryGetDouble(root, "ymin");
-            var xmax = TryGetDouble(root, "xmax");
-            var ymax = TryGetDouble(root, "ymax");
-
-            if (!(xmin.HasValue && ymin.HasValue && xmax.HasValue && ymax.HasValue))
-            {
-                error = "mapExtent envelope must include xmin, ymin, xmax, and ymax.";
-                return false;
-            }
-
-            normalized = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{xmin.Value},{ymin.Value},{xmax.Value},{ymax.Value}");
-            return true;
-        }
-        catch (JsonException)
-        {
-            error = "Invalid mapExtent parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.";
-            return false;
-        }
     }
 
     private static bool TryParseIdentifyGeometry(
@@ -730,7 +718,8 @@ internal static partial class MapServerEndpoints
         }
 
         if (string.Equals(geometryType, "esriGeometryPoint", StringComparison.OrdinalIgnoreCase) &&
-            TryParsePointPair(geometryValue, out var pairX, out var pairY))
+            (TryParsePointPair(geometryValue, out var pairX, out var pairY) ||
+             GeoServicesPointGeometryParser.TryParsePointLiteral(geometryValue, out pairX, out pairY)))
         {
             geometry = new IdentifyGeometryInput(
                 geometryValue,
@@ -1064,14 +1053,13 @@ internal static partial class MapServerEndpoints
 
     private static IdentifyLayerSelection ResolveIdentifyLayers(
         IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
+        ResourceAccessSet access,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
-        HttpContext context,
         double scaleDenominator)
     {
         var accessibleLayers = publishedLayers
-            .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, service))
+            .Where(l => access.IsAccessible(l.Resource))
             .ToArray();
 
         IdentifyLayerMode mode = IdentifyLayerMode.Top;
@@ -1121,7 +1109,7 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                if (!access.IsAccessible(layer.Resource))
                 {
                     continue;
                 }
@@ -1514,8 +1502,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static bool TryResolveIdentifyJoinRightLayer(
         IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
-        HttpContext context,
+        ResourceAccessSet access,
         DynamicLayerJoinDefinition join,
         out IdentifyLayerDescriptor? rightLayer,
         out string? error)
@@ -1530,7 +1517,7 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        if (!AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service))
+        if (!access.IsAccessible(rightLayer.Resource))
         {
             error = "dynamicLayers join references an inaccessible right layer.";
             return false;

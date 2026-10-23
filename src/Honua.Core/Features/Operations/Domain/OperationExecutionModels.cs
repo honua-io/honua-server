@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Core.Features.Operations.Domain;
 
 /// <summary>
@@ -11,6 +13,13 @@ namespace Honua.Core.Features.Operations.Domain;
 /// </summary>
 public sealed record OperationRequest
 {
+    /// <summary>
+    /// Server-revalidated committed-sink evidence for this invocation. The public request and
+    /// durable approval payload carry only source job/artifact IDs; the executor reconstructs
+    /// this evidence before validation on every submission and approved replay.
+    /// </summary>
+    [JsonIgnore]
+    public VerifiedCommittedSinkPublication? VerifiedCommittedSinkPublication { get; init; }
     /// <summary>
     /// Operation identifier this request targets (for example <c>service.publish</c>).
     /// </summary>
@@ -49,6 +58,69 @@ public sealed record OperationRequest
     /// The canonical runtime still owns identity, validation, policy, and actuation.
     /// </summary>
     public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest? GatewayRequest { get; init; }
+
+    /// <summary>
+    /// Secret inputs captured in an approval payload. References are resolved only by the
+    /// approved REST executor and are never serialized as part of the public request.
+    /// </summary>
+    public IReadOnlyDictionary<string, OperationSecretReference> SecretParameters { get; init; } =
+        new Dictionary<string, OperationSecretReference>(StringComparer.Ordinal);
+}
+
+/// <summary>Exact source and destination identity revalidated from a completed sink job.</summary>
+public sealed record VerifiedCommittedSinkPublication
+{
+    /// <summary>Durable source job identifier.</summary>
+    public required string SourceJobId { get; init; }
+
+    /// <summary>Exact source artifact identifier.</summary>
+    public required string SourceArtifactId { get; init; }
+
+    /// <summary>Registered secure connection identifier used by the sink.</summary>
+    public required Guid ConnectionId { get; init; }
+
+    /// <summary>Committed schema.</summary>
+    public required string Schema { get; init; }
+
+    /// <summary>Committed table.</summary>
+    public required string Table { get; init; }
+
+    /// <summary>Hash of the sink's exact database endpoint.</summary>
+    public required string EndpointFingerprint { get; init; }
+
+    /// <summary>Durable source job owner.</summary>
+    public required string SourceOwnerActorId { get; init; }
+
+    /// <summary>Actor authorized to request this publication.</summary>
+    public required string PublisherActorId { get; init; }
+
+    /// <summary>Whether the publisher accessed another actor's source as an administrator.</summary>
+    public bool PublisherWasAdministrator { get; init; }
+
+    /// <summary>Trusted tenant identity captured by the source job.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Durable source job parameter name.</summary>
+    public const string SourceJobIdKey = "committedSinkSourceJobId";
+
+    /// <summary>Durable source artifact parameter name.</summary>
+    public const string SourceArtifactIdKey = "committedSinkSourceArtifactId";
+
+    /// <summary>Sealed actor parameter name used for approved replay.</summary>
+    public const string PublisherActorIdKey = "committedSinkPublisherActorId";
+
+    /// <summary>Sealed administrator decision parameter name used for approved replay.</summary>
+    public const string PublisherWasAdministratorKey = "committedSinkPublisherWasAdministrator";
+}
+
+/// <summary>Opaque, non-secret handle for one-time operation secret material.</summary>
+public sealed record OperationSecretReference
+{
+    /// <summary>Opaque identifier resolved by the operation secret channel.</summary>
+    public required string ReferenceId { get; init; }
+
+    /// <summary>Logical field name, such as <c>key</c> or <c>clientSecret</c>.</summary>
+    public required string Name { get; init; }
 }
 
 /// <summary>
@@ -101,6 +173,14 @@ public sealed record OperationPolicyContext
     public string? IdempotencyKey { get; init; }
 
     /// <summary>
+    /// Optional digest of the canonical effective request. Adapters that opt in bind a
+    /// durable idempotency key to this payload and refuse concurrent actuation retries.
+    /// The adapter must scope IdempotencyKey to the authenticated principal and tenant.
+    /// The digest must not contain credentials or unredacted request data.
+    /// </summary>
+    public string? IdempotencyRequestHash { get; init; }
+
+    /// <summary>
     /// Trusted authorization outcome established before the operation policy decision.
     /// </summary>
     public string? AuthorizationOutcome { get; init; }
@@ -134,6 +214,13 @@ public sealed record OperationPolicyContext
 
     /// <summary>Normalized recognized OAuth scopes forming the invocation's upper bound.</summary>
     public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when this invocation is not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>
@@ -156,6 +243,15 @@ public sealed record OperationValidation
     /// Human-readable diagnostic messages describing the plan or the problems found.
     /// </summary>
     public IReadOnlyList<string> Messages { get; init; } = [];
+
+    /// <summary>
+    /// Optional error taxonomy for a blocking validation failure (for example <c>argument</c>,
+    /// <c>not-found</c>, <c>conflict</c>). Pre-policy rejections carry no actuation handle of
+    /// their own, so this is the only seam that lets a caller-facing surface map a rejection
+    /// raised before policy routing onto the same status code it would get from actuation.
+    /// <see langword="null"/> keeps the historical opaque-failure behavior.
+    /// </summary>
+    public string? ErrorKind { get; init; }
 
     /// <summary>
     /// Typed, validated approval plan produced from the accepted request. When policy requires
@@ -236,6 +332,12 @@ public sealed record OperationHandle
 
     /// <summary>Durable evidence references associated with the invocation.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. Stamped at acceptance and
+    /// preserved across actuation. Null when the invocation was not federated.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>
@@ -256,6 +358,12 @@ public sealed record OperationResultSummary
     /// </summary>
     public IReadOnlyDictionary<string, string> Details { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Opaque references for one-time secret outputs. The material is available only through
+    /// the authenticated consume-once channel and is never part of this durable result.
+    /// </summary>
+    public IReadOnlyList<OperationSecretReference> SecretReferences { get; init; } = [];
 }
 
 /// <summary>
@@ -319,6 +427,12 @@ public sealed record OperationStatus
 
     /// <summary>Durable evidence references associated with the invocation.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
+
+    /// <summary>
+    /// Verified provisioning root copied from the durable <see cref="OperationHandle"/>.
+    /// Status reads do not invent a root the handle does not carry.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>

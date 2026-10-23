@@ -29,7 +29,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   HONUA_TEST_CONFIGURATION: Release
-  HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua'
+  HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}'
 
 jobs:
   plan:
@@ -41,7 +41,7 @@ jobs:
       producers: ${{ steps.plan.outputs.producers }}
       reused_consumers: ${{ steps.plan.outputs.reused_consumers }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - id: plan
         name: Validate and emit bounded matrices
         env:
@@ -56,7 +56,7 @@ jobs:
             --output benchmark-plan.json \
             --github-output "${GITHUB_OUTPUT}"
       - name: Upload immutable benchmark plan
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-benchmark-plan-${{ github.run_id }}
           path: benchmark-plan.json
@@ -77,7 +77,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # NOT routed through ./.github/actions/setup-dotnet-ci — deliberate, and it
       # applies to every job in this workflow (see `baseline` and `reused-consumer`).
       #
@@ -98,7 +98,7 @@ jobs:
       # Each job here also does its own `dotnet nuget update source` below, so the
       # composite's `Configure GitHub Packages` step would be redundant as well.
       # Keep this workflow on raw setup-dotnet so its numbers stay comparable.
-      - uses: actions/setup-dotnet@v6.0.0
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Authenticate exact package inputs
@@ -140,7 +140,7 @@ jobs:
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
       - name: Upload immutable same-run payload
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: server-test-${{ github.sha }}-${{ matrix.project_suffix }}
           path: payload/
@@ -159,7 +159,7 @@ jobs:
             metrics/producer-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/producer-${{ matrix.identity }}.json
       - name: Upload producer metrics
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-producer-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -178,7 +178,7 @@ jobs:
         image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
-          POSTGRES_PASSWORD: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
@@ -194,11 +194,11 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
       # on the `producer` job. Caching NuGet here would speed up only the baseline
       # arm and bias the gated comparison.
-      - uses: actions/setup-dotnet@v6.0.0
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Authenticate exact package inputs
@@ -224,7 +224,7 @@ jobs:
             '.job_elapsed_ms=$job_elapsed_ms' metrics/baseline-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/baseline-${{ matrix.identity }}.json
       - name: Upload baseline metrics and TRX evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-baseline-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -245,7 +245,7 @@ jobs:
         image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
-          POSTGRES_PASSWORD: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
@@ -261,14 +261,14 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
       # on the `producer` job. This job restores nothing: it unpacks the producer
       # payload and runs `dotnet test --no-build --no-restore`
       # (scripts/ci/benchmark-server-test-transfer.sh), so `restore_ms` is 0 for
       # every consumer mode. A NuGet cache step here would be pure overhead
       # charged to this arm's p90 and billed minutes.
-      - uses: actions/setup-dotnet@v6.0.0
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - id: toolchain
@@ -323,7 +323,7 @@ jobs:
             metrics/consumer-artifact-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/consumer-artifact-${{ matrix.identity }}.json
       - name: Upload reuse metrics and TRX evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-consumer-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -344,7 +344,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - name: Download benchmark plan
         uses: actions/download-artifact@v8
         with:
@@ -378,7 +378,7 @@ jobs:
       - name: Preserve raw metrics
         run: cp -a raw-metrics evidence/raw-metrics
       - name: Upload raw and summarized reuse evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: server-test-reuse-evidence-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: evidence/

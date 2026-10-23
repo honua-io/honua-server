@@ -1,0 +1,51 @@
+diff --git a/docs/gis/data/capability-matrix.v1.json b/docs/gis/data/capability-matrix.v1.json
+index d4a7eef2ed..d93e1d4337 100644
+--- a/docs/gis/data/capability-matrix.v1.json
++++ b/docs/gis/data/capability-matrix.v1.json
+@@ -842,7 +842,7 @@
+       "edition": "Pro",
+       "status": null,
+       "entryCount": 7,
+-      "provingTestCount": 150,
++      "provingTestCount": 151,
+       "maturity": {
+         "implemented": 7
+       },
+diff --git a/docs/gis/data/feature-catalog.json b/docs/gis/data/feature-catalog.json
+index d4b0de6de8..e6421065cb 100644
+--- a/docs/gis/data/feature-catalog.json
++++ b/docs/gis/data/feature-catalog.json
+@@ -20681,6 +20681,7 @@
+         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.ApplyEdits_WithScopedDataEditor_AllowsMatchingService",
+         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.ApplyEdits_WithScopedDataEditor_DeniesOtherService",
+         "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.ApplyEdits_FormUrlEncoded_AttributeValuesWithSqlMetacharacters_AreNotRejected",
++        "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.SRV_INF_003_ApplyEdits_WithStructuredPayloadOverGenericLimit_ReachesHandler",
+         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.CSRF_PostWithoutToken_ShouldBeBlocked",
+         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.ContentValidation_MalformedJSON_ShouldBeRejected",
+         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.CorrelationId_CriticalOperations_ReturnsCorrelationId",
+diff --git a/docs/okf/capabilities/editing.featureserver-edits.md b/docs/okf/capabilities/editing.featureserver-edits.md
+index 1b35f445e5..bc9b9f3694 100644
+--- a/docs/okf/capabilities/editing.featureserver-edits.md
++++ b/docs/okf/capabilities/editing.featureserver-edits.md
+@@ -18,7 +18,7 @@ Create, update, and delete features through the Esri GeoServices FeatureServer w
+ | Edition | Pro |
+ | Surface maturity | 7 implemented |
+ | Registry entries | 7 |
+-| Proving tests | 150 |
++| Proving tests | 151 |
+ 
+ The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
+ 
+diff --git a/examples/manifest.json b/examples/manifest.json
+index a71a00bb65..86140adb41 100644
+--- a/examples/manifest.json
++++ b/examples/manifest.json
+@@ -7756,7 +7756,7 @@
+         "check": "inventory-classification"
+       },
+       "fence": 1,
+-      "line": 123,
++      "line": 124,
+       "language": "bash"
+     },
+     {

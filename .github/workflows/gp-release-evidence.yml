@@ -104,7 +104,7 @@ jobs:
           sha256sum "${package}.tar.gz" > "${package}.tar.gz.sha256"
 
       - name: Retain and publish immutable evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: gp-release-evidence-${{ inputs.source_sha }}
           path: gp-qualification-${{ inputs.source_sha }}.tar.gz*

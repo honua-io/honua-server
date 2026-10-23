@@ -191,6 +191,7 @@ public sealed class FilterPlanCompilerTests
         var distance = spatial.Distance.Should().BeOfType<Literal>().Subject;
         distance.Type.Should().Be(LiteralType.Number);
         ((double)distance.Value!).Should().Be(5000.0); // 5 km converted to meters
+        spatial.DistanceInMeters.Should().BeTrue("projected-layer translators convert metres to the native unit (#5462)");
     }
 
     [UnitTest]
@@ -610,6 +611,56 @@ public sealed class FilterPlanCompilerTests
 
         plan.Clauses.Should().NotBeNull();
         plan.Clauses.Length.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Compile_NullClauseType_ReturnsFailureInsteadOfThrowing()
+    {
+        var plan = new FilterPlan
+        {
+            Combinator = FilterPlanCombinator.And,
+            Clauses = [new FilterPlanClause { Type = null! }]
+        };
+
+        var act = () => FilterPlanCompiler.Compile(plan, _testResource);
+
+        act.Should().NotThrow();
+        act().IsSuccess.Should().BeFalse();
+        act().ErrorMessage.Should().Contain("type");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Compile_TooManyClauses_ReturnsFailureInsteadOfThrowing()
+    {
+        var clauses = new FilterPlanClause[FilterExpressionNormalizer.MaxExpressionDepth + 1];
+        for (var i = 0; i < clauses.Length; i++)
+        {
+            clauses[i] = new FilterPlanClause
+            {
+                Type = "comparison",
+                Comparison = new ComparisonClause
+                {
+                    Property = "name",
+                    Operator = "eq",
+                    Value = "x"
+                }
+            };
+        }
+
+        var plan = new FilterPlan
+        {
+            Combinator = FilterPlanCombinator.And,
+            Clauses = clauses
+        };
+
+        var act = () => FilterPlanCompiler.Compile(plan, _testResource);
+
+        act.Should().NotThrow();
+        var result = act();
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("maximum nesting depth");
     }
 
     private static FilterPlan Deserialize(string json)

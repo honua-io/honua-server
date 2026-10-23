@@ -323,8 +323,11 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
-    public async Task ExtractChanges_WithBaselineReplicaExceedingConfiguredLimit_ReturnsBadRequest()
+    public async Task ExtractChanges_BaselineReplicaLargerThanQueryRecordLimit_DeliversEveryFeature()
     {
+        // #4019: a generation-0 extract over more rows than Limits:Query:MaxRecordCount used to be a
+        // permanent 400 ("exceeds the configured per-layer ... limit"). Feature payloads are now read in
+        // pages of that cap, so the extract carries every row. The expected rows come back from SQL.
         var limitedFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.ConfigureAppConfiguration((_, configBuilder) =>
@@ -342,7 +345,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         try
         {
             await limitedFixture.EnsureLargeTestDatasetAsync();
-            await InsertAdditionalFeaturesAsync(limitedFixture, 25);
+            var inserted = await InsertAdditionalFeaturesAsync(limitedFixture, 250);
             var replicaId = await CreateReplicaAsync(limitedFixture, "LargeReplica");
             var replicaStore = limitedFixture.GetService<IReplicaStore>();
             var replica = await replicaStore.GetAsync(replicaId);
@@ -364,15 +367,34 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
                 requestContent);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
-            // After the change-log baseline (migration 059), a gen-0 baseline replica resolves through
-            // the incremental change-log delta path rather than the all-features snapshot fallback, so an
-            // over-limit first sync is rejected as a per-layer *change* limit overflow. Both are correct
-            // 400s; assert on the stable "per-layer ... limit" semantics rather than the exact path text.
-            content.Should().Contain("exceeds the configured per-layer");
-            content.Should().Contain("limit");
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+            root.TryGetProperty("error", out _).Should().BeFalse(content);
+            root.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse(
+                "the default Limits:Replica:MaxChangesPerLayer is far above this layer's size");
+
+            var adds = root.GetProperty("edits").EnumerateArray().Should().ContainSingle().Subject
+                .GetProperty("features").GetProperty("adds");
+            adds.GetArrayLength().Should().BeGreaterThan(100, "the layer holds more rows than the query record cap");
+            // The baseline also carries the large dataset's own rows (a different attribute schema); the
+            // value oracle is the rows this test inserted, read back from SQL.
+            var delivered = adds.EnumerateArray()
+                .Where(feature => inserted.ContainsKey(feature.GetProperty("attributes").GetProperty("objectid").GetInt64()))
+                .ToDictionary(
+                feature => feature.GetProperty("attributes").GetProperty("objectid").GetInt64(),
+                feature => (
+                    Name: feature.GetProperty("attributes").GetProperty("Name").GetString(),
+                    X: feature.GetProperty("geometry").GetProperty("x").GetDouble(),
+                    Y: feature.GetProperty("geometry").GetProperty("y").GetDouble()));
+            foreach (var (objectId, row) in inserted)
+            {
+                delivered.Should().ContainKey(objectId);
+                delivered[objectId].Name.Should().Be(row.Name);
+                delivered[objectId].X.Should().BeApproximately(row.X, 1e-9);
+                delivered[objectId].Y.Should().BeApproximately(row.Y, 1e-9);
+            }
         }
         finally
         {
@@ -404,7 +426,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         return doc.RootElement.GetProperty("replicaID").GetString()!;
     }
 
-    private static async Task InsertAdditionalFeaturesAsync(WebAppFixture fixture, int count)
+    private static async Task<Dictionary<long, (string? Name, double X, double Y)>> InsertAdditionalFeaturesAsync(WebAppFixture fixture, int count)
     {
         fixture.CurrentSchema.Should().NotBeNullOrWhiteSpace();
 
@@ -417,9 +439,17 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
                    jsonb_build_object(
                        'Name', format('Replication Limit Test %s', n),
                        'Category', 'ReplicationLimit')
-            FROM generate_series(1, @count) AS n;
+            FROM generate_series(1, @count) AS n
+            RETURNING objectid, attributes->>'Name', ST_X(geometry), ST_Y(geometry);
             """;
         command.Parameters.AddWithValue("count", count);
-        await command.ExecuteNonQueryAsync();
+        var rows = new Dictionary<long, (string? Name, double X, double Y)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows[reader.GetInt64(0)] = (reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetDouble(2), reader.GetDouble(3));
+        }
+
+        return rows;
     }
 }

@@ -89,6 +89,24 @@ internal sealed partial class StreamingFileImportService
         return GetAllowedTableName(tableName);
     }
 
+    /// <summary>
+    /// Reports whether the live physical target already exists. A replace whose load drops
+    /// rows must only refuse to promote when this is <see langword="true"/> — a first-ever
+    /// replace into a brand-new target has no prior complete dataset to lose, so a partial
+    /// result is a normal partial import (#4006), not data loss.
+    /// </summary>
+    private static async Task<bool> ImportTableExistsAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(ImportTableExistsSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        return (bool?)await command.ExecuteScalarAsync(cancellationToken) == true;
+    }
+
     private static async Task CreateTableAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -209,6 +227,86 @@ internal sealed partial class StreamingFileImportService
     }
 
     /// <summary>
+    /// Copies every staged row into the live target and drops the staging sibling in one
+    /// transaction. A failure rolls the insert back and leaves the live table unchanged.
+    /// </summary>
+    private static async Task AppendStagingIntoTargetAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string liveTableName,
+        string stagingTableName,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var insertSql =
+                $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(liveTableName)} (geometry, properties) " +
+                $"SELECT geometry, properties FROM {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)}";
+            await using (var insert = new NpgsqlCommand(insertSql, connection, transaction))
+            {
+                await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var drop = new NpgsqlCommand(DropImportStagingTableSql, connection, transaction))
+            {
+                drop.Parameters.AddWithValue("schema_name", schemaName);
+                drop.Parameters.AddWithValue("table_name", liveTableName);
+                await drop.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitSafelyAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="tableName"/> exists and carries the importer ownership marker.
+    /// A missing table and a table the importer does not own both return false; the latter is not
+    /// an error here because append still has a direct write path for those tables.
+    /// This is a read of the ownership comment only. <see cref="ImportTableOwnership.AssertOwnedAsync"/>
+    /// takes <c>LOCK TABLE</c>, which PostgreSQL rejects outside a transaction (SQLSTATE 25P01),
+    /// and this check runs before the load transaction starts.
+    /// </summary>
+    private static async Task<bool> TargetIsImporterOwnedAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT obj_description(to_regclass(@relation), 'pg_class')",
+            connection);
+        command.Parameters.AddWithValue(
+            "relation",
+            $"{QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}");
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is string marker
+            && marker == ImportTableOwnership.Marker;
+    }
+
+    /// <summary>
+    /// Drops the never-promoted <c>&lt;table&gt;__staging</c> sibling of <paramref name="tableName"/>.
+    /// Used when a replace's load left features out (skip/continue) and the live target must not
+    /// be swapped for an incomplete dataset (#4006); the staging table is otherwise dead weight
+    /// until the next replace's <see cref="CreateStagingTableAsync"/> drops it anyway.
+    /// </summary>
+    private static async Task DropStagingTableAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(DropImportStagingTableSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Ensures a stable unique index over the requested property key columns so the keyed
     /// upsert path has a valid <c>ON CONFLICT</c> target.
     /// </summary>
@@ -238,18 +336,7 @@ internal sealed partial class StreamingFileImportService
     }
 
     private string ResolveTargetSchema(string? requestedSchema)
-    {
-        var schema = string.IsNullOrWhiteSpace(requestedSchema)
-            ? _schemaConfiguration.DefaultOperationalSchema
-            : requestedSchema.Trim();
-
-        if (!SchemaSearchPath.IsValidIdentifier(schema))
-        {
-            throw new ArgumentException("Target schema contains invalid characters.", nameof(requestedSchema));
-        }
-
-        return schema;
-    }
+        => _schemaConfiguration.ResolveImportTargetSchema(requestedSchema);
 
     private Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
         => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);

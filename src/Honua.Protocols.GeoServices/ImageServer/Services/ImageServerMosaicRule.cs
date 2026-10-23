@@ -9,7 +9,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// <summary>
 /// The Esri <c>mosaicMethod</c> that an ImageServer <c>mosaicRule</c> selects, normalized to
 /// the subset this service understands. <see cref="Unsupported"/> covers recognized-but-not-yet
-/// implemented methods (for example <c>esriMosaicCenter</c>, or an <c>esriMosaicByAttribute</c>
+/// implemented methods (for example <c>esriMosaicCenter</c>, or an <c>esriMosaicAttribute</c>
 /// over a non-acquisition, non-allowlisted field) which must surface a clean 501 when more than
 /// one raster would be composited.
 /// </summary>
@@ -19,14 +19,14 @@ public enum MosaicMethod
     None = 0,
 
     /// <summary>
-    /// <c>esriMosaicByAttribute</c> over an allowlisted NON-date raster attribute — composites by
+    /// <c>esriMosaicAttribute</c> over an allowlisted NON-date raster attribute — composites by
     /// the named attribute value (ascending or descending). The resolved physical column is
     /// carried on <see cref="ImageServerMosaicRule.AttributeSortColumn"/>.
     /// </summary>
     Attribute = 1,
 
     /// <summary>
-    /// <c>esriMosaicByAttribute</c> over a date field, or <c>esriMosaicAttribute</c> resolved to
+    /// <c>esriMosaicAttribute</c> over a date field, or <c>esriMosaicAttribute</c> resolved to
     /// an acquisition ordering. Equivalent to <see cref="Attribute"/> for ordering purposes.
     /// </summary>
     ByDate = 2,
@@ -73,6 +73,39 @@ public enum MosaicMethod
 /// </summary>
 public readonly record struct ImageServerMosaicRule
 {
+    /// <summary>
+    /// The <c>allowedMosaicMethods</c> the service advertises (#4063): the unprefixed Esri
+    /// vocabulary (<c>None,Center,NorthWest,LockRaster,ByAttribute,Nadir,Viewpoint,Seamline</c>)
+    /// narrowed to the methods <see cref="TryParse"/> classifies as executable. <c>Center</c> and
+    /// <c>Viewpoint</c> classify as <see cref="MosaicMethod.Unsupported"/> (501 on a multi-raster
+    /// request), so they are not advertised. REST and SOAP service metadata share this value.
+    /// </summary>
+    public const string AllowedMosaicMethods = "None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline";
+
+    /// <summary>
+    /// The <c>defaultMosaicMethod</c> the service advertises (#4063). A request without a
+    /// <c>mosaicRule</c> composites newest acquisition first (<see cref="ToOrdering"/> falls back to
+    /// <see cref="RasterMosaicOrdering.AcquisitionNewest"/>), which in Esri terms is a
+    /// <c>ByAttribute</c> mosaic over <see cref="DefaultSortField"/>, not <c>NorthWest</c>.
+    /// </summary>
+    public const string DefaultMosaicMethod = "ByAttribute";
+
+    /// <summary>
+    /// Wire <c>mosaicMethod</c> for an advertised short name. <c>ByAttribute</c> is
+    /// <c>esriMosaicAttribute</c>; the other advertised names take an <c>esriMosaic</c> prefix.
+    /// </summary>
+    public static string ToMosaicMethodWireValue(string shortName) =>
+        string.Equals(shortName, DefaultMosaicMethod, StringComparison.OrdinalIgnoreCase)
+            ? "esriMosaicAttribute"
+            : "esriMosaic" + shortName;
+
+    /// <summary>
+    /// The raster-catalog date field the default <see cref="DefaultMosaicMethod"/> sorts on. It is
+    /// the catalog attribute field name, and <see cref="TryParse"/> resolves it to the
+    /// acquisition ordering.
+    /// </summary>
+    public const string DefaultSortField = "AcquisitionDate";
+
     /// <summary>The normalized mosaic method requested by the rule.</summary>
     public MosaicMethod Method { get; init; }
 
@@ -95,7 +128,7 @@ public readonly record struct ImageServerMosaicRule
     public string? SortValue { get; init; }
 
     /// <summary>
-    /// The allowlisted physical raster-catalog column an <c>esriMosaicByAttribute</c> rule sorts
+    /// The allowlisted physical raster-catalog column an <c>esriMosaicAttribute</c> rule sorts
     /// on when <see cref="Method"/> is <see cref="MosaicMethod.Attribute"/> over a non-date
     /// field; <c>null</c> for date-attribute and all other methods. Always a vetted physical
     /// column name (never the caller's raw <see cref="SortField"/>), so it is safe to thread into
@@ -128,12 +161,43 @@ public readonly record struct ImageServerMosaicRule
 
     /// <summary>
     /// Builds the non-date attribute ordering passed to the raster store when this rule is an
-    /// <c>esriMosaicByAttribute</c> over an allowlisted non-date column; <c>null</c> otherwise.
+    /// <c>esriMosaicAttribute</c> over an allowlisted non-date column; <c>null</c> otherwise.
     /// </summary>
     public RasterMosaicAttributeSort? ToAttributeSort()
         => Method == MosaicMethod.Attribute && !string.IsNullOrEmpty(AttributeSortColumn)
             ? new RasterMosaicAttributeSort(AttributeSortColumn, Ascending)
             : null;
+
+    /// <summary>
+    /// Keeps only rasters named by a lock-raster rule, in caller-pinned
+    /// <see cref="LockRasterIds"/> order. Other methods return the selection unchanged.
+    /// </summary>
+    /// <param name="rasters">Rasters already selected by geometry and time.</param>
+    /// <returns>The rasters the rule allows, in lock order when the method is lock-raster.</returns>
+    public RasterInfo[] RestrictToLockedRasters(IReadOnlyList<RasterInfo> rasters)
+    {
+        ArgumentNullException.ThrowIfNull(rasters);
+        if (Method != MosaicMethod.LockRaster)
+        {
+            return rasters as RasterInfo[] ?? rasters.ToArray();
+        }
+
+        var lockedIds = LockRasterIds ?? [];
+        var byId = new Dictionary<long, RasterInfo>(rasters.Count);
+        foreach (var raster in rasters)
+        {
+            byId.TryAdd(raster.Id, raster);
+        }
+
+        return lockedIds
+            .Where(byId.ContainsKey)
+            .Select(id =>
+            {
+                byId.Remove(id, out var raster);
+                return raster;
+            })
+            .ToArray();
+    }
 
     /// <summary>
     /// Parses an ImageServer <c>mosaicRule</c> request string.
@@ -165,11 +229,18 @@ public readonly record struct ImageServerMosaicRule
         var trimmed = mosaicRule.Trim();
         if (!trimmed.StartsWith('{'))
         {
-            // A bare token (e.g. "last"/"mean") only carries a merge-strategy hint.
+            // A bare token (e.g. "first"/"mean") only carries a merge-strategy hint.
+            if (!TryParseOperationToken(trimmed, out var bareStrategy))
+            {
+                error = $"mosaicRule operation '{trimmed}' is not implemented.";
+                isNotImplemented = true;
+                return false;
+            }
+
             rule = new ImageServerMosaicRule
             {
                 Method = MosaicMethod.None,
-                Operation = TryParseOperationToken(trimmed, out var bareStrategy) ? bareStrategy : null
+                Operation = bareStrategy
             };
             return true;
         }
@@ -195,13 +266,23 @@ public readonly record struct ImageServerMosaicRule
                 return true;
             }
 
-            var operation = ResolveOperation(root);
+            if (TryRejectUnimplementedConstraints(root, out error))
+            {
+                isNotImplemented = true;
+                return false;
+            }
+
+            if (!TryResolveOperation(root, out var operation, out error))
+            {
+                isNotImplemented = true;
+                return false;
+            }
             var ascending = ResolveAscending(root);
             var sortField = ReadString(root, "sortField");
             var sortValue = ReadString(root, "sortValue");
 
             var methodName = ReadString(root, "mosaicMethod");
-            var method = ClassifyMethod(methodName, sortField, out var attributeSortColumn);
+            var method = ClassifyMethod(methodName, sortField, sortValue, out var attributeSortColumn);
 
             if (method == MosaicMethod.LockRaster)
             {
@@ -236,7 +317,7 @@ public readonly record struct ImageServerMosaicRule
         }
     }
 
-    private static MosaicMethod ClassifyMethod(string? methodName, string? sortField, out string? attributeSortColumn)
+    private static MosaicMethod ClassifyMethod(string? methodName, string? sortField, string? sortValue, out string? attributeSortColumn)
     {
         attributeSortColumn = null;
 
@@ -273,9 +354,16 @@ public readonly record struct ImageServerMosaicRule
             return MosaicMethod.Nadir;
         }
 
-        if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) ||
-            methodName.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase))
+        if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase))
         {
+            // Esri ByAttribute with a base sortValue ranks rasters by their distance from that
+            // value. The raster store only orders by the attribute itself, so a base value is a
+            // recognized-but-unsupported form (#4063); a direction token ("asc"/"desc") is not.
+            if (!string.IsNullOrWhiteSpace(sortValue) && !IsSortDirectionToken(sortValue))
+            {
+                return MosaicMethod.Unsupported;
+            }
+
             // A date/acquisition attribute sort uses the temporal ordering path.
             if (IsDateSortField(sortField))
             {
@@ -296,14 +384,14 @@ public readonly record struct ImageServerMosaicRule
         return MosaicMethod.Unsupported;
     }
 
-    // Maps an Esri esriMosaicByAttribute sortField onto a strictly allowlisted physical raster
+    // Maps an Esri esriMosaicAttribute sortField onto a strictly allowlisted physical raster
     // catalog column. Only stable, numeric/sortable columns the catalog actually carries are
     // permitted; everything else (including sensor/nadir-style fields that are not modeled) is
     // rejected so an arbitrary, injectable, or meaningless sort never reaches the SQL ORDER BY.
     // Accepts the Esri canonical catalog field names and their physical aliases. Sensor- and
     // orientation-derived fields (e.g. off-nadir) are intentionally absent here: the dedicated
     // esriMosaicNadir method (MosaicMethod.Nadir) ranks by the off-nadir angle from sensor
-    // metadata; an esriMosaicByAttribute sort over a raw sensor field stays unsupported.
+    // metadata; an esriMosaicAttribute sort over a raw sensor field stays unsupported.
     private static bool TryResolveAttributeSortColumn(string? sortField, out string? column)
     {
         column = null;
@@ -358,6 +446,9 @@ public readonly record struct ImageServerMosaicRule
             || sortField.Equals("createddate", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsSortDirectionToken(string sortValue)
+        => sortValue.Trim().ToLowerInvariant() is "asc" or "ascending" or "desc" or "descending";
+
     // Esri sortValue/ascending semantics: an explicit "ascending": true wins. Otherwise a
     // sortValue of "asc"/"ascending" requests an ascending (oldest-first) ordering. The
     // default is descending (newest-first), matching the Esri acquisition default.
@@ -389,21 +480,80 @@ public readonly record struct ImageServerMosaicRule
         return false;
     }
 
-    private static RasterMergeStrategy? ResolveOperation(JsonElement root)
+    private static bool TryRejectUnimplementedConstraints(JsonElement root, out string error)
     {
-        if (TryReadStringInsensitive(root, "mergeStrategy", out var mergeStrategy) &&
-            TryParseOperationToken(mergeStrategy, out var fromMerge))
+        error = string.Empty;
+        if (TryReadStringInsensitive(root, "where", out var where) && !IsTrivialMosaicWhere(where))
         {
-            return fromMerge;
+            error = "mosaicRule where is not implemented.";
+            return true;
         }
 
-        if (TryReadStringInsensitive(root, "operation", out var operation) &&
-            TryParseOperationToken(operation, out var fromOperation))
+        if (HasNonEmptyFids(root))
         {
-            return fromOperation;
+            error = "mosaicRule fids is not implemented.";
+            return true;
         }
 
-        return null;
+        return false;
+    }
+
+    private static bool IsTrivialMosaicWhere(string? where)
+    {
+        if (string.IsNullOrWhiteSpace(where))
+        {
+            return true;
+        }
+
+        var compact = where.Trim().Replace(" ", string.Empty, StringComparison.Ordinal);
+        return compact is "1=1" or "(1=1)";
+    }
+
+    private static bool HasNonEmptyFids(JsonElement root)
+    {
+        foreach (var property in root.EnumerateObject())
+        {
+            if (property.Name.Equals("fids", StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.Array &&
+                property.Value.GetArrayLength() > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveOperation(JsonElement root, out RasterMergeStrategy? operation, out string error)
+    {
+        operation = null;
+        error = string.Empty;
+        string? token = null;
+        if (TryReadStringInsensitive(root, "mergeStrategy", out var mergeStrategy))
+        {
+            token = mergeStrategy;
+        }
+        else if (TryReadStringInsensitive(root, "operation", out var operationToken))
+        {
+            token = operationToken;
+        }
+        else if (TryReadStringInsensitive(root, "mosaicOperation", out var mosaicOperation))
+        {
+            token = mosaicOperation;
+        }
+        else
+        {
+            return true;
+        }
+
+        if (!TryParseOperationToken(token, out var strategy))
+        {
+            error = $"mosaicRule operation '{token}' is not implemented.";
+            return false;
+        }
+
+        operation = strategy;
+        return true;
     }
 
     private static bool TryReadLockRasterIds(JsonElement root, out long[]? lockIds)
@@ -470,13 +620,16 @@ public readonly record struct ImageServerMosaicRule
         {
             case "newest":
             case "latest":
-            case "last":
-            case "mt_last":
+            case "first":
+            case "mt_first":
+                // Esri mosaicOperator "First" / MT_FIRST is the first raster in the
+                // mosaic order. The store's Newest aggregate keeps the last sorted
+                // raster, which is the same winner the service advertises as First.
                 strategy = RasterMergeStrategy.Newest;
                 return true;
             case "oldest":
-            case "first":
-            case "mt_first":
+            case "last":
+            case "mt_last":
                 strategy = RasterMergeStrategy.Oldest;
                 return true;
             case "average":

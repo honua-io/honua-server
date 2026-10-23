@@ -43,7 +43,7 @@ public sealed class FeatureServerResponse
     public required LayerInfo[] Layers { get; init; }
 
     /// <summary>
-    /// Tables available in this service (typically empty for basic implementation)
+    /// Attribute-only tables available in this service.
     /// </summary>
     public object[] Tables { get; init; } = [];
 
@@ -121,9 +121,14 @@ public sealed class FeatureServerResponse
     public GeoServicesFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
-    /// Relationships between layers (typically empty for basic implementation)
+    /// Visible relationship classes in this service.
     /// </summary>
-    public object[] Relationships { get; init; } = [];
+    public ServiceRelationshipSummary[] Relationships { get; init; } = [];
+
+    /// <summary>
+    /// Whether the service exposes the relationships child resource.
+    /// </summary>
+    public bool SupportsRelationshipsResource { get; init; }
 
     /// <summary>
     /// Whether the service allows geometry updates on features
@@ -152,6 +157,12 @@ public sealed class FeatureServerResponse
     /// branch versioning (Postgres) and the Pro branch-versioning entitlement is active.
     /// </summary>
     public bool HasVersionedData { get; init; }
+
+    /// <summary>
+    /// Whether accessible service publications expose branch-versioned data. This is the
+    /// standard service discovery flag; Honua currently versions data only through branches.
+    /// </summary>
+    public bool HasBranchVersionedData => HasVersionedData;
 
     /// <summary>
     /// Whether the service's data is branch-versioned. Mirrors Esri's service-level

@@ -12,6 +12,7 @@ const WAIT_FOR_REVIEW_STEP = 'Await exact-head review';
 const EXPENSIVE_STEPS = new Set([
   'Free disk space',
   'Setup .NET',
+  'Prepare secondary Testcontainers proof images',
   'Lean gate (build + fast unit/architecture smoke)',
   'Test serving-image boundary detector',
 ]);

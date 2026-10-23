@@ -7,9 +7,12 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -2943,7 +2946,15 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("editResults");
+        // Esri's service-level applyEdits contract is a top-level array with
+        // assigned IDs in the per-layer results.
+        using var document = JsonDocument.Parse(responseContent);
+        document.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var layer = document.RootElement.EnumerateArray().Should().ContainSingle().Subject;
+        layer.GetProperty("id").GetInt32().Should().Be(TestLayerId);
+        var added = layer.GetProperty("addResults").EnumerateArray().Should().ContainSingle().Subject;
+        added.GetProperty("success").GetBoolean().Should().BeTrue();
+        added.GetProperty("objectId").GetInt64().Should().BePositive();
     }
 
     [IntegrationTest]
@@ -2982,7 +2993,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
 
         using var jsonDoc = JsonDocument.Parse(responseContent);
-        var editResults = jsonDoc.RootElement.GetProperty("editResults");
+        jsonDoc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var editResults = jsonDoc.RootElement;
         editResults.GetArrayLength().Should().BeGreaterThan(0);
         var layerResult = editResults[0];
 
@@ -3162,10 +3174,189 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         applyEditsResponse.DeleteResults.Should().NotBeNull().And.BeEmpty();
     }
 
+    // #4105: Esri client controls that have no effect on this server are accepted wherever the client
+    // puts them (query string or form body) and the edit still applies.
+    [IntegrationTheory]
+    [InlineData("sessionID", "{5D2E0F54-6A4B-4A5B-9C8E-1F2A3B4C5D6E}", true)]
+    [InlineData("sessionID", "{5D2E0F54-6A4B-4A5B-9C8E-1F2A3B4C5D6E}", false)]
+    [InlineData("trueCurveClient", "true", true)]
+    [InlineData("usePreviousEditMoment", "true", false)]
+    [InlineData("timeReferenceUnknownClient", "false", true)]
+    [InlineData("returnEditResults", "true", false)]
+    [InlineData("async", "false", true)]
+    [InlineData("useUniqueIds", "false", false)]
+    [InlineData("assetMaps", "[]", false)]
+    [InlineData("assetMaps", "[ ]", true)]
+    [InlineData("attachments", "[\n  ]", false)]
+    [InlineData("attachments", " null ", true)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_NoOpEsriClientControl_IsAcceptedAndEditApplies(
+        string control,
+        string value,
+        bool onQueryString)
+    {
+        var name = $"noop-{Guid.NewGuid():N}";
+
+        var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        var add = root.GetProperty("addResults").EnumerateArray().Should().ContainSingle().Subject;
+        add.GetProperty("success").GetBoolean().Should().BeTrue();
+        add.GetProperty("objectId").GetInt64().Should().BeGreaterThan(0);
+        root.TryGetProperty("editMoment", out _).Should().BeFalse("editMoment is reported only when returnEditMoment=true");
+        (await CountFeaturesNamedAsync(name)).Should().Be(1);
+    }
+
+    // #4105: controls whose silent omission would drop edits or break a client promise are rejected,
+    // and the edit in the same request is not applied.
+    [IntegrationTheory]
+    [InlineData("async", "true", true, "async applyEdits is not supported")]
+    [InlineData("async", "true", false, "async applyEdits is not supported")]
+    [InlineData("useUniqueIds", "true", false, "useUniqueIds is not supported")]
+    [InlineData("editsUploadId", "a1b2c3", true, "editsUploadId and editsUploadFormat are not supported")]
+    [InlineData("editsUploadFormat", "sqlite", false, "editsUploadId and editsUploadFormat are not supported")]
+    [InlineData("assetMaps", "[{\"parentObjectId\":1}]", false, "assetMaps edits are not supported")]
+    [InlineData("attachments", "[{\"parentObjectId\":1}]", true, "attachments edits are not supported")]
+    [InlineData("datumTransformation", "1241", true, "datumTransformation is not supported")]
+    [InlineData("datumTransformation", "1241", false, "datumTransformation is not supported")]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_UnsupportedEsriControl_IsRejectedInsteadOfDropped(
+        string control,
+        string value,
+        bool onQueryString,
+        string expectedError)
+    {
+        var name = $"rejected-{Guid.NewGuid():N}";
+
+        var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
+
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(expectedError);
+        (await CountFeaturesNamedAsync(name)).Should().Be(0);
+    }
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_ReturnEditMomentTrue_ReportsWhenEditsWereApplied(bool onQueryString)
+    {
+        // #4105: the ArcGIS Maps SDK for JavaScript sends returnEditMoment=true whenever it holds an
+        // edit session; the server reports its own clock after committing, so the moment lies between
+        // wall-clock readings taken before and after the request.
+        var name = $"moment-{Guid.NewGuid():N}";
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+        var before = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var response = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "true", onQueryString, idempotencyKey);
+
+        var after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.GetProperty("addResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+        var editMoment = root.GetProperty("editMoment").GetInt64();
+        editMoment.Should().BeInRange(before, after);
+
+        // A retry with the same Idempotency-Key replays the recorded response (#2250); the moment it
+        // reports is when the edits were originally applied, not when the retry arrived.
+        await Task.Delay(TimeSpan.FromMilliseconds(20));
+        var replay = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "true", onQueryString, idempotencyKey);
+        replay.Be200Ok();
+        using var replayDocument = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+        replayDocument.RootElement.GetProperty("editMoment").GetInt64().Should().Be(editMoment);
+
+        // The recorded moment is only emitted when the caller asks for it.
+        var replayWithoutMoment = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "false", onQueryString, idempotencyKey);
+        replayWithoutMoment.Be200Ok();
+        using var withoutMomentDocument = JsonDocument.Parse(await replayWithoutMoment.Content.ReadAsStringAsync());
+        withoutMomentDocument.RootElement.TryGetProperty("editMoment", out _).Should().BeFalse();
+
+        (await CountFeaturesNamedAsync(name)).Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_ReturnEditMomentTrue_ReportsPerLayerEditMoment()
+    {
+        var name = $"service-moment-{Guid.NewGuid():N}";
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["edits"] = $$$"""[{"id":{{{TestLayerId}}},"adds":[{"attributes":{"name":"{{{name}}}"},"geometry":{"x":-122.4194,"y":37.7749}}]}]""",
+            ["returnEditMoment"] = "true",
+            ["sessionID"] = "{5D2E0F54-6A4B-4A5B-9C8E-1F2A3B4C5D6E}",
+        });
+        var before = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits", form);
+
+        var after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var layer = document.RootElement.EnumerateArray().Should().ContainSingle().Subject;
+        layer.GetProperty("addResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+        layer.GetProperty("editMoment").GetInt64().Should().BeInRange(before, after);
+        (await CountFeaturesNamedAsync(name)).Should().Be(1);
+    }
+
+    private async Task<HttpResponseMessage> PostLayerApplyEditsFormAsync(
+        string featureName,
+        string control,
+        string value,
+        bool onQueryString,
+        string? idempotencyKey = null)
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["adds"] = $$$"""[{"attributes":{"name":"{{{featureName}}}"},"geometry":{"x":-122.4194,"y":37.7749}}]""",
+        };
+        var url = $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits";
+        if (onQueryString)
+        {
+            url += $"?{control}={Uri.EscapeDataString(value)}";
+        }
+        else
+        {
+            fields[control] = value;
+        }
+
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new FormUrlEncodedContent(fields)
+        };
+        if (idempotencyKey is not null)
+        {
+            requestMessage.Headers.Add("Idempotency-Key", idempotencyKey);
+        }
+
+        return await _fixture.Client.SendAsync(requestMessage);
+    }
+
+    private async Task<long> CountFeaturesNamedAsync(string featureName)
+    {
+        var where = Uri.EscapeDataString($"name = '{featureName}'");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where={where}&returnCountOnly=true&f=json");
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("count").GetInt64();
+    }
+
     [IntegrationTheory]
     [InlineData("rollbackOnFailure", "invalid", "rollbackOnFailure must be a boolean value")]
     [InlineData("useGlobalIds", "true", "useGlobalIds is not supported")]
-    [InlineData("returnEditMoment", "true", "returnEditMoment is not supported")]
     [InlineData("f", "xml", "is not supported. Supported formats: json, pjson")]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
@@ -3458,19 +3649,26 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // error, carrying code 409 in the standard envelope.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
-        // The store scopes a key to the resolved edit principal. This fixture's client is
-        // unauthenticated, so the handler resolves EditPrincipal.Anonymous and scopes to
-        // "anonymous"; "admin" (the ClaimTypes.Name an admin API key stamps) is reserved as well so
-        // the test does not silently depend on the fixture's auth posture. A principal outside both
-        // cannot make this test pass by accident — the reservation would miss, the edit would apply,
-        // and the assertions below would fail on a success body.
-        var heldScopes = new[] { "anonymous", "admin" }
-            .Select(principal => new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, principal, idempotencyKey))
-            .ToArray();
-        foreach (var heldScope in heldScopes)
+        // Authenticate the fixture's actual request rather than reserve display-name
+        // guesses. API keys now identify edit owners by their stable api_key_id.
+        using var authenticationScope = _fixture.Services.CreateScope();
+        var context = new DefaultHttpContext { RequestServices = authenticationScope.ServiceProvider };
+        var requestBase = _fixture.Client.BaseAddress!;
+        context.Request.Method = HttpMethods.Post;
+        context.Request.Scheme = requestBase.Scheme;
+        context.Request.Host = HostString.FromUriComponent(requestBase);
+        context.Request.Path = $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits";
+        foreach (var header in _fixture.Client.DefaultRequestHeaders)
         {
-            (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
+            context.Request.Headers[header.Key] = header.Value.ToArray();
         }
+
+        var authentication = await context.AuthenticateAsync();
+        authentication.Succeeded.Should().BeTrue("the fixture's edit client is authenticated");
+        var subject = EditOwnerSubject.Resolve(authentication.Principal);
+        subject.Should().NotBeNullOrWhiteSpace();
+        var heldScope = new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, subject!, idempotencyKey);
+        (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
 
         var editsRequest = new ApplyEditsRequest
         {
@@ -3500,11 +3698,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // The loser must not release a reservation it never owned: the in-flight request's key is
         // still held after the conflict, so a third request would still be rejected rather than
         // racing the owner into a duplicate edit.
-        foreach (var heldScope in heldScopes)
-        {
-            (await store.TryReserveAsync(heldScope)).Should().BeNull(
-                "the rejected request must leave the owner's reservation untouched");
-        }
+        (await store.TryReserveAsync(heldScope)).Should().BeNull(
+            "the rejected request must leave the owner's reservation untouched");
 
         // Nothing was written by the rejected request.
         var countResponse = await _fixture.Client.GetAsync(
@@ -4394,7 +4589,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("editResults");
+        using var editDocument = JsonDocument.Parse(responseContent);
+        editDocument.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        editDocument.RootElement.EnumerateArray().Should().ContainSingle().Subject
+            .GetProperty("id").GetInt32().Should().Be(TestLayerId);
 
         // The add must have been rolled back: no feature with the marker name should exist.
         var countResponse = await _fixture.Client.GetAsync(

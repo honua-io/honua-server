@@ -1432,7 +1432,7 @@
           "Layers"
         ],
         "summary": "Publish Layer",
-        "description": "Publish a PostGIS table as a layer",
+        "description": "Publish a PostGIS table as a layer. Publications at or under the configured asynchronous row threshold return 201. Larger publications return 202 with a polling URL when a background runner is available; hosts without a compatible runner return a typed 503 refusal.",
         "operationId": "publishLayer",
         "parameters": [
           {
@@ -1480,6 +1480,34 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "202": {
+            "description": "Publication accepted for background execution.",
+            "headers": {
+              "Location": {
+                "description": "Relative URL for polling publication progress.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerPublishAccepted"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The frozen host has no compatible durable remote publication runner. Redis availability alone does not make a worker available. No publication job is accepted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerPublishUnavailableProblem"
+                }
+              }
+            }
           }
         }
       }
@@ -1628,7 +1656,7 @@
             "name": "includeDiagnostics",
             "in": "query",
             "required": false,
-            "description": "When true, includes serverVersion, environment, deploymentMode, instanceName, readiness, migration, and databaseCompatibility fields in the response.",
+            "description": "When true, includes serverVersion, environment, deploymentMode, instanceName, readiness, migration, databaseCompatibility, and databaseSessionSettings fields in the response.",
             "schema": {
               "type": "boolean",
               "default": false
@@ -2396,6 +2424,118 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/upload-object": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import a Geospatial File from Object Storage",
+        "description": "Imports one supported object from an allow-listed s3:// bucket using the host identity. The request carries no credentials. Large objects return a background job without an in-request download.",
+        "operationId": "uploadImportFileFromObjectStore",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportFileFromObjectStoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The object or bucket was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The object changed after the preflight ETag was recorded, or the importer refused the target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The object exceeds MaxObjectStoreImportBytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable, or this host has no object-store reader.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -2738,7 +2878,26 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "properties": {
+                    "runner": {
+                      "type": "string",
+                      "enum": [
+                        "batch",
+                        "in-process"
+                      ],
+                      "description": "Where the background import runs: `batch` (a batch-compute execution worker, AWS Batch on the serverless topology) or `in-process` (a long-lived server process). Absent on records written before 2026.1."
+                    },
+                    "instanceId": {
+                      "type": "string",
+                      "description": "Honua-Instance identity of the process running the import (the AWS Batch job id for `batch`); until a worker claims a durable job, the instance that accepted it."
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
                 }
               }
             }
@@ -2950,6 +3109,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
                 }
               }
             }
@@ -3431,7 +3608,7 @@
           "Metadata"
         ],
         "summary": "Get Admin Version Info",
-        "description": "Returns server version, metadata API version, and current server time.",
+        "description": "Returns server version, metadata API version, current server time, and the identity of the server instance that answered.",
         "operationId": "getAdminVersion",
         "responses": {
           "200": {
@@ -4003,7 +4180,7 @@
           "License"
         ],
         "summary": "Get License Status",
-        "description": "Returns the active runtime license snapshot. Empty LicensePath reports Community mode with isValid=true; invalid configured files report Community mode with isValid=false and a validationState.",
+        "description": "Returns the runtime license status. Licensing:Mode=Disabled reports mode=disabled, edition=Unlicensed-2026.1, validationState=Disabled, isValid=true, all entitlements active and no expiry. Enabled licensing retains Community defaults and validates configured paid licenses.",
         "operationId": "getLicenseStatus",
         "responses": {
           "200": {
@@ -4106,7 +4283,7 @@
           "License"
         ],
         "summary": "Get Platform License Status",
-        "description": "Returns the same active license status contract as GET /api/v1/admin/license.",
+        "description": "Returns the runtime license status. Licensing:Mode=Disabled reports mode=disabled, edition=Unlicensed-2026.1, validationState=Disabled, isValid=true, all entitlements active and no expiry. Enabled licensing retains Community defaults and validates configured paid licenses.",
         "operationId": "getPlatformLicenseStatus",
         "responses": {
           "200": {
@@ -5935,7 +6112,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6370,7 +6547,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -6653,7 +6830,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -6800,6 +6977,16 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "422": {
+            "description": "`requireFullFidelity` was set and construct accounting refused the selection; no run was created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportMigrationBatchRefusedResponse"
+                }
+              }
+            }
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -6938,6 +7125,16 @@
           },
           "504": {
             "description": "The import exceeded its timeout budget (errorCode ogc_api_features.timeout).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOgcApiFeaturesResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7121,6 +7318,16 @@
           },
           "502": {
             "description": "The importer reported failure; the body is the same result document with success=false and an errorMessage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOgcWfsResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7839,6 +8046,16 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Operator retry identity. Repeating the same lifecycle action with the same key produces one logical lifecycle transition and one alert domain audit action instead of duplicates. When omitted, the request's own correlation identity is used, so a retry without this header is a NEW action. Maximum 128 characters; a longer value is rejected rather than truncated.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         ],
         "requestBody": {
@@ -7896,6 +8113,16 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Operator retry identity. Repeating the same lifecycle action with the same key produces one logical lifecycle transition and one alert domain audit action instead of duplicates. When omitted, the request's own correlation identity is used, so a retry without this header is a NEW action. Maximum 128 characters; a longer value is rejected rather than truncated.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         ],
         "requestBody": {
@@ -7952,6 +8179,16 @@
             "schema": {
               "type": "integer",
               "format": "int64"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Operator retry identity. Repeating the same lifecycle action with the same key produces one logical lifecycle transition and one alert domain audit action instead of duplicates. When omitted, the request's own correlation identity is used, so a retry without this header is a NEW action. Maximum 128 characters; a longer value is rejected rather than truncated.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
             }
           }
         ],
@@ -8724,7 +8961,7 @@
           "Observability"
         ],
         "summary": "Propose Ops Finding Action",
-        "description": "Route a finding's recommended fix through the operation-approval gateway. The server materializes the execution payload from the finding id, so no request body is accepted. Depending on gateway policy the action is either executed directly or raised as a proposal awaiting approval. Requires admin write access.",
+        "description": "Route a finding's recommended fix through the operation-approval gateway. The server materializes the execution payload from the finding id. An optional body may carry rootProvisioningOperationId from a verified DevOps handoff; an empty body remains valid. Depending on gateway policy the action is either executed directly or raised as a proposal awaiting approval. Requires admin write access.",
         "operationId": "proposeOpsFinding",
         "parameters": [
           {
@@ -8737,6 +8974,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservabilityOpsFindingProposeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Proposal outcome.",
@@ -8747,6 +8994,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -9591,7 +9841,7 @@
           "Metadata"
         ],
         "summary": "Get Layer Relationships",
-        "description": "Returns the relationships persisted on the layer's Metadata v2 resource, with each related resource resolved back to its global layer id (`-1` when the related resource has no numeric publication).",
+        "description": "Returns persisted relationships, retaining composite metadata and resolving related resources to global storage-layer ids (-1 if no storage handle exists).",
         "operationId": "getAdminLayerRelationships",
         "parameters": [
           {
@@ -9628,7 +9878,7 @@
           "Metadata"
         ],
         "summary": "Set Layer Relationships",
-        "description": "Replaces the full relationship set on the layer's Metadata v2 resource. At most 64 relationships are accepted; each requires a unique id, a name, an origin field that exists on this layer, an existing related layer id, and a destination field that exists on the related layer. Cardinality must be `one-to-one`, `one-to-many`, or `many-to-many`. Any violation returns 400 and nothing is written.",
+        "description": "Replaces the full relationship set on the layer's Metadata v2 resource. At most 64 relationships are accepted; each requires a unique id, a name, an origin field that exists on this layer, an existing related layer id, and a destination field that exists on the related layer. Cardinality must be `one-to-one`, `one-to-many`, or `many-to-many`. Any violation returns 400 and nothing is written. Composite mappings must remain reciprocal and read-only; use the batch operation to establish both ends together. Layer ids are global storage handles, not service-local indexes.",
         "operationId": "setAdminLayerRelationships",
         "parameters": [
           {
@@ -9667,6 +9917,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Concurrent catalog mutations exhausted the bounded retry; retry against the current catalog."
           }
         }
       }
@@ -20505,7 +20758,7 @@
           "Platform Release"
         ],
         "summary": "Converge Platform Release",
-        "description": "Converges every configured serving deploy target onto the declared platform-release serving artifact. Co-versioning is validated first: an undeclared or invalid `ControlPlane:PlatformRelease` returns 400. Each target is classified as `already-converged` (last-applied revision matches; never actuated), `skipped-pinned` (config pins a different artifact, which cannot be cleared at runtime), `operation-created`, `unknown-treated-divergent`, or `blocked`. Deploys are routed through the guardrail gateway, so a target may yield a proposal id instead of an operation id. Geoprocessing worker images are deliberately not deployed here. When durable control-plane storage is not configured the gateway is absent and the call returns 503.",
+        "description": "Converges every configured serving deploy target onto the declared platform-release serving artifact. Co-versioning is validated first: an undeclared or invalid `ControlPlane:PlatformRelease` returns 400. Each target is classified as `already-converged` (last-applied revision matches; never actuated), `skipped-pinned` (config pins a different artifact, which cannot be cleared at runtime), `operation-created`, `unknown-treated-divergent`, or `blocked`. Deploys are routed through the guardrail gateway, so a target may yield a proposal id instead of an operation id. Geoprocessing worker images are deliberately not deployed here. An optional `targetVersion` asserts the release the caller expects; when it does not name the declared release (after trimming, case folding, stripping a leading `honua-`/`v`, and treating a zero patch as absent) the call returns 409 with `code: platform_release_version_mismatch` and actuates nothing. When durable control-plane storage is not configured the gateway is absent and the call returns 503.",
         "operationId": "convergePlatformRelease",
         "requestBody": {
           "required": false,
@@ -20536,6 +20789,16 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "The requested `targetVersion` does not name the declared platform release. The problem carries `code: platform_release_version_mismatch`, `declaredVersion`, `targetVersion`, `servingArtifactReference`, and the preflight `isCoVersioned` summary.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "503": {
             "description": "Deploy control is unavailable because durable control-plane storage is not configured."
@@ -20577,6 +20840,544 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/metadata/layers/relationships/batch": {
+      "put": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace Layer Relationship Sets Atomically",
+        "description": "Replaces complete relationship sets on 1 to 64 distinct, explicitly selected resources in one canonical graph commit. All layer ids are global storage handles; ambiguous or retired targets are rejected. Composite mappings require both reciprocal sets and read-only resources. The entire candidate is validated before saving; invalid batches make no changes. Concurrent ETag conflicts trigger fresh resolution and validation, with a 409 after five conflicts. Unspecified resources are preserved. Repeating a batch does not append duplicate relationships. Catalog caches for affected storage layers are invalidated after saving.",
+        "operationId": "setAdminLayerRelationshipsBatch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerRelationshipBatchUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Relationship sets from the saved graph snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerRelationshipBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Concurrent catalog mutations exhausted the bounded retry; retry against the current catalog."
+          }
+        }
+      }
+    },
+    "/raster-artifacts/cog": {
+      "post": {
+        "tags": [
+          "Cloud Rasters"
+        ],
+        "summary": "Publish Layer Raster As COG",
+        "description": "Exports the publication layer's primary raster as a Cloud Optimized GeoTIFF and stores it under the deterministic object key `cog/{layerId}/{rasterId}.tif`, tagged with the publish operation and the COG media type. Desktop clients (GDAL `/vsicurl`, ArcGIS Pro) read it through `GET|HEAD /api/v1/rasters/cog/{artifactId}`. The proxy checks the current source publication, binding and access policy before serving each request; authorized HEAD responses carry the real length and ranged GETs return 206. Publishing again for the same layer overwrites the same key. A layer with no raster is 400, an unknown or unroutable layer is 404, and an export or upload failure is 500.",
+        "operationId": "publishCogArtifact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CogArtifactPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The published COG artifact.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CogArtifactDescriptor"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "description": "The raster export or the artifact upload failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connections/{id}/layers/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Layers"
+        ],
+        "summary": "Get Layer Publication Job Status",
+        "description": "Returns publication progress visible to the current tenant and connection. Unknown jobs and jobs outside that tenant or connection return 404. A completed job includes its committed layer identifier.",
+        "operationId": "getLayerPublishJobStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection identifier used when publication was accepted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "description": "Publication job identifier returned by the 202 response.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publication job progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerPublishJobStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/diagnostics": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Diagnostics",
+        "description": "Returns the authorized honua.job-diagnostics/v1 projection, including release provenance, lifecycle, attempts, worker liveness, sanitized failures and steps, bounded events, artifact availability, and explicit missing or truncated evidence. Unknown and unreadable jobs both return 404. Responses use Cache-Control: no-store.",
+        "operationId": "getConsoleJobDiagnostics",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          },
+          {
+            "name": "events",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            }
+          },
+          {
+            "name": "eventCursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Omit for a tail. Use start to page the retained stream from its beginning, then the returned nextCursor. Append order; not a frozen snapshot."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Versioned diagnostics for the job.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Job correlation id when available.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobDiagnostics"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Execution job store is unavailable."
+          },
+          "400": {
+            "description": "Invalid job identifier or event limit."
+          }
+        }
+      }
+    },
+    "/gp/process-releases": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Publish gp process release",
+        "operationId": "publishGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "201": {
+            "description": "Release created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessReleaseLock"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "List gp process releases",
+        "operationId": "listGpProcessReleases",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/{digest}": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Get gp process release",
+        "operationId": "getGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseLock"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/bindings": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "List gp process bindings",
+        "operationId": "listGpProcessBindings",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/gp/process-releases/bindings/{process}": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Get gp process binding",
+        "operationId": "getGpProcessBinding",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/bindings/{process}/activate": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Activate gp process release",
+        "operationId": "activateGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "description": "Activation refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingRefusedResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessBindingActivateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gp/process-releases/bindings/{process}/jobs": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Submit a release-bound custom-code job",
+        "operationId": "submitGpProcessReleaseJob",
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Identical retries return the original job and release pin."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessReleaseJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; Location identifies the canonical job status route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Idempotency key already belongs to different inputs."
+          },
+          "429": {
+            "description": "Admission throttled; Retry-After may be present."
+          },
+          "503": {
+            "description": "Durable jobs or the selected execution backend is unavailable."
           }
         }
       }
@@ -21067,6 +21868,46 @@
             "default": false
           },
           "trackProgress": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ImportFileFromObjectStoreRequest": {
+        "type": "object",
+        "required": [
+          "sourceUri",
+          "tableName"
+        ],
+        "properties": {
+          "sourceUri": {
+            "type": "string",
+            "description": "s3://bucket/key object to import. Credentials, queries, and fragments are rejected."
+          },
+          "assumeRoleArn": {
+            "type": "string",
+            "description": "Optional allow-listed role ARN. The host assumes it with the configured external id. Omit to use the host identity."
+          },
+          "tableName": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+          },
+          "targetSchema": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "sourceSrid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetSrid": {
+            "type": "integer",
+            "format": "int32",
+            "default": 4326
+          },
+          "overwriteExisting": {
             "type": "boolean",
             "default": false
           }
@@ -21826,6 +22667,20 @@
           },
           "compatibility": {
             "$ref": "#/components/schemas/AdminCompatibilityMetadata"
+          },
+          "contractVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Same map as compatibility.contractVersions: every contract this server serves, name to exact version, as declared in release/component-versions.json."
+          },
+          "schemaVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Same map as compatibility.schemaVersions: schema name to exact version, as declared in release/component-versions.json."
           }
         }
       },
@@ -21869,6 +22724,20 @@
           },
           "features": {
             "$ref": "#/components/schemas/AdminCompatibilityFeatureFlags"
+          },
+          "contractVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Every contract this server serves, name to exact version, keyed like release/component-versions.json (admin, metadata, geoservices, ogc, stac, grpc). The server refuses to start when its embedded declaration differs from the versions it serves, so this map is the whole advertised contract set."
+          },
+          "schemaVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Schema name to exact version, as declared in release/component-versions.json. The database schema version is derived by the release resolver from the migrations and is not advertised here."
           }
         }
       },
@@ -22893,6 +23762,23 @@
           "serviceName": {
             "type": "string",
             "description": "Service name"
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "source",
+              "managed"
+            ],
+            "nullable": true,
+            "description": "Storage the layer was published with. Set on publish responses; null on listings."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Capability tokens declared on the layer's feature publication. Set on publish responses; null on listings."
           }
         }
       },
@@ -22962,6 +23848,16 @@
             "maxLength": 64,
             "description": "Geometry type override"
           },
+          "hasZ": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether the source geometries carry elevation (Z) ordinates. Only valid with a geometry column."
+          },
+          "hasM": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether the source geometries carry measure (M) ordinates. Only valid with a geometry column."
+          },
           "srid": {
             "type": "integer",
             "minimum": 0,
@@ -22979,15 +23875,258 @@
             },
             "description": "Subset of fields to publish (empty publishes all)"
           },
+          "fieldDomains": {
+            "type": "object",
+            "nullable": true,
+            "description": "Captured source value domains keyed by field name. Entries for fields that are not published are ignored. Each coded-value domain is limited to 100 coded values, the import capture cap; a request over it is rejected with 400.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PublishLayerFieldDomain"
+            }
+          },
+          "subtypes": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublishLayerSubtypes"
+              }
+            ],
+            "nullable": true,
+            "description": "Captured source subtype set. Attached only when subtypeField is a published column."
+          },
+          "attributeRules": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 200,
+            "description": "Captured source attribute rules, limited to 200 per layer (the import capture cap). Rule names must be unique; calculation rules whose fieldName is not published are dropped.",
+            "items": {
+              "$ref": "#/components/schemas/PublishLayerAttributeRule"
+            }
+          },
           "serviceName": {
             "type": "string",
             "maxLength": 64,
             "description": "Target service name (defaults to default)"
           },
+          "namespace": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "description": "Optional case-preserving metadata grouping namespace. Tenant ownership is derived only from the trusted request context; the payload cannot select a tenant. Omitted or null preserves legacy unscoped publication. Existing services must have the same namespace and tenant; mismatches and adoption of shared services return 409. A namespaced request without a resolved tenant returns 400. Namespace grouping does not grant authorization or change the canonical service route."
+          },
           "enabled": {
             "type": "boolean",
             "description": "Enable layer after publish",
             "default": true
+          },
+          "createEditableCopy": {
+            "type": "boolean",
+            "default": false,
+            "description": "Create an independent editable copy in the configured managed feature store. Source rows are unchanged; new target object IDs map to source IDs through the read-only honua_source_id field. Attachment and relationship migration must use that mapping. The publication connection must resolve the same database and features table as the managed writer."
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "source",
+              "managed"
+            ],
+            "default": "source",
+            "maxLength": 16,
+            "description": "Where the layer's features live. source serves the live source table read-only. managed copies the source rows into the managed feature store, which is then authoritative for the layer and accepts edits; the layer no longer tracks the source table."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Query",
+                "Extract",
+                "Create",
+                "Update",
+                "Delete",
+                "Editing"
+              ]
+            },
+            "description": "Capability tokens declared on the feature publication (case-insensitive). Omit for the read-only default [\"Query\",\"Extract\"]. Must include Query. Create, Update, Delete and Editing require storageMode managed; otherwise the request is rejected with 400."
+          },
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 63,
+            "description": "Existing published UUID column containing edit-stable global IDs. Does not enable editing."
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "default": false,
+            "description": "Declares attachment support for the published resource. Does not enable editing."
+          }
+        }
+      },
+      "PublishLayerFieldDomain": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "description": "Captured source value domain. Held to the Esri import capture rules: coded-value domains carry at most 100 entries, each with a string, number or boolean code and a name; range domains carry exactly [min, max].",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Source domain name."
+          },
+          "type": {
+            "type": "string",
+            "description": "Domain kind: codedValue, range, or another source kind carried for identity only."
+          },
+          "codedValues": {
+            "type": "array",
+            "maxItems": 100,
+            "description": "Coded value entries when type is codedValue.",
+            "items": {
+              "$ref": "#/components/schemas/LayerFieldCodedValue"
+            }
+          },
+          "range": {
+            "type": "array",
+            "nullable": true,
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "[min, max] when type is range.",
+            "items": {}
+          },
+          "mergePolicy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional merge policy metadata for Esri-style clients."
+          },
+          "splitPolicy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional split policy metadata for Esri-style clients."
+          }
+        }
+      },
+      "PublishLayerSubtypes": {
+        "type": "object",
+        "required": [
+          "subtypeField",
+          "subtypes"
+        ],
+        "description": "Captured source subtype set, limited to 100 subtypes (the import capture cap).",
+        "properties": {
+          "subtypeField": {
+            "type": "string",
+            "description": "Field that selects the subtype for each row."
+          },
+          "defaultSubtypeCode": {
+            "nullable": true,
+            "description": "Subtype code applied when none is supplied: a string, number or boolean."
+          },
+          "subtypes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/PublishLayerSubtype"
+            }
+          }
+        }
+      },
+      "PublishLayerSubtype": {
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "description": "One captured subtype.",
+        "properties": {
+          "code": {
+            "description": "Subtype code: a string, number or boolean."
+          },
+          "name": {
+            "type": "string",
+            "description": "Subtype display name."
+          },
+          "fieldOverrides": {
+            "type": "object",
+            "description": "Per-field default values and domains for rows of this subtype, keyed by field name. Override domains follow the same limits as fieldDomains.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "defaultValue": {
+                  "nullable": true,
+                  "description": "Default value for the field on rows of this subtype."
+                },
+                "defaultValueIsNull": {
+                  "type": "boolean",
+                  "description": "Distinguishes an explicit null default from no default."
+                },
+                "domain": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PublishLayerFieldDomain"
+                    }
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "PublishLayerAttributeRule": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "scriptExpression"
+        ],
+        "description": "Captured source attribute rule.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Rule name, unique within the layer (case-insensitive)."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Rule kind: 0 calculation, 1 constraint, 2 validation, 3 exclusion."
+          },
+          "fieldName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Target field; required for calculation rules."
+          },
+          "scriptExpression": {
+            "type": "string",
+            "description": "Arcade expression text."
+          },
+          "triggeringEvents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Edit events that trigger the rule (insert, update, delete). Empty means every edit."
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true,
+            "description": "Message surfaced when a constraint or validation rule reports a violation."
+          },
+          "isEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the rule fires on the edit path."
+          },
+          "batch": {
+            "type": "boolean",
+            "default": false,
+            "description": "Defer the rule to an explicit batch evaluation pass."
           }
         }
       },
@@ -23133,6 +24272,52 @@
           },
           "databaseCompatibility": {
             "$ref": "#/components/schemas/DeployPreflightDatabaseCompatibility"
+          },
+          "databaseSessionSettings": {
+            "$ref": "#/components/schemas/DeployPreflightDatabaseSessionSettings"
+          }
+        }
+      },
+      "DeployPreflightDatabaseSessionSettings": {
+        "type": "object",
+        "required": [
+          "mode",
+          "verification"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "connection",
+              "role-defaults"
+            ],
+            "description": "Database:SessionSettings:Mode. connection: the server sets lock_timeout, statement_timeout, idle_in_transaction_session_timeout (and search_path when Database:Schema is set) on every connection. role-defaults: no session SET; the database role's defaults apply, so RDS Proxy can multiplex"
+          },
+          "verification": {
+            "type": "string",
+            "enum": [
+              "not-applicable",
+              "pending",
+              "verified",
+              "mismatch",
+              "unavailable"
+            ],
+            "description": "Startup verification of the role defaults against Limits:Connections (role-defaults mode only)"
+          },
+          "role": {
+            "type": "string",
+            "description": "Database role whose defaults were verified"
+          },
+          "remediation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ALTER ROLE statements an operator runs to align the role defaults; the server never runs them"
+          },
+          "message": {
+            "type": "string",
+            "description": "Why verification is unavailable, when it is"
           }
         }
       },
@@ -24380,7 +25565,7 @@
           },
           "permissions": {
             "type": "array",
-            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal approve/reject only), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. The focused Console recipe is [`admin:read`, `admin:approve`].",
+            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal approve/reject only), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. Data read grants use read:{service}, read:{service}/{layer}, read:{service}/* (every layer of the service) or read:* (every service); a key without a full-admin grant reads no service or layer data without a matching read grant, and wildcards are rejected on write grants. The recommended agent key is [`admin:read`, `admin:write`, `read:*`]. The focused Console recipe is [`admin:read`, `admin:approve`].",
             "items": {
               "type": "string",
               "minLength": 1,
@@ -24857,6 +26042,9 @@
           },
           "rasterMosaic": {
             "$ref": "#/components/schemas/RasterMosaicResponse"
+          },
+          "editing": {
+            "$ref": "#/components/schemas/MetadataV2ResourceEditing"
           }
         }
       },
@@ -24891,12 +26079,27 @@
               "enum": [
                 "FeatureServer",
                 "MapServer",
+                "ImageServer",
+                "GPServer",
+                "VectorTileServer",
                 "OgcFeatures",
+                "OGC-API-Maps",
+                "OGC-API-Coverages",
+                "OGC-API-Tiles",
+                "Wfs20",
+                "Wms",
+                "Wmts",
+                "Wcs",
                 "OData",
-                "Grpc"
+                "Grpc",
+                "Stac",
+                "SensorThings",
+                "Terrain",
+                "Elevation"
               ]
             },
-            "minItems": 1
+            "minItems": 1,
+            "description": "Protocols the service exposes. Replaces the existing set rather than adding to it. These are the per-service toggles only; instance-level surfaces (Geometry Service, geocoding, OGC API Processes/Records/Styles, EDR, WPS, MCP, PMTiles, 3D scenes) and licence-gated ones (NAServer, VersionManagementServer) are not set here."
           }
         }
       },
@@ -25016,6 +26219,9 @@
           },
           "rasterMosaic": {
             "$ref": "#/components/schemas/UpdateRasterMosaicRequest"
+          },
+          "editing": {
+            "$ref": "#/components/schemas/MetadataV2EditingPatch"
           }
         }
       },
@@ -25049,6 +26255,42 @@
             "type": "string",
             "format": "date-time",
             "description": "Server time in UTC"
+          },
+          "instance": {
+            "$ref": "#/components/schemas/AdminServerInstance"
+          }
+        }
+      },
+      "AdminServerInstance": {
+        "type": "object",
+        "description": "Identity of the server instance (replica) that answered. The id equals the Honua-Instance response header.",
+        "required": [
+          "id",
+          "source",
+          "startedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable instance id for the life of the server process"
+          },
+          "source": {
+            "type": "string",
+            "description": "Source the id was resolved from",
+            "enum": [
+              "configuration",
+              "aws-lambda",
+              "aws-ecs-task",
+              "aws-ecs-container",
+              "hostname",
+              "machine-name",
+              "generated"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the instance resolved its identity (process start, UTC)"
           }
         }
       },
@@ -27484,6 +28726,11 @@
           "correlationId": {
             "type": "string"
           },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Null when the operation was not federated."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -27513,6 +28760,11 @@
         "properties": {
           "packageId": {
             "type": "string"
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Matches the top-level field on the operation."
           },
           "gitOperationId": {
             "type": "string"
@@ -27731,17 +28983,17 @@
         "properties": {
           "edition": {
             "type": "string",
-            "description": "Active platform edition label."
+            "description": "Active platform edition label, or Unlicensed-2026.1 when licensing is disabled."
           },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "License expiry timestamp, or null for Community/perpetual licenses."
+            "description": "License expiry timestamp, or null for disabled licensing and Community/perpetual licenses."
           },
           "isValid": {
             "type": "boolean",
-            "description": "Whether the active configured license validated successfully."
+            "description": "True when licensing is disabled or the active licensing snapshot is valid."
           },
           "daysUntilExpiry": {
             "type": "integer",
@@ -27762,7 +29014,8 @@
               "Malformed",
               "UnknownKey",
               "InvalidSignature",
-              "Expired"
+              "Expired",
+              "Disabled"
             ],
             "description": "Runtime validation state for the active license snapshot."
           },
@@ -27785,6 +29038,14 @@
               "$ref": "#/components/schemas/EntitlementResponse"
             },
             "description": "Known FeatureCatalog entitlement inventory with active/inactive state."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "description": "Runtime licensing mode. Disabled grants all catalog entitlements without license validation, expiry or capacity metering."
           }
         }
       },
@@ -30744,6 +32005,28 @@
             "nullable": true,
             "additionalProperties": true,
             "description": "Catalog parity report produced by the Validating phase."
+          },
+          "fidelityVerdict": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "full-fidelity",
+              "unverified",
+              "incomplete"
+            ],
+            "description": "Migration fidelity verdict for the imported layer. `status` says whether the job finished; this says whether the migrated layer is proven equivalent to the source. Null until the job has run its fidelity evaluation; persisted on the final job record, including `needs-review` runs."
+          },
+          "fidelityDifferences": {
+            "type": "array",
+            "description": "Per-resource differences that produced `fidelityVerdict`, ordered by code then subject.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
+            }
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
           }
         }
       },
@@ -30847,12 +32130,18 @@
           "manifestBody": {
             "type": "string",
             "nullable": true,
-            "description": "Manifest JSON body used for post-publish relationship application."
+            "description": "Scan manifest JSON for the source service. Every construct it discovered is accounted against the selected layers before apply, and its relationship classes are applied after publish when `applyRelationships` is true. Without it, construct accounting does not run and the run cannot prove full fidelity."
           },
           "applyRelationships": {
             "type": "boolean",
             "nullable": true,
             "default": false
+          },
+          "requireFullFidelity": {
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Refuse the run with 422, before any layer is queued, when construct accounting finds a blocking construct (an unselected or undiscovered layer or table, an unsupported service type or construct) or has no readable manifest to account from."
           }
         }
       },
@@ -30918,6 +32207,16 @@
           "statusNote": {
             "type": "string",
             "nullable": true
+          },
+          "fidelityVerdict": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "full-fidelity",
+              "unverified",
+              "incomplete"
+            ],
+            "description": "Per-layer migration fidelity verdict reported by the child import job; null until the child is terminal."
           }
         }
       },
@@ -30996,6 +32295,212 @@
             "items": {
               "$ref": "#/components/schemas/ImportMigrationBatchChildResponse"
             }
+          },
+          "fidelityVerdict": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "full-fidelity",
+              "unverified",
+              "incomplete"
+            ],
+            "description": "Service-level migration fidelity verdict. `status` says whether the batch finished; this says whether the migrated service is proven equivalent to the source. Null while running."
+          },
+          "fidelityDifferences": {
+            "type": "array",
+            "description": "Per-resource differences that produced `fidelityVerdict`, ordered by code then subject.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
+            }
+          },
+          "constructAccounting": {
+            "$ref": "#/components/schemas/ImportMigrationConstructAccountingReport"
+          }
+        }
+      },
+      "ImportMigrationConstructAccountingReport": {
+        "type": "object",
+        "description": "Pre-apply accounting of every construct discovered on the source against the run's selection, replayed from the persisted manifest and layers. Its differences fold into `fidelityVerdict` when the run finishes.",
+        "required": [
+          "matrixVersion",
+          "executed",
+          "discoveredResourceCount",
+          "selectedResourceCount",
+          "entries",
+          "differences",
+          "isBlocking"
+        ],
+        "properties": {
+          "matrixVersion": {
+            "type": "string",
+            "description": "Version of the source-to-target construct matrix the accounting ran against.",
+            "example": "2026.1"
+          },
+          "executed": {
+            "type": "boolean",
+            "description": "False when there was no readable ArcGIS scan manifest to account from."
+          },
+          "notExecutedReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "discoveredResourceCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layers and tables the scan discovered."
+          },
+          "selectedResourceCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layers and tables in the selection."
+          },
+          "entries": {
+            "type": "array",
+            "description": "One entry per accounted construct, ordered by source id then construct.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationConstructAccountingEntry"
+            }
+          },
+          "differences": {
+            "type": "array",
+            "description": "Differences the accounting contributes to the verdict, ordered by code then subject.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
+            }
+          },
+          "isBlocking": {
+            "type": "boolean",
+            "description": "True when at least one difference is blocking."
+          }
+        }
+      },
+      "ImportMigrationConstructAccountingEntry": {
+        "type": "object",
+        "description": "One source construct and how the migration disposes of it.",
+        "required": [
+          "construct",
+          "sourceId",
+          "resourceIds",
+          "automationStatus",
+          "codes",
+          "disposition",
+          "verification"
+        ],
+        "properties": {
+          "construct": {
+            "type": "string",
+            "description": "Construct matrix key, e.g. `service.resource`, `resource.geometry`, `resource.relationships` or `unmapped` for a discovered category without a matrix row."
+          },
+          "sourceId": {
+            "type": "string",
+            "description": "Source resource, style, label class or service identifier."
+          },
+          "resourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Source layers or tables that own the construct; empty for service-level constructs."
+          },
+          "automationStatus": {
+            "type": "string",
+            "enum": [
+              "automated",
+              "assisted",
+              "manual-review",
+              "unsupported"
+            ]
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "migrated",
+              "review",
+              "blocker",
+              "unselected",
+              "undiscovered"
+            ]
+          },
+          "verification": {
+            "type": "string",
+            "enum": [
+              "selection-accounting",
+              "data-reconciliation",
+              "catalog-reconciliation",
+              "attachment-reconciliation",
+              "relationship-apply",
+              "operator-review"
+            ],
+            "description": "The check that verifies the construct on the target after apply."
+          },
+          "targetResourceId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Planned target resource id from the manifest."
+          },
+          "targetTable": {
+            "type": "string",
+            "nullable": true,
+            "description": "Target table the selection imports the owning layer or table into."
+          }
+        }
+      },
+      "ImportMigrationBatchRefusedResponse": {
+        "type": "object",
+        "description": "Returned with 422 when `requireFullFidelity` refuses a selection before any layer is queued.",
+        "required": [
+          "error",
+          "constructAccounting"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "constructAccounting": {
+            "$ref": "#/components/schemas/ImportMigrationConstructAccountingReport"
+          }
+        }
+      },
+      "ImportMigrationFidelityDifference": {
+        "type": "object",
+        "description": "One actionable source-to-target difference, or a required check that did not execute.",
+        "required": [
+          "code",
+          "severity",
+          "summary"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable finding code, e.g. `fidelity.service.layer-incomplete` or `fidelity.relationship.omitted`."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "unverified"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected": {
+            "type": "string",
+            "nullable": true
+          },
+          "actual": {
+            "type": "string",
+            "nullable": true
+          },
+          "summary": {
+            "type": "string"
           }
         }
       },
@@ -31869,6 +33374,11 @@
           "duration": {
             "type": "string",
             "description": "Serialized as a .NET TimeSpan string."
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
           }
         }
       },
@@ -33783,6 +35293,22 @@
             "type": "string",
             "nullable": true,
             "description": "Operator-facing message describing the outcome, when available."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Null when the proposal was not federated."
+          }
+        }
+      },
+      "ObservabilityOpsFindingProposeRequest": {
+        "type": "object",
+        "description": "Optional body for proposing a finding action. An empty body remains valid.",
+        "properties": {
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits)."
           }
         }
       },
@@ -34258,6 +35784,14 @@
             "nullable": true,
             "description": "Optional ETL/data-populate workload id dispatched after the schema change."
           },
+          "dataPopulateFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Fields the data-populate workload writes. Required with dataPopulateWorkloadId; the release is rejected before mutation unless every field is the new nullable field."
+          },
           "scriptId": {
             "type": "string",
             "nullable": true,
@@ -34546,6 +36080,14 @@
             "nullable": true,
             "description": "Optional ETL/data-populate workload identifier dispatched after the schema change."
           },
+          "dataPopulateFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Fields the data-populate workload writes. Required with dataPopulateWorkloadId; the release is rejected before mutation unless every field is the new nullable field."
+          },
           "scriptId": {
             "type": "string",
             "nullable": true,
@@ -34565,6 +36107,11 @@
             "type": "string",
             "nullable": true,
             "description": "Correlation id propagated from upstream systems."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Omit when the release is not federated."
           }
         }
       },
@@ -34699,6 +36246,11 @@
           "packageId": {
             "type": "string",
             "description": "Release package identifier."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Matches the top-level field on the operation."
           },
           "gitOperationId": {
             "type": "string",
@@ -34876,6 +36428,11 @@
             "nullable": true,
             "description": "Upstream correlation identifier."
           },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Null when the operation was not federated."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -34968,7 +36525,7 @@
           "relatedLayerId": {
             "type": "integer",
             "format": "int32",
-            "description": "Global layer id of the related layer, or -1 when the related resource has no numeric publication."
+            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
           },
           "role": {
             "type": "string",
@@ -34996,6 +36553,11 @@
             "format": "int32",
             "nullable": true,
             "description": "Esri relationship id carried for GeoServices clients."
+          },
+          "composite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Composite ownership metadata. Both resources require reciprocal declarations and must remain read-only."
           }
         }
       },
@@ -35064,12 +36626,12 @@
           "relatedLayerId": {
             "type": "integer",
             "format": "int32",
-            "description": "Global layer id of the related layer; resolved to its resource id server-side."
+            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
           },
           "role": {
             "type": "string",
             "default": "origin",
-            "description": "Relationship role, typically origin or destination. Blank defaults to origin."
+            "description": "Origin or destination role; also accepts esriRelRoleOrigin and esriRelRoleDestination. Blank defaults to origin."
           },
           "cardinality": {
             "type": "string",
@@ -35094,6 +36656,11 @@
             "format": "int32",
             "nullable": true,
             "description": "Optional Esri relationship id."
+          },
+          "composite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Composite ownership metadata. Both resources require reciprocal declarations and must remain read-only."
           }
         }
       },
@@ -35826,6 +37393,14 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "timingSource": {
+            "type": "string",
+            "enum": [
+              "measured",
+              "inferred"
+            ],
+            "description": "Whether durationMs comes from the harness monotonic clock or is inferred from log timestamps."
           }
         }
       },
@@ -35857,6 +37432,20 @@
             "items": {
               "$ref": "#/components/schemas/ConsoleJobStep"
             }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Total appended log entries, including entries removed by retention bounds."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the returned timeline omits earlier entries."
+          },
+          "droppedCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of earliest entries removed by the retained-log bound."
           }
         }
       },
@@ -42927,6 +44516,13 @@
             "description": "Failure detail when the job failed; null otherwise.",
             "nullable": true
           },
+          "warnings": {
+            "type": "array",
+            "description": "Non-fatal scan warnings. Includes a failed coordinate enrichment when the structural scan still succeeded.",
+            "items": {
+              "type": "string"
+            }
+          },
           "coverage": {
             "$ref": "#/components/schemas/MultidimCoverageResponse"
           }
@@ -46489,9 +48085,11 @@
               4,
               5,
               6,
-              7
+              7,
+              8,
+              9
             ],
-            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge."
+            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge, 8 MeteringGap, 9 Disabled."
           },
           "terms": {
             "$ref": "#/components/schemas/LicenseCapacityTermsView"
@@ -46597,6 +48195,10 @@
               "type": "string"
             },
             "description": "Safe operator-facing state messages."
+          },
+          "meteringEnabled": {
+            "type": "boolean",
+            "description": "False in Disabled licensing mode; no registrations, usage samples, surge state or capacity enforcement are active."
           }
         }
       },
@@ -46937,6 +48539,11 @@
       "PlatformReleaseConvergePayload": {
         "type": "object",
         "properties": {
+          "targetVersion": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional release the caller expects to converge to (for example `2026.1-rc.3`). `honua-` and `v` prefixes and a zero patch are normalized. A value that does not name the declared release returns 409 `platform_release_version_mismatch`."
+          },
           "reason": {
             "type": "string",
             "nullable": true,
@@ -47059,6 +48666,1464 @@
             "type": "integer",
             "format": "int32",
             "description": "Number of records the baseline digest covers."
+          }
+        }
+      },
+      "CogArtifactPublishRequest": {
+        "type": "object",
+        "required": [
+          "layerId"
+        ],
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Publication layer index whose primary raster is exported."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CogArtifactDescriptor": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "layerId",
+          "rasterId",
+          "sizeBytes",
+          "contentType",
+          "url",
+          "width",
+          "height",
+          "bandCount",
+          "publishedAt"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "description": "Deterministic object key, `cog/{layerId}/{rasterId}.tif`; also the `{artifactId}` of the range proxy.",
+            "example": "cog/0/1.tif"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rasterId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Identifier of the layer's primary raster."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "contentType": {
+            "type": "string",
+            "example": "image/tiff; application=geotiff; profile=cloud-optimized"
+          },
+          "url": {
+            "type": "string",
+            "description": "Root-relative range proxy path `/api/v1/rasters/cog/{artifactId}`.",
+            "example": "/api/v1/rasters/cog/cog/0/1.tif"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bandCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MetadataV2EditingPatch": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Declared UUID field; null preserves the binding and an empty string clears it."
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Attachment support; null preserves the existing declaration."
+          },
+          "create": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Create policy for the selected publication; null preserves it."
+          },
+          "update": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Update policy for the selected publication; null preserves it."
+          },
+          "delete": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Delete policy for the selected publication; null preserves it."
+          }
+        }
+      },
+      "MetadataV2ResourceEditing": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "description": "UUID field used as an edit-stable identifier."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creating user."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creation timestamp."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last editing user."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last update timestamp."
+          },
+          "canModify": {
+            "type": "boolean",
+            "default": true
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "default": false
+          },
+          "supportsRelatedRecords": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "LayerRelationshipBatchUpdateItem": {
+        "type": "object",
+        "required": [
+          "layerId"
+        ],
+        "description": "Complete desired relationship set for one global storage-layer id.",
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "relationships": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Full replacement relationship set.",
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipUpdateItem"
+            }
+          }
+        }
+      },
+      "LayerRelationshipBatchUpdateRequest": {
+        "type": "object",
+        "required": [
+          "layers"
+        ],
+        "properties": {
+          "layers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipBatchUpdateItem"
+            }
+          }
+        }
+      },
+      "LayerRelationshipBatchResponse": {
+        "type": "object",
+        "properties": {
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipResponse"
+            }
+          }
+        }
+      },
+      "ApiResponseLayerRelationshipBatchResponse": {
+        "type": "object",
+        "description": "Relationship sets from the atomically committed graph snapshot.",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerRelationshipBatchResponse"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LayerPublishAcceptedResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "statusUrl",
+          "rowsTotal",
+          "status"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "statusUrl": {
+            "type": "string",
+            "description": "Relative URL for polling publication progress."
+          },
+          "rowsTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Queued"
+            ]
+          }
+        }
+      },
+      "LayerPublishJobStatusResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "status",
+          "rowsMaterialized",
+          "rowsTotal"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Queued",
+              "Processing",
+              "Completed",
+              "Failed",
+              "Cancelled"
+            ]
+          },
+          "rowsMaterialized": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Confirmed materialized rows. If live progress expires before completion, zero is a conservative lower bound rather than a current copy measurement; completion uses the recorded actual count."
+          },
+          "rowsTotal": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Source count, updated to the actual materialization observation when reported by the worker."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Published layer identifier after the transaction commits."
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ApiResponseLayerPublishAccepted": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerPublishAcceptedResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseLayerPublishJobStatus": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerPublishJobStatusResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LayerPublishUnavailableProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "code",
+              "capability",
+              "missingDependency",
+              "remediation",
+              "remediationRef"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer",
+                "enum": [
+                  503
+                ]
+              },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "durable-runner-required"
+                ]
+              },
+              "capability": {
+                "type": "string",
+                "enum": [
+                  "jobs.runner"
+                ]
+              },
+              "missingDependency": {
+                "type": "string",
+                "enum": [
+                  "layer-publish-runner"
+                ]
+              },
+              "remediation": {
+                "type": "string"
+              },
+              "remediationRef": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
+      },
+      "ConsoleJobDiagnostics": {
+        "type": "object",
+        "required": [
+          "schema",
+          "jobId",
+          "generatedAt",
+          "view",
+          "identity",
+          "release",
+          "lifecycle",
+          "attempt",
+          "worker",
+          "steps",
+          "events",
+          "artifacts",
+          "evidence",
+          "links"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "honua.job-diagnostics/v1"
+            ]
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "traceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "view": {
+            "type": "string"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticIdentity"
+          },
+          "release": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticRelease"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticLifecycle"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticAttempt"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticWorker"
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConsoleJobDiagnosticFailure"
+              }
+            ],
+            "nullable": true
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobStep"
+            }
+          },
+          "events": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticEvents"
+          },
+          "artifacts": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticArtifacts"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticEvidence"
+          },
+          "links": {
+            "$ref": "#/components/schemas/ConsoleJobLinks"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticIdentity": {
+        "type": "object",
+        "required": [
+          "kind",
+          "backend",
+          "targetKind",
+          "workloadName",
+          "priority",
+          "contractVersion",
+          "resourceRefs"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "targetKind": {
+            "type": "string"
+          },
+          "workloadName": {
+            "type": "string"
+          },
+          "workloadId": {
+            "type": "string",
+            "nullable": true
+          },
+          "definitionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "queue": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "providerOperationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "runtimeProfile": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConsoleJobDiagnosticRelease": {
+        "type": "object",
+        "required": [
+          "state",
+          "serverVersion",
+          "processDefinitions",
+          "missing"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceRepository": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "entrypoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "dependencyManifest": {
+            "type": "string",
+            "nullable": true
+          },
+          "planId": {
+            "type": "string",
+            "nullable": true
+          },
+          "processDefinitions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "environment": {
+            "type": "string",
+            "nullable": true
+          },
+          "releaseId": {
+            "type": "string",
+            "nullable": true
+          },
+          "changeSetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "processRelease": {
+            "type": "string",
+            "nullable": true
+          },
+          "processVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "lockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "bindingVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "workflowVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "dependencyLockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "workerImage": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ConsoleJobDiagnosticLifecycle": {
+        "type": "object",
+        "required": [
+          "status",
+          "phase",
+          "createdAt",
+          "updatedAt",
+          "timingSource"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "currentPhase": {
+            "type": "string",
+            "nullable": true
+          },
+          "percentComplete": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancellationRequestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "queueDelayMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "executionMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "durationMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "timingSource": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticAttempt": {
+        "type": "object",
+        "required": [
+          "number",
+          "maxAttempts",
+          "retry"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextRetryAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "retry": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticRetry"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticRetry": {
+        "type": "object",
+        "required": [
+          "allowed",
+          "requiresApproval",
+          "wouldRepeat"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "disabledReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "requiresApproval": {
+            "type": "boolean"
+          },
+          "wouldRepeat": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticWorker": {
+        "type": "object",
+        "required": [
+          "heartbeatIntervalSeconds",
+          "heartbeatTimeoutSeconds",
+          "liveness",
+          "livenessReason"
+        ],
+        "properties": {
+          "claimedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastHeartbeatAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "heartbeatIntervalSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "heartbeatTimeoutSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "liveness": {
+            "type": "string"
+          },
+          "livenessReason": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticFailure": {
+        "type": "object",
+        "required": [
+          "message",
+          "classification",
+          "recovery"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "nullable": true
+          },
+          "stepOrdinal": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "nativeExitCode": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stderrExcerpt": {
+            "type": "string",
+            "nullable": true
+          },
+          "recovery": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticEvents": {
+        "type": "object",
+        "required": [
+          "state",
+          "items",
+          "totalCount",
+          "limit",
+          "truncated"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobLogEntry"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "firstCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "tail",
+              "page"
+            ]
+          }
+        }
+      },
+      "ConsoleJobDiagnosticArtifacts": {
+        "type": "object",
+        "required": [
+          "state",
+          "items",
+          "availableCount",
+          "expiredCount",
+          "unavailableCount"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobArtifact"
+            }
+          },
+          "availableCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expiredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unavailableCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticEvidence": {
+        "type": "object",
+        "required": [
+          "missing",
+          "truncated",
+          "notes"
+        ],
+        "properties": {
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "truncated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GpProcessReleaseResponse": {
+        "type": "object",
+        "properties": {
+          "lockDigest": {
+            "type": "string"
+          },
+          "process": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "sourceSha": {
+            "type": "string"
+          },
+          "publishedBy": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessReleaseListResponse": {
+        "type": "object",
+        "properties": {
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessReleaseResponse"
+            }
+          }
+        }
+      },
+      "GpProcessBindingTargetResponse": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "jobDefinitionArn": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessBindingResponse": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "string"
+          },
+          "bindingVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "previousLockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingTargetResponse"
+            }
+          },
+          "operation": {
+            "type": "string",
+            "nullable": true
+          },
+          "activatedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "activatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "serverContractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "supportedTargets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scheduleReconciliation": {
+            "type": "string"
+          }
+        }
+      },
+      "GpProcessBindingListResponse": {
+        "type": "object",
+        "properties": {
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingResponse"
+            }
+          }
+        }
+      },
+      "GpProcessBindingTargetRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "jobDefinitionArn": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessBindingActivateRequest": {
+        "type": "object",
+        "properties": {
+          "lockDigest": {
+            "type": "string"
+          },
+          "expectedBindingVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "operation": {
+            "type": "string",
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingTargetRequest"
+            }
+          }
+        }
+      },
+      "GpProcessBindingRefusedResponse": {
+        "type": "object",
+        "properties": {
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "binding": {
+            "$ref": "#/components/schemas/GpProcessBindingResponse",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessReleaseLock": {
+        "title": "GP process release lock v1",
+        "description": "Immutable identity of one geoprocessing process release: the exact source, dependency lock, runtime image, workflow version, configuration references, targets, artifacts and validation receipts that a deployment activates. Generated once by `honua-gp-devkit release` (honua-server#6221); promoted and rolled back by digest, never rebuilt.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "process",
+          "source",
+          "dependencyLock",
+          "runtimeImage",
+          "workflowVersion",
+          "configurationReferences",
+          "targets",
+          "compatibility",
+          "artifacts",
+          "validation",
+          "generatedAt"
+        ],
+        "properties": {
+          "schema": {
+            "enum": [
+              "honua.gp-process-release-lock/v1"
+            ],
+            "type": "string"
+          },
+          "process": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "version",
+              "runtime",
+              "entrypoint",
+              "contract"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,62}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+              },
+              "runtime": {
+                "enum": [
+                  "python",
+                  "dotnet"
+                ],
+                "type": "string"
+              },
+              "entrypoint": {
+                "type": "string",
+                "minLength": 1
+              },
+              "contract": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "inputSchemaSha256",
+                  "outputSchemaSha256"
+                ],
+                "properties": {
+                  "inputSchemaSha256": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "outputSchemaSha256": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "repository",
+              "sha",
+              "descriptorPath"
+            ],
+            "properties": {
+              "repository": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+              },
+              "sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "descriptorPath": {
+                "type": "string",
+                "pattern": "^[^ ]+\\.ya?ml$"
+              }
+            }
+          },
+          "dependencyLock": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          },
+          "runtimeImage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reference",
+              "digest"
+            ],
+            "properties": {
+              "reference": {
+                "type": "string",
+                "pattern": "^[a-z0-9.-]+(:[0-9]+)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          },
+          "workflowVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "configurationReferences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "reference"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                },
+                "reference": {
+                  "type": "string",
+                  "description": "A reference, never a value: the worker resolves it at execution time.",
+                  "pattern": "^(aws:secretsmanager:|azure:keyvault:|ref:)[^ ]+$"
+                }
+              }
+            }
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "workerImageDigest"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "kubernetes-job",
+                    "aws-batch"
+                  ],
+                  "type": "string"
+                },
+                "workerImageDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "chartVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+                },
+                "jobDefinitionName": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                }
+              }
+            }
+          },
+          "compatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "serverContractVersion"
+            ],
+            "properties": {
+              "serverContractVersion": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "minimum",
+                  "maximum"
+                ],
+                "properties": {
+                  "minimum": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maximum": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "sha256",
+                "sizeBytes"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "validation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receipts"
+            ],
+            "properties": {
+              "receipts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "sha256",
+                    "status"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "status": {
+                      "enum": [
+                        "pass"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "generatedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+          }
+        }
+      },
+      "GpProcessReleaseJobRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "declaredScope": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "serviceId"
+              ],
+              "properties": {
+                "serviceId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "layerId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ],
+                  "default": "read"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GpProcessReleaseJobResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "statusUrl",
+          "diagnosticsUrl",
+          "artifactsUrl"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "diagnosticsUrl": {
+            "type": "string"
+          },
+          "artifactsUrl": {
+            "type": "string"
           }
         }
       }

@@ -6,6 +6,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
@@ -28,7 +29,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresRasterStore>>(),
                 provider.GetRequiredService<IDatabaseSchemaGuard>(),
-                schemaName));
+                schemaName,
+                provider.GetService<IOptions<PostgresRasterStatisticsOptions>>()?.Value));
 
         // Register the map renderer implementation
         services.AddScoped<IRasterMapRenderer>(provider =>

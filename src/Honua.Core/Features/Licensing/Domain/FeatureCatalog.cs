@@ -88,8 +88,18 @@ public static class FeatureCatalog
         /// <summary>High availability and disaster recovery — backup automation, failover, RTO/RPO reporting.</summary>
         public const string DisasterRecovery = "DisasterRecovery";
 
-        /// <summary>Tenant administration and other platform control-plane capabilities.</summary>
+        /// <summary>Platform control-plane capabilities.</summary>
         public const string ControlPlane = "ControlPlane";
+
+        /// <summary>
+        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
+        /// licensee. These are not part of the customer-deployable product surface and have no
+        /// path to general availability as a customer feature: the Elastic License 2.0 prohibits
+        /// providing Honua to third parties as a hosted or managed service, so a licensee can
+        /// never be the party operating them. Not Preview - Preview implies a GA path, and there
+        /// is none. Never published as customer documentation.
+        /// </summary>
+        public const string Internal = "Internal";
     }
 
     /// <summary>
@@ -168,7 +178,7 @@ public static class FeatureCatalog
 
     /// <summary>
     /// Entitlement key for disconnected field operations — form offline policy discovery,
-    /// FieldCollection cursor/change sync, and GeoServices replica/GeoPackage delta sync.
+    /// FieldCollection cursor/change sync, and GeoServices replica delta sync (delivered as Esri JSON).
     /// Online form package reads and submissions remain Community surfaces.
     /// </summary>
     public const string FieldOpsOfflineSyncKey = "fieldops.offline-sync";
@@ -455,7 +465,7 @@ public static class FeatureCatalog
 
         // Field operations — Pro (disconnected/offline sync; online collection remains Community)
         new(FieldOpsOfflineSyncKey, "Offline/Field Sync", Categories.FieldOps,
-            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."),
+            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange."),
 
         // Import — Enterprise
         new("import.geoservices", "GeoServices Import", Categories.Import,
@@ -574,8 +584,8 @@ public static class FeatureCatalog
         new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
             HonuaEdition.Enterprise, "Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Documented recovery expectations and verified restores remain baseline obligations in every edition."),
 
-        // Control plane — Enterprise Preview
-        new(MultiTenancyKey, "Multi-Tenant Operation", Categories.ControlPlane,
-            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure."),
+        // Internal — Honua's own hosted operation; not offered to licensees
+        new(MultiTenancyKey, "Multi-Tenant Operation", Categories.Internal,
+            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless."),
     ];
 }

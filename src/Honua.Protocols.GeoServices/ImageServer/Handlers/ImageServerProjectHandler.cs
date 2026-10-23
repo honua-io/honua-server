@@ -111,6 +111,7 @@ internal sealed class ImageServerProjectHandler
                 return StandardErrorHelpers.CreateBadRequest(context, datumError ?? "Invalid datumTransformation.");
             }
 
+            var maxCurveVertices = GeoServicesGeometryConverter.ResolveConfiguredCurveVertexBudget(context.RequestServices);
             var projectedGeometries = new List<JsonElement>(request.GeometryJsonStrings.Count);
             foreach (var geometryJson in request.GeometryJsonStrings)
             {
@@ -147,6 +148,7 @@ internal sealed class ImageServerProjectHandler
                     sourceSrid,
                     targetSrid,
                     datumSelection,
+                    maxCurveVertices,
                     cancellationToken).ConfigureAwait(false));
             }
 
@@ -340,6 +342,7 @@ internal sealed class ImageServerProjectHandler
         int inSrid,
         int outSrid,
         DatumTransformationSelection? selection,
+        int maxCurveVertices,
         CancellationToken cancellationToken)
     {
         var geometry = JsonSerializer.Deserialize(
@@ -347,7 +350,7 @@ internal sealed class ImageServerProjectHandler
             FeatureServerJsonContext.Default.GeoServicesGeometry)
             ?? throw new ArgumentException("Invalid GeoServices JSON geometry format.");
 
-        var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, inSrid);
+        var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, inSrid, maxCurveVertices);
         var projected = await _operationService.ProjectAsync(
             wkb,
             inSrid,

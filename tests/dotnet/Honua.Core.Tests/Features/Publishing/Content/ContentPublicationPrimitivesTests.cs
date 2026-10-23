@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Publishing.Content;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ContentPublicationPrimitivesTests
 {
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Theory]
     [InlineData("My Quarterly Map", "my-quarterly-map")]
@@ -29,6 +30,7 @@ public sealed class ContentPublicationPrimitivesTests
         slug.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Theory]
     [InlineData(null)]

@@ -24,12 +24,12 @@ namespace Honua.Worker.Gdal.Execution;
 /// </para>
 ///
 /// <para>
-/// The check is deliberately conservative: if the payload is not a TIFF we can
-/// parse (an unrecognized byte order/magic, a truncated header, or another GDAL
-/// raster format), the guard ADMITS the job — GDAL opens the same header the same
-/// way and either handles it or fails cheaply without a full allocation. The
-/// guard's job is specifically to catch a parseable header that DECLARES an
-/// oversized raster, which is the decompression-bomb vector.
+/// Known raster containers outside <see cref="GdalWorkerOptions.AllowedRasterInputFormats"/>
+/// are refused, and so is magic the guard cannot classify (<see cref="RasterContainerFormat.Unknown"/>).
+/// An allowlisted TIFF/PNG/JPEG whose dimensions cannot be parsed is still admitted: GDAL
+/// opens that header the same way and either handles it or fails without a full allocation.
+/// The guard's job is to refuse an unidentified or disallowed container, and to catch a
+/// parseable header that DECLARES an oversized raster (the decompression-bomb vector).
 /// </para>
 /// </summary>
 internal static class GdalRasterDimensionGuard
@@ -51,10 +51,11 @@ internal static class GdalRasterDimensionGuard
 
     /// <summary>
     /// Admits or rejects a decoded raster blob against the configured pixel-
-    /// dimension caps. Returns <c>true</c> (admit) when the blob is within limits
-    /// OR when its header cannot be parsed as a TIFF (see class remarks); returns
-    /// <c>false</c> with a caller-facing <paramref name="error"/> when a parsed
-    /// header declares dimensions over a cap.
+    /// dimension caps and the positive container allowlist. Returns <c>false</c>
+    /// when the magic is <see cref="RasterContainerFormat.Unknown"/>, when the
+    /// container is outside the allowlist, or when a parsed header declares
+    /// dimensions over a cap. An allowlisted TIFF/PNG/JPEG whose dimensions cannot
+    /// be parsed is admitted.
     /// </summary>
     public static bool TryAdmit(ReadOnlySpan<byte> raster, GdalWorkerOptions options, out string error)
     {
@@ -84,8 +85,8 @@ internal static class GdalRasterDimensionGuard
 
     /// <summary>
     /// Admits a classified raster container against the positive worker format allowlist.
-    /// Unknown inputs remain for the caller or GDAL to adjudicate, matching
-    /// <see cref="TryAdmit(ReadOnlySpan{byte}, GdalWorkerOptions, out string)"/>.
+    /// <see cref="RasterContainerFormat.Unknown"/> is refused: an unidentified raster-role
+    /// input must not reach GDAL.
     /// </summary>
     internal static bool TryAdmitContainerFormat(
         RasterContainerFormat format,
@@ -95,7 +96,13 @@ internal static class GdalRasterDimensionGuard
         ArgumentNullException.ThrowIfNull(options);
         error = "";
 
-        if (format is RasterContainerFormat.Unknown || IsFormatAllowed(format, options))
+        if (format is RasterContainerFormat.Unknown)
+        {
+            error = "raster input format could not be identified and is not in the configured AllowedRasterInputFormats allowlist";
+            return false;
+        }
+
+        if (IsFormatAllowed(format, options))
         {
             return true;
         }
@@ -109,8 +116,8 @@ internal static class GdalRasterDimensionGuard
     /// <see cref="Tiff"/> / <see cref="Png"/> / <see cref="Jpeg"/> are the
     /// dimension-guarded (allowlisted-by-default) formats; the remainder are KNOWN
     /// raster containers the guard cannot bound and that the positive allowlist refuses
-    /// by default (#2784). <see cref="Unknown"/> covers anything else (vector payloads,
-    /// truncated blobs) and is left for GDAL / the vector paths to adjudicate.
+    /// by default (#2784). <see cref="Unknown"/> is refused for raster-role inputs so an
+    /// unidentified header cannot reach GDAL.
     /// </summary>
     internal enum RasterContainerFormat
     {
@@ -246,8 +253,9 @@ internal static class GdalRasterDimensionGuard
     /// magic-byte classifier <see cref="ClassifyContainer"/> (rather than a second
     /// copy of the magic table) — the guarded formats route to their per-format
     /// reader; every other classification (the un-bounded bomb vectors and
-    /// <see cref="RasterContainerFormat.Unknown"/>) returns <c>false</c> so the
-    /// caller admits and lets GDAL adjudicate. Each per-format reader keeps its own
+    /// <see cref="RasterContainerFormat.Unknown"/>) returns <c>false</c>. Unknown
+    /// containers are refused by <see cref="TryAdmit"/>; an allowlisted container
+    /// whose own reader fails is admitted. Each per-format reader keeps its own
     /// internal length guards.
     /// </summary>
     internal static bool TryReadRasterDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)

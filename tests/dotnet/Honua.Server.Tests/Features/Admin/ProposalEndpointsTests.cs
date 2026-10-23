@@ -86,11 +86,13 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         string? requestedBy = "agent:test",
         OperationProposalAutonomyMetadata? autonomyMetadata = null,
         string? executionPayload = null,
-        OperationClass kind = OperationClass.AdminConfigChange)
+        OperationClass kind = OperationClass.AdminConfigChange,
+        OperationProposalEvidence? evidence = null)
     {
         if (status == OperationProposalStatus.AwaitingApproval &&
             autonomyMetadata is null &&
-            kind == OperationClass.AdminConfigChange)
+            kind == OperationClass.AdminConfigChange &&
+            evidence is null)
         {
             // Ruling 4: approval fixtures must enter through canonical acceptance so
             // replay can prove the original instance identity and sealed plan hash.
@@ -128,6 +130,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             },
             CreatedAt = now,
             UpdatedAt = now,
+            Evidence = evidence,
         };
         await _proposalStore.TryCreateAsync(proposal);
         return proposal;
@@ -372,6 +375,53 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         instance.Should().NotBeNull();
         instance!.Status.Should().Be(OperationHandleStatus.Rejected);
         instance.ProposalId.Should().Be(proposal.ProposalId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
+    public async Task RejectProposal_EvidenceBoundToAnotherTenant_ReturnsNotFound()
+    {
+        var proposal = await SeedProposalAsync(
+            requestedBy: "agent:proposer",
+            evidence: new OperationProposalEvidence
+            {
+                ToolName = "test-tool",
+                OperationId = "test-operation",
+                CandidateId = "candidate-a",
+                TenantId = "tenant-a",
+                TargetId = "target-a",
+                DescriptorRevision = "descriptor-1",
+                PolicyRevision = "policy-1",
+                AuthorizationDecision = "admin-policy-authorized",
+                RequestDigest = "request-digest",
+                CanonicalRequest = "eA==",
+                PayloadDigest = "payload-digest",
+                CanonicalPayload = "eA==",
+                TranscriptDigest = "transcript-digest",
+                TranscriptKeyId = "key-1",
+                CanonicalTranscript = "eA==",
+                TranscriptSignature = "signature",
+                ReleaseId = "release-1",
+                ActionId = "action-1",
+                RunNonce = "run-1",
+                McpSessionId = "session-1",
+                McpCallId = "call-1",
+                IssuedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+            });
+        using var tenantBClient = _fixture.CreateClient(client =>
+        {
+            client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+            client.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-b");
+        });
+
+        var response = await tenantBClient.PostAsJsonAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/reject",
+            new { reason = "not safe right now" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _proposalStore.GetAsync(proposal.ProposalId))!.Status
+            .Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
     [IntegrationTest]

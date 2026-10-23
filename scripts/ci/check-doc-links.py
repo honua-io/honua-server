@@ -35,19 +35,22 @@ Three checks run, in order:
     error, so the debt can only shrink.
 
 2.  **The code-referenced-anchor manifest** (see `--manifest`). Product code and
-    shipped config embed absolute `https://docs.honua.io/...` URLs — the
+    shipped config embed absolute phase-A documentation URLs
+    (`https://honua.io/docs/<slug>/`, trailing slash before any fragment) — the
     `remediationRef` on a typed capability refusal, a SCIM `documentationUri`, a
-    Prometheus `runbook_url`. Those are contracts with an operator or an agent,
-    not prose, and nothing else notices when a heading is renamed underneath
-    them. Every manifest entry is translated back to a `docs/` file and, when it
-    carries a fragment, to a heading in that file. A URL that resolves only
-    through a `.gitbook.yaml` redirect is a warning naming the redirect: it
-    still serves, but the reference is one restructure away from dead.
+    Prometheus `runbook_url`. `https://docs.honua.io/` stays dark until 2026.2,
+    so a runtime URL on that host is an error even when the path would resolve.
+    A phase-A URL that omits the trailing slash is an error too. Every manifest
+    entry is still translated back to a `docs/` file and, when it carries a
+    fragment, to a heading in that file. A URL that resolves only through a
+    `.gitbook.yaml` redirect is a warning naming the redirect: it still serves,
+    but the reference is one restructure away from dead.
 
 3.  **Manifest completeness.** The scan roots declared in the manifest are swept
-    for `https://docs.honua.io/` URLs; any URL found in code or config that the
-    manifest does not list is an error. This is what keeps check 2 honest as new
-    references are added.
+    for phase-A and dark-host documentation URLs. A `docs.honua.io` URL is an
+    error. A phase-A URL with an invalid shape is an error. A canonical
+    phase-A URL that the manifest does not list is an error. This is what keeps
+    check 2 honest as new references are added.
 
 An entry may carry `"pendingPr": <number>` for a heading that exists only on an
 open pull request. It degrades to a warning until that branch lands, so trunk
@@ -88,7 +91,11 @@ SLUG_STRIP_RE = re.compile(
 
 SKIP_PREFIXES = ("http://", "https://", "mailto:", "honua://", "tel:", "data:")
 
-DOCS_URL_RE = re.compile(r"https://docs\.honua\.io/[^\s\"'`<>)\\]*")
+# 2026.1 runtime front door. docs.honua.io is deliberately dark until 2026.2.
+PHASE_A_BASE = "https://honua.io/docs/"
+DARK_HOST_PREFIX = "https://docs.honua.io/"
+RUNTIME_DOCS_URL_RE = re.compile(
+    r"https://(?:docs\.honua\.io/|honua\.io/docs/)[^\s\"'`<>)\\]*")
 # Trailing punctuation that belongs to the surrounding prose or code, not the URL.
 URL_TRAILING_TRIM = ".,;:!?"
 
@@ -214,12 +221,52 @@ def parse_gitbook_redirects(path):
     return redirects
 
 
-def url_to_doc_path(url_path, docs_root):
-    """Translate a docs.honua.io URL path to a file under docs/, or None.
+def classify_runtime_docs_url(url):
+    """Return ('ok', slug, fragment) or (reason, None, None).
 
-    GitBook serves `guides/deploy/troubleshooting.md` at `/guides/deploy/
-    troubleshooting` and a directory's `README.md` at the bare directory path,
-    so both spellings are tried.
+    A canonical 2026.1 runtime docs URL is ``https://honua.io/docs/<slug>/``
+    with a trailing slash before any ``#fragment``. ``<slug>`` is the path of
+    the page under ``docs/`` without a ``.md`` suffix. ``reason`` is
+    ``dark-host`` (docs.honua.io), ``format`` (phase-A shape is wrong), or
+    ``off-base``.
+    """
+    if url.startswith(DARK_HOST_PREFIX):
+        return "dark-host", None, None
+    if not url.startswith(PHASE_A_BASE):
+        return "off-base", None, None
+    if "?" in url:
+        return "format", None, None
+    remainder = url[len(PHASE_A_BASE):]
+    path_part, _, fragment = remainder.partition("#")
+    if (not path_part.endswith("/") or "//" in path_part
+            or path_part.startswith("/")):
+        return "format", None, None
+    slug = path_part.strip("/")
+    if not slug or slug.endswith(".md"):
+        return "format", None, None
+    return "ok", slug, fragment
+
+
+def runtime_docs_url_error(url, reason):
+    """Stable error text for a runtime docs URL the gate refuses."""
+    if reason == "dark-host":
+        return (
+            f"{url} uses the dark host docs.honua.io, which does not serve "
+            f"until 2026.2. Runtime documentation links must use "
+            f"{PHASE_A_BASE}<slug>/.")
+    if reason == "format":
+        return (
+            f"{url} is not a canonical phase-A URL; expected "
+            f"{PHASE_A_BASE}<slug>/ with a trailing slash before any fragment.")
+    return f"{url} is not under {PHASE_A_BASE}"
+
+
+def url_to_doc_path(url_path, docs_root):
+    """Translate a phase-A docs slug to a file under docs/, or None.
+
+    ``guides/deploy/troubleshooting`` is the page
+    ``guides/deploy/troubleshooting.md``, and a directory slug is that
+    directory's ``README.md``. Both spellings are tried.
     """
     url_path = url_path.strip("/")
     if not url_path:
@@ -235,18 +282,8 @@ def url_to_doc_path(url_path, docs_root):
     return None
 
 
-def split_docs_url(url, base_url):
-    """Return (url_path, fragment) for a docs URL, or None if it is off-base."""
-    if not url.startswith(base_url):
-        return None
-    remainder = url[len(base_url):]
-    path_part, _, fragment = remainder.partition("#")
-    path_part = path_part.split("?", 1)[0]
-    return path_part, fragment
-
-
-def scan_for_docs_urls(repo_root, scan, base_url):
-    """Collect every docs.honua.io URL embedded in the declared scan roots."""
+def scan_for_docs_urls(repo_root, scan):
+    """Collect phase-A and dark-host docs URLs embedded in the scan roots."""
     found = {}
     extensions = tuple(scan.get("extensions", []))
     exclude_dirs = set(scan.get("excludeDirs", []))
@@ -269,9 +306,10 @@ def scan_for_docs_urls(repo_root, scan, base_url):
                         text = fh.read()
                 except (OSError, UnicodeDecodeError):
                     continue
-                if base_url not in text:
+                if (PHASE_A_BASE not in text
+                        and DARK_HOST_PREFIX not in text):
                     continue
-                for raw in DOCS_URL_RE.findall(text):
+                for raw in RUNTIME_DOCS_URL_RE.findall(text):
                     url = raw.rstrip(URL_TRAILING_TRIM)
                     found.setdefault(url, set()).add(rel(path, repo_root))
     return found
@@ -345,7 +383,12 @@ def check_manifest(manifest, repo_root, docs_root, redirects):
     warnings = []
     notes = []
     anchor_cache = {}
-    base_url = manifest.get("docsBaseUrl", "https://docs.honua.io/")
+    declared_base = manifest.get("docsBaseUrl", PHASE_A_BASE)
+    if declared_base != PHASE_A_BASE:
+        errors.append(
+            f"docsBaseUrl must be {PHASE_A_BASE} for the 2026.1 phase-A front "
+            f"door (got {declared_base}). https://docs.honua.io/ stays dark "
+            f"until 2026.2.")
 
     listed = {}
     for entry in manifest.get("references", []):
@@ -360,11 +403,10 @@ def check_manifest(manifest, repo_root, docs_root, redirects):
         pending = (f" (expected only on open PR #{pending_pr})"
                    if pending_pr else "")
 
-        split = split_docs_url(url, base_url)
-        if split is None:
-            errors.append(f"manifest entry {url} is not under {base_url}")
+        kind, url_path, fragment = classify_runtime_docs_url(url)
+        if kind != "ok":
+            errors.append(runtime_docs_url_error(url, kind))
             continue
-        url_path, fragment = split
 
         resolved = url_to_doc_path(url_path, docs_root)
         via_redirect = None
@@ -405,17 +447,26 @@ def check_manifest(manifest, repo_root, docs_root, redirects):
 
 
 def check_manifest_completeness(manifest, listed, repo_root):
-    """Every docs.honua.io URL embedded in the scan roots must be registered."""
+    """Every runtime docs URL embedded in the scan roots must be registered.
+
+    Dark-host URLs and phase-A URLs with the wrong shape fail even when a
+    manifest entry happens to spell the same string. Only a canonical
+    ``https://honua.io/docs/<slug>/`` URL can satisfy the manifest.
+    """
     errors = []
     scan = manifest.get("sourceScan")
     if not scan:
         return errors, 0
-    base_url = manifest.get("docsBaseUrl", "https://docs.honua.io/")
-    found = scan_for_docs_urls(repo_root, scan, base_url)
+    found = scan_for_docs_urls(repo_root, scan)
     for url in sorted(found):
+        sources = ", ".join(sorted(found[url]))
+        kind, _, _ = classify_runtime_docs_url(url)
+        if kind != "ok":
+            errors.append(
+                f"{runtime_docs_url_error(url, kind)} Referenced from {sources}.")
+            continue
         if url in listed:
             continue
-        sources = ", ".join(sorted(found[url]))
         errors.append(
             f"{url} is referenced from {sources} but is not listed in the "
             f"code-referenced-anchor manifest. Add it (with its sources) so a "
@@ -426,7 +477,7 @@ def check_manifest_completeness(manifest, listed, repo_root):
 def main(argv):
     parser = argparse.ArgumentParser(
         description="Validate docs/ relative links, heading anchors, and the "
-                    "code-referenced docs.honua.io anchor manifest.")
+                    "code-referenced phase-A docs anchor manifest.")
     parser.add_argument("--repo-root", default=REPO)
     parser.add_argument("--docs-root", default=None,
                         help=f"default: <repo-root>/{DEFAULT_DOCS_ROOT}")

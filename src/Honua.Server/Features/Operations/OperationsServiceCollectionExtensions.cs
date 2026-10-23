@@ -1,15 +1,18 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
@@ -31,6 +34,19 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationLineageAttestationStore>();
+        if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
+        {
+            services.TryAddSingleton<IOperationSecretStore, VolatileOperationSecretStore>();
+        }
+        else
+        {
+            services.TryAddSingleton<IOperationSecretStore>(sp =>
+                sp.GetService<IConnectionMultiplexer>() is { } redis
+                    ? new RedisOperationSecretStore(
+                        redis,
+                        sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>())
+                    : new UnavailableOperationSecretStore());
+        }
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
         // The real verifier's constructor requires the durable proposal store, and the
         // dispatcher requires a verifier, so hosts composed without the store failed
@@ -42,7 +58,8 @@ internal static class OperationsServiceCollectionExtensions
         // final composition lacks the store get the fail-closed verifier: replay can
         // never verify without the durable authority (ruling 4).
         services.TryAddScoped<IOperationApprovalReplayVerifier>(sp =>
-            sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is { } proposalStore
+            sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is { } proposalStore &&
+            Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(proposalStore)
                 ? new OperationApprovalReplayVerifier(proposalStore)
                 : new UnavailableOperationApprovalReplayVerifier());
         services.TryAddEnumerable(
@@ -81,12 +98,22 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetService<IConnectionMultiplexer>() is { } redis
                     ? new RedisOperationInstanceStore(redis)
                     : new UnavailableOperationInstanceStore());
+            // The durable-runtime validator and proposal reconcilers stay gated on a REAL
+            // proposal store: a Redis-off host composes the fail-closed placeholder only so
+            // the governed admin catalogs advertise (J1/S1), not to claim a durable runtime.
             if (services.Any(descriptor => descriptor.ServiceType ==
-                    typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
+                    typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore) &&
+                    descriptor.ImplementationType != typeof(Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore) &&
+                    descriptor.ImplementationInstance is not Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore))
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
-                services.AddHostedService<PlannedProposalReconciler>();
-                services.AddHostedService<QueuedOperationReconciler>();
+                // Janitor sweeps open Redis and the database on an interval. The event-handler
+                // Lambdas are invoked to run one tick, then release their pool (honua-server#6515).
+                if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+                {
+                    services.AddHostedService<PlannedProposalReconciler>();
+                    services.AddHostedService<QueuedOperationReconciler>();
+                }
             }
         }
         services.TryAddSingleton<IOperationEnvelopeFactory>(sp =>
@@ -102,27 +129,30 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
 
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StylePresetExecutor>());
+        services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
 
-        // Executors: concrete work, registered as an enumerable for the dispatcher.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IOperationExecutor, DeferredServicePublishExecutor>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftCreateExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftUpdateExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftValidateExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftPreviewPlanExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioSaveVersionExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioCreatePublicationRequestExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioReopenVersionExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioRollbackExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, DeployRollbackOperationExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, CoordinatedReleaseRollbackOperationExecutor>());
+        // Enumerate operation identities without resolving unrelated actuator dependencies.
+        services.TryAddDeferredOperationExecutor<DeferredServicePublishExecutor>(ServicePublishOperation.OperationId);
+        services.AddServerInstanceIdentity();
+        services.TryAddDeferredOperationExecutor<AdminServerStatusExecutor>(AdminServerStatusExecutor.OperationName);
+        services.TryAddDeferredOperationExecutor<StudioDraftCreateExecutor>(StudioDraftOperations.Create);
+        services.TryAddDeferredOperationExecutor<StudioDraftUpdateExecutor>(StudioDraftOperations.Update);
+        services.TryAddDeferredOperationExecutor<StudioDraftDeleteExecutor>(StudioDraftOperations.Delete);
+        services.TryAddDeferredOperationExecutor<StudioDraftValidateExecutor>(StudioDraftOperations.Validate);
+        services.TryAddDeferredOperationExecutor<StudioDraftPreviewPlanExecutor>(StudioDraftOperations.PreviewPlan);
+        services.TryAddDeferredOperationExecutor<StudioSaveVersionExecutor>(StudioDraftOperations.SaveVersion);
+        services.TryAddDeferredOperationExecutor<StudioCreatePublicationRequestExecutor>(StudioDraftOperations.CreatePublicationRequest);
+        services.TryAddDeferredOperationExecutor<StudioReopenVersionExecutor>(StudioDraftOperations.ReopenVersion);
+        services.TryAddDeferredOperationExecutor<StudioRollbackExecutor>(StudioDraftOperations.Rollback);
+        services.TryAddDeferredOperationExecutor<DeployRollbackOperationExecutor>(WorkflowRollbackOperations.Deploy);
+        services.TryAddDeferredOperationExecutor<CoordinatedReleaseRollbackOperationExecutor>(WorkflowRollbackOperations.CoordinatedRelease);
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
+        // True on every production topology: Redis-on hosts register the durable store and
+        // Redis-off hosts register UnavailableOperationProposalStore, so the governed admin
+        // tools advertise everywhere and approval-gated calls refuse at call time with the
+        // typed capability-unavailable outcome (the approval bridge finds no gateway).
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
             typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore));
         if (hasProposalStore &&
@@ -138,13 +168,14 @@ internal static class OperationsServiceCollectionExtensions
                     services.AddSingleton<IOperationApprovalRequestMapper>(
                         new AdminConnectImportApprovalRequestMapper(definition));
                 }
-                services.AddScoped<IOperationExecutor>(sp => new AdminConnectImportOperationExecutor(
+                services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminConnectImportOperationExecutor(
                     definition,
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
                     sp.GetRequiredService<TimeProvider>(),
-                    sp.GetRequiredService<OperationLineageAttestationStore>()));
+                    sp.GetRequiredService<OperationLineageAttestationStore>(),
+                    sp.GetService<Honua.Core.Features.FileImport.Abstractions.IImportJobService>()));
             }
             services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
@@ -161,9 +192,11 @@ internal static class OperationsServiceCollectionExtensions
                 if (definition.Destructive)
                 {
                     services.AddSingleton<IOperationApprovalRequestMapper>(
-                        new AdminApiOperationApprovalRequestMapper(definition));
+                        sp => new AdminApiOperationApprovalRequestMapper(
+                            definition,
+                            sp.GetRequiredService<IOperationSecretStore>()));
                 }
-                services.AddScoped<IOperationExecutor>(sp => new AdminApiOperationExecutor(
+                services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminApiOperationExecutor(
                     definition,
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
@@ -198,19 +231,25 @@ internal static class OperationsServiceCollectionExtensions
 
         foreach (var definition in AdminOperateOperationCatalog.Definitions)
         {
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Single(
+                item => item.OperationId == definition.OperationId);
             if (definition.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None &&
                 definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
             {
                 services.AddSingleton<IOperationApprovalRequestMapper>(
-                    new AdminOperateOperationApprovalRequestMapper(definition));
+                    sp => new AdminOperateOperationApprovalRequestMapper(
+                        definition,
+                        sp.GetRequiredService<IOperationSecretStore>()));
             }
-            services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
+            services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminOperateOperationExecutor(
                 definition,
+                descriptor,
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IHttpContextAccessor>(),
                 sp.GetService<IAdminApiKeyStore>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<OperationLineageAttestationStore>()));
+                sp.GetRequiredService<OperationLineageAttestationStore>(),
+                sp.GetRequiredService<IOperationSecretStore>()));
         }
 
         services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
@@ -222,7 +261,16 @@ internal static class OperationsServiceCollectionExtensions
             .AddOptions<OperationPolicyOptions>()
             .Bind(configuration.GetSection(OperationPolicyOptions.SectionName));
 
-        services.TryAddSingleton<IOperationPolicyDecisionPoint, CanonicalOperationPolicyDecisionPoint>();
+        // Production appends the code-declared built-in administrator rules after the operator
+        // rules (OperationPolicyBuiltInRules); the startup validator still requires an enabled,
+        // fail-closed default so every other caller is denied without an operator rule.
+        var productionEnvironment = environment.IsProduction();
+        services.TryAddSingleton<IOperationPolicyDecisionPoint>(sp => new CanonicalOperationPolicyDecisionPoint(
+            sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+            sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
+            productionEnvironment));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, OperationPolicyStartupReporter>());
 
         // Dispatcher: resolves descriptor + executor, runs policy, executes on Allow.
         services.TryAddScoped<IOperationInvoker>(sp =>
@@ -232,21 +280,49 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetService<IOperationApprovalBridge>(),
-                sp.GetRequiredService<IOperationInstanceStore>(),
+                ComposeDispatcherInstanceStore(sp.GetRequiredService<IOperationInstanceStore>()),
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is null
+                !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
+                    sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>())
                     ? null
                     : sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
 
         return services;
     }
 
+    /// <summary>
+    /// Operations a Redis-off host may execute directly, without the durable operation-instance
+    /// store, when the policy decision is Allow. Owner decision 3 (topology) and decision 20
+    /// (2026-10-10): a Redis-off cell is a serving + configure + style/render topology, so the
+    /// configure step (<c>service.publish</c>) and the style step (<c>style.apply-preset</c>, the
+    /// operation behind <c>honua_apply_style_preset</c>) involve no governed proposal when the
+    /// policy allows them and must not be refused for a missing Redis. Rendering is a read and
+    /// never enters the operation runtime. Governed / proposal-based paths (RequireApproval
+    /// decisions, Studio drafts and publication requests, geoprocessing, the
+    /// <c>honua_admin_*</c> catalogs) are not listed and keep the typed capability-unavailable
+    /// refusal.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
+    [
+        ServicePublishOperation.OperationId,
+        StylePresetOperation.OperationId,
+    ];
+
+    /// <summary>
+    /// Wraps the fail-closed Redis-off instance store in a dispatcher-scoped non-durable store for
+    /// <see cref="RedisOffDirectOperationIds"/>; every other store is used as composed.
+    /// </summary>
+    internal static IOperationInstanceStore ComposeDispatcherInstanceStore(IOperationInstanceStore store)
+        => store is UnavailableOperationInstanceStore
+            ? new NonDurableDirectOperationInstanceStore(store, RedisOffDirectOperationIds)
+            : store;
+
     private static void AddLegacyAdapter(
         IServiceCollection services,
         Honua.Core.Features.Guardrails.Domain.OperationClass operationClass)
-        => services.AddScoped<IOperationExecutor>(sp =>
+        => services.AddDeferredOperationExecutor(LegacyOperationIds.For(operationClass), sp =>
             new LegacyGatewayOperationAdapter(sp, operationClass));
 
     /// <summary>

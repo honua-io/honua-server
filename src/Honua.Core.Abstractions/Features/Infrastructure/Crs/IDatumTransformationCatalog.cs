@@ -6,6 +6,15 @@ using System.Diagnostics.CodeAnalysis;
 namespace Honua.Core.Features.Infrastructure.Crs;
 
 /// <summary>
+/// Longitude/latitude envelope used to choose a datum grid by area of use.
+/// </summary>
+/// <param name="West">West longitude, degrees.</param>
+/// <param name="South">South latitude, degrees.</param>
+/// <param name="East">East longitude, degrees.</param>
+/// <param name="North">North latitude, degrees.</param>
+public readonly record struct DatumAreaEnvelope(double West, double South, double East, double North);
+
+/// <summary>
 /// Resolves datum (geographic) transformations for a source-to-target reprojection,
 /// matching ArcGIS' default geotransformation selection so reprojected geometry
 /// lands within a documented tolerance of Esri output.
@@ -32,6 +41,36 @@ public interface IDatumTransformationCatalog
     /// pairs) or fail explicitly rather than silently substitute.
     /// </returns>
     bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection);
+
+    /// <summary>
+    /// Selects the catalog transformation whose area of use fully contains the envelope.
+    /// </summary>
+    /// <param name="fromSrid">Source CRS SRID.</param>
+    /// <param name="toSrid">Target CRS SRID.</param>
+    /// <param name="west">Envelope west longitude, degrees.</param>
+    /// <param name="south">Envelope south latitude, degrees.</param>
+    /// <param name="east">Envelope east longitude, degrees.</param>
+    /// <param name="north">Envelope north latitude, degrees.</param>
+    /// <param name="selection">The single containing transformation, when exactly one matches.</param>
+    /// <returns>
+    /// <see langword="true"/> when exactly one area contains the envelope.
+    /// <see langword="false"/> when none do, or more than one does, so the caller
+    /// uses a 2-argument transform instead of a grid that does not cover the data.
+    /// </returns>
+    bool TryGetForEnvelope(
+        int fromSrid,
+        int toSrid,
+        double west,
+        double south,
+        double east,
+        double north,
+        [NotNullWhen(true)] out DatumTransformationSelection? selection)
+        => TryGetDefault(fromSrid, toSrid, out selection);
+
+    /// <summary>
+    /// True when the pair has area-of-use bounds, so a non-match must not fall back to the default grid.
+    /// </summary>
+    bool HasAreaOfUse(int fromSrid, int toSrid) => false;
 
     /// <summary>
     /// Resolves a transformation explicitly requested by a client via its Esri WKID.

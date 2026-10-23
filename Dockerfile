@@ -11,11 +11,28 @@
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
 # digest pinned 2026-08-12
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
 # digest pinned 2026-08-20
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac
 
 # Build stage
+# Extract restore inputs with their directory structure. Ordinary source edits,
+# including JSON content, rerun this inexpensive extraction but leave the
+# downstream restore input tree unchanged.
+FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
+# Bind-mounted context. WORKDIR avoids `cd` (hadolint DL3003) without changing
+# the relative paths `find` and `cp --parents` write under /restore-inputs.
+WORKDIR /context
+RUN --mount=type=bind,target=/context \
+    mkdir -p /restore-inputs && \
+    find . -type d \( -name bin -o -name obj -o -name .git \) -prune -o \
+      -type f \( -name '*.csproj' -o -name '*.fsproj' -o -name '*.vbproj' \
+        -o -name '*.props' -o -name '*.targets' \
+        -o -name '*.sln' -o -name '*.slnx' -o -name '*.slnf' \
+        -o -name '*.config' -o -name '.editorconfig' \
+        -o -name 'global.json' -o -name 'packages.lock.json' -o -name 'dotnet-tools.json' \) \
+      -exec cp --parents -p '{}' /restore-inputs/ \;
+
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -23,21 +40,19 @@ WORKDIR /src
 RUN groupadd --gid 1001 --system builduser && \
     useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin builduser
 
-# Copy solution and source project graph first for restore. The modularized
-# assembly graph changes often enough that a hand-maintained csproj list is
-# more brittle than copying src/ into the restore layer.
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+# Restore sees project/configuration inputs only. The extraction stage tracks
+# additions automatically without tying NuGet restore to every source edit.
+COPY --from=restore-inputs /restore-inputs/ ./
 COPY eng/Honua.BuildProfiles.props eng/
+COPY eng/Honua.ProtocolProfiles.props eng/
+COPY eng/protocol-profiles.v1.json eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
-COPY src/ src/
-COPY docs/developer/api-specs/admin-api.json docs/developer/api-specs/
-COPY docs/gis/data/feature-catalog.json docs/gis/data/
-COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
 # Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.
 ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 ARG HONUA_BUILD_PROFILE=full
+ARG HONUA_PROTOCOL_PROFILE=all
 ARG HONUA_INCLUDE_AWS=
 ARG HONUA_INCLUDE_AZURE=
 ARG HONUA_INCLUDE_ORACLE=
@@ -55,12 +70,12 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false $MODULE_MSBUILD_ARGS" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
@@ -84,12 +99,12 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false $MODULE_MSBUILD_ARGS" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
@@ -119,12 +134,18 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage
 FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
+# The current upstream digest predates available OS fixes. The revision is
+# echoed in the upgrade RUN so a bump invalidates the cached apt layer.
+# 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
+ARG RUNTIME_PACKAGE_REVISION=20261008
+
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.
 # The base is digest-pinned; compatible security updates and dependency versions
 # intentionally follow that Debian snapshot's configured repositories.
 # hadolint ignore=DL3005,DL3008
-RUN apt-get update && \
+RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
+    apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \

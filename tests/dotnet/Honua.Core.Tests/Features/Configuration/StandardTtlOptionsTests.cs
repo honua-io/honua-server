@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Configuration;
 
 public class StandardTtlOptionsTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_WithDevelopmentEnvironment_SetsShortTtls()
     {
@@ -27,6 +28,7 @@ public class StandardTtlOptionsTests
         Assert.Equal(TimeSpan.FromHours(2), options.VeryLong);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_WithProductionEnvironment_SetsLongTtls()
     {
@@ -44,6 +46,7 @@ public class StandardTtlOptionsTests
         Assert.Equal(TimeSpan.FromDays(1), options.VeryLong);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetTtl_ReturnsCorrectValueForCategory()
     {
@@ -58,6 +61,7 @@ public class StandardTtlOptionsTests
         Assert.Equal(options.VeryLong, options.GetTtl(TtlCategory.VeryLong));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateTtlOrdering_WithValidOrdering_ReturnsTrue()
     {
@@ -78,6 +82,7 @@ public class StandardTtlOptionsTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateTtlOrdering_WithInvalidOrdering_ReturnsFalse()
     {
@@ -98,6 +103,7 @@ public class StandardTtlOptionsTests
         Assert.False(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateTtlOrdering_WithNegativeTtl_ReturnsFalse()
     {
@@ -118,6 +124,7 @@ public class StandardTtlOptionsTests
         Assert.False(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetAllTtls_ReturnsAllCategories()
     {
@@ -136,6 +143,7 @@ public class StandardTtlOptionsTests
         Assert.Contains("VeryLong", allTtls.Keys);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(TtlCategory.VeryShort, "Frequently changing data (user sessions, real-time metrics)")]
     [InlineData(TtlCategory.Short, "Semi-static data (layer configurations, service metadata)")]
@@ -151,6 +159,7 @@ public class StandardTtlOptionsTests
         Assert.Equal(expectedDescription, description);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("session", TtlCategory.VeryShort)]
     [InlineData("metadata", TtlCategory.Short)]

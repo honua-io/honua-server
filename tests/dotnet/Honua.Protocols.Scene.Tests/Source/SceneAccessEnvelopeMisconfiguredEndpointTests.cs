@@ -13,8 +13,8 @@ namespace Honua.Server.Tests.Features.Protocols.Scene;
 /// Integration coverage for the misconfigured-signing-key path. A deployment
 /// that registers a protected scene without setting
 /// <c>Honua:SceneAccessSigning:SigningKey</c> must surface a structured 500
-/// from both the issue endpoint and the token-verification path on asset
-/// requests, rather than an unhandled exception during DI parameter binding.
+/// from the issue endpoint, while an unaccepted token on an asset request is
+/// refused rather than exposing configuration state as a server error.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
@@ -46,7 +46,7 @@ public sealed class SceneAccessEnvelopeMisconfiguredEndpointTests : IAsyncLifeti
                         // Intentionally NO Honua:SceneAccessSigning:SigningKey.
                         // The signing service constructor will throw
                         // InvalidOperationException on first resolve and the
-                        // endpoints must catch and surface 500 + log.
+                        // issue endpoint must catch and surface 500 + log.
                     });
                 });
             });
@@ -83,16 +83,14 @@ public sealed class SceneAccessEnvelopeMisconfiguredEndpointTests : IAsyncLifeti
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
-    public async Task GetSceneAsset_MissingSigningKey_WithToken_Returns500()
+    public async Task GetSceneAsset_MissingSigningKey_WithUnacceptedToken_Returns401()
     {
-        // Anonymous request carrying a stray token: the bearer-auth gate
-        // fails, the asset handler attempts to verify the token and tries
-        // to resolve the envelope service, which throws because SigningKey
-        // is unset. Expect a structured 500.
+        // A presented credential that cannot be accepted must be refused at
+        // the protocol boundary even when envelope verification is unavailable.
         var response = await _fixture.Client.GetAsync(
             $"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm?token=any-stray-token-value");
 
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [IntegrationTest]
@@ -200,16 +198,13 @@ public sealed class SceneAccessEnvelopeBadTtlEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
-    public async Task GetSceneAsset_BadTtl_WithToken_Returns500()
+    public async Task GetSceneAsset_BadTtl_WithUnacceptedToken_Returns401()
     {
-        // An anonymous request carrying a stray token reaches the
-        // token-verification branch, which resolves the signing service —
-        // the constructor throws because TtlMinutes is invalid. The catch
-        // site must convert that into a structured 500 with no internal
-        // detail leaked.
+        // Invalid verifier configuration cannot turn an unaccepted credential
+        // into a server error; the protected resource remains fail-closed.
         var response = await _fixture.Client.GetAsync(
             $"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm?token=any-stray-token-value");
 
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

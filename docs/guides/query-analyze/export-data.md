@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Export data"
+description: "Pull a layer's features out of Honua as GeoJSON, CSV, GeoParquet, GeoArrow, FlatGeobuf, GeoPackage, or Shapefile — straight from the query endpoints or as a bulk admin export."
+---
 # Export data
 
 Pull a layer's features out of Honua as GeoJSON, CSV, GeoParquet, GeoArrow, FlatGeobuf, GeoPackage, or Shapefile — straight from the query endpoints or as a bulk admin export.
@@ -36,7 +41,13 @@ Which formats are available depends on the surface: OGC API Features items serve
 
    In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/services/{service}/layers/{layerId}/export?format=gpkg` and save the response as `layer.gpkg`.
 
+   Shapefile downloads preserve records without geometry as null shapes with their attributes. When field names must change to fit DBF limits, the ZIP includes `export-warnings.txt` listing each change. This manifest is included in synchronous and background downloads; completed background job status also exposes `warnings` and the actual exported feature count.
+
+   Shapefile records use one ordinate layout for the entire file. If a later feature introduces Z or M dimensions that this layout cannot preserve, export fails explicitly; use CSV or GeoPackage for mixed ordinate layouts.
+
    Valid formats are `csv`, `shapefile`, and `gpkg`. Small exports stream back directly; large exports return `202 Accepted` with an `operationId` and a `statusUrl` (`/api/v1/admin/operations/{id}`) to poll — the async path requires cloud storage to be configured.
+
+   Background exports retain the submitting identity and resolved tenant. The worker applies current row and field policies for that identity when it reads the layer. Queued exports created before identity capture was supported fail safely after an upgrade; submit those exports again.
 
 ## Verify
 
@@ -61,7 +72,3 @@ Expected: a row/column tuple such as `(5, 12)` with a populated `geometry` colum
 - [Query features](query-features.md)
 - [Run geoprocessing](run-geoprocessing.md)
 - [Connect Excel and Power BI](../connect/excel-power-bi.md)
-
-Shapefile downloads preserve records without geometry as null shapes with their attributes. When field names must change to fit DBF limits, the ZIP includes `export-warnings.txt` listing each change. This manifest is included in synchronous and background downloads; completed background job status also exposes `warnings` and the actual exported feature count.
-
-Shapefile records use one ordinate layout for the entire file. If a later feature introduces Z or M dimensions that this layout cannot preserve, export fails explicitly; use CSV or GeoPackage for mixed ordinate layouts.

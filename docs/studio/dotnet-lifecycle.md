@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Use the .NET lifecycle client"
+description: "Honua.Sdk.Studio exposes the durable draft/version lifecycle independently of the preview browser UI."
+---
 # Use the .NET lifecycle client
 
 `Honua.Sdk.Studio` exposes the durable draft/version lifecycle independently
@@ -24,8 +29,9 @@ var saved = await packages.GetVersionAsync(version.ItemId, version.VersionId);
 var reopened = await packages.ReopenVersionAsync(saved.ItemId, saved.VersionId);
 ```
 
-Use the exact request/model names from the installed SDK version; this snippet
-must not be treated as a published-package receipt. Publication methods exist,
-but a pending or rejected request has no public URL, and these docs do not
-claim the blocked end-to-end approval journey is ready. Track
-[#3304](https://github.com/honua-io/honua-server/issues/3304).
+Use the request and model names from the installed SDK version. Follow the
+publication method's actual returned status and its documented polling contract;
+a pending or rejected request has no active URL. The
+[MCP publication tool](mcp-tools.md) has an admin direct-publication branch and
+a non-admin proposal branch. That MCP behavior is not a substitute for checking
+the installed .NET client's REST contract.

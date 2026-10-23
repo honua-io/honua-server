@@ -540,18 +540,51 @@ internal sealed partial class AnalysisContentService(
                     contentVersion.VersionId);
 
                 var submittedVersion = contentVersion;
+                int? mintedVersion = null;
                 if (command.ParameterOverrides is { Count: > 0 })
                 {
-                    package = ApplyExecutableParameterOverrides(package, command.ParameterOverrides);
-                    var next = new CreateAnalysisContentVersionCommand(
-                        SavedQuery: null,
-                        AnalysisPackage: package,
-                        BasedOnVersionId: contentVersion.VersionId,
-                        CreatedFromJobId: NormalizeOptional(command.RerunOfJobId),
-                        CreatedFromArtifactIds: []);
-                    var result = await AddVersionAsync(itemId, next, principal, cancellationToken).ConfigureAwait(false);
-                    submittedVersion = result.Version;
-                    package = submittedVersion.AnalysisPackage!;
+                    var overridden = ApplyExecutableParameterOverrides(package, command.ParameterOverrides);
+                    var identity = string.IsNullOrWhiteSpace(command.IdempotencyKey)
+                        ? null
+                        : ComputeRerunIdentity(
+                            itemId,
+                            contentVersion.VersionId,
+                            command.IdempotencyKey,
+                            command.ParameterOverrides);
+                    AnalysisContentVersion? reusable = null;
+                    if (identity is not null)
+                    {
+                        var versions = await store.ListVersionsAsync(itemId, cancellationToken).ConfigureAwait(false);
+                        reusable = FindReusableRerunVersion(versions, contentVersion.VersionId, identity);
+                    }
+
+                    if (reusable is not null)
+                    {
+                        submittedVersion = reusable;
+                        package = reusable.AnalysisPackage ?? overridden;
+                    }
+                    else
+                    {
+                        if (identity is not null)
+                        {
+                            overridden = WithRerunIdentity(overridden, identity);
+                        }
+
+                        var created = await AddVersionAsync(
+                            itemId,
+                            new CreateAnalysisContentVersionCommand(
+                                SavedQuery: null,
+                                AnalysisPackage: overridden,
+                                BasedOnVersionId: contentVersion.VersionId,
+                                CreatedFromJobId: NormalizeOptional(command.RerunOfJobId),
+                                CreatedFromArtifactIds: []),
+                            principal,
+                            cancellationToken).ConfigureAwait(false);
+                        submittedVersion = created.Version;
+                        package = submittedVersion.AnalysisPackage ?? overridden;
+                        mintedVersion = submittedVersion.Version;
+                    }
+
                     AnalysisContentTelemetry.SetContentTags(
                         activity,
                         submittedVersion.ItemId,
@@ -571,12 +604,41 @@ internal sealed partial class AnalysisContentService(
                     metadata[AnalysisContentMetadataKeys.RerunOfResultPackageId] = command.RerunOfResultPackageId.Trim();
                 }
 
-                var job = await geoprocessingJobService.SubmitJobAsync(
-                    package.Plan,
-                    command.IdempotencyKey,
-                    principal,
-                    metadata,
-                    cancellationToken).ConfigureAwait(false);
+                ExecutionJobRecord job;
+                try
+                {
+                    job = await geoprocessingJobService.SubmitJobAsync(
+                        package.Plan,
+                        command.IdempotencyKey,
+                        principal,
+                        metadata,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    if (mintedVersion is int abandoned)
+                    {
+                        await TryAbandonMintedVersionAsync(itemId, abandoned).ConfigureAwait(false);
+                    }
+
+                    throw;
+                }
+
+                if (mintedVersion is int createdVersion
+                    && job.Spec.Parameters.TryGetValue(AnalysisContentMetadataKeys.VersionId, out var jobVersionId)
+                    && !string.Equals(jobVersionId, submittedVersion.VersionId, StringComparison.Ordinal))
+                {
+                    await TryAbandonMintedVersionAsync(itemId, createdVersion).ConfigureAwait(false);
+                    if (TryParseContentVersionNumber(itemId, jobVersionId, out var jobVersion))
+                    {
+                        var resolved = await store.GetVersionAsync(itemId, jobVersion, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (resolved is not null)
+                        {
+                            submittedVersion = resolved;
+                        }
+                    }
+                }
 
                 Log.AnalysisPackageRerunSubmitted(logger, itemId, submittedVersion.Version, job.OperationId);
                 activity?.SetTag(Honua.ServiceDefaults.HonuaTelemetry.Tags.JobId, job.OperationId);
@@ -770,6 +832,18 @@ internal sealed partial class AnalysisContentService(
                     throw new AnalysisContentValidationException("Saved-query layerId must be non-negative.", "analysis.content.savedQuery.layerId.range", "/savedQuery/layerId");
                 }
 
+                if (savedQuery.FilterPlan is { } filterPlan)
+                {
+                    var structure = FilterPlanCompiler.DescribeStructureFailure(filterPlan);
+                    if (structure is not null)
+                    {
+                        throw new AnalysisContentValidationException(
+                            structure,
+                            "analysis.content.savedQuery.filter.invalid",
+                            "/savedQuery/filter");
+                    }
+                }
+
                 break;
             case AnalysisContentKind.AnalysisPackage:
                 if (analysisPackage is null || savedQuery is not null)
@@ -804,6 +878,95 @@ internal sealed partial class AnalysisContentService(
             default:
                 throw new AnalysisContentValidationException("Unsupported analysis content kind.", "analysis.content.kind.unsupported", "/kind");
         }
+    }
+
+    private async Task TryAbandonMintedVersionAsync(string itemId, int version)
+    {
+        try
+        {
+            var versions = await store.ListVersionsAsync(itemId, CancellationToken.None).ConfigureAwait(false);
+            if (versions.Count <= 1)
+            {
+                return;
+            }
+
+            await store.TryAbandonVersionAsync(itemId, version, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.RerunVersionAbandonFailed(logger, version, itemId, ex);
+        }
+    }
+
+    private static string ComputeRerunIdentity(
+        string itemId,
+        string sourceVersionId,
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string> overrides)
+    {
+        var builder = new StringBuilder();
+        builder.Append(itemId).Append('\n')
+            .Append(sourceVersionId).Append('\n')
+            .Append(idempotencyKey.Trim()).Append('\n');
+        foreach (var pair in overrides.OrderBy(pair => pair.Key.Trim(), StringComparer.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key))
+            {
+                continue;
+            }
+
+            builder.Append(pair.Key.Trim()).Append('=').Append(pair.Value).Append('\n');
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()))).ToLowerInvariant();
+    }
+
+    private static AnalysisContentVersion? FindReusableRerunVersion(
+        IReadOnlyList<AnalysisContentVersion> versions,
+        string sourceVersionId,
+        string identity)
+    {
+        AnalysisContentVersion? match = null;
+        foreach (var version in versions)
+        {
+            if (!string.Equals(version.BasedOnVersionId, sourceVersionId, StringComparison.Ordinal)
+                || version.AnalysisPackage is not { } package
+                || !package.Metadata.TryGetValue(AnalysisContentMetadataKeys.RerunIdentity, out var stored)
+                || !string.Equals(stored, identity, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            match = version;
+        }
+
+        return match;
+    }
+
+    private static AnalysisPackageContent WithRerunIdentity(AnalysisPackageContent package, string identity)
+    {
+        var metadata = new Dictionary<string, string>(package.Metadata, StringComparer.Ordinal)
+        {
+            [AnalysisContentMetadataKeys.RerunIdentity] = identity
+        };
+        return package with { Metadata = metadata };
+    }
+
+    private static bool TryParseContentVersionNumber(string itemId, string versionId, out int version)
+    {
+        version = 0;
+        const string marker = ":v";
+        var index = versionId.LastIndexOf(marker, StringComparison.Ordinal);
+        if (index <= 0 || !string.Equals(versionId[..index], itemId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return int.TryParse(
+            versionId[(index + marker.Length)..],
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out version) && version > 0;
     }
 
     private static AnalysisPackageContent ApplyExecutableParameterOverrides(
@@ -1162,5 +1325,8 @@ internal sealed partial class AnalysisContentService(
 
         [LoggerMessage(12007, LogLevel.Debug, "Analysis content estimate could not resolve statistics for layer {LayerId}; reporting a lower bound")]
         public static partial void EstimateLayerUnresolved(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(12008, LogLevel.Warning, "Failed to abandon analysis content version {Version} for item {ItemId} after rerun submission did not keep it")]
+        public static partial void RerunVersionAbandonFailed(ILogger logger, int version, string itemId, Exception exception);
     }
 }

@@ -12,7 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
-using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -71,13 +71,37 @@ internal static class StartupConfigurationHelpers
         ResolveEnvironmentSecretReference(configuration, "Aspire:StackExchange:Redis:ConnectionString");
         ResolveEnvironmentSecretReference(configuration, "HONUA_ADMIN_PASSWORD");
         ResolveEnvironmentSecretReference(configuration, "Security:ConnectionEncryption:MasterKey");
+        ResolveEnvironmentSecretReference(configuration, AuditChainKeyConfigurationKey);
+        ResolveEnvironmentSecretReference(configuration, OidcSigningKeyConfigurationKey);
     }
 
     /// <summary>
+    /// The audit hash-chain MAC key. Its consumers decode it once at service registration
+    /// (<c>AuditChainKeySnapshot</c>), so a secret reference must be resolved before then.
+    /// </summary>
+    internal const string AuditChainKeyConfigurationKey = "AuditLog:ChainVerification:Key";
+
+    internal const string OidcSigningKeyConfigurationKey = "Oidc:TokenValidation:SymmetricSigningKey";
+
+    /// <summary>
+    /// Security values the AWS serverless module may inject as <c>aws:secretsmanager:</c>
+    /// references, because Lambda cannot resolve Secrets Manager into environment variables.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> SecuritySecretReferenceKeys =
+    [
+        "HONUA_ADMIN_PASSWORD",
+        "Security:ConnectionEncryption:MasterKey",
+        AuditChainKeyConfigurationKey,
+        OidcSigningKeyConfigurationKey
+    ];
+
+    /// <summary>
     /// Validates or resolves security values that are consumed directly from configuration. The AWS
-    /// serverless module deliberately injects the admin password and connection-encryption master key
-    /// as Secrets Manager references. Authentication retains its reference for per-request refresh,
-    /// while connection encryption requires a stable process-lifetime key snapshot.
+    /// serverless module deliberately injects the admin password, connection-encryption master key
+    /// and audit-chain key as Secrets Manager references. Authentication retains its reference for
+    /// per-request refresh, while connection encryption and the audit chain require a stable
+    /// process-lifetime key snapshot. Static OIDC signing keys must also resolve before bearer
+    /// options are bound; a secret reference must never become literal HMAC key material.
     /// </summary>
     public static async Task ResolveSecuritySecretReferencesAsync(
         ConfigurationManager configuration,
@@ -85,11 +109,7 @@ internal static class StartupConfigurationHelpers
         CancellationToken cancellationToken = default)
     {
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
-        var keys = new[]
-        {
-            "HONUA_ADMIN_PASSWORD",
-            "Security:ConnectionEncryption:MasterKey"
-        };
+        var keys = SecuritySecretReferenceKeys;
 
         // Normalize references for direct callers as well. Program.cs finalizes source precedence
         // before its initial environment-reference pass, so security-file overrides are already visible.
@@ -105,13 +125,8 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
-        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        using var resolver = new AwsSecretsManagerResolver(
-            secretsClient,
-            metadataClient,
-            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+        using var lease = BootstrapSecretResolver.Create();
+        var resolver = lease.Resolver;
 
         await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, isProduction, cancellationToken)
             .ConfigureAwait(false);
@@ -147,12 +162,22 @@ internal static class StartupConfigurationHelpers
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (string.Equals(key, OidcSigningKeyConfigurationKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Provider exceptions may contain the secret reference or material. The host
+                    // prints startup exceptions, so keep this authentication failure value-free.
+                    throw new InvalidOperationException(
+                        $"Failed to resolve the security setting '{key}' from AWS Secrets Manager.");
+                }
+
                 throw new InvalidOperationException(
                     $"Failed to resolve the security setting '{key}' from AWS Secrets Manager.",
                     ex);
             }
 
-            if (string.IsNullOrEmpty(resolved))
+            if (string.IsNullOrEmpty(resolved) ||
+                (string.Equals(key, OidcSigningKeyConfigurationKey, StringComparison.OrdinalIgnoreCase) &&
+                 string.IsNullOrWhiteSpace(resolved)))
             {
                 throw new InvalidOperationException(
                     $"AWS Secrets Manager returned an empty value for the security setting '{key}'.");
@@ -162,7 +187,9 @@ internal static class StartupConfigurationHelpers
             // request so a warm process observes secret rotation. Resolve once here only to fail
             // startup on an inaccessible or weak production credential. The connection-encryption
             // master key is different: changing it while a process is live would make existing
-            // ciphertext unreadable, so that key remains a process-lifetime snapshot.
+            // ciphertext unreadable, so that key remains a process-lifetime snapshot. The audit-chain
+            // key is a snapshot for the same reason: a mid-process change breaks chain verification.
+            // OIDC static keys are captured by bearer options at startup and require a restart to rotate.
             if (string.Equals(key, "HONUA_ADMIN_PASSWORD", StringComparison.OrdinalIgnoreCase))
             {
                 if (isProduction)
@@ -180,7 +207,19 @@ internal static class StartupConfigurationHelpers
     private static void ResolveEnvironmentSecretReference(ConfigurationManager configuration, string key)
     {
         var value = configuration[key];
-        var resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
+        string? resolved;
+        try
+        {
+            resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
+        }
+        catch (InvalidOperationException) when (string.Equals(key, OidcSigningKeyConfigurationKey, StringComparison.OrdinalIgnoreCase))
+        {
+            // Startup exceptions are logged. Keep the signing-key reference out of the
+            // diagnostic and its inner exceptions, as with AWS resolution failures.
+            throw new InvalidOperationException(
+                $"Failed to resolve the security setting '{key}' from the environment.");
+        }
+
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
             SetResolvedSecretValue(configuration, key, resolved);
@@ -231,6 +270,71 @@ internal static class StartupConfigurationHelpers
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Materializes <see cref="Honua.Server.Features.Operations.OperationSecretKeyRingProtection.CertificateMaterialKey"/>
+    /// into a private PKCS#12 file and points
+    /// <see cref="Honua.Server.Features.Operations.OperationSecretKeyRingProtection.CertificatePathKey"/>
+    /// at it. A path that already names a file is left alone, so a mounted certificate still wins.
+    /// Lambda cannot mount a file; it carries an <c>aws:secretsmanager:</c> reference instead.
+    /// </summary>
+    public static async Task EnsureKeyRingCertificateMaterializedAsync(
+        ConfigurationManager configuration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var path = configuration[OperationSecretKeyRingProtection.CertificatePathKey];
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            return;
+        }
+
+        var material = configuration[OperationSecretKeyRingProtection.CertificateMaterialKey];
+        if (string.IsNullOrWhiteSpace(material))
+        {
+            return;
+        }
+
+        material = await ResolveKeyRingMaterialAsync(material, cancellationToken).ConfigureAwait(false);
+        var written = OperationSecretKeyRingProtection.WritePkcs12Material(material);
+        SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.CertificatePathKey, written.Path);
+        if (!string.IsNullOrEmpty(written.Password))
+        {
+            SetResolvedSecretValue(
+                configuration,
+                OperationSecretKeyRingProtection.CertificatePasswordKey,
+                written.Password);
+        }
+    }
+
+    private static async Task<string> ResolveKeyRingMaterialAsync(
+        string material,
+        CancellationToken cancellationToken)
+    {
+        // Production validation accepts env/aws/azure references for this key, so an
+        // env: reference has to resolve here too - otherwise it would validate and
+        // then die in WritePkcs12Material as "not a PKCS#12 bundle".
+        material = SecretReferenceResolver.ResolveEnvironmentReference(
+            material,
+            OperationSecretKeyRingProtection.CertificateMaterialKey) ?? material;
+
+        const string awsSecretsManagerPrefix = "aws:secretsmanager:";
+        if (!material.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return material;
+        }
+
+        using var lease = BootstrapSecretResolver.Create();
+        var resolver = lease.Resolver;
+        var resolved = await resolver.ResolveSecretAsync(material, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            throw new InvalidOperationException(
+                $"'{OperationSecretKeyRingProtection.CertificateMaterialKey}' did not resolve to a certificate.");
+        }
+
+        return resolved;
+    }
+
     private static async Task ResolveRedisConnectionSecretReferenceAsync(
         ConfigurationManager configuration,
         string key,
@@ -246,13 +350,8 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
-        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        using var resolver = new AwsSecretsManagerResolver(
-            secretsClient,
-            metadataClient,
-            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+        using var lease = BootstrapSecretResolver.Create();
+        var resolver = lease.Resolver;
 
         await ResolveRedisConnectionSecretReferenceAsync(configuration, key, resolver, cancellationToken)
             .ConfigureAwait(false);

@@ -10,6 +10,10 @@
          GPServer / NAServer / Catalog / GeometryService). The largest
          protocol surface; the audit called it out as the most-entangled. -->
     <RootNamespace>Honua.Server.Tests.Features.Protocols.GeoServices</RootNamespace>
+    <!-- honua-server#4747: the test assembly supplies its own entry point so a test can re-run
+         the cloud-native writers in a child process with JSON reflection disabled, the way the
+         shipped server runs. See ReflectionDisabledCloudNativeProbe. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -51,7 +55,21 @@
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.GeoServicesRest\Honua.GeoServicesRest.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Plugins\Honua.Plugins.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs" Link="Shared/ImageServerZarrTestFixture.cs" />
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs" Link="Shared/GeoServicesErrorAssertions.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs" Link="Shared/PbfQueryFormatterTests.Shared.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs" Link="Shared/ImageServerMultidimensionalSoapAssertions.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs" Link="Shared/GPServerSoapRequestFixtures.cs" />
+  </ItemGroup>
 </Project>

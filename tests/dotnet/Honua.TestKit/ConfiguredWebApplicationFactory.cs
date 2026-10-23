@@ -82,6 +82,16 @@ internal static class ConfiguredWebApplicationFactory
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            // Pin the requested environment on the builder instead of leaving it to the
+            // process. WebApplicationFactory builds this web host builder before CreateHost
+            // takes _testEnvironmentGate, and the builder snapshots every ASPNETCORE_* variable
+            // when it is constructed, layered over WebApplicationFactory's own Development
+            // default. Unpinned, the host's environment was whatever ASPNETCORE_ENVIRONMENT
+            // another host held at that instant: usually unset (Development), but "Test" while
+            // a concurrent host was inside StartInEnvironment — and a Test host skips the
+            // infrastructure composition root unless it opts in (#4640). Callers may still
+            // override this in their own configure delegate.
+            builder.UseEnvironment(_environmentName);
             _configure(builder);
         }
 

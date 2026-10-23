@@ -34,6 +34,14 @@ internal static class SpatialJoinSupport
     internal const string JoinCountAttribute = "JOIN_COUNT";
 
     /// <summary>
+    /// Default ceiling on carried match values across a whole join, shared by every caller of
+    /// <see cref="MatchBudget"/> (the <c>enrichment.enrich</c> executor and the
+    /// <c>analytics.spatial-join</c> executor, #4629) so the same runaway guard applies
+    /// regardless of which adapter dispatched the join.
+    /// </summary>
+    internal const long DefaultMaxCarriedMatchValues = 20_000_000L;
+
+    /// <summary>
     /// Builds an in-memory STRtree over the join features' envelopes, skipping
     /// null/empty geometries.
     /// </summary>
@@ -120,15 +128,7 @@ internal static class SpatialJoinSupport
                     carried[field].Add(ReadValue(candidate, field));
                 }
 
-                foreach (var accumulator in accumulators)
-                {
-                    switch (StatisticsSupport.TryReadNumeric(candidate, accumulator.Key, out var value))
-                    {
-                        case true:
-                            accumulator.Value.Add(value);
-                            break;
-                    }
-                }
+                StatisticsSupport.Accumulate(candidate, stats, accumulators);
             }
         }
 

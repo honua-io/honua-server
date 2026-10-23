@@ -38,7 +38,7 @@ namespace Honua.Geoprocessing.Execution;
 ///     table and materializes the typed layer schema; the same call rebuilds the MVT materialization (#1628).</description></item>
 ///   <item><description><b>tile</b> — when a raster layer is supplied,
 ///     <see cref="IRasterImportService.ImportAsync"/> loads the raster, computes statistics, and pre-generates tiles/overviews (#1625).</description></item>
-///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync"/>
+///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync(string,string,CancellationToken)"/>
 ///     recomputes the layer and service extents from the now-typed source.</description></item>
 ///   <item><description><b>provenance</b> — a structured provenance record is appended to the execution log and
 ///     published as a JSON data-URI artifact (source, table, layer, counts, timings).</description></item>
@@ -186,6 +186,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         // duplicate that logic.
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(15, "Validating and importing source", cancellationToken).ConfigureAwait(false);
+        // Fence before the overwrite import commits into the target table (#6154).
+        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         ImportResult importResult;
         try
@@ -230,6 +232,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         // the MVT materialization (#1628).
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(55, "Flattening to typed layer", cancellationToken).ConfigureAwait(false);
+        // Fence again immediately before publish; a lost claim must not overwrite the layer (#6154).
+        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         // The streaming importer is the single source of truth for the physical staging
         // table it actually created (provider-prefixed, e.g. imported_<table>) and the
@@ -362,7 +366,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         try
         {
             await publishingService
-                .RefreshLayerExtentsAsync(connectionString, serviceName, cancellationToken)
+                .RefreshLayerExtentsAsync(connectionString, serviceName,
+                    Guid.TryParse(request.ConnectionRef, out var refreshConnectionId) ? refreshConnectionId : null, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

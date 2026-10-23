@@ -17,21 +17,40 @@ internal static class ConsoleShareMapper
     /// authoritative; when none exists the tier is derived from the item's
     /// membership visibility for backward compatibility (public =&gt;
     /// public-indexed, organization =&gt; organization, otherwise private).
-    /// Public-link and embed remain disabled until explicitly configured.
+    /// A stored public-indexed tier is then capped by visibility so narrowing
+    /// membership revokes anonymous catalog and open-data exposure. Public-link
+    /// stays a token grant and is not capped by membership visibility.
     /// </summary>
     public static ConsoleShareAccessTier ResolveEffectiveTier(ConsoleShareState? state, ConsoleContentItem item)
     {
-        if (state is not null)
+        ArgumentNullException.ThrowIfNull(item);
+        var tier = state is not null
+            ? state.AccessTier
+            : item.Visibility switch
+            {
+                ConsoleVisibility.Public => ConsoleShareAccessTier.PublicIndexed,
+                ConsoleVisibility.Organization => ConsoleShareAccessTier.Organization,
+                _ => ConsoleShareAccessTier.Private,
+            };
+        return CapToVisibility(tier, item.Visibility);
+    }
+
+    /// <summary>
+    /// Caps a public-indexed tier when membership is no longer public.
+    /// Organization visibility drops it to organization. Personal and team
+    /// visibility drop it to private. Public-link, organization, and private
+    /// tiers are left unchanged, including a public-link grant on a non-public item.
+    /// </summary>
+    public static ConsoleShareAccessTier CapToVisibility(ConsoleShareAccessTier tier, ConsoleVisibility visibility)
+    {
+        if (visibility == ConsoleVisibility.Public || tier != ConsoleShareAccessTier.PublicIndexed)
         {
-            return state.AccessTier;
+            return tier;
         }
 
-        return item.Visibility switch
-        {
-            ConsoleVisibility.Public => ConsoleShareAccessTier.PublicIndexed,
-            ConsoleVisibility.Organization => ConsoleShareAccessTier.Organization,
-            _ => ConsoleShareAccessTier.Private,
-        };
+        return visibility == ConsoleVisibility.Organization
+            ? ConsoleShareAccessTier.Organization
+            : ConsoleShareAccessTier.Private;
     }
 
     /// <summary>

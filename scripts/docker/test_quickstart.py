@@ -14,6 +14,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class QuickstartTests(unittest.TestCase):
+    def test_issue_5419_no_redis_keeps_storage_initialization_dependency(self):
+        override = (ROOT / "docker-compose.no-redis.yml").read_text()
+        depends_on = override.split("depends_on: !override", 1)[1].split("environment:", 1)[0]
+
+        self.assertIn("storage-init:", depends_on)
+        self.assertIn("condition: service_completed_successfully", depends_on)
+
     def test_demo_callers_initialize_before_compose_and_use_container_credentials(self):
         for name in ("stac-ops", "mobile-offline"):
             source = (ROOT / f"scripts/demos/run-{name}-demo.sh").read_text()

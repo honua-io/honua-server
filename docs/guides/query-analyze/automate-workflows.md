@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Automate workflows"
+description: "Chain geoprocessing steps into a declarative DAG, publish it on a cron schedule, and watch runs — the orchestration engine handles step wiring, retries, and crash recovery."
+resource: "honua://capability/jobs.durable-runtime"
+---
 # Automate workflows
 
 Chain geoprocessing steps into a declarative DAG, publish it on a cron schedule, and watch runs — the orchestration engine handles step wiring, retries, and crash recovery.
@@ -26,15 +32,15 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
            "nodeId": "buffer",
            "nodeTypeId": "process:geometry.buffer",
            "parameters": {
-             "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-             "srid": "4326",
+             "wkb": "AQEAAAAAAAAAgIQeQQAAAACQBVBB",
+             "srid": "32610",
              "distance": "500"
            }
          },
          {
            "nodeId": "simplify",
            "nodeTypeId": "process:geometry.simplify",
-           "parameters": { "srid": "4326", "tolerance": "10" }
+           "parameters": { "srid": "32610", "tolerance": "10" }
          }
        ],
        "edges": [
@@ -48,6 +54,8 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
      }
    }
    ```
+
+   The input is `POINT(500000 4200000)` already expressed in EPSG:32610 (WGS 84 / UTM zone 10N). Buffer distance 500 and simplification tolerance 10 therefore use projected meters. Both steps retain the same CRS. For geographic input, transform the coordinates into an appropriate analysis CRS first; changing only the SRID does not transform them. The current buffer is planar and does not support `geodesic: true`.
 
    Note the package id (`PKG` below) from the response.
 
@@ -69,7 +77,7 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
    }
    ```
 
-   The scheduler evaluates cron triggers every 30 seconds and claims each fire-time so exactly one replica creates a run per occurrence. Failed steps retry per the engine's per-step retry policy with exponential backoff; see [operations](../deploy/backup-and-restore.md#workflow-orchestration) for run lifecycle, failure policies, and crash-safety details.
+   The scheduler evaluates cron triggers every 30 seconds and claims each fire-time so exactly one replica creates a run per occurrence. Failed steps retry per the engine's per-step retry policy with exponential backoff, and runs survive a control-plane restart.
 
    Honua captures the publishing author's security context, then re-resolves current roles before
    every cron or event firing when the configured identity source manages that author (including
@@ -105,5 +113,5 @@ Expected (trimmed): run progress that ends in a succeeded state with both steps 
 ## Next steps
 
 - [Run geoprocessing](run-geoprocessing.md)
-- [Operations: workflow orchestration](../deploy/backup-and-restore.md#workflow-orchestration)
+- [Monitor Honua Server](../deploy/monitoring.md)
 - [Geoprocessing operations reference](../../reference/geoprocessing-operations.md)

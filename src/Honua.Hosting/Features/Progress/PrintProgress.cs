@@ -11,6 +11,9 @@ namespace Honua.Infrastructure.Progress;
 internal sealed record PrintProgress : IOperationProgress, ICancellableOperationProgress
 {
     public required string JobId { get; init; }
+    public string? RequestedBy { get; init; }
+    public string? TenantId { get; init; }
+    public bool? AnonymousSubmission { get; init; }
     public required string Format { get; init; }
     public required string TemplateName { get; init; }
     public required OperationStatus Status { get; init; }
@@ -23,6 +26,12 @@ internal sealed record PrintProgress : IOperationProgress, ICancellableOperation
     public string? ErrorMessage { get; init; }
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public string? CurrentPhase { get; init; }
+
+    /// <summary>Process that accepted the job. Null on records written before owner stamping.</summary>
+    public string? OwnerInstanceId { get; init; }
+
+    /// <summary>Last proof the owner was still executing the job. Null falls back to <see cref="StartedAt"/>.</summary>
+    public DateTimeOffset? HeartbeatAt { get; init; }
 
     // Print rendering is atomic (single ExecuteAsync call), so ProcessedElements
     // jumps from 0 to TotalElements on completion.  Return null (indeterminate)

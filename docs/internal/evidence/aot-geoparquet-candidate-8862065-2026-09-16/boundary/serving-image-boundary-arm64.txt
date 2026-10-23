@@ -1,0 +1,3 @@
+1b9f3a9c1831949743c35978a7ba7a9610995e3e89afb61c333bb81ee2b08550
+Serving image ghcr.io/honua-io/honua-server@sha256:ee9e6dc0ad87e10f7bc47328048d9b28a5e58b49d7636765b6719433fe97f06d is native AOT and GDAL/PROJ/GEOS-free.
+exit=0

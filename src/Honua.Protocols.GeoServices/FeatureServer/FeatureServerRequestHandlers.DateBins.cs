@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -95,7 +96,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -188,8 +190,28 @@ internal static partial class FeatureServerEndpoints
             return whereError!;
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var rows = await featureReader.QueryDateBinsAsync(storageLayerId.Value, query, dateBin, cancellationToken);
+        var (filteredQuery, filterError) = await ApplyAnalyticsFiltersAsync(
+            context, resource, values, query, cancellationToken).ConfigureAwait(false);
+        if (filterError != null)
+        {
+            return filterError;
+        }
+
+        query = filteredQuery;
+
+        var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+            context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+        ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
+        try
+        {
+            rows = await featureReader.QueryDateBinsAsync(storageLayerId.Value, query, dateBin, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "queryDateBins is not supported by the configured feature provider for this layer.");
+        }
 
         var responseFeatures = rows.Select(row => new GeoServicesFeature
         {

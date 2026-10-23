@@ -113,6 +113,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             principal,
             StudioAuthorizationOperation.CreateDraft,
             existingPointers is null ? actorId : existingPointers.OwnerId,
+            existingPointers is null ? RequestTenantId(httpContext) : existingPointers.TenantId,
             existingPointers is null ? null : argument.ItemId?.ToString("D"),
             existingPointers is null ? "studio-package-draft" : "studio-content-item",
             OperatorOperation.Create,
@@ -455,7 +456,8 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Name = ToolName,
         Title = "Validate Studio draft",
         Description =
-            "Validate a Studio package lifecycle draft's current envelope and return the validation summary. "
+            "Validate a Studio package lifecycle draft's current envelope and return the structural validation summary. "
+            + "This does not query sources, verify their current access, or render the Studio canvas. "
             + "Genuinely read-only: it does NOT persist the result onto the draft or change its generation "
             + "(unlike the REST admin POST .../validate endpoint), so it is always safe to call between composition-mutation calls.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
@@ -477,7 +479,6 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
                 cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
-        var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -492,6 +493,7 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         // Pure computation only — no UpdateDraftAsync/ValidateDraftAsync call,
         // so the draft's persisted generation is untouched.
+        var validator = RequireValidator(httpContext);
         var validation = validator.Validate(draft.Envelope);
 
         Audit(principal, ToolName, draftId, generationBefore: draft.Generation, generationAfter: draft.Generation);
@@ -534,6 +536,7 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         Title = "Preview Studio draft",
         Description =
             "Build a read-only preview plan for a Studio package lifecycle draft's current envelope. "
+            + "This is planning only for every family: it does not query sources or render a map. "
             + "Genuinely read-only: it does NOT persist a validation summary or change the draft's generation "
             + "(unlike the REST admin POST .../preview-plan endpoint). "
             + "For job-backed families (gp, etl, workflow) the plan is planning-only — it does not submit or execute a job.",
@@ -556,7 +559,6 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
                 cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
-        var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -571,6 +573,7 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         // Pure computation only — mirrors StudioPackageLifecycleService.PreviewPlanAsync's
         // projection without calling it (that method persists via ValidateDraftAsync first).
+        var validator = RequireValidator(httpContext);
         var validation = validator.Validate(draft.Envelope);
         var requiresJob = StudioPackageLifecycleService.RequiresBackgroundJob(draft.Family);
         var steps = requiresJob

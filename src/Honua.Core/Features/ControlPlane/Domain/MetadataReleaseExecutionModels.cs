@@ -154,4 +154,13 @@ public sealed record MetadataReleaseExecutionPlan
     /// Null when the additive change needs no data populate.
     /// </summary>
     public string? DataPopulateWorkloadId { get; init; }
+
+    /// <summary>
+    /// Fields the data-populate workload writes. Required when <see cref="DataPopulateWorkloadId"/>
+    /// is set: the workload qualifies as an additive physical change only when every field it writes
+    /// is a nullable field this script adds, so old readers and writers never depend on it and
+    /// rollback needs no data compensation. A workload that declares nothing, or writes any other
+    /// field, is rejected before mutation.
+    /// </summary>
+    public IReadOnlyList<string> DataPopulateFields { get; init; } = Array.Empty<string>();
 }

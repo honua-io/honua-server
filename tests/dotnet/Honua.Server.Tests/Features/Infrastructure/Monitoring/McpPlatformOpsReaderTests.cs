@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.StudioAiProxy;
@@ -15,10 +18,12 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -58,6 +63,13 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             : $$"""{"packageId":"package-a","targetEnvironment":"candidate-a","resourceSemanticId":"roads","newFieldName":"speed_limit","idempotencyKey":"{{idempotencyKey}}"}""";
         using var argumentDocument = JsonDocument.Parse(argumentJson);
         var signedArguments = argumentDocument.RootElement.Clone();
+        IMcpTool tool = toolName switch
+        {
+            ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
+            _ => throw new InvalidOperationException($"Tool '{toolName}' is not a governed proposal tool.")
+        };
+        var descriptor = tool.Describe();
         var request = new StudioAiChatRequest
         {
             Provider = "anthropic",
@@ -65,12 +77,27 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             Certification = new StudioAiTranscriptCertification
             {
                 CandidateId = "candidate-a",
+                TenantId = "tenant-a",
                 ReleaseId = "2026.1-rc.1",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "governed-mutation",
                 RunNonce = "nonce-1"
             },
-            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }]
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }],
+            Tools =
+            [
+                new StudioAiToolDefinition
+                {
+                    Name = descriptor.Name,
+                    Description = descriptor.Description,
+                    InputSchema = descriptor.InputSchema,
+                }
+            ],
+            ToolChoice = new StudioAiToolChoice
+            {
+                Mode = StudioAiToolChoiceMode.Specific,
+                ToolName = descriptor.Name,
+            },
         };
         var events = new[]
         {
@@ -80,7 +107,13 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
         };
         var privateKey = new Ed25519PrivateKeyParameters(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray(), 0);
-        var signer = new StudioAiTranscriptSigner(Options.Create(new StudioAiProxyConfiguration()), TimeProvider.System);
+        var signingOptions = new StudioAiProxyConfiguration();
+        signingOptions.TranscriptSigning.OverlapKeys.Add(new StudioAiTranscriptVerificationKeyOptions
+        {
+            KeyId = "candidate-key",
+            PublicKey = Convert.ToBase64String(privateKey.GeneratePublicKey().GetEncoded()),
+        });
+        var signer = new StudioAiTranscriptSigner(Options.Create(signingOptions), TimeProvider.System);
         var provenance = signer.Sign(
             new StudioAiTranscriptSigner.SigningKey("candidate-key", privateKey, privateKey.GeneratePublicKey().GetEncoded()),
             request, "anthropic", "claude-sonnet-4-5", events);
@@ -97,7 +130,29 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             StudioAiProxyJsonContext.Default.ListStudioAiChatEvent)!;
         var verifiedCall = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStop);
         var verifiedToolName = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStart).ToolName;
+        var signedJson = JsonSerializer.Serialize(
+            provenance,
+            StudioAiProxyJsonContext.Default.StudioAiSignedTranscript);
+        using var metadata = JsonDocument.Parse(
+            $$"""{"{{ProposalEvidenceVerifier.MetaProperty}}":{{signedJson}}}""");
+        using var callId = JsonDocument.Parse("17");
+        var proposalEvidence = await new ProposalEvidenceVerifier(signer, TimeProvider.System)
+            .VerifyAsync(
+                tool,
+                verifiedCall.ToolArguments,
+                metadata.RootElement,
+                "tenant-a",
+                "session-candidate-a",
+                callId.RootElement,
+                CancellationToken.None);
 
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var proposer = await apiKeys.CreateAsync(
+            "proposal-evidence-proposer",
+            ["admin:operation:POST:/api/v1/admin/proposals"],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test",
+            CancellationToken.None);
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var proposalStore = new RedisOperationProposalStore(
             multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
@@ -110,20 +165,22 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
         actuator.PlanAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
             .Returns(new OperationProposalPlan());
         var gateway = CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, [actuator]);
-        using var readerServices = McpPlatformOpsReaderTests.CreateServices(gateway);
+        var httpContextAccessor = new HttpContextAccessor();
+        using var readerServices = McpPlatformOpsReaderTests.CreateServices(
+            gateway,
+            accessor: httpContextAccessor,
+            apiKeys: apiKeys);
         var reader = McpPlatformOpsReaderTests.CreateReader(services: readerServices);
         using var toolServices = new ServiceCollection().AddSingleton<IMcpPlatformOpsReader>(reader).BuildServiceProvider();
         var context = new DefaultHttpContext
         {
             RequestServices = toolServices,
-            User = McpPlatformOpsReaderTests.CreatePrincipal()
+            User = McpPlatformOpsReaderTests.CreateApiKeyPrincipal(proposer.Record.Id)
         };
-        IMcpTool tool = verifiedToolName switch
-        {
-            ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
-            ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
-            _ => throw new InvalidOperationException($"Verified tool '{verifiedToolName}' is not a governed proposal tool.")
-        };
+        verifiedToolName.Should().Be(tool.Name);
+        context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = proposalEvidence;
+        context.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = tool.Name;
+        httpContextAccessor.HttpContext = context;
 
         var result = await tool.InvokeAsync(context, verifiedCall.ToolArguments, CancellationToken.None);
 
@@ -135,6 +192,14 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
         persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
         persisted.Kind.Should().Be(operationClass);
         persisted.Plan.ExecutionPayload.Should().Contain("candidate-a");
+        persisted.Evidence.Should().NotBeNull();
+        persisted.Evidence!.CandidateId.Should().Be("candidate-a");
+        persisted.Evidence.TenantId.Should().Be("tenant-a");
+        persisted.Evidence.ToolName.Should().Be(toolName);
+        persisted.Evidence.McpSessionId.Should().Be("session-candidate-a");
+        persisted.Evidence.McpCallId.Should().Be("17");
+        persisted.Evidence.AuthorizationDecision.Should().Be("admin-policy-authorized");
+        persisted.Evidence.PolicyRevision.Should().Be(OperationGateway.ComputePolicyRevision(decision));
         await actuator.DidNotReceive().ExecuteAsync(
             Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
@@ -394,6 +459,7 @@ public sealed class McpPlatformOpsReaderTests
         gateway.LastRequest.RequestedByAgent.Should().Be("agent:test:subject:-:ops-agent");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
+        gateway.LastRequest.AutonomyContext.Should().BeNull("direct rollback has no originating finding");
         await services.GetRequiredService<IOperationEnvelopeFactory>().Received(1).CreateAcceptedAsync(
             "control-plane.deploy",
             Arg.Is<OperationPolicyContext>(context =>
@@ -489,6 +555,441 @@ public sealed class McpPlatformOpsReaderTests
         gateway.RouteCalls.Should().Be(0);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_TargetVersionMismatch_RejectsWithTypedCodeAndPreflightEcho()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(services: services);
+
+        var output = await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { TargetVersion = " 2026.1-rc.3 " },
+            CancellationToken.None);
+
+        output.Outcome.Should().Be("rejected");
+        output.Code.Should().Be("platform_release_version_mismatch");
+        output.RequiresApproval.Should().BeFalse();
+        output.ProposalId.Should().BeNull();
+        output.Targets.Should().BeNull();
+        output.DeclaredVersion.Should().Be("2026.07.01");
+        output.TargetVersion.Should().Be("2026.1-rc.3");
+        output.ServingArtifactReference.Should().Be("ghcr.io/honua/server:2026.07.01");
+        output.IsCoVersioned.Should().BeFalse("the fixture's serving-pinned target diverges from the release");
+        output.Message.Should().Contain("2026.1-rc.3").And.Contain("2026.07.01");
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+        await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceiveWithAnyArgs()
+            .CreateAcceptedAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_TargetVersionMatchesDeclared_SealsProposalAsToday()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(services: services);
+
+        var output = await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { TargetVersion = "honua-v2026.07.01" },
+            CancellationToken.None);
+
+        output.Outcome.Should().Be("completed");
+        output.Code.Should().BeNull();
+        output.RequiresApproval.Should().BeTrue();
+        output.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.ProposalId == "proposal-converge");
+        output.Targets.Should().ContainSingle(target => target.TargetId == "serving-pinned" && target.Outcome == "skipped-pinned");
+        gateway.ProposalCalls.Should().Be(1);
+        gateway.RouteCalls.Should().Be(0);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_NoDeclaredRelease_KeepsTheExistingPreconditionOutcome()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var options = CreateOptions();
+        options.PlatformRelease = new PlatformReleaseOptions();
+        var reader = CreateReader(options: options, services: services);
+
+        var act = () => reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { TargetVersion = "2026.1-rc.3" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingPreconditionFailedException>()
+            .WithMessage("A platform release is not declared.");
+        gateway.ProposalCalls.Should().Be(0);
+    }
+
+    private static RecordingGateway ConvergenceGateway() => new(new OperationGatewayResult
+    {
+        Outcome = OperationGatewayOutcome.ProposalCreated,
+        Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"),
+        ProposalId = "proposal-converge",
+    });
+
+    [Theory]
+    [InlineData("stale", "unavailable")]
+    [InlineData("partial", "partial")]
+    [InlineData("unavailable", "unavailable")]
+    [InlineData("unverified", "unavailable")]
+    [InlineData("notConfigured", "notConfigured")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeFinding_IncompleteDeploymentEvidence_BlocksBeforeProposalOrActuation(
+        string scenario, string expectedCompleteness)
+    {
+        var evaluation = DeploymentFindingFixture(scenario);
+        evaluation.Posture.Sources.Single().Completeness.Should().Be(expectedCompleteness);
+        // The diagnosis survives even when its required source cannot authorize an action.
+        evaluation.Findings.Single().Subject.TargetId.Should().Be("serving-us-west");
+        var source = Substitute.For<IOpsFindingsEvidenceSource>();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(evaluation);
+        var gateway = FindingGateway();
+        using var services = CreateServices(gateway, findings: source);
+        var reader = CreateReader(services: services);
+
+        var result = await reader.ProposeFindingAsync(CreatePrincipal(),
+            new McpProposeFindingArgument { FindingId = "deployment-fixture", CandidateId = "serving-us-west" },
+            CancellationToken.None);
+
+        result.Outcome.Should().Be("Blocked");
+        result.Message.Should().Be("evidencePostureNotActionable");
+        result.ProposalId.Should().BeNull();
+        result.ExecutionOperationId.Should().BeNull();
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+        await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceive()
+            .CreateAcceptedAsync(Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("scope")]
+    [InlineData("target")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal(string denial)
+    {
+        var source = Substitute.For<IOpsFindingsEvidenceSource>();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(DeploymentFindingFixture("complete"));
+        var gateway = FindingGateway();
+        using var services = CreateServices(gateway, findings: source);
+        var reader = CreateReader(
+            authorization: CreateAuthorization(denial == "actor" ? AuthorizationResult.Failed() : AuthorizationResult.Success()),
+            scopeAuthorizer: new OperatorScopeAuthorizer(), services: services);
+        var principal = denial == "scope"
+            ? new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
+                new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, OperatorScopeCatalog.ScopeGovernedClaimValue),
+                new Claim(OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.Read),
+            ], "test"))
+            : CreatePrincipal();
+
+        var act = () => reader.ProposeFindingAsync(principal,
+            new McpProposeFindingArgument
+            {
+                FindingId = "deployment-fixture",
+                CandidateId = denial == "target" ? "another-target" : "serving-us-west",
+            }, CancellationToken.None);
+
+        if (denial == "target")
+            await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>();
+        else
+            await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingAuthorizationException>();
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+        await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceive()
+            .CreateAcceptedAsync(Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeFinding_CompleteDeploymentEvidence_SealsOnlyTheBoundAction()
+    {
+        var source = Substitute.For<IOpsFindingsEvidenceSource>();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(DeploymentFindingFixture("complete"));
+        var gateway = FindingGateway();
+        using var services = CreateServices(gateway, findings: source);
+        var result = await CreateReader(services: services).ProposeFindingAsync(CreatePrincipal(),
+            new McpProposeFindingArgument { FindingId = "deployment-fixture", CandidateId = "serving-us-west" },
+            CancellationToken.None);
+
+        result.RequiresApproval.Should().BeTrue();
+        result.ProposalId.Should().Be("deployment-proposal");
+        result.ExecutionOperationId.Should().BeNull();
+        gateway.ProposalCalls.Should().Be(1);
+        gateway.RouteCalls.Should().Be(0);
+        // Authentication scheme + subject kind + absent issuer + subject ID.
+        gateway.LastRequest!.RequestedBy.Should().Be("test:subject:-:ops-agent");
+        gateway.LastRequest.IdempotencyKey.Should().Be("deployment-fixture");
+        var provenance = gateway.LastRequest.AutonomyContext;
+        provenance.Should().NotBeNull("the CLI and durable audit must retain the source finding");
+        provenance!.FindingId.Should().Be("deployment-fixture");
+        provenance.Rule.Should().Be(OpsFindingsService.RuleDeployManualIntervention);
+        provenance.ActionDiscriminator.Should().Be("deploy.converge");
+        provenance.ActionMarkedAutoSafe.Should().BeFalse();
+        provenance.BlastRadius.Should().Be(2);
+        provenance.EvidenceRefs.Should().Contain("workflow-operation:deploy-fixture");
+        provenance.EvidenceRefs.Should().Contain(reference => reference.StartsWith(
+            "evidence:" + EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations + ":",
+            StringComparison.Ordinal));
+        var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload!);
+        payload!.TargetId.Should().Be("serving-us-west");
+        payload.DesiredRevision.Should().Be("rev-2");
+    }
+
+    private static RecordingGateway FindingGateway() => new(new OperationGatewayResult
+    {
+        Outcome = OperationGatewayOutcome.ProposalCreated,
+        Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"),
+        ProposalId = "deployment-proposal",
+    });
+
+    internal static OpsFindingsEvaluation DeploymentFindingFixture(string scenario)
+    {
+        // Fixed, independently specified source observations, not a snapshot of runtime output.
+        var now = new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero);
+        const string sourceId = EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations;
+        const string backend = EvidencePostureVocabulary.BackendKinds.DurableStore;
+        var age = TimeSpan.FromMinutes(5);
+        var envelope = scenario switch
+        {
+            "complete" => EvidencePostureFactory.Complete(sourceId, backend, "fixture-redis", now, age),
+            "stale" => EvidencePostureFactory.Complete(sourceId, backend, "fixture-redis", now.AddHours(-1), age),
+            "partial" => EvidencePostureFactory.Partial(sourceId, backend, "fixture-redis", now, age,
+                EvidencePostureVocabulary.ReasonCodes.PartialResult),
+            "unavailable" => EvidencePostureFactory.Unavailable(sourceId, backend, "fixture-redis",
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable),
+            "unverified" => EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.Unverified,
+                "fixture-redis", now, age),
+            "notConfigured" => EvidencePostureFactory.NotConfigured(sourceId, backend, "fixture-redis"),
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+        };
+        return new OpsFindingsEvaluation
+        {
+            EvaluatedAt = now,
+            Posture = EvidencePostureFactory.Build(now, envelope),
+            Findings = [new OpsFinding
+            {
+                Id = "deployment-fixture",
+                Rule = OpsFindingsService.RuleDeployManualIntervention,
+                Severity = OpsFindingSeverity.Critical,
+                Title = "Deployment requires intervention",
+                Explanation = "The fixture is serving rev-1; the approved desired revision is rev-2.",
+                DetectedAt = now,
+                Subject = new OpsFindingSubject { TargetId = "serving-us-west", OperationId = "deploy-fixture" },
+                EvidenceRefs = ["workflow-operation:deploy-fixture"],
+                RecommendedAction = new OpsFindingRecommendedAction
+                {
+                    Kind = OperationClass.Deploy,
+                    Summary = "Converge deployment",
+                    ActionDiscriminator = "deploy.converge",
+                    AutoSafe = false,
+                    BlastRadius = 2,
+                    Reason = "Apply the declared revision",
+                    ExecutionPayload = new DeployExecutionPayload
+                    { TargetId = "serving-us-west", CurrentRevision = "rev-1", DesiredRevision = "rev-2" }.Serialize(),
+                },
+            }],
+        };
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task BatchRollback_StaleDeployEvidence_SealsProposalWithoutEvidence()
+    {
+        var store = new RecordingWorkflowOperationStore(
+            BuildDeployOperation(
+                "op-prod",
+                targetId: "prod",
+                desiredRevision: "rev-2",
+                currentRevision: "rev-1",
+                status: WorkflowOperationStatus.Succeeded));
+        var gateway = ProposalGateway();
+        var accessor = new HttpContextAccessor();
+        using var services = CreateServices(gateway, accessor: accessor);
+        var reader = CreateReader(store: store, services: services);
+        using var toolServices = new ServiceCollection()
+            .AddSingleton<IMcpPlatformOpsReader>(reader)
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = toolServices,
+            User = CreatePrincipal(),
+        };
+        accessor.HttpContext = context;
+        context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = SampleEvidence(targetId: "staging");
+
+        var surface = new McpDataAccessSurface(
+            [new ProposeRollbackTool(NullLogger<ProposeRollbackTool>.Instance)],
+            [],
+            NullLogger<McpDataAccessSurface>.Instance);
+        using var parameters = JsonDocument.Parse(
+            """{"name":"honua_propose_rollback","arguments":{"targetId":"prod","toRevision":"rev-1"}}""");
+        using var id = JsonDocument.Parse("2");
+        var response = await surface.DispatchAsync(
+            context,
+            new McpJsonRpcRequest
+            {
+                JsonRpc = "2.0",
+                Id = id.RootElement.Clone(),
+                Method = "tools/call",
+                Params = parameters.RootElement.Clone(),
+            },
+            CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        gateway.ProposalCalls.Should().Be(1);
+        gateway.LastRequest.Should().NotBeNull();
+        gateway.LastRequest!.Evidence.Should().BeNull();
+        DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload)!.TargetId.Should().Be("prod");
+        context.Items.ContainsKey(ProposalEvidenceVerifier.HttpContextItemKey).Should().BeFalse();
+        context.Items.ContainsKey(ProposalEvidenceVerifier.InvokingToolItemKey).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task SealProposal_MismatchedEvidenceTarget_IsRejected()
+    {
+        var gateway = ProposalGateway();
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var proposer = await apiKeys.CreateAsync(
+            "proposal-evidence-proposer",
+            ["admin:*"],
+            DateTimeOffset.UtcNow.AddHours(1),
+            "test",
+            CancellationToken.None);
+        var accessor = new HttpContextAccessor();
+        using var services = CreateServices(gateway, accessor: accessor, apiKeys: apiKeys);
+        var reader = CreateReader(services: services);
+        var context = new DefaultHttpContext();
+        accessor.HttpContext = context;
+        context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = SampleEvidence(targetId: "staging");
+        context.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = ProposeDeployOperationTool.ToolName;
+
+        var act = () => reader.ProposeDeployOperationAsync(
+            CreateApiKeyPrincipal(proposer.Record.Id),
+            new McpDeployMutationArgument { TargetId = "prod", DesiredRevision = "rev-9" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*does not match the proposal target*");
+        gateway.ProposalCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ValidateApprovalAsync_MismatchedDeployTarget_Throws()
+    {
+        var execution = new DeployExecutionPayload
+        {
+            TargetId = "prod",
+            DesiredRevision = "rev-2",
+        }.Serialize();
+        var canonicalPayload = StudioAiTranscriptSigner.Canonicalize(Encoding.UTF8.GetBytes(execution));
+        var canonicalRequest = StudioAiTranscriptSigner.Canonicalize("{\"targetId\":\"staging\"}"u8);
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var proposer = await apiKeys.CreateAsync(
+            "proposal-evidence-proposer",
+            ["admin:*"],
+            DateTimeOffset.UtcNow.AddHours(1),
+            "test",
+            CancellationToken.None);
+        var services = new ServiceCollection()
+            .AddSingleton<IMcpTool>(new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance))
+            .AddSingleton<IAdminApiKeyStore>(apiKeys)
+            .BuildServiceProvider();
+        var validator = new OperationProposalEvidenceValidator(
+            new ProposalEvidenceVerifier(
+                new StudioAiTranscriptSigner(Options.Create(new StudioAiProxyConfiguration()), TimeProvider.System),
+                TimeProvider.System),
+            services,
+            Substitute.For<IGuardrailLadder>(),
+            apiKeys,
+            TimeProvider.System);
+        var evidence = SampleEvidence(targetId: "staging") with
+        {
+            RequestDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalRequest)),
+            CanonicalRequest = Convert.ToBase64String(canonicalRequest),
+            PayloadDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalPayload)),
+            CanonicalPayload = Convert.ToBase64String(canonicalPayload),
+            AuthorizationDecision = "admin-policy-authorized",
+        };
+        var proposal = new OperationProposal
+        {
+            ProposalId = "proposal-forged",
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.AwaitingApproval,
+            OperationId = "control-plane.deploy",
+            RequestedBy = $"apikey:api-key:{proposer.Record.Id:D}",
+            TenantId = "tenant-a",
+            Plan = new OperationProposalPlan { ExecutionPayload = execution },
+            Evidence = evidence,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var act = () => validator.ValidateApprovalAsync(
+            proposal,
+            new OperationProposalApprovalContext { ApprovedBy = "approver-1", TenantId = "tenant-a" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*does not match its evidence seal*");
+    }
+
+    private static RecordingGateway ProposalGateway()
+        => new(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(
+                GuardrailTier.RequiresApproval,
+                OperationClass.Deploy,
+                HonuaEdition.Pro,
+                "test"),
+            ProposalId = "proposal-1",
+            Message = "queued for approval",
+        });
+
+    private static OperationProposalEvidence SampleEvidence(string targetId)
+        => new()
+        {
+            ToolName = ProposeDeployOperationTool.ToolName,
+            OperationId = "control-plane.deploy",
+            CandidateId = targetId,
+            TenantId = "tenant-a",
+            TargetId = targetId,
+            DescriptorRevision = "descriptor",
+            PolicyRevision = ProposalEvidenceVerifier.PolicyRevision,
+            AuthorizationDecision = "pending-call-authorization",
+            RequestDigest = "aa",
+            CanonicalRequest = Convert.ToBase64String("{}"u8),
+            PayloadDigest = "bb",
+            CanonicalPayload = Convert.ToBase64String("{}"u8),
+            TranscriptDigest = "cc",
+            TranscriptKeyId = "candidate-key",
+            CanonicalTranscript = Convert.ToBase64String("{}"u8),
+            TranscriptSignature = Convert.ToBase64String(new byte[64]),
+            ReleaseId = "2026.1",
+            ActionId = "governed-mutation",
+            RunNonce = "nonce-1",
+            McpSessionId = "session-1",
+            McpCallId = "1",
+            IssuedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+        };
+
     internal static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
@@ -528,9 +1029,25 @@ public sealed class McpPlatformOpsReaderTests
 
     internal static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
-        IOperationExecutorCatalog? catalog = null)
+        IOperationExecutorCatalog? catalog = null,
+        IOpsFindingsEvidenceSource? findings = null,
+        IHttpContextAccessor? accessor = null,
+        IAdminApiKeyStore? apiKeys = null,
+        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null)
     {
         var services = new ServiceCollection();
+        if (tenantOptions is not null)
+        {
+            services.AddSingleton(Options.Create(tenantOptions));
+        }
+        if (accessor is not null)
+        {
+            services.AddSingleton(accessor);
+        }
+        if (apiKeys is not null)
+        {
+            services.AddSingleton(apiKeys);
+        }
         var envelopeFactory = Substitute.For<IOperationEnvelopeFactory>();
         var now = DateTimeOffset.UtcNow;
         envelopeFactory.CreateAcceptedAsync(
@@ -548,6 +1065,10 @@ public sealed class McpPlatformOpsReaderTests
                 UpdatedAt = now,
             });
         services.AddSingleton(envelopeFactory);
+        if (findings is not null)
+        {
+            services.AddSingleton(findings);
+        }
         if (gateway is not null)
         {
             services.AddSingleton(gateway);
@@ -569,12 +1090,17 @@ public sealed class McpPlatformOpsReaderTests
             ],
             "test"));
 
+    internal static ClaimsPrincipal CreateApiKeyPrincipal(Guid apiKeyId)
+        => new(new ClaimsIdentity(
+            [new Claim("api_key_id", apiKeyId.ToString("D"))],
+            AuthenticationExtensions.ApiKeyScheme));
+
     private static bool IsOpsReadResource(object resource, ClaimsPrincipal principal)
         => resource is DefaultHttpContext context &&
             ReferenceEquals(context.User, principal) &&
             string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.Ordinal);
 
-    private static ControlPlaneOptions CreateOptions()
+    internal static ControlPlaneOptions CreateOptions()
         => new()
         {
             PlatformRelease = new PlatformReleaseOptions

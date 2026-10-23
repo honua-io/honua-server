@@ -105,7 +105,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         if (effectiveOutputSrid.HasValue && effectiveOutputSrid.Value > 0)
         {
-            rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+            rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid");
             extraParams.Add(("@outputSrid", effectiveOutputSrid.Value));
         }
 
@@ -228,7 +228,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 WHERE rast IS NOT NULL
             ),
             resized AS (
-                SELECT ST_Resize(rast, @width, @height) AS rast
+                SELECT {RasterProjectionSql.ResizePreservingGrid("rast", "@width", "@height")} AS rast
                 FROM merged
                 WHERE rast IS NOT NULL
             )

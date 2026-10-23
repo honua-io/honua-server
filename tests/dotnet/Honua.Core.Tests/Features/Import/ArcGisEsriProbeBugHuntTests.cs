@@ -19,6 +19,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
     private static readonly Func<string, CancellationToken, Task<IPAddress[]>> PublicResolver =
         (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") });
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TokenCredential_DoesNotPutSecretInRequestUrl()
     {
@@ -42,6 +43,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.Equal("Bearer esri-secret-token", handler.LastEsriAuthorization);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task OAuthCredential_SendsResolvedAccessToken()
     {
@@ -62,6 +64,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.Equal("Bearer oauth-access-token", handler.LastEsriAuthorization);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ServiceMetadata_200ErrorEnvelope_IsRejected()
     {
@@ -76,6 +79,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.Equal(ArcGisAuthenticationFailureKind.CredentialRequired, exception.Kind);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task LayerMetadata_ReadsNestedPaginationCapability()
     {
@@ -94,6 +98,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.False(layer.SupportsPagination);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task LayerMetadata_200ErrorEnvelope_IsRejected()
     {
@@ -108,6 +113,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
             CancellationToken.None));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task LayerCount_200ErrorEnvelope_IsRejected()
     {
@@ -124,6 +130,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
             CancellationToken.None));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Query_429RetryAfter_IsRetried()
     {
@@ -161,6 +168,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
                 ? values.Single()
                 : null;
 
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
@@ -178,6 +186,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         {
             var index = Interlocked.Increment(ref _requestCount) - 1;
             var body = responseBodies[Math.Min(index, responseBodies.Length - 1)];
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
@@ -197,6 +206,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         {
             if (Interlocked.Increment(ref _requestCount) == 1)
             {
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 var throttled = new HttpResponseMessage((HttpStatusCode)429);
                 throttled.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(
                     TimeSpan.FromSeconds(1));
@@ -207,6 +217,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
                 return Task.FromResult(throttled);
             }
 
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(

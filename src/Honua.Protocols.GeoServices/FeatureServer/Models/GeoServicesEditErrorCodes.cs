@@ -64,10 +64,14 @@ public static class GeoServicesEditErrorCodes
 
     /// <summary>
     /// The feature is locked by another editor/session and cannot be modified right now. The
-    /// "lock/locked" class. Reserved for lock-aware writers: surfaced when a writer reports a
-    /// lock failure (HTTP 423 semantics). No writer in the default <c>applyEdits</c> path
-    /// produces feature locks today, but the code is part of the stable contract so lock-aware
-    /// providers map onto it without a client change.
+    /// "lock/locked" class (HTTP 423 semantics).
+    /// <para>
+    /// Produced by the default <c>applyEdits</c> path since #4402: an update or delete of a
+    /// feature another editor holds a collaborative-editing lease on
+    /// (<c>/api/v1/saved-maps/{mapId}/collaboration/feature-locks</c>) fails its slot with this
+    /// code and leaves the stored row untouched. Lock-aware providers that report a 423 from the
+    /// writer itself map onto the same code without a client change.
+    /// </para>
     /// </summary>
     public const int FeatureLocked = 1005;
 
@@ -81,7 +85,8 @@ public static class GeoServicesEditErrorCodes
     /// <summary>
     /// The edit was denied by an owner-based edit policy: a non-owning, non-admin principal
     /// (or an anonymous caller, while the policy is active) attempted to modify or delete a row
-    /// owned by another principal. An authorization failure, not a conflict.
+    /// owned by another principal, or the written row would fall outside the caller's
+    /// row-level security partition (honua-server#6103). An authorization failure, not a conflict.
     /// </summary>
     public const int NotPermitted = 1007;
 
@@ -134,6 +139,9 @@ public static class GeoServicesEditErrorCodes
             404 => kind == FeatureEditOperationKind.Delete ? DeleteNotFound : NotFound,
             // HTTP 423 — a lock-aware writer reported the feature as locked.
             423 => FeatureLocked,
+            // HTTP 403 — the written row would fall outside the caller's row-level security
+            // partition (honua-server#6103); an authorization failure, not a conflict.
+            EditOperationResult.NotPermittedErrorCode => NotPermitted,
             _ => GenericFailure,
         };
     }

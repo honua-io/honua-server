@@ -289,12 +289,10 @@
       "kind": "field-domain",
       "category": "domains",
       "name": "Parcels",
-      "automationStatus": "assisted",
-      "code": "MANUAL_REVIEW",
-      "reason": "Domain metadata was captured for review; target domain enforcement is not automated by this import slice.",
-      "manualSteps": [
-        "Review coded-value and range domains before publishing target field configuration."
-      ],
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Coded-value and range domains are persisted onto the published fields, served on FeatureServer field metadata and queryDomains, enforced on applyEdits and OGC/WFS edits, and verified by catalog reconciliation.",
+      "manualSteps": [],
       "relatedIds": [],
       "metadata": {
         "domainFieldCount": "1"
@@ -406,8 +404,8 @@
   "fidelityMatrix": {
     "summary": {
       "totalCount": 11,
-      "automatedCount": 8,
-      "assistedCount": 1,
+      "automatedCount": 9,
+      "assistedCount": 0,
       "manualReviewCount": 2,
       "unsupportedCount": 0
     },
@@ -434,7 +432,7 @@
       },
       {
         "category": "domains",
-        "automationStatus": "assisted",
+        "automationStatus": "automated",
         "count": 1,
         "kinds": [
           "field-domain"
@@ -443,13 +441,11 @@
           "resource:Parcels:layer:0"
         ],
         "codes": [
-          "MANUAL_REVIEW"
+          "COMPATIBLE"
         ],
         "targetIds": [],
         "relatedIds": [],
-        "manualSteps": [
-          "Review coded-value and range domains before publishing target field configuration."
-        ]
+        "manualSteps": []
       },
       {
         "category": "fields",

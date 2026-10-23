@@ -174,4 +174,24 @@ internal static partial class OidcAuthenticationLog
         Message = "OIDC custom claims mapping is configured but the identity.claims-mapping entitlement is not active; applying default claims normalization only.")]
     public static partial void CustomClaimsMappingNotEntitled(ILogger logger);
 
+    /// <summary>
+    /// Logs when a reused token is admitted because it was bound to the server-issued
+    /// continuation (an MCP session) the request presents (honua-server#4909).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4219,
+        Level = LogLevel.Debug,
+        Message = "OIDC token reuse admitted as a continuation of the server-issued session it is bound to.")]
+    public static partial void TokenReplayContinuationAccepted(ILogger logger);
+
+    /// <summary>
+    /// Logs when a token's continuation binding could not be recorded in Redis; later
+    /// reuse of that token on the continuation is then rejected as a replay.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4220,
+        Level = LogLevel.Warning,
+        Message = "OIDC token replay continuation could not be recorded in Redis; reuse of this token will be rejected as a replay.")]
+    public static partial void TokenReplayContinuationBindFailed(ILogger logger, Exception exception);
+
 }

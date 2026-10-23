@@ -119,5 +119,5 @@ something it depends on. There must be no back edges.
 - [ADR-0046 IDatabaseSession progressive migration](adr/0046-audit-c3-database-session-progressive-migration.md) — how the abstractions surface is being narrowed without forcing a big-bang.
 
 See also: [ARCHITECTURE.md](ARCHITECTURE.md) for the legacy, pre-modularization layered
-view; [ARCHITECTURE_DIAGRAMS.md](ARCHITECTURE_DIAGRAMS.md) for runtime/topology
+view; [ARCHITECTURE_DIAGRAMS.md](../../concepts/architecture-diagrams.md) for runtime/topology
 diagrams.

@@ -162,7 +162,8 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
         try
         {
-            var providerId = Launch(job, executable);
+            // StartAsync receives the record before the submission is counted.
+            var providerId = Launch(job, executable, executionAttempt: job.AttemptCount + 1);
             return Task.FromResult(new BatchComputeSubmissionResult
             {
                 Status = ExecutionJobStatus.Running,
@@ -319,7 +320,8 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
         try
         {
-            var providerId = Launch(job, executable);
+            // The deferred launch runs after the submission was counted on the durable record.
+            var providerId = Launch(job, executable, executionAttempt: Math.Max(1, job.AttemptCount));
             return new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Running,
@@ -340,7 +342,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
     }
 
-    private string Launch(ExecutionJobRecord job, string executable)
+    private string Launch(ExecutionJobRecord job, string executable, int executionAttempt)
     {
         var arguments = ResolveArguments(job.Spec.Parameters);
         var (workingDirectory, ownedScratch) = ResolveWorkingDirectory(job);
@@ -360,7 +362,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             startInfo.ArgumentList.Add(argument);
         }
 
-        foreach (var variable in BuildEnvironment(job))
+        foreach (var variable in BuildEnvironment(job, executionAttempt))
         {
             startInfo.Environment[variable.Key] = variable.Value;
         }
@@ -589,27 +591,11 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         return ordered.Count == 0 ? Array.Empty<string>() : ordered.Values.ToArray();
     }
 
-    private static List<KeyValuePair<string, string>> BuildEnvironment(ExecutionJobRecord job)
+    private static List<KeyValuePair<string, string>> BuildEnvironment(ExecutionJobRecord job, int executionAttempt)
     {
-        // Mirror AwsBatchComputeBackend.BuildEnvironmentOverrides variable names so a workload behaves
-        // identically whether it runs as a child process here or as a container on a cloud batch service.
-        var variables = new List<KeyValuePair<string, string>>
-        {
-            new("HONUA_OPERATION_ID", job.OperationId),
-            new("HONUA_WORKLOAD_NAME", job.Spec.WorkloadName),
-            new("HONUA_JOB_KIND", job.Spec.Kind.ToString())
-        };
-
-        if (!string.IsNullOrWhiteSpace(job.Spec.WorkloadId))
-        {
-            variables.Add(new("HONUA_WORKLOAD_ID", job.Spec.WorkloadId));
-        }
-
-        if (!string.IsNullOrWhiteSpace(job.Spec.RuntimeProfile))
-        {
-            variables.Add(new("HONUA_RUNTIME_PROFILE", job.Spec.RuntimeProfile));
-        }
-
+        // Same launch contract as the cloud backends (ExecutionWorkerLaunchEnvironment) so a workload
+        // behaves identically whether it runs as a child process here or as a batch container.
+        var variables = new List<KeyValuePair<string, string>>();
         foreach (var entry in job.Spec.Parameters)
         {
             if (!entry.Key.StartsWith(LocalProcessParameterKeys.EnvironmentPrefix, StringComparison.Ordinal))
@@ -618,21 +604,16 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             }
 
             var name = entry.Key[LocalProcessParameterKeys.EnvironmentPrefix.Length..];
-            if (string.IsNullOrWhiteSpace(name)
-                || string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(name) || ExecutionWorkerLaunchEnvironment.IsReserved(name))
             {
-                // Never let a workload passthrough shadow the contract-version gate; it is stamped last.
+                // Never let a workload passthrough shadow a launch variable; they are stamped last.
                 continue;
             }
 
             variables.Add(new(name, entry.Value ?? string.Empty));
         }
 
-        // Serving↔worker job-contract version (ADR-0060 #3b): stamped AFTER the env.* passthrough so a
-        // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value. Mirrors the
-        // cloud backends so a workload behaves identically as a child process or a batch container.
-        variables.Add(new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
-
+        variables.AddRange(ExecutionWorkerLaunchEnvironment.Build(job, executionAttempt));
         return variables;
     }
 

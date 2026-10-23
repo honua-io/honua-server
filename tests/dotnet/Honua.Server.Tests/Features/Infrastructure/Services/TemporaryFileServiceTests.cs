@@ -4,8 +4,11 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.FileStorage;
 using Honua.Infrastructure.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -24,6 +27,156 @@ public sealed class TemporaryFileServiceTests : IDisposable
     private readonly string _storageDirectory = Path.Join(
         Path.GetTempPath(),
         $"honua-temp-tests-{Guid.NewGuid():N}");
+
+    [UnitTest]
+    public async Task SRV_AUTH_003_RejectsEncodedTemporaryObjectKeyWithParentTraversal()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
+        var redis = CreateRedisLeaseMultiplexer();
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage,
+            redis: redis);
+        var token = WebEncoders.Base64UrlEncode(
+            System.Text.Encoding.UTF8.GetBytes("temporary-files/../exports/package.zip"));
+
+        var result = await service.GetTemporaryFileAsync(token + ".bin");
+
+        result.Should().BeNull();
+        cloudStorage.MetadataRequests.Should().BeEmpty(
+            "a client-chosen traversal key must be rejected before it reaches the storage provider");
+    }
+
+    [UnitTest]
+    public async Task SRV_AUTH_003_ClientChosenProviderTemporaryKeyIsNotReadable()
+    {
+        var doubledPrefixKey = CloudStoragePath.BuildObjectKey(
+            "0123456789abcdef0123456789abcdef",
+            "temporary-file.png",
+            "temporary-files",
+            "temporary-files");
+        var nestedPrefixKey = CloudStoragePath.BuildObjectKey(
+            "abcdef0123456789abcdef0123456789",
+            "temporary-file.pdf",
+            "temporary-files",
+            "temporary-files/tenant-a");
+        var ordinaryPrefixKey = CloudStoragePath.BuildObjectKey(
+            "00112233445566778899aabbccddeeff",
+            "temporary-file.jpg",
+            "temporary-files",
+            "honua");
+        var extensionlessKey = CloudStoragePath.BuildObjectKey(
+            "ffeeddccbbaa99887766554433221100",
+            "temporary-file",
+            "temporary-files",
+            "temporary-files");
+
+        doubledPrefixKey.Should().Be("temporary-files/temporary-files/0123456789abcdef0123456789abcdef.png");
+        nestedPrefixKey.Should().Be("temporary-files/tenant-a/temporary-files/abcdef0123456789abcdef0123456789.pdf");
+        ordinaryPrefixKey.Should().Be("honua/temporary-files/00112233445566778899aabbccddeeff.jpg");
+        extensionlessKey.Should().Be("temporary-files/temporary-files/ffeeddccbbaa99887766554433221100");
+
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        cloudStorage.SeedObject(doubledPrefixKey, [4, 5, 6], "image/png");
+        cloudStorage.SeedObject(nestedPrefixKey, [7, 8, 9], "application/pdf");
+        cloudStorage.SeedObject(ordinaryPrefixKey, [1, 2, 3], "image/jpeg");
+        cloudStorage.SeedObject(extensionlessKey, [9, 8, 7], "application/octet-stream");
+
+        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage,
+            distributedCache,
+            redis: CreateRedisLeaseMultiplexer());
+
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, doubledPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, nestedPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, ordinaryPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, extensionlessKey);
+        cloudStorage.MetadataRequests.Should().BeEmpty(
+            "a client-chosen encoding of a well-formed provider key must not be resolved after the cache mapping is gone");
+    }
+
+    [UnitTest]
+    public async Task SRV_AUTH_003_IgnoresPoisonedCachedObjectKey()
+    {
+        var objectKey = "temporary-files/../exports/package.zip";
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
+        cloudStorage.SeedObject(objectKey, [1, 2, 3], "application/zip");
+        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage,
+            distributedCache,
+            redis: CreateRedisLeaseMultiplexer());
+        const string token = "client-chosen-token";
+        await distributedCache.SetStringAsync("honua:temporary-files:cloud:" + token, objectKey);
+
+        var result = await service.GetTemporaryFileAsync(token + ".bin");
+
+        result.Should().BeNull();
+        cloudStorage.MetadataRequests.Should().BeEmpty(
+            "a cached object key with a parent segment must be rejected before storage lookup");
+    }
+
+    [UnitTheory]
+    [InlineData("temporary-files/exports/0123456789abcdef0123456789abcdef.png")]
+    [InlineData("temporary-files/%2e%2e/exports/0123456789abcdef0123456789abcdef.png")]
+    [InlineData("temporary-files/../temporary-files/0123456789abcdef0123456789abcdef.png")]
+    [InlineData("temporary-files/./0123456789abcdef0123456789abcdef.png")]
+    [InlineData("temporary-files/0123456789abcdef0123456789abcdef.zip")]
+    [InlineData("temporary-files/0123456789ABCDEF0123456789ABCDEF.png")]
+    [InlineData("temporary-files\\0123456789abcdef0123456789abcdef.png")]
+    public async Task SRV_AUTH_003_RejectsEncodedTemporaryObjectKeyOutsideProviderShape(string objectKey)
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage,
+            redis: CreateRedisLeaseMultiplexer());
+        cloudStorage.SeedObject(objectKey, [1, 2, 3], "image/png");
+        var token = WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(objectKey));
+
+        var result = await service.GetTemporaryFileAsync(token + ".bin");
+
+        result.Should().BeNull();
+        cloudStorage.MetadataRequests.Should().BeEmpty(
+            "a client-chosen key outside the provider temporary-file shape must be rejected before storage lookup");
+    }
+
+    private static async Task AssertClientChosenKeyIsNotReadableAsync(
+        CloudBackedTemporaryFileService service,
+        MemoryDistributedCache distributedCache,
+        string objectKey)
+    {
+        var token = WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(objectKey));
+        var cacheKey = "honua:temporary-files:cloud:" + token;
+        await distributedCache.SetStringAsync(cacheKey, objectKey);
+        await distributedCache.RemoveAsync(cacheKey);
+
+        var publicFileName = string.IsNullOrEmpty(Path.GetExtension(objectKey))
+            ? token
+            : token + Path.GetExtension(objectKey);
+        var retrieved = await service.GetTemporaryFileAsync(publicFileName);
+
+        retrieved.Should().BeNull();
+    }
 
     [Fact]
     public async Task StoreTemporaryFileAsync_ExceedingTotalStorageLimit_ThrowsLimitExceeded()
@@ -672,6 +825,101 @@ public sealed class TemporaryFileServiceTests : IDisposable
         retrieved!.Value.contentType.Should().Be("image/png");
     }
 
+    // honua-server#5826: the shared mapping is a Redis string under its own key. A stale
+    // process-local cache entry, including one stored at the IDistributedCache key, must not
+    // resolve the file. Deleting the shared key makes every replica miss.
+    [UnitTest]
+    public async Task GetTemporaryFileAsync_SharedRedisToken_ResolvesOnAnotherReplicaAfterLocalCacheEviction()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        var issuerCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var issuer = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            issuerCache,
+            redis: redis);
+        var reader = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-b"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var url = await issuer.StoreTemporaryFileAsync([9, 8, 7], "image/png");
+        var fileId = Path.GetFileName(url);
+        var token = Path.GetFileNameWithoutExtension(fileId);
+        await issuerCache.SetStringAsync(
+            "honua:temporary-files:cloud:" + token,
+            "temporary-files/not-the-uploaded-object");
+
+        var fromReader = await reader.GetTemporaryFileAsync(fileId);
+        fromReader.Should().NotBeNull();
+        fromReader!.Value.data.Should().Equal(9, 8, 7);
+        fromReader.Value.contentType.Should().Be("image/png");
+        (await issuer.GetTemporaryFileAsync(fileId))!.Value.data.Should().Equal(9, 8, 7);
+
+        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:cloud:" + token)).Should().BeFalse();
+        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:shared:" + token)).Should().BeTrue();
+        (await issuer.GetTemporaryFileAsync(fileId)).Should().BeNull();
+        (await reader.GetTemporaryFileAsync(fileId)).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WhenSharedTokenPublishFails_DeletesTheUploadedObject()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        redis.GetDatabase().StringSetAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<When>(),
+                Arg.Any<CommandFlags>())
+            .Returns<Task<bool>>(_ => throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "lost"));
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
+
+        await act.Should().ThrowAsync<RedisConnectionException>();
+        (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WhenRedisDisconnectsBeforeTokenPublish_DoesNotLeaveAnObject()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        redis.IsConnected.Returns(true, false);
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
+
+        await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
+        (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_storageDirectory))
@@ -766,6 +1014,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 }
             });
 
+        ConfigureSharedTokenMap(database);
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.IsConnected.Returns(true);
         redis.GetDatabase().Returns(database);
@@ -821,11 +1070,39 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 }
             });
 
+        ConfigureSharedTokenMap(database);
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.IsConnected.Returns(true);
         redis.GetDatabase().Returns(database);
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
         return redis;
+    }
+
+    // honua-server#5826: both lease substitutes are connected, so token reads go to Redis.
+    // An unconfigured StringGetAsync returns a null task and the existing store/get tests throw.
+    private static void ConfigureSharedTokenMap(IDatabase database)
+    {
+        var entries = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+        database.StringSetAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<When>(),
+                Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                entries[callInfo.ArgAt<RedisKey>(0).ToString()] = callInfo.ArgAt<RedisValue>(1).ToString();
+                return Task.FromResult(true);
+            });
+        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var found = entries.TryGetValue(callInfo.ArgAt<RedisKey>(0).ToString(), out var value);
+                return Task.FromResult(found ? (RedisValue)value! : RedisValue.Null);
+            });
+        database.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo => Task.FromResult(entries.TryRemove(callInfo.ArgAt<RedisKey>(0).ToString(), out _)));
     }
 
     private static ClaimsPrincipal CreatePrincipal(string subject)
@@ -866,6 +1143,24 @@ public sealed class TemporaryFileServiceTests : IDisposable
         }
 
         public CloudStorageProvider Provider { get; }
+
+        public ConcurrentQueue<string> MetadataRequests { get; } = new();
+
+        public void SeedObject(string fileId, byte[] content, string contentType)
+        {
+            _files[fileId] = new CloudFile
+            {
+                FileId = fileId,
+                FileName = Path.GetFileName(fileId),
+                StoragePath = fileId,
+                ContentType = contentType,
+                SizeBytes = content.LongLength,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Metadata = ImmutableDictionary<string, string>.Empty,
+                Provider = Provider
+            };
+            _payloads[fileId] = content;
+        }
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
         {
@@ -958,6 +1253,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         public Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
         {
+            MetadataRequests.Enqueue(fileId);
             _files.TryGetValue(fileId, out var cloudFile);
             return Task.FromResult(cloudFile);
         }

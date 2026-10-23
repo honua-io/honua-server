@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -15,6 +16,52 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2GraphSnapshotTests
 {
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Index_ServiceScopes_PreservesFirstWinsIdsAndCaseRules()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new() { Metadata = new() { Id = "first", Name = "Alpha" } },
+                new() { Metadata = new() { Id = "first", Name = "wrong_duplicate_service" } },
+                new() { Metadata = new() { Id = "alias", Name = "ALPHA" } },
+                new() { Metadata = new() { Id = "second", Name = "Beta" } },
+                new() { Metadata = new() { Id = "blank", Name = "  " } }
+            ],
+            Publications =
+            [
+                new() { Metadata = new() { Id = "duplicate" }, ResourceId = "resource", ServiceId = "first" },
+                new() { Metadata = new() { Id = "duplicate" }, ResourceId = "ignored_duplicate", ServiceId = "second" },
+                new() { Metadata = new() { Id = "alias" }, ResourceId = "resource", ServiceId = "alias" },
+                new()
+                {
+                    Metadata = new() { Id = "retired" }, ResourceId = "resource", ServiceId = "second",
+                    Status = new() { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                },
+                new() { Metadata = new() { Id = "case" }, ResourceId = "RESOURCE", ServiceId = "second" },
+                new() { Metadata = new() { Id = "missing" }, ResourceId = "no_names", ServiceId = "missing" },
+                new() { Metadata = new() { Id = "blank" }, ResourceId = "no_names", ServiceId = "blank" }
+            ]
+        };
+
+        var index = MetadataV2GraphIndex.Build(graph);
+
+        index.ServiceNamesByResource["resource"].Should().Equal("Alpha", "Beta");
+        index.ServiceNamesByResource["RESOURCE"].Should().Equal("Beta");
+        index.ServiceNamesByResource.Should().NotContainKey("no_names");
+        index.ServiceNamesByResource.Should().NotContainKey("ignored_duplicate");
+        // The snapshot, not a TTL cache, owns the names. Updating the graph builds
+        // fresh names without modifying an already authorized snapshot.
+        var changed = graph with
+        {
+            Services = [new() { Metadata = new() { Id = "first", Name = "Changed" } }]
+        };
+        MetadataV2GraphIndex.Build(changed).ServiceNamesByResource["resource"].Should().Equal("Changed");
+        index.ServiceNamesByResource["resource"].Should().Equal("Alpha", "Beta");
+    }
+
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Index_Build_PopulatesAllLookups()
@@ -292,6 +339,142 @@ public sealed class MetadataV2GraphSnapshotTests
         binding.IsRoutable(resource: null).Should().BeFalse();
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void OmittedStatus_StaysRoutable_ExplicitDraftStaysHidden()
+    {
+        new MetadataV2Status().Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+
+        var omitted = StatuslessServingGraph();
+        var omittedSnapshot = new MetadataV2GraphSnapshot(omitted, "\"omitted\"", DateTimeOffset.UtcNow);
+        var publication = omitted.Publications.Single();
+        omitted.Services.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        omitted.Resources.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        omitted.StorageBindings.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        publication.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        omitted.Services.Single().IsRoutable().Should().BeTrue();
+        omittedSnapshot.IsRoutable(publication).Should().BeTrue(
+            "a caller that omits status must not silently become draft and disappear");
+
+        var draftService = omitted.Services.Single() with
+        {
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft }
+        };
+        new MetadataV2GraphSnapshot(
+                omitted with { Services = [draftService] },
+                "\"draft-service\"",
+                DateTimeOffset.UtcNow)
+            .IsRoutable(publication).Should().BeFalse();
+
+        var fromJson = JsonSerializer.Deserialize(StatuslessGraphJson, MetadataV2JsonContext.Default.MetadataV2Graph);
+        fromJson.Should().NotBeNull();
+        AssertServingOmission(fromJson!);
+
+        const string statusWithoutLifecycle =
+            """
+            {"catalogs":[],"connections":[],"policies":[],"projectionProfiles":[],"roles":[],"services":[{"metadata":{"id":"svc","name":"parcels"},"status":{"state":"ready"}}],"resources":[{"metadata":{"id":"res","name":"parcels"},"status":{}}],"storageBindings":[{"metadata":{"id":"binding","name":"binding"},"resourceId":"res","status":{"lifecycle":null}}],"publications":[{"metadata":{"id":"pub","name":"parcels"},"serviceId":"svc","resourceId":"res","storageBindingId":"binding"}]}
+            """;
+        var lifecycleOmitted = JsonSerializer.Deserialize(
+            statusWithoutLifecycle,
+            MetadataV2JsonContext.Default.MetadataV2Graph);
+        lifecycleOmitted.Should().NotBeNull();
+        lifecycleOmitted!.Services.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        lifecycleOmitted.Services.Single().Status.State.Should().Be(MetadataV2OperationalState.Ready);
+        lifecycleOmitted.Resources.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        lifecycleOmitted.StorageBindings.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        new MetadataV2GraphSnapshot(lifecycleOmitted, "\"lifecycle-omitted\"", DateTimeOffset.UtcNow)
+            .IsRoutable(lifecycleOmitted.Publications.Single()).Should().BeTrue();
+
+        var explicitDraft = JsonSerializer.Deserialize(
+            StatuslessGraphJson.Replace(
+                """{"metadata":{"id":"svc","name":"parcels"}""",
+                """{"metadata":{"id":"svc","name":"parcels"},"status":{"lifecycle":"draft","state":"ready"}""",
+                StringComparison.Ordinal),
+            MetadataV2JsonContext.Default.MetadataV2Graph);
+        explicitDraft.Should().NotBeNull();
+        explicitDraft!.Services.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Draft);
+        explicitDraft.Services.Single().Status.State.Should().Be(MetadataV2OperationalState.Ready);
+        explicitDraft.Services.Single().IsRoutable().Should().BeFalse();
+        new MetadataV2GraphSnapshot(explicitDraft, "\"json-draft\"", DateTimeOffset.UtcNow)
+            .IsRoutable(explicitDraft.Publications.Single()).Should().BeFalse();
+
+        var drafted = explicitDraft.Services.Single().Status with
+        {
+            Conditions =
+            [
+                new MetadataV2Condition
+                {
+                    Type = "Ready",
+                    Status = "False",
+                    Reason = "held",
+                    Message = "explicit draft"
+                }
+            ]
+        };
+        var roundTripped = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(drafted, MetadataV2JsonContext.Default.MetadataV2Status),
+            MetadataV2JsonContext.Default.MetadataV2Status);
+        roundTripped.Should().NotBeNull();
+        roundTripped!.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Draft);
+        roundTripped.State.Should().Be(MetadataV2OperationalState.Ready);
+        roundTripped.Conditions.Should().ContainSingle();
+        roundTripped.Conditions[0].Reason.Should().Be("held");
+        roundTripped.Conditions[0].Message.Should().Be("explicit draft");
+    }
+
+    private static void AssertServingOmission(MetadataV2Graph graph)
+    {
+        // An omitted status member deserializes as null. That is still serving:
+        // it must not materialize as draft and disappear from the catalog gate.
+        graph.Services.Single().IsRoutable().Should().BeTrue();
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"json-omitted\"", DateTimeOffset.UtcNow);
+        snapshot.IsRoutable(graph.Publications.Single()).Should().BeTrue();
+    }
+
+    private static MetadataV2Graph StatuslessServingGraph()
+        => new()
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc", Name = "parcels" }
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "parcels" },
+                    StorageBindingIds = ["binding"],
+                    PrimaryStorageBindingId = "binding"
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding", Name = "binding" },
+                    ResourceId = "res"
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub", Name = "parcels" },
+                    ServiceId = "svc",
+                    ResourceId = "res",
+                    StorageBindingId = "binding"
+                }
+            ]
+        };
+
+    private const string StatuslessGraphJson =
+        """
+        {"catalogs":[],"connections":[],"policies":[],"projectionProfiles":[],"roles":[],"services":[{"metadata":{"id":"svc","name":"parcels"}}],"resources":[{"metadata":{"id":"res","name":"parcels"},"storageBindingIds":["binding"],"primaryStorageBindingId":"binding"}],"storageBindings":[{"metadata":{"id":"binding","name":"binding"},"resourceId":"res"}],"publications":[{"metadata":{"id":"pub","name":"parcels"},"serviceId":"svc","resourceId":"res","storageBindingId":"binding"}]}
+        """;
+
     private static MetadataV2Graph SampleGraph()
     {
         return new MetadataV2Graph
@@ -367,4 +550,300 @@ public sealed class MetadataV2GraphSnapshotTests
             ],
         };
     }
+
+    // ---- Aliased-publication storage handle resolution (SEC-4) -----------
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_AliasedPublication_PrefersTheBoundStorageHandleOverTheLayerIndex()
+    {
+        var snapshot = AliasedSnapshot();
+        var publication = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+        var resource = snapshot.Index.ResourcesById["resource.parcels"];
+
+        publication.LayerIndex.Should().Be(
+            AliasedCollidingStorageLayerId,
+            "the fixture's whole point is a service-local index that names another resource's storage handle");
+
+        snapshot.ResolveStorageLayerId(publication, resource)
+            .Should().Be(AliasedParcelsStorageLayerId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_AliasedPublication_DoesNotResolveToTheCollidingResource()
+    {
+        var snapshot = AliasedSnapshot();
+        var parcels = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+        var permits = snapshot.Index.PublicationsById["pub.permits"];
+
+        var parcelsHandle = snapshot.ResolveStorageLayerId(parcels, snapshot.ResolveResource(parcels));
+        var permitsHandle = snapshot.ResolveStorageLayerId(permits, snapshot.ResolveResource(permits));
+
+        parcelsHandle.Should().NotBe(permitsHandle);
+        permitsHandle.Should().Be(AliasedCollidingStorageLayerId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_ResolvesTheResourceWhenTheCallerDoesNotSupplyIt()
+    {
+        var snapshot = AliasedSnapshot();
+        var publication = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+
+        snapshot.ResolveStorageLayerId(publication, resource: null)
+            .Should().Be(AliasedParcelsStorageLayerId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_BindinglessPublication_FallsBackToTheLayerIndex()
+    {
+        // The last resort stays: graphs that carry no storage handle at all are still
+        // addressable by their service-local index.
+        var snapshot = AliasedSnapshot();
+        var publication = snapshot.Index.PublicationsById["pub.documents"];
+
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication))
+            .Should().Be(77);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ResolvesNoHandle()
+    {
+        var snapshot = new MetadataV2GraphSnapshot(UnboundCollidingGraph(), "\"unbound\"", DateTimeOffset.UtcNow);
+        var publication = snapshot.Index.PublicationsById["pub.unbound"];
+
+        publication.LayerIndex.Should().Be(AliasedCollidingStorageLayerId);
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication))
+            .Should().BeNull("the layer index is resource.permits' storage handle, not this publication's");
+        snapshot.ResolveStorageLayerId(publication, resource: null).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_AliasedPublicationWithItsOwnStorageBinding_IsValid()
+    {
+        MetadataV2GraphValidator.Validate(AliasedGraph()).Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ReturnsError()
+    {
+        var result = MetadataV2GraphValidator.Validate(UnboundCollidingGraph());
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().Be(
+            "publication 'pub.unbound' has no storage binding and its layer index 3 is the storage layer id of resource 'resource.permits'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_UnboundPublicationCollidingWithAnotherConnection_RejectsUnsafeFallback()
+    {
+        var graph = WithPermitsOnAnotherConnection(UnboundCollidingGraph());
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"cross-connection\"", DateTimeOffset.UtcNow);
+        var publication = snapshot.Index.PublicationsById["pub.unbound"];
+        var binding = snapshot.Index.StorageBindingsById["storage.permits"];
+
+        binding.ConnectionId.Should().Be("conn.sqlserver");
+        snapshot.ResolveStorageBinding(publication).Should().BeNull();
+        publication.LayerIndex.Should().Be(AliasedCollidingStorageLayerId);
+        // Default-reader metadata and read policy use this integer-only index. Moving
+        // the claimant to another connection does not make the legacy fallback safe.
+        snapshot.Index.ResourcesByStorageLayerId[AliasedCollidingStorageLayerId]
+            .Metadata.Id.Should().Be("resource.permits");
+        snapshot.ResolveStorageLayerId(publication, resource: null).Should().BeNull();
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)).Should().BeNull();
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().ContainSingle().Which.Should().Be(
+            "publication 'pub.unbound' has no storage binding and its layer index 3 is the storage layer id of resource 'resource.permits'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_BoundPublicationsSharingAnIdAcrossConnections_PreserveTheirBindings()
+    {
+        var graph = WithPermitsOnAnotherConnection(AliasedGraph());
+        graph = graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(binding => binding with
+            {
+                StorageLayerId = AliasedCollidingStorageLayerId,
+            }).ToArray(),
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"cross-connection\"", DateTimeOffset.UtcNow);
+        var parcels = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+        var permits = snapshot.Index.PublicationsById["pub.permits"];
+
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().BeEmpty();
+        (snapshot.ResolveStorageBinding(parcels)?.ConnectionId).Should().Be("conn.postgres");
+        (snapshot.ResolveStorageBinding(permits)?.ConnectionId).Should().Be("conn.sqlserver");
+        snapshot.ResolveStorageLayerId(parcels, resource: null).Should().Be(AliasedCollidingStorageLayerId);
+        snapshot.ResolveStorageLayerId(permits, resource: null).Should().Be(AliasedCollidingStorageLayerId);
+    }
+
+    private static MetadataV2Graph WithPermitsOnAnotherConnection(MetadataV2Graph graph)
+        => graph with
+        {
+            Connections =
+            [
+                .. graph.Connections,
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "conn.sqlserver", Name = "sqlserver" },
+                    Type = MetadataV2ConnectionType.Managed,
+                    Provider = "sqlserver",
+                },
+            ],
+            StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == "storage.permits"
+                ? binding with { ConnectionId = "conn.sqlserver" }
+                : binding).ToArray(),
+        };
+
+    /// <summary>
+    /// <see cref="AliasedGraph"/> plus a feature resource with no storage binding whose
+    /// publication's service-local index equals <c>resource.permits</c>' storage handle.
+    /// </summary>
+    private static MetadataV2Graph UnboundCollidingGraph()
+    {
+        var graph = AliasedGraph();
+        return graph with
+        {
+            Resources =
+            [
+                .. graph.Resources,
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.unbound", Name = "unbound" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                    StorageBindingIds = [],
+                    SchemaFields = [],
+                },
+            ],
+            Publications =
+            [
+                .. graph.Publications,
+                Publication("pub.unbound", "resource.unbound", storageBindingId: null, AliasedCollidingStorageLayerId),
+            ],
+        };
+    }
+
+    private const int AliasedParcelsStorageLayerId = 7;
+    private const int AliasedCollidingStorageLayerId = 3;
+
+    /// <summary>
+    /// Graph in which <c>resource.parcels</c> is published with the service-local index
+    /// <see cref="AliasedCollidingStorageLayerId"/> while its storage binding carries
+    /// <see cref="AliasedParcelsStorageLayerId"/>, and a second resource,
+    /// <c>resource.permits</c>, owns <see cref="AliasedCollidingStorageLayerId"/> as its
+    /// storage handle. Reading the index as a storage handle therefore lands on the other
+    /// resource. Manifest-authored, release-authored and imported graphs produce this shape
+    /// (#4065); the admin publish path does not.
+    /// </summary>
+    internal static MetadataV2GraphSnapshot AliasedSnapshot()
+        => new(AliasedGraph(), "\"aliased\"", DateTimeOffset.UtcNow);
+
+    private static MetadataV2Graph AliasedGraph()
+    {
+        return new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            GeneratedAt = DateTimeOffset.Parse("2026-09-21T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
+            Connections =
+            [
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "conn.postgres", Name = "postgres" },
+                    Type = MetadataV2ConnectionType.Managed,
+                    Provider = "postgres",
+                }
+            ],
+            Resources =
+            [
+                FeatureResource("resource.parcels", "parcels", "storage.parcels"),
+                FeatureResource("resource.permits", "permits", "storage.permits"),
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.documents", Name = "documents" },
+                    Type = MetadataV2ResourceType.Document,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                    StorageBindingIds = [],
+                    SchemaFields = [],
+                },
+            ],
+            StorageBindings =
+            [
+                Binding("storage.parcels", "resource.parcels", "public.parcels", AliasedParcelsStorageLayerId),
+                Binding("storage.permits", "resource.permits", "public.permits", AliasedCollidingStorageLayerId),
+            ],
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
+                    Protocols = [ServiceProtocols.OgcFeatures],
+                    Route = "/ogc/features",
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                }
+            ],
+            Publications =
+            [
+                Publication("pub.parcels.aliased", "resource.parcels", "storage.parcels", AliasedCollidingStorageLayerId),
+                Publication("pub.permits", "resource.permits", "storage.permits", 9),
+                Publication("pub.documents", "resource.documents", storageBindingId: null, layerIndex: 77),
+            ],
+        };
+    }
+
+    private static MetadataV2Resource FeatureResource(string id, string name, string storageBindingId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            StorageBindingIds = [storageBindingId],
+            PrimaryStorageBindingId = storageBindingId,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, SemanticRoles = ["id.primary"] },
+                new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] },
+            ],
+        };
+
+    private static MetadataV2StorageBinding Binding(string id, string resourceId, string locator, int storageLayerId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            ResourceId = resourceId,
+            ConnectionId = "conn.postgres",
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = locator,
+            StorageLayerId = storageLayerId,
+        };
+
+    private static MetadataV2Publication Publication(
+        string id,
+        string resourceId,
+        string? storageBindingId,
+        int layerIndex)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            ResourceId = resourceId,
+            ServiceId = "service.features",
+            StorageBindingId = storageBindingId,
+            PublicationType = MetadataV2PublicationType.OgcCollection,
+            IsPrimary = true,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                IsNumeric = true,
+            },
+        };
 }

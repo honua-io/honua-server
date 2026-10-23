@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -10,12 +12,15 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Honua.TestKit.Mixins;
@@ -37,10 +42,12 @@ namespace Honua.TestKit.Mixins;
 internal static class WebAppFixturePostgresWiringMixin
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
-    private const string TestEncryptionMasterKey =
-        "test-master-key-that-is-at-least-32-characters-long-for-security";
-    private const string TestEncryptionSalt =
-        "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
+    // Keep material stable for this test process, including host restart proofs, but
+    // do not feed shipped example credentials to fixtures running as Production.
+    private static readonly string _testEncryptionMasterKey =
+        Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    private static readonly string _testEncryptionSalt =
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
     /// <summary>
     /// Applies the auth-bypass and migration-skip <c>UseSetting</c> flags that both the
@@ -83,8 +90,11 @@ internal static class WebAppFixturePostgresWiringMixin
             ["Limits:Query:QueryTimeout"] = "00:02:00",
             ["FileStorage:Provider"] = "Local",
             ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
-            ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-            ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt,
+            ["Security:ConnectionEncryption:MasterKey"] = _testEncryptionMasterKey,
+            ["Security:ConnectionEncryption:Salt"] = _testEncryptionSalt,
+            // Request-supplied secret references are refused unless an operator permits them;
+            // integration tests name variables under this prefix.
+            ["Security:RequestSecretReferences:AllowedEnvironmentVariablePrefixes:0"] = "HONUA_TEST_",
             // The ops-health rollup sampler (#2553) is a hosted background service that would
             // otherwise boot in EVERY integration-test host and add constant background
             // Postgres sampling/flush/downsample/prune load across the whole parallel
@@ -120,6 +130,8 @@ internal static class WebAppFixturePostgresWiringMixin
         services.RemoveAll<IRelationshipStore>();
         services.RemoveAll<IStreamingFeatureStore>();
         services.RemoveAll<IAttachmentStore>();
+        services.RemoveAll<IFeatureAttachmentCleanup>();
+        services.RemoveAll<PostgresAttachmentStore>();
         services.RemoveAll<ITableDiscoveryService>();
         services.RemoveAll<IDatabaseHealthChecker>();
         services.RemoveAll<IDatabaseConnectionProvider>();
@@ -192,8 +204,8 @@ internal static class WebAppFixturePostgresWiringMixin
             ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
             ["Limits:Connections:RequestTimeout"] = "00:05:00",
             ["Limits:Query:QueryTimeout"] = "00:02:00",
-            ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-            ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt,
+            ["Security:ConnectionEncryption:MasterKey"] = _testEncryptionMasterKey,
+            ["Security:ConnectionEncryption:Salt"] = _testEncryptionSalt,
         };
 
         if (extraSettings is not null)
@@ -270,7 +282,14 @@ internal static class WebAppFixturePostgresWiringMixin
         RemovePostgresBackedServices(services);
         RemoveBackgroundPollers(services);
 
-        var testConfiguration = BuildPostgresTestConfiguration(connectionString);
+        // The isolated host owns its fixture schema, so configure it as an operational schema
+        // exactly as an operator would (#5391): a secure connection whose search path names that
+        // schema then resolves under the unchanged connection policy. Drop the composition root's
+        // schema configuration so AddPostgreSqlServices registers this one.
+        services.RemoveAll<Honua.Db.Postgres.Features.Infrastructure.PostgresSchemaConfiguration>();
+        var testConfiguration = BuildPostgresTestConfiguration(
+            connectionString,
+            BuildFixtureOperationalSchemaSettings(currentSchemaAccessor()));
         Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
             services,
             testConfiguration,
@@ -278,6 +297,7 @@ internal static class WebAppFixturePostgresWiringMixin
         UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
+        BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
         // renderer with the vector-aware styled-render decorator (honua-server#2498) so
@@ -291,12 +311,29 @@ internal static class WebAppFixturePostgresWiringMixin
         WebAppFixtureMetadataV2Mixin.RegisterDefaultMetadataV2Graph(services);
 
         OverrideDatabaseConnectionProvider(services, currentSchemaAccessor);
+        // Job executors open a new scope and publish into the fixture schema. The HTTP
+        // test-schema header never reaches that scope, so bind ISchemaContext to the
+        // same accessor the connection provider uses.
+        services.RemoveAll<ISchemaContext>();
+        services.AddScoped<ISchemaContext>(_ => new FixtureCurrentSchemaContext(currentSchemaAccessor));
 
         foreach (var configure in userConfigurations)
         {
             configure(services);
         }
     }
+
+    /// <summary>
+    /// Configuration that lists an isolated host's fixture schema under
+    /// <c>Database:OperationalSchemas</c>, or nothing when the schema is not yet known.
+    /// Only isolated hosts use it: a shared host serves many fixture schemas and cannot
+    /// configure them, so tests that pin a secure connection's search path to their fixture
+    /// schema need an isolated host.
+    /// </summary>
+    internal static IDictionary<string, string?>? BuildFixtureOperationalSchemaSettings(string? fixtureSchema)
+        => string.IsNullOrWhiteSpace(fixtureSchema)
+            ? null
+            : new Dictionary<string, string?> { ["Database:OperationalSchemas:0"] = fixtureSchema };
 
     /// <summary>
     /// Applies the ConfigureTestServices block used by the shared bootstrap path. Same
@@ -320,6 +357,7 @@ internal static class WebAppFixturePostgresWiringMixin
         UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
+        BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
         // renderer with the vector-aware styled-render decorator (honua-server#2498) so
@@ -338,6 +376,25 @@ internal static class WebAppFixturePostgresWiringMixin
         // reach this registry, so unsupported registration shapes fail closed.
         services.AddSingleton<ScopedServiceOverrideRegistry>();
         services.AddSingleton<IStartupFilter, ScopedServiceOverrideStartupFilter>();
+    }
+
+    /// <summary>
+    /// Keeps attachment reads and transactional feature-delete cleanup on the same
+    /// maintained store, using the isolated host's schema or the shared request's schema.
+    /// The production default targets honua, which isolated test schemas do not populate.
+    /// </summary>
+    private static void BindFixtureAttachmentStore(IServiceCollection services)
+    {
+        services.RemoveAll<PostgresAttachmentStore>();
+        services.AddScoped(serviceProvider => new PostgresAttachmentStore(
+            serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+            serviceProvider.GetService<ICloudFileStorage>(),
+            serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
+            schemaName: serviceProvider.GetRequiredService<ISchemaContext>().CurrentSchema,
+            orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+            attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                ?? new AttachmentLimits(),
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
     }
 
     /// <summary>

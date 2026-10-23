@@ -109,6 +109,15 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddSingletonPortalTokenIssuer(this IServiceCollection services)
     {
+        // Re-checks the credential a stored token was minted from on every restore (SEC-9).
+        // Registered unconditionally, including when an operator supplies a custom issuer, so
+        // the binding is never silently absent.
+        services.TryAddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(
+            sp.GetRequiredService<IMemoryCache>(),
+            sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
+            sp,
+            sp.GetService<TimeProvider>()));
+
         if (!services.Any(d => d.ServiceType == typeof(IPortalTokenIssuer)))
         {
             services.AddSingleton<IPortalTokenIssuer>(sp => new PortalTokenIssuer(
@@ -134,10 +143,16 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddPortalCredentialVerifier(this IServiceCollection services)
     {
+        // The OAuth bridge constructs OidcPortalCredentialVerifier directly. Register
+        // that concrete type and its cache even when an operator already supplied
+        // IPortalCredentialVerifier; skipping them makes /sharing/rest/oauth2/authorize
+        // fail during activation. The custom verifier still wins the interface.
+        services.TryAddSingleton<OidcConfigurationManagerCache>();
+        services.TryAddScoped<AdminPortalCredentialVerifier>();
+        services.TryAddScoped<OidcPortalCredentialVerifier>();
+
         if (services.Any(d => d.ServiceType == typeof(IPortalCredentialVerifier)))
         {
-            // An operator-supplied custom verifier takes precedence over the
-            // built-in admin/OIDC selection.
             return;
         }
 
@@ -145,9 +160,6 @@ public static class PortalTokenAuthenticationExtensions
         // and community option. The OIDC-backed verifier is opt-in and, when
         // enabled, may fall back to the admin verifier so admin/API-key access
         // keeps working alongside named-user login.
-        services.TryAddSingleton<OidcConfigurationManagerCache>();
-        services.AddScoped<AdminPortalCredentialVerifier>();
-        services.AddScoped<OidcPortalCredentialVerifier>();
         services.AddScoped<IPortalCredentialVerifier>(static provider =>
         {
             var options = provider.GetRequiredService<IOptions<PortalCredentialVerifierOptions>>().Value;
@@ -172,6 +184,9 @@ public static class PortalTokenAuthenticationExtensions
         // auth subsystem (ADR-0049). The store/broker/token-service are scoped to
         // the request like the credential verifier; the store is registered as a
         // singleton because it is stateless over the shared distributed/memory cache.
+        services.TryAddSingleton<OidcRuntimeProviderRegistry>();
+        services.TryAddSingleton<IOidcRuntimeProviderSource>(static provider =>
+            provider.GetRequiredService<OidcRuntimeProviderRegistry>());
         services.TryAddSingleton<PortalOAuthStore>();
 
         // First-class OAuth2 client registry + scope catalogue (ADR-0053 Increment 2,
@@ -184,13 +199,14 @@ public static class PortalTokenAuthenticationExtensions
                 : new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
 
-        // Portal community-group + item-sharing surface (#1868). In-memory singletons
-        // mirror the OAuth client-registry / Admin API-key pattern: no parallel
-        // durable store (ADR-0049). They compose the shared identity/role model for
-        // authorization rather than introducing a separate RBAC model.
+        // Process-local defaults for non-Postgres providers. The server's Postgres
+        // composition registers durable stores first, so TryAdd preserves them.
+        // Both profiles compose the shared identity/role model.
         services.TryAddSingleton<IPortalGroupStore>(
             sp => new InMemoryPortalGroupStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IPortalItemSharingStore, InMemoryPortalItemSharingStore>();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<Honua.Core.Features.Security.Abstractions.IPortalResourceReadAuthorizer, PortalResourceReadAuthorizer>();
 
         // Optional JWT access-token format + RFC 7662 introspection (ADR-0068, #1890)
         // and pluggable IdP/OIDC federation for client_credentials (ADR-0053
@@ -257,7 +273,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (_options.CurrentValue.Enabled &&
+        if (!ScopedJobAuthentication.HasCandidate(context) && _options.CurrentValue.Enabled &&
             !IsAuthenticated(context) &&
             CarriesPortalTokenIndicator(context))
         {

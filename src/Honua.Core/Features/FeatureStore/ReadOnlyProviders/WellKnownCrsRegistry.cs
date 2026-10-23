@@ -42,9 +42,15 @@ public sealed class WellKnownCrsRegistry : ICrsRegistry
     private const string EpsgUrnPrefix = "urn:ogc:def:crs:EPSG::";
     private const string EpsgPrefix = "EPSG:";
 
-    private static readonly CrsDefinition _crs84Definition = new(Crs84Uri, 4326, AxisOrder.EastNorth, true);
-    private static readonly CrsDefinition _epsg4326Definition = new($"{EpsgUriPrefix}4326", 4326, AxisOrder.NorthEast, true);
-    private static readonly CrsDefinition _epsg3857Definition = new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false);
+    // Same three definitions as PostgresCrsRegistry's built-in fast path, WKT included: a
+    // DuckDB/MySQL-backed export has no catalog to fall back to, so a WKT-less definition
+    // here means a shapefile with no .prj sidecar at all.
+    private static readonly CrsDefinition _crs84Definition =
+        new(Crs84Uri, 4326, AxisOrder.EastNorth, true) { Wkt = WellKnownCrsWkt.Epsg4326 };
+    private static readonly CrsDefinition _epsg4326Definition =
+        new($"{EpsgUriPrefix}4326", 4326, AxisOrder.NorthEast, true) { Wkt = WellKnownCrsWkt.Epsg4326 };
+    private static readonly CrsDefinition _epsg3857Definition =
+        new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false) { Wkt = WellKnownCrsWkt.Epsg3857 };
 
     /// <inheritdoc />
     public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)

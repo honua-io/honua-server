@@ -53,6 +53,15 @@ public static class CapabilityKeyCatalog
     public const string PreviewStatus = "preview";
 
     /// <summary>
+    /// Release-posture value for capabilities that support Honua's own hosted operation and are
+    /// not offered to licensees. Distinct from <see cref="PreviewStatus"/>, which promises a GA
+    /// path: this one promises the opposite. A licensee cannot operate these at all, because the
+    /// Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed
+    /// service. Capabilities with this status are never published as customer documentation.
+    /// </summary>
+    public const string InternalStatus = "internal";
+
+    /// <summary>
     /// Edition-qualified, routed capabilities that remain deployable while their public release
     /// posture is experimental.
     /// </summary>
@@ -65,8 +74,13 @@ public static class CapabilityKeyCatalog
     /// <summary>Routed capabilities that ship as explicit opt-in Preview.</summary>
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedPreviewKeys { get; } =
     [
-        new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.ControlPlane,
-            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure.", Status: PreviewStatus),
+        new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.Internal,
+            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.", Status: InternalStatus),
+
+        // Operator ruling (2026-09-03, honua-release#266 / #264) supersedes the earlier
+        // sync.offline GA promotion for release 2026.1: offline sync is Preview in 2026.1.
+        new(FeatureCatalog.FieldOpsOfflineSyncKey, "Offline/Field Sync", FeatureCatalog.Categories.FieldOps,
+            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange.", Status: PreviewStatus),
     ];
 
     /// <summary>
@@ -84,6 +98,15 @@ public static class CapabilityKeyCatalog
 
         /// <summary>General admin/control-plane CRUD surfaces with no dedicated entitlement.</summary>
         public const string ControlPlane = "ControlPlane";
+
+        /// <summary>
+        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
+        /// licensee. Not part of the customer-deployable product surface and with no path to
+        /// general availability as a customer feature: the Elastic License 2.0 prohibits
+        /// providing Honua to third parties as a hosted or managed service, so a licensee can
+        /// never be the party operating them. Never published as customer documentation.
+        /// </summary>
+        public const string Internal = "Internal";
 
         /// <summary>Operational health, metrics, and observability surfaces.</summary>
         public const string Ops = "Ops";
@@ -105,6 +128,9 @@ public static class CapabilityKeyCatalog
 
         /// <summary>Third-party data enrichment dataset surfaces.</summary>
         public const string Enrichment = "Enrichment";
+
+        /// <summary>Durable job/task execution substrate surfaces.</summary>
+        public const string Jobs = "Jobs";
     }
 
     /// <summary>
@@ -153,6 +179,8 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Serve coverage data through WCS 2.0.1."),
         new("serve.wfs", "WFS 2.0", Categories.Serve,
             HonuaEdition.Community, "Query and read features through WFS 2.0."),
+        new("serve.wps", "WPS 2.0", Categories.Serve,
+            HonuaEdition.Community, "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult)."),
         new("serve.vector-tiles", "Vector Tiles (MVT/TileJSON/PMTiles)", Categories.Serve,
             HonuaEdition.Community, "Serve Mapbox Vector Tiles, TileJSON descriptors, and PMTiles archives."),
         new("serve.sensorthings", "OGC SensorThings API", Categories.Serve,
@@ -163,6 +191,12 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."),
         new("serve.elevation", "Elevation Query", Categories.Serve,
             HonuaEdition.Community, "Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sight, and viewshed analytics are Pro-gated separately."),
+        new("serve.grpc", "gRPC (geospatial.v1)", Categories.Serve,
+            HonuaEdition.Community, "The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService — served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."),
+
+        // Jobs
+        new("jobs.durable-runtime", "Durable Job Runtime", Categories.Jobs,
+            HonuaEdition.Community, "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates."),
 
         // Discovery
         new("discovery.capability-manifest", "Capability Manifest", Categories.Discovery,
@@ -170,7 +204,9 @@ public static class CapabilityKeyCatalog
 
         // Control plane
         new("admin.control-plane", "Admin Control Plane", Categories.ControlPlane,
-            HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Tenant administration is Preview/trial only in 2026.1; GA is single-tenant, with no hosted service or production multi-tenant deployment. Cross-tenant isolation remains mandatory."),
+            HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Isolation between administrative scopes remains mandatory."),
+        new("operations.proposals", "Governed Operation Proposals", Categories.ControlPlane,
+            HonuaEdition.Community, "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."),
 
         // Ops
         new("ops.health", "Health Checks", Categories.Ops,

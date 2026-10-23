@@ -26,31 +26,15 @@ internal sealed class PostgresGeometryOperationService(
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider = connectionProvider
         ?? throw new ArgumentNullException(nameof(connectionProvider));
 
-    // Web Mercator (EPSG:3857) is only well-defined within roughly ±85.0511° latitude;
-    // outside this band the planar distortion is severe enough to produce wildly wrong
-    // buffer geometries. Planar buffers over geographic CRS route through 3857, so we
-    // refuse when the input geometry extends past this limit.
+    // Web Mercator (EPSG:3857) is only well-defined within roughly ±85.0511° latitude.
+    // Projecting into it clamps latitudes to this band. Geographic buffers do not use
+    // Web Mercator; they buffer on the spheroid and transform back to the input SRID.
     private const double WebMercatorMaxAbsoluteLatitudeDegrees = 85.0511287798066;
 
     public async Task<byte[]> BufferAsync(byte[] wkb, int srid, double distance, bool geodesic, CancellationToken ct = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         var crsMetrics = await GetCrsMetricsAsync(connection, srid, ct).ConfigureAwait(false);
-
-        LatitudeBounds? latitudeBounds = null;
-        if (!geodesic && crsMetrics.IsGeographic)
-        {
-            latitudeBounds = await GetGeographicLatitudeBoundsAsync(connection, wkb, srid, ct).ConfigureAwait(false);
-            if (latitudeBounds is { } bounds
-                && (Math.Abs(bounds.MinY) > WebMercatorMaxAbsoluteLatitudeDegrees
-                    || Math.Abs(bounds.MaxY) > WebMercatorMaxAbsoluteLatitudeDegrees))
-            {
-                throw new ArgumentException(
-                    $"Planar buffer on geographic CRS EPSG:{srid} is only accurate within "
-                    + $"±{WebMercatorMaxAbsoluteLatitudeDegrees:F4}° latitude. Input extends to "
-                    + $"[{bounds.MinY:F4}°, {bounds.MaxY:F4}°]. Use geodesic=true for polar geometries.");
-            }
-        }
 
         await using var cmd = connection.CreateCommand();
 
@@ -62,18 +46,10 @@ internal sealed class PostgresGeometryOperationService(
         }
         else if (crsMetrics.IsGeographic)
         {
-            // Planar buffers over geographic CRS need linear units. Buffer in Web Mercator meters,
-            // then transform back. Web Mercator's point scale is k = 1/cos(lat), so a distance in
-            // ground meters must be inflated by 1/cos(lat) before buffering in EPSG:3857 — without
-            // this a "1000 m" buffer shrinks to ~707 m on the ground at 45° and ~500 m at 60°.
-            // The geometry's mid-latitude is a good approximation within the ±85.0511° guard above.
-            if (latitudeBounds is { } b)
-            {
-                var midLatitudeRadians = (b.MinY + b.MaxY) / 2.0 * Math.PI / 180.0;
-                distance /= Math.Cos(midLatitudeRadians);
-            }
-
-            cmd.CommandText = "SELECT ST_AsBinary(ST_Transform(ST_Buffer(ST_Transform(ST_SetSRID($1::geometry, $2), 3857), $3), $2))";
+            // The distance is already ground meters. Buffer on the spheroid and transform
+            // back to the geographic SRID. A single Web Mercator scale factor is wrong
+            // across a tall geometry and near the poles.
+            cmd.CommandText = "SELECT ST_AsBinary(ST_Transform(ST_Buffer(ST_Transform(ST_SetSRID($1::geometry, $2), 4326)::geography, $3)::geometry, $2))";
         }
         else
         {
@@ -87,25 +63,6 @@ internal sealed class PostgresGeometryOperationService(
 
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result as byte[] ?? throw new InvalidOperationException("PostGIS buffer returned null.");
-    }
-
-    private readonly record struct LatitudeBounds(double MinY, double MaxY);
-
-    private static async Task<LatitudeBounds?> GetGeographicLatitudeBoundsAsync(
-        DbConnection connection, byte[] wkb, int srid, CancellationToken ct)
-    {
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT ST_YMin(g), ST_YMax(g) FROM (SELECT ST_SetSRID($1::geometry, $2) AS g) t";
-        cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false) || reader.IsDBNull(0) || reader.IsDBNull(1))
-        {
-            return null;
-        }
-
-        return new LatitudeBounds(reader.GetDouble(0), reader.GetDouble(1));
     }
 
     public async Task<byte[]> SimplifyAsync(byte[] wkb, double tolerance, bool preserveTopology, CancellationToken ct = default)
@@ -135,10 +92,7 @@ internal sealed class PostgresGeometryOperationService(
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
 
-        if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
-        {
-            wkb = ClampWebMercatorLatitudes(wkb, fromSrid);
-        }
+        wkb = ClampSourceForWebMercator(wkb, fromSrid, toSrid);
 
         cmd.CommandText = "SELECT ST_AsBinary(ST_Transform(ST_SetSRID($1::geometry, $2), $3))";
 
@@ -174,10 +128,7 @@ internal sealed class PostgresGeometryOperationService(
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
 
-        if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
-        {
-            wkb = ClampWebMercatorLatitudes(wkb, fromSrid);
-        }
+        wkb = ClampSourceForWebMercator(wkb, fromSrid, toSrid);
 
         // Honor the explicit (Esri-parity) datum-transformation pipeline through the shared
         // chokepoint that emits ST_TransformPipeline. The pipeline string is
@@ -186,7 +137,8 @@ internal sealed class PostgresGeometryOperationService(
         var transformExpression = DatumTransformSql.BuildTransformExpression(
             "ST_SetSRID($1::geometry, $2)",
             toSrid,
-            selection);
+            selection,
+            fromSrid);
         cmd.CommandText = $"SELECT ST_AsBinary({transformExpression})";
 
         cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
@@ -198,6 +150,21 @@ internal sealed class PostgresGeometryOperationService(
 
     private static bool IsWebMercatorSrid(int srid)
         => SpatialReferenceExtensions.IsWebMercatorSrid(srid);
+
+    /// <summary>
+    /// Clamps geographic latitudes before a Web Mercator projection. Every geographic
+    /// source is clamped, not only EPSG:4326, so polar vertices in NAD83/ETRS89/GDA94
+    /// do not reach an unclamped <c>ST_Transform</c> (#6132).
+    /// </summary>
+    internal static byte[] ClampSourceForWebMercator(byte[] wkb, int fromSrid, int toSrid)
+    {
+        if (!GeographicSridClassifier.IsGeographicSrid(fromSrid) || !IsWebMercatorSrid(toSrid))
+        {
+            return wkb;
+        }
+
+        return ClampWebMercatorLatitudes(wkb, fromSrid);
+    }
 
     private static byte[] ClampWebMercatorLatitudes(byte[] wkb, int srid)
     {
@@ -390,6 +357,152 @@ internal sealed class PostgresGeometryOperationService(
             System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    public async Task<double> DistanceAsync(byte[] wkbA, byte[] wkbB, int srid, CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT ST_Distance(
+                ST_Transform(ST_SetSRID($1::geometry, $3), 4326)::geography,
+                ST_Transform(ST_SetSRID($2::geometry, $3), 4326)::geography)
+            """;
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkbA });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkbB });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return Convert.ToDouble(
+            result ?? throw new InvalidOperationException("PostGIS distance returned null."),
+            System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public async Task<byte[]> SegmentizeGeodesicAsync(
+        byte[] wkb,
+        int srid,
+        double maxSegmentLengthMeters,
+        CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+
+        // Installed per call because pooled connections discard pg_temp. The bodies use
+        // named arguments only: this command is parameterless, and the follow-up query's
+        // $1/$2/$3 must not be rewritten into the function text.
+        await using (var define = connection.CreateCommand())
+        {
+            define.CommandText = GeodesicSegmentizeFunctionsSql;
+            await define.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await using var cmd = connection.CreateCommand();
+        // ST_Segmentize(geography) binary-subdivides until every piece is at most the
+        // limit, so a 557 km edge requested at 1 km comes back as 1024 pieces of ~544 m.
+        // Split each edge into ceil(length / max) equal spheroidal steps instead.
+        // Original vertices are kept; only intermediate points come from ST_Project.
+        cmd.CommandText = """
+            SELECT ST_AsBinary(ST_Transform(
+                pg_temp.honua_geodesic_segmentize(
+                    ST_Transform(ST_SetSRID($1::geometry, $2), 4326),
+                    $3),
+                $2))
+            """;
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = maxSegmentLengthMeters });
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as byte[] ?? throw new InvalidOperationException("PostGIS segmentize returned null.");
+    }
+
+    private const string GeodesicSegmentizeFunctionsSql = """
+        CREATE OR REPLACE FUNCTION pg_temp.honua_geodesic_line(line geometry, max_m double precision)
+        RETURNS geometry
+        LANGUAGE sql
+        STABLE
+        AS $fn$
+            SELECT CASE
+                WHEN line IS NULL OR ST_IsEmpty(line) THEN line
+                ELSE (
+                    WITH segs AS (
+                        SELECT row_number() OVER () AS seg_id, s.geom AS seg
+                        FROM ST_DumpSegments(line) AS s
+                    ),
+                    calc AS (
+                        SELECT
+                            seg_id,
+                            seg,
+                            ST_Length(seg::geography) AS len,
+                            GREATEST(1, CEIL(ST_Length(seg::geography) / max_m)::int) AS n,
+                            ST_Azimuth(ST_StartPoint(seg)::geography, ST_EndPoint(seg)::geography) AS az
+                        FROM segs
+                    ),
+                    pts AS (
+                        SELECT
+                            c.seg_id,
+                            gs.i,
+                            CASE
+                                WHEN gs.i = 0 THEN ST_StartPoint(c.seg)
+                                WHEN gs.i = c.n THEN ST_EndPoint(c.seg)
+                                ELSE ST_SetSRID(
+                                    ST_Project(
+                                        ST_StartPoint(c.seg)::geography,
+                                        gs.i * c.len / c.n,
+                                        c.az)::geometry,
+                                    4326)
+                            END AS pt
+                        FROM calc AS c
+                        CROSS JOIN LATERAL generate_series(0, c.n) AS gs(i)
+                    )
+                    SELECT ST_SetSRID(
+                        ST_RemoveRepeatedPoints(ST_MakeLine(pt ORDER BY seg_id, i)),
+                        4326)
+                    FROM pts
+                )
+            END;
+        $fn$;
+
+        CREATE OR REPLACE FUNCTION pg_temp.honua_geodesic_polygon(poly geometry, max_m double precision)
+        RETURNS geometry
+        LANGUAGE sql
+        STABLE
+        AS $fn$
+            SELECT CASE
+                WHEN poly IS NULL OR ST_IsEmpty(poly) THEN poly
+                WHEN ST_NumInteriorRings(poly) = 0 THEN
+                    ST_MakePolygon(pg_temp.honua_geodesic_line(ST_ExteriorRing(poly), max_m))
+                ELSE
+                    ST_MakePolygon(
+                        pg_temp.honua_geodesic_line(ST_ExteriorRing(poly), max_m),
+                        ARRAY(
+                            SELECT pg_temp.honua_geodesic_line(ST_InteriorRingN(poly, i), max_m)
+                            FROM generate_series(1, ST_NumInteriorRings(poly)) AS i
+                        ))
+            END;
+        $fn$;
+
+        CREATE OR REPLACE FUNCTION pg_temp.honua_geodesic_segmentize(g geometry, max_m double precision)
+        RETURNS geometry
+        LANGUAGE sql
+        STABLE
+        AS $fn$
+            SELECT CASE
+                WHEN g IS NULL OR ST_IsEmpty(g) THEN g
+                ELSE CASE ST_GeometryType(g)
+                    WHEN 'ST_LineString' THEN pg_temp.honua_geodesic_line(g, max_m)
+                    WHEN 'ST_MultiLineString' THEN ST_SetSRID(ST_Collect(ARRAY(
+                        SELECT pg_temp.honua_geodesic_line(d.geom, max_m)
+                        FROM ST_Dump(g) AS d
+                        ORDER BY d.path
+                    )), 4326)
+                    WHEN 'ST_Polygon' THEN pg_temp.honua_geodesic_polygon(g, max_m)
+                    WHEN 'ST_MultiPolygon' THEN ST_SetSRID(ST_Collect(ARRAY(
+                        SELECT pg_temp.honua_geodesic_polygon(d.geom, max_m)
+                        FROM ST_Dump(g) AS d
+                        ORDER BY d.path
+                    )), 4326)
+                    ELSE g
+                END
+            END;
+        $fn$;
+        """;
+
     private static double ConvertMetersToNativeUnits(double distanceMeters, double metersPerUnit)
     {
         var normalizedMetersPerUnit = NormalizeMetersPerUnit(metersPerUnit);
@@ -412,15 +525,36 @@ internal sealed class PostgresGeometryOperationService(
 
         await using var cmd = connection.CreateCommand();
         // Geographic CRS detection must be authoritative (WKT prefix or +proj=longlat).
-        // The prior 4000–4999 range rule misclassified projected and geocentric CRS that
-        // fall in that range (notably EPSG:4978 WGS84 geocentric 3D Cartesian).
+        // WKT2 uses GEODCRS for both ellipsoidal geographic CRS and Cartesian geocentric
+        // CRS (EPSG:4978). A bare GEODCRS prefix treats ECEF coordinates as latitude and
+        // sends them through the geography measurement branch. Geocentric detection
+        // mirrors SpatialReference.IsGeocentricByWkt: GEOCCS, +proj=geocent, and
+        // GEODCRS whose CS is Cartesian are not geographic. Ellipsoidal GEODCRS stays
+        // geographic.
         cmd.CommandText = """
             SELECT
                 CASE
+                    WHEN COALESCE(proj4text, '') ILIKE '%+proj=geocent%'
+                        OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOCCS[%'
+                        OR (
+                            upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEODCRS[%'
+                            AND upper(COALESCE(srtext, '')) LIKE '%CS[CARTESIAN%'
+                        )
+                    THEN FALSE
                     WHEN upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOGCS[%'
                         OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOGRAPHICCRS[%'
-                        OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEODCRS[%'
+                        OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOGCRS[%'
                         OR COALESCE(proj4text, '') ILIKE '%+proj=longlat%'
+                        OR COALESCE(proj4text, '') ILIKE '%+proj=latlong%'
+                        OR COALESCE(proj4text, '') ILIKE '%+proj=latlon%'
+                        OR (
+                            upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEODCRS[%'
+                            AND (
+                                upper(COALESCE(srtext, '')) LIKE '%CS[ELLIPSOIDAL%'
+                                OR upper(COALESCE(srtext, '')) LIKE '%AXIS["LATITUDE"%'
+                                OR upper(COALESCE(srtext, '')) LIKE '%AXIS["LONGITUDE"%'
+                            )
+                        )
                     THEN TRUE
                     ELSE FALSE
                 END AS is_geographic,
@@ -466,8 +600,9 @@ internal sealed class PostgresGeometryOperationService(
     // uses the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
     // list — a geography measurement is only sound for the WGS 84-compatible degree CRSes, and this
     // matches the DuckDB provider's narrow gate. The narrow bucket differs from the pre-#2732
-    // 6-code fallback (4326/4269/4267/4258/4619/4283): it drops 4619 (SWEREF99) and adds
-    // 4617 (NAD83(CSRS)) / 4759 (NAD83(NSRS2007)); the primary spatial_ref_sys-derived path still
+    // 6-code fallback (4326/4269/4267/4258/4619/4283): it drops 4619 (SWEREF99) and 4267
+    // (NAD27, whose degrees are not WGS 84) and adds 4617 (NAD83(CSRS)) / 4759
+    // (NAD83(NSRS2007)); the primary spatial_ref_sys-derived path still
     // classifies 4619 correctly, so only the registry-miss fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);

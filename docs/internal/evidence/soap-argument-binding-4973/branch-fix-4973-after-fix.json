@@ -1,0 +1,319 @@
+{
+  "issue": "honua-io/honua-server#4973",
+  "label": "diagnostic build of fix/4973-soap-unqualified-args at 75fb3a1 (framework-dependent Honua.Server output, same database and Redis as the candidate control)",
+  "recordedAt": "2026-09-16T18:25:47+00:00",
+  "baselineGetServiceDescriptions": {
+    "status": 200,
+    "serviceDescriptionNames": [
+      "geoprocessing"
+    ]
+  },
+  "cases": [
+    {
+      "case": "catalog/pro-3.7.1-captured-envelope",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\n               xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n               xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"\n               xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\">\n  <soap:Body>\n    <tns:GetServiceDescriptionsEx>\n      <FolderName></FolderName>\n    </tns:GetServiceDescriptionsEx>\n  </soap:Body>\n</soap:Envelope>\n",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetServiceDescriptionsExResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": [
+          "geoprocessing"
+        ],
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/tns-operation+unqualified-FolderName",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetServiceDescriptionsEx><FolderName></FolderName></tns:GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetServiceDescriptionsExResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": [
+          "geoprocessing"
+        ],
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/tns-operation+qualified-FolderName",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetServiceDescriptionsEx><tns:FolderName></tns:FolderName></tns:GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetServiceDescriptionsExResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": [
+          "geoprocessing"
+        ],
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/default-namespace+inherited-FolderName",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><FolderName></FolderName></GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetServiceDescriptionsExResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": [
+          "geoprocessing"
+        ],
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/default-namespace+inherited-folderName",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><folderName></folderName></GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetServiceDescriptionsExResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": [
+          "geoprocessing"
+        ],
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/tns-operation+unqualified-folderName",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetServiceDescriptionsEx><folderName /></tns:GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetServiceDescriptionsExResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": [
+          "geoprocessing"
+        ],
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/legacy-9.0-operation+unqualified-FolderName",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><legacy:GetServiceDescriptionsEx xmlns:legacy=\"http://www.esri.com/schemas/ArcGIS/9.0\"><FolderName /></legacy:GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetServiceDescriptionsExResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": [
+          "geoprocessing"
+        ],
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/default-namespace+folderName+Recurse",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><folderName /><Recurse>true</Recurse></GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 400,
+      "observedStatus": 400,
+      "observed": {
+        "parseable": true,
+        "response": null,
+        "faultstring": "GetServiceDescriptionsEx does not accept the 'Recurse' argument; its only argument is FolderName.",
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/tns-operation+unqualified-Recurse",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetServiceDescriptionsEx><Recurse>true</Recurse></tns:GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 400,
+      "observedStatus": 400,
+      "observed": {
+        "parseable": true,
+        "response": null,
+        "faultstring": "GetServiceDescriptionsEx does not accept the 'Recurse' argument; its only argument is FolderName.",
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "catalog/tns-operation+two-FolderName",
+      "endpoint": "/services",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetServiceDescriptionsEx><FolderName /><tns:FolderName /></tns:GetServiceDescriptionsEx></soap:Body></soap:Envelope>",
+      "expectedStatus": 400,
+      "observedStatus": 400,
+      "observed": {
+        "parseable": true,
+        "response": null,
+        "faultstring": "GetServiceDescriptionsEx accepts at most one FolderName argument.",
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/GetToolInfo/unqualified",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetToolInfo><ToolName>Buffer</ToolName></tns:GetToolInfo></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetToolInfoResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": null,
+        "resultToolName": "Buffer",
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/GetToolInfo/qualified",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetToolInfo><tns:ToolName>Buffer</tns:ToolName></tns:GetToolInfo></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetToolInfoResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": null,
+        "resultToolName": "Buffer",
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/GetToolInfo/default-namespace",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><GetToolInfo xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><ToolName>Buffer</ToolName></GetToolInfo></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "GetToolInfoResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": null,
+        "resultToolName": "Buffer",
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/GetToolInfo/unqualified+Recurse",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:GetToolInfo><Recurse>true</Recurse></tns:GetToolInfo></soap:Body></soap:Envelope>",
+      "expectedStatus": 400,
+      "observedStatus": 400,
+      "observed": {
+        "parseable": true,
+        "response": null,
+        "faultstring": "GetToolInfo does not accept the 'Recurse' argument; its only argument is ToolName.",
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/SubmitJob/unqualified",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:SubmitJob><ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\"><GPValue xsi:type=\"tns:GPString\"><Value>AQEAAAAAAAAAAAAAAAAAAAAAAAAA</Value></GPValue><GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values></tns:SubmitJob></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "SubmitJobResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": true
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/SubmitJob/qualified",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:SubmitJob><tns:ToolName>Honua_67656F6D657472792E61726561</tns:ToolName><tns:Values xsi:type=\"tns:GPValues\"><tns:GPValue xsi:type=\"tns:GPString\"><tns:Value>AQEAAAAAAAAAAAAAAAAAAAAAAAAA</tns:Value></tns:GPValue><tns:GPValue xsi:type=\"tns:GPLong\"><tns:Value>3857</tns:Value></tns:GPValue></tns:Values></tns:SubmitJob></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "SubmitJobResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": true
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/SubmitJob/default-namespace",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><SubmitJob xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\"><GPValue xsi:type=\"tns:GPString\"><Value>AQEAAAAAAAAAAAAAAAAAAAAAAAAA</Value></GPValue><GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values></SubmitJob></soap:Body></soap:Envelope>",
+      "expectedStatus": 200,
+      "observedStatus": 200,
+      "observed": {
+        "parseable": true,
+        "response": "SubmitJobResponse",
+        "faultstring": null,
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": true
+      },
+      "matchesContract": true
+    },
+    {
+      "case": "gpserver/SubmitJob/unqualified+Recurse",
+      "endpoint": "/services/geoprocessing/GPServer",
+      "request": "<?xml version=\"1.0\" encoding=\"utf-8\" ?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><tns:SubmitJob><ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\"><GPValue xsi:type=\"tns:GPString\"><Value>AQEAAAAAAAAAAAAAAAAAAAAAAAAA</Value></GPValue><GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values><Recurse>true</Recurse></tns:SubmitJob></soap:Body></soap:Envelope>",
+      "expectedStatus": 400,
+      "observedStatus": 400,
+      "observed": {
+        "parseable": true,
+        "response": null,
+        "faultstring": "The GP operation failed.",
+        "serviceDescriptionNames": null,
+        "resultToolName": null,
+        "resultHasText": false
+      },
+      "matchesContract": true
+    }
+  ],
+  "summary": {
+    "total": 18,
+    "matchesContract": 18
+  }
+}

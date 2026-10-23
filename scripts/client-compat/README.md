@@ -10,17 +10,17 @@ Validates that desktop GIS and BI clients can connect to and work with Honua Ser
 > `docker/client-compat-compose.yml` and `docker/client-compat-seed.sql` names;
 > update that script before using it for release evidence.
 >
-> Licensed ArcGIS Pro automation now has a separate scaffold:
-> `scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py`, documented in
-> `docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md`. It is a manual/scheduled
-> self-hosted Windows lane and is not part of ordinary PR gates.
+> Desktop ArcGIS evidence is identifier `desktop-arcgis`.
+> `docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md` names it.
+> Procedure stays in private honua-esri-compat. Ordinary PR gates do not
+> require ArcGIS Pro. This helper does not configure that lane.
 
 ## Prerequisites
 
 - Docker (accessible from WSL)
 - One or more desktop clients installed on Windows:
   - [QGIS](https://qgis.org/) 3.34+
-  - [ArcGIS Pro](https://www.esri.com/en-us/arcgis/products/arcgis-pro/overview) 3.x
+  - ArcGIS Pro is not produced by this helper. Cite `desktop-arcgis` in honua-esri-compat.
   - [Excel](https://www.microsoft.com/en-us/microsoft-365/excel) (Microsoft 365 / Office 2019+)
   - [Power BI Desktop](https://powerbi.microsoft.com/desktop/)
 
@@ -71,7 +71,7 @@ For each installed client, the script:
 | Client | Connection File | How It Opens |
 |--------|----------------|-------------|
 | QGIS | `.qgs` project (WMS + OGC Features layers) | Opens with layers already loaded |
-| ArcGIS Pro | ArcPy script (`add-honua-layers.py`) | Paste in Pro's Python window |
+| ArcGIS Pro | not produced here | Cite evidence id `desktop-arcgis` in honua-esri-compat |
 | Excel | `.odc` connection file | Use Data > Get Data > OData Feed |
 | Power BI | `.pbids` OData connection file | Navigator opens to the OData feed |
 

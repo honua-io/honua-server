@@ -53,7 +53,9 @@ global.json
 NuGet.config
 .github/
 scripts/ci/
-src/Honua.Analyzers/'
+src/Honua.Analyzers/
+eng/Honua.ProtocolProfiles.props
+eng/protocol-profiles.v1.json'
 force_full_paths="${FORCE_FULL_BUILD_PATHS:-${default_force_full}}"
 
 # Diff the working tree against base. Tolerate the case where the base ref
@@ -65,7 +67,17 @@ if ! git rev-parse --verify --quiet "${base_ref}" >/dev/null 2>&1; then
   exit 0
 fi
 
-changed_files="$(git diff --name-only "${base_ref}...${head_ref}" 2>/dev/null || true)"
+# Local callers freeze a complete committed + working-tree manifest.
+if [[ -n "${HONUA_CHANGED_FILES_FILE:-}" ]]; then
+  if [[ ! -r "${HONUA_CHANGED_FILES_FILE}" ]]; then
+    echo "ALL"
+    exit 0
+  fi
+  changed_files="$(cat "${HONUA_CHANGED_FILES_FILE}")"
+elif ! changed_files="$(git diff --no-renames --name-only "${base_ref}...${head_ref}" 2>/dev/null)"; then
+  echo "ALL"
+  exit 0
+fi
 if [[ -z "${changed_files}" ]]; then
   # No diff = no projects to build. Emit nothing so callers can short-circuit.
   exit 0

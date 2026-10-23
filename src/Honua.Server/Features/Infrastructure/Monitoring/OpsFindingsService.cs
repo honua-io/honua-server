@@ -11,6 +11,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
@@ -39,6 +40,11 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     // BackendName of the in-process baseline batch backend (which reports a KubernetesJob target kind).
     private const string InProcessLocalBackendName = "local";
 
+    private const string WorkflowOperationStoreBackendId = "workflow-operation-store";
+    private const string ManualInterventionComponentId = "manual-intervention-deploy-operations";
+    private const int ManualInterventionPageSize = 200;
+    private const int ManualInterventionMaxPages = 5;
+
     private readonly IOptionsMonitor<OpsFindingsOptions> _options;
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions;
     private readonly IAlertDispatchHealth _alertHealth;
@@ -51,6 +57,8 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly IOpsDatabasePressureSignal? _databasePressureSignal;
     private readonly IRuntimeTunableAdmissionGate? _admissionGate;
     private readonly IOpsHealthRollupStore? _rollupStore;
+    private readonly OpsFindingsCollectionLedger _collectionLedger;
+    private readonly TimeProvider _clock;
 
     /// <summary>
     /// Server-owned validity window for the live operational signals the rules read. A signal older
@@ -82,6 +90,8 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         _databasePressureSignal = extendedSignals?.DatabasePressureSignal;
         _admissionGate = extendedSignals?.AdmissionGate;
         _rollupStore = extendedSignals?.RollupStore;
+        _collectionLedger = extendedSignals?.CollectionLedger ?? new OpsFindingsCollectionLedger();
+        _clock = extendedSignals?.TimeProvider ?? TimeProvider.System;
     }
 
     public async Task<IReadOnlyList<OpsFinding>> EvaluateAsync(CancellationToken cancellationToken = default)
@@ -89,12 +99,21 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 
     public async Task<OpsFindingsEvaluation> EvaluateWithEvidenceAsync(CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _clock.GetUtcNow();
         var options = _options.CurrentValue;
         var findings = new List<OpsFinding>();
 
         var alertObservation = _alertHealth.LastObservation;
         var alertSource = BuildAlertDispatchSource(alertObservation);
+        // The workflow store's posture is derived from the reads the deployment rules perform below,
+        // never from the store merely being registered (#4840).
+        var workflowCollection = _workflowStore is null
+            ? null
+            : new OpsFindingsStoreCollection(
+                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                WorkflowOperationStoreBackendId,
+                _clock);
         EvaluateAlertDispatchBacklog(now, options, findings, alertObservation?.Backlog);
         EvaluateAlertDispatchChannelFailures(now, options, findings, alertObservation?.Backlog);
         EvaluateLocalBackendSubstrate(now, findings);
@@ -102,9 +121,14 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         EvaluateDbBoundedAdmissionPressure(now, options, findings);
         await EvaluatePendingContractMigrationsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateGpQueueDepthAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
-        await EvaluateDeployManualInterventionAsync(now, findings, cancellationToken).ConfigureAwait(false);
+        await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
-        await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, cancellationToken).ConfigureAwait(false);
+        await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
+        var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
+            ?? EvidencePostureFactory.NotConfigured(
+                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                WorkflowOperationStoreBackendId);
 
         return new OpsFindingsEvaluation
         {
@@ -115,7 +139,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 .ThenBy(f => f.Rule, StringComparer.Ordinal)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList(),
-            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource),
+            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, workflowSource),
         };
     }
 
@@ -125,7 +149,12 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     /// backend failed reports <c>unavailable</c>, and a heartbeat-bearing source publishes its own
     /// observation time rather than the evaluation time.
     /// </summary>
-    private EvidencePosture BuildEvidencePosture(DateTimeOffset now, OpsFindingsOptions options, bool rollupDegraded, EvidenceSourceEnvelope alertSource)
+    private EvidencePosture BuildEvidencePosture(
+        DateTimeOffset now,
+        OpsFindingsOptions options,
+        bool rollupDegraded,
+        EvidenceSourceEnvelope alertSource,
+        EvidenceSourceEnvelope workflowSource)
     {
         var sections = new[]
         {
@@ -147,11 +176,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 "execution-job-store",
                 _jobStore is not null,
                 now),
-            BuildStoreSource(
-                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
-                "workflow-operation-store",
-                _workflowStore is not null,
-                now),
+            workflowSource,
             BuildServingLatencyRollupSource(now, options, rollupDegraded),
             BuildStoreSource(
                 EvidencePostureVocabulary.SourceIds.FindingsDatabasePressure,
@@ -263,23 +288,36 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             ? EvidencePostureFactory.Complete(sourceId, backendKind, backendId, now, SignalValidity)
             : EvidencePostureFactory.NotConfigured(sourceId, backendKind, backendId);
 
-    public async Task<OpsFindingProposalResult> ProposeAsync(string findingId, CancellationToken cancellationToken = default)
+    public async Task<OpsFindingProposalResult> ProposeAsync(
+        string findingId,
+        string? rootProvisioningOperationId = null,
+        CancellationToken cancellationToken = default)
     {
+        var root = RootProvisioningOperationIds.Normalize(rootProvisioningOperationId);
+        OpsFindingProposalResult WithRoot(OpsFindingProposalResult result)
+            => result with { RootProvisioningOperationId = root };
+
         if (string.IsNullOrWhiteSpace(findingId))
         {
-            return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId ?? string.Empty };
+            return WithRoot(new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId ?? string.Empty });
         }
 
         var evaluation = await EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
         var finding = evaluation.Findings.FirstOrDefault(f => string.Equals(f.Id, findingId, StringComparison.Ordinal));
         if (finding is null)
         {
-            return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId };
+            return WithRoot(new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId });
+        }
+
+        if (finding.Subject.OperationId is { Length: > 0 } linkedOperationId && _workflowStore is not null)
+        {
+            var linked = await _workflowStore.GetAsync(linkedOperationId, cancellationToken).ConfigureAwait(false);
+            root = RootProvisioningOperationIds.AlignWithRecord(linked?.RootProvisioningOperationId, root);
         }
 
         if (finding.RecommendedAction is null)
         {
-            return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId };
+            return WithRoot(new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId });
         }
 
         // Evidence integrity precedes both the deterministic auto-safe policy and gateway lookup, so
@@ -287,12 +325,12 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         // evaluation pass that produced the finding and is derived from the signals the rule read.
         if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var requiredSources))
         {
-            return new OpsFindingProposalResult
+            return WithRoot(new OpsFindingProposalResult
             {
                 Status = OpsFindingProposalStatus.Blocked,
                 FindingId = findingId,
                 Message = "evidencePostureNotActionable",
-            };
+            });
         }
 
         // Degraded mode: the operation gateway is only wired when the durable control-plane graph is
@@ -301,13 +339,13 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         // clear degraded outcome instead of failing to construct the service at startup (#2511).
         if (_gateway is null)
         {
-            return new OpsFindingProposalResult
+            return WithRoot(new OpsFindingProposalResult
             {
                 Status = OpsFindingProposalStatus.GatewayUnavailable,
                 FindingId = findingId,
                 Message = "The durable control-plane operation gateway is unavailable "
                     + "(it requires the durable backend / Redis); the recommended action cannot be proposed.",
-            };
+            });
         }
 
         var action = finding.RecommendedAction;
@@ -321,6 +359,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             // Idempotency-keyed on the deterministic finding id so re-proposing the same live
             // condition folds onto the same gateway operation rather than spawning duplicates.
             IdempotencyKey = findingId,
+            RootProvisioningOperationId = root,
             AutonomyContext = new OperationGatewayAutonomyContext
             {
                 FindingId = finding.Id,
@@ -337,14 +376,14 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 
         var result = await _gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
 
-        return new OpsFindingProposalResult
+        return WithRoot(new OpsFindingProposalResult
         {
             Status = MapOutcome(result.Outcome),
             FindingId = findingId,
             ProposalId = result.ProposalId,
             ExecutionOperationId = result.ExecutionOperationId,
             Message = result.Message,
-        };
+        });
     }
 
     private static OpsFindingProposalStatus MapOutcome(OperationGatewayOutcome outcome) => outcome switch
@@ -699,19 +738,88 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     // Rule (e): deploy operation stuck in ManualInterventionRequired. Critical. Offers a rollback
     // recommended action ONLY when a safe rollback target revision is derivable (the operation records
     // the revision it was moving away from); otherwise it is informational and says so.
-    private async Task EvaluateDeployManualInterventionAsync(DateTimeOffset now, List<OpsFinding> findings, CancellationToken cancellationToken)
+    private async Task EvaluateDeployManualInterventionAsync(
+        DateTimeOffset now,
+        List<OpsFinding> findings,
+        OpsFindingsStoreCollection? workflowCollection,
+        CancellationToken cancellationToken)
     {
-        if (_workflowStore is null)
+        if (_workflowStore is null || workflowCollection is null)
         {
             return;
         }
 
-        var active = await _workflowStore.ListActiveAsync(WorkflowOperationKind.Deploy, cancellationToken).ConfigureAwait(false);
-        foreach (var operation in active)
+        // A failed read yields no finding and marks the source unavailable; it never reads as "no
+        // deploy needs intervention" with complete evidence.
+        var active = await workflowCollection.ReadAsync(
+                "active-deploy-operations",
+                token => _workflowStore.ListActiveAsync(WorkflowOperationKind.Deploy, token),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!active.Succeeded)
         {
-            if (operation.Status != WorkflowOperationStatus.ManualInterventionRequired)
+            return;
+        }
+
+        var stuck = await ReadManualInterventionDeploysAsync(workflowCollection, cancellationToken).ConfigureAwait(false);
+        if (stuck is null)
+        {
+            return;
+        }
+
+        var succeededByTarget = new Dictionary<string, OpsFindingsStoreRead<WorkflowOperationRecord?>>(StringComparer.Ordinal);
+        foreach (var operation in stuck)
+        {
+            // A stuck deploy is not re-driven by the reconciler and has no rollback of its own; it is
+            // resolved by a later deploy of the same target (typically the rollback this finding
+            // proposes). Once one exists, the stale rollback payload must not be offered again.
+            var targetId = operation.Deploy?.TargetId;
+            if (!string.IsNullOrWhiteSpace(targetId))
             {
-                continue;
+                var newerKnown = stuck.Concat(active.Value ?? [])
+                    .Any(other => IsLaterDeployOfTarget(other, operation, targetId));
+                if (newerKnown)
+                {
+                    continue;
+                }
+
+                if (!succeededByTarget.TryGetValue(targetId, out var lookup))
+                {
+                    lookup = await workflowCollection.ReadAsync(
+                            $"deploy-target:{targetId}",
+                            token => _workflowStore.GetMostRecentSucceededDeployByTargetAsync(targetId, token),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    succeededByTarget[targetId] = lookup;
+                }
+
+                // Unknown supersession is not "not superseded": an unread index yields no finding.
+                if (!lookup.Succeeded
+                    || (lookup.Value is { } succeeded && IsLaterDeployOfTarget(succeeded, operation, targetId)))
+                {
+                    continue;
+                }
+
+                var later = await workflowCollection.ReadAsync(
+                        $"deploy-target:{targetId}:later-than:{operation.OperationId}",
+                        token => _workflowStore.HasLaterDeployOfTargetAsync(operation, token),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!later.Succeeded || later.Value is null)
+                {
+                    // Legacy records have no creation-index coverage. Do not offer a rollback based
+                    // on incomplete history, and publish partial source coverage for this pass.
+                    if (later.Succeeded)
+                    {
+                        workflowCollection.ExpectUncollected($"deploy-target:{targetId}:creation-history");
+                    }
+                    continue;
+                }
+
+                if (later.Value.Value)
+                {
+                    continue;
+                }
             }
 
             var deploy = operation.Deploy;
@@ -767,6 +875,71 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             });
         }
     }
+
+    /// <summary>
+    /// Reads deploys parked in <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> through
+    /// the store's kind + status query. The active index is not the source: the Redis store files the
+    /// status under its terminal index, so reconcilers and the backstop sweep (which walk the active
+    /// index) leave it alone and <c>ListActiveAsync</c> never returns it (#4938). The read is bounded;
+    /// when the store still reports more, the source is published as partial.
+    /// </summary>
+    /// <returns>The stuck deploys, or null when a read failed.</returns>
+    private async Task<List<WorkflowOperationRecord>?> ReadManualInterventionDeploysAsync(
+        OpsFindingsStoreCollection workflowCollection,
+        CancellationToken cancellationToken)
+    {
+        var collected = new List<WorkflowOperationRecord>();
+        var sawTruncatedWindow = false;
+        for (var page = 1; page <= ManualInterventionMaxPages; page++)
+        {
+            var query = new WorkflowOperationQuery
+            {
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                Page = page,
+                PageSize = ManualInterventionPageSize,
+            };
+            var read = await workflowCollection.ReadAsync(
+                    page == 1 ? ManualInterventionComponentId : $"{ManualInterventionComponentId}:page-{page}",
+                    token => _workflowStore!.QueryAsync(query, token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!read.Succeeded)
+            {
+                return null;
+            }
+
+            // A store that ignores the query filters must not widen the rule's scope, and paging over a
+            // set that moves under the reader can repeat an operation.
+            collected.AddRange((read.Value?.Items ?? []).Where(IsStuckDeploy));
+            sawTruncatedWindow |= read.Value?.IsTruncated == true;
+
+            if (sawTruncatedWindow && read.Value is not { HasMore: true })
+            {
+                workflowCollection.ExpectUncollected($"{ManualInterventionComponentId}:beyond-materialization-window");
+            }
+
+            if (read.Value is not { HasMore: true })
+            {
+                return Deduplicate(collected);
+            }
+        }
+
+        workflowCollection.ExpectUncollected($"{ManualInterventionComponentId}:beyond-page-{ManualInterventionMaxPages}");
+        return Deduplicate(collected);
+    }
+
+    private static bool IsStuckDeploy(WorkflowOperationRecord operation)
+        => operation is { Kind: WorkflowOperationKind.Deploy, Status: WorkflowOperationStatus.ManualInterventionRequired };
+
+    private static List<WorkflowOperationRecord> Deduplicate(IEnumerable<WorkflowOperationRecord> operations)
+        => operations.DistinctBy(operation => operation.OperationId, StringComparer.Ordinal).ToList();
+
+    private static bool IsLaterDeployOfTarget(WorkflowOperationRecord candidate, WorkflowOperationRecord stuck, string targetId)
+        => candidate.Kind == WorkflowOperationKind.Deploy
+            && !string.Equals(candidate.OperationId, stuck.OperationId, StringComparison.Ordinal)
+            && string.Equals(candidate.Deploy?.TargetId, targetId, StringComparison.Ordinal)
+            && candidate.CreatedAt > stuck.CreatedAt;
 
     // Rule (g): per-protocol serving-latency/error-rate SLO breach, evidenced from the persisted
     // ops-health rollup history (#2553) rather than the live in-process window, so a short blip does not
@@ -853,9 +1026,13 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     // gateway-routed Deploy operation to the declared release artifact: the same per-target actuation the
     // platform-release converge API (#2564) performs, reusing the existing Deploy operation-gateway path
     // so this rule does not depend on that API's endpoint landing first.
-    private async Task EvaluatePlatformReleaseRuntimeDivergenceAsync(DateTimeOffset now, List<OpsFinding> findings, CancellationToken cancellationToken)
+    private async Task EvaluatePlatformReleaseRuntimeDivergenceAsync(
+        DateTimeOffset now,
+        List<OpsFinding> findings,
+        OpsFindingsStoreCollection? workflowCollection,
+        CancellationToken cancellationToken)
     {
-        if (_workflowStore is null)
+        if (_workflowStore is null || workflowCollection is null)
         {
             return;
         }
@@ -878,10 +1055,20 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 continue;
             }
 
-            var lastSucceeded = await _workflowStore
-                .GetMostRecentSucceededDeployByTargetAsync(target.TargetId, cancellationToken)
+            // An unread target is unknown because the store did not answer, not because no deploy
+            // succeeded: it must not become the "no terminal deploy = divergent" case below.
+            var targetId = target.TargetId;
+            var lookup = await workflowCollection.ReadAsync(
+                    $"deploy-target:{targetId}",
+                    token => _workflowStore.GetMostRecentSucceededDeployByTargetAsync(targetId, token),
+                    cancellationToken)
                 .ConfigureAwait(false);
-            var lastAppliedRevision = lastSucceeded?.Deploy?.DesiredRevision;
+            if (!lookup.Succeeded)
+            {
+                continue;
+            }
+
+            var lastAppliedRevision = lookup.Value?.Deploy?.DesiredRevision;
 
             // Pinned contract (#2564): no terminal-Succeeded deploy for the target = unknown = divergent.
             var isDivergent = lastAppliedRevision is null

@@ -85,7 +85,19 @@ internal sealed partial class JobReconciliationService(
 
             if (job.Status is ExecutionJobStatus.Queued)
             {
-                continue; // Not yet claimed; nothing to reconcile.
+                // Creation can commit just before request cancellation or process loss.
+                // Queued initial local records are dispatch intent, even if no pending
+                // queue membership was ever written. Re-read to avoid repairing a stale
+                // snapshot; atomic enqueue refuses deliveries already in the claimed set.
+                if (ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(job))
+                {
+                    var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                    if (current != null && ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(current))
+                    {
+                        await jobQueue.EnqueueAsync(current.OperationId, current.Priority, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                continue;
             }
 
             // Timeout takes precedence: timed-out jobs must fail terminally
@@ -97,6 +109,16 @@ internal sealed partial class JobReconciliationService(
                     reconciled++;
                 }
 
+                continue;
+            }
+
+            // A record submitted to an external provider (AWS/Azure Batch, a Kubernetes Job, the local
+            // process pool) is claimed by the execution worker that provider launched, not by this
+            // host's queue. Its liveness belongs to the provider: the execution-job reconciler observes
+            // the provider job and owns its retry. Requeueing it on heartbeat expiry would push a remote
+            // attempt into this host's local queue. The terminal timeout above still applies.
+            if (IsProviderOwned(job))
+            {
                 continue;
             }
 
@@ -116,6 +138,16 @@ internal sealed partial class JobReconciliationService(
         await claimReconciler.ReconcileStaleClaimsAsync(StaleClaimThreshold, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Whether the active record names an external provider job, so its liveness is observed by
+    /// the execution-job reconciler rather than by heartbeat expiry on this host. The in-process
+    /// <c>local</c> backend stamps the operation id itself as its provider id.
+    /// </summary>
+    internal static bool IsProviderOwned(ExecutionJobRecord job)
+        => !string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+            && !string.IsNullOrEmpty(job.ProviderOperationId)
+            && !string.Equals(job.ProviderOperationId, job.OperationId, StringComparison.Ordinal);
 
     private static bool ShouldExpireHeartbeat(ExecutionJobRecord job, DateTimeOffset now)
     {
@@ -216,7 +248,7 @@ internal sealed partial class JobReconciliationService(
                 ErrorMessage = null,
                 ProviderOperationId = null,
                 CompletedAt = null,
-                ArtifactReferences = Array.Empty<string>(),
+                ArtifactReferences = preRetry.CommittedEffectReferences,
                 NextRetryAt = delay > TimeSpan.Zero ? now.Add(delay) : null
             };
             if (!await jobStore.TrySetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -411,8 +443,11 @@ internal sealed partial class JobReconciliationService(
             Status = ExecutionJobStatus.Cancelled,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = "Cancelled by operator (durable signal honoured by reconciler).",
-            CurrentPhase = "Cancelled"
+            ErrorMessage = job.CommittedEffectReferences.Count > 0
+                ? JobExecutionService.CommittedCancellationWarning : "Cancelled by operator (durable signal honoured by reconciler).",
+            Warnings = job.CommittedEffectReferences.Count > 0
+                ? [.. job.Warnings, JobExecutionService.CommittedCancellationWarning] : job.Warnings,
+            CurrentPhase = job.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"
         };
         if (!await jobStore.TrySetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false))
         {

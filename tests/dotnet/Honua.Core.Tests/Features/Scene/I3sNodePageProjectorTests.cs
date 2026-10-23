@@ -28,6 +28,16 @@ public sealed class I3sNodePageProjectorTests
     }
 
     [UnitTest]
+    public void BuildPages_EveryNodeCarriesItsGlobalIndex()
+    {
+        var pages = I3sNodePageProjector.BuildPages(BuildThreeNodeTileset());
+
+        pages.SelectMany(page => page.Nodes)
+            .Select(node => node.Index)
+            .Should().Equal(0, 1, 2);
+    }
+
+    [UnitTest]
     public void BuildPages_Root_HasZeroLodThreshold_NoParent_AndChildIndices()
     {
         var pages = I3sNodePageProjector.BuildPages(BuildThreeNodeTileset());
@@ -116,6 +126,7 @@ public sealed class I3sNodePageProjectorTests
         var pages = I3sNodePageProjector.BuildPages(document);
         pages.Should().HaveCount(2);
         pages[0].Nodes.Should().HaveCount(I3sNodePageProjector.NodesPerPage);
+        pages[1].Nodes[0].Index.Should().Be(I3sNodePageProjector.NodesPerPage);
     }
 
     private static TilesetDocument BuildThreeNodeTileset() => new()

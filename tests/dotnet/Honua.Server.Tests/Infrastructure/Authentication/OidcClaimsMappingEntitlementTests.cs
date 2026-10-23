@@ -90,6 +90,205 @@ public sealed class OidcClaimsMappingEntitlementTests
             CanonicalSecurityActor.FindStampedValue(result, CanonicalSecurityActor.AuthenticationSchemeClaim));
     }
 
+    /// <summary>
+    /// Claim types minted by the server's own authentication handlers and then read as
+    /// authoritative by shared authorization (SEC-10). Nothing outside the process may
+    /// populate them.
+    /// </summary>
+    private static readonly string[] FrameworkAuthorityClaimTypes =
+    [
+        "permission", "auth_type", "api_key_id", "api_key_name", "plan", "honua_plan",
+        "portal_token_binding",
+    ];
+
+    [UnitTest]
+    public async Task TransformAsync_IssuerSuppliedAuthorityClaims_AreNotHonoured()
+    {
+        // A validated token may carry any custom claim its issuer chose to mint. These
+        // claim types belong to this process's own handlers, so an externally issued
+        // identity must reach authorization carrying none of the values it presented.
+        var transformation = CreateTransformation(HonuaEdition.Enterprise);
+        var identity = new ClaimsIdentity(
+            [
+                new Claim("sub", "user-123"),
+                new Claim("permission", "admin"),
+                new Claim("auth_type", "admin"),
+                new Claim("api_key_id", "11111111-1111-1111-1111-111111111111"),
+                new Claim("api_key_name", "bootstrap"),
+                new Claim("plan", "enterprise"),
+                new Claim("honua_plan", "enterprise"),
+                new Claim("portal_token_binding", "Referer"),
+            ],
+            "Bearer");
+
+        var result = await transformation.TransformAsync(new ClaimsPrincipal(identity));
+
+        foreach (var claimType in FrameworkAuthorityClaimTypes.Where(
+                     static type => type != "auth_type"))
+        {
+            Assert.Null(result.FindFirst(claimType));
+        }
+
+        // auth_type is re-derived from the scheme ASP.NET selected, never from the token.
+        Assert.Equal("Bearer", result.FindFirst("auth_type")?.Value);
+        Assert.True(CanonicalSecurityActor.IsFrameworkOwnedClaim(result.FindFirst("auth_type")!));
+
+        // The readers that consume those claims see no authority at all.
+        Assert.False(AdminApiKeyPermission.IsFullAdminPrincipal(result));
+        Assert.False(AdminApiKeyPermission.IsAuthorized(result, "POST"));
+        Assert.False(LayerScopedWriteKey.IsScopedWritePrincipal(result));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_IssuerSuppliedScopedWriteAuthType_DoesNotSelectThatBranch()
+    {
+        // The scoped-write and bootstrap-admin auth_type values short-circuit this
+        // transformation. An issuer choosing one of them would skip role normalization
+        // and keep every other claim it supplied.
+        var transformation = CreateTransformation(HonuaEdition.Enterprise);
+        var identity = new ClaimsIdentity(
+            [
+                new Claim("sub", "user-123"),
+                new Claim("auth_type", LayerScopedWriteKey.AuthType),
+                new Claim("permission", "write:parcels"),
+            ],
+            "Bearer");
+
+        var result = await transformation.TransformAsync(new ClaimsPrincipal(identity));
+
+        Assert.False(LayerScopedWriteKey.IsScopedWritePrincipal(result));
+        Assert.False(LayerScopedWriteKey.AllowsWrite(result, "parcels", layerName: null));
+        // Normalization ran, proving the early return was not taken.
+        Assert.True(result.IsInRole("user"));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_FrameworkStampedAuthorityClaims_ArePreserved()
+    {
+        // What the API-key handler produces: the same claim types, carrying in-memory
+        // framework provenance. These are the legitimate carriers of admin authority and
+        // must pass through untouched, including the scoped-key early return.
+        var transformation = CreateTransformation(HonuaEdition.Enterprise);
+        var identity = new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "scoped-api-key"),
+                CanonicalSecurityActor.CreateStampedClaim("auth_type", "api-key"),
+                CanonicalSecurityActor.CreateStampedClaim("permission", "admin"),
+                CanonicalSecurityActor.CreateStampedClaim(
+                    "api_key_id", "11111111-1111-1111-1111-111111111111"),
+                CanonicalSecurityActor.CreateStampedClaim("api_key_name", "ops-key"),
+            ],
+            "ApiKey");
+
+        var result = await transformation.TransformAsync(new ClaimsPrincipal(identity));
+
+        Assert.Equal("api-key", result.FindFirst("auth_type")?.Value);
+        Assert.Equal("admin", result.FindFirst("permission")?.Value);
+        Assert.Equal("ops-key", result.FindFirst("api_key_name")?.Value);
+        Assert.True(AdminApiKeyPermission.IsFullAdminPrincipal(result));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_ConfiguredRoleMapping_StillReachesAdminRoles()
+    {
+        // The supported way for an operator to grant authority from an identity provider
+        // claim is the configured role-claim mapping. Removing the framework authority
+        // claim types must leave it working end to end.
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Enterprise);
+        var identity = new ClaimsIdentity(
+            [
+                new Claim("sub", "user-123"),
+                new Claim("groups", "platform-admins"),
+                new Claim("permission", "admin"),
+            ],
+            "Bearer",
+            "name",
+            "groups");
+
+        var result = await transformation.TransformAsync(new ClaimsPrincipal(identity));
+
+        Assert.True(result.IsInRole("platform-admins"));
+        Assert.True(result.IsInRole("admin"));
+        // The role mapping — not the discarded issuer claim — is what granted it.
+        Assert.Null(result.FindFirst("permission"));
+    }
+
+    [Theory]
+    [InlineData("primary", HonuaEdition.Enterprise)]
+    [InlineData("additional", HonuaEdition.Enterprise)]
+    [InlineData("custom", HonuaEdition.Enterprise)]
+    [InlineData("primary", HonuaEdition.Pro)]
+    [InlineData("additional", HonuaEdition.Pro)]
+    [InlineData("custom", HonuaEdition.Pro)]
+    [Trait("Tier", "Fast")]
+    public async Task TransformAsync_AuthorityClaimAsConfiguredMappingSource_PreservesOnlyEntitledRole(
+        string mappingKind, HonuaEdition edition)
+    {
+        var mapping = new ClaimsMappingOptions();
+        if (mappingKind == "primary")
+        {
+            mapping.RoleClaimType = "permission";
+        }
+        else if (mappingKind == "additional")
+        {
+            mapping.AdditionalRoleClaimTypes = ["permission"];
+        }
+        else
+        {
+            mapping.CustomMappings = new Dictionary<string, string> { ["permission"] = ClaimTypes.Role };
+        }
+
+        using var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            Options.Create(new OidcAuthenticationOptions { ClaimsMapping = mapping }),
+            NullLogger<OidcClaimsTransformation>.Instance,
+            services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "user-123"), new Claim("permission", "mapped-editor")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.Null(result.FindFirst("permission"));
+        Assert.Equal(edition == HonuaEdition.Enterprise, result.IsInRole("mapped-editor"));
+        Assert.Equal(edition == HonuaEdition.Enterprise,
+            result.HasClaim(claim => claim.Type == OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+        Assert.DoesNotContain(result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType),
+            claim => claim.Value == "mapped-editor");
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_CustomMappingTargetingAuthorityClaim_IsSkipped()
+    {
+        // A custom mapping runs after the sanitization above, so a mapping that targets a
+        // framework authority claim type would re-admit a provider-controlled value.
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                CustomMappings = new Dictionary<string, string>
+                {
+                    ["department"] = "permission",
+                    ["groups"] = "honua_plan",
+                },
+            },
+        });
+        var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(
+                new TestLicenseEntitlementService(HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            options, NullLogger<OidcClaimsTransformation>.Instance, services);
+
+        var result = await transformation.TransformAsync(CreatePrincipal());
+
+        Assert.Null(result.FindFirst("permission"));
+        Assert.Null(result.FindFirst("honua_plan"));
+    }
+
     [UnitTest]
     public async Task TransformAsync_WithoutClaimsMappingEntitlement_SkipsCustomMappings()
     {

@@ -19,6 +19,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Infrastructure.Rendering;
@@ -133,7 +134,10 @@ internal static partial class TilesEndpoints
         var tileLimits = limitsOptions.Value.Tiles;
         var titleBase = BuildDatasetTitleBase(selectedLayers!);
         var querySuffix = BuildCollectionsQuerySuffix(collections, selectedLayers!);
-        var advertiseVectorTiles = selectedLayers!.Length == 1 &&
+        // Landing pages advertise the unfiltered dataset as map tiles, regardless
+        // of how many collections this caller can see. Explicit selections retain
+        // their existing vector metadata when a single collection supports it.
+        var advertiseVectorTiles = !string.IsNullOrWhiteSpace(collections) && selectedLayers!.Length == 1 &&
             await SupportsVectorTilesAsync(selectedLayers[0], context, cancellationToken).ConfigureAwait(false);
         var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, advertiseVectorTiles, tileMatrixSetRegistry).ToImmutableArray();
         return BuildTilesetsListResponse(
@@ -198,7 +202,7 @@ internal static partial class TilesEndpoints
         var description = layers.Length == 1
             ? layers[0].Description
             : $"Dataset tiles across {layers.Length} collections.";
-        var advertiseVectorTiles = layers.Length == 1 &&
+        var advertiseVectorTiles = !string.IsNullOrWhiteSpace(collections) && layers.Length == 1 &&
             await SupportsVectorTilesAsync(layers[0], context, cancellationToken).ConfigureAwait(false);
 
         var (customEntry, customGeometry) = ResolveCustomTilesetGrid(tileMatrixSetEntry, tileMatrixSetRegistry, limitsOptions);
@@ -281,7 +285,8 @@ internal static partial class TilesEndpoints
             tileProvider,
             tileOptions,
             limitsOptions,
-            tileMatrixSetRegistry);
+            tileMatrixSetRegistry,
+            defaultToRaster: true);
     }
 
     private static async Task<IResult> HandleGetCollectionTilesets(
@@ -470,7 +475,8 @@ internal static partial class TilesEndpoints
         ITileProvider tileProvider,
         IOptions<TileOptions> tileOptions,
         IOptions<LimitsOptions> limitsOptions,
-        ITileMatrixSetRegistry tileMatrixSetRegistry)
+        ITileMatrixSetRegistry tileMatrixSetRegistry,
+        bool defaultToRaster = false)
     {
         // Resolved from the request container rather than taken as a formal parameter
         // (honua-server#2962): this method and its callers are already at the
@@ -486,7 +492,7 @@ internal static partial class TilesEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        var isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request);
+        var isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request, defaultToRaster);
 
         if (!isRaster)
         {
@@ -1563,36 +1569,59 @@ internal static partial class TilesEndpoints
         out MetadataV2Service? service)
     {
         service = null;
-        foreach (var publication in snapshot.Graph.Publications)
+        var selected = SelectTileCollectionPublication(
+            context,
+            snapshot,
+            requireProtocol,
+            publication => string.Equals(
+                LayerValidationHelpers.AdvertisedCollectionId(publication, snapshot.ResolveResource(publication)),
+                collectionId,
+                StringComparison.OrdinalIgnoreCase));
+        selected ??= SelectTileCollectionPublication(
+            context,
+            snapshot,
+            requireProtocol,
+            publication => string.Equals(publication.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase));
+        selected ??= SelectTileCollectionPublication(
+            context,
+            snapshot,
+            requireProtocol,
+            publication => MatchesCollectionId(snapshot, publication, collectionId));
+        if (selected is null ||
+            !snapshot.Index.ServicesById.TryGetValue(selected.ServiceId, out service))
         {
-            if (!MatchesCollectionId(snapshot, publication, collectionId))
-            {
-                continue;
-            }
-
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService))
-            {
-                continue;
-            }
-
-            if (requireProtocol &&
-                !MetadataV2ServiceProtocols.IsProtocolEnabled(candidateService, OgcApiTilesProtocol))
-            {
-                continue;
-            }
-
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) ||
-                !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService))
-            {
-                continue;
-            }
-
-            service = candidateService;
-            return publication;
+            return null;
         }
 
-        return null;
+        return selected;
+    }
+
+    private static MetadataV2Publication? SelectTileCollectionPublication(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        bool requireProtocol,
+        Func<MetadataV2Publication, bool> matches)
+    {
+        return LayerValidationHelpers.SelectMatchingCollectionPublication(
+            snapshot.Graph.Publications,
+            matches,
+            publication =>
+            {
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService))
+                {
+                    return false;
+                }
+
+                var resource = snapshot.ResolveResource(publication);
+                return snapshot.IsRoutable(publication) &&
+                    TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService);
+            },
+            publication => !requireProtocol ||
+                (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService) &&
+                 MetadataV2ServiceProtocols.IsProtocolEnabled(candidateService, OgcApiTilesProtocol)),
+            publication => MetadataV2ServiceProtocols.IsPreferredPublicationType(
+                OgcApiTilesProtocol,
+                publication.PublicationType));
     }
 
     private static bool MatchesCollectionId(

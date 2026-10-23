@@ -16,6 +16,9 @@ public static class CapabilityReasonCodes
     /// <summary>No capability with the requested id is registered.</summary>
     public const string NotRegistered = "capability-not-registered";
 
+    /// <summary>The capability is declared as a known implementation gap.</summary>
+    public const string NotImplemented = "capability-not-implemented";
+
     /// <summary>
     /// The capability is <see cref="CapabilityMaturity.Experimental"/> and neither the
     /// per-capability nor the global experimental flag is enabled, so it is off by
@@ -28,6 +31,11 @@ public static class CapabilityReasonCodes
     /// the current host configuration.
     /// </summary>
     public const string DisabledByConfiguration = "disabled-by-configuration";
+
+    /// <summary>
+    /// The capability's serving module was left out of the compiled protocol profile.
+    /// </summary>
+    public const string ProtocolProfileExcluded = "protocol-profile-excluded";
 
     /// <summary>
     /// The active edition does not meet the capability's

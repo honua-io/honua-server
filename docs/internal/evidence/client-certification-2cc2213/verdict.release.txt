@@ -1,0 +1,5 @@
+mode=release requiredCells=59 {'pass': 43, 'fail': 15, 'skip': 1}
+  cell-failed: 15
+  missing-envelope: 1
+  owner honua-io/honua-server: 16
+FAIL: the bounded 2026.1 external-client roster is not certified. Missing, skipped, stale, mismatched and source-built required cells fail closed.

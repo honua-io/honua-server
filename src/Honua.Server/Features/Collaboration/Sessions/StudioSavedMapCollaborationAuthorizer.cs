@@ -92,6 +92,7 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
                 context,
                 StudioAuthorizationOperation.UpdateDraft,
                 draft.OwnerId,
+                draft.TenantId,
                 resourceType: "studio-package-draft",
                 resourceId: draft.DraftId.ToString("D")).ConfigureAwait(false);
             if (!decision.IsAllowed)
@@ -122,6 +123,7 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
                 context,
                 StudioAuthorizationOperation.CreateVersion,
                 pointers.OwnerId,
+                pointers.TenantId,
                 resourceType: "studio-content-item",
                 resourceId: draft.ItemId.ToString("D")).ConfigureAwait(false);
             if (!itemDecision.IsAllowed)

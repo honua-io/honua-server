@@ -3,11 +3,19 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Geometry.Domain;
+using Honua.TestKit.Attributes;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -18,6 +26,49 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class LayerReconciliationServiceTests
 {
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(false, 100, true, "pass")]
+    [InlineData(false, 10, true, "fail")]
+    [InlineData(false, 100, false, "fail")]
+    [InlineData(true, 100, true, "fail")]
+    public async Task Reconcile_AttributeOnlySource_PreservesCountAndContentChecks(
+        bool sourceHasGeometry, long targetCount, bool hasExpectedField, string expected)
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = targetCount,
+            Sample = BuildSampleInternal(hasExpectedField ? ["NAME"] : ["OTHER"], validGeometry: false, rows: 5)
+        };
+        var request = new LayerReconciliationRequest
+        {
+            RunId = "table-run",
+            SourceKind = "arcgis-geoservices-rest",
+            Layers = [new LayerReconciliationLayerInput
+            {
+                SourceLayerId = "svc#1", TargetHonuaLayerId = 1,
+                SourceFeatureCount = 100, SourceHasGeometry = sourceHasGeometry,
+                SourceFieldNames = ["NAME"]
+            }]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Classification.Should().Be(expected);
+        if (!sourceHasGeometry)
+        {
+            reader.ExtentQueries.Should().BeEmpty();
+            result.Layers[0].Geometry.Sampled.Should().Be(0);
+            result.Layers[0].Geometry.Reason.Should().Contain("not applicable");
+            result.Layers[0].Extent.Reason.Should().Contain("not applicable");
+        }
+        else
+        {
+            result.Layers[0].Geometry.Classification.Should().Be("fail");
+        }
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenTargetMatchesSourceSnapshot_ClassifiesPass()
     {
@@ -39,6 +90,7 @@ public sealed class LayerReconciliationServiceTests
         artifact.Layers.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenTargetCountFarBelowSource_ClassifiesFail()
     {
@@ -61,6 +113,7 @@ public sealed class LayerReconciliationServiceTests
         artifact.Reasons.Should().NotBeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenSourceFieldMissingOnTarget_ClassifiesFail()
     {
@@ -82,6 +135,7 @@ public sealed class LayerReconciliationServiceTests
         artifact.Layers[0].Content.MissingOnTarget.Should().Contain("NAME");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenNoTargetLayerPublished_ClassifiesSkipped()
     {
@@ -106,8 +160,850 @@ public sealed class LayerReconciliationServiceTests
         artifact.Layers[0].Classification.Should().Be(MigrationReconciliationClassifications.Skipped);
     }
 
-    private static LayerReconciliationService NewService(IFeatureReader reader)
-        => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance);
+    private static LayerReconciliationService NewService(IFeatureReader reader, IGeometryTopologyValidator? topology = null)
+        => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance, topologyValidator: topology);
+
+    private sealed class FixedTopologyValidator(bool valid) : IGeometryTopologyValidator
+    {
+        public Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeometryValidationResult { IsValid = valid });
+
+        public Task<GeometryRepairResult> RepairAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingBatchTopologyValidator(params bool[] validity)
+        : IGeometryTopologyValidator, IBatchGeometryTopologyValidator
+    {
+        public int BatchCalls { get; private set; }
+
+        public int SingleCalls { get; private set; }
+
+        public Task<IReadOnlyList<GeometryValidationResult>> ValidateTopologiesAsync(
+            IReadOnlyList<byte[]> wkbs,
+            CancellationToken cancellationToken = default)
+        {
+            BatchCalls++;
+            wkbs.Should().HaveCount(2);
+            IReadOnlyList<GeometryValidationResult> results = validity
+                .Select(value => new GeometryValidationResult { IsValid = value })
+                .ToArray();
+            return Task.FromResult(results);
+        }
+
+        public Task<GeometryValidationResult> ValidateTopologyAsync(
+            byte[] wkb,
+            CancellationToken cancellationToken = default)
+        {
+            SingleCalls++;
+            throw new InvalidOperationException("The census must use the batch path.");
+        }
+
+        public Task<GeometryRepairResult> RepairAsync(byte[] wkb, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(99, "fail")]
+    [InlineData(100, "pass")]
+    [InlineData(101, "fail")]
+    public async Task Reconcile_DedicatedImportTarget_CountsEveryRowWithoutSourcePredicate(long targetCount, string expected)
+    {
+        const string sourceFilter = "DateOfFlight = DATE '2025-01-11' AND OBJECTID > 1000";
+        var reader = new StubFeatureReader
+        {
+            Count = targetCount,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 5)
+        };
+        var request = BuildRequest(100, BoundingBox.Create(0, 0, 10, 10, 4326), ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with { FilterMirror = sourceFilter, TargetContainsOnlyImportedFeatures = true }]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        // A 1% delta sits inside the default 5% pass band; a dedicated target must still fail it.
+        result.Layers[0].Count.Classification.Should().Be(expected);
+        result.Layers[0].Count.FilterMirror.Should().Be(sourceFilter);
+        result.Layers[0].Count.TargetCount.Should().Be(targetCount);
+        reader.CountQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+        reader.ExtentQueries.Should().ContainSingle().Which!.Value.Where.Should().BeNull();
+        reader.SampleQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_InheritedNullGeometry_IsNotTransferLoss()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        var geometry = result.Layers[0].Geometry;
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.Reason.Should().Contain("inherited a null source geometry");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_UnconvertedSourceGeometry_IsTransferLoss()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        UnconvertedTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        var geometry = result.Layers[0].Geometry;
+        geometry.Classification.Should().Be("fail");
+        geometry.MigrationLosses.Should().Be(1);
+        geometry.InheritedSourceDefects.Should().Be(0);
+        geometry.Reason.Should().Contain("lost in transfer");
+        result.Classification.Should().Be("fail");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_NewlyNullTargetGeometry_IsTransferLossBesideInheritedNulls()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 3,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false), (2, false), (3, true))
+        };
+        var request = BuildRequest(3, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(1);
+        geometry.Reason.Should().Contain("lost in transfer").And.Contain("inherited");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_MatchingNullGeometry_IsNotLossOrRepair()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.SourceDefectRewrites.Should().Be(0);
+        geometry.Reason.Should().Contain("inherited a null source geometry").And.Contain("none were repaired");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_NullSourceWithWellFormedTarget_IsNotASuccessfulRepair()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+        var geometry = result.Layers[0].Geometry;
+
+        result.Classification.Should().Be("warn");
+        geometry.Classification.Should().Be("warn");
+        geometry.InheritedSourceDefects.Should().Be(0);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.SourceDefectRewrites.Should().Be(1);
+        geometry.Reason.Should().Contain("not a successful repair");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceWithNullTarget_IsInheritedNotLoss()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.SourceDefectRewrites.Should().Be(0);
+        geometry.Reason.Should().Contain("invalid source geometry").And.Contain("none were repaired");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceWithWellFormedTarget_IsNotASuccessfulRepair()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader, new FixedTopologyValidator(valid: true)).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("warn");
+        geometry.InheritedSourceDefects.Should().Be(0);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.SourceDefectRewrites.Should().Be(1);
+        geometry.Reason.Should().Contain("not a successful repair");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceThatRemainsTopologicallyInvalid_IsInherited()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader, new FixedTopologyValidator(valid: false)).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.SourceDefectRewrites.Should().Be(0);
+        geometry.Reason.Should().Contain("invalid source geometry").And.Contain("none were repaired");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourcePopulation_BatchesOrderedTopologyResults()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with
+            {
+                SourceGeometry = new SourceGeometryCensus
+                {
+                    InvalidTargetFeatureIds = new HashSet<long> { 1, 2 }
+                }
+            }]
+        };
+        var topology = new RecordingBatchTopologyValidator(false, true);
+
+        var geometry = (await NewService(reader, topology).ReconcileAsync(request)).Layers[0].Geometry;
+
+        topology.BatchCalls.Should().Be(1);
+        topology.SingleCalls.Should().Be(0);
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.SourceDefectRewrites.Should().Be(1);
+        geometry.Classification.Should().Be(MigrationReconciliationClassifications.Warn);
+    }
+
+    [UnitTest]
+    public async Task Reconcile_IncompleteTopologyBatch_RefusesCensusQualification()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with
+            {
+                SourceGeometry = new SourceGeometryCensus
+                {
+                    InvalidTargetFeatureIds = new HashSet<long> { 1, 2 }
+                }
+            }]
+        };
+
+        var geometry = (await NewService(reader, new RecordingBatchTopologyValidator(true))
+            .ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be(MigrationReconciliationClassifications.Fail);
+        geometry.Reason.Should().Contain("could not be verified");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_InvalidSourceWithoutTopologyCheck_IsNotCountedAsRepair()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        InvalidTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.SourceDefectRewrites.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Reconcile_NewlyNullTargetGeometryBeyondTheFirstPage_IsTransferLoss()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = query =>
+            {
+                if ((query.Offset ?? 0) == 0)
+                {
+                    return QueryResult<Feature>.Create(
+                        2,
+                        ImmutableArray.Create(Feature.Create(1, [1, 1, 0, 0, 0], attributes)),
+                        hasMoreResults: true);
+                }
+
+                return QueryResult<Feature>.Create(
+                    2,
+                    ImmutableArray.Create(Feature.Create(2, null, attributes)));
+            }
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with { SourceGeometry = new SourceGeometryCensus() }]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        geometry.InheritedSourceDefects.Should().Be(0);
+        geometry.MigrationLosses.Should().Be(1);
+        geometry.SourceDefectRewrites.Should().Be(0);
+        geometry.Reason.Should().Contain("lost in transfer");
+        reader.SampleQueries.Should().HaveCount(2);
+        reader.SampleQueries[0].Offset.Should().Be(0);
+        reader.SampleQueries[1].Offset.Should().Be(1);
+        reader.SampleQueries.Should().OnlyContain(query => query.Where == null && query.OutputSrid == null);
+    }
+
+    [UnitTest]
+    public async Task Reconcile_ShortTerminalPage_DoesNotCertifyUnreadPopulation()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(
+                2,
+                ImmutableArray.Create(Feature.Create(1, [1, 1, 0, 0, 0], attributes)),
+                hasMoreResults: false)
+        };
+        var request = CensusRequest(2);
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        geometry.Reason.Should().Contain("did not cover the filtered population");
+        reader.SampleQueries.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task Reconcile_CensusLargerThanCount_DoesNotCertifyParity()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(
+                2,
+                ImmutableArray.Create(
+                    Feature.Create(1, [1, 1, 0, 0, 0], attributes),
+                    Feature.Create(2, [1, 1, 0, 0, 0], attributes)),
+                hasMoreResults: false)
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    TargetContainsOnlyImportedFeatures = true,
+                    SourceGeometry = new SourceGeometryCensus()
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+        var layer = result.Layers[0];
+
+        result.Classification.Should().Be("fail");
+        layer.Count.Classification.Should().Be("fail");
+        layer.Count.TargetCount.Should().Be(1);
+        layer.Geometry.Classification.Should().Be("fail");
+        layer.Geometry.Reason.Should().Contain("did not cover the filtered population");
+        layer.Count.Reason.Should().Contain("did not cover the filtered population");
+    }
+
+    [UnitTest]
+    public async Task Reconcile_EmptyTerminalPage_DoesNotCertifyKnownPopulation()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(2, ImmutableArray<Feature>.Empty, hasMoreResults: false)
+        };
+        var request = CensusRequest(2);
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        geometry.Reason.Should().Contain("did not cover the filtered population");
+        reader.SampleQueries.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task Reconcile_OffsetIgnoringReader_WithoutCount_DoesNotCertifyFirstPage()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            CountUnavailable = true,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(
+                1,
+                ImmutableArray.Create(Feature.Create(1, [1, 1, 0, 0, 0], attributes)),
+                hasMoreResults: true)
+        };
+        var request = CensusRequest(2);
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        reader.SampleQueries.Should().HaveCount(2);
+    }
+
+    [UnitTest]
+    public async Task Reconcile_DedicatedTarget_DoesNotExecuteDateFilterOrHideExtraRows()
+    {
+        const string sourceFilter = "DateOfFlight = DATE '2026-01-02'";
+        var reader = new StubFeatureReader
+        {
+            Count = 4,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 1)
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    FilterMirror = sourceFilter,
+                    TargetContainsOnlyImportedFeatures = true,
+                    FilterFieldMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["DateOfFlight"] = "date_of_flight"
+                    }
+                }
+            ]
+        };
+
+        var result = await NewFilteredService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Count.Classification.Should().Be("fail");
+        result.Layers[0].Count.SourceCount.Should().Be(2);
+        result.Layers[0].Count.TargetCount.Should().Be(4);
+        result.Layers[0].Count.FilterMirror.Should().Be(sourceFilter);
+        reader.CountQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+        reader.CountQueries[0].SqlFilter.Should().BeNull();
+        reader.ExtentQueries.Should().ContainSingle().Which!.Value.Where.Should().BeNull();
+        reader.SampleQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task Reconcile_CensusPopulation_UsesSourceCrsWhenExtentReprojectionApplies()
+    {
+        var source = BoundingBox.Create(361431.356, 3736037.969, 483556.921, 3783589.624, 26911);
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(-118.5013, 33.7591, -117.1778, 34.1842, 4326),
+            ComparisonExtent = FeatureExtent.Create(source.MinX, source.MinY, source.MaxX, source.MaxY, 26911),
+            Sample = BuildGeometrySample((1, true))
+        };
+        var request = BuildRequest(1, source, ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    PlannedTargetSrid = 4326,
+                    SourceGeometry = new SourceGeometryCensus()
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Extent.ComparisonTarget!.Value.Srid.Should().Be(26911);
+        reader.SampleQueries.Should().ContainSingle().Which.OutputSrid.Should().Be(26911);
+        reader.SampleQueries[0].Where.Should().BeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_StaleAdvertisedExtent_ComparesTargetWithQueriedExtent()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(-100, -100, -90, -90, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    QueriedSourceExtent = BoundingBox.Create(0, 0, 10, 10, 4326)
+                }
+            ]
+        };
+
+        var extent = (await NewService(reader).ReconcileAsync(request)).Layers[0].Extent;
+
+        extent.AdvertisedExtentStale.Should().BeTrue();
+        extent.Classification.Should().Be("warn");
+        extent.QueriedSource!.Value.MinX.Should().Be(0);
+        extent.Source!.Value.MinX.Should().Be(-100);
+        extent.Reason.Should().Contain("queried");
+        extent.MaxDimensionDelta.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_StaleAdvertisedExtent_StillFailsWhenTargetMissesQueriedExtent()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(50, 50, 60, 60, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(-100, -100, -90, -90, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    QueriedSourceExtent = BoundingBox.Create(0, 0, 10, 10, 4326)
+                }
+            ]
+        };
+
+        var extent = (await NewService(reader).ReconcileAsync(request)).Layers[0].Extent;
+
+        extent.AdvertisedExtentStale.Should().BeTrue();
+        extent.Classification.Should().Be("fail");
+        extent.Reason.Should().Contain("queried extent");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_SharedTarget_RewritesFilterFieldsAndPreservesLiterals()
+    {
+        const string sourceFilter = "\"DateOfFlight\" = DATE '2026-01-01' AND UPPER(STATUS) = 'DateOfFlight'";
+        var reader = new StubFeatureReader
+        {
+            Count = 100,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 5)
+        };
+        var request = BuildRequest(100, BoundingBox.Create(0, 0, 10, 10, 4326), ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    FilterMirror = sourceFilter,
+                    FilterFieldMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["DateOfFlight"] = "flight_date",
+                        ["STATUS"] = "status",
+                        ["UPPER"] = "must_not_replace_function"
+                    }
+                }
+            ]
+        };
+
+        FilterExpression? translated = null;
+        var service = NewFilteredService(reader, expression => translated = expression);
+        await service.ReconcileAsync(request);
+
+        var expected = new GeoServicesSqlParser().Parse("flight_date = DATE '2026-01-01' AND UPPER(status) = 'DateOfFlight'");
+        translated.Should().BeEquivalentTo(expected, options => options.RespectingRuntimeTypes());
+        reader.CountQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+        reader.CountQueries[0].SqlFilter.Should().NotBeNull();
+        reader.SampleQueries.Should().ContainSingle().Which.SqlFilter.Should().BeSameAs(reader.CountQueries[0].SqlFilter);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_SharedTargetWithFilterMirror_KeepsMirroredPredicateAndTolerance()
+    {
+        const string sourceFilter = "STATUS = 'open'";
+        var reader = new StubFeatureReader
+        {
+            Count = 101,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 5)
+        };
+        var request = BuildRequest(100, BoundingBox.Create(0, 0, 10, 10, 4326), ["OBJECTID", "NAME"]);
+        request = request with { Layers = [request.Layers[0] with { FilterMirror = sourceFilter }] };
+
+        var result = await NewFilteredService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Count.Classification.Should().Be("pass");
+        reader.CountQueries.Should().ContainSingle().Which.SqlFilter.Should().NotBeNull();
+        reader.CountQueries[0].Where.Should().BeNull();
+        reader.SampleQueries.Should().ContainSingle().Which.SqlFilter.Should().BeSameAs(reader.CountQueries[0].SqlFilter);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Reconcile_SharedFilterWithoutCompiler_FailsWithoutReadingUnfilteredRows()
+    {
+        var reader = new StubFeatureReader();
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 1, 1, 4326), ["NAME"]);
+        request = request with { Layers = [request.Layers[0] with { FilterMirror = "STATUS = 'open'" }] };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Count.Classification.Should().Be("fail");
+        reader.CountQueries.Should().BeEmpty();
+        reader.SampleQueries.Should().BeEmpty();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(false, null, false)]
+    [InlineData(true, "STATUS = 'open'", false)]
+    [InlineData(false, "STATUS = 'open'", true)]
+    public async Task Reconcile_ProviderWithoutFilterService_OnlyFilteredSharedTargetFails(bool dedicated, string? filter, bool fails)
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 1, 1, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 1)
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 1, 1, 4326), ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with { FilterMirror = filter, TargetContainsOnlyImportedFeatures = dedicated }]
+        };
+        var metadata = new Mock<IMetadataV2GraphProvider>(MockBehavior.Strict);
+        var service = new LayerReconciliationService(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance,
+            new ReconciliationQueryBuilder(metadata.Object));
+
+        var result = await service.ReconcileAsync(request);
+
+        result.Layers[0].Count.Classification.Should().Be(fails ? "fail" : "pass");
+        reader.CountQueries.Should().HaveCount(fails ? 0 : 1);
+        reader.SampleQueries.Should().HaveCount(fails ? 0 : 1);
+        metadata.VerifyNoOtherCalls();
+    }
+
+    private static LayerReconciliationService NewFilteredService(StubFeatureReader reader, Action<FilterExpression>? translated = null)
+    {
+        var resource = new MetadataV2Resource { Metadata = new() { Id = "target" } };
+        var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
+        {
+            Resources = [resource],
+            StorageBindings = [new() { Metadata = new() { Id = "binding" }, ResourceId = "target", StorageLayerId = 1 }]
+        }, "test", DateTimeOffset.UtcNow);
+        var graph = new Mock<IMetadataV2GraphProvider>();
+        graph.Setup(provider => provider.GetCurrentAsync(It.IsAny<CancellationToken>())).ReturnsAsync(snapshot);
+        var filters = new Mock<IFilterExpressionService>();
+        filters.Setup(service => service.Parse(FilterLanguage.ArcGisSql, It.IsAny<string>()))
+            .Returns((FilterLanguage _, string filter) => FilterParseResult.Success(new GeoServicesSqlParser().Parse(filter)));
+        filters.Setup(service => service.Translate(It.IsAny<FilterExpression>(), resource))
+            .Returns((FilterExpression expression, MetadataV2Resource _) =>
+            {
+                translated?.Invoke(expression);
+                return FilterTranslationResult.Success(expression, new SqlFragment("status = @p0", ["open"]));
+            });
+        return new LayerReconciliationService(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance,
+            new ReconciliationQueryBuilder(graph.Object, filters.Object));
+    }
+
+    private static LayerReconciliationRequest CensusRequest(long sourceCount)
+    {
+        var request = BuildRequest(sourceCount, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        return request with
+        {
+            Layers = [request.Layers[0] with { SourceGeometry = new SourceGeometryCensus() }]
+        };
+    }
 
     private static LayerReconciliationRequest BuildRequest(
         long sourceCount,
@@ -137,6 +1033,15 @@ public sealed class LayerReconciliationServiceTests
         int rows)
         => BuildSampleInternal([fieldsTwo.Item1, fieldsTwo.Item2], validGeometry, rows);
 
+    private static QueryResult<Feature> BuildGeometrySample(params (long Id, bool Valid)[] rows)
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var items = rows
+            .Select(row => Feature.Create(row.Id, row.Valid ? [1, 1, 0, 0, 0] : null, attributes))
+            .ToImmutableArray();
+        return QueryResult<Feature>.Create(rows.Length, items);
+    }
+
     private static QueryResult<Feature> BuildSampleInternal(string[] fields, bool validGeometry, int rows)
     {
         var attrs = fields.ToImmutableDictionary(f => f, _ => (object?)"x");
@@ -148,20 +1053,136 @@ public sealed class LayerReconciliationServiceTests
         return QueryResult<Feature>.Create(rows, items);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(0, "pass")]
+    [InlineData(5000, "fail")]
+    public async Task Reconcile_PlannedReprojection_ComparesTargetRowsInSourceCrs(double offset, string expected)
+    {
+        var source = BoundingBox.Create(361431.356, 3736037.969, 483556.921, 3783589.624, 26911);
+        var reader = new StubFeatureReader
+        {
+            Count = 26,
+            Extent = FeatureExtent.Create(-118.5013, 33.7591, -117.1778, 34.1842, 4326),
+            ComparisonExtent = FeatureExtent.Create(source.MinX + offset, source.MinY, source.MaxX + offset, source.MaxY, 26911),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 26)
+        };
+        var request = BuildRequest(26, source, ["OBJECTID", "NAME"]);
+        request = request with { Layers = [request.Layers[0] with { PlannedTargetSrid = 4326 }] };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Extent.Classification.Should().Be(expected);
+        result.Layers[0].Extent.Source!.Value.Srid.Should().Be(26911);
+        result.Layers[0].Extent.Target!.Value.Srid.Should().Be(4326);
+        result.Layers[0].Extent.ComparisonTarget!.Value.Srid.Should().Be(26911);
+        reader.ExtentQueries.Should().HaveCount(2);
+        reader.ExtentQueries[1]!.Value.OutputSrid.Should().Be(26911);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(4326, 0, "warn")]
+    [InlineData(3857, 0, "warn")]
+    [InlineData(null, 0, "pass")]
+    [InlineData(4326, 5000, "fail")]
+    public async Task Reconcile_QueriedExtentCrs_UsesSelectedBaselineForTargetObservation(
+        int? advertisedSrid, double offset, string expected)
+    {
+        var queried = BoundingBox.Create(361431.356, 3736037.969, 483556.921, 3783589.624, 26911);
+        var reader = new StubFeatureReader
+        {
+            Count = 26,
+            Extent = FeatureExtent.Create(-118.5013, 33.7591, -117.1778, 34.1842, 4326),
+            ComparisonExtent = FeatureExtent.Create(
+                queried.MinX + offset, queried.MinY, queried.MaxX + offset, queried.MaxY, 26911),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 26)
+        };
+        var request = BuildRequest(26, queried, ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceExtent = advertisedSrid is { } srid ? BoundingBox.Create(0, 0, 10, 10, srid) : null,
+                    QueriedSourceExtent = queried,
+                    PlannedTargetSrid = 4326
+                }
+            ]
+        };
+
+        var extent = (await NewService(reader).ReconcileAsync(request)).Layers[0].Extent;
+
+        extent.Classification.Should().Be(expected);
+        (extent.Source?.Srid).Should().Be(advertisedSrid);
+        extent.QueriedSource!.Value.Srid.Should().Be(26911);
+        extent.ComparisonTarget!.Value.Srid.Should().Be(26911);
+        extent.AdvertisedExtentStale.Should().Be(advertisedSrid.HasValue);
+        reader.ExtentQueries.Should().HaveCount(2);
+        reader.ExtentQueries[1]!.Value.OutputSrid.Should().Be(26911);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(4326, null)]
+    [InlineData(4326, 3857)]
+    [InlineData(3857, 26911)]
+    public async Task Reconcile_UnplannedOrUnobservedReprojection_CannotPass(int? plannedSrid, int? comparisonSrid)
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 26,
+            // Identical coordinate numbers do not prove parity when their CRSs differ.
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            ComparisonExtent = comparisonSrid is { } srid ? FeatureExtent.Create(0, 0, 10, 10, srid) : null,
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 26)
+        };
+        var request = BuildRequest(26, BoundingBox.Create(0, 0, 10, 10, 26911), ["OBJECTID", "NAME"]);
+        request = request with { Layers = [request.Layers[0] with { PlannedTargetSrid = plannedSrid }] };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Extent.Classification.Should().Be("fail");
+        result.Layers[0].Extent.ComparisonTarget.Should().BeNull();
+    }
+
     private sealed class StubFeatureReader : IFeatureReader
     {
         public long Count { get; init; }
+
+        public bool CountUnavailable { get; init; }
         public FeatureExtent? Extent { get; init; }
+        public FeatureExtent? ComparisonExtent { get; init; }
+        public List<FeatureQuery?> ExtentQueries { get; } = [];
+        public List<FeatureQuery> CountQueries { get; } = [];
+        public List<FeatureQuery> SampleQueries { get; } = [];
         public QueryResult<Feature> Sample { get; init; } = QueryResult<Feature>.Empty();
+        public Func<FeatureQuery, QueryResult<Feature>>? QueryByPage { get; init; }
 
         public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-            => Task.FromResult(Count);
+        {
+            CountQueries.Add(query);
+            if (CountUnavailable)
+            {
+                throw new InvalidOperationException("count unavailable");
+            }
+
+            return Task.FromResult(Count);
+        }
 
         public Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(Extent);
+        {
+            ExtentQueries.Add(query);
+            return Task.FromResult(query?.OutputSrid is not null ? ComparisonExtent : Extent);
+        }
 
         public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-            => Task.FromResult(Sample);
+        {
+            SampleQueries.Add(query);
+            return Task.FromResult(QueryByPage is null ? Sample : QueryByPage(query));
+        }
 
         public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();

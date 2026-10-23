@@ -83,6 +83,18 @@ internal sealed class MapServerResponse
     public bool SingleFusedMapCache { get; init; }
 
     /// <summary>
+    /// Indicates whether clients may create offline tile packages from the cache.
+    /// </summary>
+    [JsonPropertyName("exportTilesAllowed")]
+    public bool ExportTilesAllowed { get; init; }
+
+    /// <summary>
+    /// Maximum number of tiles accepted by one export operation.
+    /// </summary>
+    [JsonPropertyName("maxExportTilesCount")]
+    public int MaxExportTilesCount { get; init; }
+
+    /// <summary>
     /// Supported image format types.
     /// </summary>
     [JsonPropertyName("supportedImageFormatTypes")]
@@ -136,6 +148,10 @@ internal sealed class MapServerResponse
     [JsonPropertyName("supportedQueryFormats")]
     public string? SupportedQueryFormats { get; init; }
 
+    /// <summary>Companion feature and version-management extensions available to the caller.</summary>
+    [JsonPropertyName("supportedExtensions")]
+    public string SupportedExtensions { get; init; } = string.Empty;
+
     /// <summary>
     /// Minimum visible scale for the service.
     /// </summary>
@@ -158,6 +174,7 @@ internal sealed class MapServerResponse
     /// Tile caching information for the service (WebMercatorQuad tile matrix set).
     /// </summary>
     [JsonPropertyName("tileInfo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
 
     /// <summary>
@@ -591,6 +608,12 @@ internal sealed class MapServerLayerResponse
     /// </summary>
     [JsonPropertyName("spatialReference")]
     public EsriSpatialReference? SpatialReference { get; init; }
+
+    /// <summary>
+    /// Spatial reference of the source dataset, which can differ from the map CRS.
+    /// </summary>
+    [JsonPropertyName("sourceSpatialReference")]
+    public EsriSpatialReference? SourceSpatialReference { get; init; }
 
     /// <summary>
     /// Field name used by clients for display.

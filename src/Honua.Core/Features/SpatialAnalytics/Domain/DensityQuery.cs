@@ -21,7 +21,8 @@ public enum DensityBinningMode
 
 /// <summary>
 /// Defines a density (heatmap) operation that bins input features into a hex
-/// or square grid in Web Mercator (3857) and returns one row per occupied cell
+/// or square grid. Geographic layers use an azimuthal equidistant metre plane;
+/// other layers use Web Mercator. Each occupied cell is returned
 /// with the cell boundary geometry plus a count or weighted sum.
 /// </summary>
 public readonly record struct DensityQuery

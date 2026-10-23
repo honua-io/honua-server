@@ -17,6 +17,7 @@ using FileGdb = Honua.Core.Features.FileImport.Services.FileGdb;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using NetTopologySuite.Features;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
@@ -52,6 +53,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private const string EnsureImportTableSql = "SELECT honua.ensure_import_table(@schema_name, @table_name, @target_srid)";
     private const string CreateImportStagingTableSql = "SELECT honua.create_import_staging_table(@schema_name, @table_name, @target_srid)";
     private const string SwapImportTableSql = "SELECT honua.swap_import_table(@schema_name, @table_name)";
+    private const string DropImportStagingTableSql = "SELECT honua.drop_import_staging_table(@schema_name, @table_name)";
     private const string EnsureImportUpsertKeySql = "SELECT honua.ensure_import_upsert_key(@schema_name, @table_name, @key_columns)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties)";
     private const string InsertImportFeatureWithDatumSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties, @datum_pipeline)";
@@ -130,28 +132,82 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// such case the import keeps PROJ's default (2-argument <c>ST_Transform</c>) behavior.
     /// </summary>
     /// <remarks>
-    /// Only forward selections are applied. The catalog synthesizes reverse directions with
-    /// <see cref="DatumTransformationSelection.TransformForward"/> set to <see langword="false"/> but
-    /// keeps the forward <see cref="DatumTransformationSelection.ProjPipeline"/>; applying that forward
-    /// pipeline to reverse-direction input (e.g. a NAD27→NAD83 NADCON shift on NAD83 coordinates) would
-    /// corrupt the result. Until inverse pipelines are emitted, reverse-direction imports fall back to
-    /// PROJ's default path rather than the (wrong-way) explicit pipeline.
+    /// Reverse selections are oriented with <see cref="ProjPipelineInverter"/> before they
+    /// are bound. <c>honua.insert_import_feature</c> executes a non-empty pipeline with
+    /// <c>ST_TransformPipeline</c>. An exact <c>+proj=noop</c> selection is returned as-is;
+    /// the function rewrites that to <c>ST_SetSRID</c> so every ordinate is kept.
     /// </remarks>
-    private string? ResolveImportDatumPipeline(int sourceSrid, int targetSrid)
+    private string? ResolveImportDatumPipeline(
+        int sourceSrid,
+        int targetSrid,
+        DatumAreaEnvelope? envelope = null)
     {
         if (sourceSrid == targetSrid || _datumTransformationCatalog is null)
         {
             return null;
         }
 
+        if (envelope is { } area)
+        {
+            if (_datumTransformationCatalog.TryGetForEnvelope(
+                    sourceSrid,
+                    targetSrid,
+                    area.West,
+                    area.South,
+                    area.East,
+                    area.North,
+                    out var areaSelection)
+                && areaSelection.ProjPipeline is { Length: > 0 } areaPipeline)
+            {
+                return ProjPipelineInverter.Orient(areaPipeline, areaSelection.TransformForward);
+            }
+
+            if (_datumTransformationCatalog.HasAreaOfUse(sourceSrid, targetSrid))
+            {
+                // The envelope is in no catalog area, or it meets more than one.
+                // Do not fall back to the CONUS NAD27 grid.
+                return null;
+            }
+        }
+
         if (_datumTransformationCatalog.TryGetDefault(sourceSrid, targetSrid, out var selection)
-            && selection.TransformForward
             && selection.ProjPipeline is { Length: > 0 } pipeline)
         {
-            return pipeline;
+            return ProjPipelineInverter.Orient(pipeline, selection.TransformForward);
         }
 
         return null;
+    }
+
+    private static DatumAreaEnvelope? TryImportEnvelope(IReadOnlyList<IFeature> features, int sourceSrid)
+    {
+        if (!GeographicSridClassifier.IsGeographicSrid(sourceSrid))
+        {
+            return null;
+        }
+
+        double? west = null;
+        double? south = null;
+        double? east = null;
+        double? north = null;
+        // codeql[cs/linq/missed-select]: folds feature envelopes into one extent and skips null geometry
+        foreach (var feature in features)
+        {
+            var envelope = feature.Geometry?.EnvelopeInternal;
+            if (envelope is null || envelope.IsNull)
+            {
+                continue;
+            }
+
+            west = west is null ? envelope.MinX : Math.Min(west.Value, envelope.MinX);
+            south = south is null ? envelope.MinY : Math.Min(south.Value, envelope.MinY);
+            east = east is null ? envelope.MaxX : Math.Max(east.Value, envelope.MaxX);
+            north = north is null ? envelope.MaxY : Math.Max(north.Value, envelope.MaxY);
+        }
+
+        return west is null || south is null || east is null || north is null
+            ? null
+            : new DatumAreaEnvelope(west.Value, south.Value, east.Value, north.Value);
     }
 
     /// <inheritdoc/>
@@ -175,6 +231,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     {
         // Validate request has exactly one source: FileStream, CloudFileId, or LocalFilePath
         request.Validate();
+
+        // Refuse a reserved target schema before any source is read or connection opened (SEC-23).
+        _ = ResolveTargetSchema(request.TargetSchema);
 
         var stopwatch = Stopwatch.StartNew();
         var format = DetectFormat(request.FileName);
@@ -360,9 +419,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     return result;
                 }
 
-                detectedSrid = layers.Length == 1 && layers[0].Srid > 0
-                    ? layers[0].Srid
-                    : FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                // A geodatabase with no feature classes has nothing to georeference (the import
+                // reports NoFeaturesFound), so only then is the target SRID an acceptable source.
+                // Otherwise an unresolvable CRS must fail with SourceSridRequired like every other
+                // format instead of silently assuming the target SRID (#6114).
+                detectedSrid = request.SourceSrid
+                    ?? (layers.Length == 0
+                        ? request.TargetSrid
+                        : await ResolveFileGdbSridAsync(layers, cancellationToken));
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
@@ -441,10 +505,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 fileStream.Position = 0;
             }
 
-            // For FileGDB with no detectable SRID, fall back to TargetSrid (coordinates
-            // may not need transformation if the GDB has no spatial features).
-            var sourceSrid = request.SourceSrid ?? detectedSrid
-                ?? (format.Value == SupportedFileFormat.FileGdb ? request.TargetSrid : null);
+            var sourceSrid = request.SourceSrid ?? detectedSrid;
             if (!sourceSrid.HasValue)
             {
                 errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
@@ -543,7 +604,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             IReadOnlyList<ImportValidationIssue> rowIssues;
             int repairedCount;
             string physicalTableName;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName) = await ImportStreamingAsync(
+            bool replacementBlocked;
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -555,15 +617,48 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 shapefileScratch,
                 fileGdbScratch);
 
-            if (importedCount == 0 && failedCount == 0)
+            // A replace whose load dropped rows against an already-populated target never
+            // promoted its staging sibling (see ImportStreamingAsync) — the live target is
+            // unchanged. Report that truthfully rather than a complete success: the caller asked
+            // to replace the whole dataset and got nothing applied instead (#4006).
+            if (replacementBlocked)
             {
-                errorMessage = "No features found in file";
+                errorMessage = $"Import failed: {failedCount} feature(s) could not be imported; " +
+                    "the replace was not applied and the prior target is unchanged.";
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,
                     errorMessage,
                     stopwatch.Elapsed,
                     warnings);
+                return result;
+            }
+
+            if (importedCount == 0)
+            {
+                if (failedCount > 0)
+                {
+                    errorMessage = FormattableString.Invariant(
+                        $"Import failed: all {failedCount} feature(s) were skipped or rejected and no rows were loaded.");
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings,
+                        ImportValidationErrorCodes.AllRowsFailed);
+                }
+                else
+                {
+                    errorMessage = "No features found in file";
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings);
+                }
+
                 return result;
             }
 
@@ -609,6 +704,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             // Preserve cancellation for UniversalImportJobService, which records the
             // terminal Cancelled state and uses a non-cancelled token for its receipt.
+            // The metric and the finally log otherwise stay on the failed path.
+            status = "cancelled";
             throw;
         }
         catch (ImportGeometryTooLargeException ex)
@@ -654,13 +751,16 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // explanation and includes the SQL state code so operators can correlate
             // without leaking provider internals.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
-            errorMessage = $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
+            errorMessage = ex.SqlState == "HN409"
+                ? $"IMPORT_TARGET_NOT_OWNED: Import target '{request.TableName}' or its staging table is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to adopt a verified legacy import."
+                : $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
             result = ImportResult.CreateFailure(
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,
                 errorMessage,
                 stopwatch.Elapsed,
-                warnings);
+                warnings,
+                errorCode: ex.SqlState == "HN409" ? ImportTableOwnershipException.Code : null);
             return result;
         }
         // Intentionally broad: this is the top-level import job handler — any unexpected failure

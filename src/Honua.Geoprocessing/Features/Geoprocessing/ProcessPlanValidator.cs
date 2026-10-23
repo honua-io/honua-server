@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Sql;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Geoprocessing.Execution;
 
@@ -60,6 +61,9 @@ internal static partial class ProcessPlanValidator
     // worker rather than failing at the CLI boundary.
     private static readonly HashSet<string> RasterMosaicOperatorValues =
         new(ProcessValueDomains.RasterMosaicOperator, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> KrigingVariogramModels =
+        new(ProcessValueDomains.KrigingVariogramModel, StringComparer.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> RasterFormatValues =
         new(ProcessValueDomains.RasterFormat, StringComparer.OrdinalIgnoreCase);
@@ -116,7 +120,7 @@ internal static partial class ProcessPlanValidator
     // handler rejects (the analytics endpoints already overload `distance`).
     private static readonly HashSet<string> RejectedSpatialRelValues = new(StringComparer.OrdinalIgnoreCase)
     {
-        "esriSpatialRelWithinDistance", "esriSpatialRelBeyondDistance"
+        "withinDistance", "beyondDistance"
     };
 
     /// <summary>
@@ -339,10 +343,7 @@ internal static partial class ProcessPlanValidator
                 ValidateRasterInterpolateIdwSemantics(step, violations);
                 break;
             case "raster.interpolate-kriging":
-                // Kriging remains shape-validated here so diagnostic tooling can
-                // describe malformed inputs. The catalog capability layer classifies
-                // it as Unavailable and the direct-submit validator rejects execution
-                // with the canonical operator-facing reason.
+                ValidateRasterInterpolateKrigingSemantics(step, violations);
                 break;
             case "raster.mosaic":
                 ValidateRasterMosaicSemantics(step, violations);
@@ -352,8 +353,8 @@ internal static partial class ProcessPlanValidator
                 // whether a backend is actually configured is a deployment concern the
                 // static validator cannot see, so an unconfigured deployment surfaces
                 // the clear "no cloud inference backend is configured" message as a
-                // job failure at execution. Unlike unavailable kriging, imagery is a
-                // configuration-dependent Job capability and remains directly callable.
+                // job failure at execution. Imagery is a configuration-dependent Job
+                // capability and remains directly callable.
                 ValidateImageryClassifySemantics(step, violations);
                 break;
             case "raster.map-algebra":
@@ -497,8 +498,10 @@ internal static partial class ProcessPlanValidator
             case "source.postgis":
                 // The external-PostGIS source reuses the same secure-connection contract
                 // as the sink: a registered connectionName XOR connectionId, never an
-                // inline connection string.
+                // inline connection string. where is appended into the SELECT, so refuse
+                // a predicate the read-only single-statement check would reject.
                 ValidateExternalPostgisSinkSemantics(step, violations);
+                ValidateExternalPostgisWhere(step, violations);
                 break;
         }
     }
@@ -588,6 +591,30 @@ internal static partial class ProcessPlanValidator
         ValidatePostgisIdentifier(step, "table", violations);
         ValidatePostgisIdentifier(step, "schema", violations);
         ValidatePostgisIdentifier(step, "geometryColumn", violations);
+    }
+
+    private static void ValidateExternalPostgisWhere(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("where", out var where)
+            || string.IsNullOrWhiteSpace(where))
+        {
+            return;
+        }
+
+        // ExternalPostgisDagSource appends the predicate inside one SELECT.
+        var sql = "SELECT 1 FROM \"t\" WHERE (" + where + ")";
+        try
+        {
+            ReadOnlyDynamicSql.ValidateReadOnlySingleStatement(sql);
+        }
+        catch (ArgumentException)
+        {
+            AddRangeViolationIfNew(step, "where",
+                "expected a single read-only predicate without a statement separator, comment, or mutating SQL",
+                violations);
+        }
     }
 
     private static void ValidatePostgisIdentifier(
@@ -1304,6 +1331,44 @@ internal static partial class ProcessPlanValidator
         // gdal_grid -outsize requires BOTH dimensions; reject a half-specified grid up
         // front so submit-time validation matches the executor (which fails the job for
         // the same XOR), mirroring ValidateConversionRasterizeSemantics.
+        var hasWidth = step.Inputs.TryGetValue("width", out var width) && !string.IsNullOrWhiteSpace(width);
+        var hasHeight = step.Inputs.TryGetValue("height", out var height) && !string.IsNullOrWhiteSpace(height);
+        if (hasWidth ^ hasHeight)
+        {
+            AddRangeViolationIfNew(step, "width", "supply both 'width' and 'height' together to set the output grid size", violations);
+        }
+    }
+
+    private static void ValidateRasterInterpolateKrigingSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'points' is a declared-required base64 input enforced by the base
+        // type-validator. Range-check the variogram knobs so a plan accepted here is
+        // accepted by the worker's kriging solver rather than failing at execution.
+        RequireNonNegativeFiniteDouble(step, "nugget", violations);
+        RequirePositiveFiniteDouble(step, "sill", violations);
+        RequirePositiveFiniteDouble(step, "range", violations);
+        RequireIntAtLeast(step, "width", 1, violations);
+        RequireIntAtLeast(step, "height", 1, violations);
+
+        if (step.Inputs.TryGetValue("model", out var modelRaw)
+            && !string.IsNullOrWhiteSpace(modelRaw)
+            && !KrigingVariogramModels.Contains(modelRaw.Trim()))
+        {
+            AddEnumViolation(step, "model", modelRaw, "spherical, exponential, gaussian", violations);
+        }
+
+        // The sill is the TOTAL sill, so a sill below the nugget is not a variogram.
+        if (TryReadOptionalFinite(step, "nugget", out var nugget)
+            && TryReadOptionalFinite(step, "sill", out var sill)
+            && sill < nugget)
+        {
+            AddRangeViolationIfNew(step, "sill", "'sill' is the total sill and must be greater than or equal to 'nugget'", violations);
+        }
+
+        // The worker grids the point extent into width×height cells and needs both;
+        // reject a half-specified grid up front, mirroring the IDW path.
         var hasWidth = step.Inputs.TryGetValue("width", out var width) && !string.IsNullOrWhiteSpace(width);
         var hasHeight = step.Inputs.TryGetValue("height", out var height) && !string.IsNullOrWhiteSpace(height);
         if (hasWidth ^ hasHeight)
@@ -2185,7 +2250,7 @@ internal static partial class ProcessPlanValidator
         if (RejectedSpatialRelValues.Contains(raw.Trim()))
         {
             AddRangeViolationIfNew(step, "spatialRel",
-                $"distance-based spatial relationships (esriSpatialRelWithinDistance / esriSpatialRelBeyondDistance) are not supported; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead, got '{raw}'",
+                $"distance-based spatial relationships (withinDistance / beyondDistance) are not supported; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead, got '{raw}'",
                 violations);
         }
     }
@@ -2627,6 +2692,20 @@ internal static partial class ProcessPlanValidator
     // Range checks emit one violation per field, even when multiple bounds or
     // type checks would each report the same parameter. Keeps error payloads
     // small enough for user-facing surfaces without hiding any offending field.
+    /// <summary>
+    /// Reads an optional finite numeric input, returning <see langword="false"/> when the
+    /// caller omitted it or it is not a finite number — the range checks above already
+    /// report a malformed value, so cross-parameter rules simply skip it.
+    /// </summary>
+    private static bool TryReadOptionalFinite(AnalysisPlanStep step, string parameter, out double value)
+    {
+        value = 0d;
+        return step.Inputs.TryGetValue(parameter, out var raw)
+            && !string.IsNullOrWhiteSpace(raw)
+            && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+            && double.IsFinite(value);
+    }
+
     private static void AddRangeViolationIfNew(
         AnalysisPlanStep step,
         string parameter,

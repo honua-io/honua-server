@@ -16,6 +16,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// Pure string/JSON transforms over a hand-built <see cref="ProcessDefinition"/>; no Redis,
 /// catalog, or control plane.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpDescribeRendererTests
 {
     private static ProcessDefinition SampleDefinition() => new()
@@ -71,7 +72,7 @@ public sealed class GpDescribeRendererTests
         text.Should().Contain("outputs     : FeatureLayer");
         // The example invocation only carries the required parameters.
         text.Should().Contain("honua gp run geometry.buffer --param wkb=");
-        text.Should().Contain("--param distance=0.0");
+        text.Should().Contain("--param distance=<number>");
         text.Should().NotContain("--param endCap");
     }
 

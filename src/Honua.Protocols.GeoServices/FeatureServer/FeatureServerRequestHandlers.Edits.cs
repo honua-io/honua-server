@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -16,6 +17,7 @@ using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
@@ -32,9 +34,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
         if (authorizationError != null)
@@ -59,7 +66,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "applyEdits");
@@ -69,9 +75,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         // addFeatures authorizes as Insert (BH3-001/BH3-014).
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Insert);
@@ -112,7 +123,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "addFeatures");
@@ -122,9 +132,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         // updateFeatures authorizes as Update (BH3-001/BH3-014).
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Update);
@@ -165,7 +180,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "updateFeatures");
@@ -175,9 +189,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.DeleteFeatures, out var parameterError))
         {
@@ -271,7 +290,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request);
     }
@@ -407,7 +425,10 @@ internal static partial class FeatureServerEndpoints
                     InSr = inSr
                 };
                 var spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
-                    deleteQueryParams, parsedGeometry, inputSrid);
+                    deleteQueryParams,
+                    parsedGeometry,
+                    inputSrid,
+                    limits.Geometry.MaxVerticesPerGeometry);
                 query = query with { SpatialFilter = spatialFilter };
             }
         }
@@ -456,7 +477,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsRequest request)
     {
@@ -469,38 +489,58 @@ internal static partial class FeatureServerEndpoints
 
         request.F = normalizedFormat;
 
-        if (request.UseGlobalIds)
+        var unsupportedControlError = CreateUnsupportedEditControlError(context, request);
+        if (unsupportedControlError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "useGlobalIds is not supported",
-                ["Set useGlobalIds to false and supply objectIds in attributes."]);
-        }
-
-        if (request.ReturnEditMoment)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "returnEditMoment is not supported");
+            return unsupportedControlError;
         }
 
         // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
         // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
         // Pro-gated and Postgres-only.
 
+        var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler.HandleApplyEditsAsync(
+        var result = await editsHandler.HandleApplyEditsAsync(
             serviceId,
             layerId,
             request,
             editLimits,
-            cancellationToken);
+            cancellationToken: cancellationToken);
+        return StampEditMoment(context, request, result);
     }
+
+    /// <summary>
+    /// Checks the FeatureServer editing entitlement (#4640) using only <paramref name="context"/> —
+    /// no dependency on <see cref="FeatureServerEditsHandler"/> or any of the services its
+    /// constructor pulls in (<c>IResourceValidator</c>, and therefore
+    /// <c>IMetadataV2GraphProvider</c>, plus a dozen others). Every write entrypoint calls this
+    /// FIRST, before any resource validation/authorization or the handler resolve below, so a
+    /// license-denied request never constructs that dependency graph — and a transient DI hiccup
+    /// inside it can never leak a raw 500 through the graceful 402 GeoServices refusal.
+    /// </summary>
+    private static IResult? RequireFeatureServerEditsEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
+
+    /// <summary>
+    /// Resolves the shared edits handler. Callers must confirm
+    /// <see cref="RequireFeatureServerEditsEntitlement"/> first (#4640) — every entrypoint in this
+    /// file does, at its top, before any other work.
+    /// </summary>
+    private static FeatureServerEditsHandler ResolveEditsHandler(HttpContext context)
+        => context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
 
     private static async Task<IResult> HandleServiceApplyEdits(
         string serviceId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -629,17 +669,10 @@ internal static partial class FeatureServerEndpoints
                 ["Service-level applyEdits does not accept attachment or assetMaps edits; submit them through the layer attachment endpoints."]);
         }
 
-        if (sharedOptions.UseGlobalIds)
+        var unsupportedControlError = CreateUnsupportedEditControlError(context, sharedOptions);
+        if (unsupportedControlError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "useGlobalIds is not supported",
-                ["Set useGlobalIds to false and supply objectIds in attributes."]);
-        }
-
-        if (sharedOptions.ReturnEditMoment)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "returnEditMoment is not supported");
+            return unsupportedControlError;
         }
 
         // gdbVersion (when present) flows to each per-layer ApplyEditsRequest below and is resolved
@@ -647,7 +680,7 @@ internal static partial class FeatureServerEndpoints
         // the byte-identical non-versioned path.
 
         // Group entries by layer id while preserving first-seen layer order so the response
-        // emits one editResults entry per distinct layer (matching ArcGIS), and merge their
+        // emits one result entry per distinct layer (matching ArcGIS), and merge their
         // adds/updates/deletes so each layer is applied in a single transaction.
         var orderedLayerIds = new List<int>();
         var mergedEdits = new Dictionary<int, ServiceLayerEdits>();
@@ -688,6 +721,8 @@ internal static partial class FeatureServerEndpoints
                  "Set rollbackOnFailure=false to allow partial commits, or submit each layer separately."]);
         }
 
+        var editsHandler = ResolveEditsHandler(context);
+
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
         // BH2-013: Track whether any non-first layer returned an error response so the
@@ -718,7 +753,7 @@ internal static partial class FeatureServerEndpoints
                 entry.Id,
                 request,
                 editLimits,
-                cancellationToken);
+                cancellationToken: cancellationToken);
 
             // Extract the ApplyEditsResponse from the IResult
             if (layerResult is Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
@@ -733,7 +768,10 @@ internal static partial class FeatureServerEndpoints
                     Id = entry.Id,
                     AddResults = response?.AddResults ?? [],
                     UpdateResults = response?.UpdateResults ?? [],
-                    DeleteResults = response?.DeleteResults ?? []
+                    DeleteResults = response?.DeleteResults ?? [],
+                    // Each layer commits in its own transaction; report the moment the edits handler
+                    // recorded for this layer's edits (#4105).
+                    EditMoment = sharedOptions.ReturnEditMoment ? response?.EditMoment ?? ResolveEditMoment(context) : null
                 };
             }
             else if (i == 0)
@@ -771,13 +809,17 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        var serviceResponse = new ServiceApplyEditsResponse { EditResults = results };
         var responseStatusCode = hasPartialFailure
             ? StatusCodes.Status207MultiStatus
             : StatusCodes.Status200OK;
-        return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse,
-            statusCode: responseStatusCode, contentType: "application/json");
+        return CreateServiceApplyEditsResult(results, responseStatusCode);
     }
+
+    internal static IResult CreateServiceApplyEditsResult(
+        ServiceLayerEditResult[] results,
+        int statusCode = StatusCodes.Status200OK)
+        => Results.Json(results, FeatureServerJsonContext.Default.ServiceLayerEditResultArray,
+            statusCode: statusCode, contentType: "application/json");
 
     /// <summary>
     /// Builds per-slot add failure entries for a layer whose applyEdits call returned a
@@ -1044,7 +1086,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsRequest request,
         string operationName)
@@ -1073,6 +1114,32 @@ internal static partial class FeatureServerEndpoints
 
         request.F = normalizedFormat;
 
+        var unsupportedControlError = CreateUnsupportedEditControlError(context, request);
+        if (unsupportedControlError is not null)
+        {
+            return unsupportedControlError;
+        }
+
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
+        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
+
+        var editsHandler = ResolveEditsHandler(context);
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var result = await editsHandler.HandleApplyEditsAsync(
+            serviceId,
+            layerId,
+            request,
+            editLimits,
+            cancellationToken: cancellationToken);
+        return StampEditMoment(context, request, result);
+    }
+
+    /// <summary>
+    /// Rejects applyEdits controls the server cannot honor. Each is a 400 rather than an accepted
+    /// no-op because ignoring it would drop edits or change what the client was promised (#4105).
+    /// </summary>
+    private static IResult? CreateUnsupportedEditControlError(HttpContext context, ApplyEditsRequest request)
+    {
         if (request.UseGlobalIds)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -1080,29 +1147,86 @@ internal static partial class FeatureServerEndpoints
                 ["Set useGlobalIds to false and supply objectIds in attributes."]);
         }
 
-        if (request.ReturnEditMoment)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "returnEditMoment is not supported");
-        }
-
-        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
-        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
-
         if (request.Attachments is { Length: > 0 })
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "attachments edits are not supported");
         }
 
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler.HandleApplyEditsAsync(
-            serviceId,
-            layerId,
-            request,
-            editLimits,
-            cancellationToken);
+        if (request.AssetMaps is { Length: > 0 })
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "assetMaps edits are not supported");
+        }
+
+        if (request.Async)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "async applyEdits is not supported",
+                ["Omit async or set it to false; edits are applied synchronously."]);
+        }
+
+        if (request.UseUniqueIds)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "useUniqueIds is not supported",
+                ["Set useUniqueIds to false and supply objectIds in attributes."]);
+        }
+
+        if (!string.IsNullOrEmpty(request.EditsUploadId) || !string.IsNullOrEmpty(request.EditsUploadFormat))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "editsUploadId and editsUploadFormat are not supported",
+                ["Send the edits inline in adds, updates and deletes."]);
+        }
+
+        if (request.DatumTransformation is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "datumTransformation is not supported",
+                ["Edit geometries must already be in the layer spatial reference."]);
+        }
+
+        return null;
     }
+
+    /// <summary>
+    /// Emits <c>editMoment</c> (server clock, epoch milliseconds) on a JSON applyEdits response only when
+    /// the client asked for it with returnEditMoment=true (#4105). A committed edit carries the moment the
+    /// edits handler recorded with the response, so an Idempotency-Key replay (#2250) reports the original
+    /// moment; a response the handler did not stamp (no committed write) gets the current server time. The
+    /// handler's object may be the replay record, so any change goes on a copy, never on that object.
+    /// </summary>
+    private static IResult StampEditMoment(HttpContext context, ApplyEditsRequest request, IResult result)
+    {
+        if (result is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> { Value: { } response } json)
+        {
+            return result;
+        }
+
+        long? editMoment = request.ReturnEditMoment ? response.EditMoment ?? ResolveEditMoment(context) : null;
+        if (response.EditMoment == editMoment)
+        {
+            return result;
+        }
+
+        var stamped = new ApplyEditsResponse
+        {
+            AddResults = response.AddResults,
+            UpdateResults = response.UpdateResults,
+            DeleteResults = response.DeleteResults,
+            Success = response.Success,
+            EditMoment = editMoment,
+        };
+        return Results.Json(
+            stamped,
+            FeatureServerJsonContext.Default.ApplyEditsResponse,
+            contentType: json.ContentType,
+            statusCode: json.StatusCode);
+    }
+
+    private static long ResolveEditMoment(HttpContext context)
+        => (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().ToUnixTimeMilliseconds();
 
     private static bool TryApplyEditOptionsFromQuery(
         ApplyEditsRequest request,
@@ -1156,12 +1280,73 @@ internal static partial class FeatureServerEndpoints
             request.GdbVersion = gdbVersion;
         }
 
-        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !StringValues.IsNullOrEmpty(attachmentsRaw))
+        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !IsEmptyEditPayload(attachmentsRaw.ToString()))
         {
             request.Attachments = [attachmentsRaw.ToString()];
         }
 
+        return TryParseUnsupportedEditControls(values, request, out error);
+    }
+
+    /// <summary>
+    /// Reads the Esri applyEdits controls this server cannot honor (#4105) so that a non-default
+    /// value is rejected by <see cref="CreateUnsupportedEditControlError"/> instead of being
+    /// dropped. Empty strings, empty JSON arrays and <c>false</c> are the defaults and stay accepted.
+    /// </summary>
+    private static bool TryParseUnsupportedEditControls(
+        IReadOnlyDictionary<string, StringValues> values,
+        ApplyEditsRequest request,
+        out string? error)
+    {
+        if (!TryParseBoolValue(values, "async", request.Async, out var isAsync, out error) ||
+            !TryParseBoolValue(values, "useUniqueIds", request.UseUniqueIds, out var useUniqueIds, out error))
+        {
+            return false;
+        }
+
+        request.Async = isAsync;
+        request.UseUniqueIds = useUniqueIds;
+        request.EditsUploadId = GetValueString(values, "editsUploadId") is { Length: > 0 } uploadId ? uploadId : request.EditsUploadId;
+        request.EditsUploadFormat = GetValueString(values, "editsUploadFormat") is { Length: > 0 } uploadFormat ? uploadFormat : request.EditsUploadFormat;
+        if (GetValueString(values, "assetMaps") is { } assetMaps && !IsEmptyEditPayload(assetMaps))
+        {
+            request.AssetMaps = [assetMaps];
+        }
+
+        if (GetValueString(values, "datumTransformation") is { } datumTransformation && !string.IsNullOrWhiteSpace(datumTransformation))
+        {
+            request.DatumTransformation = datumTransformation;
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// True when an attachments/assetMaps payload carries no edits: blank, JSON <c>null</c>, or a JSON
+    /// array with no elements however it is formatted (<c>[ ]</c>, a multi-line empty array). Anything
+    /// else, including text that is not JSON, counts as edits and is rejected rather than dropped.
+    /// </summary>
+    private static bool IsEmptyEditPayload(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.Null => true,
+                JsonValueKind.Array => document.RootElement.GetArrayLength() == 0,
+                _ => false,
+            };
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool HasServiceAttachmentPayload(JsonElement? payload)
@@ -1603,12 +1788,12 @@ internal static partial class FeatureServerEndpoints
         request.F = GetValueString(values, "f");
         request.GdbVersion = GetValueString(values, "gdbVersion");
 
-        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !StringValues.IsNullOrEmpty(attachmentsRaw))
+        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !IsEmptyEditPayload(attachmentsRaw.ToString()))
         {
             request.Attachments = [attachmentsRaw.ToString()];
         }
 
-        return true;
+        return TryParseUnsupportedEditControls(values, request, out error);
     }
 
     private static bool TryParseRequestOptions(
@@ -1662,9 +1847,52 @@ internal static partial class FeatureServerEndpoints
             request.GdbVersion = gdbVersionElement.GetString();
         }
 
-        if (root.TryGetProperty("attachments", out var attachmentsElement))
+        if (root.TryGetProperty("attachments", out var attachmentsElement) && !IsEmptyEditPayload(attachmentsElement.GetRawText()))
         {
             request.Attachments = [attachmentsElement.GetRawText()];
+        }
+
+        // Unsupported Esri controls (#4105): read them so a non-default value is rejected, not dropped.
+        if (root.TryGetProperty("async", out var asyncElement))
+        {
+            if (!TryParseBooleanElement(asyncElement, out var isAsync))
+            {
+                error = "async must be a boolean value";
+                return false;
+            }
+
+            request.Async = isAsync;
+        }
+
+        if (root.TryGetProperty("useUniqueIds", out var uniqueIdsElement))
+        {
+            if (!TryParseBooleanElement(uniqueIdsElement, out var useUniqueIds))
+            {
+                error = "useUniqueIds must be a boolean value";
+                return false;
+            }
+
+            request.UseUniqueIds = useUniqueIds;
+        }
+
+        if (root.TryGetProperty("editsUploadId", out var uploadIdElement) && uploadIdElement.ValueKind != JsonValueKind.Null)
+        {
+            request.EditsUploadId = uploadIdElement.ToString();
+        }
+
+        if (root.TryGetProperty("editsUploadFormat", out var uploadFormatElement) && uploadFormatElement.ValueKind != JsonValueKind.Null)
+        {
+            request.EditsUploadFormat = uploadFormatElement.ToString();
+        }
+
+        if (root.TryGetProperty("assetMaps", out var assetMapsElement) && !IsEmptyEditPayload(assetMapsElement.GetRawText()))
+        {
+            request.AssetMaps = [assetMapsElement.GetRawText()];
+        }
+
+        if (root.TryGetProperty("datumTransformation", out var datumElement) && datumElement.ValueKind != JsonValueKind.Null)
+        {
+            request.DatumTransformation = datumElement.GetRawText();
         }
 
         return true;

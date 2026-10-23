@@ -8,6 +8,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!--
       GP Devkit dev tool (#2123). Packaged as a local dotnet tool (`honua gp`) for
@@ -17,8 +18,10 @@
       ProjectReferences) never pulls it in. The tool itself is NOT AOT-published.
     -->
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>honua-gp</ToolCommandName>
-    <IsPackable>false</IsPackable>
+    <ToolCommandName>honua-gp-devkit</ToolCommandName>
+    <IsPackable>true</IsPackable>
+    <PackageId>Honua.Geoprocessing.Cli</PackageId>
+    <Description>Local Honua geoprocessing runner, discovery, validation, and golden tests.</Description>
     <PublishAot>false</PublishAot>
 
     <!-- Console front-end intentionally writes to stdout/stderr. -->
@@ -43,8 +46,41 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- honua-gp.yaml descriptor parsing for `release` (#6221); the devkit is not AOT-published. -->
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The publish-command pipeline is internal; the offline unit tests exercise it directly. -->
     <InternalsVisibleTo Include="Honua.Geoprocessing.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      `honua-gp-devkit init` (#6217) copies the honua-samples GP templates byte for byte.
+      They are embedded here together with their TEMPLATE-MANIFEST.json (per-file SHA-256),
+      which GpCustomProjectScaffolder.VerifyEmbedded checks, so drift between the devkit and
+      honua-samples trunk is a test failure, not a surprise. Keep the resource names as the
+      template-relative paths.
+    -->
+    <Compile Remove="Templates\**" />
+    <None Remove="Templates\**" />
+    <EmbeddedResource Include="Templates\**\*" LogicalName="Templates/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pack the matching local harness and SDK as source payload, independent of a server checkout.
+         Explicit source globs exclude build output, credentials, caches and development fixtures. -->
+    <EmbeddedResource Include="../../docker/worker-customcode-python/harness/honua_customcode_harness/*.py"
+                      LogicalName="Toolchain/docker/worker-customcode-python/harness/honua_customcode_harness/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../docker/worker-customcode-python/harness/pyproject.toml;../../docker/worker-customcode-python/harness/README.md"
+                      LogicalName="Toolchain/docker/worker-customcode-python/harness/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../docker/worker-customcode-dotnet/harness/src/**/*.cs;../../docker/worker-customcode-dotnet/harness/src/**/*.csproj"
+                      Exclude="../../docker/worker-customcode-dotnet/harness/src/**/obj/**;../../docker/worker-customcode-dotnet/harness/src/**/bin/**"
+                      LogicalName="Toolchain/docker/worker-customcode-dotnet/harness/src/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../docker/worker-customcode-dotnet/harness/Directory.Build.props;../../docker/worker-customcode-dotnet/harness/Directory.Packages.props;../../docker/worker-customcode-dotnet/harness/NuGet.config"
+                      LogicalName="Toolchain/docker/worker-customcode-dotnet/harness/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../LICENSE" LogicalName="Toolchain/LICENSE" />
   </ItemGroup>
 
 </Project>

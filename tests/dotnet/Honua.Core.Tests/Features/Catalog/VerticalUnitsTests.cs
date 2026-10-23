@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 /// </summary>
 public sealed class MetadataV2VerticalUnitsTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -28,6 +29,7 @@ public sealed class MetadataV2VerticalUnitsTests
         normalized.Should().Be(MetadataV2VerticalUnits.Meters);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("meters", "meters")]
     [InlineData("METERS", "meters")]
@@ -39,6 +41,7 @@ public sealed class MetadataV2VerticalUnitsTests
         normalized.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("feet", "feet")]
     [InlineData("FEET", "feet")]
@@ -49,6 +52,7 @@ public sealed class MetadataV2VerticalUnitsTests
         normalized.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("usSurveyFeet", "usSurveyFeet")]
     [InlineData("ussurveyfeet", "usSurveyFeet")]
@@ -59,6 +63,7 @@ public sealed class MetadataV2VerticalUnitsTests
         normalized.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("metres")]   // British spelling not accepted; MetadataV2ExtrusionValidator surfaces this.
     [InlineData("m")]         // Symbol form not accepted.

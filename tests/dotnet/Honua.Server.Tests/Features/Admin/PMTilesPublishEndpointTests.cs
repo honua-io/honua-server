@@ -2,13 +2,21 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Tiles.PMTiles;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -22,8 +30,15 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // The shared test host otherwise authenticates every caller as an admin API key,
+        // which hides a restricted source-layer denial.
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
         await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+        _client = _fixture.CreateAdminClient();
     }
 
     public async Task DisposeAsync()
@@ -119,6 +134,121 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
         bytes[..7].Should().BeEquivalentTo("PMTiles"u8.ToArray(), "PMTiles archive header should appear at offset 0");
     }
 
+    /// <summary>
+    /// Range coverage for an <em>interior</em> tile window, not the seven-byte magic prefix
+    /// (honua-server#4397).
+    /// </summary>
+    /// <remarks>
+    /// The existing 206 test requests bytes 0-6 and asserts they spell "PMTiles", which proves the
+    /// route honours <c>Range</c> but says nothing about whether a range landing on real tile data
+    /// returns the right bytes — the thing every PMTiles client actually does. This walks the
+    /// served archive's header and root directory to compute one tile's absolute byte window, then
+    /// asks for exactly that window over HTTP and compares the returned bytes with that tile's
+    /// bytes in the whole-archive download.
+    /// </remarks>
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_InteriorTileRange_ReturnsExactlyThatTilesBytes()
+    {
+        var artifactId = await PublishArchiveAsync();
+
+        var whole = await _client.GetByteArrayAsync($"/api/v1/tiles/pmtiles/{artifactId}");
+        whole.Length.Should().BeGreaterThan(PMTilesHeader.HeaderSize);
+
+        var header = PMTilesHeader.ReadFrom(whole);
+        var rootRaw = whole.AsSpan(
+            checked((int)header.RootDirectoryOffset),
+            checked((int)header.RootDirectoryLength)).ToArray();
+        var entries = PMTilesDirectory.DeserializeEntries(
+            PMTilesDirectory.Decompress(rootRaw, header.InternalCompression));
+
+        var entry = entries.FirstOrDefault(candidate => candidate.RunLength > 0 && candidate.Length > 0);
+        entry.Length.Should().BeGreaterThan(0, "the published archive must contain at least one tile");
+
+        var start = checked((long)(header.TileDataOffset + entry.Offset));
+        var end = start + entry.Length - 1;
+        start.Should().BeGreaterThan(
+            PMTilesHeader.HeaderSize,
+            "the window under test must be interior tile data, not the header prefix");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/tiles/pmtiles/{artifactId}");
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(start, end);
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+        var contentRange = response.Content.Headers.ContentRange;
+        contentRange.Should().NotBeNull();
+        contentRange!.Unit.Should().Be("bytes");
+        contentRange.From.Should().Be(start);
+        contentRange.To.Should().Be(end);
+        contentRange.Length.Should().Be(whole.Length,
+            "Content-Range must report the full archive length so a client can plan further reads");
+
+        var ranged = await response.Content.ReadAsByteArrayAsync();
+        var expected = whole.AsSpan(checked((int)start), checked((int)entry.Length)).ToArray();
+        ranged.Should().Equal(expected, "a ranged read must return exactly that tile's bytes");
+
+        // And the bytes really are a tile: the published archive stores MVT, so a tile that
+        // decompresses (when compressed) must be non-empty payload rather than padding.
+        var payload = header.TileCompression == PMTilesCompression.None
+            ? ranged
+            : PMTilesDirectory.Decompress(ranged, header.TileCompression);
+        payload.Should().NotBeEmpty();
+    }
+
+    /// <summary>
+    /// The archive the proxy serves must be the archive on disk, byte for byte — otherwise a
+    /// client that range-reads it computes offsets against something the server never sent
+    /// (honua-server#4397).
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_ServedArchive_IsReadableAsAWholePMTilesArchive()
+    {
+        var artifactId = await PublishArchiveAsync();
+
+        var whole = await _client.GetByteArrayAsync($"/api/v1/tiles/pmtiles/{artifactId}");
+
+        // Parse the served bytes the way an independent reader would: magic, then header, then
+        // the root directory, then a tile located by coordinate.
+        whole[..7].Should().Equal("PMTiles"u8.ToArray());
+
+        var header = PMTilesHeader.ReadFrom(whole);
+        header.TileType.Should().Be(PMTilesTileType.Mvt, "the published archive must declare MVT tiles");
+        header.AddressedTilesCount.Should().BeGreaterThan(0);
+        checked((int)(header.TileDataOffset + header.TileDataLength)).Should().BeLessThanOrEqualTo(
+            whole.Length, "the served archive must contain the whole tile-data section it declares");
+
+        var rootRaw = whole.AsSpan(
+            checked((int)header.RootDirectoryOffset),
+            checked((int)header.RootDirectoryLength)).ToArray();
+        var entries = PMTilesDirectory.DeserializeEntries(
+            PMTilesDirectory.Decompress(rootRaw, header.InternalCompression));
+        entries.Should().NotBeEmpty("the served archive must expose a readable root directory");
+
+        // Every directory entry must address bytes that are actually present in what was served.
+        foreach (var entry in entries.Where(candidate => candidate.RunLength > 0))
+        {
+            var end = header.TileDataOffset + entry.Offset + entry.Length;
+            end.Should().BeLessThanOrEqualTo((ulong)whole.Length,
+                "entry for tileId {0} addresses bytes past the end of the served archive", entry.TileId);
+        }
+    }
+
+    private async Task<string> PublishArchiveAsync()
+    {
+        var jobId = await StartPublishJobAsync();
+        var (status, finalJson) = await WaitForJobCompletionAsync(jobId);
+        status.Should().Be(OperationStatus.Completed, "publish job must complete to exercise the proxy");
+
+        var artifactId = GetPropertyCaseInsensitive(
+            GetPropertyCaseInsensitive(finalJson!.RootElement, "publishedArtifact"),
+            "artifactId").GetString()!;
+        finalJson.Dispose();
+        return artifactId;
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_MissingArtifact_Returns404()
@@ -176,6 +306,122 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
         using var response = await _client.SendAsync(headRequest);
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_RestrictedOrRetiredSource_DoesNotServeArchiveBytes()
+    {
+        var artifactId = await PublishArchiveAsync();
+        var url = $"/api/v1/tiles/pmtiles/{artifactId}";
+        using var anonymous = _fixture.CreateClient();
+
+        using (var warmRequest = new HttpRequestMessage(HttpMethod.Get, url))
+        {
+            warmRequest.Headers.Range = new RangeHeaderValue(0, 6);
+            using var warm = await anonymous.SendAsync(warmRequest);
+            warm.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+            (await warm.Content.ReadAsByteArrayAsync()).Should().Equal("PMTiles"u8.ToArray());
+        }
+
+        var initial = _fixture.GetCurrentV2GraphSnapshot();
+        var source = PMTilesProxySourceResolver.ResolveForPublish(
+            initial,
+            WebAppFixture.TestServiceId,
+            WebAppFixture.TestLayerId);
+        source.Should().NotBeNull("the published archive must bind the current test layer");
+
+        var restricted = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] };
+        try
+        {
+            SetGraph(initial.Graph with
+            {
+                Resources = initial.Graph.Resources.Select(resource =>
+                    resource.Metadata.Id == source!.Resource.Metadata.Id
+                        ? resource with { AccessPolicy = restricted }
+                        : resource).ToArray()
+            });
+
+            await AssertArchiveDeniedAsync(anonymous, HttpMethod.Get, url, withRange: true);
+            await AssertArchiveDeniedAsync(anonymous, HttpMethod.Head, url, withRange: false);
+
+            using (var allowedRequest = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                allowedRequest.Headers.Range = new RangeHeaderValue(0, 6);
+                using var allowed = await _client.SendAsync(allowedRequest);
+                allowed.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+                (await allowed.Content.ReadAsByteArrayAsync()).Should().Equal("PMTiles"u8.ToArray());
+            }
+
+            var serviceRestricted = _fixture.GetCurrentV2GraphSnapshot();
+            SetGraph(initial.Graph with
+            {
+                Revision = serviceRestricted.Graph.Revision,
+                Services = initial.Graph.Services.Select(service =>
+                    service.Metadata.Id == source.Service.Metadata.Id
+                        ? service with { AccessPolicy = restricted }
+                        : service).ToArray()
+            });
+
+            await AssertArchiveDeniedAsync(anonymous, HttpMethod.Get, url, withRange: true);
+
+            using (var allowedRequest = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                allowedRequest.Headers.Range = new RangeHeaderValue(0, 6);
+                using var allowed = await _client.SendAsync(allowedRequest);
+                allowed.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+            }
+
+            var current = _fixture.GetCurrentV2GraphSnapshot();
+            SetGraph(current.Graph with
+            {
+                Publications = current.Graph.Publications.Select(publication =>
+                    publication.Metadata.Id == source.Publication.Metadata.Id
+                        ? publication with
+                        {
+                            Status = publication.Status with { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                        }
+                        : publication).ToArray()
+            });
+
+            using var retiredAdmin = await _client.GetAsync(url);
+            retiredAdmin.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await retiredAdmin.Content.ReadAsByteArrayAsync()).Should().NotEqual("PMTiles"u8.ToArray());
+
+            using var retiredAnonymous = await anonymous.GetAsync(url);
+            retiredAnonymous.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            var latest = _fixture.GetCurrentV2GraphSnapshot();
+            SetGraph(initial.Graph with { Revision = latest.Graph.Revision });
+        }
+    }
+
+    private async Task AssertArchiveDeniedAsync(HttpClient client, HttpMethod method, string url, bool withRange)
+    {
+        using var request = new HttpRequestMessage(method, url);
+        if (withRange)
+        {
+            request.Headers.Range = new RangeHeaderValue(0, 6);
+        }
+
+        using var response = await client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.ETag.Should().BeNull();
+        response.Headers.AcceptRanges.Should().NotContain("bytes");
+        response.Content.Headers.ContentRange.Should().BeNull();
+        if (method == HttpMethod.Get)
+        {
+            var body = await response.Content.ReadAsByteArrayAsync();
+            body.Take(7).SequenceEqual("PMTiles"u8.ToArray()).Should().BeFalse(
+                "a denied proxy response must not return the archive header");
+        }
+    }
+
+    private void SetGraph(MetadataV2Graph graph)
+        => _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()
+            .SetGraph(graph with { Revision = graph.Revision + 1 }, schema: _fixture.MetadataGraphSchema);
 
     private async Task<string> StartPublishJobAsync()
     {

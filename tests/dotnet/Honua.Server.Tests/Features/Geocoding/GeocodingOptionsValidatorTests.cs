@@ -46,6 +46,37 @@ public sealed class GeocodingOptionsValidatorTests
             failure.Contains("private", StringComparison.OrdinalIgnoreCase));
     }
 
+    [UnitTheory]
+    [InlineData("City/Street")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("City\nStreet")]
+    public void Validate_WithUnsafeLocatorName_ReturnsFailure(string locatorName)
+    {
+        var options = CreateOptions("https://8.8.8.8/nominatim");
+        options.LocatorName = locatorName;
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("LocatorName"));
+    }
+
+    [UnitTheory]
+    [InlineData("München")]
+    [InlineData("City%2FStreet")]
+    [InlineData("City\\Street")]
+    [InlineData("City.Street")]
+    public void Validate_WithRouteSafeUnicodeAndLiteralPercentName_ReturnsSuccess(string locatorName)
+    {
+        var options = CreateOptions("https://8.8.8.8/nominatim");
+        options.LocatorName = locatorName;
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
+    }
+
     private static GeocodingOptions CreateOptions(string baseUrl)
         => new()
         {

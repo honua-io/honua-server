@@ -1,19 +1,30 @@
+---
+type: guide
+title: "Run Studio standalone"
+description: "Build and configure the self-hosted Studio Preview from source, or use a verified versioned release when available."
+---
 # Run Studio standalone
 
-{% hint style="danger" %}
-**Blocked in 2026.1 preview.** There is no released, versioned Studio static
-bundle or container to install. Do not deploy an image name or `/config.json`
-shape copied from an unmerged branch.
-{% endhint %}
+Studio has a self-hosted container build, static-archive release workflow, and
+runtime `/config.json` contract. Build availability, published release assets,
+and GA support are separate: Studio remains Preview.
 
-The source repository has a development server, an embeddable custom element,
-and OIDC Authorization Code with PKCE. Those are development evidence, not a
-self-hosted product artifact. A supported standalone procedure requires a
-versioned bundle and image, runtime server/OIDC configuration without a
-rebuild, a clean-machine candidate receipt, and a real-model compose,
-durable-save, and reopen receipt.
+1. Select the Studio source revision or a published release with its source/image
+   receipt. The [Studio release posture](https://github.com/honua-io/honua-studio/blob/main/docs/preview-release-posture.md)
+   defines the required gates. If no versioned release exists, build from source;
+   do not assume a sample registry tag is pullable.
+2. Follow the [self-hosted guide](https://github.com/honua-io/honua-studio/blob/main/docs/self-hosted.md)
+   for that revision. It defines the container invocation and runtime settings.
+3. Configure the server and MCP bases, public OIDC client, redirect URI, and model
+   mode through that version's runtime configuration contract. Provider keys and
+   administrator credentials do not belong in the browser configuration.
+4. Verify sign-in, a realtime composition change, save, and reopen against the
+   intended server. A container starting does not establish those outcomes.
 
-Track [honua-studio#41](https://github.com/honua-io/honua-studio/issues/41).
-Until it closes with release evidence, use [embedding](embed.md) from a source
-checkout for evaluation, or drive the server directly with MCP or an SDK.
-Neither route promotes the browser Studio preview to GA support.
+The local BYOM/browser fixture receipt and hosted-model qualification have
+different scopes. Use the linked release posture to interpret each; neither a
+source build nor a working preview establishes general-availability support.
+
+For an application host, use [embedding](embed.md). To work through an existing
+agent client, use [MCP](drive-from-claude-desktop.md) or the
+[JavaScript Studio agent](sdk-js-studio-agent.md).

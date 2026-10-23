@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Data formats"
+description: "Import and export format matrix: which formats Honua ingests, and which output formats each query surface serves."
+resource: "honua://capability/format.geoarrow"
+---
 # Data formats
 
 Import and export format matrix: which formats Honua ingests, and which output formats each query surface serves. All lists below are verified against the running format registries; the live lists are also served at `GET /api/v1/admin/import/formats`, `GET /api/v1/admin/import/raster/formats`, and `GET /api/v1/admin/import/limits`.
@@ -18,6 +24,8 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | FlatGeobuf | `.fgb` | Compact binary format. |
 | File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
 | GeoParquet | `.parquet`, `.geoparquet` | Apache Parquet with WKB geometry encoding. |
+
+New import tables retain the source geometry's ordinate dimensions (for example GPX elevations) while enforcing the requested SRID; existing append/upsert tables keep their declared geometry constraints.
 
 Format detection uses the extension plus content magic numbers (ZIP, SQLite, FlatGeobuf, Parquet signatures), so mislabeled files are caught early.
 
@@ -64,7 +72,7 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 
 #### GeoParquet runtime requirement
 
-`f=parquet` (and OData `$format=parquet`) is encoded by the native ParquetSharp Arrow library (`ParquetSharpNative`), which ships only a glibc (`linux-x64`) binary. On a glibc-based runtime image (the Debian/Ubuntu `mcr.microsoft.com/dotnet/aspnet:10.0` image, RID `linux-x64`) GeoParquet output works normally. On the Alpine/musl image (`...:10.0-alpine`, RID `linux-musl-x64`) the native library cannot load; rather than returning an unhandled HTTP 500, the server detects the native-load failure and returns a clean **HTTP 501 Not Implemented** capability response (`GeoParquet (f=parquet) output is unavailable on this runtime image...`). `f=arrow` is unaffected because GeoArrow is encoded with the pure-managed Apache.Arrow IPC writer. To serve GeoParquet, deploy a glibc-based runtime image.
+`f=parquet` (and OData `$format=parquet`) is encoded by the native ParquetSharp Arrow library (`ParquetSharpNative`). It ships only glibc binaries (`linux-x64`, `linux-arm64`) and needs `libatomic.so.1`. Every published server image is glibc-based and includes that library: the native-AOT serving image (`docker/Dockerfile.aot`, Ubuntu `runtime-deps:10.0`, RID `linux-x64`/`linux-arm64`), the Lambda native-AOT image, and the JIT image. Each image build fails if the library cannot resolve its dependencies, and the nightly AOT build requests `f=parquet` from the candidate before it publishes any tag. A custom Alpine/musl build (RID `linux-musl-x64`) cannot load the library. Instead of an unhandled HTTP 500, the server detects the native-load failure and returns a clean **HTTP 501 Not Implemented** capability response (`GeoParquet (f=parquet) output is unavailable on this runtime image...`). `f=arrow` is unaffected because GeoArrow is encoded with the pure-managed Apache.Arrow IPC writer. To serve GeoParquet from a custom image, build it on glibc and install `libatomic1`.
 
 ### OGC API Features (`/ogc/features/collections/{id}/items`, `f=` parameter or `Accept`)
 
@@ -100,6 +108,23 @@ JSON (`application/json`) responses by default; geometry is emitted as GeoJSON-s
 
 Large exports queue as background jobs. See [export data guide](../guides/query-analyze/export-data.md).
 
+The capability registry and `GET /api/v1/capabilities/manifest` distinguish `format.read.<name>` (file import) from
+`format.write.<name>` (admin file export). Only `csv`, `shapefile`, and
+`geopackage` have implemented file-write descriptors; the GeoPackage endpoint token
+is `gpkg`. The other ten file-write descriptors are planned, known implementation
+gaps in the built-in writer registry. The live manifest also includes licensed,
+enabled plugin writers, including a plugin that fills a built-in format gap.
+Its request-scoped `available` field checks admin permissions (import requires
+write authority; synchronous export allows admin read authority). Readers also
+require the active provider to register the file-import service and the import
+entitlement; a missing service reports `dependency-unavailable`.
+
+The original `format.<name>` identifiers describe shared codec and protocol format
+support. They do not promise a writer at the admin export endpoint. For example,
+GeoJSON query responses and GeoParquet query exports remain supported through the
+protocol routes listed above even though those formats have no built-in admin
+file-export writer.
+
 ### Tiles, maps, and coverages
 
 | Surface | Output |
@@ -120,5 +145,3 @@ See the protocol pages for parameters: [vector tiles](protocols/vector-tiles.md)
 - [Import files guide](../guides/publish/import-files.md)
 - [Export data guide](../guides/query-analyze/export-data.md)
 - [Environment variables — imports and limits](configuration/environment-variables.md#imports-and-limits)
-
-New import tables retain source geometry ordinate dimensions while enforcing the requested SRID. Migration 111 enables this for GPX elevations and other dimensional input. Existing append/upsert tables keep their declared geometry constraints.

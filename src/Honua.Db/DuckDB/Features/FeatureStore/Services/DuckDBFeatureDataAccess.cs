@@ -253,7 +253,9 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
-        var columnsExpr = string.Join(", ", mapping.AttributeColumns.Select(c => $"\"{c}\""));
+        var columnsExpr = string.Join(
+            ", ",
+            mapping.AttributeColumns.Select(DuckDBExternalSourceSql.QuoteAttribute));
         var selectCols = $"{mapping.QuotedObjectIdColumn}, ST_AsWKB({mapping.QuotedGeometryColumn})";
         if (!string.IsNullOrEmpty(columnsExpr))
         {

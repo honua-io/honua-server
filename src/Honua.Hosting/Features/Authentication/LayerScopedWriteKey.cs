@@ -6,7 +6,8 @@ using System.Security.Claims;
 namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
-/// Grammar and helpers for layer-scoped write API keys (#1637).
+/// Grammar and helpers for layer-scoped write API keys (#1637) and the
+/// resource grants (<c>read:</c> / <c>write:</c>) carried by scoped API keys.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,6 +28,24 @@ namespace Honua.Infrastructure.Authentication;
 /// write key: it is authenticated as a non-admin principal and is enforced by
 /// the shared write-authorization pipeline rather than by caller discipline.
 /// </para>
+/// <para>
+/// Read grammar for scope-governed keys (same normalization):
+/// <list type="bullet">
+///   <item><c>read:{service}</c> or <c>read:{service}/*</c> — reads any layer of the named service.</item>
+///   <item><c>read:{service}/{layer}</c> — reads a single named layer.</item>
+///   <item><c>read:*</c> — reads any layer of any service.</item>
+/// </list>
+/// The wildcard forms exist only for <c>read:</c>; <c>write:</c> grants must
+/// always name their service. Wildcard reads still pass through the same field
+/// mask, row-level and tenant filters as a named <c>read:</c> grant.
+/// </para>
+/// <para>
+/// GPServer execution uses an additional exact grant: <c>execute:{service}/{canonical-process-id}</c>,
+/// for example <c>execute:test/geometry.area</c>. No wildcard, service-wide, read, or write grant
+/// implies execution. GP discovery still requires a separate <c>read:</c> grant. Execution grants
+/// apply only to the named GP task and its owned, service-bound jobs; they confer no generic
+/// operator, OGC Processes, WPS, or MCP authority.
+/// </para>
 /// </remarks>
 internal static class LayerScopedWriteKey
 {
@@ -34,6 +53,31 @@ internal static class LayerScopedWriteKey
     /// Prefix that identifies a layer-scoped write permission grant.
     /// </summary>
     public const string WritePermissionPrefix = "write:";
+
+    /// <summary>
+    /// Prefix that identifies a scoped read permission grant.
+    /// </summary>
+    public const string ReadPermissionPrefix = "read:";
+
+    /// <summary>Exact GPServer service/canonical-process execution grant prefix.</summary>
+    public const string ExecutePermissionPrefix = "execute:";
+
+    /// <summary>Checks an exact GP execution grant. Neither service-wide nor wildcard forms exist.</summary>
+    public static bool AllowsGPExecution(ClaimsPrincipal principal, string service, string processId)
+        => IsExactExecutionIdentifier(service) && IsExactExecutionIdentifier(processId)
+            && principal.FindAll("permission").Any(claim =>
+                !IsMalformedResourceGrant(claim.Value)
+                && string.Equals(claim.Value.Trim(), $"{ExecutePermissionPrefix}{service}/{processId}", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsExactExecutionIdentifier(string value)
+        => !string.IsNullOrWhiteSpace(value) && value == value.Trim()
+            && !value.Any(character => character is '*' or '/' or ':' || char.IsWhiteSpace(character));
+
+    /// <summary>
+    /// Wildcard token accepted in <c>read:</c> grants: <c>read:*</c> (any service)
+    /// and <c>read:{service}/*</c> (any layer of the service).
+    /// </summary>
+    public const string ReadWildcard = "*";
 
     /// <summary>
     /// Exact full-administration grants. A key carrying any of these is NOT scoped
@@ -162,13 +206,60 @@ internal static class LayerScopedWriteKey
     }
 
     /// <summary>
-    /// Determines whether the principal authenticated as a layer-scoped write key.
+    /// Determines whether writes require explicit grants from a scoped key or job capability.
     /// </summary>
     /// <param name="principal">The request principal.</param>
-    /// <returns><see langword="true"/> when the principal is a scoped write key.</returns>
+    /// <returns><see langword="true"/> when the principal is a scoped key or a frozen job capability.</returns>
     public static bool IsScopedWritePrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
-           principal.HasClaim("auth_type", AuthType);
+           (principal.HasClaim("auth_type", AuthType) ||
+            principal.HasClaim("auth_type", ScopedJobTokenIssuer.AuthTypeClaimValue));
+
+    /// <summary>
+    /// Determines whether resource access for an API-key principal is governed by
+    /// its permission claims rather than by the coarse authenticated-user fallback.
+    /// </summary>
+    /// <remarks>
+    /// The API-key handler stamps these markers as <see cref="ClaimTypes.Role"/> claims, but a
+    /// principal restored from a durable job snapshot is built with the configured RBAC role
+    /// claim type (for example OIDC <c>roles</c>), so <see cref="ClaimsPrincipal.IsInRole"/>
+    /// alone would miss a marker held under <see cref="ClaimTypes.Role"/>. Either claim type
+    /// marks the principal as governed: the check only ever narrows access (honua-server#6101).
+    /// </remarks>
+    public static bool IsScopeGovernedPrincipal(ClaimsPrincipal? principal)
+        => principal is not null &&
+           (IsScopedWritePrincipal(principal)
+            || ScopeGovernanceRoles.Any(role =>
+                principal.IsInRole(role) || principal.HasClaim(ClaimTypes.Role, role)));
+
+    /// <summary>
+    /// Role markers the API-key handler stamps on credentials whose resource access is governed
+    /// by their <c>permission</c> grants rather than by the coarse authenticated-user fallback.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ScopeGovernanceRoles =
+    [
+        ScopedKeyRole,
+        AdminApiKeyPermission.ScopedAdminRole,
+        AdminApiKeyPermission.ApprovedOperationRole,
+    ];
+
+    /// <summary>
+    /// Determines whether a scoped API key has a read grant for a resource.
+    /// </summary>
+    public static bool AllowsRead(ClaimsPrincipal principal, string? serviceName, string? layerName)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return false;
+        }
+
+        var service = serviceName.Trim();
+        var layer = layerName?.Trim();
+        return principal.FindAll("permission")
+            .Any(claim => GrantMatchesResource(claim.Value, ReadPermissionPrefix, service, layer, allowWildcard: true));
+    }
 
     /// <summary>
     /// Evaluates whether a scoped write principal is authorized to write to the
@@ -198,15 +289,85 @@ internal static class LayerScopedWriteKey
     }
 
     private static bool GrantAllowsWrite(string? grant, string service, string? layer)
+        => GrantMatchesResource(grant, WritePermissionPrefix, service, layer, allowWildcard: false);
+
+    /// <summary>
+    /// Determines whether a <c>read:</c>, <c>write:</c>, or <c>execute:</c> grant fails to name a valid
+    /// target. Read grants accept <c>read:*</c> and <c>read:{service}/*</c>; write
+    /// grants accept no wildcard. Execute grants require exact service and canonical process identities.
+    /// Grants with other prefixes are not resource grants
+    /// and are never reported as malformed.
+    /// </summary>
+    /// <param name="grant">The permission grant.</param>
+    /// <returns><see langword="true"/> when the grant is a malformed resource grant.</returns>
+    public static bool IsMalformedResourceGrant(string? grant)
     {
         var trimmed = grant?.Trim();
-        if (string.IsNullOrEmpty(trimmed) ||
-            !trimmed.StartsWith(WritePermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(trimmed))
         {
             return false;
         }
 
-        var scope = trimmed[WritePermissionPrefix.Length..].Trim();
+        if (trimmed.StartsWith(ExecutePermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var executionScope = trimmed[ExecutePermissionPrefix.Length..];
+            var separator = executionScope.IndexOf('/', StringComparison.Ordinal);
+            return separator < 1
+                || !IsExactExecutionIdentifier(executionScope[..separator])
+                || !IsExactExecutionIdentifier(executionScope[(separator + 1)..]);
+        }
+
+        bool allowWildcard;
+        string scope;
+        if (trimmed.StartsWith(ReadPermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            allowWildcard = true;
+            scope = trimmed[ReadPermissionPrefix.Length..].Trim();
+        }
+        else if (trimmed.StartsWith(WritePermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            allowWildcard = false;
+            scope = trimmed[WritePermissionPrefix.Length..].Trim();
+        }
+        else
+        {
+            return false;
+        }
+
+        if (scope.Length == 0)
+        {
+            return true;
+        }
+
+        var separatorIndex = scope.IndexOf('/', StringComparison.Ordinal);
+        var service = separatorIndex < 0 ? scope : scope[..separatorIndex].Trim();
+        var layer = separatorIndex < 0 ? null : scope[(separatorIndex + 1)..].Trim();
+        if (service.Length == 0 || layer is { Length: 0 })
+        {
+            return true;
+        }
+
+        var serviceIsWildcard = string.Equals(service, ReadWildcard, StringComparison.Ordinal);
+        var layerIsWildcard = string.Equals(layer, ReadWildcard, StringComparison.Ordinal);
+        if (!allowWildcard)
+        {
+            return serviceIsWildcard || layerIsWildcard;
+        }
+
+        // read:* is the only service wildcard; read:*/{layer} and read:*/* are not grammar.
+        return serviceIsWildcard && layer is not null;
+    }
+
+    private static bool GrantMatchesResource(string? grant, string prefix, string service, string? layer, bool allowWildcard)
+    {
+        var trimmed = grant?.Trim();
+        if (string.IsNullOrEmpty(trimmed) ||
+            !trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var scope = trimmed[prefix.Length..].Trim();
         if (scope.Length == 0)
         {
             return false;
@@ -215,7 +376,13 @@ internal static class LayerScopedWriteKey
         var separatorIndex = scope.IndexOf('/');
         if (separatorIndex < 0)
         {
-            // Service-wide grant: write:{service} authorizes any layer of the service.
+            // read:* authorizes any layer of any service (read grants only).
+            if (allowWildcard && string.Equals(scope, ReadWildcard, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            // Service-wide grant: {prefix}{service} authorizes any layer of the service.
             return string.Equals(scope, service, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -225,6 +392,13 @@ internal static class LayerScopedWriteKey
         if (!string.Equals(grantService, service, StringComparison.OrdinalIgnoreCase))
         {
             return false;
+        }
+
+        // read:{service}/* is equivalent to the service-wide read:{service} grant,
+        // including service-level checks that carry no target layer.
+        if (allowWildcard && string.Equals(grantLayer, ReadWildcard, StringComparison.Ordinal))
+        {
+            return true;
         }
 
         // A layer-specific grant requires a known target layer that matches.

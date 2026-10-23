@@ -32,6 +32,7 @@ public sealed class DashboardDocumentValidatorTests
         result.Issues.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Theory]
     [InlineData(DashboardPanelKinds.Map)]
@@ -56,6 +57,7 @@ public sealed class DashboardDocumentValidatorTests
         issue.Message.Should().Contain(kind);
     }
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Theory]
     [InlineData(DashboardPanelKinds.Map)]

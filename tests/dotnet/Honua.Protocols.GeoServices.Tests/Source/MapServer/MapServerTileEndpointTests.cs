@@ -2,7 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -25,6 +29,88 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
     private readonly WebAppFixture _fixture;
 
     public MapServerTileEndpointTests(WebAppFixture fixture) => _fixture = fixture;
+
+    [UnitTest]
+    public async Task BuildTileFieldMaskFingerprintAsync_CommaInFieldName_DistinguishesLiteralFields()
+    {
+        var resource = new TestMetadataV2GraphBuilder().AddResource("mask", "Mask").Build().Resources.Single();
+        var layers = new[] { new MapServerEndpoints.TileLayerDescriptor(0, 17, resource) };
+        var source = Substitute.For<IFieldMaskSource>();
+        source.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("a,b"), ImmutableArray.Create("a", "b"));
+
+        var literal = await MapServerEndpoints.BuildTileFieldMaskFingerprintAsync(source, layers, CancellationToken.None);
+        var separate = await MapServerEndpoints.BuildTileFieldMaskFingerprintAsync(source, layers, CancellationToken.None);
+
+        literal.Should().NotBe(separate);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Tile)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]
+    public async Task Tile_MasksRemovedAfterCacheLookup_RenderQueryUsesFingerprintedSnapshot()
+    {
+        var masks = ImmutableArray.Create("classification");
+        var source = Substitute.For<IFieldMaskSource>();
+        source.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>()).Returns(_ => masks);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            masks = ImmutableArray<string>.Empty;
+            return (CloudFile?)null;
+        });
+        var queries = new List<FeatureQuery>();
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            queries.Add(call.ArgAt<FeatureQuery>(1));
+            return QueryResult<Feature>.Empty();
+        });
+        await using var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IFieldMaskSource>();
+            services.AddSingleton(source);
+            services.RemoveAll<ICloudFileStorage>();
+            services.AddSingleton(storage);
+            services.RemoveAll<IFeatureReader>();
+            services.AddSingleton(reader);
+        });
+        await fixture.InitializeAsync();
+
+        var response = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/0/0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        masks.Should().BeEmpty("the policy changed between fingerprinting and rendering");
+        queries.Should().NotBeEmpty();
+        queries.Should().AllSatisfy(query =>
+        {
+            query.EnforcedMaskedFields.Should().NotBeNull();
+            query.EnforcedMaskedFields!.Value.Should().Equal("classification");
+        });
+    }
+
+    [UnitTest]
+    public async Task SRV_INF_002_FieldMasksPartitionMapTileCache()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-mask-cache", "Mask cache")
+            .Build();
+        var resource = graph.Resources.Single();
+        var layers = new[] { new MapServerEndpoints.TileLayerDescriptor(0, 17, resource) };
+        var unmasked = Substitute.For<IFieldMaskSource>();
+        unmasked.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<string>.Empty);
+        var masked = Substitute.For<IFieldMaskSource>();
+        masked.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("classification"));
+
+        var unmaskedFingerprint = await MapServerEndpoints.BuildTileFieldMaskFingerprintAsync(
+            unmasked, layers, CancellationToken.None);
+        var maskedFingerprint = await MapServerEndpoints.BuildTileFieldMaskFingerprintAsync(
+            masked, layers, CancellationToken.None);
+
+        maskedFingerprint.Should().NotBe(unmaskedFingerprint);
+    }
 
     [UnitTest]
     public async Task ResolveTileLayerDescriptors_DraftStorageBinding_ExcludesPublication()

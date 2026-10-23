@@ -28,8 +28,8 @@ NON_DISTANCE_SPATIAL_RELS = [
 ]
 
 DISTANCE_SPATIAL_RELS = [
-    "esriSpatialRelWithinDistance",
-    "esriSpatialRelBeyondDistance",
+    "withinDistance",
+    "beyondDistance",
 ]
 
 DISTANCE_UNITS = [
@@ -131,7 +131,7 @@ class TestSpatialRelMatrix:
                 "where": "1=1",
                 "geometry": json.dumps(point.to_esri_json()),
                 "geometryType": "esriGeometryPoint",
-                "spatialRel": "esriSpatialRelWithinDistance",
+                "spatialRel": "withinDistance",
                 "f": "json",
             },
         )

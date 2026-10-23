@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Claims;
 using Honua.Ai.Grounding;
@@ -29,12 +30,12 @@ public sealed class GroundingServiceTelemetryTests
         var service = BuildService();
         var request = new GroundingRequest { Goal = "buffer the parcels layer by 100 meters" };
 
-        var activities = new List<Activity>();
+        var activities = new ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "Honua",
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add
+            ActivityStopped = activities.Enqueue
         };
         ActivitySource.AddActivityListener(listener);
 

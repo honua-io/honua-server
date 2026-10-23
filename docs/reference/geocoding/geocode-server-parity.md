@@ -1,14 +1,34 @@
+---
+type: reference
+title: "GeocodeServer provider parity matrix"
+description: "Which GeocodeServer operations each geocoding provider supports, how batch and rate limits are enforced, and the known caveats."
+resource: "honua://capability/serve.geoservices-geocodeserver"
+resources:
+  - "honua://capability/geocoding.batch"
+  - "honua://capability/geocoding.reverse"
+---
 # GeocodeServer provider parity matrix
 
-This page is the receipt for GeocodeServer parity across Honua's geocoding providers and against
-Esri GeocodeServer behavior. The per-provider capability matrix below is enforced in CI by
-`GeocodeServerParityMatrixTests` (in `Honua.Core.Tests`): the test asserts each provider's advertised
-`GeocodeProviderCapabilities`, so flipping a previously-supported capability off (a regression) fails
-the build.
+This page records GeocodeServer parity across Honua's geocoding providers and against Esri
+GeocodeServer behavior. The per-provider capability matrix below is checked against each
+provider's advertised capabilities on every build, so a regression fails the build.
 
 For the operation-by-operation comparison against Esri GeocodeServer, see
-[GeoServices REST parity](../compatibility/geoservices-parity.md) and the
-[GeocodeServer matrix spike](../../internal/spikes/geocode-server-matrix.md).
+[GeoServices REST parity](../compatibility/geoservices-parity.md).
+
+## Service discovery
+
+The REST services directory and SOAP `GetServiceDescriptions` / `GetServiceDescriptionsEx`
+catalogs advertise the configured `Geocoding:LocatorName` (default `World`) as a
+`GeocodeServer` when geocoding is enabled and its default provider is configured. The
+canonical URL uses the named locator and the configured public base URL or request path
+base. The unnamed GeocodeServer route remains a compatibility alias. Configured locator names
+must not contain `/` or control characters, or be the dot path segments `.` or `..`.
+These names fail startup rather than advertising an unreachable URL; routable Unicode
+names and existing name lengths remain supported. Catalog capabilities
+match the locator metadata and provider operation flags, including licensed batch support.
+The locator is anonymous; its visibility does not expose protected feature or map services
+or suppress authentication and authorization errors on their named service folders.
 
 ## Status vocabulary
 
@@ -53,9 +73,9 @@ For the operation-by-operation comparison against Esri GeocodeServer, see
 
 ## Caveats
 
-- **Provider-key-gated live tests.** Azure Maps and Amazon Location structured-input fidelity is
-  verified in CI against recorded/mocked responses. Live-key tests require provider credentials and
-  are skippable; they are not run in the default CI path.
+- **Hosted providers are verified against recorded responses.** Azure Maps and Amazon Location
+  structured-input fidelity is checked against recorded responses; live-key verification is not
+  part of the default path.
 - **Unsupported locator constructs.** Honua exposes a single anonymous, read-only locator.
   Esri-specific locator constructs (suggest categories beyond provider-supplied address types,
   multi-locator composite services, and locator-side custom output fields) are not modeled.

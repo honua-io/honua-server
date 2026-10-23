@@ -12,24 +12,27 @@ namespace Honua.Core.Features.Scene.Conversion;
 /// Transcodes Honua scene geometry (the same <see cref="SceneFeature"/> source
 /// the 3D Tiles <see cref="GeometryTileBuilder"/> consumes) into an Esri I3S
 /// <c>nodes/{id}/geometries/0</c> binary buffer (OGC 19-008 Indexed Scene
-/// Layers, "Default" geometry, uncompressed interleaved layout). This is the
+/// Layers, "Default" geometry, uncompressed <c>PerAttributeArray</c> layout). This is the
 /// first concrete glTF/3D-Tiles → I3S geometry slice (#1810): it lets an ArcGIS
 /// SceneLayer / I3S client actually render a hosted Honua scene rather than only
 /// discover its descriptor.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Layout.</b> The emitted buffer matches the layer descriptor's advertised
-/// <c>geometryDefinitions[0].geometryBuffers[0]</c>: an 8-byte header
+/// <b>Layout.</b> The emitted buffer is the I3S 1.7 <c>PerAttributeArray</c>
+/// geometry the layer advertises in <c>store.defaultGeometrySchema</c> and
+/// <c>geometryDefinitions[0]</c> (Esri i3s-spec
+/// <c>defaultGeometrySchema</c> / <c>geometryBuffer</c>): an 8-byte header
 /// (<c>vertexCount</c> + <c>featureCount</c>, both little-endian UInt32)
-/// followed by an interleaved per-vertex stream
-/// (<c>position</c> Float32×3, <c>normal</c> Float32×3, <c>uv0</c> Float32×2,
-/// <c>color</c> UInt8×4 = 36 bytes/vertex) and a trailing feature section
-/// (per-feature <c>id</c> UInt64 + the half-open vertex <c>[start, count)</c>
-/// range that maps each triangle vertex back to its source feature, so identify
-/// flows can attribute a picked vertex to a batch id). Triangles are emitted in
-/// the deterministic source-feature / fan-triangulation order, so the output is
-/// byte-identical across runs for identical input.
+/// followed by contiguous attribute arrays in the fixed order
+/// <c>position</c> (Float32×3), <c>normal</c> (Float32×3), <c>uv0</c> (Float32×2),
+/// <c>color</c> (UInt8×4), then contiguous feature arrays <c>id</c> (UInt64) and
+/// <c>faceRange</c> (UInt32×2). <c>faceRange</c> is the inclusive first and last
+/// triangle index of that feature (<c>vertexIndex = faceIndex * 3</c> for this
+/// un-indexed mesh). Triangles are emitted in the deterministic source-feature /
+/// fan-triangulation order, so the output is byte-identical across runs for
+/// identical input. A feature that produces no triangles is omitted: an inclusive
+/// face range cannot represent an empty span.
 /// </para>
 /// <para>
 /// <b>vertexCRS + per-node MBS offset.</b> Positions are ECEF (EPSG:4978) metres
@@ -56,14 +59,41 @@ namespace Honua.Core.Features.Scene.Conversion;
 /// </remarks>
 public static class I3sGeometryTranscoder
 {
-    /// <summary>Bytes per interleaved vertex: position(12) + normal(12) + uv0(8) + color(4).</summary>
-    public const int VertexStrideBytes = 36;
+    /// <summary>Bytes of one position value (Float32×3).</summary>
+    public const int PositionBytesPerVertex = 12;
+
+    /// <summary>Bytes of one normal value (Float32×3).</summary>
+    public const int NormalBytesPerVertex = 12;
+
+    /// <summary>Bytes of one uv0 value (Float32×2).</summary>
+    public const int Uv0BytesPerVertex = 8;
+
+    /// <summary>Bytes of one color value (UInt8×4).</summary>
+    public const int ColorBytesPerVertex = 4;
+
+    /// <summary>
+    /// Combined per-vertex attribute bytes (position + normal + uv0 + color).
+    /// The vertex section is four contiguous arrays, not an interleaved record;
+    /// its size is <c>vertexCount * VertexStrideBytes</c>.
+    /// </summary>
+    public const int VertexStrideBytes =
+        PositionBytesPerVertex + NormalBytesPerVertex + Uv0BytesPerVertex + ColorBytesPerVertex;
 
     /// <summary>Header bytes: vertexCount(4) + featureCount(4), little-endian UInt32.</summary>
     public const int HeaderBytes = 8;
 
-    /// <summary>Bytes per feature in the trailing feature section: id(8) + vertexStart(4) + vertexCount(4).</summary>
-    public const int FeatureRecordBytes = 16;
+    /// <summary>Bytes of one feature id (UInt64).</summary>
+    public const int FeatureIdBytes = 8;
+
+    /// <summary>Bytes of one faceRange (inclusive first and last triangle index, UInt32×2).</summary>
+    public const int FaceRangeBytes = 8;
+
+    /// <summary>
+    /// Combined per-feature attribute bytes (id + faceRange). The feature section
+    /// is two contiguous arrays, not an interleaved record; its size is
+    /// <c>featureCount * FeatureRecordBytes</c>.
+    /// </summary>
+    public const int FeatureRecordBytes = FeatureIdBytes + FaceRangeBytes;
 
     private const byte OpaqueWhiteR = 255;
     private const byte OpaqueWhiteG = 255;
@@ -114,8 +144,8 @@ public static class I3sGeometryTranscoder
         }
 
         // 1. Accumulate triangle vertices in double-precision ECEF, tracking the
-        //    per-feature half-open vertex range so the feature section can map a
-        //    picked vertex back to its source object id.
+        //    per-feature vertex span so faceRange can name that feature's
+        //    inclusive triangle indices.
         var positions = new List<double>(features.Count * 18);
         var featureRanges = new List<(long Id, int Start, int Count)>(features.Count);
 
@@ -124,6 +154,21 @@ public static class I3sGeometryTranscoder
             var start = positions.Count / 3;
             AppendFeatureTriangles(feature, extrusion, positions);
             var count = positions.Count / 3 - start;
+            // faceRange is an inclusive triangle pair (I3S geometryFaceRange).
+            // A degenerate ring owns no faces, and an inclusive range cannot
+            // represent an empty span, so those features are left out.
+            if (count == 0)
+            {
+                continue;
+            }
+
+            if ((start % 3) != 0 || (count % 3) != 0)
+            {
+                throw new InvalidOperationException(
+                    $"Feature {feature.Id} produced vertex span [{start}, {count}) " +
+                    "which is not a whole number of triangles.");
+            }
+
             featureRanges.Add((feature.Id, start, count));
         }
 
@@ -146,10 +191,10 @@ public static class I3sGeometryTranscoder
         //    vertices of each triangle. normalReferenceFrame = earth-centered.
         var normals = ComputeFaceNormals(positions);
 
-        // 4. Pack the interleaved buffer + feature section.
+        // 4. Pack contiguous attribute arrays + the feature id / faceRange arrays.
         var buffer = PackBuffer(positions, normals, featureRanges, vertexCount, cx, cy, cz);
 
-        return new I3sTranscodedGeometry(buffer, [cx, cy, cz], radius, vertexCount, features.Count);
+        return new I3sTranscodedGeometry(buffer, [cx, cy, cz], radius, vertexCount, featureRanges.Count);
     }
 
     private static void AppendFeatureTriangles(
@@ -336,37 +381,60 @@ public static class I3sGeometryTranscoder
         BinaryPrimitives.WriteUInt32LittleEndian(span[..4], (uint)vertexCount);
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(4, 4), (uint)featureRanges.Count);
 
-        // Interleaved per-vertex stream.
-        var offset = HeaderBytes;
+        // Contiguous vertex attributes, fixed I3S order: position, normal, uv0, color.
+        var positionOffset = HeaderBytes;
+        var normalOffset = positionOffset + (vertexCount * PositionBytesPerVertex);
+        var uvOffset = normalOffset + (vertexCount * NormalBytesPerVertex);
+        var colorOffset = uvOffset + (vertexCount * Uv0BytesPerVertex);
         for (var v = 0; v < vertexCount; v++)
         {
             var p = v * 3;
-            // position (relative to MBS centre)
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset, 4), (float)(positions[p] - cx));
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset + 4, 4), (float)(positions[p + 1] - cy));
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset + 8, 4), (float)(positions[p + 2] - cz));
-            // normal (unit ECEF)
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset + 12, 4), normals[p]);
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset + 16, 4), normals[p + 1]);
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset + 20, 4), normals[p + 2]);
+            var positionAt = positionOffset + (v * PositionBytesPerVertex);
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(positionAt, 4), (float)(positions[p] - cx));
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(positionAt + 4, 4), (float)(positions[p + 1] - cy));
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(positionAt + 8, 4), (float)(positions[p + 2] - cz));
+
+            var normalAt = normalOffset + (v * NormalBytesPerVertex);
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(normalAt, 4), normals[p]);
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(normalAt + 4, 4), normals[p + 1]);
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(normalAt + 8, 4), normals[p + 2]);
+
             // uv0 placeholder (0,0): real unwrapping deferred (#1810 follow-up).
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset + 24, 4), 0f);
-            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(offset + 28, 4), 0f);
+            var uvAt = uvOffset + (v * Uv0BytesPerVertex);
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(uvAt, 4), 0f);
+            BinaryPrimitives.WriteSingleLittleEndian(span.Slice(uvAt + 4, 4), 0f);
+
             // color (opaque white): per-feature symbology baking deferred.
-            span[offset + 32] = OpaqueWhiteR;
-            span[offset + 33] = OpaqueWhiteG;
-            span[offset + 34] = OpaqueWhiteB;
-            span[offset + 35] = OpaqueWhiteA;
-            offset += VertexStrideBytes;
+            var colorAt = colorOffset + (v * ColorBytesPerVertex);
+            span[colorAt] = OpaqueWhiteR;
+            span[colorAt + 1] = OpaqueWhiteG;
+            span[colorAt + 2] = OpaqueWhiteB;
+            span[colorAt + 3] = OpaqueWhiteA;
         }
 
-        // Feature section: id, vertexStart, vertexCount per source feature.
-        foreach (var (id, start, count) in featureRanges)
+        // Feature attributes, contiguous: every id, then every faceRange.
+        // faceRange is the inclusive [first, last] triangle index
+        // (vertexIndex = faceIndex * 3). See I3S geometryFaceRange.
+        var featureIdOffset = colorOffset + (vertexCount * ColorBytesPerVertex);
+        var faceRangeOffset = featureIdOffset + (featureRanges.Count * FeatureIdBytes);
+        for (var i = 0; i < featureRanges.Count; i++)
         {
-            BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(offset, 8), unchecked((ulong)id));
-            BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(offset + 8, 4), (uint)start);
-            BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(offset + 12, 4), (uint)count);
-            offset += FeatureRecordBytes;
+            var (id, start, count) = featureRanges[i];
+            if (count <= 0 || (start % 3) != 0 || (count % 3) != 0)
+            {
+                throw new InvalidOperationException(
+                    $"Feature {id} vertex span [{start}, {count}) is not a positive multiple of three vertices.");
+            }
+
+            BinaryPrimitives.WriteUInt64LittleEndian(
+                span.Slice(featureIdOffset + (i * FeatureIdBytes), FeatureIdBytes),
+                unchecked((ulong)id));
+
+            var firstFace = (uint)(start / 3);
+            var lastFace = (uint)((start + count) / 3 - 1);
+            var faceAt = faceRangeOffset + (i * FaceRangeBytes);
+            BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(faceAt, 4), firstFace);
+            BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(faceAt + 4, 4), lastFace);
         }
 
         return buffer;

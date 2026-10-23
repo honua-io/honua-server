@@ -131,7 +131,8 @@ public readonly record struct SpatialReference
          !Wkt.Contains("+proj=geocent", StringComparison.OrdinalIgnoreCase));
 
     private readonly bool IsGeocentricByWkt() =>
-        Wkt?.Contains("GEOCS", StringComparison.OrdinalIgnoreCase) == true ||
+        // WKT1 geocentric CRS is GEOCCS. The substring GEOCS matches neither GEOCCS nor GEOGCS.
+        Wkt?.Contains("GEOCCS", StringComparison.OrdinalIgnoreCase) == true ||
         Wkt?.Contains("GEOCENTRIC", StringComparison.OrdinalIgnoreCase) == true ||
         Wkt?.Contains("+proj=geocent", StringComparison.OrdinalIgnoreCase) == true ||
         (Wkt?.Contains("GEODCRS", StringComparison.OrdinalIgnoreCase) == true &&

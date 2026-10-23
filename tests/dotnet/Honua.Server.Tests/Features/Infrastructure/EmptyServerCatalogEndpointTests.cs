@@ -54,6 +54,8 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE"] = "false",
+                    // The default public locator is independent of graph publications.
+                    ["Geocoding:Enabled"] = "false",
                 })))
             .ConfigureServices(services =>
             {
@@ -145,6 +147,41 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
             "STAC catalog must be returned as JSON");
     }
 
+    // --- ArcGIS site root (#5158) ---
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /")]
+    [Endpoint("GET /rest")]
+    [Endpoint("GET /arcgis")]
+    public async Task SiteRoot_RedirectsToTheServicesDirectory()
+    {
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        foreach (var path in new[] { "/", "/rest", "/arcgis" })
+        {
+            using var get = await client.GetAsync(path);
+            AssertRedirectsToServicesDirectory(get, path);
+
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, path);
+            using var head = await client.SendAsync(headRequest);
+            AssertRedirectsToServicesDirectory(head, path);
+        }
+
+        using var following = _fixture.CreateClient(allowAutoRedirect: true);
+        using var followed = await following.GetAsync("/");
+        followed.StatusCode.Should().Be(HttpStatusCode.OK);
+        followed.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    private static void AssertRedirectsToServicesDirectory(HttpResponseMessage response, string path)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect, $"{path} is an ArcGIS site-root probe and must not 404");
+        response.Headers.Location.Should().NotBeNull();
+        var location = response.Headers.Location!;
+        var locationPath = location.IsAbsoluteUri ? location.AbsolutePath : location.OriginalString;
+        locationPath.Should().Be("/rest/services");
+    }
+
     // --- GeoServices /rest/services ---
 
     [IntegrationTest]
@@ -168,11 +205,14 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
 
         // Valid GeoServices directory structure.
         // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // A fresh server still publishes the built-in Utilities/PrintingTools GPServer.
         root.TryGetProperty("currentVersion", out _).Should().BeFalse();
-        root.GetProperty("services").GetArrayLength().Should().Be(0,
-            "an empty server should advertise zero services");
-        root.GetProperty("folders").GetArrayLength().Should().Be(0,
-            "an empty server should advertise zero folders");
+        var services = root.GetProperty("services").EnumerateArray().ToArray();
+        services.Should().ContainSingle();
+        services[0].GetProperty("name").GetString().Should().Be("Utilities/PrintingTools");
+        services[0].GetProperty("type").GetString().Should().Be("GPServer");
+        root.GetProperty("folders").EnumerateArray().Select(folder => folder.GetString())
+            .Should().Equal("Utilities");
     }
 
     [IntegrationTest]

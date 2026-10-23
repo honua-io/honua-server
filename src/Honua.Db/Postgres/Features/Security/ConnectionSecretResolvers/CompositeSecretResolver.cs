@@ -154,58 +154,21 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Only a value that is, as a whole, a <c>provider:path</c> reference for a registered provider
+    /// is resolved. Any other value is returned unchanged: placeholders embedded in a longer string
+    /// are not substituted.
+    /// </remarks>
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(connectionStringTemplate))
+        if (string.IsNullOrWhiteSpace(connectionStringTemplate) ||
+            !TryGetRegisteredProvider(connectionStringTemplate, out _))
+        {
             return connectionStringTemplate;
-
-        if (TryGetRegisteredProvider(connectionStringTemplate, out _))
-        {
-            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
-            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
         }
 
-        // Find all secret references in the connection string and resolve them
-        var result = connectionStringTemplate;
-
-        // Simple pattern matching for secret references like ${provider:path} or {provider:path}
-        var patterns = new[] { "${", "{" };
-
-        foreach (var pattern in patterns)
-        {
-            var startIndex = 0;
-            while (true)
-            {
-                var start = result.IndexOf(pattern, startIndex, StringComparison.OrdinalIgnoreCase);
-                if (start == -1) break;
-
-                var end = result.IndexOf('}', start + pattern.Length);
-                if (end == -1) break;
-
-                var secretRef = result.Substring(start + pattern.Length, end - start - pattern.Length);
-
-                if (!string.IsNullOrWhiteSpace(secretRef) && CanResolve(secretRef))
-                {
-                    var resolvedValue = await ResolveSecretAsync(secretRef, cancellationToken);
-                    if (!string.IsNullOrEmpty(resolvedValue))
-                    {
-                        var fullReference = result.Substring(start, end - start + 1);
-                        result = result.Replace(fullReference, resolvedValue);
-                        startIndex = start + resolvedValue.Length;
-                    }
-                    else
-                    {
-                        startIndex = end + 1;
-                    }
-                }
-                else
-                {
-                    startIndex = end + 1;
-                }
-            }
-        }
-
-        return result;
+        var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
+        return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
     }
 
     public string[] GetSupportedProviders()

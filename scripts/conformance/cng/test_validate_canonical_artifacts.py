@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
 import tempfile
 import unittest
+import unittest.mock
 from argparse import Namespace
 from pathlib import Path
 
@@ -14,6 +16,60 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
+IDENTITY_SPEC = importlib.util.spec_from_file_location(
+    "candidate_identity", SCRIPT.parent / "artifact-gen" / "candidate_identity.py"
+)
+assert IDENTITY_SPEC and IDENTITY_SPEC.loader
+IDENTITY = importlib.util.module_from_spec(IDENTITY_SPEC)
+IDENTITY_SPEC.loader.exec_module(IDENTITY)
+
+
+class CandidateIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.manifest = {
+            "candidate": {"ref": "a" * 40, "refSource": "trunk"},
+            "components": {"honua-server": {
+                "sha": "a" * 40,
+                "image": "ghcr.io/honua-io/honua-server:nightly-aot-aaaaaaa",
+                "digest": "sha256:" + "b" * 64,
+            }},
+            "protocolCertification": {
+                "serverCertificationProducerSha": "a" * 40,
+                "candidateCutAt": "2026-09-11T19:47:41Z",
+            },
+        }
+
+    def test_dispatch_uses_manifest_digest_instead_of_mutable_tag(self):
+        self.assertEqual({
+            "server_image": "ghcr.io/honua-io/honua-server@sha256:" + "b" * 64,
+            "source_sha": "a" * 40,
+            "candidate_cut_at": "2026-09-11T19:47:41Z",
+        }, IDENTITY.resolve(self.manifest))
+
+    def test_mixed_candidate_identity_is_rejected(self):
+        for section, key, value in (
+            ("candidate", "ref", "c" * 40),
+            ("candidate", "refSource", "feature"),
+            ("protocolCertification", "serverCertificationProducerSha", "c" * 40),
+            ("protocolCertification", "candidateCutAt", "2026-09-11T19:47:41"),
+        ):
+            with self.subTest(key=key):
+                manifest = copy.deepcopy(self.manifest)
+                manifest[section][key] = value
+                with self.assertRaises(ValueError):
+                    IDENTITY.resolve(manifest)
+
+    def test_invalid_registry_identity_is_rejected(self):
+        for key, value in (
+            ("digest", "nightly"), ("sha", "aaaaaaa"),
+            ("image", "ghcr.io/another/project:nightly"),
+        ):
+            with self.subTest(key=key):
+                manifest = copy.deepcopy(self.manifest)
+                manifest["components"]["honua-server"][key] = value
+                with self.assertRaises(ValueError):
+                    IDENTITY.resolve(manifest)
+
 
 def args() -> Namespace:
     return Namespace(
@@ -22,27 +78,450 @@ def args() -> Namespace:
         fixture_revision="fixture-v1",
         evidence_uri="https://example.test/evidence",
         evidence_digest="sha256:" + "c" * 64,
+        base_url="http://localhost:8094",
     )
 
 
 class CanonicalArtifactEvidenceTests(unittest.TestCase):
     def test_every_governed_format_assignment_has_a_budget_profile(self):
-        self.assertEqual(23, len(MODULE.GOVERNED_ASSIGNMENTS))
+        self.assertEqual(24, len(MODULE.GOVERNED_ASSIGNMENTS))
         for identity, assignment in MODULE.GOVERNED_ASSIGNMENTS.items():
             self.assertIn(assignment.budget_profile, MODULE.FORMAT_BUDGET_PROFILES)
             self.assertEqual(f"format.{identity[0]}", assignment.capability_key)
 
-    def test_budget_incomplete_observation_remains_an_explicit_skip(self):
+    def test_third_party_produced_artifact_can_never_pass(self):
+        """#4398: the Zarr store cells read what `xarray.to_zarr` wrote, so however
+        clean the canonical client read is, the row cannot be Honua cloud-native
+        evidence."""
         started = "2026-08-21T00:00:00Z"
         row = MODULE._observation(
-            "cog", "window-read", "Rasterio", "diagnostic", started, args()
+            "zarr", "array-read", "zarr", "diagnostic", started, args()
+        )
+        # Even with every declared metadata oracle satisfied, the producer bars a pass.
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"])
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertEqual(MODULE.NON_HONUA_PRODUCER_GAP, normalized[0]["skip_reason"])
+        self.assertFalse(normalized[0]["honua_in_loop"])
+        self.assertEqual("third-party-fixture", normalized[0]["artifact_producer"])
+        self.assertIsNone(normalized[0]["evidence_receipt"])
+
+    def test_verified_derived_zarr_still_requires_original_metadata_and_transfer_budgets(self):
+        def row():
+            result = MODULE._observation("zarr", "array-read", "zarr", "zarr", "2026-08-21T00:00:00Z", args())
+            result["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"])
+            result["observed_transfer"] = {"requests": 12, "range_requests": 0,
+                                           "full_object_downloads": 12, "transferred_bytes": 4096}
+            result["derived_output_binding"] = {
+                "source_sha": args().source_sha, "image_digest": args().image_digest,
+                "receipt_sha256": "d" * 64, "worker_image": "localhost:5000/cng-zarr-worker@sha256:" + "e" * 64,
+                "qualification": False, "job_id": "job42", "coverage_id": 7,
+                "registration_id": 8, "root_path": "derived-zarr/42-1/canonical.zarr"}
+            return result
+
+        passed = MODULE._normalize_observations([row()], args())[0]
+        self.assertEqual("pass", passed["result"])
+        self.assertEqual("honua", passed["artifact_producer"])
+        for section, key, value in [("observed_metadata", "chunks", [4, 8, 16]),
+                                    ("observed_metadata", "zarr_format", 3),
+                                    ("observed_transfer", "full_object_downloads", 17)]:
+            changed = row()
+            changed[section][key] = value
+            with self.subTest(key=key):
+                normalized = MODULE._normalize_observations([changed], args())[0]
+                self.assertNotEqual("pass", normalized["result"])
+                self.assertFalse(normalized["budget_results"]["met"])
+        unmeasured = row()
+        del unmeasured["observed_transfer"]
+        normalized = MODULE._normalize_observations([unmeasured], args())[0]
+        self.assertNotEqual("pass", normalized["result"])
+        self.assertFalse(normalized["budget_results"]["met"])
+        changed = row()
+        changed["operation"], changed["canonical_client"] = "multidimensional-subset", "xarray"
+        self.assertNotEqual("honua", MODULE._normalize_observations([changed], args())[0]["artifact_producer"])
+
+    def test_fsspec_requires_its_own_completed_read_and_unchanged_budgets(self):
+        row = MODULE._observation("zarr", "store-read", "fsspec", "fsspec-zarr", "2026-08-21T00:00:00Z", args())
+        row.update(executed=True,
+                   observed_metadata=dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"]),
+                   observed_transfer={"requests": 12, "range_requests": 0,
+                                      "full_object_downloads": 12, "transferred_bytes": 2704},
+                   derived_output_binding={"source_sha": args().source_sha, "image_digest": args().image_digest,
+                                           "receipt_sha256": "d" * 64,
+                                           "worker_image": "localhost:5000/cng-zarr-worker@sha256:" + "e" * 64,
+                                           "qualification": False, "job_id": "job42", "coverage_id": 7,
+                                           "registration_id": 8, "root_path": "derived-zarr/42-1/canonical.zarr"},
+                   fsspec_execution={"client": "fsspec.implementations.http.HTTPFileSystem", "completed": True,
+                                     "values_checked": 128,
+                                     "verified_facets": ["positive", "metadata", "range-efficiency"]})
+        normalized = MODULE._normalize_observations([copy.deepcopy(row)], args())[0]
+        self.assertEqual("pass", normalized["result"])
+        self.assertEqual({"positive", "metadata", "range-efficiency"}, set(normalized["facet_results"]))
+        for mutation in ("unexecuted", "binding", "not_completed", "values", "facets", "bytes", "objects", "transfer"):
+            changed = copy.deepcopy(row)
+            if mutation == "unexecuted":
+                changed["executed"] = False
+            elif mutation == "binding":
+                del changed["derived_output_binding"]
+            elif mutation == "not_completed":
+                changed["fsspec_execution"]["completed"] = False
+            elif mutation == "values":
+                changed["fsspec_execution"]["values_checked"] = 0
+            elif mutation == "facets":
+                changed["fsspec_execution"]["verified_facets"].append("crs-axis")
+            elif mutation == "bytes":
+                changed["observed_transfer"]["transferred_bytes"] = 33_554_433
+            elif mutation == "objects":
+                changed["observed_transfer"]["full_object_downloads"] = 17
+            else:
+                del changed["observed_transfer"]
+            with self.subTest(mutation=mutation):
+                rejected = MODULE._normalize_observations([changed], args())[0]
+                self.assertNotEqual("pass", rejected["result"])
+                self.assertIsNone(rejected["facet_results"])
+        for client, operation in (("xarray", "multidimensional-subset"), ("Dask", "distributed-array-compute")):
+            changed = copy.deepcopy(row)
+            changed.update(canonical_client=client, operation=operation,
+                           client_version=MODULE.GOVERNED_ASSIGNMENTS[("zarr", operation, client)].version)
+            rejected = MODULE._normalize_observations([changed], args())[0]
+            self.assertNotEqual("pass", rejected["result"])
+            self.assertFalse(rejected["honua_in_loop"])
+
+    def test_honua_transcoded_cog_passes_with_a_real_evidence_digest(self):
+        """#4398: `honua.cog.tif` is produced by CogMetadataExtractor +
+        CogTiffTileEncoder, so the COG cells are Honua evidence and — once every
+        declared oracle and the measured range budget are met — must actually pass."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, args()
+        )
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        row["observed_transfer"] = {
+            "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+            "transferred_bytes": 82_420,
+        }
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("pass", normalized[0]["result"])
+        self.assertTrue(normalized[0]["honua_in_loop"])
+        self.assertEqual("honua", normalized[0]["artifact_producer"])
+        self.assertEqual(args().evidence_digest, normalized[0]["evidence_digest"])
+        self.assertTrue(normalized[0]["budget_results"]["met"])
+
+    def test_cog_oracle_rejects_a_valid_but_wrong_transcode(self):
+        """A well-formed GeoTIFF cut from the wrong tile, or one that lost the nodata
+        cell, still reads cleanly in rasterio. The declared samples must reject it."""
+        expected = MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"]
+        measured = {
+            "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+            "transferred_bytes": 82_420,
+        }
+        for corruption in (
+            {"samples": dict(expected["samples"], **{"3,7": 1543.0})},
+            {"samples": dict(expected["samples"], **{"0,0": 256.0})},
+            {"pixel_mismatches": 1},
+            {"crs": "EPSG:4326"},
+            {"dimensions": [512, 512]},
+        ):
+            with self.subTest(corruption=sorted(corruption)):
+                started = "2026-08-21T00:00:00Z"
+                row = MODULE._observation(
+                    "cog", "window-read", "Rasterio", "rasterio-cog", started, args()
+                )
+                row["observed_metadata"] = dict(expected, **corruption)
+                row["observed_transfer"] = dict(measured)
+
+                normalized = MODULE._normalize_observations([row], args())
+
+                self.assertEqual("skip", normalized[0]["result"])
+                self.assertIsNone(normalized[0]["evidence_digest"])
+
+    def test_cog_range_budget_rejects_a_whole_object_read(self):
+        """Reading the entire object and slicing locally produces a byte-identical
+        tile. Range-efficient cloud-native access is the claim, so the observed
+        traffic has to carry it."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "cog", "structure-validate", "rio-cogeo", "rio-cogeo", started, args()
+        )
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        row["observed_transfer"] = {
+            "requests": 1, "range_requests": 0, "full_object_downloads": 1,
+            "transferred_bytes": 360_368,
+        }
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertIn("full-object downloads", normalized[0]["skip_reason"])
+        self.assertIn("range requests", normalized[0]["skip_reason"])
+
+    def test_zarr_subset_transcode_is_honua_evidence_and_prunes_chunks(self):
+        """#4398: Honua does not write Zarr, so the artifact it can be held to is what
+        `ZarrSubsetReader` decodes. That cell is Honua's, and a read that pulled the
+        whole array instead of the 8 chunks the subset touches must not pass."""
+        started = "2026-08-21T00:00:00Z"
+        expected = MODULE.FORMAT_BUDGET_PROFILES["zarr-honua-subset"]["expected_metadata"]
+        measured = {
+            "requests": 38, "range_requests": 0, "full_object_downloads": 19,
+            "transferred_bytes": 3_386,
+        }
+
+        def row(metadata, transfer):
+            observation = MODULE._observation(
+                "zarr", "subset-transcode", "xarray", "honua-zarr-transcode", started, args()
+            )
+            observation["observed_metadata"] = metadata
+            observation["observed_transfer"] = transfer
+            return observation
+
+        passing = MODULE._normalize_observations([row(dict(expected), dict(measured))], args())[0]
+        self.assertEqual("pass", passing["result"])
+        self.assertTrue(passing["honua_in_loop"])
+        self.assertEqual("honua", passing["artifact_producer"])
+
+        whole_array = MODULE._normalize_observations(
+            [row(dict(expected, chunk_objects_read=32),
+                 dict(measured, full_object_downloads=43, requests=86))],
+            args(),
+        )[0]
+        self.assertEqual("skip", whole_array["result"])
+        self.assertIn("chunk_objects_read", whole_array["skip_reason"])
+        self.assertIn("full-object downloads", whole_array["skip_reason"])
+
+        wrong_values = MODULE._normalize_observations(
+            [row(dict(expected, formula_mismatches=3), dict(measured))], args())[0]
+        self.assertEqual("skip", wrong_values["result"])
+        self.assertIn("formula_mismatches", wrong_values["skip_reason"])
+
+    def test_scope_disposition_names_the_third_party_cells(self):
+        """The fragment's own disposition must state which cells cannot support the
+        claim, so a downstream GA citation cannot read it as cloud-native proof. Cells,
+        not surfaces: Zarr holds both third-party store reads and Honua's transcode."""
+        def row(surface, operation, client, result, honua, executed=True):
+            return {
+                "surface": surface, "operation": operation, "canonical_client": client,
+                "result": result, "honua_in_loop": honua, "executed": executed,
+            }
+
+        rows = [
+            row("hdf5-netcdf", "dataset-read", "h5py", "skip", False),
+            row("zarr", "array-read", "zarr", "skip", False),
+            row("zarr", "subset-transcode", "xarray", "pass", True),
+            row("cog", "window-read", "Rasterio", "pass", True),
+            row("pmtiles", "producer-validate", "Tippecanoe", "skip", True, executed=False),
+        ]
+
+        disposition = MODULE._scope_disposition(rows)
+
+        self.assertIn("2 of 5", disposition)
+        self.assertIn("zarr/array-read/zarr", disposition)
+        self.assertIn("hdf5-netcdf/dataset-read/h5py", disposition)
+        self.assertNotIn("zarr/subset-transcode/xarray", disposition)
+        self.assertIn("1 governed cell(s) did not execute", disposition)
+        self.assertIn("not by Honua", disposition)
+
+    def test_a_cell_that_never_ran_is_reported_as_non_passing(self):
+        """#4398: an absent identity is indistinguishable from a passing one to
+        anything counting passes, so every governed cell gets an explicit row."""
+        started = "2026-08-21T00:00:00Z"
+        ran = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, args())
+        ran["result"] = "pass"
+
+        rows = MODULE._append_unexecuted_cells([ran], args())
+
+        self.assertEqual(len(MODULE.GOVERNED_ASSIGNMENTS), len(rows))
+        self.assertTrue(rows[0]["executed"])
+        synthesized = [row for row in rows if not row["executed"]]
+        self.assertEqual(len(MODULE.GOVERNED_ASSIGNMENTS) - 1, len(synthesized))
+        for row in synthesized:
+            self.assertNotEqual("pass", row["result"])
+            self.assertEqual(MODULE.NOT_RUN_GAP, row["skip_reason"])
+            self.assertIsNone(row["evidence_digest"])
+
+    def test_every_governed_surface_declares_a_producer(self):
+        for identity in MODULE.GOVERNED_ASSIGNMENTS:
+            self.assertTrue(
+                identity in MODULE.ARTIFACT_PRODUCER_OVERRIDES
+                or identity[0] in MODULE.ARTIFACT_PRODUCERS,
+                f"cell '{identity}' has no declared artifact producer",
+            )
+
+    def test_hard_gated_cell_that_does_not_pass_fails_the_run(self):
+        """A rejected transcode becomes a `skip`, not a `fail`. Exiting non-zero only on
+        `fail` would leave the lane green while its own oracles rejected the artifact."""
+        started = "2026-08-21T00:00:00Z"
+        rows = []
+        for identity in MODULE.HARD_GATED_CELLS:
+            surface, operation, client = identity
+            row = MODULE._observation(
+                surface, operation, client, "lane", started, args(),
+                MODULE.GOVERNED_ASSIGNMENTS[identity].version)
+            profile = MODULE.FORMAT_BUDGET_PROFILES[
+                MODULE.GOVERNED_ASSIGNMENTS[identity].budget_profile]
+            row["observed_metadata"] = dict(profile["expected_metadata"])
+            row["observed_transfer"] = {
+                "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+                "transferred_bytes": 82_420,
+            }
+            rows.append(row)
+
+        normalized = MODULE._normalize_observations(rows, args())
+        self.assertTrue(all(row["hard_gated"] for row in normalized))
+        self.assertTrue(all(row["result"] == "pass" for row in normalized))
+
+        # One unmet value oracle is enough to sink the run.
+        normalized[0]["result"] = "skip"
+        unmet = [
+            MODULE._cell_name(row) for row in normalized
+            if row.get("hard_gated") and row["result"] != "pass"
+        ]
+        self.assertEqual(1, len(unmet))
+
+    def test_offline_generated_evidence_is_refused_for_a_different_candidate(self):
+        """#4398 review: on a candidate dispatch the checkout and the candidate image can
+        differ, so artifact-gen output must not be stamped with the candidate's identity."""
+        started = "2026-08-21T00:00:00Z"
+        candidate = args()
+        candidate.generator_source_sha = "d" * 40
+        row = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, candidate)
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        row["observed_transfer"] = {
+            "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+            "transferred_bytes": 82_420,
+        }
+
+        normalized = MODULE._normalize_observations([row], candidate)[0]
+
+        self.assertEqual("skip", normalized["result"])
+        self.assertIn("d" * 40, normalized["skip_reason"])
+        self.assertIn("different Honua code", normalized["skip_reason"])
+        self.assertIsNone(normalized["evidence_digest"])
+
+        # Same source on both sides — the scheduled lane — still passes.
+        aligned = args()
+        same = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, aligned)
+        same["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        same["observed_transfer"] = dict(row["observed_transfer"])
+        self.assertEqual("pass", MODULE._normalize_observations([same], aligned)[0]["result"])
+
+    def test_zarr_transcode_cell_claims_no_unmeasured_crs_facet(self):
+        """The canonical Zarr fixture declares no CRS, so a `crs-axis` conformance facet
+        on this cell would be unearned. What is measured is the axis oracle."""
+        assignment = MODULE.GOVERNED_ASSIGNMENTS[("zarr", "subset-transcode", "xarray")]
+        self.assertNotIn("crs-axis", assignment.facets)
+        expected = MODULE.FORMAT_BUDGET_PROFILES["zarr-honua-subset"]["expected_metadata"]
+        self.assertEqual(["time", "y", "x"], expected["dimension_names"])
+        self.assertEqual(0, expected["axis_mismatches"])
+        self.assertIn("axis_mismatches",
+                      MODULE.FORMAT_BUDGET_PROFILES["zarr-honua-subset"]["required_metadata"])
+
+    def test_consumer_evidence_is_required_before_any_cog_or_zarr_cell_runs(self):
+        """A lane that skipped the artifact generator must fail loudly. Silently
+        falling back would restore exactly the false proof #4398 was filed for."""
+        with self.assertRaises(ValueError) as missing:
+            MODULE._consumer_evidence(Namespace(consumer_evidence=None))
+        self.assertIn("honua-consumer-evidence.json", str(missing.exception))
+
+        with self.assertRaises(ValueError) as empty:
+            MODULE._consumer_transfer(Namespace(consumer_evidence={"zarr": {}}), "cog")
+        self.assertIn("no cog read", str(empty.exception))
+
+        transfer = MODULE._consumer_transfer(
+            Namespace(consumer_evidence={"cog": {"observed_transfer": {"requests": 8}}}), "cog")
+        self.assertEqual({"requests": 8}, transfer)
+
+    def test_unmeasured_budget_names_the_oracle_it_could_not_prove(self):
+        """The blanket BUDGET_EVIDENCE_GAP rewrite is retired: a cell that measured
+        nothing now says which oracle is unproven, per cell."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args()
         )
 
         normalized = MODULE._normalize_observations([row], args())
 
         self.assertEqual("skip", normalized[0]["result"])
-        self.assertEqual(MODULE.BUDGET_EVIDENCE_GAP, normalized[0]["skip_reason"])
-        self.assertIsNone(normalized[0]["evidence_receipt"])
+        self.assertIn("no metadata was read back", normalized[0]["skip_reason"])
+        self.assertFalse(normalized[0]["budget_results"]["met"])
+        self.assertIsNone(normalized[0]["evidence_digest"])
+
+    def test_metadata_mismatch_is_reported_per_key_and_blocks_the_pass(self):
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args()
+        )
+        expected = MODULE.FORMAT_BUDGET_PROFILES["pmtiles-range"]["expected_metadata"]
+        row["observed_metadata"] = dict(expected) | {"tile_count": 20}
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertIn("tile_count", normalized[0]["skip_reason"])
+        self.assertIn("expected 21", normalized[0]["skip_reason"])
+
+    def test_measured_honua_observation_passes_and_carries_a_digest(self):
+        """The retirement half of the fix: a Honua-produced cell that met every declared
+        oracle now passes with a real evidence digest, instead of being rewritten to skip
+        along with every other row."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args()
+        )
+        row["observed_metadata"] = dict(
+            MODULE.FORMAT_BUDGET_PROFILES["pmtiles-range"]["expected_metadata"]
+        )
+        row["observed_transfer"] = {
+            "requests": 3,
+            "transferred_bytes": 20_480,
+            "range_requests": 3,
+            "full_object_downloads": 0,
+        }
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("pass", normalized[0]["result"], normalized[0].get("skip_reason"))
+        self.assertTrue(normalized[0]["honua_in_loop"])
+        self.assertTrue(normalized[0]["budget_results"]["met"])
+        self.assertEqual(args().evidence_digest, normalized[0]["evidence_digest"])
+        self.assertIsNotNone(normalized[0]["facet_results"])
+
+    def test_range_efficiency_facet_requires_measured_transfer(self):
+        """`min_range_requests` / `max_full_object_downloads` are the declared
+        range-efficiency budgets; nothing counted requests or bytes before #4398."""
+        started = "2026-08-21T00:00:00Z"
+        identity = ("pmtiles", "archive-read", "pmtiles")
+        assignment = MODULE.GOVERNED_ASSIGNMENTS[identity]
+        self.assertIn("range-efficiency", assignment.facets)
+
+        row = MODULE._observation(*identity, "python-pmtiles", started, args())
+        row["observed_metadata"] = dict(
+            MODULE.FORMAT_BUDGET_PROFILES[assignment.budget_profile]["expected_metadata"]
+        )
+
+        unmeasured = MODULE._normalize_observations([dict(row)], args())
+        self.assertEqual("skip", unmeasured[0]["result"])
+        self.assertIn("range-efficiency", unmeasured[0]["skip_reason"])
+
+        # A full-object download is exactly what "range-efficient cloud-native access"
+        # is supposed to exclude, so the budget must reject it.
+        overspent = dict(row)
+        overspent["observed_transfer"] = {
+            "requests": 3,
+            "transferred_bytes": 20_480,
+            "range_requests": 0,
+            "full_object_downloads": 9,
+        }
+        blocked = MODULE._normalize_observations([overspent], args())[0]
+        self.assertEqual("skip", blocked["result"])
+        self.assertIn("full-object downloads", blocked["skip_reason"])
+        self.assertIn("range requests", blocked["skip_reason"])
 
     def test_fixture_generators_match_governed_shape_and_archive_contract(self):
         fixture_source = (SCRIPT.parent / "generate-canonical-fixtures.py").read_text(
@@ -55,8 +534,32 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertIn("reshape(4, 8, 16)", fixture_source)
         self.assertIn('("time", "y", "x")', fixture_source)
         self.assertIn('"chunksizes": (1, 4, 4)', fixture_source)
-        self.assertIn("overview_level=3", fixture_source)
-        self.assertIn("nodata=-9999.0", fixture_source)
+        self.assertIn("overview_level=1", fixture_source)
+        self.assertIn("nodata=NODATA", fixture_source)
+        self.assertIn("NODATA = -9999.0", fixture_source)
+        # #4398: the Web Mercator source Honua transcodes, and the zlib codec its
+        # Zarr subset reader can decode. Without either, the COG and Zarr cells
+        # would silently fall back to validating third-party output.
+        self.assertIn('crs="EPSG:3857"', fixture_source)
+        self.assertIn("numcodecs.Zlib", fixture_source)
+        # The COG oracle recomputes the expected tile from these constants rather than
+        # importing them, so that a snapshot cannot stand in for a proof. That makes
+        # drift between the two a real risk: pin it here, in the cheap self-test job,
+        # instead of discovering it in the weekly lane.
+        self.assertIn("WEB_MERCATOR_SIZE = 512", fixture_source)
+        self.assertIn("WEB_MERCATOR_BLOCK = 256", fixture_source)
+        self.assertIn("NODATA_ROW, NODATA_COL = 3, 7", fixture_source)
+        self.assertIn("np.arange(WEB_MERCATOR_SIZE * WEB_MERCATOR_SIZE", fixture_source)
+        self.assertIn("pixels[NODATA_ROW, NODATA_COL] = NODATA", fixture_source)
+        expected_cog = MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"]
+        self.assertEqual([256, 256], expected_cog["dimensions"])
+        self.assertEqual(-9999.0, expected_cog["nodata"])
+        self.assertEqual(-9999.0, expected_cog["samples"]["3,7"])
+        # value(row, col) = row * 512 + col over the north-west quadrant.
+        for row, col in ((0, 0), (0, 255), (255, 0), (255, 255)):
+            self.assertEqual(
+                float(row * 512 + col), expected_cog["samples"][f"{row},{col}"])
+        self.assertIn("HonuaConsumerArtifacts.GenerateAsync", artifact_source)
         self.assertIn("for (var z = 0; z <= 2; z++)", artifact_source)
         self.assertIn('tileContentUris: ["content/0.glb"]', artifact_source)
         self.assertIn("maxHeightMeters: 100.0", artifact_source)
@@ -153,6 +656,382 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertIn("for attempt in 1 2 3", workflow)
         self.assertIn("retry npm install -g 3d-tiles-validator@0.6.1", workflow)
         self.assertNotIn("retry npm install -g 3d-tiles-validator@latest", workflow)
+
+    def test_selftest_and_lane_do_not_share_a_concurrency_group(self):
+        """#4479: a push to trunk touching the lane paths shares `refs/heads/trunk` with
+        the scheduled run. With one group and cancel-in-progress the cheap self-test
+        cancelled the heavyweight lane and, because the `cng` job is schedule/dispatch
+        only, produced no conformance result to replace it."""
+        workflow = (SCRIPT.parents[3] / ".github" / "workflows" / "cng-conformance.yml").read_text(
+            encoding="utf-8"
+        )
+        group = next(
+            line.strip() for line in workflow.splitlines() if line.strip().startswith("group:")
+        )
+        self.assertNotEqual("group: cng-conformance-${{ github.ref }}", group)
+        self.assertIn("github.event_name == 'schedule'", group)
+        self.assertIn("github.event_name == 'workflow_dispatch'", group)
+        self.assertIn("'lane'", group)
+        self.assertIn("'selftest'", group)
+
+
+# The exact `geo` metadata `GeoParquetFeatureWriter.BuildGeoParquetMetadata` emits for a
+# point layer served as EPSG:4326: no `crs` field (the GeoParquet default is OGC:CRS84)
+# and no metadata `bbox` — a `covering` descriptor addressing the physical bbox struct
+# column instead.
+EMITTED_GEOPARQUET_METADATA = {
+    "version": "1.1.0",
+    "primary_column": "geometry",
+    "columns": {
+        "geometry": {
+            "encoding": "WKB",
+            "geometry_types": ["Point"],
+            "covering": {
+                "bbox": {
+                    "xmin": ["bbox", "xmin"],
+                    "ymin": ["bbox", "ymin"],
+                    "xmax": ["bbox", "xmax"],
+                    "ymax": ["bbox", "ymax"],
+                }
+            },
+        }
+    },
+}
+
+# One per-row bbox for each of the six fixture points, as the physical struct column
+# holds them. Their aggregate is the profile's declared extent.
+FIXTURE_BBOX_COLUMN = {
+    "xmin": [-122.4194, 0.0, 179.5, 13.0, -70.0, 100.0],
+    "ymin": [37.7749, 0.0, 86.0, 52.5, 40.0, 1.3],
+    "xmax": [-122.4194, 0.0, 179.5, 13.0, -70.0, 100.0],
+    "ymax": [37.7749, 0.0, 86.0, 52.5, 40.0, 1.3],
+}
+
+
+def read_fixture_covering(parts):
+    """Stands in for the Arrow column read so the aggregation is testable without pyarrow."""
+    if list(parts)[:1] != ["bbox"]:
+        return None
+    return FIXTURE_BBOX_COLUMN.get(list(parts)[1])
+
+
+class GeoParquetObservationTests(unittest.TestCase):
+    """#4479: the observation must be read from the format Honua actually emits."""
+
+    def test_omitted_crs_is_the_geoparquet_default_not_a_missing_crs(self):
+        column = EMITTED_GEOPARQUET_METADATA["columns"]["geometry"]
+        self.assertNotIn("crs", column)
+        self.assertEqual("EPSG:4326", MODULE._geoparquet_column_crs(column))
+        self.assertEqual("EPSG:4326", MODULE._geoparquet_column_crs({"crs": "OGC:CRS84"}))
+
+    def test_explicit_crs_still_resolves_to_its_authority_code(self):
+        projjson = {"id": {"authority": "EPSG", "code": 3857}}
+        self.assertEqual("EPSG:3857", MODULE._geoparquet_column_crs({"crs": projjson}))
+        self.assertIsNone(MODULE._geoparquet_column_crs({"crs": None}))
+
+    def test_bounds_aggregate_the_declared_covering_column(self):
+        column = EMITTED_GEOPARQUET_METADATA["columns"]["geometry"]
+        self.assertNotIn("bbox", column)
+        self.assertEqual(
+            [-122.4194, 0.0, 179.5, 86.0],
+            MODULE._geoparquet_bounds(column, read_fixture_covering),
+        )
+
+    def test_bounds_fall_back_to_a_metadata_bbox_when_no_covering_is_declared(self):
+        column = {"encoding": "WKB", "bbox": [-1.0, -2.0, 3.0, 4.0]}
+        self.assertEqual(
+            [-1.0, -2.0, 3.0, 4.0],
+            MODULE._geoparquet_bounds(column, lambda parts: None),
+        )
+
+    def test_bounds_are_unobserved_when_the_covering_column_is_absent(self):
+        column = EMITTED_GEOPARQUET_METADATA["columns"]["geometry"]
+        self.assertEqual([], MODULE._geoparquet_bounds(column, lambda parts: None))
+
+    def test_emitted_geoparquet_meets_its_declared_budget_and_carries_a_digest(self):
+        """The regression this file exists for: before #4479 the PyArrow cell read
+        `column["crs"]` and `column["bbox"]`, which the writer never emits, so the
+        governed GeoParquet cell observed `None` / `[]`, always missed its oracle and
+        was rewritten to `skip` with its evidence digest stripped."""
+        observed = MODULE._geoparquet_metadata(
+            EMITTED_GEOPARQUET_METADATA, 6, read_fixture_covering)
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", started, args()
+        )
+        row["result"] = "pass"
+        row["observed_metadata"] = observed
+        normalized = MODULE._normalize_observations([row], args())[0]
+
+        self.assertEqual([], normalized["budget_results"]["unmet"])
+        self.assertTrue(normalized["budget_results"]["met"])
+        self.assertEqual("pass", normalized["result"])
+        self.assertEqual("sha256:" + "c" * 64, normalized["evidence_digest"])
+
+
+def gdal_geoparquet_info(feature_count=6, extent=(-122.4194, -0.0, 179.5, 86.0)):
+    """`ogrinfo -json -al -so -mdd _PARQUET_METADATA_` for the Honua artifact, trimmed.
+
+    Shape taken from the pinned GDAL 3.14.0 image reading `cng.parquet` from CNG run
+    35084581101: GDAL reports the south edge as -0.0 and surfaces the footer `geo` key
+    under the `_PARQUET_METADATA_` layer metadata domain.
+    """
+    return {
+        "driverShortName": "Parquet",
+        "layers": [{
+            "name": "cng",
+            "metadata": {"_PARQUET_METADATA_": {
+                "geo": json.dumps(EMITTED_GEOPARQUET_METADATA)}},
+            "geometryFields": [{
+                "name": "geometry",
+                "type": "Point",
+                "extent": list(extent),
+                "coordinateSystem": {"projjson": {
+                    "type": "GeographicCRS", "name": "WGS 84",
+                    "id": {"authority": "EPSG", "code": 4326}}},
+            }],
+            "featureCount": feature_count,
+        }],
+    }
+
+
+class _FakeCrs:
+    def __init__(self, value):
+        self._value = value
+
+    def to_string(self):
+        return self._value
+
+
+class _FakeGeometry:
+    name = "geometry"
+
+    def isna(self):
+        return self
+
+    def any(self):
+        return False
+
+
+class _FakeFrame:
+    """The GeoDataFrame surface the GeoPandas check reads, without GeoPandas."""
+
+    empty = False
+
+    def __init__(self, rows=6, crs="OGC:CRS84"):
+        self._rows = rows
+        self.crs = _FakeCrs(crs)
+        self.geometry = _FakeGeometry()
+        self.total_bounds = [-122.4194, 0.0, 179.5, 86.0]
+
+    def __len__(self):
+        return self._rows
+
+
+class GeoParquetConsumerMetadataTests(unittest.TestCase):
+    """#4799: GeoPandas and GDAL must report what they read, so a healthy artifact grades."""
+
+    def _grade(self, client, operation, lane, version, observed):
+        row = MODULE._observation(
+            "geoparquet", operation, client, lane, "2026-09-22T00:00:00Z", args(), version)
+        row["observed_metadata"] = observed
+        return MODULE._normalize_observations([row], args())[0]
+
+    def test_geopandas_reads_every_declared_oracle(self):
+        observed = MODULE._geopandas_geoparquet_metadata(
+            _FakeFrame(), EMITTED_GEOPARQUET_METADATA)
+
+        self.assertEqual({
+            "geo.version": "1.1.0", "primary_column": "geometry",
+            "geometry_encoding": "WKB", "crs": "EPSG:4326", "feature_count": 6,
+            "bounds": [-122.4194, 0.0, 179.5, 86.0],
+        }, observed)
+
+    def test_gdal_reads_every_declared_oracle(self):
+        observed = MODULE._gdal_geoparquet_metadata(gdal_geoparquet_info())
+
+        self.assertEqual({
+            "geo.version": "1.1.0", "primary_column": "geometry",
+            "geometry_encoding": "WKB", "crs": "EPSG:4326", "feature_count": 6,
+            "bounds": [-122.4194, -0.0, 179.5, 86.0],
+        }, observed)
+
+    def test_healthy_artifact_passes_both_lanes(self):
+        graded = [
+            self._grade("GeoPandas", "geometry-read", "geopandas-geoparquet", None,
+                        MODULE._geopandas_geoparquet_metadata(
+                            _FakeFrame(), EMITTED_GEOPARQUET_METADATA)),
+            self._grade("GDAL", "feature-read", "gdal-geoparquet", "3.14.0",
+                        MODULE._gdal_geoparquet_metadata(gdal_geoparquet_info())),
+        ]
+        for row in graded:
+            with self.subTest(client=row["canonical_client"]):
+                self.assertEqual([], row["budget_results"]["unmet"])
+                self.assertEqual("pass", row["result"])
+                self.assertEqual("sha256:" + "c" * 64, row["evidence_digest"])
+
+    def test_metadata_mismatch_still_does_not_pass(self):
+        graded = [
+            self._grade("GeoPandas", "geometry-read", "geopandas-geoparquet", None,
+                        MODULE._geopandas_geoparquet_metadata(
+                            _FakeFrame(rows=5), EMITTED_GEOPARQUET_METADATA)),
+            self._grade("GDAL", "feature-read", "gdal-geoparquet", "3.14.0",
+                        MODULE._gdal_geoparquet_metadata(
+                            gdal_geoparquet_info(feature_count=5))),
+        ]
+        for row in graded:
+            with self.subTest(client=row["canonical_client"]):
+                self.assertFalse(row["budget_results"]["met"])
+                self.assertIn("metadata 'feature_count' observed 5, expected 6",
+                              row["budget_results"]["unmet"])
+                self.assertNotEqual("pass", row["result"])
+                self.assertIsNone(row["evidence_digest"])
+
+    def test_undecoded_geo_declarations_are_named_not_passed(self):
+        observed = MODULE._geopandas_geoparquet_metadata(_FakeFrame(), None)
+        row = self._grade(
+            "GeoPandas", "geometry-read", "geopandas-geoparquet", None, observed)
+
+        self.assertNotEqual("pass", row["result"])
+        self.assertIn("required metadata 'geo.version' was not observed",
+                      row["budget_results"]["unmet"])
+        self.assertIn("required metadata 'geometry_encoding' was not observed",
+                      row["budget_results"]["unmet"])
+
+    def test_validate_geoparquet_attaches_each_consumers_own_observation(self):
+        """The wiring the bug lived in: before #4799 both rows were collected without
+        `observed_metadata`, so they could only ever skip."""
+        import subprocess
+        import sys
+        import types
+
+        geopandas = types.ModuleType("geopandas")
+        geopandas.read_parquet = lambda path: _FakeFrame()
+        geopandas_io = types.ModuleType("geopandas.io")
+        arrow = types.ModuleType("geopandas.io.arrow")
+        arrow._read_parquet_schema_and_metadata = lambda path, filesystem: (
+            None, {b"geo": json.dumps(EMITTED_GEOPARQUET_METADATA).encode()})
+        arrow._decode_metadata = json.loads
+        pyarrow = types.ModuleType("pyarrow")  # the PyArrow cell is not under test here
+        stubs = {
+            "geopandas": geopandas, "geopandas.io": geopandas_io,
+            "geopandas.io.arrow": arrow, "pyarrow": pyarrow,
+            "pyarrow.compute": types.ModuleType("pyarrow.compute"),
+            "pyarrow.parquet": types.ModuleType("pyarrow.parquet"),
+        }
+
+        def fake_run(*command):
+            if command[0] == "ogrinfo":
+                self.assertIn("_PARQUET_METADATA_", command)
+                stdout = json.dumps(gdal_geoparquet_info())
+            else:
+                stdout = "GDAL 3.8.4, released 2024/02/08"
+            return subprocess.CompletedProcess(command, 0, stdout, "")
+
+        env = {key: value for key, value in MODULE.os.environ.items()
+               if key != "HONUA_CNG_GDAL_IMAGE"}
+        with unittest.mock.patch.dict(sys.modules, stubs), \
+                unittest.mock.patch.dict(MODULE.os.environ, env, clear=True), \
+                unittest.mock.patch.object(MODULE, "_run", fake_run):
+            rows = MODULE.validate_geoparquet(Path("cng.parquet"), args())
+
+        by_client = {row["canonical_client"]: row for row in rows}
+        for client in ("GeoPandas", "GDAL"):
+            with self.subTest(client=client):
+                self.assertEqual("pass", by_client[client]["result"])
+                self.assertEqual(6, by_client[client]["observed_metadata"]["feature_count"])
+                self.assertEqual("WKB",
+                                 by_client[client]["observed_metadata"]["geometry_encoding"])
+
+
+class FlatGeobufConsumerMetadataTests(unittest.TestCase):
+    def _frame(self, rows=6):
+        frame = _FakeFrame(rows=rows, crs="EPSG:4326")
+        frame.geometry.geom_type = ["Point"] * rows
+        return frame
+
+    def _gdal(self):
+        return {"layers": [{"featureCount": 6, "geometryFields": [{
+            "type": "Point", "extent": [-122.4194, 0, 179.5, 86],
+            "coordinateSystem": {"projjson": {"id": {"authority": "EPSG", "code": 4326}}},
+        }]}]}
+
+    def test_each_reader_reports_its_own_metadata_and_changed_values_fail(self):
+        expected = {
+            "geometry_type": "Point", "feature_count": 6, "crs": "EPSG:4326",
+            "bounds": [-122.4194, 0, 179.5, 86],
+        }
+        for client, lane, observed in (
+            ("GeoPandas", "geopandas-flatgeobuf", MODULE._flatgeobuf_frame_metadata(self._frame())),
+            ("GDAL", "gdal-flatgeobuf", MODULE._gdal_flatgeobuf_metadata(self._gdal())),
+        ):
+            with self.subTest(client=client):
+                self.assertEqual(expected, observed)
+                row = MODULE._observation("flatgeobuf", "feature-read", client, lane,
+                                          "2026-09-25T00:00:00Z", args())
+                row["observed_metadata"] = observed
+                assignment = MODULE.GOVERNED_ASSIGNMENTS[("flatgeobuf", "feature-read", client)]
+                self.assertEqual([], MODULE._evaluate_budget(row, assignment))
+                row["observed_metadata"] = dict(observed, feature_count=5)
+                self.assertTrue(MODULE._evaluate_budget(row, assignment))
+
+    def test_missing_gdal_crs_is_not_filled_from_oracle(self):
+        info = self._gdal()
+        info["layers"][0]["geometryFields"][0].pop("coordinateSystem")
+        self.assertNotIn("crs", MODULE._gdal_flatgeobuf_metadata(info))
+        with self.assertRaises(ValueError):
+            MODULE._gdal_flatgeobuf_metadata({"layers": []})
+
+    def test_mixed_geometry_cannot_report_homogeneous_point(self):
+        frame = self._frame()
+        frame.geometry.geom_type[0] = "LineString"
+        self.assertEqual("LineString,Point", MODULE._flatgeobuf_frame_metadata(frame)["geometry_type"])
+
+    def test_pmtiles_enum_numeric_and_unknown_values(self):
+        from enum import Enum
+
+        class TileType(Enum):
+            MVT = 1
+            PNG = 2
+            JPEG = 3
+
+        for raw, expected in ((TileType.MVT, "mvt"), (TileType.PNG, "png"),
+                              (TileType.JPEG, "jpeg"), (1, "mvt"), (4, "webp"),
+                              ("MVT", "mvt"), (88, "88")):
+            with self.subTest(raw=raw):
+                self.assertEqual(expected, MODULE._pmtiles_tile_type(raw))
+
+    def test_javascript_metadata_survives_collection_without_invented_transfer(self):
+        import subprocess
+
+        payload = [{
+            "surface": "flatgeobuf", "operation": "feature-read", "canonical_client": "flatgeobuf-js",
+            "client_version": "4.4.0", "lane": "node-flatgeobuf", "result": "pass",
+            "observed_metadata": {"feature_count": 5, "crs": "EPSG:3857"},
+        }]
+        with unittest.mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+            rows = MODULE.validate_javascript(Path("artifacts"), args())
+        self.assertEqual(payload[0]["observed_metadata"], rows[0]["observed_metadata"])
+        self.assertNotIn("observed_transfer", rows[0])
+
+    def test_javascript_whole_object_response_survives_collection_and_fails_unchanged_budget(self):
+        import subprocess
+
+        payload = [{
+            "surface": "pmtiles", "operation": "browser-archive-read", "canonical_client": "PMTiles-browser-viewer",
+            "client_version": "4.5.0", "lane": "node-pmtiles", "result": "pass",
+            "observed_metadata": dict(MODULE.FORMAT_BUDGET_PROFILES["pmtiles-range"]["expected_metadata"]),
+            "observed_transfer": {"requests": 1, "range_requests": 1, "full_object_downloads": 1, "transferred_bytes": 1107},
+            "serving_source": {"provider_environment": "localstack", "publication_api_proven": False},
+            "http_responses": [{"status": 206, "bytes": 1107, "content_range": "bytes 0-1106/1107"}],
+        }]
+        with unittest.mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+            rows = MODULE.validate_javascript(Path("artifacts"), args())
+        for key in ("observed_transfer", "serving_source", "http_responses"):
+            self.assertEqual(payload[0][key], rows[0][key])
+        normalized = MODULE._normalize_observations(rows, args())
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertFalse(normalized[0]["budget_results"]["met"])
 
 
 if __name__ == "__main__":

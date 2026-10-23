@@ -3,11 +3,12 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.RegularExpressions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -24,11 +25,19 @@ namespace Honua.Protocols.Ogc.Api.Edr;
 /// and cube subsetting samples the canonical raster read pipeline on a bounded grid. Results
 /// are returned as CoverageJSON.
 /// </summary>
-internal sealed class EdrHandler
+internal sealed partial class EdrHandler
 {
     private const string CoveragesProtocol = "OGC-API-Coverages";
     private const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
     private const string CoverageJsonMediaType = "application/prs.coveragejson+json";
+    private const string CoverageJsonFormat = "CoverageJSON";
+    private const string Crs84Code = "CRS84";
+
+    // Every output format and CRS a collection advertises (output_formats / crs). The position
+    // and cube queries bind `f` and `crs` to these lists, so an unadvertised value is a 400
+    // rather than a silently CoverageJSON/CRS84 answer (#4153).
+    private static readonly ImmutableArray<string> OutputFormats = ImmutableArray.Create(CoverageJsonFormat);
+    private static readonly ImmutableArray<string> SupportedCrs = ImmutableArray.Create(Crs84Code);
 
     // Bound the cube sampling grid so an unbounded bbox cannot fan out into a huge
     // number of point-sample reads; EDR cube here is a sampled subset, not a full export.
@@ -37,12 +46,14 @@ internal sealed class EdrHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly ICoordinateTransformService _coordinateTransformService;
 
     public EdrHandler(EdrDependencies dependencies)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
         _graphProvider = dependencies.GraphProvider;
         _rasterStore = dependencies.RasterStore;
+        _coordinateTransformService = dependencies.CoordinateTransformService;
     }
 
     public static IResult GetLandingPage(HttpContext context)
@@ -71,46 +82,22 @@ internal sealed class EdrHandler
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-
-        var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
-        foreach (var publication in snapshot.Graph.Publications)
-        {
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
-                !IsProtocolEnabled(service, CoveragesProtocol))
-            {
-                continue;
-            }
-
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) ||
-                !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
-            {
-                continue;
-            }
-
-            if (!byResource.TryGetValue(resource!.Metadata.Id, out var existing) ||
-                (publication.IsPrimary && !existing.Publication.IsPrimary))
-            {
-                byResource[resource.Metadata.Id] = (publication, service, resource!);
-            }
-        }
+        var byCollection = await LayerValidationHelpers.ResolveStorageCollectionsWithAccessV2Async(
+            context, snapshot, CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var collections = ImmutableArray.CreateBuilder<EdrCollection>();
-        foreach (var entry in byResource.Values.OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue))
+        foreach (var entry in byCollection.Where(static pair => pair.Value.IsValid).OrderBy(static pair => pair.Key))
         {
-            var storageLayerId = snapshot.ResolveStorageLayerId(entry.Publication);
-            if (!storageLayerId.HasValue)
-            {
-                continue;
-            }
-
-            var raster = await GetRasterAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            var storageLayerId = entry.Key;
+            var raster = await GetRasterAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
             if (raster is null)
             {
                 continue;
             }
 
-            collections.Add(BuildCollection(entry.Resource, storageLayerId.Value, raster.Value, baseUrl));
+            collections.Add(await BuildCollectionAsync(
+                    entry.Value.Resource!, storageLayerId, raster.Value, baseUrl, cancellationToken)
+                .ConfigureAwait(false));
         }
 
         var links = ImmutableArray.Create(
@@ -131,7 +118,8 @@ internal sealed class EdrHandler
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var collection = BuildCollection(resolution.Resource!, resolution.StorageLayerId, resolution.Raster, baseUrl);
+        var collection = await BuildCollectionAsync(resolution.Resource!, resolution.StorageLayerId, resolution.Raster, baseUrl, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(collection, EdrJsonContext.Default.EdrCollection);
     }
 
@@ -143,32 +131,91 @@ internal sealed class EdrHandler
             return resolution.Error;
         }
 
-        var coords = context.Request.Query["coords"].ToString();
-        if (!TryParsePoint(coords, out var lon, out var lat))
+        var queryError = ValidateOutputFormatAndCrs(context);
+        if (queryError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(
-                context, "Query parameter 'coords' must be a WKT POINT, e.g. coords=POINT(-122.4 37.8).");
+            return queryError;
         }
 
+        var coords = context.Request.Query["coords"].ToString();
+        if (!TryParsePositions(coords, out var positions, out var isMultiPoint))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Query parameter 'coords' must be a WKT POINT or MULTIPOINT, e.g. coords=POINT(-122.4 37.8) or coords=MULTIPOINT((-122.4 37.8),(-122.3 37.7)).");
+        }
+
+        // coords are CRS84 lon/lat while RasterInfo.Extent is in the raster's storage CRS, so the
+        // gate compares against the CRS84-transformed extent (#4149). Every MULTIPOINT member is
+        // gated: a partial answer would be indistinguishable from a full one.
         var raster = resolution.Raster;
-        if (!WithinExtent(raster.Extent, lon, lat))
+        var crs84Extent = await ResolveCrs84ExtentAsync(raster, cancellationToken).ConfigureAwait(false);
+        if (positions.Any(position => !WithinExtent(crs84Extent, position.Lon, position.Lat)))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context, "Requested position is outside the collection spatial extent.");
         }
 
-        var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
+        var datetimeError = ValidateDatetime(context, raster, out var temporallyIntersects);
+        if (datetimeError is not null)
+        {
+            return datetimeError;
+        }
+
         var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
         if (parameterError is not null)
         {
             return parameterError;
         }
 
+        if (!temporallyIntersects)
+        {
+            return Results.NoContent();
+        }
+
+        var instant = Iso(ResolveRasterInstant(raster));
+        var parameters = BuildParameters(raster, requestedParameters);
+        if (!isMultiPoint)
+        {
+            var (lon, lat) = positions[0];
+            var coverage = await SamplePointSeriesAsync(resolution, parameters, lon, lat, cancellationToken).ConfigureAwait(false);
+
+            // The single time instant is carried on the domain via a t-axis serialized as a
+            // CoverageJSON time axis (ISO-8601 string values) alongside the numeric x/y axes.
+            return CoverageJsonResult(ToCoverageNode(coverage, instant));
+        }
+
+        // EDR 1.1 position: a MULTIPOINT answers with a CoverageJSON CoverageCollection holding one
+        // PointSeries coverage per requested position, in request order.
+        var coverages = new System.Text.Json.Nodes.JsonArray();
+        foreach (var (lon, lat) in positions)
+        {
+            var coverage = await SamplePointSeriesAsync(resolution, parameters, lon, lat, cancellationToken).ConfigureAwait(false);
+            coverages.Add(ToCoverageNode(coverage, instant));
+        }
+
+        var parametersNode = coverages[0]!["parameters"]!.DeepClone();
+        var collection = new System.Text.Json.Nodes.JsonObject
+        {
+            ["type"] = "CoverageCollection",
+            ["domainType"] = "PointSeries",
+            ["parameters"] = parametersNode,
+            ["coverages"] = coverages
+        };
+        return CoverageJsonResult(collection);
+    }
+
+    private async Task<CoverageJson> SamplePointSeriesAsync(
+        EdrResolution resolution,
+        ImmutableDictionary<string, EdrParameter> parameters,
+        double lon,
+        double lat,
+        CancellationToken cancellationToken)
+    {
         var pixel = await _rasterStore
-            .IdentifyAsync(resolution.StorageLayerId, raster.Id, lon, lat, srid: 4326, rendering: null, cancellationToken)
+            .IdentifyAsync(resolution.StorageLayerId, resolution.Raster.Id, lon, lat, srid: 4326, rendering: null, cancellationToken)
             .ConfigureAwait(false);
 
-        var parameters = BuildParameters(raster, requestedParameters);
         var ranges = ImmutableDictionary.CreateBuilder<string, CoverageJsonRange>();
         foreach (var parameterName in parameters.Keys)
         {
@@ -191,16 +238,12 @@ internal sealed class EdrHandler
             Referencing = BuildReferencing()
         };
 
-        var coverage = new CoverageJson
+        return new CoverageJson
         {
             Domain = domain,
             Parameters = parameters,
             Ranges = ranges.ToImmutable()
         };
-
-        // The single time instant is carried on the domain via a t-axis serialized as a
-        // CoverageJSON time axis (ISO-8601 string values) alongside the numeric x/y axes.
-        return JsonWithTimeAxis(coverage, instant);
     }
 
     public async Task<IResult> GetCubeAsync(HttpContext context, string collectionId, CancellationToken cancellationToken)
@@ -211,6 +254,12 @@ internal sealed class EdrHandler
             return resolution.Error;
         }
 
+        var queryError = ValidateOutputFormatAndCrs(context);
+        if (queryError is not null)
+        {
+            return queryError;
+        }
+
         if (!TryParseBbox(context.Request.Query["bbox"].ToString(), out var minX, out var minY, out var maxX, out var maxY))
         {
             return StandardErrorHelpers.CreateBadRequest(
@@ -219,13 +268,24 @@ internal sealed class EdrHandler
 
         var resolutionCount = ResolveCubeSampleCount(context.Request.Query["resolution-x"].ToString());
         var raster = resolution.Raster;
-        var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
+        var datetimeError = ValidateDatetime(context, raster, out var temporallyIntersects);
+        if (datetimeError is not null)
+        {
+            return datetimeError;
+        }
+
         var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
         if (parameterError is not null)
         {
             return parameterError;
         }
 
+        if (!temporallyIntersects)
+        {
+            return Results.NoContent();
+        }
+
+        var instant = Iso(ResolveRasterInstant(raster));
         var parameters = BuildParameters(raster, requestedParameters);
 
         // Sample a bounded regular grid of cell centres inside the bbox using the canonical
@@ -285,7 +345,7 @@ internal sealed class EdrHandler
             Ranges = ranges.ToImmutable()
         };
 
-        return JsonWithTimeAxis(coverage, instant);
+        return CoverageJsonResult(ToCoverageNode(coverage, instant));
     }
 
     // ---- resolution ----
@@ -298,14 +358,15 @@ internal sealed class EdrHandler
 
     private async Task<EdrResolution> ResolveAsync(HttpContext context, string collectionId, CancellationToken cancellationToken)
     {
-        var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+        var validation = await LayerValidationHelpers.ValidateStorageCollectionWithAccessV2Async(
             context, collectionId, requiredProtocol: CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {
             return new EdrResolution(null, 0, default, validation.ErrorResult);
         }
 
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = validation.Snapshot
+            ?? await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var storageLayerId = snapshot.ResolveStorageLayerId(validation.Publication!);
         if (!storageLayerId.HasValue)
         {
@@ -345,23 +406,50 @@ internal sealed class EdrHandler
 
     // ---- metadata building ----
 
-    private static EdrCollection BuildCollection(MetadataV2Resource resource, int storageLayerId, RasterInfo raster, string baseUrl)
+    private async Task<EdrCollection> BuildCollectionAsync(
+        MetadataV2Resource resource,
+        int storageLayerId,
+        RasterInfo raster,
+        string baseUrl,
+        CancellationToken cancellationToken)
     {
         var collectionId = storageLayerId.ToString(CultureInfo.InvariantCulture);
         var basePath = $"{baseUrl}/edr/collections/{Uri.EscapeDataString(collectionId)}";
-        var outputFormats = ImmutableArray.Create("CoverageJSON");
+        var outputFormats = OutputFormats;
 
-        Extent? extent = null;
+        // The raster's single instant is its temporal geometry; advertising it lets clients pick a
+        // datetime that selects data instead of receiving 204 for a disjoint request (#4151).
+        var rasterInstant = Iso(ResolveRasterInstant(raster));
+        var temporal = new TemporalExtent
+        {
+            Interval = ImmutableArray.Create(ImmutableArray.Create<string?>(rasterInstant, rasterInstant))
+        };
+
+        var extent = new Extent { Temporal = temporal };
         if (raster.Extent is { } e)
         {
+            // The storage-CRS extent is advertised in CRS84 (#4149). If the storage CRS cannot be
+            // transformed, the native bbox is labelled with its own EPSG CRS instead of CRS84, as
+            // OGC API - Coverages does for the same layer.
+            var crs84Extent = await ResolveCrs84ExtentAsync(raster, cancellationToken).ConfigureAwait(false);
             extent = new Extent
             {
-                Spatial = new SpatialExtent
-                {
-                    BoundingBox = ImmutableArray.Create(
-                        ImmutableArray.Create(e.XMin, e.YMin, e.XMax, e.YMax)),
-                    Crs = Crs84
-                }
+                Spatial = crs84Extent is { } bbox
+                    ? new SpatialExtent
+                    {
+                        BoundingBox = ImmutableArray.Create(
+                            ImmutableArray.Create(bbox.MinLon, bbox.MinLat, bbox.MaxLon, bbox.MaxLat)),
+                        Crs = Crs84
+                    }
+                    : new SpatialExtent
+                    {
+                        BoundingBox = ImmutableArray.Create(
+                            ImmutableArray.Create(e.XMin, e.YMin, e.XMax, e.YMax)),
+                        Crs = string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"http://www.opengis.net/def/crs/EPSG/0/{ResolveStorageSrid(raster)}")
+                    },
+                Temporal = temporal
             };
         }
 
@@ -396,7 +484,7 @@ internal sealed class EdrHandler
             Links = links,
             Extent = extent,
             DataQueries = dataQueries,
-            Crs = ImmutableArray.Create("CRS84"),
+            Crs = SupportedCrs,
             OutputFormats = outputFormats,
             ParameterNames = BuildParameters(raster, requested: null)
         };
@@ -482,6 +570,50 @@ internal sealed class EdrHandler
             [$"Available parameter names: {string.Join(", ", available)}."]);
     }
 
+    /// <summary>
+    /// Binds the position/cube <c>f</c> and <c>crs</c> query parameters to the collection's
+    /// advertised <c>output_formats</c> and <c>crs</c> lists.
+    /// </summary>
+    /// <remarks>
+    /// OGC API - Common Part 1 (8.1.3) maps an unsupported query-parameter value to <c>400</c>.
+    /// Before #4153 the handler never read either parameter, so <c>f=csv</c> returned CoverageJSON
+    /// and <c>crs=EPSG:3857</c> reinterpreted projected metres as CRS84 degrees.
+    /// </remarks>
+    private static IResult? ValidateOutputFormatAndCrs(HttpContext context)
+    {
+        var format = context.Request.Query["f"].ToString();
+        if (!string.IsNullOrWhiteSpace(format) && !IsCoverageJsonFormat(format.Trim()))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Query parameter 'f' requests an output format this collection does not offer: {format}.",
+                [$"Available output formats: {string.Join(", ", OutputFormats)}."]);
+        }
+
+        var crs = context.Request.Query["crs"].ToString();
+        if (!string.IsNullOrWhiteSpace(crs) && !IsCrs84(crs.Trim()))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Query parameter 'crs' requests a coordinate reference system this collection does not offer: {crs}.",
+                [$"Available crs: {string.Join(", ", SupportedCrs)}."]);
+        }
+
+        return null;
+    }
+
+    private static bool IsCoverageJsonFormat(string format) =>
+        string.Equals(format, CoverageJsonFormat, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(format, "covjson", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(format, CoverageJsonMediaType, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCrs84(string crs) =>
+        string.Equals(crs, Crs84Code, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(crs, "OGC:CRS84", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(crs, "[OGC:CRS84]", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(crs, Crs84, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(crs, "https://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase);
+
     private static ImmutableArray<CoverageJsonReferencing> BuildReferencing() =>
         ImmutableArray.Create(
             new CoverageJsonReferencing
@@ -501,6 +633,58 @@ internal sealed class EdrHandler
 
     // ---- parsing helpers ----
 
+    /// <summary>
+    /// Parses the EDR position <c>coords</c> WKT: a <c>POINT</c>, or a <c>MULTIPOINT</c> in either
+    /// the parenthesised member form <c>MULTIPOINT((x y),(x y))</c> shown in the EDR 1.1 examples or
+    /// the bare form <c>MULTIPOINT(x y, x y)</c>.
+    /// </summary>
+    private static bool TryParsePositions(string coords, out (double Lon, double Lat)[] positions, out bool isMultiPoint)
+    {
+        positions = [];
+        isMultiPoint = false;
+        if (string.IsNullOrWhiteSpace(coords))
+        {
+            return false;
+        }
+
+        var trimmed = coords.Trim();
+        if (!trimmed.StartsWith("MULTIPOINT", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParsePoint(trimmed, out var lon, out var lat))
+            {
+                return false;
+            }
+
+            positions = [(lon, lat)];
+            return true;
+        }
+
+        isMultiPoint = true;
+        var body = trimmed["MULTIPOINT".Length..].Trim();
+        if (body.Length < 2 || body[0] != '(' || body[^1] != ')')
+        {
+            return false;
+        }
+
+        var members = body[1..^1]
+            .Split(',', StringSplitOptions.TrimEntries)
+            .Select(static member => member.StartsWith('(') && member.EndsWith(')') ? member[1..^1].Trim() : member);
+        var parsed = new List<(double Lon, double Lat)>();
+        foreach (var inner in members)
+        {
+            if (inner.Contains('(') || inner.Contains(')')
+                || !TryParseOrdinates(inner.Split(' ', StringSplitOptions.RemoveEmptyEntries), out var lon, out var lat))
+            {
+                return false;
+            }
+
+            parsed.Add((lon, lat));
+        }
+
+        positions = [.. parsed];
+        return positions.Length > 0;
+    }
+
     private static bool TryParsePoint(string coords, out double lon, out double lat)
     {
         lon = 0;
@@ -519,10 +703,25 @@ internal sealed class EdrHandler
         }
 
         var inner = trimmed[(open + 1)..close];
-        var parts = inner.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return parts.Length >= 2
-            && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out lon)
-            && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out lat);
+        return TryParseOrdinates(
+            inner.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            out lon,
+            out lat);
+    }
+
+    /// <summary>
+    /// Parses a WKT position as <c>x y</c> or <c>x y z</c>. Every token must be a number: a third
+    /// token is a Z ordinate (ignored for 2D sampling), never unvalidated trailing text.
+    /// </summary>
+    private static bool TryParseOrdinates(string[] ordinates, out double lon, out double lat)
+    {
+        lon = 0;
+        lat = 0;
+        return ordinates.Length is 2 or 3
+            && double.TryParse(ordinates[0], NumberStyles.Float, CultureInfo.InvariantCulture, out lon)
+            && double.TryParse(ordinates[1], NumberStyles.Float, CultureInfo.InvariantCulture, out lat)
+            && (ordinates.Length == 2
+                || double.TryParse(ordinates[2], NumberStyles.Float, CultureInfo.InvariantCulture, out _));
     }
 
     private static bool TryParseBbox(string bbox, out double minX, out double minY, out double maxX, out double maxY)
@@ -555,20 +754,63 @@ internal sealed class EdrHandler
             ? Array.Empty<string>()
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string ResolveInstant(string datetime, RasterInfo raster)
+    /// <summary>
+    /// Validates the EDR <c>datetime</c> query parameter and decides whether the collection's
+    /// temporal geometry intersects it (#4151).
+    /// </summary>
+    /// <remarks>
+    /// The coverage is a single raster whose temporal geometry is one instant: its acquisition
+    /// date, falling back to its creation date (<see cref="ResolveRasterInstant"/>). OGC API - EDR
+    /// 1.1 <c>/req/edr/datetime-response</c> only returns data whose temporal geometry intersects
+    /// the requested instant or interval, so a disjoint request selects no data and the query
+    /// paths answer <c>204 No Content</c> instead of stamping the requested time onto the raster's
+    /// values. A value that is not an RFC 3339 date-time or <c>start/end</c> interval (with
+    /// <c>..</c> or empty open ends) is an invalid parameter value, which OGC API - Common Part 1
+    /// maps to <c>400</c>; the grammar is checked here because the shared range parser accepts any
+    /// <see cref="DateTimeOffset"/> text. The intersection is exact to the tick, and the t-axis
+    /// advertises the instant with its fractional seconds, so echoing it back selects it.
+    /// </remarks>
+    private static IResult? ValidateDatetime(HttpContext context, RasterInfo raster, out bool intersects)
     {
-        if (!string.IsNullOrWhiteSpace(datetime) &&
-            DateTimeOffset.TryParse(
-                datetime.Split('/')[0],
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out var parsed))
+        intersects = true;
+        var datetime = context.Request.Query["datetime"].ToString();
+        if (string.IsNullOrWhiteSpace(datetime))
         {
-            return Iso(parsed);
+            return null;
         }
 
-        return Iso(raster.AcquisitionDate ?? raster.CreatedAt);
+        if (!IsRfc3339InstantOrInterval(datetime) ||
+            !OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out _))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Query parameter 'datetime' must be an RFC 3339 instant or an interval 'start/end' where either end may be '..', e.g. datetime=2024-05-01T00:00:00Z/..");
+        }
+
+        var instant = ResolveRasterInstant(raster);
+        intersects = (start is not { } from || instant >= from)
+            && (end is not { } to || instant <= to);
+        return null;
     }
+
+    private static bool IsRfc3339InstantOrInterval(string datetime)
+    {
+        var parts = datetime.Split('/');
+        return parts.Length switch
+        {
+            1 => Rfc3339DateTime().IsMatch(parts[0]),
+            2 => parts.All(static part => part is "" or ".." || Rfc3339DateTime().IsMatch(part)),
+            _ => false
+        };
+    }
+
+    // RFC 3339 date-time: full-date "T" partial-time with optional fractional seconds and a
+    // mandatory "Z" or numeric UTC offset.
+    [GeneratedRegex(@"^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial Regex Rfc3339DateTime();
+
+    private static DateTimeOffset ResolveRasterInstant(RasterInfo raster)
+        => raster.AcquisitionDate ?? raster.CreatedAt;
 
     private static int ResolveCubeSampleCount(string resolutionX)
     {
@@ -598,14 +840,42 @@ internal sealed class EdrHandler
         return values;
     }
 
-    private static bool WithinExtent(RasterExtent? extent, double lon, double lat)
+    // RasterInfo.Extent is populated in the raster's storage SRID, not CRS84 (#4149).
+    private async Task<(double MinLon, double MinLat, double MaxLon, double MaxLat)?> ResolveCrs84ExtentAsync(
+        RasterInfo raster,
+        CancellationToken cancellationToken)
+    {
+        if (raster.Extent is not { } e)
+        {
+            return null;
+        }
+
+        return await OgcExtentTransformer
+            .TryTransformExtentToCrs84Async(
+                e.XMin,
+                e.YMin,
+                e.XMax,
+                e.YMax,
+                ResolveStorageSrid(raster),
+                _coordinateTransformService,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static int ResolveStorageSrid(RasterInfo raster)
+        => raster.Extent?.Srid ?? raster.Srid ?? 4326;
+
+    private static bool WithinExtent(
+        (double MinLon, double MinLat, double MaxLon, double MaxLat)? extent,
+        double lon,
+        double lat)
     {
         if (extent is not { } e)
         {
-            return true; // No declared extent: accept and let the store decide.
+            return true; // No declared or transformable extent: accept and let the store decide.
         }
 
-        return lon >= e.XMin && lon <= e.XMax && lat >= e.YMin && lat <= e.YMax;
+        return lon >= e.MinLon && lon <= e.MaxLon && lat >= e.MinLat && lat <= e.MaxLat;
     }
 
     private static int BandIndex(string parameterName)
@@ -632,16 +902,15 @@ internal sealed class EdrHandler
         _ => null
     };
 
+    // UTC RFC 3339 instant. Fractional seconds are kept (and omitted with their period when zero)
+    // so an advertised time round-trips exactly through the datetime parameter (#4151).
     private static string Iso(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
-
-    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol) =>
-        service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
+        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture);
 
     // CoverageJSON puts the t-axis values (ISO strings) on the domain alongside numeric
     // x/y axes; the source-gen NdArray axis dictionary is numeric-only, so the time axis is
     // merged into the serialized document via a post-step that adds the "t" string axis.
-    private static IResult JsonWithTimeAxis(CoverageJson coverage, string instant)
+    private static System.Text.Json.Nodes.JsonNode ToCoverageNode(CoverageJson coverage, string instant)
     {
         var node = System.Text.Json.JsonSerializer.SerializeToNode(coverage, EdrJsonContext.Default.CoverageJson)!;
         var axes = node["domain"]!["axes"]!.AsObject();
@@ -649,6 +918,9 @@ internal sealed class EdrHandler
             new CoverageJsonTimeAxis { Values = ImmutableArray.Create(instant) },
             EdrJsonContext.Default.CoverageJsonTimeAxis)!;
         axes["t"] = timeAxis;
-        return Results.Text(node.ToJsonString(), CoverageJsonMediaType);
+        return node;
     }
+
+    private static IResult CoverageJsonResult(System.Text.Json.Nodes.JsonNode document)
+        => Results.Text(document.ToJsonString(), CoverageJsonMediaType);
 }

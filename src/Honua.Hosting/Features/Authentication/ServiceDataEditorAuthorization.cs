@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -143,6 +144,13 @@ internal static class ServiceDataEditorAuthorization
             return AccessDecision.Forbidden(AccessPolicyHelpers.TenantScopeDeniedReason);
         }
 
+        // Ownership semantics are a capability constraint, not a discretionary
+        // grant. Admins, wildcard grants and scoped write keys cannot bypass it.
+        if (MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
+        }
+
         // Layer-scoped write keys (#1637) are enforced here in the shared pipeline.
         // The key must carry a grant for the target (service, layer); a service-wide
         // grant authorizes any layer of that service, a layer-specific grant only
@@ -216,6 +224,33 @@ internal static class ServiceDataEditorAuthorization
         }
 
         return AccessDecision.Forbidden("The supplied write key is not scoped to this resource.");
+    }
+
+    /// <summary>
+    /// Authorizes a tenant-wide configuration mutation that is not tied to one
+    /// service id. Admins and global data-editor roles are allowed. A
+    /// service-scoped editor role is not, because the mutation is shared by
+    /// every service in the tenant.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <returns>The access decision.</returns>
+    internal static AccessDecision EvaluateGlobalDataEditor(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (context.User?.Identity?.IsAuthenticated != true)
+        {
+            return AccessDecision.RequiresAuth("Authentication is required.");
+        }
+
+        var options = context.RequestServices.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions();
+        if (IsAdmin(context.User, options, context.RequestServices) ||
+            HasGlobalDataEditorRole(context.User, options, context.RequestServices))
+        {
+            return AccessDecision.Allowed();
+        }
+
+        return AccessDecision.Forbidden("User does not have the required data editor role.");
     }
 
     internal static Task<AccessDecision> EvaluateServiceAccessAsync(
@@ -394,6 +429,60 @@ internal static class ServiceDataEditorAuthorization
 
         var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
         return IsAdmin(context.User, options, context.RequestServices);
+    }
+
+    /// <summary>
+    /// Returns <see cref="ClaimTypes.NameIdentifier"/>, then <c>sub</c>, then <c>api_key_id</c>,
+    /// and only then <see cref="ClaimsIdentity.Name"/> when none of those exist.
+    /// </summary>
+    /// <param name="principal">The caller, or <c>null</c>.</param>
+    /// <returns>The owner subject, or <c>null</c> when none is present.</returns>
+    internal static string? ResolveOwnerSubject(ClaimsPrincipal? principal)
+    {
+        if (principal is null)
+        {
+            return null;
+        }
+
+        var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(subject))
+        {
+            return subject;
+        }
+
+        subject = principal.FindFirst("sub")?.Value;
+        if (!string.IsNullOrWhiteSpace(subject))
+        {
+            return subject;
+        }
+
+        subject = principal.FindFirst("api_key_id")?.Value;
+        if (!string.IsNullOrWhiteSpace(subject))
+        {
+            return subject;
+        }
+
+        subject = principal.Identity?.Name;
+        return string.IsNullOrWhiteSpace(subject) ? null : subject;
+    }
+
+    /// <summary>
+    /// Resolves the edit principal for an owner-based policy. A null or unauthenticated
+    /// context is <see cref="EditPrincipal.Anonymous"/>.
+    /// </summary>
+    /// <param name="httpContext">The request context, or <c>null</c> when the caller has none.</param>
+    /// <returns>The principal the shared owner policy evaluates.</returns>
+    internal static EditPrincipal ResolveEditPrincipal(HttpContext? httpContext)
+    {
+        if (httpContext?.User?.Identity?.IsAuthenticated != true)
+        {
+            return EditPrincipal.Anonymous;
+        }
+
+        return new EditPrincipal(
+            ResolveOwnerSubject(httpContext.User),
+            IsAuthenticated: true,
+            IsAdmin: IsAdminPrincipal(httpContext));
     }
 
     private static bool IsAdmin(

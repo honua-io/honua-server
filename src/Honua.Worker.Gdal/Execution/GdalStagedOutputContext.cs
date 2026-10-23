@@ -59,4 +59,13 @@ internal sealed class GdalStagedOutputContext : IJobExecutionContext
 
     public Task PublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
         => _inner.PublishArtifactAsync(artifactReference, cancellationToken);
+    public Task<bool> TryPublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
+        => _inner.TryPublishArtifactAsync(artifactReference, cancellationToken);
+
+    public Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
+        => _inner.RecordCommittedEffectAsync(artifactReference, cancellationToken);
+
+    public Task ThrowIfExecutionLeaseLostAsync(CancellationToken cancellationToken = default)
+        => _inner.ThrowIfExecutionLeaseLostAsync(cancellationToken);
+
 }

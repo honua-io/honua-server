@@ -21,13 +21,17 @@ internal sealed partial class ExecutionJobReconciler(
     IEnumerable<IBatchComputeBackend> backends,
     IUniversalProgressStore progressStore,
     ILogger<ExecutionJobReconciler> logger,
-    ILicenseOperationPolicy? licensePolicy = null) : IExecutionJobReconciler
+    ILicenseOperationPolicy? licensePolicy = null,
+    IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
+    IEnumerable<IExecutionJobRetryGuard>? retryGuards = null) : IExecutionJobReconciler
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
 
     private readonly IReadOnlyList<IBatchComputeBackend> _backends = backends.ToArray();
+    private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
+    private readonly IReadOnlyList<IExecutionJobRetryGuard> _retryGuards = retryGuards?.ToArray() ?? [];
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public async Task ReconcileExecutionJobAsync(
@@ -95,6 +99,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(job, missing);
                     await BridgeProgressAsync(job, missing, reconciliationCancellation.Token).ConfigureAwait(false);
+                    await NotifyTerminalAsync(missing).ConfigureAwait(false);
                 }
 
                 return;
@@ -146,6 +151,11 @@ internal sealed partial class ExecutionJobReconciler(
                 reconcileOutcome = "changed";
                 ControlPlaneTelemetry.RecordExecutionTransition(job, updated);
                 await BridgeProgressAsync(job, updated, reconciliationCancellation.Token).ConfigureAwait(false);
+                if (IsTerminal(updated.Status))
+                {
+                    await NotifyTerminalAsync(updated).ConfigureAwait(false);
+                }
+
                 Log.ExecutionJobReconciled(logger, operationId, updated.Status.ToString(), updated.PercentComplete ?? double.NaN);
             }
             else
@@ -158,11 +168,26 @@ internal sealed partial class ExecutionJobReconciler(
             reconcileOutcome = "license_expired";
             await FailExpiredJobAsync(operationId, persistedSuccess).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A serving-task switch does not fail or cancel the independent provider job.
+            reconcileOutcome = "host_stopping";
+        }
+        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
         {
             reconcileOutcome = "lease_lost";
             Log.ExecutionJobLeaseLost(logger, operationId);
             return;
+        }
+        catch (Exception ex) when (IsTransientInfrastructureFailure(ex))
+        {
+            // A Redis or database timeout while observing says nothing about the job. A running
+            // worker keeps heartbeating, and stamping the record terminal Failed here makes that
+            // worker lose its lease and cancel a healthy attempt (honua-server#6507). Leave the
+            // record as it is and let the next sweep observe it again.
+            reconcileOutcome = "transient_error";
+            Log.ExecutionJobReconciliationDeferred(logger, operationId, ex.GetType().Name);
+            throw;
         }
         catch (Exception ex)
         {
@@ -183,6 +208,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(job, failed);
                     await BridgeProgressAsync(job, failed, cancellationToken).ConfigureAwait(false);
+                    await NotifyTerminalAsync(failed).ConfigureAwait(false);
                 }
             }
 
@@ -207,7 +233,8 @@ internal sealed partial class ExecutionJobReconciler(
                 // the lease-renewal loop's Task.Delay/RenewLeaseAsync calls. Nothing to log.
             }
 
-            await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cleanup.Token).ConfigureAwait(false);
         }
     }
 
@@ -259,6 +286,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(current, failed);
                     await BridgeProgressAsync(current, failed, CancellationToken.None).ConfigureAwait(false);
+                    await NotifyTerminalAsync(failed).ConfigureAwait(false);
                     break;
                 }
             }
@@ -293,6 +321,13 @@ internal sealed partial class ExecutionJobReconciler(
                 job, backend, jobStore, progressStore, ProgressRetention, logger, cancellationToken)
             .ConfigureAwait(false);
 
+        // The helper owns the CAS and returns the original job to the outer loop, so a
+        // terminal record it already persisted is notified here and only here.
+        if (!ReferenceEquals(updated, job) && IsTerminal(updated.Status))
+        {
+            await NotifyTerminalAsync(updated).ConfigureAwait(false);
+        }
+
         // The submission helper only bridges terminal progress; reconciliation historically
         // also reflected nonterminal phase/percent changes. Mirror that so polled progress
         // picks up "Queued on provider" etc. without waiting a full reconciler interval.
@@ -309,7 +344,22 @@ internal sealed partial class ExecutionJobReconciler(
         return job;
     }
 
-    private static async Task<ExecutionJobRecord> CancelJobAsync(
+    private async Task NotifyTerminalAsync(ExecutionJobRecord job)
+    {
+        foreach (var callback in _terminalCallbacks)
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.TerminalCallbackFailed(logger, job.OperationId, ex);
+            }
+        }
+    }
+
+    private async Task<ExecutionJobRecord> CancelJobAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         CancellationToken cancellationToken)
@@ -324,12 +374,16 @@ internal sealed partial class ExecutionJobReconciler(
         return ApplyObservation(job, observation);
     }
 
-    private static async Task<ExecutionJobRecord> ObserveJobAsync(
+    private async Task<ExecutionJobRecord> ObserveJobAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         CancellationToken cancellationToken)
     {
         var observation = await backend.ObserveAsync(job, cancellationToken).ConfigureAwait(false);
+        if (observation.RecoveredAttemptCount is { } recoveredAttempt && recoveredAttempt > job.AttemptCount)
+        {
+            job = job with { AttemptCount = recoveredAttempt };
+        }
         var retried = await TryRequeueFailedRemoteJobAsync(job, backend, observation, cancellationToken).ConfigureAwait(false);
         if (retried != null)
         {
@@ -341,6 +395,7 @@ internal sealed partial class ExecutionJobReconciler(
 
     private static ExecutionJobRecord ApplyObservation(ExecutionJobRecord job, BatchComputeObservation observation)
     {
+        var newAttemptCount = Math.Max(job.AttemptCount, observation.RecoveredAttemptCount ?? job.AttemptCount);
         var newProviderOpId = observation.ProviderOperationId ?? job.ProviderOperationId;
         var newPercent = observation.PercentComplete ?? job.PercentComplete;
         var newPhase = observation.Message ?? job.CurrentPhase;
@@ -348,7 +403,7 @@ internal sealed partial class ExecutionJobReconciler(
             ? observation.Message ?? job.ErrorMessage
             : job.ErrorMessage;
 
-        if (observation.Status == job.Status &&
+        if (newAttemptCount == job.AttemptCount && observation.Status == job.Status &&
             string.Equals(newProviderOpId, job.ProviderOperationId, StringComparison.Ordinal) &&
             Math.Abs((newPercent ?? 0d) - (job.PercentComplete ?? 0d)) < 0.0001 &&
             string.Equals(newPhase, job.CurrentPhase, StringComparison.Ordinal) &&
@@ -361,6 +416,7 @@ internal sealed partial class ExecutionJobReconciler(
         return job with
         {
             Status = observation.Status,
+            AttemptCount = newAttemptCount,
             UpdatedAt = now,
             CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
             ProviderOperationId = newProviderOpId,
@@ -371,7 +427,7 @@ internal sealed partial class ExecutionJobReconciler(
         };
     }
 
-    private static async Task<ExecutionJobRecord?> TryRequeueFailedRemoteJobAsync(
+    private async Task<ExecutionJobRecord?> TryRequeueFailedRemoteJobAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         BatchComputeObservation observation,
@@ -394,6 +450,25 @@ internal sealed partial class ExecutionJobReconciler(
             return null;
         }
 
+        IReadOnlyList<string> retainedArtifacts = [];
+        foreach (var guard in _retryGuards)
+        {
+            var decision = guard.EvaluateRetry(job);
+            if (decision is null)
+            {
+                continue;
+            }
+            if (!decision.Allowed)
+            {
+                return ApplyObservation(job, observation) with
+                {
+                    CurrentPhase = "Failed (retry budget exhausted)",
+                    ErrorMessage = decision.RefusalReason ?? "The durable resource budget does not permit another attempt.",
+                    ArtifactReferences = job.ArtifactReferences
+                };
+            }
+            retainedArtifacts = retainedArtifacts.Concat(decision.ArtifactReferences).Distinct(StringComparer.Ordinal).ToArray();
+        }
         var now = DateTimeOffset.UtcNow;
         var delay = retryPolicy.ComputeDelay(job.AttemptCount + 1);
         return job with
@@ -405,12 +480,12 @@ internal sealed partial class ExecutionJobReconciler(
             PercentComplete = null,
             CurrentPhase = $"Retrying (attempt {job.AttemptCount + 1}/{retryPolicy.MaxAttempts})",
             ErrorMessage = null,
-            ArtifactReferences = Array.Empty<string>(),
+            ArtifactReferences = retainedArtifacts,
             NextRetryAt = now.Add(delay)
         };
     }
 
-    private static async Task<ExecutionJobRecord> ObserveLocalRetryAsync(
+    private async Task<ExecutionJobRecord> ObserveLocalRetryAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         CancellationToken cancellationToken)
@@ -623,8 +698,19 @@ internal sealed partial class ExecutionJobReconciler(
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
 
+    internal static bool IsTransientInfrastructureFailure(Exception exception)
+        => exception is StackExchange.Redis.RedisException
+            or TimeoutException
+            or System.Net.Sockets.SocketException
+            or System.Data.Common.DbException
+            or Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException
+            || exception.InnerException is { } inner && IsTransientInfrastructureFailure(inner);
+
     internal static partial class Log
     {
+        [LoggerMessage(9039, LogLevel.Warning, "Execution-job reconciliation for operation {OperationId} hit a transient infrastructure failure ({ExceptionType}); the job is left as it is for the next sweep")]
+        public static partial void ExecutionJobReconciliationDeferred(ILogger logger, string operationId, string exceptionType);
+
         [LoggerMessage(9030, LogLevel.Debug, "Reconciled execution job {OperationId} to status {Status} ({PercentComplete}%)")]
         public static partial void ExecutionJobReconciled(ILogger logger, string operationId, string status, double percentComplete);
 
@@ -645,6 +731,9 @@ internal sealed partial class ExecutionJobReconciler(
 
         [LoggerMessage(9037, LogLevel.Debug, "Execution-job reconciliation CAS conflict for {OperationId}; deferring to next sweep")]
         public static partial void ExecutionJobCasConflict(ILogger logger, string operationId);
+
+        [LoggerMessage(9038, LogLevel.Warning, "Terminal callback failed for execution job {OperationId}")]
+        public static partial void TerminalCallbackFailed(ILogger logger, string operationId, Exception exception);
     }
 
     internal static partial class BackgroundLog

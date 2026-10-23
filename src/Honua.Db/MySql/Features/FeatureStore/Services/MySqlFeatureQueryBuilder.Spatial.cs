@@ -180,11 +180,10 @@ internal sealed partial class MySqlFeatureQueryBuilder
         var distanceParam = $"@p{paramIndex++}";
         parameters.Add(distanceMeters);
 
-        // ST_Distance_Sphere is a WGS84 spherical approximation supported by both MySQL 8.0+
-        // and MariaDB 10.6+. It is documented as approximate; geodesic-accurate distance is
-        // a PostGIS-only path.
+        // ST_Distance_Sphere is a sphere on an explicit mean radius, supported by MySQL 8.0+
+        // and MariaDB 10.6+. It is not a WGS 84 spheroid. Geodesic distance is a PostGIS path.
         var op = withinDistance ? "<=" : ">";
-        return $"ST_Distance_Sphere({geomCol}, {filterGeom}) {op} {distanceParam}";
+        return $"{MySqlSpatialSql.DistanceSphere(geomCol, filterGeom)} {op} {distanceParam}";
     }
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)

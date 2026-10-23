@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Net;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -124,6 +126,91 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetString(responseBytes));
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
         responseBytes.Should().StartWith(PngSignature);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, false, false, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(false, false, false, true)]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/maps/collections")]
+    public async Task GetCollections_DuplicateLocalIds_UsesResolvableIdsAndExcludesDeniedResources(bool denyFirst, bool collideWithName, bool collideWithPublicationId, bool collideWithForeignPublication)
+    {
+        var graphBuilder = new TestMetadataV2GraphBuilder()
+            .AddResource("first-resource", collideWithName ? "0" : "First", MetadataV2ResourceType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = !denyFirst })
+            .AddResource("second-resource", "Second", MetadataV2ResourceType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddStorageBinding("first-binding", "first-resource", "public.features", storageLayerId: 4000)
+            .AddStorageBinding("second-binding", "second-resource", "public.features", storageLayerId: 4001)
+            .AddService("first-service", "first", protocols: ["OGC-API-Maps"])
+            .AddService("second-service", "second", protocols: ["OGC-API-Maps"])
+            .AddPublication("first-publication", "first-service", "first-resource",
+                serviceLocalId: collideWithName ? "first" : "0", storageBindingId: "first-binding")
+            .AddPublication("second-publication", "second-service", "second-resource",
+                serviceLocalId: collideWithForeignPublication ? "foreign-publication" : "0", storageBindingId: "second-binding");
+        if (collideWithForeignPublication)
+        {
+            graphBuilder.AddService("foreign-service", "foreign", protocols: ["FeatureServer"])
+                .AddPublication("foreign-publication", "foreign-service", "first-resource",
+                    serviceLocalId: "foreign", storageBindingId: "first-binding");
+        }
+
+        var graph = graphBuilder.Build();
+        if (collideWithPublicationId)
+        {
+            graph = graph with
+            {
+                Resources = graph.Resources.Select(resource => resource.Metadata.Id == "first-resource"
+                    ? resource with { Metadata = resource.Metadata with { Title = "second-publication" } }
+                    : resource).ToArray()
+            };
+        }
+
+        var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
+        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(new MetadataV2GraphSnapshot(graph, "\"discovery-test\"", DateTimeOffset.UtcNow));
+        await using var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+            builder.UseSetting("HONUA_DEV_AUTH", "false")).ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.AddSingleton<IMetadataV2GraphProvider>(graphProvider);
+        });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+        graphProvider.ClearReceivedCalls();
+        using var response = await client.GetAsync("/ogc/maps/collections");
+        await graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var collections = json.RootElement.GetProperty("collections").EnumerateArray().ToArray();
+        collections.Should().HaveCount(denyFirst ? 1 : 2);
+        foreach (var collection in collections)
+        {
+            var id = collection.GetProperty("id").GetString();
+            if (!collideWithForeignPublication)
+            {
+                id.Should().NotBe("0");
+            }
+            id.Should().NotBe("foreign-publication");
+            graphProvider.ClearReceivedCalls();
+            using var detail = await client.GetAsync($"/ogc/maps/collections/{id}?f=json");
+            detail.StatusCode.Should().Be(HttpStatusCode.OK);
+            await graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
+            using var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+            detailJson.RootElement.GetProperty("id").GetString().Should().Be(id);
+            detailJson.RootElement.GetProperty("links").EnumerateArray()
+                .Single(link => link.GetProperty("rel").GetString() == "self")
+                .GetProperty("href").GetString().Should().EndWith("?f=json");
+            detailJson.RootElement.GetProperty("title").GetString().Should().Be(collection.GetProperty("title").GetString());
+        }
+        if (denyFirst)
+        {
+            collections[0].GetProperty("id").GetString().Should().Be("second-publication");
+        }
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();

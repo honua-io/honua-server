@@ -1,374 +1,395 @@
+---
+type: runbook
+title: "Deploy with Docker Compose"
+description: "Take a single-node Compose install to production: a TLS edge, backups you have restored from, and a rollback path."
+---
 # Deploy with Docker Compose
 
-Windows operators can use the [native PowerShell package installation](../../get-started/windows-packages.md)
-for a local customer journey with pinned registry clients and isolated storage.
-The public TLS deployment commands on this page use a Unix host shell.
+This is the **single-node** path: one host you administer, running Compose. It
+covers what the quickstart leaves out — terminating TLS in front of it, taking
+backups you have actually restored from, and upgrading without losing the
+database.
 
-You'll run a production-shaped Honua stack on a single host: pinned image, secrets in an env file, persistent PostGIS and Redis volumes, optional Console, and TLS terminated by a reverse proxy. For the build-from-source dev stack with the profiled Console service, use the [quickstart](../../get-started/quickstart.md) instead.
+**Deploying to a cloud account instead?** That path is
+[honua-iac](https://github.com/honua-io/honua-iac) — public Terraform modules for
+ECS/Fargate, Lambda, Azure Container Apps, Azure Functions, EKS and AKS. See
+[Deploy on AWS and Azure](cloud-deployments.md) to pick a pattern, then
+[the operator deployment guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/operator-deployment.md) to stand it up.
+Nothing below applies to those; they do not use Compose.
 
-**Prerequisites:** Docker with Compose 2.23.1 or later, OpenSSL, a DNS name pointing at the host (for TLS), and outbound access to Docker Hub or GHCR.
+**Start from the [quickstart](../../get-started/quickstart.md).** It gives you
+the `compose.yaml`, the `.env` and a published layer in about ten minutes, on any
+machine that runs Docker; everything here assumes that project directory and adds
+to it. For a locked-down single-host install with startup and recovery checks scripted,
+see [Linux](../../get-started/linux-packages.md) or
+[Windows](../../get-started/windows-packages.md).
 
-## Steps
-
-1. Create the env file. The master key must be at least 32 characters; production compose files must pass secrets explicitly rather than relying on the repo-root development defaults.
+Commands are `bash`, with a collapsed PowerShell equivalent wherever the two
+differ. `dc` is shorthand throughout:
 
 ```bash
-mkdir -p /opt/honua && cd /opt/honua
-umask 077
-cat > .env.production <<EOF
-# Supply an immutable GHCR image reference (tag plus digest) from the release
-# manifest; floating tags such as latest are not suitable for production.
-HONUA_IMAGE=${HONUA_IMAGE:?Set the immutable published image digest first}
-POSTGRES_PASSWORD=$(openssl rand -hex 32)
-HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
-HONUA_MASTER_KEY=$(openssl rand -hex 32)
-HONUA_HOST=honua.example.com
-HONUA_NETWORK_NAME=honua-production
-HONUA_PROXY_IP=
-HONUA_CORS_ORIGIN=https://app.example.com
-HONUA_STORAGE_VOLUME_NAME=honua_production_storage
-EOF
-chmod 600 .env.production
+Install="$PWD"                      # the quickstart project directory
+dc() { docker compose --env-file .env -f compose.yaml "$@"; }
 ```
 
-Set `HONUA_HOST` in `.env.production` to the DNS name your proxy serves; it is also the server's trusted hostname and public URL. Retain the private env file with your persistent volumes; regenerating it does not rotate existing database credentials.
+Compose 2.23.1 or later is required. Nothing here needs a repository checkout, a
+compiler, or a registry credential.
 
-2. Create the compose file. This block matches the shipped [`docker-compose.production.yml`](../../../docker-compose.production.yml). The server process is replaceable, while PostGIS, Redis durable-control-plane state, and local file storage live on persistent volumes. The server binds to localhost only, so the proxy is the sole public entrypoint.
+## Public TLS edge
+
+The installed server publishes loopback ports `127.0.0.1:18080` for HTTP/1 REST
+and gRPC-Web, and `127.0.0.1:18081` for native HTTP/2 gRPC (or your selected ports).
+For a public deployment, put an existing TLS-terminating reverse proxy on the
+same host in front of those loopback ports, arrange DNS and certificates for your
+hostname, and permit access to the proxy through the host firewall. Do not expose
+PostgreSQL, Redis or the unauthenticated health probe on a separate public port.
+Configure the Docker daemon to start on boot so the stack comes back after a host restart.
+
+The Development container profile enables database startup recovery by default.
+Docker's restart policy does not repeat Compose's dependency health ordering, so
+Honua can start while PostgreSQL is still recovering. During a transient outage,
+liveness remains available, readiness returns 503, and mutation requests are
+refused until the canonical migration or schema verification succeeds. Permanent
+database incompatibility or migration failures still require operator action.
+An explicit `HONUA_DB_DEGRADED_START` or
+`Database__StartupResilience__DegradedStartEnabled` setting takes precedence;
+Production container defaults retain fail-fast behavior unless opted in. If
+background migrations are disabled, recovery verifies the externally prepared
+schema rather than assuming it is current. Docker health based on liveness is
+not evidence that Honua is ready: check `/healthz/ready` and its typed reason.
+
+After the proxy is configured, set its hostname, browser origin and actual source
+address as seen by Honua. The original loopback route remains
+available for local diagnostics and recovery. This example accepts one forwarded
+hop; a multi-proxy deployment needs its own explicit trust configuration.
+
+Set three values: the hostname the proxy serves, the browser origin allowed to
+call the API, and the proxy's own source address as Honua sees it. Never use a
+wildcard or a whole network.
 
 ```bash
-cat > docker-compose.yml <<'EOF'
+PUBLIC_HOST=honua.example.com           # DNS name, no scheme or path
+BROWSER_ORIGIN=https://app.example.com  # including https://
+PROXY_ADDRESS=10.0.0.7                  # exact source IP as Honua sees it
+
+cat > edge.yaml <<EOF
 services:
   honua:
-    image: ${HONUA_IMAGE:?Set an immutable HONUA_IMAGE from the release manifest}
-    env_file: .env.production
-    ports:
-      - "127.0.0.1:8080:8080"
-      - "127.0.0.1:8081:8081"
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      AllowedHosts: "${HONUA_HOST:?Set the public proxy hostname};localhost;127.0.0.1"
-      PUBLIC_BASE_URL: "https://${HONUA_HOST:?Set the public proxy hostname}"
+      AllowedHosts: "${PUBLIC_HOST};localhost;127.0.0.1"
+      PUBLIC_BASE_URL: "https://${PUBLIC_HOST}"
+      Cors__AllowedOrigins__0: "${BROWSER_ORIGIN}"
       ForwardedHeaders__Enabled: "true"
       ForwardedHeaders__ForwardLimit: "1"
-      ForwardedHeaders__KnownProxies__0: "${HONUA_PROXY_IP:?Set the trusted proxy address from the Compose network gateway}"
-      ConnectionStrings__DefaultConnection: "${ConnectionStrings__DefaultConnection:-Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}}"
-      HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD}
-      Security__ConnectionEncryption__MasterKey: ${Security__ConnectionEncryption__MasterKey:-${HONUA_MASTER_KEY:?Set the connection encryption master key}}
-      Cors__AllowedOrigins__0: ${Cors__AllowedOrigins__0:-${HONUA_CORS_ORIGIN:?Set the browser origin}}
-      HONUA_OBSERVABILITY: "${HONUA_OBSERVABILITY:-true}"
-      ConnectionStrings__Redis: "${ConnectionStrings__Redis:-redis:6379}"
-      Database__MigrationSafety__ContractApplyPolicy: "${Database__MigrationSafety__ContractApplyPolicy:-Gate}"
-      FileStorage__Provider: Local
-      FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-    volumes:
-      - honua_storage:/var/lib/honua/storage
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 2g
-
-  postgres:
-    image: pgrouting/pgrouting:17-3.5-3.7.3
-    environment:
-      POSTGRES_DB: honua
-      POSTGRES_USER: honua
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    configs:
-      - source: postgis_init
-        target: /docker-entrypoint-initdb.d/10-honua-postgis.sql
-    healthcheck:
-      # The PostGIS image starts a temporary postmaster while initializing a
-      # fresh volume. Wait for the final postmaster (PID 1) before migrations.
-      test: ["CMD-SHELL", "test \"$(head -n 1 /var/lib/postgresql/data/postmaster.pid 2>/dev/null)\" = \"1\" && pg_isready -U honua -d honua"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-  redis_data:
-  honua_storage:
-    name: ${HONUA_STORAGE_VOLUME_NAME}
-
-networks:
-  default:
-    name: ${HONUA_NETWORK_NAME:-honua-production}
-
-configs:
-  postgis_init:
-    content: |
-      CREATE EXTENSION IF NOT EXISTS postgis;
-      CREATE EXTENSION IF NOT EXISTS postgis_topology;
-      CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
-      CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
+      ForwardedHeaders__KnownProxies__0: "${PROXY_ADDRESS}"
 EOF
+
+# the overlay joins every later dc invocation
+dc() { docker compose --env-file .env -f compose.yaml -f edge.yaml "$@"; }
+
+dc config --quiet
+dc up -d --wait --wait-timeout 180
 ```
 
-3. Put a TLS-terminating reverse proxy in front — Honua does not terminate TLS. Any proxy works; Caddy on the host is the shortest path (port 8080 carries HTTP/1 REST, port 8081 carries h2c gRPC for native SDK clients).
+Then read a published layer back through the public hostname, not through
+loopback — point `HONUA_BASE_URL` at `https://${PUBLIC_HOST}` and re-run the
+query from the [quickstart](../../get-started/quickstart.md#4-publish-a-table-and-query-it-back).
+A readback over loopback proves nothing about the edge.
 
-```bash
-HONUA_HOST="$(sed -n 's/^HONUA_HOST=//p' .env.production)"
-printf '%s {\n  reverse_proxy 127.0.0.1:8080\n}\n' "$HONUA_HOST" | sudo tee /etc/caddy/Caddyfile && sudo systemctl reload caddy
-```
 
-4. Start the stack. Redis is part of the production-shaped baseline because durable jobs, queued imports, workflows, operation proposals, and Console approval flows need it.
+Retain `edge.yaml` with the installation, and redefine `dc` with the overlay in
+any new shell. Recheck the proxy source address after replacing the proxy or Docker network.
+Never disable certificate validation to make public readback pass. DNS, TLS and
+host reboot behavior must also be checked on the actual deployment host.
 
-```bash
-# Create the network and containers without starting them. The temporary
-# loopback trust value is replaced before the server starts.
-HONUA_PROXY_IP=127.0.0.1 docker compose --env-file .env.production create
-HONUA_NETWORK_NAME="$(sed -n 's/^HONUA_NETWORK_NAME=//p' .env.production)"
-HONUA_PROXY_IP="$(docker network inspect "$HONUA_NETWORK_NAME" --format '{{(index .IPAM.Config 0).Gateway}}')"
-sed -i "s/^HONUA_PROXY_IP=.*/HONUA_PROXY_IP=$HONUA_PROXY_IP/" .env.production
-docker compose --env-file .env.production up -d --wait --wait-timeout 180
-```
+### Native gRPC at the TLS edge
 
-Caddy on the host reaches the server through the Docker bridge gateway, which is the only additional trusted proxy. If Caddy runs in a container or on another host, set `HONUA_PROXY_IP` to that proxy’s actual source IP instead. Recalculate the gateway after recreating the Compose network. The server accepts one forwarded hop; never use a wildcard proxy trust setting.
+Enable HTTP/2 on the public TLS listener and route native gRPC requests to the
+h2c upstream `127.0.0.1:18081`, preserving the service/method path, authorization
+metadata and gRPC trailers. Keep HTTP/1 REST and gRPC-Web on `127.0.0.1:18080`.
+A proxy that downgrades the native gRPC upstream to HTTP/1 cannot serve it.
 
-For headless deployments, keep Redis unless every durable control-plane feature is intentionally disabled — see [Redis is optional; PostGIS is not](#redis-is-optional-postgis-is-not) for exactly what you give up. To add Console in production, use a published Console image tag that is compatible with the server ops-health contract and add this service:
+Configure your proxy's native gRPC route by content type (`application/grpc`,
+including its `+proto` form), excluding `application/grpc-web` traffic. For NGINX,
+use a dedicated native gRPC TLS virtual host with `http2 on` and a `location /`
+containing `grpc_pass grpc://127.0.0.1:18081`; add that hostname to `AllowedHosts`,
+provide its DNS/certificate, and preserve `Host`, `X-Forwarded-Proto` and the
+trusted proxy's `X-Forwarded-For`. The [NGINX gRPC module](https://nginx.org/en/docs/http/ngx_http_grpc_module.html)
+documents HTTP/2 forwarding and trailer handling.
 
-```yaml
-  console:
-    image: ghcr.io/honua-io/honua-console:replace-with-compatible-tag
-    ports:
-      - "127.0.0.1:5174:8080"
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: "http://+:8080"
-      HONUA_SERVER_BASE_URL: "http://honua:8080"
-      HONUA_ADMIN_API_KEY: ${HONUA_ADMIN_PASSWORD}
-      # Production Console is fail-closed and must sit behind a trusted edge
-      # authenticator that supplies these identity headers.
-      Honua__Console__Auth__Mode: EdgeForwarded
-      Honua__Console__Auth__EdgeForwarded__Enabled: "true"
-    depends_on:
-      honua:
-        condition: service_healthy
-    # The Console image intentionally does not own an anonymous health endpoint;
-    # use the hosting layer or the backend /healthz/ready probe for health.
-    restart: unless-stopped
-```
-
-Then start it with `docker compose --env-file .env.production up -d console`, or disable it with `docker compose --env-file .env.production up -d --scale console=0`.
-
-## Verify
-
-> Open `http://127.0.0.1:8080/healthz/ready` in a browser.
-
-Expected output: `Ready`. Then confirm admin auth works:
-
-From an operator workstation with Python 3, install the pinned admin SDK and read
-the effective configuration through its authenticated client:
-
-```bash
-export HONUA_ADMIN_PASSWORD="$(sed -n 's/^HONUA_ADMIN_PASSWORD=//p' .env.production)"
-python3 -m pip install \
-  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
-python3 - <<'PY'
-import os
-from honua_admin import HonuaAdminClient
-
-with HonuaAdminClient(
-    "http://127.0.0.1:8080",
-    api_key=os.environ["HONUA_ADMIN_PASSWORD"],
-) as admin:
-    print(admin.get_config())
-PY
-```
-
-If Console is enabled behind the configured edge authenticator, confirm the ops dashboard responds:
-
-> Open `http://127.0.0.1:5174/operate`, `http://127.0.0.1:5174/operate/health`, `http://127.0.0.1:5174/operate/copilot` in a browser.
-
-The inline PostGIS config initializes the selected database before the final postmaster becomes healthy; an existing incompatible volume still fails the server preflight. Backing stores have no host port publication. Verify a candidate on fresh volumes with `python3 scripts/docker/smoke-production.py --image "$HONUA_IMAGE"` from a checkout. The smoke also sends an authenticated Admin config request through Caddy using the configured public hostname and verifies rejection of an untrusted hostname. Its local proxy checks routing and authentication; public DNS and TLS certificates still need verification on the deployment host. This check requires the corrected published Production image; the current image reported in the release notes aborts startup for missing rollback approval mappers.
-
-CI can run the separate local quickstart smoke through `scripts/ci/smoke-quickstart-console.sh`.
-Set the repository variable `HONUA_CONSOLE_IMAGE` or pass the `console_image`
-workflow-dispatch input once a compatible Console image tag is published. The
-smoke starts Redis, Honua, and Console, creates a Redis-backed operation proposal
-through the platform-release converge API, and verifies the Operate routes.
+Validate the proxy configuration and perform an authenticated native gRPC SDK
+query through its public hostname before admitting traffic. The HTTP readback
+above verifies the REST route only; TLS/gRPC qualification must use the actual
+proxy and deployment host.
 
 ## Redis is optional; PostGIS is not
 
-The 2026.1 install topology is deliberate and applies to every deployment shape:
+PostGIS owns the catalog, layer metadata and feature data and is required.
 
-- **PostGIS is mandatory.** The server connects to `ConnectionStrings__DefaultConnection` on boot and runs its migrations there. All catalog, service/layer, style, and metadata state lives in PostGIS. There is no alternative metadata store, and the server will not start without one.
-- **Redis is optional.** A single-node install with no `ConnectionStrings__Redis` starts cleanly, reports `Ready` on `/healthz/ready`, and serves the whole read path — connections, imports, service/layer publication, styles, tiles, and rendering.
+Redis is optional for **serving**, but it is required for the **governed control
+plane**. Without Redis, a host still serves every protocol, and the admin REST API
+and Console still connect sources, import, publish layers, configure services,
+style and render. It cannot persist the following, and refuses them with a typed
+`dependency-unavailable` receipt naming `redis`:
 
-### What you lose without Redis
+- governed operation proposals and approvals (`/api/v1/admin/proposals`,
+  `honua_propose_*`), including any operation whose policy decision is
+  "require approval";
+- typed operations invoked through MCP (the `honua_admin_*` tools), whose
+  durable operation record is also Redis-backed in Production;
+- durable geoprocessing jobs and workflows (`jobs.runner`);
+- Studio drafts.
 
-| Subsystem | Without Redis |
-|---|---|
-| Multi-layer cache | Falls back to the in-memory provider. Reads still serve correctly; the cache is process-local and not shared across replicas. |
-| Durable geoprocessing jobs (GPServer, OGC API Processes, WPS, MCP, gRPC) | **Unavailable.** No durable job store or queue is composed and no worker loop runs, so submission is refused up front on every one of those surfaces. |
-| Workflows / orchestration | **Unavailable.** The orchestration engine is not registered; workflow definitions and runs are not persisted. Publishing a workflow package to a `Schedule` target is refused up front, because the compiled workflow definition has nowhere durable to land. `Job` and `ProcessEndpoint` publications still succeed; their *runs* are refused by the durable job store instead. |
-| Operation proposals and the Console approval flow | **Unavailable.** Proposal state has no PostGIS path — it is Redis-only. |
-| Queued imports | Development/Test fall back to an in-process queue (non-durable). Outside those environments the import routes refuse with `503`. |
-| Multi-replica coordination | Not available. Cross-replica cache invalidation, feature-change event durability, and shared streaming fan-out all degrade to node-local behaviour, so run **one** server instance. |
+A server without Redis still serves, configures, styles and renders, so two
+operations execute directly without Redis: publishing a service
+(`service.publish`) and applying a style preset to a published layer
+(`style.apply-preset`). When `Operations:Policy` allows the caller (an `admin`
+or `scoped-admin-key` role, such as an `admin:write` API key),
+`honua_publish_service`, `honua_apply_style_preset` and
+`POST /api/v1/operations/{service.publish|style.apply-preset}/submit` make the
+change and return the usual handle: `operationId`, `operationInstanceId`,
+`correlationId`, `auditId`, `status`, `policyOutcome` and
+`authorizationOutcome`. The audit log records the acceptance and the
+completion. The operation instance record itself is kept only in memory, so the
+handle carries `durable: false` (and the evidence reference
+`operation-instance:non-durable`) and cannot be polled afterwards.
+`honua_render_map` and the OGC styles endpoints are reads and do not use the
+operation runtime. A caller the policy denies gets a `Denied` handle. A publish
+or style preset whose policy decision is "require approval" still refuses with
+the typed `redis` receipt, because it needs a governed proposal. Geoprocessing,
+Studio compositions and publication requests, proposals and approvals, and the
+`honua_admin_*` tools keep the typed refusal.
 
-Nothing in that list fails silently: every affected surface refuses with a typed error instead of accepting work it cannot finish.
+On a Development or Test host without Redis, Studio drafts still compose against a
+volatile operation store (create, validate, preview-plan and save a content version
+succeed), but a publish-request that needs separate-principal approval is refused with
+the same typed receipt: HTTP 503 `capability-unavailable` with `missingDependency: "redis"`
+and `capability: "operations.proposals"`, and the draft is left unchanged.
 
-### The typed refusal
+The governed tools are still advertised on a Redis-off host, so an agent sees the
+same catalog everywhere. The capability manifest (`GET /api/v1/capabilities/manifest`)
+tells it in advance which ones will refuse: `operations.proposals` and
+`jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`
+(or `"license-required"` when Redis is configured but not entitled).
 
-Refusals on a Redis-less install carry a machine-readable *capability-unavailable receipt* so an agent or script can branch on it without parsing prose. On the problem+json surfaces (OGC API Processes, admin API) it looks like this:
+**What "required" means: present and working, not a proven durability policy.**
+The governed control plane and durable jobs need Redis to be configured,
+entitled and connected. They do not need a particular persistence policy (owner
+ruling, 2026-10-10). At startup the server still reads the Redis policy
+(`appendonly`, `appendfsync`, `maxmemory-policy`) and publishes the result in the
+capability manifest as `limits.job.redisDurability.status`. The value is
+`attested`, `unverified` (the policy could not be read, as on managed Redis
+that blocks `CONFIG`) or `not-durable` (the policy was read and is not
+durable). The result never disables `operations.proposals` or `jobs.runner`.
 
-```json
-{
-  "type": "https://honua.io/problems/capability-unavailable",
-  "title": "Capability unavailable",
-  "status": 503,
-  "detail": "Durable geoprocessing jobs and workflows require a Redis-backed job store. This server was started without a Redis connection, so the request is refused up front instead of being queued and never run.",
-  "code": "dependency-unavailable",
-  "capability": "jobs.runner",
-  "missingDependency": "redis",
-  "remediation": "Set ConnectionStrings__Redis to a reachable Redis instance and restart the server. ...",
-  "remediationRef": "https://docs.honua.io/guides/deploy/docker-compose#redis-is-optional-postgis-is-not"
-}
-```
-
-The same receipt is projected onto every other job envelope:
-
-| Surface | Where the receipt lands |
-|---|---|
-| OGC API Processes, admin API | RFC 7807 extension members, as above |
-| GeoServices (GPServer) | `error.details[]` entries as `code: …`, `missingDependency: …`, `capability: …`, `remediation: …`, `remediationRef: …` — the same `Key: value` convention the envelope already uses for `CorrelationId:`/`Timestamp:` |
-| MCP | `isError: true` with `code`, `retryable: false`, and the same fields in `structuredContent` |
-| WPS 2.0 | additional `ows:ExceptionText` lines carrying the same `key: value` pairs. The `exceptionCode` stays `ServerBusy` because OWS constrains that vocabulary and CITE checks it |
-| gRPC | `Unavailable` plus trailing metadata: `honua-error-code`, `honua-capability`, `honua-missing-dependency`, `honua-missing-entitlement`, `honua-remediation`, `honua-remediation-ref` |
-
-`retryable` is `false`, and `capability` is omitted where no manifest capability covers the refused surface — today that is the proposal/approval control plane, which otherwise carries the identical receipt.
-
-The capabilities manifest agrees with the refusal rather than over-claiming. `GET /api/v1/capabilities/manifest` reports:
-
-```json
-{ "id": "jobs.runner", "category": "jobs", "supported": true, "available": false,
-  "reasonCode": "dependency-unavailable", "messageKey": "capabilities.jobs.runner.dependency-unavailable" }
-```
-
-and `limits.job.durableJobRuntimeAvailable` is `false`. That flag requires the **complete** substrate — a durable job store *and* a runnable queue — because a store without a queue would let a submission be persisted and never drain. The manifest is computed per request and served `no-store`, so no stale "available" claim survives.
+A Redis started with `--appendonly yes --appendfsync everysec --maxmemory-policy
+noeviction` keeps proposals and job state across restarts and reports `attested`.
+A stock `redis:7` image also works. The manifest then reports `not-durable`, and
+a Redis restart can lose recent proposals and job state. If you would rather the server refuse to
+start unless the policy is `attested`, set `Jobs__RequireDurableStore=true`
+(see [Redis durability](troubleshooting.md#redis-durability)).
 
 ### Redis is configured but not entitled
 
-Redis-backed services are gated on the Pro `caching.redis` entitlement as well as on the connection string. If Redis is running and `ConnectionStrings__Redis` is set but the active licence does not include `caching.redis`, `IConnectionMultiplexer` is never registered and the durable job substrate is composed out exactly as if Redis were absent.
+Redis is included with persistent storage, but installing Redis does not grant
+paid features. Durable jobs, workflows, queued imports, proposals and shared coordination need
+both Redis configuration and the applicable `caching.redis` licence entitlement.
+Without the dependency those operations return a typed `dependency-unavailable`
+receipt; without the entitlement the receipt is `license-required`.
+Do not add a development edition grant to a Production deployment.
 
-**This is the default for the repository quickstart**: the root `docker-compose.yml` leaves `HONUA_DEV_GRANT_EDITION` empty, so the stack starts Redis but runs as Community and durable jobs stay unavailable. Set `HONUA_DEV_GRANT_EDITION=Pro` (a development-only grant, honoured outside Production) or install a licence that includes `caching.redis`.
+To omit Redis, remove `ConnectionStrings__Redis`, the `honua.depends_on.redis`
+entry, the `redis` service and the `redis` volume declaration from `compose.yaml`.
+Keep a single server instance. Restore those four entries and provide the
+appropriate licence before enabling durable operations. A persisted Redis volume
+must be retained if it already contains job or workflow state.
 
-Because "add Redis" is not the fix here, this case reports itself differently. The refusal carries `"code": "license-required"` with `"missingEntitlement": "caching.redis"` and **no** `missingDependency`, and the capabilities manifest reports `jobs.runner` with `"reasonCode": "license-required"` rather than `dependency-unavailable`. Workflow-package `Schedule` publication splits the same way: it is refused on both hosts, but names the entitlement here and the missing Redis dependency there, so the remediation you are handed is one that can actually work.
+## Backup and recovery
 
-### Running the no-Redis variant
+A restart or container recreation preserves volumes but is not a backup. Before
+an upgrade, stop Honua so it cannot write while database and file-storage snapshots
+are taken. This small-install procedure pauses service for the backup. It keeps
+Redis out of the backup: deployments using durable jobs/workflows must also follow
+the coordinated [backup and restore policy](backup-and-restore.md) before using
+this recipe with live customer data.
 
-For the repository quickstart, the repository ships an override that composes the root stack as PostGIS + Honua Server only, with `ConnectionStrings__Redis` unset:
+Write the binary files inside the containers and copy them out, rather than
+redirecting binary streams through the shell. The one-off archive container runs
+as root with file-ownership capabilities so the storage owner is preserved; the
+running server keeps its unprivileged, dropped-capabilities configuration. Keep
+`$Backup` — the restore needs it.
+
+Take the backup:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.no-redis.yml up -d
+Backup="$Install/backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -m 700 "$Backup"
+cp .env compose.yaml "$Backup/"
+cp quickstart.py journey.py published-layer.json installed-packages.txt "$Backup/" 2>/dev/null || true
+dc stop honua
+dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
+dc cp postgres:/tmp/honua-backup.dump "$Backup/database.dump"
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "$Backup:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
+sha256sum "$Backup/database.dump" "$Backup/storage.tar.gz"
+dc start honua
+dc up -d --wait --wait-timeout 180
 ```
 
-The production flow on this page creates its Compose file directly in `/opt/honua`; it does not copy that repository override. To run that inline stack without Redis, remove `ConnectionStrings__Redis` from `honua.environment`, remove the `redis` entry from `honua.depends_on`, remove the entire `redis` service, and remove `redis_data` from the top-level `volumes` list before running `docker compose --env-file .env.production up -d`.
+Then read a known layer back (the quickstart's `honua query`, or `journey.py --verify-only`
+on a Linux or Windows package install).
 
-### Adding Redis later
+<details>
+<summary>PowerShell</summary>
 
-For the repository quickstart, drop the override and start again with the Pro development grant (or install a licence that includes `caching.redis`):
+```powershell
+$Backup = Join-Path $Install ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+New-Item -ItemType Directory -Path $Backup | Out-Null
+Copy-Item -LiteralPath .env, compose.yaml -Destination $Backup
+Copy-Item -LiteralPath quickstart.py, journey.py, published-layer.json, installed-packages.txt -Destination $Backup -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath edge.yaml) { Copy-Item -LiteralPath edge.yaml -Destination $Backup }
+dc stop honua
+try {
+    dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
+    dc cp postgres:/tmp/honua-backup.dump (Join-Path $Backup 'database.dump')
+    dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "${Backup}:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
+    Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Backup 'database.dump'), (Join-Path $Backup 'storage.tar.gz') | Format-Table
+} finally { dc start honua }
+dc up -d --wait --wait-timeout 180
+```
+
+</details>
+
+If any backup command fails, retain its error and run `dc start honua` to
+resume service after investigation; do not use a partial backup. Store a verified
+copy of the private backup off-host using your organization's backup system.
+
+**Restore is destructive to this installation's database and file storage.** Use it only when you
+intend to replace the database with the saved backup. Stop incoming requests and
+Honua first. These commands restore into the same project using the original
+credentials. They drop and recreate only the `honua` database in this project
+to restore partitioned tables without inherited-constraint conflicts; they do not
+delete volumes or touch other projects. For a fresh
+host, restore the saved installation files first, install the recorded clients,
+then start only PostgreSQL and Redis before continuing. File storage
+is cleared inside this project's mounted `/var/lib/honua/storage` directory before
+extraction, including hidden files and nested paths. Keep Honua stopped if any
+restore command fails; do not resume with a partial database or storage restore.
+
+
+
+Restore it, using the backup directory from above:
 
 ```bash
-HONUA_DEV_GRANT_EDITION=Pro docker compose --env-file .env.production up -d
+test -f "$Backup/database.dump"
+test -f "$Backup/storage.tar.gz"
+dc stop honua
+dc cp "$Backup/database.dump" postgres:/tmp/honua-restore.dump
+dc exec -T postgres dropdb -U honua --force --if-exists honua
+dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "$Backup:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
+dc start honua
+dc up -d --wait --wait-timeout 180
 ```
 
-For the inline production stack, restore the four Redis entries removed above and install a licence that includes `caching.redis` before restarting. Redis holds only job, workflow, proposal, and cache state, none of which is durable across an install that never had it — so nothing is lost by adding it. PostGIS-backed metadata state is untouched by the change, and durable jobs and workflows become available on the next boot.
+Then read a known layer back before readmitting traffic.
 
-## Troubleshoot
+<details>
+<summary>PowerShell</summary>
 
-- **Admin calls return 401** — `HONUA_ADMIN_PASSWORD` was not passed into the container; check your production compose file and secret source.
-- **Startup fails with "Master key must be at least 32 characters"** — lengthen `Security__ConnectionEncryption__MasterKey`.
-- **Browser requests blocked by CORS** — the permissive dev CORS policy is force-disabled inside containers; set `Cors__AllowedOrigins__0` to your app's exact origin.
-- **`503` on OGC Processes, import job routes, or proposal flows** — those need Redis; check the `redis` container health and `ConnectionStrings__Redis`. A `503` whose body carries `"code": "dependency-unavailable"` means the server was started with no Redis at all — see [Redis is optional; PostGIS is not](#redis-is-optional-postgis-is-not).
-- **Console shows a missing server binding** — set `HONUA_SERVER_BASE_URL` to the server origin reachable from the Console container and pass `HONUA_ADMIN_API_KEY`.
-- **Container restarts in a loop** — check `docker compose --env-file .env.production logs honua` for migration failures; the server applies database migrations at startup.
+```powershell
+$Backup = 'C:\path\to\the\verified\backup'
+if (-not (Test-Path -LiteralPath (Join-Path $Backup 'database.dump'))) { throw 'Database backup not found' }
+if (-not (Test-Path -LiteralPath (Join-Path $Backup 'storage.tar.gz'))) { throw 'Storage backup not found' }
+dc stop honua
+dc cp (Join-Path $Backup 'database.dump') postgres:/tmp/honua-restore.dump
+dc exec -T postgres dropdb -U honua --force --if-exists honua
+dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "${Backup}:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
+dc start honua
+dc up -d --wait --wait-timeout 180
+```
+
+</details>
 
 ## Upgrade & Rollback
 
-A single-node compose deployment cannot upgrade with zero downtime — there is one server process, so stopping the old container and starting the new one always leaves a brief gap. Plan the short outage rather than expecting a seamless roll. The safe order is **preflight → backup → pull → verify**, with rollback to the previous tag first and a database restore only if a schema-narrowing migration actually ran. See [Upgrade and roll back](upgrade-and-rollback.md) for the full policy (and Kubernetes/cloud rollouts).
+Use the signed release lock's next server digest and compatible clients together.
+Retain the previous `.env`, installed-package list and backup. A single-node
+Compose upgrade has downtime. Review migration preflight through the published
+admin client or the [API explorer](../../reference/openapi-and-explorer.md), then
+follow [upgrade and rollback](upgrade-and-rollback.md). Keep the Gate migration
+policy; a contract migration needs its specific approval nonce. Never skip
+migrations or erase volumes to bypass a failure.
 
-1. Preflight against the running instance before pulling anything. Proceed only when `readyForCoordinatedDeploy` is `true` and no unexpected migrations are pending.
+Image rollback keeps the migrated database. Roll back only to images that
+include the schema-reader guard: schema 135 or later for additive migrations,
+and never across a contract-phase migration without a restore. `honua-2026.1`
+is not a safe rollback target across any migration, and the only safe way back
+to 2026.1 is restoring the backup taken before the upgrade. That image predates
+the schema-reader guard, so it starts and serves on a newer schema with no
+refusal. There is no release-named immutable tag for it yet
+([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
+The rules are in
+[Rollback target eligibility](upgrade-and-rollback.md#rollback-target-eligibility).
 
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` and `GET /api/v1/admin/observability/migrations`.
-
-2. Back up the database (this is your rollback floor for any destructive migration).
+To see the migrations apply, or refuse, before the new server starts, run them
+out of band with the new image after updating the image tag in `.env`. Stop
+the old server first: this is the single-node downtime window.
 
 ```bash
-docker compose --env-file .env.production exec -T postgres pg_dump -U honua -d honua -Fc > "honua-$(date +%F).dump"
+dc stop honua
+dc pull honua
+dc run --rm --no-deps -e HONUA_MIGRATE_ONLY=true honua
+dc up -d --wait --wait-timeout 180
 ```
 
-3. Pull the new tag and recreate the server. Migrations run automatically when the new container starts.
+The run starts no listener and prints one JSON summary line. Exit `0` means the
+journal is current. Exit `5` means a reviewed contract migration is pending:
+read `contractApproval.nonce` from the summary, review the scripts it names,
+and re-run with `-e HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>`. Every other
+exit code and field is listed in
+[Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band).
+If the run refuses, nothing was applied: restore the previous image tag in
+`.env` and start the old server while you resolve it. After a successful run
+the new server finds the journal current and applies nothing, so
+`HONUA_SKIP_MIGRATIONS=true` is only needed where several servers start at once.
+
+## Diagnostics and scoped teardown
 
 ```bash
-HONUA_IMAGE=${HONUA_IMAGE:?Set the next immutable image digest from the release manifest}
-sed -i "s|^HONUA_IMAGE=.*|HONUA_IMAGE=$HONUA_IMAGE|" .env.production
-docker compose --env-file .env.production pull honua
-docker compose --env-file .env.production up -d honua
+dc ps
+dc logs --no-color --tail 150 honua postgres redis
+docker image inspect "$(grep '^HONUA_IMAGE=' .env | cut -d= -f2-)" --format '{{json .RepoDigests}}'
+pip freeze
 ```
 
-4. Verify readiness, then confirm no migration failure in the logs.
+For support, retain the image digest, installed-package list, HTTP status,
+timestamp, and relevant error/correlation ID. Inspect logs before sharing them;
+do not send `.env`, full Compose rendering, credentials, or customer records.
 
-> Open `http://127.0.0.1:8080/healthz/ready` in a browser.
+- **Port already allocated:** change the conflicting `HONUA_HTTP_PORT` or
+  `HONUA_GRPC_PORT` in `.env`, run
+  `dc up -d`.
+- **Startup exits or readiness times out:** inspect `dc logs`. Keep the image
+  digest and the error. Do not switch to the Development environment or disable
+  preflight to get past a startup failure; it is telling you something.
+- **Registry access fails:** these pins require no package-read credential.
+  Check network/proxy policy and retry. The optional NuGet client uses a different
+  registry; see [registry clients](../../get-started/registry-clients.md) only if you need .NET.
 
-**Roll back:** re-pin `HONUA_IMAGE` in `.env.production` to the previous immutable digest and `docker compose --env-file .env.production up -d honua`. Additive (expand) migrations are intended to leave the schema backward-compatible. N-1 upgrade and rollback qualification remains unverified until a released baseline exists. Restore the database (`pg_restore` from your dump) **only** when a contract-phase (schema-narrowing) migration ran and made the old version unusable — stop the container first, restore, then start the previous digest.
+Stop this installation while retaining all data:
 
-### Gating contract-phase migrations (optional)
-
-When a Pro or Enterprise licence enables Redis-backed operations, production starts with a
-fail-closed operation policy. The shipped production settings enable
-`Operations__Policy__Enabled=true` and set `Operations__Policy__DefaultDecision=Deny`; add
-explicit `Operations__Policy__Rules` entries for operations this deployment allows.
-
-The root quickstart uses the journal-scoped Gate policy by default. For production compose, keep `Database__MigrationSafety__ContractApplyPolicy: Gate` when you want a schema-narrowing upgrade to be a deliberate, approved step on an existing database. It applies only to an already-migrated database, so a first install still provisions fully with no extra config:
-
-```yaml
-    environment:
-      # ... existing env ...
-      Database__MigrationSafety__ContractApplyPolicy: Gate
-      # Optional: run a backup automatically, just before any contract-phase script applies.
-      # A non-zero exit aborts the upgrade (fail closed). This value is read only from
-      # configuration/env — it is never settable through the admin API or database.
-      Database__MigrationSafety__BackupCommand: "pg_dump -h postgres -U honua -d honua -Fc -f /tmp/honua-pre-migrate.dump"
+```bash
+dc down
 ```
 
-Under `Gate`, a pending reviewed contract migration blocks startup with a message naming the scripts and the preflight endpoints above. Approve it for one upgrade by setting `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error; unset it again afterward. Setting `HONUA_SKIP_MIGRATIONS=true` bypasses migrations entirely (for out-of-band migration flows such as serverless) and is **outside** this policy — those paths own their own upgrade safety.
+Only when you intend to permanently discard **this installation's** data, run
+the following from its saved directory. It removes this project's containers,
+network, and its three project-scoped volumes; it does not prune other projects.
 
-## Next steps
+```bash
+dc down --volumes
+unset HONUA_ADMIN_PASSWORD POSTGRES_PASSWORD
+```
 
-- [Upgrade and roll back](upgrade-and-rollback.md)
-- [Monitor Honua Server](monitoring.md)
-- [Back up and restore](backup-and-restore.md)
-- [Production checklist](../secure/production-checklist.md)
+The private installation folder remains for deliberate retention or deletion.

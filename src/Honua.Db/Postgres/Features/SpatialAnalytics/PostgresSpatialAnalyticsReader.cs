@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
 namespace Honua.Db.Postgres.Features.SpatialAnalytics;
 
@@ -26,27 +28,33 @@ namespace Honua.Db.Postgres.Features.SpatialAnalytics;
 /// the existing data-access pipeline. Cross-cutting concerns like edition gating,
 /// limit enforcement and overflow detection live in the request handler so the
 /// reader stays focused on storage interaction.
+/// <para>
+/// Read policy (permanent filter, row-level security, field masks) is resolved through
+/// <see cref="LayerReadSecurityResolver"/>, the same implementation the feature store
+/// uses, so an analytics operation sees exactly the rows and fields a direct query by
+/// the same caller would. A spatial join resolves the policy of both layers.
+/// </para>
 /// </remarks>
 internal sealed class PostgresSpatialAnalyticsReader : ISpatialAnalyticsReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
-    private readonly IMetadataV2GraphProvider? _v2Provider;
-    private readonly IFilterExpressionService? _filterExpressionService;
+    private readonly LayerReadSecurityResolver _readSecurity;
 
     public PostgresSpatialAnalyticsReader(
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager,
         IMetadataV2GraphProvider? v2Provider = null,
-        IFilterExpressionService? filterExpressionService = null)
+        IFilterExpressionService? filterExpressionService = null,
+        IRowLevelSecurityFilterSource? rlsFilterSource = null,
+        IFieldMaskSource? fieldMaskSource = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
-        _v2Provider = v2Provider;
-        _filterExpressionService = filterExpressionService;
+        _readSecurity = new LayerReadSecurityResolver(v2Provider, filterExpressionService, rlsFilterSource, fieldMaskSource);
     }
 
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryClustersAsync(
@@ -55,7 +63,8 @@ internal sealed class PostgresSpatialAnalyticsReader : ISpatialAnalyticsReader
         ClusterQuery clusterQuery,
         CancellationToken cancellationToken = default)
     {
-        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        query = await _readSecurity.ApplyAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        FeatureQuerySecurity.ValidateClusters(query, clusterQuery);
         var geometryStorageType = await _cacheManager
             .GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var sqlQuery = _queryBuilder.BuildClusterQuery(layerId, query, clusterQuery, geometryStorageType);
@@ -70,22 +79,43 @@ internal sealed class PostgresSpatialAnalyticsReader : ISpatialAnalyticsReader
         SpatialJoinQuery joinQuery,
         CancellationToken cancellationToken = default)
     {
-        targetQuery = await ApplyPermanentFilterAsync(targetLayerId, targetQuery, cancellationToken).ConfigureAwait(false);
+        targetQuery = await _readSecurity.ApplyAsync(targetLayerId, targetQuery, cancellationToken).ConfigureAwait(false);
+
+        // The join layer carries its own read policy. Its enforced row filter (permanent
+        // filter AND row-level security) is applied on the join side of the LEFT JOIN so
+        // matchCount, carry fields and join-side statistics only aggregate rows a direct
+        // query of the join layer would return; its field masks decide which join-layer
+        // fields carryFields / outStatistics may name.
+        var joinLayerFilter = await _readSecurity
+            .ResolveEnforcedSqlFilterAsync(joinQuery.JoinLayerId, cancellationToken)
+            .ConfigureAwait(false);
+        var joinLayerMaskedFields = await _readSecurity
+            .ResolveMaskedFieldsAsync(joinQuery.JoinLayerId, cancellationToken)
+            .ConfigureAwait(false);
+        FeatureQuerySecurity.ValidateSpatialJoin(targetQuery, joinQuery, joinLayerMaskedFields);
+
         var geometryStorageType = await _cacheManager
             .GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
 
-        // The join layer needs its own permanent filter on the join side of the
-        // LEFT JOIN: matchCount, carry fields and join-side statistics would
-        // otherwise aggregate (and leak) rows the join layer hides from direct
-        // queries. Threaded through the Postgres-specific builder overload.
-        var joinLayerFilter = await PermanentFilterResolver
-            .ResolveAsync(_v2Provider, _filterExpressionService, joinQuery.JoinLayerId, cancellationToken)
-            .ConfigureAwait(false);
-        var sqlQuery = joinLayerFilter is not null && _queryBuilder is FeatureQueryBuilder postgresQueryBuilder
-            ? postgresQueryBuilder.BuildSpatialJoinQuery(
-                targetLayerId, targetQuery, joinQuery, joinLayerFilter, geometryStorageType)
-            : _queryBuilder.BuildSpatialJoinQuery(
+        CoreParameterizedQuery sqlQuery;
+        if (joinLayerFilter is null)
+        {
+            sqlQuery = _queryBuilder.BuildSpatialJoinQuery(
                 targetLayerId, targetQuery, joinQuery, geometryStorageType);
+        }
+        else if (_queryBuilder is FeatureQueryBuilder postgresQueryBuilder)
+        {
+            sqlQuery = postgresQueryBuilder.BuildSpatialJoinQuery(
+                targetLayerId, targetQuery, joinQuery, joinLayerFilter, geometryStorageType);
+        }
+        else
+        {
+            // Only the PostgreSQL builder can place the join layer's filter on the join
+            // side. Refuse rather than run the join without it.
+            throw new InvalidOperationException(
+                "The join layer has an enforced row filter that the configured query builder cannot apply.");
+        }
+
         return await _dataAccess
             .ExecuteStatisticsQueryAsync(sqlQuery, targetQuery, targetLayerId, cancellationToken)
             .ConfigureAwait(false);
@@ -97,7 +127,8 @@ internal sealed class PostgresSpatialAnalyticsReader : ISpatialAnalyticsReader
         BufferAggregateQuery bufferQuery,
         CancellationToken cancellationToken = default)
     {
-        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        query = await _readSecurity.ApplyAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        FeatureQuerySecurity.ValidateBufferAggregate(query, bufferQuery);
         var geometryStorageType = await _cacheManager
             .GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var sqlQuery = _queryBuilder.BuildBufferAggregateQuery(
@@ -113,33 +144,13 @@ internal sealed class PostgresSpatialAnalyticsReader : ISpatialAnalyticsReader
         DensityQuery densityQuery,
         CancellationToken cancellationToken = default)
     {
-        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        query = await _readSecurity.ApplyAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        FeatureQuerySecurity.ValidateDensity(query, densityQuery);
         var geometryStorageType = await _cacheManager
             .GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var sqlQuery = _queryBuilder.BuildDensityQuery(layerId, query, densityQuery, geometryStorageType);
         return await _dataAccess
             .ExecuteStatisticsQueryAsync(sqlQuery, query, layerId, cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Applies the layer's metadata-v2 permanent (row-visibility) filter to the
-    /// query, mirroring <c>PostgresFeatureStoreRefactored</c> so the analytics
-    /// surface enforces the same row-level visibility as direct queries.
-    /// </summary>
-    private async Task<FeatureQuery> ApplyPermanentFilterAsync(
-        int layerId,
-        FeatureQuery query,
-        CancellationToken cancellationToken)
-    {
-        if (query.EnforcedSqlFilter != null)
-        {
-            return query;
-        }
-
-        var enforcedFilter = await PermanentFilterResolver
-            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
-            .ConfigureAwait(false);
-        return enforcedFilter == null ? query : query with { EnforcedSqlFilter = enforcedFilter };
     }
 }

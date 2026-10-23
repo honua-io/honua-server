@@ -455,24 +455,10 @@ internal static partial class RasterImportEndpoints
             int[] tileZoomLevels = [0, 1, 2, 3, 4, 5, 6, 7, 8];
             if (fields.TryGetValue("tileZoomLevels", out var zoomStr) && !string.IsNullOrWhiteSpace(zoomStr))
             {
-                try
-                {
-                    tileZoomLevels = zoomStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .Select(int.Parse)
-                        .Distinct()
-                        .Order()
-                        .ToArray();
-                }
-                catch (FormatException)
+                if (!TryParseTileZoomLevels(zoomStr, out tileZoomLevels, out var zoomError))
                 {
                     MultipartParsingHelpers.TryDeleteFile(stagedFilePath);
-                    return RasterImportParseResult.Failure("'tileZoomLevels' must be a comma-separated list of integers (0-24).", StatusCodes.Status400BadRequest);
-                }
-
-                if (tileZoomLevels.Any(z => z is < 0 or > 24))
-                {
-                    MultipartParsingHelpers.TryDeleteFile(stagedFilePath);
-                    return RasterImportParseResult.Failure("'tileZoomLevels' values must be between 0 and 24.", StatusCodes.Status400BadRequest);
+                    return RasterImportParseResult.Failure(zoomError, StatusCodes.Status400BadRequest);
                 }
             }
 
@@ -503,6 +489,36 @@ internal static partial class RasterImportEndpoints
             MultipartParsingHelpers.TryDeleteFile(stagedFilePath);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Parses <paramref name="zoomStr"/> as comma-separated zoom levels in 0-24.
+    /// Values that do not fit in an <see cref="int"/> are a client error, not a
+    /// server fault (#6177).
+    /// </summary>
+    internal static bool TryParseTileZoomLevels(string zoomStr, out int[] levels, out string error)
+    {
+        var tokens = zoomStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var parsed = new int[tokens.Length];
+        for (var i = 0; i < tokens.Length; i++)
+        {
+            if (!int.TryParse(tokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed[i]))
+            {
+                levels = [];
+                error = "'tileZoomLevels' must be a comma-separated list of integers (0-24).";
+                return false;
+            }
+        }
+
+        levels = parsed.Distinct().Order().ToArray();
+        if (levels.Any(static z => z is < 0 or > 24))
+        {
+            error = "'tileZoomLevels' values must be between 0 and 24.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
     }
 
     // =============================================================================

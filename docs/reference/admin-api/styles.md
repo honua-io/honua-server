@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Styles"
+description: "Reference for managing layer styles."
+resource: "honua://capability/styling.defaults"
+---
 # Styles
 
 Reference for managing layer styles. The canonical style document is MapLibre Style Spec v8 JSON; the server back-generates a GeoServices `drawingInfo` snapshot from it so MapServer and FeatureServer renderers stay in sync.

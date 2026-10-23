@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -28,7 +30,29 @@ internal static class SelfHostedDeployParameterKeys
 
     /// <summary>Prefix for <c>env.&lt;NAME&gt;</c> environment variables passed into the replica container.</summary>
     public const string EnvironmentPrefix = "env.";
+
+    /// <summary>
+    /// Prefix for <c>mount.&lt;CONTAINER_PATH&gt;</c> read-only host mounts placed into the replica
+    /// container, where the parameter value is the host path (honua-server#4617).
+    /// </summary>
+    /// <remarks>
+    /// Environment variables alone cannot carry a file, and a 2026.1 server image that connects to
+    /// Redis outside Development/Test refuses to start until
+    /// <c>Operations:SecretChannel:KeyRingCertificatePath</c> names a real PKCS#12 key-ring
+    /// certificate (honua-server#4722, #4885). Without a file seam the self-hosted rolling backend
+    /// could not roll out such an image at all: every standby would exit at startup and the rollout
+    /// would fail at the exposure deadline without activating. Mounts are always read-only, so a
+    /// replica can never write back to operator-supplied material. The container path is the key
+    /// because it is absolute and POSIX, which keeps a Windows host path (<c>C:\…</c>) out of the
+    /// part that would otherwise have to be split on a separator.
+    /// </remarks>
+    public const string MountPrefix = "mount.";
 }
+
+/// <summary>A read-only host path made visible inside a replica container.</summary>
+/// <param name="HostPath">Absolute path on the container host.</param>
+/// <param name="ContainerPath">Absolute path inside the container.</param>
+internal sealed record ContainerMount(string HostPath, string ContainerPath);
 
 /// <summary>
 /// Container-runtime seam so the backend can drive <c>docker</c>/<c>podman</c> without taking a hard
@@ -75,6 +99,9 @@ internal sealed record ContainerRunRequest
 
     /// <summary>Environment variables passed into the container.</summary>
     public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Read-only host paths mounted into the container.</summary>
+    public IReadOnlyList<ContainerMount> Mounts { get; init; } = [];
 }
 
 /// <summary>Read-only snapshot of a container discovered through the runtime.</summary>
@@ -120,6 +147,12 @@ internal sealed record LocalReplicaHealthResult
 
     /// <summary>Whether every issued probe returned the expected status.</summary>
     public bool Healthy => Attempts > 0 && Failures == 0;
+
+    /// <summary>Whether at least one probe received an HTTP response (as opposed to a transport failure).</summary>
+    public bool Reached { get; init; }
+
+    /// <summary>Response body of a reached probe, used as the local functional-query sample.</summary>
+    public string? Body { get; init; }
 
     /// <summary>Human-readable detail for the operation phase message.</summary>
     public string? Detail { get; init; }
@@ -193,7 +226,9 @@ internal sealed partial class YarpRollingDeployBackend(
             SupportsTrafficShifting = false,
             RequiresOutOfBandMigrations = true,
             SupportsProgressPolling = true,
-            SupportsRevisionPinning = true
+            SupportsRevisionPinning = true,
+            // The standby replica serves no traffic until PromoteAsync swaps the proxy to it.
+            StagesCandidateWithoutTraffic = true
         });
 
     public async Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
@@ -234,6 +269,18 @@ internal sealed partial class YarpRollingDeployBackend(
             blockingReasons.Add($"The container runtime '{target.ContainerRuntime}' is not available on this host.");
         }
 
+        // An unsatisfiable mount blocks here rather than at submit, so the operator reads the reason
+        // instead of watching the standby exit at startup and the rollout fail at the exposure
+        // deadline as "never passed the backend health gate" (#4617).
+        try
+        {
+            BuildMounts(spec);
+        }
+        catch (InvalidOperationException ex)
+        {
+            blockingReasons.Add(ex.Message);
+        }
+
         return new DeployPlan
         {
             IsReadyToSubmit = blockingReasons.Count == 0 && !spec.RequiresApproval,
@@ -271,7 +318,8 @@ internal sealed partial class YarpRollingDeployBackend(
                     [LabelRevision] = spec.DesiredRevision,
                     [LabelRole] = RoleStandby
                 },
-                Environment = BuildEnvironment(spec)
+                Environment = BuildEnvironment(spec),
+                Mounts = BuildMounts(spec)
             };
 
             var containerId = await containerRuntime.RunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -312,30 +360,22 @@ internal sealed partial class YarpRollingDeployBackend(
 
             if (operation.Status == WorkflowOperationStatus.RollbackRequested)
             {
-                // Rollback settles once the standby replica is gone and the active replica is serving.
+                // The standby being gone is routing convergence only. The active replica still has
+                // to prove it is the prior revision, ready, and answering the functional query.
                 var standbyGone = replicas.Standby is null || !replicas.Standby.Running;
-                string? activeRevision = null;
-                var activeIsPriorRevision = replicas.Active is { Running: true } active &&
-                    active.Labels.TryGetValue(LabelRevision, out activeRevision) &&
-                    string.Equals(activeRevision, spec.CurrentRevision, StringComparison.OrdinalIgnoreCase);
-                if (standbyGone && activeIsPriorRevision)
+                if (!standbyGone)
                 {
                     return new DeployObservation
                     {
-                        Status = WorkflowOperationStatus.RolledBack,
+                        Status = WorkflowOperationStatus.RollbackRequested,
                         ProviderOperationId = operation.ProviderOperationId,
-                        ObservedRevision = activeRevision,
-                        Message = "Rolling deploy rolled back: the standby replica was stopped and the active replica is serving."
+                        ObservedRevision = spec.CurrentRevision,
+                        Message = "Rolling deploy rollback is still settling the standby replica."
                     };
                 }
 
-                return new DeployObservation
-                {
-                    Status = WorkflowOperationStatus.RollbackRequested,
-                    ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = spec.CurrentRevision,
-                    Message = "Rolling deploy rollback is still settling the standby replica."
-                };
+                return await CompleteLocalRollbackAsync(operation, spec, target, replicas.Active, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (replicas.Standby is null || !replicas.Standby.Running)
@@ -410,8 +450,6 @@ internal sealed partial class YarpRollingDeployBackend(
                 };
             }
 
-            var replicas = await DiscoverReplicasAsync(operation, target, cancellationToken).ConfigureAwait(false);
-
             // Atomic single-switch cutover: point the proxy at the standby destination.
             var standbyAddress = ReplicaAddress(target, target.StandbyPort);
             await proxySwapper.SwapAsync(standbyAddress, cancellationToken).ConfigureAwait(false);
@@ -431,25 +469,19 @@ internal sealed partial class YarpRollingDeployBackend(
                 };
             }
 
-            // Keep-old-until-healthy: only after the new replica is confirmed serving do we drain and
-            // stop the old replica, after a configurable delay so in-flight requests can complete.
-            if (replicas.Active is { } active)
-            {
-                if (_options.DrainDelaySeconds > 0)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(_options.DrainDelaySeconds), cancellationToken).ConfigureAwait(false);
-                }
-
-                await containerRuntime.StopAsync(target.ContainerRuntime, active.Name, cancellationToken).ConfigureAwait(false);
-                Log.OldReplicaStopped(logger, operation.OperationId, spec.TargetId, active.Name);
-            }
-
+            // Retain-through-observation (honua-server#4618): the old replica keeps running after
+            // cutover instead of being stopped here. Stopping it immediately would disconnect the
+            // advertised rollback protection window from reality — a candidate that fails moments
+            // after cutover would have nothing left to recover to. The reconciler's post-activation
+            // observation window now owns retiring it, through CompleteProtectionAsync below, once the
+            // window elapses without a rollback trigger. RollbackAsync repoints traffic straight back
+            // to this still-running replica if a trigger fires first.
             return new DeployObservation
             {
                 Status = WorkflowOperationStatus.Succeeded,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = spec.DesiredRevision,
-                Message = $"Rolling deploy promoted: traffic now flows to revision '{spec.DesiredRevision}' on port {target.StandbyPort}; the old replica was drained and stopped."
+                Message = $"Rolling deploy promoted: traffic now flows to revision '{spec.DesiredRevision}' on port {target.StandbyPort}; the old replica is retained for recovery until the post-activation observation window elapses."
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -492,16 +524,18 @@ internal sealed partial class YarpRollingDeployBackend(
 
             // Classify from ground truth, not only in-memory proxy state. The in-memory
             // ActiveDestinationAddress is reset to the configured active port when the front process
-            // restarts, so after a promote+restart it wrongly reads "not promoted". Container labels
-            // survive the restart: the new revision is serving when its standby replica is running and
-            // the previous active replica is gone (PromoteAsync removes it at cutover). Either signal
-            // (the live proxy address in-process, or the discovered container state after a restart)
-            // marks the cutover as done.
+            // restarts, so after a promote+restart it wrongly reads "not promoted". The durable
+            // operation record is the authoritative signal that survives any restart: PromoteAsync's
+            // caller (the reconciler) only ever sets Deploy.Protection once cutover has actually
+            // completed (honua-server#4618), so its presence proves promotion happened even though the
+            // old replica is now retained (not removed) at cutover and would otherwise look
+            // indistinguishable from the pre-cutover state. The container-label fallback covers
+            // callers/tests that construct an operation without a durable Protection record.
             var proxyPointsAtStandby = string.Equals(
                 proxySwapper.ActiveDestinationAddress, standbyAddress, StringComparison.OrdinalIgnoreCase);
             var newRevisionServing = replicas.Standby is { Running: true }
                 && (replicas.Active is null || !replicas.Active.Running);
-            var alreadyPromoted = proxyPointsAtStandby || newRevisionServing;
+            var alreadyPromoted = proxyPointsAtStandby || spec.Protection != null || newRevisionServing;
 
             if (replicas.Active is { Running: true } active &&
                 (!active.Labels.TryGetValue(LabelRevision, out var activeRevision) ||
@@ -518,20 +552,16 @@ internal sealed partial class YarpRollingDeployBackend(
 
             if (!alreadyPromoted)
             {
-                // Pre-cutover rollback: the old replica was never touched. Just stop the standby.
+                // Pre-cutover rollback: the old replica was never touched. Stop the standby, then
+                // prove the still-serving replica before the operation may terminate as RolledBack.
                 if (replicas.Standby is { } standby)
                 {
                     await containerRuntime.StopAsync(target.ContainerRuntime, standby.Name, cancellationToken).ConfigureAwait(false);
                 }
 
                 Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, promoted: false);
-                return new DeployObservation
-                {
-                    Status = WorkflowOperationStatus.RolledBack,
-                    ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = spec.CurrentRevision,
-                    Message = "Rolling deploy rolled back before cutover: the standby replica was stopped and the old replica was never touched."
-                };
+                return await CompleteLocalRollbackAsync(operation, spec, target, replicas.Active, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             // Post-cutover rollback: repoint the proxy at the old replica if it is still running.
@@ -552,7 +582,10 @@ internal sealed partial class YarpRollingDeployBackend(
                 };
             }
 
-            // The old replica is gone; attempt to relaunch the previous revision if we know it.
+            // Fallback path: the retained old replica is unexpectedly gone (for example an operator
+            // removed it, or CompleteProtectionAsync already retired it before this trigger arrived).
+            // Attempt to relaunch the previous revision if we know it, rather than leaving the target
+            // fully on the failed candidate with no recovery route.
             if (!string.IsNullOrWhiteSpace(spec.CurrentRevision))
             {
                 var request = new ContainerRunRequest
@@ -569,7 +602,8 @@ internal sealed partial class YarpRollingDeployBackend(
                         [LabelRevision] = spec.CurrentRevision!,
                         [LabelRole] = RoleActive
                     },
-                    Environment = BuildEnvironment(spec)
+                    Environment = BuildEnvironment(spec),
+                    Mounts = BuildMounts(spec)
                 };
 
                 await containerRuntime.RunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -607,6 +641,52 @@ internal sealed partial class YarpRollingDeployBackend(
     }
 
     /// <summary>
+    /// Retires the old replica retained through cutover (honua-server#4618) once the reconciler's
+    /// post-activation observation window elapses without a rollback trigger. This is the deferred half
+    /// of what <see cref="PromoteAsync"/> used to do immediately at cutover: only after the durable
+    /// operation itself decides the window is over does the previous revision's capacity actually go
+    /// away, so a candidate that fails mid-window always has somewhere to recover to.
+    /// </summary>
+    public async Task<DeployObservation> CompleteProtectionAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy workflow operation is missing deploy metadata.");
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var target = ResolveTarget(spec);
+
+        try
+        {
+            var replicas = await DiscoverReplicasAsync(operation, target, cancellationToken).ConfigureAwait(false);
+            if (replicas.Active is { } active)
+            {
+                await containerRuntime.StopAsync(target.ContainerRuntime, active.Name, cancellationToken).ConfigureAwait(false);
+                Log.OldReplicaStopped(logger, operation.OperationId, spec.TargetId, active.Name);
+            }
+
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Succeeded,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = spec.DesiredRevision,
+                Message = "Post-activation observation window elapsed: the retained old replica was stopped."
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.OperationFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Failed,
+                ProviderOperationId = operation.ProviderOperationId,
+                Message = "Failed to retire the retained old replica after the observation window elapsed."
+            };
+        }
+    }
+
+    /// <summary>
     /// Stops the standby (new-revision) replica after the configured drain window during a
     /// post-cutover rollback. Traffic has already been repointed at the previous replica, so the
     /// drain only lets the failed revision finish in-flight requests. Best-effort by name when the
@@ -626,9 +706,124 @@ internal sealed partial class YarpRollingDeployBackend(
         await containerRuntime.StopAsync(target.ContainerRuntime, name, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<LocalReplicaHealthResult> ProbeStandbyAsync(SelfHostedDeployTarget target, CancellationToken cancellationToken)
+    private async Task<DeployObservation> CompleteLocalRollbackAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        SelfHostedDeployTarget target,
+        ContainerSummary? active,
+        CancellationToken cancellationToken)
     {
-        var url = ReplicaHealthUrl(target, target.StandbyPort);
+        string? activeRevision = null;
+        var activeRunning = active is { Running: true };
+        var hasRevisionLabel = activeRunning &&
+            active!.Labels.TryGetValue(LabelRevision, out activeRevision) &&
+            !string.IsNullOrWhiteSpace(activeRevision);
+        var identityProven = hasRevisionLabel &&
+            string.Equals(activeRevision, spec.CurrentRevision, StringComparison.OrdinalIgnoreCase);
+        var identityMismatched = hasRevisionLabel && !identityProven;
+
+        var readiness = activeRunning
+            ? await ProbeReplicaAsync(target, target.ActivePort, cancellationToken).ConfigureAwait(false)
+            : new LocalReplicaHealthResult { Attempts = 0, Failures = 0 };
+        var functional = await ClassifyLocalFunctionalQueryAsync(spec, target, readiness, cancellationToken)
+            .ConfigureAwait(false);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = identityProven,
+                ServingIdentityMismatched = identityMismatched,
+                ServingRevision = hasRevisionLabel ? activeRevision : null,
+                HealthyEndpointCount = readiness.Healthy ? 1 : 0,
+                RegisteredEndpointCount = activeRunning ? 1 : 0,
+                FunctionalQuery = functional,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, operation.ProviderOperationId);
+    }
+
+    private async Task<RollbackFunctionalQueryVerdict> ClassifyLocalFunctionalQueryAsync(
+        DeployOperationSpec spec,
+        SelfHostedDeployTarget target,
+        LocalReplicaHealthResult readiness,
+        CancellationToken cancellationToken)
+    {
+        var expectation = RollbackDataPlaneCompletion.ReadFunctionalExpectation(spec.Parameters);
+        if (!expectation.IsConfigured)
+        {
+            return RollbackFunctionalQueryVerdict.NotProven;
+        }
+
+        var sample = readiness;
+        if (!string.IsNullOrWhiteSpace(expectation.Path))
+        {
+            var path = expectation.Path.StartsWith('/') ? expectation.Path : "/" + expectation.Path;
+            var url = $"http://{target.Host}:{target.ActivePort.ToString(CultureInfo.InvariantCulture)}{path}";
+            sample = await healthProbe.ProbeAsync(
+                    url,
+                    1,
+                    _options.HealthProbeTimeoutSeconds,
+                    expectation.ExpectedStatusCode,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!sample.Reached && sample.Body is null)
+        {
+            return RollbackFunctionalQueryVerdict.Unreachable;
+        }
+
+        if (!string.IsNullOrWhiteSpace(sample.Body))
+        {
+            var bytes = Encoding.UTF8.GetBytes(sample.Body);
+            if (DeployProbeBodyInspector.DescribeErrorEnvelope(bytes) != null)
+            {
+                return RollbackFunctionalQueryVerdict.ServedErrorEnvelope;
+            }
+        }
+        else if (!sample.Healthy)
+        {
+            return RollbackFunctionalQueryVerdict.Unreachable;
+        }
+
+        var text = sample.Body ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(expectation.ForbiddenContains) &&
+            text.Contains(expectation.ForbiddenContains, StringComparison.Ordinal))
+        {
+            return RollbackFunctionalQueryVerdict.ServedOtherMarker;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectation.ExpectedContains) &&
+            !text.Contains(expectation.ExpectedContains, StringComparison.Ordinal))
+        {
+            return RollbackFunctionalQueryVerdict.ServedOtherMarker;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectation.ExpectedSha256))
+        {
+            var actual = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+            if (!string.Equals(actual, expectation.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return RollbackFunctionalQueryVerdict.ServedOtherMarker;
+            }
+        }
+
+        return sample.Healthy || !string.IsNullOrWhiteSpace(sample.Body)
+            ? RollbackFunctionalQueryVerdict.MatchedPriorMarker
+            : RollbackFunctionalQueryVerdict.Unreachable;
+    }
+
+    private async Task<LocalReplicaHealthResult> ProbeStandbyAsync(SelfHostedDeployTarget target, CancellationToken cancellationToken)
+        => await ProbeReplicaAsync(target, target.StandbyPort, cancellationToken).ConfigureAwait(false);
+
+    private async Task<LocalReplicaHealthResult> ProbeReplicaAsync(
+        SelfHostedDeployTarget target,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        var url = ReplicaHealthUrl(target, port);
         return await healthProbe.ProbeAsync(
                 url,
                 _options.HealthProbeSamples,
@@ -695,6 +890,54 @@ internal sealed partial class YarpRollingDeployBackend(
         }
 
         return environment;
+    }
+
+    /// <summary>
+    /// Reads the <c>mount.&lt;CONTAINER_PATH&gt;=&lt;HOST_PATH&gt;</c> parameters (honua-server#4617).
+    /// </summary>
+    /// <remarks>
+    /// A mount that cannot be satisfied is rejected here, before a container exists. The alternative
+    /// is a standby that starts, exits on the missing file, and only surfaces at the exposure
+    /// deadline as "never passed the backend health gate" — a configuration error reported as a
+    /// candidate health failure.
+    /// </remarks>
+    private static List<ContainerMount> BuildMounts(DeployOperationSpec spec)
+    {
+        var mounts = new List<ContainerMount>();
+        foreach (var entry in spec.Parameters)
+        {
+            if (!entry.Key.StartsWith(SelfHostedDeployParameterKeys.MountPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var containerPath = entry.Key[SelfHostedDeployParameterKeys.MountPrefix.Length..];
+            if (string.IsNullOrWhiteSpace(containerPath))
+            {
+                throw new InvalidOperationException(
+                    $"Self-hosted rolling deploy parameter '{entry.Key}' names no container path; " +
+                    $"use '{SelfHostedDeployParameterKeys.MountPrefix}<container-path>=<host-path>'.");
+            }
+
+            var hostPath = entry.Value;
+            if (string.IsNullOrWhiteSpace(hostPath))
+            {
+                throw new InvalidOperationException(
+                    $"Self-hosted rolling deploy parameter '{entry.Key}' has no host path, so '{containerPath}' " +
+                    "would be empty inside the replica.");
+            }
+
+            if (!File.Exists(hostPath) && !Directory.Exists(hostPath))
+            {
+                throw new InvalidOperationException(
+                    $"Self-hosted rolling deploy parameter '{entry.Key}' points at '{hostPath}', which does not exist " +
+                    "on the container host, so the replica would start without it.");
+            }
+
+            mounts.Add(new ContainerMount(hostPath, containerPath));
+        }
+
+        return mounts;
     }
 
     private SelfHostedDeployTarget ResolveTarget(DeployOperationSpec spec)

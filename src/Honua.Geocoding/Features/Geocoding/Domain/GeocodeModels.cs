@@ -293,6 +293,11 @@ public sealed record StructuredAddress
     public string? Country { get; init; }
 
     /// <summary>
+    /// ISO country code when the provider supplies one separately from the country name.
+    /// </summary>
+    public string? CountryCode { get; init; }
+
+    /// <summary>
     /// Subaddress (e.g., unit, suite, apartment)
     /// </summary>
     public string? Subaddress { get; init; }

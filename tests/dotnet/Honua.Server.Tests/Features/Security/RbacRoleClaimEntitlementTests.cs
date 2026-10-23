@@ -54,8 +54,10 @@ public sealed class RbacRoleClaimEntitlementTests
     }
 
     [UnitTest]
-    public async Task AccessPolicyGrant_CustomRoleClaim_FollowsLiveEntitlement()
+    public async Task AccessPolicyGrant_CustomRoleClaim_DoesNotSkipRoleList()
     {
+        // The mapped role's query grant must not skip AllowedRoles (#6358), including
+        // when an Enterprise snapshot admits the custom claim.
         var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Community);
         using var provider = BuildServices(entitlements);
         var context = CreateContext(provider, CreatePrincipal(CustomRoleClaimType, MappedRole));
@@ -74,7 +76,7 @@ public sealed class RbacRoleClaimEntitlementTests
 
         entitlements.Apply(HonuaEdition.Enterprise);
         (await AccessPolicyHelpers.IsResourceAccessibleAsync(
-            context, resource, service, AuthorizationOperation.Query)).Should().BeTrue();
+            context, resource, service, AuthorizationOperation.Query)).Should().BeFalse();
 
         entitlements.Expire();
         (await AccessPolicyHelpers.IsResourceAccessibleAsync(
@@ -131,7 +133,66 @@ public sealed class RbacRoleClaimEntitlementTests
         policyStore.LastRoles.Should().NotContain(MappedRole);
     }
 
-    private static ServiceProvider BuildServices(MutableLicenseEntitlementService entitlements)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ReadPolicies_BackgroundConfiguredRole_UsesLiveEntitlement(bool fieldMask)
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Community);
+        var rowPolicies = new RecordingRlsPolicyStore();
+        IReadOnlyList<string> maskRoles = [];
+        var maskPolicies = Substitute.For<IFieldMaskPolicyStore>();
+        maskPolicies.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(),
+                Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                maskRoles = call.ArgAt<IReadOnlyList<string>>(0);
+                return Task.FromResult<IReadOnlyList<FieldMaskPolicy>>([]);
+            });
+        using var provider = BuildServices(entitlements, services =>
+        {
+            services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor());
+            services.AddSingleton<IMetadataV2GraphProvider>(new ThrowingGraphProvider());
+            services.AddSingleton(Substitute.For<Honua.Core.Queries.Filters.IFilterExpressionService>());
+            services.AddSingleton<IRlsPolicyStore>(rowPolicies);
+            services.AddSingleton(maskPolicies);
+            services.AddTransient<RowLevelSecurityFilterSource>();
+            services.AddTransient<FieldMaskSource>();
+        });
+        using var scope = provider.CreateScope();
+        var rows = scope.ServiceProvider.GetRequiredService<RowLevelSecurityFilterSource>();
+        var masks = scope.ServiceProvider.GetRequiredService<FieldMaskSource>();
+        var snapshot = JobSecurityContextCapture.Capture(CreatePrincipal(CustomRoleClaimType, MappedRole),
+            provider.GetRequiredService<IOptions<RbacOptions>>().Value);
+        using var securityScope = JobSecurityScope.Begin(snapshot);
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-1", Name = "layer-1" }
+        };
+
+        await ResolveAsync();
+        ObservedRoles().Should().NotContain(MappedRole);
+        entitlements.Apply(HonuaEdition.Enterprise);
+        await ResolveAsync();
+        ObservedRoles().Should().Contain(MappedRole);
+        entitlements.Expire();
+        await ResolveAsync();
+        ObservedRoles().Should().NotContain(MappedRole);
+
+        IReadOnlyList<string> ObservedRoles() => fieldMask ? maskRoles : rowPolicies.LastRoles;
+        async Task ResolveAsync()
+        {
+            if (fieldMask)
+                await masks.ResolveAsync(resource);
+            else
+                await rows.ResolveAsync(resource);
+        }
+    }
+
+    private static ServiceProvider BuildServices(MutableLicenseEntitlementService entitlements,
+        Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -146,6 +207,7 @@ public sealed class RbacRoleClaimEntitlementTests
             new PermissionResolver(sp.GetRequiredService<IRoleStore>()));
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOperatorAuthorizationEvaluator, OperatorAuthorizationEvaluator>();
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
 

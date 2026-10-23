@@ -9,7 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$PROJECT_DIR/docker/scale-test/compose.yml"
 BASE_URL="${BASE_URL:-http://localhost:${HONUA_SCALE_TEST_HTTP_PORT:-8080}}"
-ADMIN_API_KEY="${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
+# The scale stack boots with ASPNETCORE_ENVIRONMENT=ScaleTest, which is not a relaxed
+# environment: startup validation refuses shipped credential literals, so there is no
+# default to fall back to here either.
+ADMIN_API_KEY="${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD to the admin password the scale stack was started with}"
 POST_DEPLOYMENT_VERIFICATION_SCRIPT="${POST_DEPLOYMENT_VERIFICATION_SCRIPT:-$PROJECT_DIR/scripts/cloud/post-deployment-verification.sh}"
 CANARY_ROUTE_HEADER="${HONUA_SCALE_TEST_CANARY_ROUTE_HEADER:-X-Honua-Canary: always}"
 CANARY_WEIGHT="${HONUA_SCALE_TEST_CANARY_WEIGHT:-10}"

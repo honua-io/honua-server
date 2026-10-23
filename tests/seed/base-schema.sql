@@ -174,7 +174,8 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
     band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
     pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
-    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED,
+    second_band_is_alpha BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Store the raster payload EXTERNAL (out-of-line, UNCOMPRESSED) so dynamic
@@ -526,6 +527,26 @@ CREATE TABLE IF NOT EXISTS honua.sta_observation (
 CREATE TABLE IF NOT EXISTS honua.sta_observation_default
     PARTITION OF honua.sta_observation DEFAULT;
 
+-- Identifier sequences from migration 116_AddSensorThingsIdSequences.sql. Ingest allocates
+-- @iot.ids from these instead of MAX(id) + 1, so two concurrent writers cannot mint the
+-- same id (#4199).
+CREATE SEQUENCE IF NOT EXISTS honua.sta_thing_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE
+    OWNED BY honua.sta_thing.id;
+CREATE SEQUENCE IF NOT EXISTS honua.sta_sensor_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE
+    OWNED BY honua.sta_sensor.id;
+CREATE SEQUENCE IF NOT EXISTS honua.sta_observed_property_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE
+    OWNED BY honua.sta_observed_property.id;
+CREATE SEQUENCE IF NOT EXISTS honua.sta_datastream_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE
+    OWNED BY honua.sta_datastream.id;
+CREATE SEQUENCE IF NOT EXISTS honua.sta_observation_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE
+    OWNED BY honua.sta_observation.id;
+
+ALTER TABLE honua.sta_thing ALTER COLUMN id SET DEFAULT nextval('honua.sta_thing_id_seq');
+ALTER TABLE honua.sta_sensor ALTER COLUMN id SET DEFAULT nextval('honua.sta_sensor_id_seq');
+ALTER TABLE honua.sta_observed_property ALTER COLUMN id SET DEFAULT nextval('honua.sta_observed_property_id_seq');
+ALTER TABLE honua.sta_datastream ALTER COLUMN id SET DEFAULT nextval('honua.sta_datastream_id_seq');
+ALTER TABLE honua.sta_observation ALTER COLUMN id SET DEFAULT nextval('honua.sta_observation_id_seq');
+
 CREATE INDEX IF NOT EXISTS ix_sta_observation_time
     ON honua.sta_observation USING BRIN (phenomenon_time);
 CREATE INDEX IF NOT EXISTS ix_sta_observation_datastream_time
@@ -562,6 +583,14 @@ SELECT gs, 1,
     NULL::bigint
 FROM generate_series(1, 48) AS gs
 ON CONFLICT (id, phenomenon_time) DO NOTHING;
+
+-- The seeded rows carry explicit ids: position each sequence after them, exactly as the
+-- migration's setval block does.
+SELECT setval('honua.sta_thing_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM honua.sta_thing;
+SELECT setval('honua.sta_sensor_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM honua.sta_sensor;
+SELECT setval('honua.sta_observed_property_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM honua.sta_observed_property;
+SELECT setval('honua.sta_datastream_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM honua.sta_datastream;
+SELECT setval('honua.sta_observation_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM honua.sta_observation;
 
 CREATE OR REPLACE FUNCTION honua.seed_metadata_v2_compat_snapshot()
 RETURNS void
@@ -717,6 +746,11 @@ BEGIN
                                 END,
                                 'description', lf.description,
                                 'nullable', lf.nullable,
+                                -- Mirror the production publish path
+                                -- (MapLayerFieldToMetadataV2: Length = MaxLength) so
+                                -- protocol field metadata keeps the declared string
+                                -- length (honua-server#5330).
+                                'length', lf.max_length,
                                 'editable', CASE regexp_replace(lower(COALESCE(lf.field_type, '')), '[^a-z0-9]+', '', 'g')
                                     WHEN 'geometry' THEN false
                                     WHEN 'geography' THEN false
@@ -1101,15 +1135,15 @@ BEGIN
                 'title', 'CI compatibility seed'
             ),
             'catalogs', '[]'::jsonb,
-            'resources', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM resource_rows), '[]'::jsonb),
+            'resources', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM (SELECT DISTINCT value, sort_key FROM resource_rows) dr), '[]'::jsonb),
             'connections', jsonb_build_array(jsonb_build_object(
                 'metadata', jsonb_build_object('id', 'conn-postgres', 'name', 'postgres'),
                 'type', 'managed',
                 'provider', 'postgres',
                 'status', (SELECT value FROM status_doc)
             )),
-            'storageBindings', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM storage_rows), '[]'::jsonb),
-            'services', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM service_rows), '[]'::jsonb),
+            'storageBindings', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM (SELECT DISTINCT value, sort_key FROM storage_rows) sr), '[]'::jsonb),
+            'services', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM (SELECT DISTINCT value, sort_key FROM service_rows) svc), '[]'::jsonb),
             'publications', COALESCE((SELECT jsonb_agg(value ORDER BY service_part, layer_id, sort_order) FROM publication_rows), '[]'::jsonb),
             'projectionProfiles', '[]'::jsonb,
             'policies', '[]'::jsonb,

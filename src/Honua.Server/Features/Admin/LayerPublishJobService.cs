@@ -1,0 +1,252 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Db.Postgres.Features.Admin;
+using Honua.Server.Features.Operations;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+
+namespace Honua.Server.Features.Admin;
+
+internal sealed class LayerPublishJobService(
+    ILayerPublishingService publishingService,
+    IOptions<LayerPublishingOptions> options,
+    LayerPublishJobDispatcher dispatcher,
+    IUniversalProgressStore progressStore,
+    ITenantContext tenantContext,
+    ISchemaContext? schemaContext = null,
+    IExecutionJobStore? jobStore = null,
+    IProcessCatalog? processCatalog = null) : ILayerPublishJobs
+{
+    public async Task<LayerPublishAdmission> SubmitAsync(
+        string connectionString,
+        Guid connectionId,
+        LayerPublishRequest request,
+        string routeId,
+        CancellationToken requestCancellation)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentException.ThrowIfNullOrWhiteSpace(routeId);
+
+        // Pre-accept only. An aborted count publishes nothing and rolls nothing back.
+        var rowCount = await publishingService.CountSourceRowsAsync(
+            connectionString, request.Schema, request.Table, requestCancellation).ConfigureAwait(false);
+        var threshold = options.Value.GetValidatedAsyncPublishRowThreshold();
+        if (rowCount <= threshold)
+        {
+            await RevalidateCommittedSourceAsync(request, connectionId, requestCancellation).ConfigureAwait(false);
+            var summary = await publishingService.PublishLayerAsync(
+                connectionString, request, CancellationToken.None).ConfigureAwait(false);
+            return new LayerPublishAdmission(LayerPublishAdmissionKind.Completed, summary, null, rowCount, null);
+        }
+
+        if (dispatcher.Mode == LayerPublishRunnerMode.Unavailable)
+        {
+            return new LayerPublishAdmission(LayerPublishAdmissionKind.Unavailable, null, null, rowCount, null);
+        }
+
+        await RevalidateCommittedSourceAsync(request, connectionId, requestCancellation).ConfigureAwait(false);
+
+        var jobId = Guid.NewGuid().ToString("N");
+        var payload = new LayerPublishJobPayload
+        {
+            ConnectionId = connectionId,
+            ConnectionKey = routeId,
+            RowCount = rowCount,
+            Request = LayerPublishRequestMapper.ToHttp(request),
+            TenantId = tenantContext.TenantId,
+            TenantSource = tenantContext.Source,
+            CurrentSchema = schemaContext?.CurrentSchema,
+            ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
+            CommittedSinkPublication = request.CommittedSinkPublication,
+        };
+        var queued = new LayerPublishJobProgress
+        {
+            OperationId = jobId,
+            Status = OperationStatus.Queued,
+            RowsMaterialized = 0,
+            RowsTotal = rowCount,
+            ConnectionId = connectionId,
+            ConnectionKey = routeId,
+            TenantId = tenantContext.TenantId,
+            StartedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Queued",
+        };
+
+        await dispatcher.DispatchAsync(payload, queued, request.Table).ConfigureAwait(false);
+        return Queued(jobId, rowCount, routeId);
+    }
+
+    private async Task RevalidateCommittedSourceAsync(
+        LayerPublishRequest request, Guid connectionId, CancellationToken cancellationToken)
+    {
+        if (request.ConnectionEndpointFingerprint is null && request.CommittedSinkPublication is null)
+        {
+            return;
+        }
+
+        if (request.CommittedSinkPublication is not { } claim ||
+            jobStore is null || processCatalog is null)
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                "Committed sink source evidence is unavailable.");
+        }
+
+        request.CommittedSinkPublication = await CommittedSinkPublicationVerifier.RevalidateAsync(
+            jobStore, processCatalog, claim, connectionId, request.Schema, request.Table,
+            request.ConnectionEndpointFingerprint, tenantContext.TenantId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<LayerPublishJobProgress?> GetAsync(string jobId, CancellationToken cancellationToken)
+    {
+        var progress = await progressStore.GetProgressAsync<LayerPublishJobProgress>(jobId, cancellationToken)
+            .ConfigureAwait(false);
+        if (progress is null)
+        {
+            if (jobStore is null)
+            {
+                return null;
+            }
+
+            var durableJob = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return RecoverProgress(jobId, durableJob, tenantContext.TenantId);
+        }
+
+        if (!string.Equals(progress.TenantId, tenantContext.TenantId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (IsTerminal(progress.Status) || jobStore is null)
+        {
+            return progress;
+        }
+
+        var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        return job is null ? progress : ProjectExecutionOutcome(progress, job);
+    }
+
+    private static LayerPublishJobProgress? RecoverProgress(string jobId, ExecutionJobRecord? job, string? tenantId)
+    {
+        if (job is null
+            || !string.Equals(job.OperationId, jobId, StringComparison.Ordinal)
+            || job.Spec.Kind != ExecutionJobKind.LayerPublish
+            || !LayerPublishJobPayload.TryParse(job.Spec.Parameters, out var payload, out _)
+            || payload is null
+            || payload.RowCount < 0
+            || !string.Equals(payload.TenantId, tenantId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var completion = LayerPublishCompletionReceipt.Read(job);
+        if (job.Status == ExecutionJobStatus.Succeeded
+            && completion is { RowsMaterialized: null })
+        {
+            // A legacy layer-only receipt cannot reconstruct lost completed counts. Keep the
+            // existing response contract rather than report fabricated zero or accepted totals.
+            return null;
+        }
+
+        // With no progress document, zero is only a confirmed lower bound, not a measurement
+        // of the running copy. A rich committed receipt replaces both counts on completion.
+        var recovered = new LayerPublishJobProgress
+        {
+            OperationId = jobId,
+            Status = job.Status == ExecutionJobStatus.Running ? OperationStatus.Processing : OperationStatus.Queued,
+            RowsMaterialized = 0,
+            RowsTotal = payload.RowCount,
+            ConnectionId = payload.ConnectionId,
+            ConnectionKey = payload.ConnectionKey,
+            TenantId = payload.TenantId,
+            StartedAt = job.CreatedAt,
+            CurrentPhase = "Recovered execution status; live row progress unavailable",
+        };
+        return ProjectExecutionOutcome(recovered, job);
+    }
+
+    internal static string StatusUrl(string routeId, string jobId)
+        => $"/api/v1/admin/connections/{Uri.EscapeDataString(routeId)}/layers/jobs/{jobId}";
+
+    internal static LayerPublishJobProgress ProjectExecutionOutcome(LayerPublishJobProgress progress, ExecutionJobRecord job)
+    {
+        if (job.Spec.Kind != ExecutionJobKind.LayerPublish || IsTerminal(progress.Status))
+        {
+            return progress;
+        }
+
+        var completion = LayerPublishCompletionReceipt.Read(job);
+        if (job.Status == ExecutionJobStatus.Succeeded && (progress.LayerId ?? completion?.LayerId) is not > 0)
+        {
+            return progress with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                CurrentPhase = "Failed",
+                ErrorMessage = "Layer publish finished without a recorded result.",
+            };
+        }
+
+        return job.Status switch
+        {
+            ExecutionJobStatus.Succeeded => progress with
+            {
+                Status = OperationStatus.Completed,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                CurrentPhase = job.CurrentPhase ?? "Completed",
+                LayerId = progress.LayerId ?? completion?.LayerId,
+                MetadataRevision = completion?.MetadataRevision ?? progress.MetadataRevision,
+                RowsMaterialized = completion?.RowsMaterialized ?? progress.RowsMaterialized,
+                RowsTotal = completion?.RowsTotal ?? progress.RowsTotal,
+            },
+            ExecutionJobStatus.Failed => progress with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                ErrorMessage = progress.ErrorMessage ?? LayerPublishJobWork.SafeFailureMessage,
+                CurrentPhase = job.CurrentPhase ?? "Failed",
+            },
+            ExecutionJobStatus.Cancelled => progress with
+            {
+                Status = OperationStatus.Cancelled,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                CurrentPhase = job.CurrentPhase ?? "Cancelled",
+            },
+            _ => progress,
+        };
+    }
+
+    private static LayerPublishAdmission Queued(string jobId, long rowCount, string routeId)
+        => new(LayerPublishAdmissionKind.Queued, null, jobId, rowCount, StatusUrl(routeId, jobId));
+
+    private static bool IsTerminal(OperationStatus status)
+        => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
+}
+
+internal static class LayerPublishServiceCollectionExtensions
+{
+    internal static IServiceCollection AddLayerPublishJobs(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (services.Any(static descriptor => descriptor.ServiceType == typeof(LayerPublishRunnerDecision)))
+        {
+            return services;
+        }
+
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobExecutor, LayerPublishJobExecutor>());
+        services.AddSingleton(static provider => LayerPublishRunnerDecision.Resolve(provider));
+        services.AddScoped<LayerPublishJobDispatcher>();
+        services.AddScoped<ILayerPublishJobs, LayerPublishJobService>();
+        return services;
+    }
+}

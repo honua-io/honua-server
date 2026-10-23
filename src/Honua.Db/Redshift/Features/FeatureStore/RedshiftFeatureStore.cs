@@ -31,17 +31,20 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
     private readonly RedshiftFeatureDataAccess _dataAccess;
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
+    private readonly LayerReadSecurityResolver? _readSecurity;
 
-    public RedshiftFeatureStore(RedshiftFeatureDataAccess dataAccess)
-        : this(dataAccess, binding: null)
+    public RedshiftFeatureStore(RedshiftFeatureDataAccess dataAccess, LayerReadSecurityResolver? readSecurity = null)
+        : this(dataAccess, readSecurity, binding: null)
     {
     }
 
     private RedshiftFeatureStore(
         RedshiftFeatureDataAccess dataAccess,
+        LayerReadSecurityResolver? readSecurity,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
+        _readSecurity = readSecurity;
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -63,7 +66,7 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new RedshiftFeatureStore(_dataAccess, binding);
+        return new RedshiftFeatureStore(_dataAccess, _readSecurity, binding);
     }
 
     /// <inheritdoc />
@@ -103,7 +106,16 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
             features = features.RemoveAt(features.Length - 1);
         }
 
-        return QueryResult<Feature>.Create(features.Length, features, hasMore);
+        var offset = query.Offset ?? 0;
+        long exactMatchCount = features.Length;
+        if (hasMore || offset > 0)
+        {
+            var countSql = RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, query);
+            exactMatchCount = await _dataAccess.ExecuteCountAsync(mapping, countSql, _boundConnection, cancellationToken).ConfigureAwait(false);
+        }
+
+        var totalCount = FeatureQueryPageTotals.ResolveReportedTotalCount(features.Length, hasMore, offset, exactMatchCount);
+        return QueryResult<Feature>.Create(totalCount, features, hasMore);
     }
 
     /// <inheritdoc />
@@ -185,11 +197,10 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
 
-    private Task<(RedshiftLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
+    private async Task<(RedshiftLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
         int layerId,
         CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
         var binding = _binding
             ?? throw new InvalidOperationException(
                 "Redshift provider reads require a Metadata v2 provider binding; route requests through FeatureProviderQueryRouter.");
@@ -199,6 +210,16 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
                 $"Redshift provider binding targets storage layer {binding.StorageLayerId}, not requested layer {layerId}.");
         }
 
+        // Every read path resolves its layer here, so this is the single seam that refuses a
+        // read whose layer carries a read policy this provider cannot enforce (permanent
+        // filter, row-level security predicate or field masks).
+        if (_readSecurity is not null)
+        {
+            await _readSecurity
+                .EnsureNoUnenforcedPolicyAsync("Redshift", layerId, binding.Resource, rejectPermanentFilter: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var mapping = RedshiftLayerMapping.FromStorage(layerId, binding.StorageMapping);
         var attributeColumns = binding.Resource.SchemaFields
             .Where(f => f.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
@@ -206,7 +227,7 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
             .Select(f => f.Name)
             .ToArray();
 
-        return Task.FromResult<(RedshiftLayerMapping, IReadOnlyList<string>)>((mapping, attributeColumns));
+        return (mapping, attributeColumns);
     }
 
     private static NotSupportedException NotSupported(string operation, int layerId)

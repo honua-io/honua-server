@@ -234,7 +234,21 @@ public enum ExecutionJobKind
     /// the generation from <c>dirty</c> to <c>ready</c> (or <c>failed</c>) without ever
     /// touching the active solve tables.
     /// </summary>
-    NetworkTopologyRebuild
+    NetworkTopologyRebuild,
+
+    /// <summary>
+    /// Background file import (honua-server#5916): the accepting host stages the source in
+    /// file storage and the worker downloads it and runs the streaming import pipeline,
+    /// reporting progress through the import job document.
+    /// </summary>
+    FileImport,
+
+    /// <summary>
+    /// Background layer publish (honua-server#5948): a table above the row threshold is copied
+    /// in batches on the shared execution-job queue and reports rows materialized plus the
+    /// published layer id. Same queue and worker loop as <see cref="FileImport"/>.
+    /// </summary>
+    LayerPublish
 }
 
 /// <summary>
@@ -389,6 +403,13 @@ public sealed record OperationAuditInfo
     public string? RequestedBy { get; init; }
 
     /// <summary>
+    /// Tenant binding of <see cref="RequestedBy"/>, taken from the validated identity when the
+    /// operation was accepted (honua-server#4958). Null on a single-tenant installation and for
+    /// principals that carry no tenant claim.
+    /// </summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>
     /// Free-form operator reason or change note.
     /// </summary>
     public string? Reason { get; init; }
@@ -402,6 +423,18 @@ public sealed record OperationAuditInfo
     /// Correlation ID propagated from upstream systems.
     /// </summary>
     public string? CorrelationId { get; init; }
+
+    /// <summary>
+    /// W3C <c>traceparent</c> of the span that submitted the operation. Persisted with the durable
+    /// record so the worker that later executes it — possibly on another node or after a restart —
+    /// can link its execution span back to the submission trace (honua-server#5474).
+    /// </summary>
+    public string? TraceParent { get; init; }
+
+    /// <summary>
+    /// W3C <c>tracestate</c> accompanying <see cref="TraceParent"/>, when the submission carried one.
+    /// </summary>
+    public string? TraceState { get; init; }
 
     /// <summary>Approved proposal identity explicitly joined to this operation.</summary>
     public string? ProposalId { get; init; }
@@ -531,6 +564,142 @@ public sealed record DeployOperationSpec
     /// deploy uses the default single-step bake-then-promote behavior.
     /// </summary>
     public CanaryRampSpec? CanaryRamp { get; init; }
+
+    /// <summary>
+    /// Timestamp the candidate revision first began receiving live traffic, stamped once by the
+    /// reconciler (honua-server#4617): the first time the backend reports
+    /// <see cref="WorkflowOperationStatus.Reconciling"/>, or, for a backend that stages the candidate
+    /// without traffic (<see cref="DeployBackendCapabilities.StagesCandidateWithoutTraffic"/>), when
+    /// promotion cuts over to it. Telemetry warmup/bake windows anchor on this rather than
+    /// <see cref="WorkflowOperationRecord.CreatedAt"/>, which can precede actual traffic exposure by an
+    /// unbounded amount of backend provisioning time. Null while the operation is still provisioning
+    /// (including for operations persisted before this field existed), in which case evaluators fall
+    /// back to <c>CreatedAt</c> so existing in-flight deploys keep their prior behavior.
+    /// </summary>
+    public DateTimeOffset? TrafficExposedAt { get; init; }
+
+    /// <summary>
+    /// Durable post-activation observation/recovery state (honua-server#4618). Set by the reconciler
+    /// when a candidate is fully promoted and cleared once the protection window completes or a
+    /// triggered recovery finishes; null before promotion and for operations that never activate a
+    /// candidate.
+    /// </summary>
+    public DeployProtectionState? Protection { get; init; }
+}
+
+/// <summary>
+/// Post-activation protection phase for a durable deploy operation observing a newly promoted
+/// candidate before the rollback protection window elapses (honua-server#4618). Distinct from
+/// <see cref="WorkflowOperationStatus"/>: while a protection window is open the operation's status
+/// stays <see cref="WorkflowOperationStatus.Reconciling"/> so the reconciler keeps driving it, and this
+/// phase carries the finer-grained, operator/API-facing detail the status alone cannot express.
+/// </summary>
+public enum DeployProtectionPhase
+{
+    /// <summary>The candidate was just exposed and is being observed against the durable policy.</summary>
+    Observing,
+
+    /// <summary>The observation window is holding a healthy candidate open for the full protection window.</summary>
+    Protected,
+
+    /// <summary>An approved safety policy triggered rollback and deterministic recovery is executing.</summary>
+    Recovering,
+
+    /// <summary>The observation window elapsed without a policy trigger; the previous revision was retired.</summary>
+    Expired,
+
+    /// <summary>Recovery was triggered but the previous revision or its controller could not be reached.</summary>
+    Unavailable
+}
+
+/// <summary>
+/// Durable post-activation observation/recovery state persisted on a promoted deploy operation
+/// (honua-server#4618). Created the first time a candidate is fully exposed to traffic and cleared once
+/// the observation window completes cleanly or a triggered recovery finishes; retained (with
+/// <see cref="Phase"/> set to <see cref="DeployProtectionPhase.Unavailable"/>) when recovery itself
+/// cannot be proven, so the durable record keeps the evidence an operator needs.
+/// </summary>
+public sealed record DeployProtectionState
+{
+    /// <summary>Revision, alias, or image that was serving before the candidate was activated.</summary>
+    public required string PreviousRevision { get; init; }
+
+    /// <summary>Revision, alias, or image activated and currently under observation.</summary>
+    public required string CandidateRevision { get; init; }
+
+    /// <summary>Time the candidate first received live traffic.</summary>
+    public required DateTimeOffset FirstExposureAt { get; init; }
+
+    /// <summary>Time the observation window closes if no recovery trigger fires before it.</summary>
+    public required DateTimeOffset ObservationDeadline { get; init; }
+
+    /// <summary>
+    /// Bound on how long a triggered recovery may take to settle before it is treated as unavailable.
+    /// Null until a recovery trigger sets it.
+    /// </summary>
+    public DateTimeOffset? RecoveryDeadline { get; init; }
+
+    /// <summary>
+    /// Stable digest of the safety-policy configuration (promotion gate, telemetry/rollback
+    /// parameters) in effect when the candidate was activated, so policy drift mid-window is
+    /// detectable and recovery always replays the policy that was actually approved.
+    /// </summary>
+    public required string PolicyDigest { get; init; }
+
+    /// <summary>Approval policy reference in effect for this activation, when the operation required approval.</summary>
+    public string? ApprovalScope { get; init; }
+
+    /// <summary>Current post-activation protection phase.</summary>
+    public DeployProtectionPhase Phase { get; init; } = DeployProtectionPhase.Observing;
+
+    /// <summary>Bounded, operator-safe reason code for the current phase (for example a telemetry breach or backend signal), when applicable.</summary>
+    public string? ReasonCode { get; init; }
+
+    /// <summary>
+    /// Stable identity of the recovery grant sealed when the candidate was activated (honua-server#4958).
+    /// A fenced rollback must quote this value, so a grant minted for a different activation — or for a
+    /// superseded one — cannot actuate this operation's compensation.
+    /// </summary>
+    public string? GrantId { get; init; }
+
+    /// <summary>
+    /// Operator or service principal that requested the protected activation (honua-server#4958).
+    /// The recovery grant is bound to this identity: a rollback from a different principal is refused
+    /// unless that principal holds an explicitly broader platform role.
+    /// </summary>
+    public string? Actor { get; init; }
+
+    /// <summary>
+    /// Tenant binding of <see cref="Actor"/> at activation time, or null on a single-tenant installation
+    /// and for principals with no tenant binding (honua-server#4958).
+    /// </summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>
+    /// The single compensation this protection window preauthorizes, declared at activation time
+    /// (honua-server#4958). See <see cref="DeployRecoveryCompensations"/>. A rollback that asks for
+    /// anything else is broader than what was approved and is refused fail-closed.
+    /// </summary>
+    public string? PermittedCompensation { get; init; }
+}
+
+/// <summary>
+/// The closed vocabulary of compensations a deploy protection window can preauthorize
+/// (honua-server#4958). The set is deliberately tiny: a protected activation declares exactly one
+/// permitted compensation, and the rollback surface refuses anything that is not that exact value —
+/// an undeclared compensation is by definition broader than the approved one.
+/// </summary>
+public static class DeployRecoveryCompensations
+{
+    /// <summary>
+    /// Restore <see cref="DeployProtectionState.PreviousRevision"/> on the operation's own target,
+    /// which is the only compensation the server itself ever actuates.
+    /// </summary>
+    public const string RestorePreviousRevision = "restore-previous-revision";
+
+    /// <summary>Whether <paramref name="value"/> is a recognised compensation identifier.</summary>
+    public static bool IsKnown(string? value)
+        => string.Equals(value, RestorePreviousRevision, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
@@ -613,6 +782,13 @@ public sealed record MetadataReleaseContext
     public required string PackageId { get; init; }
 
     /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when this release is not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
+
+    /// <summary>
     /// Git operation identifier that wrote the release package, if known.
     /// </summary>
     public string? GitOperationId { get; init; }
@@ -671,10 +847,44 @@ public sealed record MetadataReleaseContext
     public MetadataReleaseExecutionPlan? ExecutionPlan { get; init; }
 
     /// <summary>
-    /// Prior current Metadata v2 revision captured before activation so a reversible rollback can
-    /// reactivate it. Null when no prior revision existed.
+    /// Active Metadata v2 revision captured before any mutation. The candidate is prepared from
+    /// this immutable revision and activation is conditional on it still being current. A rebase
+    /// onto a concurrent update replaces it with the revision the candidate was rebased onto.
     /// </summary>
     public long? PriorRevision { get; init; }
+
+    /// <summary>
+    /// ETag of <see cref="PriorRevision"/>, used as the optimistic-concurrency precondition for
+    /// activation.
+    /// </summary>
+    public string? PriorEtag { get; init; }
+
+    /// <summary>
+    /// Staged, immutable candidate revision prepared from <see cref="PriorRevision"/>. Invisible to
+    /// canonical readers until activation. Null until staged.
+    /// </summary>
+    public long? CandidateRevision { get; init; }
+
+    /// <summary>
+    /// ETag of <see cref="CandidateRevision"/>.
+    /// </summary>
+    public string? CandidateEtag { get; init; }
+
+    /// <summary>
+    /// Schema operations this release actually changed relative to <see cref="PriorRevision"/>.
+    /// Rollback reverts only these, so fields that already existed and unrelated updates survive.
+    /// </summary>
+    public IReadOnlyList<MetadataReleaseScriptOperation> OwnedOperations { get; init; } = Array.Empty<MetadataReleaseScriptOperation>();
+
+    /// <summary>
+    /// When the candidate was confirmed active. Null while canonical readers stay on the prior revision.
+    /// </summary>
+    public DateTimeOffset? ActivatedAt { get; init; }
+
+    /// <summary>
+    /// Number of times the candidate was rebased onto a concurrent update before activation.
+    /// </summary>
+    public int RebaseCount { get; init; }
 
     /// <summary>
     /// Blocking reason codes or messages specific to metadata release progression.
@@ -902,6 +1112,13 @@ public sealed record WorkflowOperationRecord
     public MetadataReleaseContext? MetadataRelease { get; init; }
 
     /// <summary>
+    /// Verified provisioning root from the DevOps handoff. This is the canonical field
+    /// on the workflow record. The same value is copied onto <see cref="MetadataRelease"/>
+    /// so a nested read cannot disagree with the record. Null when the operation was not federated.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
+
+    /// <summary>
     /// Coordinated-release context for <see cref="WorkflowOperationKind.CoordinatedRelease"/> operations
     /// that conduct a container rollout, a DB script migration, and a metadata-v2 activation as one op.
     /// </summary>
@@ -913,6 +1130,12 @@ public sealed record WorkflowOperationRecord
 /// </summary>
 public sealed record ExecutionJobSpec
 {
+    /// <summary>
+    /// Server-owned GPServer binding, stamped after scoped execution authorization.
+    /// Arbitrary protocol parameters cannot create this binding. Null on legacy or other-protocol jobs.
+    /// </summary>
+    public GPServerJobBinding? GPServerBinding { get; init; }
+
     /// <summary>
     /// Stable workload definition identifier resolved through the job-definition registry.
     /// </summary>
@@ -962,6 +1185,9 @@ public sealed record ExecutionJobSpec
     /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
+
+/// <summary>Durable service, published task, and canonical process identity of a GPServer job.</summary>
+public sealed record GPServerJobBinding(string ServiceId, string TaskName, string ProcessId);
 
 /// <summary>
 /// Stable workload definition used to resolve specialized compute images and runtime settings.
@@ -1167,6 +1393,12 @@ public sealed record ExecutionJobRecord
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Receipts for already committed sink effects, also exposed in artifact references.
+    /// These survive operator cancellation and distinguish committed work from fenced output.
+    /// </summary>
+    public IReadOnlyList<string> CommittedEffectReferences { get; init; } = Array.Empty<string>();
+
+    /// <summary>
     /// Normalized execution-admission cost weight pinned at submit time for jobs whose exact-key spec
     /// contract forbids carrying the admission cost in <see cref="ExecutionJobSpec.Parameters"/>
     /// (for example durable tile-export jobs). The admission evaluator sums this when computing active
@@ -1241,6 +1473,15 @@ public sealed record DeployBackendCapabilities
     /// Whether the backend can pin or restore a specific revision.
     /// </summary>
     public bool SupportsRevisionPinning { get; init; }
+
+    /// <summary>
+    /// Whether the backend stages the candidate revision without live traffic until promotion, as a
+    /// single-switch cutover does (the self-hosted rolling backend health-gates a standby replica that
+    /// serves nothing until the proxy swaps to it). Such a backend reports
+    /// <see cref="WorkflowOperationStatus.Reconciling"/> while the candidate is staged, so traffic
+    /// exposure starts at the promotion cutover rather than at that observation (honua-server#4617).
+    /// </summary>
+    public bool StagesCandidateWithoutTraffic { get; init; }
 }
 
 /// <summary>
@@ -1381,6 +1622,9 @@ public sealed record BatchComputeSubmissionResult
 /// </summary>
 public sealed record BatchComputeObservation
 {
+    /// <summary>Provider-confirmed submitted attempt recovered after a lost post-submit commit.</summary>
+    public int? RecoveredAttemptCount { get; init; }
+
     /// <summary>
     /// Observed execution status.
     /// </summary>

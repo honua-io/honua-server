@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
@@ -60,10 +61,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     /// <inheritdoc />
     public async Task<GdbVersion> CreateAsync(CreateVersionRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.VersionName))
-        {
-            throw new ArgumentException("Version name is required.", nameof(request));
-        }
+        ValidateBranchName(request.VersionName);
 
         if (string.IsNullOrWhiteSpace(request.Owner))
         {
@@ -118,6 +116,11 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     /// <inheritdoc />
     public async Task<GdbVersion?> AlterAsync(AlterVersionRequest request, CancellationToken cancellationToken = default)
     {
+        if (request.VersionName is not null)
+        {
+            ValidateBranchName(request.VersionName);
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
             UPDATE honua.gdb_versions
@@ -168,7 +171,14 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     }
 
     /// <inheritdoc />
-    public async Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default)
+    public Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default)
+        => ResolveAsync(gdbVersion, callerOwner: null, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<VersionContext?> ResolveAsync(
+        string? gdbVersion,
+        string? callerOwner,
+        CancellationToken cancellationToken = default)
     {
         // Absent/empty or the DEFAULT sentinel resolves to DEFAULT (byte-identical base path).
         if (string.IsNullOrWhiteSpace(gdbVersion) ||
@@ -177,41 +187,58 @@ internal sealed partial class PostgresVersionManager : IVersionManager
             return VersionContext.Default;
         }
 
-        var version = await FindByIdentityAsync(gdbVersion.Trim(), cancellationToken).ConfigureAwait(false);
+        var version = await FindByIdentityAsync(gdbVersion.Trim(), callerOwner, cancellationToken).ConfigureAwait(false);
         return version is null ? null : VersionContext.ForVersion(version.Value);
     }
 
-    private async Task<GdbVersion?> FindByIdentityAsync(string gdbVersion, CancellationToken cancellationToken)
+    private async Task<GdbVersion?> FindByIdentityAsync(
+        string gdbVersion,
+        string? callerOwner,
+        CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        // Accept an explicit version-id GUID, or the Esri-style owner.name identity (case-insensitive).
-        string sql;
+        // Accept an explicit version-id GUID, or the advertised owner.name identity (case-insensitive).
         if (Guid.TryParse(gdbVersion, out var versionId))
         {
-            sql = """
+            const string byIdSql = """
                 SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
                 FROM honua.gdb_versions
                 WHERE version_id = @id AND state <> 3
                 """;
-            await using var byId = new NpgsqlCommand(sql, connection);
+            await using var byId = new NpgsqlCommand(byIdSql, connection);
             byId.Parameters.AddWithValue("id", versionId);
             return await ReadSingleAsync(byId, cancellationToken).ConfigureAwait(false);
         }
 
-        var (owner, name) = SplitOwnerName(gdbVersion);
-        sql = """
+        // Match the wire identity (owner + name, without qualifying a name that already starts with
+        // the owner) so a dotted branch name is not split on the last dot. A bare name has no dot and
+        // matches version_name across owners; the caller's own row wins, then the oldest (#6140).
+        // position() is used instead of LIKE so an owner that contains '_' or '%' is not a pattern.
+        const string byNameSql = """
             SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
-            FROM honua.gdb_versions
-            WHERE state <> 3
-              AND LOWER(version_name) = LOWER(@name)
-              AND (@owner IS NULL OR LOWER(owner) = LOWER(@owner))
-            ORDER BY created_at
+            FROM (
+                SELECT version_id, version_name, owner, parent_version, access, state,
+                       common_ancestor_gen, branch_gen, description, created_at, modified_at,
+                       CASE
+                           WHEN position(LOWER(owner) || '.' IN LOWER(version_name)) = 1
+                           THEN version_name
+                           ELSE owner || '.' || version_name
+                       END AS wire_name
+                FROM honua.gdb_versions
+                WHERE state <> 3
+            ) AS versions
+            WHERE LOWER(wire_name) = LOWER(@id)
+               OR (position('.' IN @id) = 0 AND LOWER(version_name) = LOWER(@id))
+            ORDER BY
+                CASE WHEN LOWER(wire_name) = LOWER(@id) THEN 0 ELSE 1 END,
+                CASE WHEN @caller IS NOT NULL AND LOWER(owner) = LOWER(@caller) THEN 0 ELSE 1 END,
+                created_at
             LIMIT 1
             """;
-        await using var byName = new NpgsqlCommand(sql, connection);
-        byName.Parameters.AddWithValue("name", name);
-        byName.Parameters.AddWithValue("owner", (object?)owner ?? DBNull.Value);
+        await using var byName = new NpgsqlCommand(byNameSql, connection);
+        byName.Parameters.AddWithValue("id", gdbVersion);
+        byName.Parameters.AddWithValue("caller", NpgsqlDbType.Text, (object?)callerOwner ?? DBNull.Value);
         return await ReadSingleAsync(byName, cancellationToken).ConfigureAwait(false);
     }
 
@@ -226,17 +253,21 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         return ReadVersion(reader);
     }
 
-    private static (string? Owner, string Name) SplitOwnerName(string gdbVersion)
+    /// <summary>
+    /// Rejects branch names that cannot round-trip as an <c>owner.name</c> identity: blank, a leading or
+    /// trailing dot, an empty segment, or the DEFAULT sentinel. Internal dots are valid (#6140).
+    /// </summary>
+    private static void ValidateBranchName(string? versionName)
     {
-        // Esri identities are "owner.name"; match on the full name first, but a dotted value also lets us
-        // disambiguate by owner. Treat the substring after the last dot as the name and the prefix as owner.
-        var lastDot = gdbVersion.LastIndexOf('.');
-        if (lastDot <= 0 || lastDot == gdbVersion.Length - 1)
+        if (string.IsNullOrWhiteSpace(versionName)
+            || versionName.StartsWith('.')
+            || versionName.EndsWith('.')
+            || versionName.Contains("..", StringComparison.Ordinal)
+            || versionName.Equals("DEFAULT", StringComparison.OrdinalIgnoreCase)
+            || versionName.Equals(DefaultVersionSentinel, StringComparison.OrdinalIgnoreCase))
         {
-            return (null, gdbVersion);
+            throw new ArgumentException("versionName is not a valid branch name.", nameof(versionName));
         }
-
-        return (gdbVersion[..lastDot], gdbVersion[(lastDot + 1)..]);
     }
 
     private static GdbVersion ReadVersion(NpgsqlDataReader reader) => new()

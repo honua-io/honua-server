@@ -57,13 +57,101 @@ rejected `401`/`403` is still captured by the authorization row below.
 |---|---|---|---|---|---|
 | Admin OIDC backend-assisted login (code → token exchange) | `/api/v{version}/admin/auth/providers/{providerKey}/token` | `POST` | `Authentication` | `auth.login` | 2xx → `Success`; failure → `Failure`/`Denied` |
 | First-party OAuth token issuance | `/oauth/token`, `/sharing/rest/oauth2/token` | `POST` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| ArcGIS-compatible portal token issuance | `/sharing/rest/generateToken` | `POST`, `GET` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure (including `400` for unusable credentials) → `Failure`/`Denied` |
 | Failed authentication (any route) | `**` | any | `Authentication` | `auth.failure` | `401` → `Failure` |
 | Permission denied (any route) | `**` | any | `Authorization` | `auth.denied` | `403` → `Denied` |
+| Update console share access | `/api/v{version}/console/content/{id}/share/access` | `PUT` | `AdminAction` | `console.share.access.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Mint a console share link | `/api/v{version}/console/content/{id}/share/link` | `POST` | `AdminAction` | `console.share.link.mint` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Revoke a console share link | `/api/v{version}/console/content/{id}/share/link/{tokenId}` | `DELETE` | `AdminAction` | `console.share.link.revoke` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update a console embed | `/api/v{version}/console/content/{id}/share/embed` | `PUT` | `AdminAction` | `console.share.embed.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Mint a console embed | `/api/v{version}/console/content/{id}/share/embed` | `POST` | `AdminAction` | `console.share.embed.mint` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Create console content | `/api/v{version}/console/content` | `POST` | `AdminAction` | `console.content.create` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update console content | `/api/v{version}/console/content/{id}` | `PUT`, `PATCH` | `AdminAction` | `console.content.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Delete console content | `/api/v{version}/console/content/{id}` | `DELETE` | `AdminAction` | `console.content.delete` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update console open data | `/api/v{version}/console/content/{id}/open-data` | `PUT` | `AdminAction` | `console.open-data.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Publish console content to STAC | `/api/v{version}/console/content/{id}/open-data/stac/publish` | `POST` | `AdminAction` | `console.open-data.stac.publish` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Delete a console STAC publication | `/api/v{version}/console/content/{id}/open-data/stac` | `DELETE` | `AdminAction` | `console.open-data.stac.delete` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Create an enrichment dataset | `/api/enrich/datasets` | `POST` | `AdminAction` | `enrich.dataset.create` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update an enrichment dataset | `/api/enrich/datasets/{id}` | `PUT` | `AdminAction` | `enrich.dataset.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Delete an enrichment dataset | `/api/enrich/datasets/{id}` | `DELETE` | `AdminAction` | `enrich.dataset.delete` | 2xx → `Success`; failure → `Failure`/`Denied` |
 
 Login success and failed login therefore both produce an `auth.login`
 (success/failure) event on the login routes, while a bare `401`/`403` on any
 other route is captured as `auth.failure` / `auth.denied`. This satisfies
 "login, failed login, permission denied".
+
+Token-issuance rows never carry the submitted credential or the issued token.
+`ResourceId` is the request path only (never the query string), and `Details`
+carries the status, method, and tenant — so a `GET /sharing/rest/generateToken`
+that passes a password in the query string is audited without the audit trail
+becoming a second place the password is written down.
+
+`401`/`403` outcomes are decided in two places and recorded in exactly one of
+them per request:
+
+| Decided by | Recorded by | Note |
+|---|---|---|
+| The authorization middleware (any policy, including a bare `RequireAuthorization`) | `HonuaAuthorizationMiddlewareResultHandler` | The denial short-circuits above `UseHonuaAuditLog`, so the result handler is the only seam that observes it. |
+| A domain endpoint or handler after authorization admitted the request | `AuditLogMiddleware` | Suppressed when an endpoint seam already recorded the decision (`AuditContextResolver.MarkAuthorizationFailureAudited`). |
+
+Both seams build the row through the same `HttpAuditEventFactory`, so the
+`EventType` / `Action` / `Outcome` / actor / resource fields are identical
+whichever one wrote it. Policy denials that a domain seam classifies (the
+Studio lifecycle policy) keep their own richer event and stable `code`; they
+are not recorded a second time as a generic `auth.denied`.
+
+Authorization-middleware denials omit operation, audit and proposal lineage headers:
+these requests stop before lineage attestation can validate those headers. Downstream
+audit events retain lineage after the attestation middleware has processed it.
+
+### Hash chain
+
+Each new audit row stores an `entry_hash`. When `AuditLog:ChainVerification:Key`
+is set to a base64 value of at least 32 decoded bytes, that hash is an
+HMAC-SHA256 under the key. The key is not stored in the database. Rows written
+before the key was set keep their unkeyed SHA-256 digest and remain a prefix
+of the chain. Verification succeeds only when a key is configured and at least
+one row was written with that key. A row with no hash after the chain has
+started does not verify. Leading rows that predate the hash columns still do.
+Until the key is set, scheduled verification reports the chain unverified
+whenever hashed rows exist, and the `audit-chain-integrity` health check is
+Unhealthy. Responses and audit writes continue either way. Set the same key on
+every node. The key is a process-lifetime startup snapshot; configuration
+reloads do not change it.
+
+#### Upgrade and activate in separate phases
+
+1. Roll out the keyed-capable release to **every** replica with the key unset.
+   Wait for all older processes, including background workers, to terminate.
+   Legacy writes continue in this phase; integrity remains Unhealthy until
+   activation and the first keyed write.
+2. Pause all traffic and background jobs that can emit audit events, drain
+   in-flight requests, and stop every audit-writing process. Set the same key
+   on every replica, restart all of them, and only then resume writes. For the
+   Docker quickstart, put `AuditLog__ChainVerification__Key` in the env file
+   passed to Compose; the service environment forwards it to the container.
+3. Perform an audited operation and wait for scheduled verification to report
+   a healthy chain before completing the activation.
+
+Do not activate the key during a rolling restart with live writers: a process
+without the key can append a legacy digest after the first HMAC row, which
+permanently breaks verification. Upgrading the binary alone does not prevent
+this; all writers must restart with the key before writes resume. Once a keyed
+row exists, retain that key and use only keyed-capable releases for rollback.
+Removing or changing the key, or rolling back to an older writer, is not a
+supported rollback. If activation fails, keep writes paused and restore the
+same key on a keyed-capable release; do not rewrite existing audit rows.
+
+### Failures of audited operations
+
+| Operation | Trigger | EventType | Action | Outcome source |
+|---|---|---|---|---|
+| Audited route throws | Any unhandled exception raised beneath `UseHonuaAuditLog` on a route the matrix classifies | matrix `EventType` | matrix `Action` | Shared exception mapping (for example `400`, `500` or `503`) → `Failure`; `403` → `Denied` |
+
+The exception is rethrown unchanged after the record is written, so the global
+exception handler still shapes the response. Client-cancelled requests are not
+recorded as failures. Routes the matrix does not classify are not audited on
+fault — their failures remain covered by logging and telemetry.
 
 ### Destructive data writes
 

@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
@@ -49,12 +50,25 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         var table = Identifier(Require(request.PostgisTable, "table"));
         var geometryColumn = Identifier(string.IsNullOrWhiteSpace(request.PostgisGeometryColumn) ? "geom" : request.PostgisGeometryColumn!);
         var sql = BuildSql(schema, table, geometryColumn, request, out var parameters);
+        PostgresSqlSafety.ValidateReadOnlySingleStatement(sql);
 
         await using var connection = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // A SELECT predicate can invoke a writing function (for example nextval).
+        // Token validation limits statement shape; PostgreSQL must enforce read-only execution.
+        await using (var readOnly = new NpgsqlCommand("SET TRANSACTION READ ONLY", connection, transaction))
+        {
+            await readOnly.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = PostgresSqlSafety.CreateReadCommand(connection, sql);
+        command.Transaction = transaction;
         foreach (var (name, value) in parameters)
         {
-            command.Parameters.AddWithValue(name, value);
+            // Let PostgreSQL infer the watermark type from its column (timestamp,
+            // number or text). Sending it as a typed text parameter makes a normal
+            // timestamptz >= @since comparison fail with operator-not-found.
+            command.Parameters.AddWithValue(name, NpgsqlTypes.NpgsqlDbType.Unknown, value);
         }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -77,6 +91,13 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
                 }
 
                 var columnName = reader.GetName(i);
+                if (string.Equals(columnName, geometryColumn, StringComparison.Ordinal))
+                {
+                    // Geometry is already projected through ST_AsGeoJSON. Do not ask
+                    // the scalar Npgsql reader to materialize its unsupported native type.
+                    continue;
+                }
+
                 attributes[columnName] = await reader.IsDBNullAsync(i, cancellationToken).ConfigureAwait(false)
                     ? null
                     : reader.GetValue(i);
@@ -131,7 +152,6 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
 
         if (!string.IsNullOrWhiteSpace(request.Where))
         {
-            // Operator-supplied predicate (validated upstream); appended verbatim.
             predicates.Add($"({request.Where})");
         }
 

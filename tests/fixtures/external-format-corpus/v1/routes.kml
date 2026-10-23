@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Schema name="routes" id="routes">
+	<SimpleField name="route_id" type="int"></SimpleField>
+	<SimpleField name="route_name" type="string"></SimpleField>
+</Schema>
+<Folder><name>routes</name>
+  <Placemark id="routes.1">
+	<Style><LineStyle><color>ff0000ff</color></LineStyle><PolyStyle><fill>0</fill></PolyStyle></Style>
+	<ExtendedData><SchemaData schemaUrl="#routes">
+		<SimpleData name="route_id">11</SimpleData>
+		<SimpleData name="route_name">bay-crossing</SimpleData>
+	</SchemaData></ExtendedData>
+      <LineString><coordinates>-122.4194,37.7749 -122.3,37.8 -122.2711,37.8044</coordinates></LineString>
+  </Placemark>
+</Folder>
+</Document></kml>

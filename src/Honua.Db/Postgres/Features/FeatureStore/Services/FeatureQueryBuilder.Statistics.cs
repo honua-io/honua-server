@@ -303,7 +303,7 @@ internal sealed partial class FeatureQueryBuilder
             // The comparison literal is bound as a positional parameter rather than
             // concatenated, keeping HAVING on the same parameterized path as WHERE.
             var valueParam = $"${paramIndex++}";
-            parameters.Add(condition.Value);
+            parameters.Add(condition.BoundValue());
 
             sql.Append(CultureInfo.InvariantCulture, $"{aggregateExpr} {op} {valueParam}");
         }

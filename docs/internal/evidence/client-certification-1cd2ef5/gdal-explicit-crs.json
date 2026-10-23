@@ -1,0 +1,18 @@
+{
+  "client_version": "3.8.4",
+  "expected": {
+    "3": [
+      -122.46,
+      37.73
+    ],
+    "4": [
+      -122.445,
+      37.74
+    ]
+  },
+  "actual": {},
+  "status": "fail",
+  "set_active_srs": 0,
+  "active_authority": "4326",
+  "error": "{\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Bounding box coordinates are out of valid range.\",\"instance\":\"/ogc/features/collections/0/items\",\"correlationId\":\"00-39682c4103ba63d8d089d90e9576a38e-c15a2bb33d84f540-00\",\"timestamp\":\"2026-09-21T09:46:35.6429969\\u002B00:00\"}\nMay be caused by: HTTP error code : 400"
+}

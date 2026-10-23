@@ -1,3 +1,14 @@
+---
+type: guide
+title: "Run geoprocessing"
+description: "Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter."
+resource: "honua://capability/process.geoprocessing"
+resources:
+  - "honua://capability/analytics.buffer-aggregate"
+  - "honua://capability/analytics.clustering"
+  - "honua://capability/analytics.density"
+  - "honua://capability/analytics.viewshed"
+---
 # Run geoprocessing
 
 Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter.
@@ -16,7 +27,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Open `http://localhost:8080/ogc/processes/processes/geometry.buffer` in a browser.
 
-   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object. `distance` is expressed in the input CRS units, so project geographic coordinates before requesting a metric buffer.
+   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. The current executor performs planar buffering and rejects `geodesic: true`. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object under its explicit SRID contract. `distance` is expressed in input CRS units. For a metric buffer, use coordinates already expressed in an appropriate projected CRS, or transform geographic input first; changing only the SRID label is not a transformation.
 
 3. Execute it. The request returns `201 Created` with a job status document and a `Location` header pointing at the job:
 
@@ -25,14 +36,14 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
    ```json
    {
      "inputs": {
-       "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-       "srid": 4326,
+       "wkb": "AQEAAAAAAAAAgIQeQQAAAACQBVBB",
+       "srid": 32610,
        "distance": 500
      }
    }
    ```
 
-   The `wkb` value above is `POINT(-122.4194 37.7749)`. Omit `response` or set it to `document` for inline qualified output values. Set `"response": "raw"` to retrieve native output bytes from the results route; multiple selected outputs use `multipart/related`. Both response modes work asynchronously. For a process advertising `sync-execute`, omit `Prefer` to run synchronously with the same response negotiation.
+   The `wkb` value above is `POINT(500000 4200000)` in EPSG:32610 (WGS 84 / UTM zone 10N), whose coordinate unit is meters. This requests a planar 500-meter buffer around that projected point; it does not relabel the coordinates of a geographic input. Choose the analysis CRS according to the region and accuracy needed. Omit `response` or set it to `document` for inline qualified output values. Set `"response": "raw"` to retrieve native output bytes from the results route; multiple selected outputs use `multipart/related`. Both response modes work asynchronously. For a process advertising `sync-execute`, omit `Prefer` to run synchronously with the same response negotiation.
 
 4. Poll the job until `status` reaches `successful` (or `failed`/`dismissed`). Take `JOB` from the `Location` header or the `jobID` field:
 
@@ -44,9 +55,13 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Catalog processes return inline qualified values in document mode, or native/multipart content when raw mode was requested; `GET /ogc/processes/jobs` lists your recent jobs.
 
-The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{serviceId}/GPServer` lists every canonical process id (for example `geometry.buffer`) and also publishes 39 unambiguous Esri-conventional task-name aliases (for example `Buffer`). Both `/GPServer/geometry.buffer` and `/GPServer/Buffer` address the same process. These aliases are a name-level convenience, not a task-specific wire adapter: task info for `Buffer` publishes the canonical `wkb`, `srid`, and numeric `distance` inputs, not Esri Buffer's feature-record-set, linear-unit, and dissolve-option contract. Clients must use the published task metadata.
+Job status, results, cancellation, and listing use the effective submission tenant and the durable submitting actor. An authenticated administrator may access jobs in that same tenant. Actor identity includes the authentication scheme, issuer and stable subject, or the API-key identifier; display names do not establish ownership. Keyed submissions require a durable identity and are scoped to that actor and tenant, so separate submitters can use the same retry key independently. A refreshed token for the same actor and tenant retains the original job. Trusted deferred submissions retain the captured submitter as owner. Older jobs without tenant metadata or a durable owner need resubmission for owner access. Stored workflow and approval snapshots without durable actor metadata must be republished or resubmitted before keyed execution. Named GP workspaces retain their established owner key and tenant scope independently of job lifecycle ownership, so existing workspace outputs and overwrite behavior remain available.
 
-The standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Successful jobs advertise their named result parameters, and the per-parameter result route reads the stored result-package value and Esri data type. A fresh instance ships a default `geoprocessing` service so the facade works out of the box — e.g. `GET /rest/services/geoprocessing/GPServer` — and every published service also exposes GPServer (so `{serviceId}` can be any service you have published). To turn the default service off, set `Geoprocessing:SeedDefaultService=false` (env `HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false`). Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the Esri execute envelope (`results` + `messages`) on the same request. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
+The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{serviceId}/GPServer` publishes deterministic Python-safe task names (`Honua_` followed by the uppercase UTF-8 hex encoding of the canonical process id), together with unambiguous Esri-conventional aliases such as `Buffer`. Existing canonical REST paths remain compatible aliases: `/GPServer/geometry.buffer` and `/GPServer/Buffer` address the same process. OGC identifiers and the canonical catalog are unchanged. These aliases are a name-level convenience, not a task-specific wire adapter: task info for `Buffer` publishes the canonical `wkb`, `srid`, and numeric `distance` inputs, not Esri Buffer's feature-record-set, linear-unit, and dissolve-option contract. Clients must use the published task metadata.
+
+The standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Successful jobs advertise their named result parameters, and the per-parameter result route reads the stored result-package value and Esri data type. A fresh instance ships a default `geoprocessing` service so the facade works out of the box — e.g. `GET /rest/services/geoprocessing/GPServer` — and every published service also exposes GPServer (so `{serviceId}` can be any service you have published). To turn the default service off, set `Geoprocessing:SeedDefaultService=false` (env `HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false`). Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the Esri execute envelope (`results` + `messages`) on the same request. A synchronous run that fails or is cancelled returns the GeoServices error envelope (`{"error":{"code":500,...}}`, with the job id, terminal status, and failure message in `details`) instead of an empty `results` list, so Esri clients see the failure. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
+
+Both `execute` and `submitJob` accept the Esri 10.6.1+ `context` parameter as the JSON form of the environment controls: `context.outSR` behaves like `env:outSR` (a WKID or a `{"wkid":...}` object) and changes the output projection. Processing-CRS overrides (`env:processSR`, `context.processSR`, and SOAP `cartographicCoordinateSystem`) are rejected before execution or job submission because the engine cannot apply them. REST returns the GeoServices error envelope with `error.code=400` over HTTP 200; SOAP returns an HTTP 400 fault. A null or blank processing reference requests no override. An empty `extent` is accepted; any other `context` property returns a 400 naming it rather than being ignored, and a `context` spatial reference that disagrees with the matching `env:*` value is rejected.
 
 Layer-scoped task parameters published as `GPFeatureRecordSetLayer`, including the
 `input` and `clip` parameters of `Clip`, accept an Esri FeatureSet JSON object in
@@ -69,6 +84,99 @@ WGS 84 when no explicit working reference is supplied; equivalent Esri Web Merca
 normalized before comparison. Merge rejects incompatible geometry types before creating a job.
 An unavailable artifact remains an explicit fallback label rather than a fictitious download URL.
 
+
+### SOAP remote toolbox execution
+
+ArcPy discovers the same catalog through `POST /services/{serviceId}/GPServer`.
+The SOAP adapter supports `SubmitJob`, `Execute`, `GetJobStatus`, `GetJobMessages`,
+`GetJobResult`, `GetJobToolName`, and `CancelJob` through the same authorized job
+handlers as REST. Job ownership, tenant and service/task binding checks apply.
+Failed synchronous execution produces a SOAP fault; cancellation succeeds only
+when the canonical runtime confirms it. The mixed catalog continues to advertise
+asynchronous execution, while SOAP `Execute` accepts sync-eligible tasks.
+
+SOAP execution supports scalar `GPString`, `GPLong`, `GPDouble`, `GPBoolean`, and
+`GPDate` values, plus the complex values the catalog advertises:
+
+- `GPFeatureRecordSetLayer` and `GPRecordSet` inputs are Esri RecordSets. They are
+  read into the same Esri JSON FeatureSet a REST client submits, so the FeatureSet
+  rules above apply unchanged. Feature and table outputs are returned as RecordSets
+  holding the REST result's fields, attributes, geometry and spatial reference.
+- `GPMultiValue` inputs with scalar members become the REST JSON array.
+- `GPRasterDataLayer` and `GPDataFile` outputs are returned as GDSData with the
+  authenticated REST output URL.
+
+Values that cannot be represented faithfully return faults rather than being
+dropped: curve segments, point IDs, vertical coordinate systems, spatial references
+without a WKID, truncated RecordSets, unsupported field types, and outputs with no
+retrievable URL. Result options accept URL transport, no densification, and boolean
+ReturnData/UpdateValues controls; unsupported options return faults. Supported SOAP
+spatial-reference environment controls map to the same REST environment validation.
+ArcPy sends its six application environment defaults with every submission (Z/M
+"Same As Input", random seed 0/ACM599, autoCommit 1000, CONVERT_UNITS cell-size
+projection, and NONE nodata). These are Esri's documented defaults and select the
+same behaviour as a REST request without `env:` parameters, so they are accepted
+for every task. Changed controls remain subject to canonical validation.
+
+### Workspace output retention and limits
+
+For managed jobs using `env:workspace`, PostgreSQL retains workspace output
+references across process restart. Workspace labels resolve within the calling
+owner's deployment context. A retry of the same job and output slot can recover
+its own output; replacing another job's output requires `env:overwriteOutput=true`.
+The native GDAL worker currently rejects these workspace controls.
+
+The `Geoprocessing:Workspace` settings bound each owner's active, unexpired
+workspaces and their artifact records:
+
+| Setting | Default | Meaning |
+| --- | ---: | --- |
+| `MaxWorkspaceCount` | 100 | Active workspaces; logically expired rows stop counting before cleanup runs. |
+| `MaxArtifactCount` | 1,000 | Artifact records across active, unexpired workspaces, including promoted records. |
+| `MaxStorageBytes` | 10 GiB | Recorded artifact bytes across those workspaces. Managed workspace publication counts the UTF-8 reference, including inline data. |
+
+Artifact writes serialize per owner and check projected usage before publication.
+An overwrite subtracts the replaced record when checking the limit. A quota
+rejection leaves the previous output intact and fails the job without automatic
+retry. Raising these limits does not change the separate executor output limit.
+
+The provider owns reference records. It neither measures nor deletes external
+files, layers, or cloud objects by following a reference, so recorded bytes are
+not a physical storage quota for those assets. Durable job acceptance and the
+PostgreSQL write use separate stores; a failed database commit requires retry
+recovery and is not a distributed transaction.
+
+### Bounded layer execution
+
+Layer-sourced buffer, dissolve, simplify, project, spatial-join and enrichment jobs
+apply the configured input limits while reading. Both join layers are bounded.
+`Limits:Analytics:MaxInputFeatures`, `Limits:Analytics:MaxInputBytes`,
+`Limits:Geometry:MaxGeometrySize` and `Limits:Geometry:MaxVerticesPerGeometry`
+remain authoritative. Non-ASCII text is charged in UTF-8 bytes, and nested
+attribute values count toward the input budget.
+
+The shared `Geoprocessing:Executors` configuration also limits computation:
+
+| Setting | Default | Enforced behavior |
+| --- | ---: | --- |
+| `MaxLayerVertices` | 100,000 | Cumulative vertices per input layer and buffered intermediate set; stops the read/buffer loop on overflow. |
+| `MaxTopologyWork` | 4,000,000 | Before managed topology, rejects squared vertex count for each buffer input, squared total vertex count for dissolve/simplify and buffered unions, or the product of both layers' vertex counts for joins/enrichment. This conservative estimate bounds admission even when a spatial index would later reduce the actual work. |
+| `MaxLayerExecutionSeconds` | 300 | Cancels layer reading, computation between topology calls, and serialization; a smaller job deadline still applies. |
+| `MaxArtifactBytes` | 52,428,800 | Stops UTF-8 serialization as the byte ceiling is reached, including attribute expansion; publishes no partial artifact. |
+
+An individual managed topology call cannot be interrupted. Its admitted work is
+bounded before entry; cancellation is observed as soon as it returns. These
+settings do not promise a hard wall-clock interrupt inside NetTopologySuite.
+Qualify the selected topology and limits under the worker's actual CPU and memory
+constraints before raising them. A failed resource budget returns its setting
+name and guidance to narrow the selection or simplify the input before resubmission.
+The job is failed, never silently truncated or reported as a partial success.
+
+Input, resource-limit and `MaxLayerExecutionSeconds` failures are terminal on the
+first attempt. The job's retry policy does not re-run them, because a retry repeats
+the same admission or spends another full deadline on the same input. Transient
+source-read failures keep the normal retry policy. Dismissing a running layer job
+cancels it at the next check between managed calls.
 
 ## Verify
 

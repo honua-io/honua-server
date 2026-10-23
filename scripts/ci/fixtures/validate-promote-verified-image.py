@@ -65,3 +65,23 @@ else:
 assert all(call[2] not in TAGS for call in failure.calls), failure.calls
 
 print("Verified-image promotion fixtures passed.")
+
+# Lambda deploy tags retain a plain serving manifest after the verified parent
+# index is retained separately. Two-phase promotion must preserve either shape.
+CHILD_MANIFEST = b'{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","layers":[]}'
+CHILD_DIGEST = f"sha256:{hashlib.sha256(CHILD_MANIFEST).hexdigest()}"
+
+
+class ChildClient(FakeClient):
+    def raw_manifest(self, reference: str) -> bytes:
+        self.calls.append(("inspect", reference, None))
+        return CHILD_MANIFEST
+
+
+child = ChildClient()
+child_candidate = f"ghcr.io/honua-io/honua-server@{CHILD_DIGEST}"
+MODULE.promote_verified_image(child_candidate, TAGS, "boundary-candidate-lambda-arm64-sha", child)
+for operation, source, destination in child.calls:
+    if operation == "copy" and destination in TAGS:
+        assert source == f"{destination.rsplit(':', 1)[0]}@{CHILD_DIGEST}", (source, destination)
+print("Lambda serving-child digest preservation fixtures passed.")

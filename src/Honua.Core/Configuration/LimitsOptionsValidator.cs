@@ -9,6 +9,7 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
     protected override void ValidateOptions(LimitsOptions options, List<string> failures)
     {
         ValidateDataAnnotations(options.Query, failures, "Query");
+        ValidateDataAnnotations(options.GeoParquet, failures, "GeoParquet");
         ValidateDataAnnotations(options.Geometry, failures, "Geometry");
         ValidateDataAnnotations(options.Edits, failures, "Edits");
         ValidateDataAnnotations(options.Attachments, failures, "Attachments");
@@ -17,6 +18,7 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
         ValidateDataAnnotations(options.Imports, failures, "Imports");
         ValidateDataAnnotations(options.Analytics, failures, "Analytics");
         ValidateDataAnnotations(options.Elevation, failures, "Elevation");
+        ValidateDataAnnotations(options.Replica, failures, "Replica");
 
         ValidateQueryLimits(options.Query, failures);
         ValidateTileLimits(options.Tiles, failures);

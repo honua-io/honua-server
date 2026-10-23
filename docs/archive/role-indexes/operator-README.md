@@ -26,7 +26,7 @@ Deploy, configure, monitor, and manage Honua Server.
 - [DuckDB Provider](../../reference/configuration/data-sources/duckdb.md) — Embedded read-only provider for analytics, GeoParquet, and edge deployments
 - [SQL Server Provider](../../reference/configuration/data-sources/sql-server.md) — Read-only SQL Server (`geometry`/`geography`) provider for enterprise data sources
 - [Oracle Provider](../../reference/configuration/data-sources/oracle.md) — Read-only Oracle Spatial (`SDO_GEOMETRY`) provider for enterprise-geodatabase data sources (ArcSDE `ST_Geometry` and versioned tables refused)
-- [MySQL/MariaDB Provider](../../reference/configuration/data-sources/mysql-mariadb.md) — Read/query-only provider for MySQL 8.0.11+ and MariaDB 10.6+ tables
+- [MySQL/MariaDB Provider](../../reference/configuration/data-sources/mysql-mariadb.md) — Read/query-only provider for MySQL 8.0.12+ and MariaDB 10.6+ tables
 - [TLS Connection Guide](../../guides/secure/tls-and-mtls.md) — SSL/TLS configuration for managed and self-hosted deployments
 
 ## Server Management

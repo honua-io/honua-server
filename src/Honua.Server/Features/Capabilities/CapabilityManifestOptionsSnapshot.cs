@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -42,12 +43,18 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<CapabilityFlagOptions> capabilityFlagOptions,
         IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
         IOptions<TenantSchemaOptions> tenantSchemaOptions,
+        IOptions<TenantContextOptions> tenantContextOptions,
         DeploymentCapabilityProfile deploymentProfile,
         DeploymentIdentity deploymentIdentity,
         IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
         IExecutionJobStore? executionJobStore = null,
-        IJobQueue? jobQueue = null)
+        IJobQueue? jobQueue = null,
+        Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null,
+        IOptions<ImportObjectStoreOptions>? objectStoreOptions = null)
     {
+        BackgroundImportRunner = backgroundImportRunner;
+        ObjectStoreConfigured = objectStoreOptions?.Value.AllowedBuckets?
+            .Any(static bucket => !string.IsNullOrWhiteSpace(bucket)) == true;
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
         ArgumentNullException.ThrowIfNull(eventOptions);
@@ -61,6 +68,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ArgumentNullException.ThrowIfNull(capabilityFlagOptions);
         ArgumentNullException.ThrowIfNull(manifestFeatureOptions);
         ArgumentNullException.ThrowIfNull(tenantSchemaOptions);
+        ArgumentNullException.ThrowIfNull(tenantContextOptions);
         ArgumentNullException.ThrowIfNull(deploymentProfile);
         ArgumentNullException.ThrowIfNull(deploymentIdentity);
 
@@ -77,10 +85,12 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
         TenantSchemaRoutingEnabled = tenantSchemaOptions.Value.Enabled;
-        DurableJobSubstrateCause = (durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions())
-            .Classify(executionJobStore is not null, jobQueue is not null);
+        TenantContextEnabled = tenantContextOptions.Value.Enabled;
+        var substrate = durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions();
+        DurableJobSubstrateCause = substrate.Classify(executionJobStore is not null, jobQueue is not null);
         DurableJobRuntimeAvailable =
             DurableJobSubstrateCause == Core.Features.Capabilities.DurableJobSubstrateCause.Available;
+        RedisDurability = BuildRedisDurability(substrate, DurableJobRuntimeAvailable);
         DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
@@ -89,6 +99,15 @@ internal sealed class CapabilityManifestOptionsSnapshot
             EnabledCapabilities = deploymentProfile.EnabledCapabilities.ToArray()
         };
     }
+
+    /// <summary>
+    /// The background-import runner resolved at composition (honua-server#5916); null when no
+    /// import job service is composed.
+    /// </summary>
+    public Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? BackgroundImportRunner { get; }
+
+    /// <summary>True when <c>Import:ObjectStore:AllowedBuckets</c> names at least one bucket.</summary>
+    public bool ObjectStoreConfigured { get; }
 
     public LimitsOptions Limits { get; }
 
@@ -129,6 +148,14 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public bool TenantSchemaRoutingEnabled { get; }
 
     /// <summary>
+    /// Whether tenant context resolution is enabled. Multi-tenant operation is internal to
+    /// Honua's own hosted operation and is not offered to licensees, so this is off in every
+    /// deployment a licensee may run - and the manifest omits tenant scope entirely when it
+    /// is, rather than reporting fields that are always null.
+    /// </summary>
+    public bool TenantContextEnabled { get; }
+
+    /// <summary>
     /// Whether the COMPLETE durable job substrate was composed at startup (honua-release#202):
     /// both a durable <c>IExecutionJobStore</c> and a runnable <c>IJobQueue</c>.
     /// </summary>
@@ -155,6 +182,13 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// </summary>
     public DurableJobSubstrateCause DurableJobSubstrateCause { get; }
 
+    /// <summary>
+    /// The informational Redis durability outcome (owner ruling 2026-10-10), or
+    /// <see langword="null"/> when the Redis-backed runtime is not composed. Published only
+    /// alongside an available runtime so it never reads as a reason a capability is withheld.
+    /// </summary>
+    public CapabilityManifestRedisDurability? RedisDurability { get; }
+
     /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
 
@@ -163,4 +197,26 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// evidence consumers can bind a retained artifact to exact code/image content (#3038).
     /// </summary>
     public DeploymentIdentity DeploymentIdentity { get; }
+
+    private static CapabilityManifestRedisDurability? BuildRedisDurability(
+        DurableJobSubstrateOptions substrate,
+        bool runtimeAvailable)
+    {
+        if (!runtimeAvailable || substrate.RedisDurabilityStatus is not { } status)
+        {
+            return null;
+        }
+
+        if (substrate.RedisDurabilityAttestation is not null || substrate.RedisDurabilityFailure is not { } cause)
+        {
+            return new CapabilityManifestRedisDurability { Status = status };
+        }
+
+        return new CapabilityManifestRedisDurability
+        {
+            Status = status,
+            Cause = cause.ToString(),
+            Remediation = DurableJobSubstrateRemediation.For(cause),
+        };
+    }
 }

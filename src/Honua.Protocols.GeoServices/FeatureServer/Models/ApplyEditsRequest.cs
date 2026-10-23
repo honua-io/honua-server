@@ -83,6 +83,42 @@ public sealed class ApplyEditsRequest
     /// </summary>
     [JsonPropertyName("attachments")]
     public object[]? Attachments { get; set; }
+
+    /// <summary>
+    /// Asset-map edits payload. Not supported; a non-empty value is rejected rather than dropped (#4105).
+    /// </summary>
+    [JsonPropertyName("assetMaps")]
+    public object[]? AssetMaps { get; set; }
+
+    /// <summary>
+    /// Esri asynchronous applyEdits. Only synchronous execution is supported; true is rejected (#4105).
+    /// </summary>
+    [JsonPropertyName("async")]
+    public bool Async { get; set; }
+
+    /// <summary>
+    /// Whether edits are keyed by unique ids. Not supported; true is rejected (#4105).
+    /// </summary>
+    [JsonPropertyName("useUniqueIds")]
+    public bool UseUniqueIds { get; set; }
+
+    /// <summary>
+    /// Identifier of an uploaded edits item. Not supported; any value is rejected (#4105).
+    /// </summary>
+    [JsonPropertyName("editsUploadId")]
+    public string? EditsUploadId { get; set; }
+
+    /// <summary>
+    /// Format of an uploaded edits item. Not supported; any value is rejected (#4105).
+    /// </summary>
+    [JsonPropertyName("editsUploadFormat")]
+    public string? EditsUploadFormat { get; set; }
+
+    /// <summary>
+    /// Datum transformation to apply to edit geometries. Not supported; any value is rejected.
+    /// </summary>
+    [JsonPropertyName("datumTransformation")]
+    public object? DatumTransformation { get; set; }
 }
 
 /// <summary>
@@ -113,6 +149,12 @@ public sealed class ApplyEditsResponse
     /// </summary>
     [JsonPropertyName("success")]
     public bool Success { get; set; } = true;
+
+    /// <summary>
+    /// When returnEditMoment=true, the time the edits were applied, in epoch milliseconds (#4105).
+    /// </summary>
+    [JsonPropertyName("editMoment")]
+    public long? EditMoment { get; set; }
 }
 
 /// <summary>

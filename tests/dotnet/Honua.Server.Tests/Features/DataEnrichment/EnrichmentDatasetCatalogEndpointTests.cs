@@ -199,14 +199,43 @@ public sealed class EnrichmentDatasetCatalogEndpointTests : IAsyncLifetime
         // means an anonymous call against it returns 201. The /api/enrich/datasets mutation group is
         // gated by .RequireAdminAuthorization(), so stand up a dedicated fixture with real gating
         // (HONUA_DEV_AUTH=false) to prove an unauthenticated register is rejected.
+        const string GatedAdminPassword = "enrich-dataset-admin-key";
         var gatedFixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
-            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", GatedAdminPassword);
+            });
         await gatedFixture.InitializeAsync();
         try
         {
             var response = await gatedFixture.Client.PostAsync("/api/enrich/datasets", JsonBody(SampleRegister("noauth")));
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+
+            // The admin policy names the ApiKey scheme, so an unauthenticated caller is
+            // challenged: exactly 401, never 403 (authenticated-but-unprivileged).
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+            // Nothing is disclosed: the created-dataset envelope must not come back.
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("\"source\"");
+            body.Should().NotContain("Natural Earth");
+
+            // Nothing is changed: 'noauth' was not registered. Discovery is anonymous-readable,
+            // so this reads the catalog back without a credential.
+            var discovery = await gatedFixture.Client.GetAsync("/api/enrich/datasets/noauth");
+            discovery.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                "an unauthenticated POST must not register a dataset");
+
+            // The admin principal still registers on the SAME host, so the denial above is a
+            // refusal of the caller and not an endpoint broken for everyone.
+            using var admin = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", GatedAdminPassword));
+            var adminResponse = await admin.PostAsync("/api/enrich/datasets", JsonBody(SampleRegister("authz-ok")));
+            var adminBody = await adminResponse.Content.ReadAsStringAsync();
+            adminResponse.StatusCode.Should().Be(HttpStatusCode.Created, adminBody);
+            using var adminDoc = JsonDocument.Parse(adminBody);
+            adminDoc.RootElement.GetProperty("id").GetString().Should().Be("authz-ok");
         }
         finally
         {

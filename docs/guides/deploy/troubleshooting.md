@@ -1,3 +1,8 @@
+---
+type: runbook
+title: "Troubleshoot Honua Server"
+description: "You'll diagnose the most common operational failures by symptom and apply the verified fix."
+---
 # Troubleshoot Honua Server
 
 You'll diagnose the most common operational failures by symptom and apply the verified fix.
@@ -22,6 +27,8 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 | Exits with an options-validation error naming a `Limits` or `ControlPlane` setting | Out-of-range or malformed env value (validated at startup) | Correct the named variable; compare against [.env.example](../../../.env.example) |
 | Container restart loop, log shows migration failure | Database migration failed at startup | Fix DB connectivity/permissions; check `GET /api/v1/admin/observability/migrations` once up. `HONUA_SKIP_MIGRATIONS=true` defers (does not fix) the migration |
 | Starts but logs "connection string not configured" | `ConnectionStrings__DefaultConnection` missing | Set it; migrations and data access are skipped without it |
+| Logs "Redis durability attestation: unverified" or "not-durable" | Information only: the Redis policy could not be read (managed Redis blocks `CONFIG`) or is not durable | Nothing is disabled. See [Redis durability](#redis-durability) to decide whether you need a durable policy |
+| Exits with "Jobs:RequireDurableStore is enabled, but the durable job substrate is not attested" | You opted in to requiring an `attested` Redis policy and the outcome was something else | Fix the Redis policy per the message's remediation, or clear `Jobs__RequireDurableStore` (required on ElastiCache and MemoryDB) |
 
 ## License failure mode
 
@@ -123,8 +130,97 @@ Do not disable rate limiting during an attack or raise every caller's limit to a
 | Import job fails on geometry | Invalid geometry or unsupported CRS in the source | Validate/fix geometries before import (`ST_MakeValid`), declare the correct source CRS |
 | Import accepted but job never progresses | Queued imports require Redis | Set `ConnectionStrings__Redis` and ensure Redis is reachable |
 | `503` on OGC Processes / GPServer job routes | Redis-backed durable job store not configured | Enable Redis; see [Scale and tune performance](scaling-and-performance.md) |
+| Capability manifest reports `jobs.runner` or `operations.proposals` with `dependency-unavailable` although Redis is configured | Redis did not connect at startup | Check the connection string, network path, TLS and credentials, then restart |
+
+## Redis durability
+
+The durable job substrate and the governed control plane store acknowledged
+state (jobs, queue, execution logs, proposals) in Redis. **Any configured,
+entitled and connected Redis enables them** (owner ruling, 2026-10-10). At
+startup the server reads the Redis persistence policy once and publishes the
+outcome as information. The outcome is `attested` only when all three hold:
+
+| Redis setting | Required value | Why |
+|---|---|---|
+| `appendonly` | `yes` (and `INFO persistence` reports `aof_enabled:1`) | Acknowledged writes survive a restart |
+| `appendfsync` | `everysec` or `always` | An acknowledged write is not left only in the OS page cache |
+| `maxmemory-policy` | `noeviction` | Durable control-plane keys are never evicted under memory pressure |
+
+| Outcome (`limits.job.redisDurability.status`) | `cause` | Meaning |
+|---|---|---|
+| `attested` | (none) | The policy was read and meets all three settings |
+| `unverified` | `RedisAttestationUnavailable` | The policy could not be read. AWS ElastiCache and MemoryDB block `CONFIG`, so this is expected there |
+| `not-durable` | `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe` or `RedisEvictionPolicyUnsafe` | The policy was read and does not protect acknowledged writes |
+
+**The outcome never disables anything.** `operations.proposals` and
+`jobs.runner` report `available: true` and
+`limits.job.durableJobRuntimeAvailable` is `true`. The `redis` health entry
+stays `Healthy` and carries `durability`, `cause`, `consequence` and
+`remediation` in its data. An MCP client reads that from the
+`honua://ops/health` resource. `/healthz/ready` is unaffected. The server logs
+one startup line: Information for `attested` and `unverified`, Warning for
+`not-durable`. The manifest publishes the status, cause and remediation, but not
+the raw Redis error text or the endpoint.
+
+Those capabilities read `dependency-unavailable` only when Redis is genuinely
+absent (`RedisNotConfigured`) or did not connect at startup
+(`RedisUnreachable`). They read `license-required` when Redis is configured but
+unentitled (`RedisNotEntitled`).
+
+Durability is a property of the Redis deployment you run. On managed Redis,
+rely on the service: MemoryDB's transaction log, or ElastiCache replication,
+Multi-AZ and snapshots. A stock `redis:7-alpine` defaults to `appendonly no` and
+reports `not-durable`. To make a self-managed Redis durable, start it with the
+policy:
+
+```yaml
+redis:
+  image: redis:7-alpine
+  command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+```
+
+### `Jobs:RequireDurableStore`
+
+`Jobs:RequireDurableStore` (environment variable `Jobs__RequireDurableStore`)
+defaults to `false`. In that state the outcome above is information only. Set it
+to `true` if the server must refuse to start unless the outcome is `attested`:
+
+```bash
+Jobs__RequireDurableStore=true
+```
+
+With that set, any other outcome, and a missing or unreachable Redis, exits with
+a single typed startup error naming the cause and its remediation. The GDAL
+worker applies the same setting. The setting **cannot be satisfied on managed
+Redis that blocks `CONFIG`** (AWS ElastiCache, Amazon MemoryDB), because the
+policy is unreadable there. Leave it unset on those services.
 
 Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET /api/v1/admin/jobs/{jobId}/logs`. For stuck workflow runs, see [Automate workflows](../query-analyze/automate-workflows.md).
+
+## Geoprocessing development and remote jobs
+
+Start with the job's status, current phase, attempt, heartbeat, and reported
+failure. In Console, open the GP job's step timeline to inspect the sanitized
+native command and artifacts. Step durations inferred from neighboring log
+timestamps are labeled `timingSource: inferred`; they are not measured spans.
+A missing command or event is missing evidence, not proof a step never ran.
+
+For local built-in functions, run the devkit's `doctor --managed-only --json`,
+then execute the failing function with the same parameters and input CRS.
+Use `--real-worker` for native worker fidelity. The doctor image probe alone
+does not execute GDAL or qualify a Kubernetes/AWS target.
+
+For custom code, use the Python/.NET
+[local debugging sample](../../../samples/gp-custom-local/README.md).
+Inspect `receipt.json` for the failed phase and `eventsTruncated`, and inspect
+`events.jsonl` and the retained work directory. Missing input is a setup error;
+an exception in the tool is an execution failure. Local files are unsanitized
+and must not be treated as exported support bundles.
+
+Re-running custom code can repeat external effects. Inspect committed results
+before retrying; cancellation and deployment rollback do not undo data writes.
+Automatic remote-to-local reproduction and per-process Git rollback are separate
+capabilities and are not provided by these local commands.
 
 ## Tiles and rendering
 

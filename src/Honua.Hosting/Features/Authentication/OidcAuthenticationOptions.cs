@@ -331,7 +331,10 @@ public sealed class TokenValidationOptions
     public string[] ValidAudiences { get; set; } = [];
 
     /// <summary>
-    /// Gets or sets whether to enable token replay protection.
+    /// Gets or sets whether to enable token replay protection. A validated bearer token is
+    /// bound to the surface it is first admitted on: it stays reusable on the ordinary HTTP
+    /// API for its lifetime, is reusable on the MCP transport only on the session it is bound
+    /// to, and is rejected as a replay when presented to the other surface.
     /// </summary>
     public bool EnableTokenReplayProtection { get; set; } = true;
 

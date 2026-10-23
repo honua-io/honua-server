@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
@@ -26,7 +27,8 @@ internal sealed class PortalOAuthTokenService(
     IOAuthScopeCatalogue scopeCatalogue,
     PortalJwtAccessTokenService jwtService,
     ClientCredentialsFederationService federation,
-    IOptions<PortalTokenAuthenticationOptions> tokenOptions)
+    IOptions<PortalTokenAuthenticationOptions> tokenOptions,
+    IPrincipalMembershipSource? membershipSource = null)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
     private const string RefreshTokenGrant = "refresh_token";
@@ -45,6 +47,7 @@ internal sealed class PortalOAuthTokenService(
     private readonly PortalJwtAccessTokenService _jwtService = jwtService;
     private readonly ClientCredentialsFederationService _federation = federation;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
+    private readonly IPrincipalMembershipSource? _membershipSource = membershipSource;
 
     // Optional JWT access-token format (ADR-0068, #1890): when enabled the issued
     // access_token is a signed JWT whose jti is the cache reference, so revocation
@@ -92,15 +95,85 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_client", "client_secret is required for the client_credentials grant.");
         }
 
-        // Increment 3 (ADR-0053, #1889): optional pluggable IdP/OIDC federation. When
-        // configured, the presented client_id/client_secret are delegated to the
-        // operator's external token endpoint first. A successful federated exchange
-        // means the IdP authenticated the machine identity; Honua then mints its own
-        // token carrying the operator-configured roles (no second token store —
-        // ADR-0049). A federation miss falls through to the in-tree resolution below,
-        // so federation is purely additive. The credential is resolved before the
-        // IP-binding check (below) so an unknown/bad credential always returns
-        // invalid_client (RFC 6749 §5.2), never the binding-resolution failure mode.
+        // Local stores run before federation (#6166). A valid Honua client secret or
+        // Admin API key is never posted to the external IdP. Federation runs only when
+        // both stores miss. IP binding stays after a successful credential check so an
+        // unknown secret is invalid_client (RFC 6749 §5.2), never a binding failure.
+        // ValidateSecret cannot tell an unknown client from a wrong secret, so a miss
+        // still falls through; only a secret the registry or key store accepts is kept
+        // on the server.
+
+        // Increment 2 (ADR-0053, #1888): the first-class OAuth client registry. The
+        // secret is matched against the per-application registry (SHA-256-hashed at
+        // rest, revocable, expiry-aware). Roles come from the scope catalogue.
+        OAuthClientRecord? client = null;
+        if (!string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            client = await _clientStore
+                .ValidateSecretAsync(request.ClientId, secret, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (client is not null)
+        {
+            var registeredIp = RequireClientIp(request);
+            if (registeredIp is null)
+            {
+                return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
+            }
+
+            return await IssueClientCredentialsAsync(client, request.Scope, registeredIp, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // Increment 1 backward-compatible fallback (ADR-0053): when no first-class
+        // client matches, the client_secret is validated against the existing Admin
+        // API-key store — the same SHA-256-hashed, expiry-aware, revocable key that
+        // X-API-Key automation already uses. client_id is a human-readable label; the
+        // secret alone authenticates.
+        var validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
+        if (validation is not null)
+        {
+            // A token carries roles only, so the key goes through the same canonical
+            // rule as the generateToken bridge (#4577): a full-admin key maps to the
+            // admin role; a constrained key, whose authority lives in claims a token
+            // cannot hold, is refused rather than having its permission labels
+            // turned into roles. Refusal happens before federation so the key is not
+            // disclosed to the IdP.
+            var keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record.Permissions);
+            if (keyRoles is null)
+            {
+                return PortalOAuthTokenResult.Failure(
+                    "unauthorized_client",
+                    "This API key cannot be exchanged for a portal token; use it with X-API-Key.");
+            }
+
+            var keyIp = RequireClientIp(request);
+            if (keyIp is null)
+            {
+                return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
+            }
+
+            var roles = ResolveRoles(keyRoles, request.Scope);
+            return await MintClientCredentialsTokenAsync(
+                principalId: validation.Record.Name,
+                roles: roles,
+                clientIp: keyIp,
+                grantedScope: null,
+                cancellationToken,
+                // Same managed key, same rule as the generateToken bridge: the minted token is
+                // clamped to the key's expiry and stops when the key is revoked or rotated (SEC-9).
+                source: new PortalCredentialSource(
+                    PortalCredentialSourceKind.ManagedApiKey,
+                    Reference: validation.Record.Id.ToString("D"),
+                    Version: PortalCredentialSourceVersion.ForManagedKey(validation.Record),
+                    ExpiresAt: validation.Record.ExpiresAt)).ConfigureAwait(false);
+        }
+
+        // Increment 3 (ADR-0053, #1889): optional IdP federation, only for a credential
+        // neither store accepted. A successful exchange means the IdP authenticated the
+        // machine identity; Honua mints its own token with the operator-configured roles
+        // (no second token store — ADR-0049).
         if (_federation.FederationEnabled)
         {
             var federatedRoles = await _federation
@@ -123,68 +196,8 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
-        // Increment 2 (ADR-0053, #1888): prefer the first-class OAuth client registry.
-        // A client presents a real client_id/client_secret pair; the secret is matched
-        // against the per-application registry (SHA-256-hashed at rest, revocable,
-        // expiry-aware). Roles come from the scope catalogue: the requested scope is
-        // resolved to RBAC permissions, bounded by the client's allowed scopes. The
-        // credential is validated before the IP-binding check so an unknown/bad
-        // credential always returns invalid_client (RFC 6749 §5.2), never leaking the
-        // binding-resolution failure mode.
-        OAuthClientRecord? client = null;
-        if (!string.IsNullOrWhiteSpace(request.ClientId))
-        {
-            client = await _clientStore
-                .ValidateSecretAsync(request.ClientId, secret, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        // Increment 1 backward-compatible fallback (ADR-0053): when no first-class
-        // client matches, the client_secret is validated against the existing Admin
-        // API-key store — the same SHA-256-hashed, expiry-aware, revocable key that
-        // X-API-Key automation already uses. client_id is a human-readable label; the
-        // secret alone authenticates. This keeps every flag-gated Increment-1
-        // deployment working byte-for-byte.
-        AdminApiKeyValidationResult? validation = null;
-        if (client is null)
-        {
-            validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
-            if (validation is null)
-            {
-                // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
-                return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
-            }
-        }
-
-        // The credential is valid; now bind the token to the issuing client's IP.
-        // Service clients have no browser referer, so an IP binding mirrors how API-key
-        // automation reaches the request path and is validated by
-        // PortalTokenAuthenticationHandler (binding.ClientIp). This is checked AFTER
-        // credential validation so an unknown/bad secret returns invalid_client, never
-        // leaking the binding-resolution failure mode (ADR-0053).
-        var clientIp = RequireClientIp(request);
-        if (clientIp is null)
-        {
-            return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
-        }
-
-        if (client is not null)
-        {
-            return await IssueClientCredentialsAsync(client, request.Scope, clientIp, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        // Identity is the API-key record: its name labels the principal and its
-        // permissions become the principal's roles, so the existing RBAC resolver
-        // (#1375) makes the per-operation decision exactly as for any other principal.
-        var roles = ResolveRoles(validation!.Record.Permissions, request.Scope);
-
-        return await MintClientCredentialsTokenAsync(
-            principalId: validation.Record.Name,
-            roles: roles,
-            clientIp: clientIp,
-            grantedScope: null,
-            cancellationToken).ConfigureAwait(false);
+        // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
+        return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
     }
 
     private async Task<PortalOAuthTokenResult> IssueClientCredentialsAsync(
@@ -229,7 +242,8 @@ internal sealed class PortalOAuthTokenService(
         IReadOnlyList<string> roles,
         string clientIp,
         string? grantedScope,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        PortalCredentialSource? source = null)
     {
         var ttlMinutes = ResolveExpirationMinutes(requested: null);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
@@ -243,7 +257,8 @@ internal sealed class PortalOAuthTokenService(
                 ClientType: PortalTokenClientType.Ip,
                 BindingValue: clientIp,
                 ExpiresAt: expiresAt,
-                IsClientCredentials: true),
+                IsClientCredentials: true,
+                Source: source),
             cancellationToken).ConfigureAwait(false);
 
         var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
@@ -339,7 +354,8 @@ internal sealed class PortalOAuthTokenService(
             record.ClientId,
             record.Principal,
             record.ExpirationMinutes,
-            requestBinding,
+            IsNativeRedirect(record.RedirectUri) ? PortalTokenClientType.Bearer : PortalTokenClientType.Referer,
+            IsNativeRedirect(record.RedirectUri) ? string.Empty : requestBinding,
             request.IncludeRefreshToken,
             cancellationToken).ConfigureAwait(false);
     }
@@ -383,17 +399,30 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
+        if (await IsRefreshRevokedAsync(record, cancellationToken).ConfigureAwait(false))
+        {
+            return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token has been revoked.");
+        }
+
+        var principal = await RevalidatePrincipalAsync(record.Principal, cancellationToken).ConfigureAwait(false);
+        if (principal is null)
+        {
+            return PortalOAuthTokenResult.Failure("invalid_grant", "The signed-in identity is no longer active.");
+        }
+
         if (!rotate)
         {
             // Rotation disabled (legacy ArcGIS behavior): the token is reusable, issue
-            // without consuming it.
+            // without consuming it. The refresh deadline stays the original expiry.
             return await IssueAsync(
                 record.ClientId,
-                record.Principal,
+                principal,
                 requestedMinutes: null,
-                requestBinding,
+                record.ClientType ?? PortalTokenClientType.Referer,
+                record.BindingValue ?? requestBinding,
                 includeRefreshToken: false,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                absoluteRefreshExpiresAt: record.ExpiresAt).ConfigureAwait(false);
         }
 
         // BH2-023: atomically consume the refresh token so only one concurrent caller
@@ -415,11 +444,13 @@ internal sealed class PortalOAuthTokenService(
         {
             return await IssueAsync(
                 consumed.ClientId,
-                consumed.Principal,
+                principal,
                 requestedMinutes: null,
-                requestBinding,
+                consumed.ClientType ?? PortalTokenClientType.Referer,
+                consumed.BindingValue ?? requestBinding,
                 includeRefreshToken: true,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                absoluteRefreshExpiresAt: consumed.ExpiresAt).ConfigureAwait(false);
         }
         catch
         {
@@ -444,12 +475,28 @@ internal sealed class PortalOAuthTokenService(
         string clientId,
         PortalOAuthPrincipal principal,
         int? requestedMinutes,
+        PortalTokenClientType clientType,
         string requestBinding,
         bool includeRefreshToken,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? absoluteRefreshExpiresAt = null)
     {
+        var now = DateTimeOffset.UtcNow;
+        // The IdP token is the backing credential (SEC-9). An already-expired source
+        // must not mint a portal token or a 90-day refresh token.
+        if (principal.Source?.ExpiresAt is { } sourceExpiresAt && sourceExpiresAt <= now)
+        {
+            return PortalOAuthTokenResult.Failure(
+                "invalid_grant",
+                "The identity provider credential has expired.");
+        }
+
         var ttlMinutes = ResolveExpirationMinutes(requestedMinutes);
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
+        var expiresAt = now.AddMinutes(ttlMinutes);
+        if (principal.Source?.ExpiresAt is { } sourceExpiry && expiresAt > sourceExpiry)
+        {
+            expiresAt = sourceExpiry;
+        }
 
         var issuance = await MintAccessTokenAsync(
             new PortalTokenIssueRequest(
@@ -457,26 +504,42 @@ internal sealed class PortalOAuthTokenService(
                 DisplayName: principal.DisplayName,
                 TenantId: principal.TenantId,
                 Roles: principal.Roles,
-                // OAuth2 bridge tokens are bound to the requesting client's referer
-                // (the redirect host) so they behave like a generateToken referer
-                // token rather than an IP-bound one.
-                ClientType: PortalTokenClientType.Referer,
+                // Browser clients retain the redirect-origin binding. Native clients
+                // use a bearer token because their HTTP stack has no browser Referer.
+                ClientType: clientType,
                 BindingValue: requestBinding,
                 ExpiresAt: expiresAt,
                 RolesRequireClaimsMappingEntitlement: principal.RolesRequireClaimsMappingEntitlement,
                 TenantRequiresClaimsMappingEntitlement: principal.TenantRequiresClaimsMappingEntitlement,
-                RolesWithoutClaimsMapping: principal.RolesWithoutClaimsMapping),
+                RolesWithoutClaimsMapping: principal.RolesWithoutClaimsMapping,
+                Source: principal.Source),
             cancellationToken).ConfigureAwait(false);
 
         string? refreshToken = null;
         if (includeRefreshToken)
         {
+            var refreshExpiresAt = absoluteRefreshExpiresAt ?? now.Add(RefreshTokenLifetime);
+            if (principal.Source?.ExpiresAt is { } refreshSourceExpiry && refreshSourceExpiry < refreshExpiresAt)
+            {
+                refreshExpiresAt = refreshSourceExpiry;
+            }
+
+            if (refreshExpiresAt <= now)
+            {
+                return PortalOAuthTokenResult.Failure(
+                    "invalid_grant",
+                    "The refresh token has expired.");
+            }
+
             refreshToken = await _store.CreateRefreshTokenAsync(
                 new PortalOAuthRefreshToken
                 {
                     ClientId = clientId,
                     Principal = principal,
-                    ExpiresAt = DateTimeOffset.UtcNow.Add(RefreshTokenLifetime),
+                    ClientType = clientType,
+                    BindingValue = requestBinding,
+                    IssuedAt = now,
+                    ExpiresAt = refreshExpiresAt,
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -486,6 +549,85 @@ internal sealed class PortalOAuthTokenService(
         var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
 
         return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken, username: principal.PrincipalId);
+    }
+
+    private async Task<bool> IsRefreshRevokedAsync(
+        PortalOAuthRefreshToken token,
+        CancellationToken cancellationToken)
+    {
+        if (await _store.IsPrincipalRefreshRevokedAsync(
+                token.Principal.PrincipalId,
+                token.IssuedAt,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        var reference = token.Principal.Source?.Reference;
+        return !string.IsNullOrWhiteSpace(reference)
+            && await _store.IsPrincipalRefreshRevokedAsync(reference, token.IssuedAt, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    private async Task<PortalOAuthPrincipal?> RevalidatePrincipalAsync(
+        PortalOAuthPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        if (_membershipSource is null)
+        {
+            return principal;
+        }
+
+        string? issuer = null;
+        if (principal.Source?.Kind == PortalCredentialSourceKind.FederatedToken
+            && principal.Source.Reference is { } reference)
+        {
+            var separator = reference.IndexOf('|');
+            if (separator > 0)
+            {
+                issuer = reference[..separator];
+            }
+        }
+
+        PrincipalMembership? membership;
+        try
+        {
+            membership = await _membershipSource
+                .ResolveMembershipAsync(principal.PrincipalId, issuer, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A membership-store failure must not re-mint the frozen roles.
+            return null;
+        }
+
+        if (membership is null)
+        {
+            return principal;
+        }
+
+        if (!membership.IsActive)
+        {
+            return null;
+        }
+
+        var roles = membership.Roles
+            .Where(static role => !string.IsNullOrWhiteSpace(role))
+            .Select(static role => role.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new PortalOAuthPrincipal
+        {
+            PrincipalId = principal.PrincipalId,
+            DisplayName = principal.DisplayName,
+            TenantId = principal.TenantId,
+            Roles = roles,
+            RolesRequireClaimsMappingEntitlement = false,
+            RolesWithoutClaimsMapping = roles,
+            TenantRequiresClaimsMappingEntitlement = principal.TenantRequiresClaimsMappingEntitlement,
+            Source = principal.Source,
+        };
     }
 
     private int ResolveExpirationMinutes(int? requested)
@@ -500,6 +642,15 @@ internal sealed class PortalOAuthTokenService(
         return requested is null
             ? Math.Min(defaultMinutes, maxMinutes)
             : Math.Min(requested.Value, maxMinutes);
+    }
+
+    private static bool IsNativeRedirect(string? redirectUri)
+    {
+        // The broker allowlists this redirect and the code exchange verifies exact
+        // equality before reaching this decision. Never select bearer mode from an
+        // unverified refresh request's redirect_uri or Referer header.
+        return Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri) &&
+            (uri.IsLoopback || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps));
     }
 
     private static bool VerifyPkce(string? challenge, string? method, string? verifier)

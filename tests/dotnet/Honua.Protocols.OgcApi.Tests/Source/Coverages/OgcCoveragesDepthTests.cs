@@ -315,6 +315,62 @@ public sealed class OgcCoveragesOversizeDepthTests : IClassFixture<OgcCoveragesO
         scaledResponse.StatusCode.Should().Be(HttpStatusCode.OK, scaledContent);
     }
 
+    [IntegrationTheory]
+    [InlineData("-122.5,37.7,-122.3,37.9")]
+    [InlineData("-180,-90,180,90")]
+    [InlineData("-122.5,37.79,-122.3,37.81")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_NativeBbox_RejectsOversizeGridBeforeExport(string bbox)
+    {
+        _fixture.ExportQueries.Clear();
+        using var response = await _fixture.App.Client.GetAsync($"{CoveragePath}?bbox={bbox}");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Should().BeEmpty();
+
+        using var downsampled = await _fixture.App.Client.GetAsync($"{CoveragePath}?bbox={bbox}&scale-size=128,64");
+        downsampled.StatusCode.Should().Be(HttpStatusCode.OK, await downsampled.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Should().ContainSingle();
+        _fixture.ExportQueries[0].OutputWidth.Should().Be(128);
+        _fixture.ExportQueries[0].OutputHeight.Should().Be(64);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_NativeSubset_EnforcesClippedGridCapBeforeExport()
+    {
+        // The authored fixture is 20,000 x 20,000 over 0.2 x 0.2 degrees.
+        // A full-width trim is therefore over the 8192 cap in either axis order.
+        _fixture.ExportQueries.Clear();
+        foreach (var subset in new[]
+        {
+            "Lon(-122.5:-122.3),Lat(37.7:37.9)",
+            "Lat(37.7:37.9),Lon(-122.5:-122.3)",
+            "Lon(-122.41:-122.39)",
+            "x(-122.5:-122.3),y(37.7:37.9)",
+        })
+        {
+            var response = await _fixture.App.Client.GetAsync($"{CoveragePath}?subset={Uri.EscapeDataString(subset)}");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("8192");
+        }
+        _fixture.ExportQueries.Should().BeEmpty();
+
+        // 0.02 / 0.00001 = 2000 pixels per axis; this native window is safe.
+        var bounded = await _fixture.App.Client.GetAsync(
+            $"{CoveragePath}?subset=Lon(-122.41:-122.39),Lat(37.79:37.81)");
+        bounded.StatusCode.Should().Be(HttpStatusCode.OK, await bounded.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Should().ContainSingle();
+
+        // Explicit dimensions bound even the full-raster subset.
+        var scaled = await _fixture.App.Client.GetAsync(
+            $"{CoveragePath}?subset=Lon(-122.5:-122.3),Lat(37.7:37.9)&scaleSize=Lat(64),Lon(128)");
+        scaled.StatusCode.Should().Be(HttpStatusCode.OK, await scaled.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Last().OutputWidth.Should().Be(128);
+        _fixture.ExportQueries.Last().OutputHeight.Should().Be(64);
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
@@ -424,24 +480,56 @@ internal static class CoverageDepthRasterStore
                 var isEmpty = emptyDataForSingleBand.HasValue &&
                               query.Bands is { Length: 1 } bands &&
                               bands[0] == emptyDataForSingleBand.Value;
+                var srid = query.OutputSrid ?? 4326;
+                var width = query.OutputWidth ?? 64;
+                var height = query.OutputHeight ?? 64;
+
+                // #4424: the covered extent follows the requested clip instead of always
+                // reporting the raster's full 20000 x 20000 native footprint, so a narrow
+                // bbox that the handler failed to apply is now distinguishable from one it
+                // applied correctly.
+                var extent = ClippedExtent(
+                    raster.Extent ?? OgcCoveragesEndpointsTests.NativeExtent,
+                    query,
+                    srid);
                 return Task.FromResult(new RasterResult
                 {
                     Data = isEmpty
                         ? []
-                        : query.OutputFormat == RasterFormat.PNG
-                            ? [0x89, 0x50, 0x4E, 0x47]
-                            : [0x49, 0x49, 0x2A, 0x00],
+                        : OgcCoveragesEndpointsTests.SyntheticRasterBytes(query.OutputFormat, extent, width, height),
                     ContentType = query.OutputFormat.ToContentType(),
-                    Width = query.OutputWidth ?? 64,
-                    Height = query.OutputHeight ?? 64,
-                    Srid = query.OutputSrid ?? 4326,
-                    Extent = raster.Extent,
+                    Width = width,
+                    Height = height,
+                    Srid = srid,
+                    Extent = extent,
                     BandCount = query.Bands?.Length ?? 3,
                     PixelType = "32BF"
                 });
             });
 
         return rasterStore;
+    }
+
+    /// <summary>
+    /// The extent a correct export covers: the requested clip envelope intersected with the
+    /// raster footprint, or the whole footprint when no clip was requested.
+    /// </summary>
+    private static RasterExtent ClippedExtent(RasterExtent native, RasterQuery query, int srid)
+    {
+        if (query.ClipRegion is not { } clip)
+        {
+            return native with { Srid = srid };
+        }
+
+        var envelope = new NetTopologySuite.IO.WKBReader().Read(clip.Geometry).EnvelopeInternal;
+        return new RasterExtent
+        {
+            XMin = Math.Max(native.XMin, envelope.MinX),
+            YMin = Math.Max(native.YMin, envelope.MinY),
+            XMax = Math.Min(native.XMax, envelope.MaxX),
+            YMax = Math.Min(native.YMax, envelope.MaxY),
+            Srid = srid
+        };
     }
 
     public static RasterInfo CreateRasterInfo(long rasterId, int width, int height, double pixelSize)

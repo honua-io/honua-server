@@ -64,6 +64,11 @@ public sealed class BandStatistic
 /// </summary>
 public sealed class BandHistogram
 {
+    // Keep canonical band identity for SOAP's named RasterHistogram_N members.
+    // The REST contract remains an ordered array, without an added JSON member.
+    [JsonIgnore]
+    internal int SourceBand { get; init; }
+
     /// <summary>
     /// Number of bins.
     /// </summary>

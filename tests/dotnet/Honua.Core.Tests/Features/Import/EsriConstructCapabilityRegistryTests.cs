@@ -10,16 +10,17 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class EsriConstructCapabilityRegistryTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisSubtypesManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisAttachments, false, false, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRenderers, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisTimeMetadataManualReview, false, false, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeFeatureService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
@@ -52,10 +53,15 @@ public sealed class EsriConstructCapabilityRegistryTests
         descriptor.Reason.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisQueryCapabilityMissing)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisDomainTruncated)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisSubtypesManualReview)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisAttachments)]
     public void ResolveOrUnknown_ConditionalConstruct_ExposesUnsupportedFallback(
         string constructKey,
         string expectedFallbackStatus,
@@ -70,6 +76,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         descriptor.UnsupportedReason.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("not-a-real-construct")]
     [InlineData("")]
@@ -88,6 +95,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         descriptor.RequiresCheck.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RegisteredConstructKeys_ContainsAllBuiltInKeys()
     {
@@ -119,6 +127,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         ]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_DuplicateConstructKey_ThrowsInvalidOperationException()
     {
@@ -140,6 +149,7 @@ public sealed class EsriConstructCapabilityRegistryTests
             .WithMessage($"*Duplicate*'{EsriConstructCapabilityRegistry.Keys.ResourceIdentity}'*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_DescriptorWithEmptyConstructKey_ThrowsInvalidOperationException()
     {

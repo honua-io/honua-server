@@ -17,6 +17,7 @@ namespace Honua.Infrastructure.Monitoring;
 [JsonSerializable(typeof(OpsHealthHistoryResponse))]
 [JsonSerializable(typeof(OpsFindingsListResponse))]
 [JsonSerializable(typeof(OpsFindingProposeResponse))]
+[JsonSerializable(typeof(OpsFindingProposeRequest))]
 [JsonSerializable(typeof(OpsAutonomyPolicyListResponse))]
 [JsonSerializable(typeof(OpsAutonomyPolicyResponse))]
 [JsonSerializable(typeof(OpsAutonomySettingsResponse))]

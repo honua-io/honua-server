@@ -4,8 +4,6 @@
 using System.Collections.Immutable;
 using System.Xml;
 using System.Xml.Serialization;
-using Honua.Infrastructure.Models;
-
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Models;
 
 // These types are public by design because XmlSerializer requires public CLR contracts for
@@ -15,7 +13,7 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Models;
 /// WFS 2.0 GetCapabilities response
 /// </summary>
 [XmlRoot("WFS_Capabilities", Namespace = Wfs20Utilities.WfsNamespace)]
-public sealed class WfsCapabilities : IXmlNamespaceProvider
+public sealed class WfsCapabilities
 {
     [XmlNamespaceDeclarations]
     public XmlSerializerNamespaces Namespaces { get; } = new(

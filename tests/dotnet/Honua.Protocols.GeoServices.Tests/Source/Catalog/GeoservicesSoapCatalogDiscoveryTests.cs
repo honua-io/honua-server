@@ -6,24 +6,217 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed class GeoservicesSoapCatalogDiscoveryTests
+public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<GeoservicesSoapCatalogDiscoveryTests.PublicCatalogFixture>
 {
+    private readonly PublicCatalogFixture _publicCatalog;
+
+    public GeoservicesSoapCatalogDiscoveryTests(PublicCatalogFixture publicCatalog) => _publicCatalog = publicCatalog;
+
+    /// <summary>
+    /// Shares a host for SOAP argument-binding cases that read an identical public catalog.
+    /// Authorization and host-configuration cases retain their own factories.
+    /// </summary>
+    public sealed class PublicCatalogFixture : IAsyncLifetime
+    {
+        public WebApplicationFactory<Program> Factory { get; } = CreateFactory(CreatePublicCatalog());
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task DisposeAsync() => Factory.DisposeAsync().AsTask();
+    }
+
     private static readonly string[] _publishedTypes = ["FeatureServer", "MapServer", "GPServer", "VectorTileServer"];
 
     private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("POST /services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs()
+    {
+        var restricted = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["catalog-reader"]);
+        using var factory = CreateFactory(new RbacTestLayerCatalog(
+            alphaServiceMetadata: restricted, betaServiceMetadata: restricted,
+            alphaLayerMetadata: restricted, betaLayerMetadata: restricted));
+        using (var client = ServiceRbacTestFixture.CreateClient(factory, "catalog-reader"))
+        {
+            await AssertCatalogParityAsync(client, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
+            foreach (var (service, layer) in new[]
+            {
+                (ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.AlphaLayerId),
+                (ServiceRbacTestFixture.BetaService, ServiceRbacTestFixture.BetaLayerId)
+            })
+            {
+                using var taskResponse = await client.GetAsync($"/rest/services/{service}/GPServer/Buffer?f=json");
+                var taskBody = await taskResponse.Content.ReadAsStringAsync();
+                taskResponse.StatusCode.Should().Be(HttpStatusCode.OK, taskBody);
+                using var taskPayload = JsonDocument.Parse(taskBody);
+                taskPayload.RootElement.TryGetProperty("error", out _).Should().BeFalse(taskBody);
+                taskPayload.RootElement.GetProperty("parameters").ValueKind.Should().Be(JsonValueKind.Array);
+
+                foreach (var protocol in new[] { "FeatureServer", "MapServer" })
+                {
+                    using var response = await client.GetAsync($"/rest/services/{service}/{protocol}/{layer}?f=json");
+                    var body = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+                    using var payload = JsonDocument.Parse(body);
+                    payload.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+                    payload.RootElement.GetProperty("id").GetInt32().Should().Be(layer);
+                }
+            }
+        }
+        using var admin = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        await AssertDeniedParityAsync(admin, HttpStatusCode.Forbidden);
+        await AssertDeniedChildMetadataAsync(admin, HttpStatusCode.Forbidden);
+        using var wrongRole = ServiceRbacTestFixture.CreateClient(factory, "other-role");
+        await AssertDeniedParityAsync(wrongRole, HttpStatusCode.Forbidden);
+        await AssertDeniedChildMetadataAsync(wrongRole, HttpStatusCode.Forbidden);
+        using var anonymous = factory.CreateClient();
+        await AssertDeniedParityAsync(anonymous, HttpStatusCode.Unauthorized);
+        await AssertDeniedChildMetadataAsync(anonymous, HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// honua-server#4783: the catalog handoff must hold past metadata. A caller the catalog
+    /// lists a role-restricted service to (the role the policy names) must not be refused by
+    /// the FeatureServer and MapServer operations a client runs next. Admin's built-in
+    /// wildcard grant does not skip that list (#6358); a wrong role and anonymous stay refused.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/queryDomains")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility()
+    {
+        var restricted = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["catalog-reader"]);
+        var catalog = new RbacTestLayerCatalog(
+            alphaServiceMetadata: restricted, betaServiceMetadata: restricted,
+            alphaLayerMetadata: restricted, betaLayerMetadata: restricted);
+        using var factory = CreateFactory(
+            catalog,
+            services =>
+            {
+                services.AddSingleton(Substitute.For<IRasterStore>());
+                services.RemoveAll<ICrsDetectionService>();
+                services.AddSingleton<ICrsDetectionService, NoopCrsDetectionService>();
+                services.RemoveAll<ILayerStyleCatalog>();
+                services.AddSingleton(Substitute.For<ILayerStyleCatalog>());
+            });
+
+        using (var client = ServiceRbacTestFixture.CreateClient(factory, "catalog-reader"))
+        {
+            await AssertCatalogParityAsync(client, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
+            var outcomes = await ReadOperationHandoffOutcomesAsync(client);
+            outcomes.Where(outcome => outcome.Value != 0)
+                .Should().BeEmpty("the catalog lists both services to 'catalog-reader'");
+        }
+
+        using var admin = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        await AssertDeniedParityAsync(admin, HttpStatusCode.Forbidden);
+        (await ReadOperationHandoffOutcomesAsync(admin)).Should().OnlyContain(outcome => outcome.Value == 403);
+
+        using var wrongRole = ServiceRbacTestFixture.CreateClient(factory, "other-role");
+        await AssertDeniedParityAsync(wrongRole, HttpStatusCode.Forbidden);
+        (await ReadOperationHandoffOutcomesAsync(wrongRole)).Should().OnlyContain(outcome => outcome.Value == 403);
+
+        using var anonymous = factory.CreateClient();
+        await AssertDeniedParityAsync(anonymous, HttpStatusCode.Unauthorized);
+        (await ReadOperationHandoffOutcomesAsync(anonymous)).Should().OnlyContain(outcome => outcome.Value == 499);
+    }
+
+    private static IEnumerable<string> OperationHandoffPaths()
+    {
+        foreach (var (service, layer) in new[]
+        {
+            (ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.AlphaLayerId),
+            (ServiceRbacTestFixture.BetaService, ServiceRbacTestFixture.BetaLayerId)
+        })
+        {
+            var root = $"/rest/services/{service}";
+            yield return $"{root}/FeatureServer/query?layerDefs=%7B%22{layer}%22%3A%221%3D1%22%7D&returnGeometry=false&f=json";
+            yield return $"{root}/FeatureServer/{layer}/query?where=1%3D1&returnGeometry=false&f=json";
+            yield return $"{root}/FeatureServer/queryDomains?layers={layer}&f=json";
+            yield return $"{root}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json";
+            yield return $"{root}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=all&tolerance=2&f=json";
+            yield return $"{root}/MapServer/find?searchText=test&layers={layer}&f=json";
+            yield return $"{root}/MapServer/legend?f=json";
+            yield return $"{root}/MapServer/layers?f=json";
+            yield return $"{root}/MapServer/queryDomains?layers={layer}&f=json";
+            yield return $"{root}/MapServer/{layer}/query?where=1%3D1&returnGeometry=false&f=json";
+            yield return $"{root}/GPServer/Buffer?f=json";
+        }
+    }
+
+    /// <summary>
+    /// Returns the outcome of every operation handoff keyed by path: 0 for a successful JSON
+    /// response, otherwise the Esri error code (403 forbidden, 499 token required) or the HTTP
+    /// status. A refusal must not carry layer content.
+    /// </summary>
+    private static async Task<Dictionary<string, int>> ReadOperationHandoffOutcomesAsync(HttpClient client)
+    {
+        var outcomes = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var path in OperationHandoffPaths())
+        {
+            using var response = await client.GetAsync(path);
+            var body = await response.Content.ReadAsStringAsync();
+            var outcome = response.StatusCode == HttpStatusCode.OK ? 0 : (int)response.StatusCode;
+            if (outcome == 0)
+            {
+                using var payload = JsonDocument.Parse(body);
+                if (payload.RootElement.TryGetProperty("error", out var error))
+                {
+                    outcome = error.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.Number
+                        ? code.GetInt32()
+                        : -1;
+                }
+            }
+
+            if (outcome is 403 or 499)
+            {
+                body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer", path);
+            }
+
+            outcomes[path] = outcome;
+        }
+
+        return outcomes;
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -128,17 +321,111 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         descriptions.Should().OnlyContain(entry => entry.SoapUrl.StartsWith(publicBaseUrl, StringComparison.Ordinal));
     }
 
+    // Captured verbatim from ArcGIS Pro 3.7.1 adding an ArcGIS Server connection (#4973):
+    // the operation is qualified, its argument is unqualified (elementFormDefault="unqualified").
+    private const string ArcGisPro371GetServiceDescriptionsEx = """
+        <?xml version="1.0" encoding="utf-8" ?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+                       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                       xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                       xmlns:tns="http://www.esri.com/schemas/ArcGIS/10.8">
+          <soap:Body>
+            <tns:GetServiceDescriptionsEx>
+              <FolderName></FolderName>
+            </tns:GetServiceDescriptionsEx>
+          </soap:Body>
+        </soap:Envelope>
+        """;
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_ArcGisPro371CapturedGetServiceDescriptionsEx_ReturnsServiceDescriptions()
+    {
+        using var client = _publicCatalog.Factory.CreateClient();
+        using var baseline = await PostSoapAsync(client);
+        var expected = ReadSoapEntries(XDocument.Parse(await baseline.Content.ReadAsStringAsync()));
+        expected.Should().NotBeEmpty();
+
+        using var content = new StringContent(ArcGisPro371GetServiceDescriptionsEx, Encoding.UTF8, "text/xml");
+        using var response = await client.PostAsync("/services", content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var document = XDocument.Parse(body);
+        document.Descendants().Should().NotContain(element => element.Name.LocalName == "Fault");
+        document.Descendants(XName.Get("GetServiceDescriptionsExResponse", ArcGisSoapNamespace)).Should().ContainSingle();
+        ReadSoapEntries(document).Should().BeEquivalentTo(expected, options => options.WithStrictOrdering());
+    }
+
+    [IntegrationTheory]
+    [InlineData("tns-operation-unqualified-FolderName", "<tns:GetServiceDescriptionsEx><FolderName></FolderName></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-qualified-FolderName", "<tns:GetServiceDescriptionsEx><tns:FolderName></tns:FolderName></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("default-namespace-inherited-FolderName", "<GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><FolderName></FolderName></GetServiceDescriptionsEx>", null)]
+    [InlineData("default-namespace-inherited-folderName", "<GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><folderName></folderName></GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-unqualified-folderName", "<tns:GetServiceDescriptionsEx><folderName /></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-unqualified-FOLDERNAME", "<tns:GetServiceDescriptionsEx><FOLDERNAME /></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("legacy-9.0-operation-unqualified-FolderName", "<legacy:GetServiceDescriptionsEx xmlns:legacy=\"http://www.esri.com/schemas/ArcGIS/9.0\"><FolderName /></legacy:GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-no-arguments", "<tns:GetServiceDescriptionsEx />", null)]
+    [InlineData("default-namespace-folderName-and-Recurse", "<GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><folderName /><Recurse>true</Recurse></GetServiceDescriptionsEx>", "GetServiceDescriptionsEx does not accept the 'Recurse' argument; its only argument is FolderName.")]
+    [InlineData("tns-operation-unqualified-Recurse", "<tns:GetServiceDescriptionsEx><Recurse>true</Recurse></tns:GetServiceDescriptionsEx>", "GetServiceDescriptionsEx does not accept the 'Recurse' argument; its only argument is FolderName.")]
+    [InlineData("tns-operation-two-FolderName", "<tns:GetServiceDescriptionsEx><FolderName /><tns:FolderName /></tns:GetServiceDescriptionsEx>", "GetServiceDescriptionsEx accepts at most one FolderName argument.")]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_GetServiceDescriptionsEx_BindsArgumentsByLocalName(
+        string form,
+        string operation,
+        string? expectedFault)
+    {
+        using var client = _publicCatalog.Factory.CreateClient();
+        var request = $"""
+            <?xml version="1.0" encoding="utf-8" ?>
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="{ArcGisSoapNamespace}">
+              <soap:Body>{operation}</soap:Body>
+            </soap:Envelope>
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+
+        using var response = await client.PostAsync("/services", content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var document = XDocument.Parse(body);
+        if (expectedFault is null)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"{form}: {body}");
+            ReadSoapEntries(document).Should().NotBeEmpty(form);
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{form}: {body}");
+            document.Descendants("faultstring").Should().ContainSingle(form).Which.Value.Should().Be(expectedFault, form);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /services")]
-    public async Task GetSoapCatalog_WithoutWsdlFlag_ReturnsNotFound()
+    public async Task GetSoapCatalog_SiteRootAndWsdlForms_ReturnTheSameCatalogContract()
     {
         using var factory = CreateFactory(new RbacTestLayerCatalog());
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/services");
+        using var wsdlResponse = await client.GetAsync("/services?wsdl");
+        using var siteRootResponse = await client.GetAsync("/services");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var wsdlBody = await wsdlResponse.Content.ReadAsStringAsync();
+        var siteRootBody = await siteRootResponse.Content.ReadAsStringAsync();
+        wsdlResponse.StatusCode.Should().Be(HttpStatusCode.OK, wsdlBody);
+        siteRootResponse.StatusCode.Should().Be(HttpStatusCode.OK, siteRootBody);
+        siteRootResponse.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        siteRootBody.Should().Be(wsdlBody);
+        var definitions = XDocument.Parse(siteRootBody).Root!;
+        definitions.Name.Should().Be(XName.Get("definitions", "http://schemas.xmlsoap.org/wsdl/"));
+        definitions.Descendants(XName.Get("operation", "http://schemas.xmlsoap.org/wsdl/"))
+            .Select(operation => operation.Attribute("name")?.Value)
+            .Should().Contain(["GetMessageVersion", "GetFolders", "GetServiceDescriptionsEx"]);
     }
 
     private static async Task AssertCatalogParityAsync(HttpClient client, string[] expectedNames)
@@ -161,6 +448,11 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         using var soapResponse = await PostSoapAsync(client);
         soapResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var soapDescriptions = ReadSoapEntries(XDocument.Parse(await soapResponse.Content.ReadAsStringAsync()));
+        foreach (var service in soapDescriptions.Where(service => service.Type == "GPServer"))
+        {
+            new Uri(service.SoapUrl).AbsolutePath.Should().Be($"/services/{service.Name}/GPServer");
+            new Uri(service.RestUrl).AbsolutePath.Should().Be($"/rest/services/{service.Name}/GPServer");
+        }
         var soapEntries = soapDescriptions
             .Select(entry => new CatalogEntry(entry.Name, entry.Type, entry.RestUrl))
             .OrderBy(entry => entry.Name, StringComparer.Ordinal)
@@ -168,9 +460,16 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
             .ToArray();
 
         soapEntries.Should().Equal(restEntries);
-        soapEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
+        // The built-in print service is published beside fixture services. Parity still
+        // requires the two catalogs to match; the fixture name set is the dataset services.
+        const string builtInPrintService = "Utilities/PrintingTools";
+        soapEntries.Should().ContainSingle(entry => entry.Name == builtInPrintService && entry.Type == "GPServer");
+        var datasetEntries = soapEntries
+            .Where(entry => !string.Equals(entry.Name, builtInPrintService, StringComparison.Ordinal))
+            .ToArray();
+        datasetEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
             .Should().BeEquivalentTo(expectedNames);
-        soapEntries.Select(entry => (entry.Name, entry.Type)).Should().BeEquivalentTo(
+        datasetEntries.Select(entry => (entry.Name, entry.Type)).Should().BeEquivalentTo(
             expectedNames.SelectMany(name => _publishedTypes
                 .Select(type => (name, type))),
             "both catalogs must enumerate every published non-raster service in this fixture");
@@ -270,6 +569,28 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         }
     }
 
+    private static async Task AssertDeniedChildMetadataAsync(HttpClient client, HttpStatusCode expectedStatus)
+    {
+        foreach (var (service, layer) in new[]
+        {
+            (ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.AlphaLayerId),
+            (ServiceRbacTestFixture.BetaService, ServiceRbacTestFixture.BetaLayerId)
+        })
+        {
+            foreach (var child in new[] { $"FeatureServer/{layer}", $"MapServer/{layer}", "GPServer/Buffer" })
+            {
+                using var response = await client.GetAsync($"/rest/services/{service}/{child}?f=json");
+                var body = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+                using var payload = JsonDocument.Parse(body);
+                payload.RootElement.EnumerateObject().Select(property => property.Name).Should().Equal("error");
+                payload.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+                    .Should().Be(expectedStatus == HttpStatusCode.Unauthorized ? 499 : 403);
+                body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer").And.NotContain("parameters");
+            }
+        }
+    }
+
     private static async Task<HttpResponseMessage> PostSoapAsync(
         HttpClient client,
         string? operation = null)
@@ -300,10 +621,31 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
     private static string ChildValue(XElement parent, string localName)
         => parent.Elements().Single(element => element.Name.LocalName == localName).Value;
 
-    private static WebApplicationFactory<Program> CreateFactory(RbacTestLayerCatalog catalog)
+    private static RbacTestLayerCatalog CreatePublicCatalog()
+    {
+        var publicPolicy = ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymous: true);
+        return new RbacTestLayerCatalog(
+            alphaServiceMetadata: publicPolicy,
+            betaServiceMetadata: publicPolicy,
+            alphaLayerMetadata: publicPolicy,
+            betaLayerMetadata: publicPolicy);
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(
+        RbacTestLayerCatalog catalog, Action<IServiceCollection>? configureServices = null)
         => ServiceRbacTestFixture.CreateFactory(
             () => catalog,
-            services => services.AddSingleton(Substitute.For<IRasterStore>()));
+            services =>
+            {
+                services.AddSingleton(Substitute.For<IRasterStore>());
+                configureServices?.Invoke(services);
+            }).WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+                // These fixtures exercise discovery of graph services only, including
+                // entirely denied catalogs. Public locator visibility has separate coverage.
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Geocoding:Enabled"] = "false"
+                })));
 
     private sealed record CatalogEntry(string Name, string Type, string Url);
 

@@ -20,6 +20,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
         WriteIndented = false
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithRequiredSourceFamiliesCovered_ReturnsPassSuite()
     {
@@ -46,6 +47,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             stage.State == MigrationEvidenceStates.NotApplicable));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithMissingRequiredSourceFamily_ReturnsBlockingGap()
     {
@@ -65,6 +67,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
         suite.BlockingGaps.Should().OnlyContain(gap => gap.State == MigrationEvidenceStates.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithManualReviewEntry_ClassifiesAssistedAndBlocksAutomatedClaim()
     {
@@ -103,6 +106,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             .Which.State.Should().Be(MigrationEvidenceStates.Unknown);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithoutApplyOrPublishEvidence_KeepsSuiteUnknown()
     {
@@ -129,6 +133,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             "stage:arcgis:publish");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_SanitizesEvidenceReferencesBeforeSerialization()
     {
@@ -159,6 +164,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
         json.Should().NotContain("#fragment");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithMismatchedManifestSourceKind_Throws()
     {
@@ -175,6 +181,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             .WithMessage("Migration manifest source kind must match inventory source kind.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithMismatchedParitySourceIdentity_Throws()
     {
@@ -195,6 +202,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             .WithMessage("Migration parity evidence source identity must match inventory source identity.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithSuppliedManifestAndStaleParityManifestFlag_ReportsManifestAvailable()
     {
@@ -214,6 +222,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             .Which.ManifestAvailable.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithPassingCostEvidence_AttachesSuiteMetricsAndRedactsReferences()
     {
@@ -270,6 +279,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
         json.Should().NotContain("#fragment");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithRequiredCostEvidenceMissing_FailsCostEvidenceContract()
     {
@@ -291,6 +301,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             .Which.State.Should().Be(MigrationEvidenceStates.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithCostEvidenceWarning_BlocksReleaseCostClaimWithoutFailingFunctionalEvidence()
     {
@@ -323,6 +334,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             .Which.State.Should().Be(MigrationEvidenceStates.Unknown);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithMissingRequiredCostMetrics_FailsCostEvidenceContract()
     {

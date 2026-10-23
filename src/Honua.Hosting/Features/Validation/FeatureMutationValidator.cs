@@ -8,6 +8,8 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
+using Honua.Core.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Validation;
 
@@ -30,8 +32,42 @@ internal sealed class FeatureMutationValidator
         return resource.ValidateAttributesV2(attributes, mode, isUpdate);
     }
 
-    public async Task<GeometryMutationResult> ValidateGeometryAsync(
+    /// <summary>
+    /// Validates (and, in repair mode, repairs) a mutation geometry and enforces the layer's
+    /// declared geometry type on the <em>post-repair</em> geometry. This is the shared write
+    /// pipeline entry point for every protocol adapter (FeatureServer, OGC API Features,
+    /// WFS-T, OData), so the layer stays geometry-type homogeneous regardless of the edit surface.
+    /// </summary>
+    public Task<GeometryMutationResult> ValidateGeometryAsync(
+        MetadataV2Resource resource,
         byte[]? geometry,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var layerSrid = resource.ReadSrid();
+        return ValidateGeometryAsync(
+            geometry,
+            ResolveLayerGeometryType(resource),
+            layerSrid is int srid && GeographicSridClassifier.IsGeographicSrid(srid) ? srid : null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Validates (and, in repair mode, repairs) a mutation geometry and enforces
+    /// <paramref name="layerGeometryType"/> on the post-repair geometry. Pass
+    /// <see cref="MetadataV2GeometryType.None"/> only when the geometry was not supplied by
+    /// the request (for example an existing geometry carried through a property-only update).
+    /// </summary>
+    public Task<GeometryMutationResult> ValidateGeometryAsync(
+        byte[]? geometry,
+        MetadataV2GeometryType layerGeometryType,
+        CancellationToken cancellationToken)
+        => ValidateGeometryAsync(geometry, layerGeometryType, geographicSrid: null, cancellationToken);
+
+    private async Task<GeometryMutationResult> ValidateGeometryAsync(
+        byte[]? geometry,
+        MetadataV2GeometryType layerGeometryType,
+        int? geographicSrid,
         CancellationToken cancellationToken)
     {
         if (geometry == null || geometry.Length == 0)
@@ -49,8 +85,259 @@ internal sealed class FeatureMutationValidator
         var finalGeometry = validationResult.WasRepaired
             ? validationResult.RepairedWkb
             : geometry;
+        if (geographicSrid is int layerSrid && finalGeometry is { Length: > 0 })
+        {
+            var cut = CutAntimeridian(finalGeometry, layerSrid);
+            if (!ReferenceEquals(cut, finalGeometry))
+            {
+                // The cut adds vertices and can split one ring into several polygons
+                // after ValidateCompleteAsync has already counted the input.
+                var limitResult = _geometryValidator.ValidateWkb(cut);
+                if (!limitResult.IsValid)
+                {
+                    var limitErrors = string.Join("; ", limitResult.Errors.Select(error => error.Message));
+                    return GeometryMutationResult.Failure(limitErrors);
+                }
 
-        return GeometryMutationResult.Success(finalGeometry);
+                finalGeometry = cut;
+            }
+        }
+
+        return GeometryTypeEnforcement.Enforce(
+            geometry,
+            finalGeometry,
+            layerGeometryType,
+            validationResult.WasRepaired,
+            validationResult.GeometryTypeChanged);
+    }
+
+    /// <summary>
+    /// Resolves the declared geometry type of a resource; resources without spatial metadata
+    /// are unconstrained.
+    /// </summary>
+    public static MetadataV2GeometryType ResolveLayerGeometryType(MetadataV2Resource resource)
+        => resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+
+    private static byte[] CutAntimeridian(byte[] wkb, int layerSrid)
+    {
+        NetTopologySuite.Geometries.Geometry geometry;
+        try
+        {
+            geometry = new WKBReader().Read(wkb);
+        }
+        catch (Exception ex) when (ex is ArgumentException or ParseException
+            or IOException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            return wkb;
+        }
+
+        if (geometry.SRID <= 0)
+        {
+            geometry.SRID = layerSrid;
+        }
+
+        var cut = AntimeridianCutter.Cut(geometry);
+        if (ReferenceEquals(cut, geometry))
+        {
+            return wkb;
+        }
+
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: cut.SRID > 0);
+        return writer.Write(cut);
+    }
+}
+
+/// <summary>
+/// Enforces a layer's declared geometry type family on a (possibly repaired) WKB geometry.
+/// Single- and multi-part forms of the same family are interchangeable; None, Mixed and
+/// GeometryCollection layers are unconstrained. When repair changed the geometry type into a
+/// collection, the components of the layer's family are extracted only when that is
+/// unambiguous (no component of a higher dimension than the layer's family).
+/// </summary>
+internal static class GeometryTypeEnforcement
+{
+    public static GeometryMutationResult Enforce(
+        byte[] inputGeometry,
+        byte[]? finalGeometry,
+        MetadataV2GeometryType layerGeometryType,
+        bool wasRepaired,
+        bool repairChangedType)
+    {
+        var expectedFamily = GetLayerFamily(layerGeometryType);
+        if (expectedFamily is null || finalGeometry is null || finalGeometry.Length == 0)
+        {
+            return GeometryMutationResult.Success(finalGeometry);
+        }
+
+        NetTopologySuite.Geometries.Geometry parsed;
+        try
+        {
+            parsed = new NetTopologySuite.IO.WKBReader().Read(finalGeometry);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NetTopologySuite.IO.ParseException
+            or IOException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            return GeometryMutationResult.Failure("Geometry could not be read to verify the layer geometry type.");
+        }
+
+        var actualFamily = GetFamily(parsed.OgcGeometryType);
+        if (actualFamily == expectedFamily)
+        {
+            return GeometryMutationResult.Success(finalGeometry);
+        }
+
+        var layerDescription = layerGeometryType.ToString();
+        if (wasRepaired)
+        {
+            if (parsed.OgcGeometryType == NetTopologySuite.Geometries.OgcGeometryType.GeometryCollection &&
+                TryExtractFamily(parsed, expectedFamily.Value, layerGeometryType, out var extracted))
+            {
+                return GeometryMutationResult.Success(WriteWkb(extracted));
+            }
+
+            var originalType = TryReadGeometryType(inputGeometry) ?? "the submitted type";
+            return GeometryMutationResult.Failure(repairChangedType
+                ? $"Geometry repair changed the geometry type from {originalType} to {parsed.GeometryType}, which does not match the layer geometry type {layerDescription}."
+                : $"Repaired geometry type {parsed.GeometryType} does not match the layer geometry type {layerDescription}.");
+        }
+
+        return GeometryMutationResult.Failure(
+            $"Geometry type {parsed.GeometryType} does not match the layer geometry type {layerDescription}.");
+    }
+
+    private enum GeometryFamily
+    {
+        Point = 0,
+        Line = 1,
+        Polygon = 2
+    }
+
+    private static GeometryFamily? GetLayerFamily(MetadataV2GeometryType layerGeometryType)
+        => layerGeometryType switch
+        {
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint => GeometryFamily.Point,
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString => GeometryFamily.Line,
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon => GeometryFamily.Polygon,
+            // None / Mixed / GeometryCollection layers do not constrain the geometry shape.
+            _ => null
+        };
+
+    private static GeometryFamily? GetFamily(NetTopologySuite.Geometries.OgcGeometryType type)
+        => type switch
+        {
+            NetTopologySuite.Geometries.OgcGeometryType.Point or NetTopologySuite.Geometries.OgcGeometryType.MultiPoint
+                => GeometryFamily.Point,
+            NetTopologySuite.Geometries.OgcGeometryType.LineString or NetTopologySuite.Geometries.OgcGeometryType.MultiLineString
+                => GeometryFamily.Line,
+            NetTopologySuite.Geometries.OgcGeometryType.Polygon or NetTopologySuite.Geometries.OgcGeometryType.MultiPolygon
+                => GeometryFamily.Polygon,
+            _ => null
+        };
+
+    private static bool TryExtractFamily(
+        NetTopologySuite.Geometries.Geometry collection,
+        GeometryFamily expectedFamily,
+        MetadataV2GeometryType layerGeometryType,
+        out NetTopologySuite.Geometries.Geometry extracted)
+    {
+        extracted = collection;
+        var matches = new List<NetTopologySuite.Geometries.Geometry>();
+        var stack = new Stack<NetTopologySuite.Geometries.Geometry>();
+        stack.Push(collection);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (current.IsEmpty)
+            {
+                continue;
+            }
+
+            if (current.OgcGeometryType is NetTopologySuite.Geometries.OgcGeometryType.GeometryCollection
+                or NetTopologySuite.Geometries.OgcGeometryType.MultiPoint
+                or NetTopologySuite.Geometries.OgcGeometryType.MultiLineString
+                or NetTopologySuite.Geometries.OgcGeometryType.MultiPolygon)
+            {
+                for (var i = current.NumGeometries - 1; i >= 0; i--)
+                {
+                    stack.Push(current.GetGeometryN(i));
+                }
+
+                continue;
+            }
+
+            var family = GetFamily(current.OgcGeometryType);
+            if (family is null || family.Value > expectedFamily)
+            {
+                // A component of a higher dimension (or an unknown type) makes the extraction
+                // ambiguous: dropping it would silently discard part of the submitted shape.
+                return false;
+            }
+
+            if (family.Value == expectedFamily)
+            {
+                matches.Add(current);
+            }
+        }
+
+        if (matches.Count == 0)
+        {
+            return false;
+        }
+
+        var factory = collection.Factory;
+        var wantsMulti = layerGeometryType is MetadataV2GeometryType.MultiPoint
+            or MetadataV2GeometryType.MultiLineString
+            or MetadataV2GeometryType.MultiPolygon;
+        if (matches.Count == 1 && !wantsMulti)
+        {
+            extracted = matches[0];
+        }
+        else
+        {
+            extracted = expectedFamily switch
+            {
+                GeometryFamily.Point => factory.CreateMultiPoint(
+                    matches.Cast<NetTopologySuite.Geometries.Point>().ToArray()),
+                GeometryFamily.Line => factory.CreateMultiLineString(
+                    matches.Cast<NetTopologySuite.Geometries.LineString>().ToArray()),
+                _ => factory.CreateMultiPolygon(
+                    matches.Cast<NetTopologySuite.Geometries.Polygon>().ToArray())
+            };
+        }
+
+        extracted.SRID = collection.SRID;
+        return true;
+    }
+
+    private static byte[] WriteWkb(NetTopologySuite.Geometries.Geometry geometry)
+    {
+        var emitZ = false;
+        var emitM = false;
+        foreach (var coordinate in geometry.Coordinates)
+        {
+            emitZ |= !double.IsNaN(coordinate.Z);
+            emitM |= !double.IsNaN(coordinate.M);
+        }
+
+        var writer = new NetTopologySuite.IO.WKBWriter(
+            NetTopologySuite.IO.ByteOrder.LittleEndian,
+            handleSRID: geometry.SRID > 0,
+            emitZ: emitZ,
+            emitM: emitM);
+        return writer.Write(geometry);
+    }
+
+    private static string? TryReadGeometryType(byte[] wkb)
+    {
+        try
+        {
+            return new NetTopologySuite.IO.WKBReader().Read(wkb).GeometryType;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NetTopologySuite.IO.ParseException
+            or IOException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            return null;
+        }
     }
 }
 
@@ -113,10 +400,13 @@ internal static class MetadataV2AttributeValidation
                 continue;
             }
 
-            // Non-editable fields are read-only on update. On insert we still
-            // accept supplied values (mirrors the v1 behaviour where Editable
-            // didn't gate writes).
-            if (isUpdate && !field.Editable)
+            // Non-editable fields and the bound GlobalID are read-only on update.
+            // Enforce the binding even for older schemas that mark its field editable.
+            // On insert this validator still accepts supplied values. GeoServices
+            // applyEdits drops those client values and stamps server-owned GlobalID
+            // and editor-tracking fields before validation (#6134).
+            if (isUpdate && (!field.Editable ||
+                field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase)))
             {
                 errors.Add($"Field '{field.Name}' is not editable.");
                 continue;
@@ -128,6 +418,15 @@ internal static class MetadataV2AttributeValidation
             {
                 errors.Add(error);
                 continue;
+            }
+
+            // GeoServices exposes Boolean fields as small integers. Accept its wire 0/1
+            // representation, but persist the declared Boolean type for other adapters.
+            if (mode == ValidationExtensions.AttributeValidationMode.GeoServices &&
+                field.Type == MetadataV2FieldType.Boolean && normalizedValue is not null &&
+                TryGetBooleanFromNumeric(normalizedValue, out var booleanValue))
+            {
+                normalizedValue = booleanValue;
             }
 
             builder[field.Name] = normalizedValue;
@@ -253,7 +552,7 @@ internal static class MetadataV2AttributeValidation
                 {
                     return null;
                 }
-                if (mode == ValidationExtensions.AttributeValidationMode.GeoServices && TryGetBooleanFromNumeric(value))
+                if (mode == ValidationExtensions.AttributeValidationMode.GeoServices && TryGetBooleanFromNumeric(value, out _))
                 {
                     return null;
                 }
@@ -563,16 +862,19 @@ internal static class MetadataV2AttributeValidation
         }
     }
 
-    private static bool TryGetBooleanFromNumeric(object value)
+    private static bool TryGetBooleanFromNumeric(object value, out bool booleanValue)
     {
         if (TryGetInt64(value, out var longValue))
         {
+            booleanValue = longValue == 1;
             return longValue is 0 or 1;
         }
         if (TryGetDouble(value, out var doubleValue))
         {
+            booleanValue = doubleValue == 1;
             return doubleValue is 0 or 1;
         }
+        booleanValue = false;
         return false;
     }
 

@@ -11,6 +11,20 @@ namespace Honua.Core.Tests.Queries.Filters;
 public sealed class InMemoryFilterEvaluatorTests
 {
     [UnitTest]
+    public void ExceedsMaxDepth_LeftDeepChainFarBeyondLimit_ReturnsTrue()
+    {
+        // The measurement stops descending once the streaming limit is passed, so its
+        // cost does not grow with the depth of the chain it is handed.
+        FilterExpression expression = new Literal(true, LiteralType.Boolean);
+        for (var i = 0; i < 5_000; i++)
+        {
+            expression = new BinaryExpression(expression, BinaryOperator.And, new Literal(true, LiteralType.Boolean));
+        }
+
+        InMemoryFilterEvaluator.ExceedsMaxDepth(expression).Should().BeTrue();
+    }
+
+    [UnitTest]
     public void TryValidateStreamingExpression_FunctionCall_ReturnsFalse()
     {
         var expression = new BinaryExpression(

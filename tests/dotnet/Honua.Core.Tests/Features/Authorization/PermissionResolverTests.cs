@@ -27,6 +27,7 @@ public sealed class PermissionResolverTests
     private static PermissionGrant Grant(string service, string layer, string operation)
         => new() { Service = service, Layer = layer, Operation = operation };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Authorize_WildcardGrant_AllowsEveryOperation()
     {
@@ -39,6 +40,7 @@ public sealed class PermissionResolverTests
             .IsAllowed.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Authorize_ServiceLevelGrant_ImpliesAllLayers()
     {
@@ -51,6 +53,7 @@ public sealed class PermissionResolverTests
             .IsAllowed.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Authorize_PerLayerGrant_DeniesOtherLayers()
     {
@@ -65,6 +68,7 @@ public sealed class PermissionResolverTests
         denied.HasNoMatchingGrant.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Authorize_PerOperationGrant_DeniesOtherOperations()
     {
@@ -77,6 +81,7 @@ public sealed class PermissionResolverTests
             .HasNoMatchingGrant.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Authorize_LegacyReadGrant_SatisfiesQuery()
     {
@@ -91,6 +96,7 @@ public sealed class PermissionResolverTests
             .IsAllowed.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Authorize_NullLayer_TreatedAsWildcardLayer()
     {
@@ -101,6 +107,7 @@ public sealed class PermissionResolverTests
             .IsAllowed.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Authorize_NoGrants_ReturnsNoMatch()
     {
@@ -110,6 +117,7 @@ public sealed class PermissionResolverTests
             .HasNoMatchingGrant.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AuthorizeAsync_AnonymousWithNoGrant_RequiresAuthentication()
     {
@@ -126,6 +134,7 @@ public sealed class PermissionResolverTests
         decision.Result.Should().Be(PermissionResult.RequiresAuthentication);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AuthorizeAsync_AuthenticatedWithNoGrant_ReturnsNoMatchForFallback()
     {
@@ -142,6 +151,7 @@ public sealed class PermissionResolverTests
         decision.HasNoMatchingGrant.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AuthorizeAsync_RoleWithGrant_Allows()
     {

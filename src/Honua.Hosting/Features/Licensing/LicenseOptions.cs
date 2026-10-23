@@ -1,11 +1,31 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Domain;
+
 namespace Honua.Infrastructure.Licensing;
 
 internal sealed class LicenseOptions
 {
     public const string SectionName = "Licensing";
+
+    /// <summary>Supported deployment mode. Disabled is legal in Production and requires restart.</summary>
+    public LicenseMode Mode { get; set; } = LicenseMode.Enabled;
+
+    internal static LicenseMode ParseMode(string? value)
+    {
+        if (value is null || string.Equals(value.Trim(), nameof(LicenseMode.Enabled), StringComparison.OrdinalIgnoreCase))
+        {
+            return LicenseMode.Enabled;
+        }
+
+        if (string.Equals(value.Trim(), nameof(LicenseMode.Disabled), StringComparison.OrdinalIgnoreCase))
+        {
+            return LicenseMode.Disabled;
+        }
+
+        throw new InvalidOperationException("Licensing:Mode must be Enabled or Disabled. Set an explicit supported mode and restart.");
+    }
 
     /// <summary>
     /// Deployment edition. Declare Pro or Enterprise even when the license source is absent.

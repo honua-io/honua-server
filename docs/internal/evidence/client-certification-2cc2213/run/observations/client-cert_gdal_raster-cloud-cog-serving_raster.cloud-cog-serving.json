@@ -1,0 +1,85 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/raster-cloud-cog-serving/raster.cloud-cog-serving",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal",
+  "client_version": "3.13.3",
+  "client_version_detail": "GDAL 3.13.3 \"Iowa City\", released 2026/08/13",
+  "surface": "raster-cloud-cog-serving",
+  "operation": "raster.cloud-cog-serving",
+  "protocol_version": "GeoServices ImageServer tile + COG 1.0",
+  "protocol_profile": "registered cloud COG, WebMercatorQuad tiles",
+  "started_at": "2026-09-16T21:44:32.427953Z",
+  "finished_at": "2026-09-16T21:46:38.437292Z",
+  "duration_ms": 126146,
+  "status": "fail",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "metadata",
+    "range-efficiency",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "failed checks positive:read a WebMercatorQuad tile of the registered cloud COG, negative:a tile outside the registered COG is refused or empty, auth:the protected mirror's tiles require a credential, metadata:format=cog tiles carry COG layout metadata, range-efficiency:COG tiles honour HTTP range reads, crs-axis:tiles are georeferenced in EPSG:3857, media-schema:png/tiff/cog formats carry their media types",
+  "primary_request_url": "http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "read a WebMercatorQuad tile of the registered cloud COG",
+      "outcome": "fail",
+      "detail": "CheckFailed: http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png was not served: `/vsicurl?use_head=no&list_dir=no&url=http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621%3Fformat%3Dpng' not recognized as being in a supported file format.; the registered S3 COG was never read (requests ['http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.aux', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.xml'])",
+      "request_url": null,
+      "duration_ms": 126145
+    },
+    {
+      "facet": "negative",
+      "name": "a tile outside the registered COG is refused or empty",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "auth",
+      "name": "the protected mirror's tiles require a credential",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "metadata",
+      "name": "format=cog tiles carry COG layout metadata",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "range-efficiency",
+      "name": "COG tiles honour HTTP range reads",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "crs-axis",
+      "name": "tiles are georeferenced in EPSG:3857",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "media-schema",
+      "name": "png/tiff/cog formats carry their media types",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    }
+  ]
+}

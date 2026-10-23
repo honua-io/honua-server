@@ -184,10 +184,9 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
 
         return spatial.Operator switch
         {
-            // ST_Distance_Sphere is approximate (WGS84 spheroid) and point-only by definition.
-            // Documented as a known limitation in the operator docs.
-            SpatialOperator.DWithin => $"ST_Distance_Sphere({left}, {right}) <= {distance}",
-            SpatialOperator.Beyond => $"ST_Distance_Sphere({left}, {right}) > {distance}",
+            // ST_Distance_Sphere is a sphere on an explicit mean radius, not a WGS 84 spheroid.
+            SpatialOperator.DWithin => $"{MySqlSpatialSql.DistanceSphere(left, right)} <= {distance}",
+            SpatialOperator.Beyond => $"{MySqlSpatialSql.DistanceSphere(left, right)} > {distance}",
             _ => throw MySqlUnsupportedFeature.Create(
                 $"Spatial distance operator '{spatial.Operator}' is not supported by the MySQL/MariaDB provider.")
         };

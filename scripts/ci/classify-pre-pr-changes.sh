@@ -5,7 +5,16 @@
 
 set -euo pipefail
 
+# Default to the repository that contains this script. HONUA_MANIFEST_ROOT lets
+# local selectors and fixtures classify another checkout with the same script.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -n "${HONUA_MANIFEST_ROOT:-}" ]]; then
+  if [[ ! -d "${HONUA_MANIFEST_ROOT}" ]]; then
+    echo "UNKNOWN"
+    exit 0
+  fi
+  REPO_ROOT="$(cd "${HONUA_MANIFEST_ROOT}" && pwd)"
+fi
 cd "${REPO_ROOT}"
 
 base_ref="${1:-${BASE_REF:-origin/trunk}}"
@@ -23,9 +32,9 @@ git rev-parse --verify --quiet "${head_ref}" >/dev/null 2>&1 || unknown
 
 # Keep each command separate so any git failure produces UNKNOWN instead of an
 # accidentally empty list that could select the no-build path.
-git diff --name-only "${base_ref}...${head_ref}" >"${scratch}/committed" 2>/dev/null || unknown
-git diff --name-only >"${scratch}/unstaged" 2>/dev/null || unknown
-git diff --cached --name-only >"${scratch}/staged" 2>/dev/null || unknown
+git diff --no-renames --name-only "${base_ref}...${head_ref}" >"${scratch}/committed" 2>/dev/null || unknown
+git diff --no-renames --name-only >"${scratch}/unstaged" 2>/dev/null || unknown
+git diff --cached --no-renames --name-only >"${scratch}/staged" 2>/dev/null || unknown
 git ls-files --others --exclude-standard >"${scratch}/untracked" 2>/dev/null || unknown
 
 LC_ALL=C sort -u \
@@ -39,6 +48,8 @@ LC_ALL=C sort -u \
 classification="CI_ONLY"
 while IFS= read -r path; do
   [[ -z "${path}" ]] && continue
+  # Quoted Git paths cannot safely use this line-oriented selector manifest.
+  [[ "${path}" != \"* ]] || unknown
   case "${path}" in
     README.md|docs/*|.github/ci-shards.json|scripts/ci/*)
       ;;

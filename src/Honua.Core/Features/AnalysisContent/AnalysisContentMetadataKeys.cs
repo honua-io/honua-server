@@ -48,4 +48,10 @@ public static class AnalysisContentMetadataKeys
     /// Result package identifier that a rerun derives from.
     /// </summary>
     public const string RerunOfResultPackageId = "analysis.content.rerun_of_result_package_id";
+
+    /// <summary>
+    /// Deterministic identity of an idempotent parameter-override rerun. Stored on the
+    /// package metadata so a replay can reuse the version it already minted.
+    /// </summary>
+    public const string RerunIdentity = "analysis.content.rerun_identity";
 }

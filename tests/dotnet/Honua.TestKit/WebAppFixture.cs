@@ -55,6 +55,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _currentSchema;
     private string _environmentName = "Test";
     private bool _useSharedServer;
+    private bool _useKestrel;
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
@@ -128,7 +129,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public IServiceProvider Services => ActiveFactory.Services;
 
-    private bool HasCustomConfiguration => _serviceConfigurations.Count > 0
+    private bool HasCustomConfiguration => _useKestrel || _serviceConfigurations.Count > 0
         || _configureWebHost != null
         || !string.Equals(_environmentName, "Test", StringComparison.OrdinalIgnoreCase);
 
@@ -179,6 +180,14 @@ public sealed class WebAppFixture : IAsyncLifetime
     {
         var postgres = _postgres ?? throw new InvalidOperationException("Postgres fixture is not initialized.");
 
+        // Create and seed the fixture schema before the host is built so the host can
+        // configure it as an operational schema (#5391). Seeding touches only the database.
+        if (string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+            await SeedSchemaAsync(_currentSchema);
+        }
+
         // Not disposed here by design: this factory is stored in the instance field
         // _factory and disposed once in DisposeAsync (see below), which owns its lifetime
         // for the whole fixture. Wrapping this in `using` would dispose it before the
@@ -196,7 +205,10 @@ public sealed class WebAppFixture : IAsyncLifetime
                 {
                     configBuilder.AddInMemoryCollection(
                         Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
-                            .BuildAppConfigurationDictionary(postgres.ConnectionString));
+                            .BuildAppConfigurationDictionary(
+                                postgres.ConnectionString,
+                                Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
+                                    .BuildFixtureOperationalSchemaSettings(_currentSchema)));
                 });
 
                 builder.ConfigureTestServices(services =>
@@ -218,14 +230,14 @@ public sealed class WebAppFixture : IAsyncLifetime
             },
             _environmentName);
 
+        if (_useKestrel)
+        {
+            _factory.UseKestrel(0);
+        }
+
         Client = CreateClient();
         _serviceScope = _factory.Services.CreateScope();
 
-        if (string.IsNullOrWhiteSpace(_currentSchema))
-        {
-            _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
-            await SeedSchemaAsync(_currentSchema);
-        }
         ApplyCurrentSchemaHeader(Client);
 
         ApplySeedSpecificMetadataV2Graph();
@@ -315,6 +327,13 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public void UpdateV2ResourceSchemaField(int layerIndex, MetadataV2Field field)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSchemaField(this, layerIndex, field);
+
+    /// <summary>
+    /// Sets (or clears with <c>null</c>) editor-tracking and GlobalID bindings on the
+    /// resource published at <paramref name="layerIndex"/>.
+    /// </summary>
+    public void UpdateV2ResourceEditing(int layerIndex, MetadataV2ResourceEditing? editing)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceEditing(this, layerIndex, editing);
 
     /// <summary>
     /// Sets (or clears with <c>null</c>) the Esri subtype set on the resource published
@@ -502,6 +521,20 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Uses a real loopback Kestrel server for HTTP transport tests. Call before initialization.
+    /// </summary>
+    public WebAppFixture UseKestrel()
+    {
+        if (_factory is not null || _useSharedServer)
+        {
+            throw new InvalidOperationException("Configure Kestrel before initializing the fixture.");
+        }
+
+        _useKestrel = true;
+        return this;
+    }
+
+    /// <summary>
     /// Configures the environment that both early <c>Program.cs</c> startup and the final
     /// web host observe. Must be called before <see cref="InitializeAsync"/>.
     /// </summary>
@@ -554,6 +587,54 @@ public sealed class WebAppFixture : IAsyncLifetime
             services.AddSingleton(instance);
         });
         return this;
+    }
+
+    /// <summary>
+    /// Wraps the registered <typeparamref name="TService"/> in a decorator instead of replacing it,
+    /// so a test can observe or perturb one method while every other call still reaches the real
+    /// production implementation (for example a real PostGIS feature writer). The original
+    /// registration's lifetime is preserved.
+    /// </summary>
+    /// <param name="decorate">Builds the decorator from the resolved inner service.</param>
+    public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate)
+        where TService : class
+    {
+        ArgumentNullException.ThrowIfNull(decorate);
+        _serviceConfigurations.Add(services =>
+        {
+            var original = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(TService))
+                ?? throw new InvalidOperationException(
+                    $"No registration for {typeof(TService).Name} to decorate.");
+            services.Remove(original);
+            services.Add(ServiceDescriptor.Describe(
+                typeof(TService),
+                provider => decorate((TService)ResolveOriginal(provider, original)),
+                original.Lifetime));
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Materializes the service a <see cref="DecorateService{TService}"/> call displaced, covering
+    /// all three descriptor shapes (instance, factory, implementation type).
+    /// </summary>
+    private static object ResolveOriginal(IServiceProvider provider, ServiceDescriptor original)
+    {
+        if (original.ImplementationInstance is { } instance)
+        {
+            return instance;
+        }
+
+        if (original.ImplementationFactory is { } factory)
+        {
+            return factory(provider);
+        }
+
+        return ActivatorUtilities.CreateInstance(
+            provider,
+            original.ImplementationType
+                ?? throw new InvalidOperationException(
+                    $"Cannot decorate {original.ServiceType.Name}: the registration has no implementation."));
     }
 
     /// <summary>
@@ -631,14 +712,18 @@ public sealed class WebAppFixture : IAsyncLifetime
     private Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
-    private Task SeedSchemaAsync(string schemaName)
+    private async Task SeedSchemaAsync(string schemaName)
     {
         if (!string.IsNullOrWhiteSpace(_seedPath))
         {
-            return Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile);
+            await Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile).ConfigureAwait(false);
+        }
+        else
+        {
+            await ServerTestData.SeedAsync(Postgres, schemaName).ConfigureAwait(false);
         }
 
-        return ServerTestData.SeedAsync(Postgres, schemaName);
+        await ServerTestData.EnsureFixtureAttachmentsAsync(Postgres, schemaName).ConfigureAwait(false);
     }
 
     private static string ResolveSeedPath(string seedPath)

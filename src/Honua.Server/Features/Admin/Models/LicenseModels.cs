@@ -10,6 +10,9 @@ namespace Honua.Server.Features.Admin.Models;
 /// </summary>
 public sealed class LicenseStatusResponse
 {
+    /// <summary>Deployment licensing mode: enabled or disabled.</summary>
+    public string Mode { get; init; } = "enabled";
+
     /// <summary>
     /// The server edition (e.g., Community, Professional, Enterprise).
     /// </summary>

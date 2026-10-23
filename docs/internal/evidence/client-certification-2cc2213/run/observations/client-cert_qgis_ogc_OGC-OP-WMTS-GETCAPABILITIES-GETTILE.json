@@ -1,0 +1,67 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "ogc",
+  "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
+  "protocol_version": "1.0.0",
+  "protocol_profile": "WMTS 1.0.0 RESTful+KVP",
+  "started_at": "2026-09-16T21:48:08.932624Z",
+  "finished_at": "2026-09-16T21:48:09.888045Z",
+  "duration_ms": 955,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 5 checks passed across 5 governed facets",
+  "primary_request_url": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "GetCapabilities and GetTile render the fixture",
+      "outcome": "pass",
+      "detail": "painted 50 px in 15 colours from 4 tile requests",
+      "request_url": null,
+      "duration_ms": 307
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown layer identifier is refused",
+      "outcome": "pass",
+      "detail": "invalid: 'Tile layer or tile matrix set not found'",
+      "request_url": null,
+      "duration_ms": 4
+    },
+    {
+      "facet": "auth",
+      "name": "the protected mirror's WMTS requires a valid credential",
+      "outcome": "pass",
+      "detail": "(painted, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (50, [200]), 'oidc-bearer': (50, [200])}",
+      "request_url": null,
+      "duration_ms": 382
+    },
+    {
+      "facet": "crs-axis",
+      "name": "WebMercatorQuad tiles georeference the fixture where EPSG:3857 places it",
+      "outcome": "pass",
+      "detail": "crs EPSG:3857; extent -13629958,4545577 : -13625506,4549802; painted at fixture 50, far away 0",
+      "request_url": null,
+      "duration_ms": 30
+    },
+    {
+      "facet": "media-schema",
+      "name": "capabilities XML and PNG tiles carry their media types",
+      "outcome": "pass",
+      "detail": "capabilities application/xml; tiles ['image/png']",
+      "request_url": null,
+      "duration_ms": 231
+    }
+  ]
+}

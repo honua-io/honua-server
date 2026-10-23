@@ -6,12 +6,15 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -33,6 +36,12 @@ internal sealed partial class PortalTokenIssuer(
     internal const string BindingClaimType = "portal_token_binding";
     private const string TokenKeyPrefix = "portal-auth:token:";
 
+    // Redis keeps key lifetimes in whole seconds and rounds the remainder down, so a distributed
+    // entry that expires exactly at ExpiresAt can vanish up to a second before the expiry the
+    // client was given. The entry outlives ExpiresAt by this margin; the ExpiresAt check in
+    // GetAsync stays the authority for when the token stops validating (honua-server#4777).
+    private static readonly TimeSpan DistributedEntryExpiryMargin = TimeSpan.FromSeconds(2);
+
     private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly ILogger<PortalTokenIssuer> _logger = logger;
     private readonly IDistributedCache? _distributedCache = distributedCache;
@@ -44,6 +53,15 @@ internal sealed partial class PortalTokenIssuer(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        var source = request.Source ?? PortalCredentialSource.None;
+
+        // A derived credential may never outlive the credential it was derived from, so the
+        // requested lifetime (already clamped to the configured maximum by the caller) is
+        // clamped again to the source's own expiry (SEC-9).
+        var expiresAt = source.ExpiresAt is { } sourceExpiresAt && sourceExpiresAt < request.ExpiresAt
+            ? sourceExpiresAt
+            : request.ExpiresAt;
 
         var token = CreateTokenValue();
         var record = new PortalTokenRecord
@@ -57,17 +75,25 @@ internal sealed partial class PortalTokenIssuer(
             TenantRequiresClaimsMappingEntitlement = request.TenantRequiresClaimsMappingEntitlement,
             ClientType = request.ClientType,
             BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
-            ExpiresAt = request.ExpiresAt
+            AcceptMissingReferer = request.ClientType == PortalTokenClientType.Referer && request.AcceptMissingReferer,
+            ExpiresAt = expiresAt,
+            Source = new PortalTokenSourceRecord
+            {
+                Kind = source.Kind,
+                Reference = source.Reference,
+                Version = source.Version,
+                ExpiresAt = source.ExpiresAt,
+            }
         };
 
         await SetAsync(
             TokenKeyPrefix + token,
             record,
-            request.ExpiresAt,
+            expiresAt,
             PortalTokenJsonContext.Default.PortalTokenRecord,
             cancellationToken).ConfigureAwait(false);
 
-        return new PortalTokenIssuance(token, request.ExpiresAt);
+        return new PortalTokenIssuance(token, expiresAt);
     }
 
     /// <inheritdoc />
@@ -76,42 +102,82 @@ internal sealed partial class PortalTokenIssuer(
         PortalTokenBinding binding,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(binding);
-
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return null;
-        }
-
-        var record = await GetAsync(
-            TokenKeyPrefix,
-            token,
-            PortalTokenJsonContext.Default.PortalTokenRecord,
-            cancellationToken).ConfigureAwait(false);
-
+        var record = await RestoreBoundRecordAsync(token, binding, cancellationToken).ConfigureAwait(false);
         if (record is null)
         {
             return null;
         }
 
-        if (!BindingMatches(record, binding))
-        {
-            PortalTokenLog.BindingMismatch(_logger, record.ClientType.ToString(), LogValueRedactor.Hash(token));
-            return null;
-        }
-
-        if (!ClaimsMappingTenantAllowed(record))
-        {
-            // The tenant itself can no longer be validated, so the token is refused rather than
-            // degraded. Dropping just the tenant would re-evaluate the caller against whatever
-            // scope an absent tenant resolves to, which is not reliably narrower than the one
-            // it was issued for (honua-server#2997 review).
-            PortalTokenLog.ClaimsMappingTenantNoLongerEntitled(_logger, LogValueRedactor.Hash(token));
-            return null;
-        }
-
         var principal = ProjectPrincipal(record, ResolveRoles(record));
         return new PortalTokenValidation(principal, record.ExpiresAt);
+    }
+
+    /// <inheritdoc />
+    public async Task<PortalTokenExchange?> ExchangeAsync(
+        PortalTokenExchangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if ((request.ClientType is null && request.BindingValue is not null) ||
+            (request.ClientType is not null && string.IsNullOrWhiteSpace(request.BindingValue)))
+        {
+            return null;
+        }
+
+        // The presented token authenticates the exchange, so it passes exactly the checks a
+        // request presenting it anywhere else passes, binding included (#5491 review).
+        var presented = await RestoreBoundRecordAsync(
+            request.Token,
+            request.PresentedBinding,
+            cancellationToken).ConfigureAwait(false);
+        if (presented is null)
+        {
+            return null;
+        }
+
+        // ArcGIS federated-server exchanges may send only token and serverUrl.
+        // In that case the new server token keeps the validated portal token's
+        // binding; never infer a new binding from an unauthenticated request.
+        var clientType = request.ClientType ?? presented.ClientType;
+        var bindingValue = request.ClientType is null
+            ? presented.BindingValue
+            : request.BindingValue!;
+
+        // Derive from the stored record, not from a reduced view of it: the persisted roles,
+        // their claims-mapping provenance and fallback, the tenant's provenance and the backing
+        // credential all carry over, so the new token is revalidated on every restore exactly as
+        // the presented one is for backing-credential and entitlement changes (#5491 review).
+        var expiresAt = request.ExpiresAt < presented.ExpiresAt ? request.ExpiresAt : presented.ExpiresAt;
+        var token = CreateTokenValue();
+        var record = new PortalTokenRecord
+        {
+            PrincipalId = presented.PrincipalId,
+            DisplayName = presented.DisplayName,
+            TenantId = presented.TenantId,
+            Roles = presented.Roles,
+            RolesRequireClaimsMappingEntitlement = presented.RolesRequireClaimsMappingEntitlement,
+            RolesWithoutClaimsMapping = presented.RolesWithoutClaimsMapping,
+            TenantRequiresClaimsMappingEntitlement = presented.TenantRequiresClaimsMappingEntitlement,
+            ClientType = clientType,
+            BindingValue = NormalizeBindingValue(clientType, bindingValue),
+            AcceptMissingReferer = clientType == PortalTokenClientType.Referer && presented.AcceptMissingReferer,
+            ExpiresAt = expiresAt,
+            Source = presented.Source,
+        };
+
+        await SetAsync(
+            TokenKeyPrefix + token,
+            record,
+            expiresAt,
+            PortalTokenJsonContext.Default.PortalTokenRecord,
+            cancellationToken).ConfigureAwait(false);
+
+        return new PortalTokenExchange(
+            new PortalTokenIssuance(token, expiresAt),
+            presented.PrincipalId,
+            presented.TenantId,
+            clientType);
     }
 
     /// <inheritdoc />
@@ -146,6 +212,11 @@ internal sealed partial class PortalTokenIssuer(
             return null;
         }
 
+        if (!await SourceCredentialStillValidAsync(record, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
         return new PortalTokenIntrospection(
             record.PrincipalId,
             ResolveRoles(record),
@@ -165,7 +236,76 @@ internal sealed partial class PortalTokenIssuer(
         // Removing the cache entry is the single authoritative revocation point: the
         // request-path validator and introspection both resolve to this entry, so a
         // revoked token is rejected on the very next request across every replica.
-        await RemoveAsync(TokenKeyPrefix + tokenReference, cancellationToken).ConfigureAwait(false);
+        // A shared-store delete that cannot be confirmed must fail the revocation;
+        // swallowing it reports success while every replica keeps honouring the token
+        // (honua-server#6164).
+        await RemoveAsync(TokenKeyPrefix + tokenReference, cancellationToken, requireSharedRemoval: true)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads the stored record for <paramref name="token"/> when it may be honoured on a request
+    /// observed with <paramref name="binding"/>: active, bound to that request, its tenant still
+    /// entitled and its backing credential still live. Otherwise <see langword="null"/>.
+    /// </summary>
+    private async Task<PortalTokenRecord?> RestoreBoundRecordAsync(
+        string token,
+        PortalTokenBinding binding,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return null;
+        }
+
+        var record = await GetAsync(
+            TokenKeyPrefix,
+            token,
+            PortalTokenJsonContext.Default.PortalTokenRecord,
+            cancellationToken).ConfigureAwait(false);
+
+        if (record is null)
+        {
+            return null;
+        }
+
+        if (!BindingMatches(record, binding))
+        {
+            var requestBindingValue = record.ClientType switch
+            {
+                PortalTokenClientType.Referer => binding.Referer,
+                PortalTokenClientType.Ip => binding.ClientIp,
+                _ => null,
+            };
+            PortalTokenLog.BindingMismatch(
+                _logger,
+                record.ClientType.ToString(),
+                LogValueRedactor.Hash(token),
+                !string.IsNullOrWhiteSpace(requestBindingValue),
+                LogValueRedactor.Hash(record.BindingValue),
+                LogValueRedactor.Hash(NormalizeBindingValue(record.ClientType, requestBindingValue ?? string.Empty)));
+            return null;
+        }
+
+        if (!ClaimsMappingTenantAllowed(record))
+        {
+            // The tenant itself can no longer be validated, so the token is refused rather than
+            // degraded. Dropping just the tenant would re-evaluate the caller against whatever
+            // scope an absent tenant resolves to, which is not reliably narrower than the one
+            // it was issued for (honua-server#2997 review).
+            PortalTokenLog.ClaimsMappingTenantNoLongerEntitled(_logger, LogValueRedactor.Hash(token));
+            return null;
+        }
+
+        if (!await SourceCredentialStillValidAsync(record, cancellationToken).ConfigureAwait(false))
+        {
+            PortalTokenLog.SourceCredentialNoLongerValid(_logger, LogValueRedactor.Hash(token));
+            return null;
+        }
+
+        return record;
     }
 
     private static string CreateTokenValue()
@@ -216,10 +356,15 @@ internal sealed partial class PortalTokenIssuer(
     {
         return record.ClientType switch
         {
-            PortalTokenClientType.Referer => string.Equals(
-                record.BindingValue,
-                NormalizeRefererValue(binding.Referer ?? string.Empty),
-                StringComparison.OrdinalIgnoreCase),
+            PortalTokenClientType.Bearer => true,
+            // generateToken desktop clients omit Referer after minting client=referer
+            // (honua-server#5558). That exception is stored on the record. Browser
+            // OAuth tokens use the same client type and still require the header.
+            PortalTokenClientType.Referer => (record.AcceptMissingReferer && string.IsNullOrWhiteSpace(binding.Referer))
+                || string.Equals(
+                    record.BindingValue,
+                    NormalizeRefererValue(binding.Referer ?? string.Empty),
+                    StringComparison.OrdinalIgnoreCase),
             PortalTokenClientType.Ip => string.Equals(
                 record.BindingValue,
                 (binding.ClientIp ?? string.Empty).Trim(),
@@ -257,6 +402,39 @@ internal sealed partial class PortalTokenIssuer(
         return mappingEntitled
             ? record.Roles
             : record.RolesWithoutClaimsMapping ?? [];
+    }
+
+    /// <summary>
+    /// Whether the credential this token was minted from is still the live one (SEC-9).
+    /// </summary>
+    /// <remarks>
+    /// Fails closed in both directions. A record with no source predates this binding: its
+    /// provenance is UNKNOWN, so it is refused exactly as unknown claims-mapping provenance is,
+    /// and the client re-authenticates. A source that names a credential but cannot be re-checked
+    /// — no validator is reachable, the store is unavailable — is refused too, because honouring
+    /// it would be honouring the issuance-time snapshot the binding exists to replace.
+    /// </remarks>
+    private async ValueTask<bool> SourceCredentialStillValidAsync(
+        PortalTokenRecord record,
+        CancellationToken cancellationToken)
+    {
+        if (record.Source is not { } source)
+        {
+            return false;
+        }
+
+        if (source.Kind == PortalCredentialSourceKind.None)
+        {
+            return true;
+        }
+
+        var validator = _serviceProvider?.GetService<IPortalTokenSourceValidator>();
+        if (validator is null)
+        {
+            return false;
+        }
+
+        return await validator.IsStillValidAsync(source, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -313,6 +491,12 @@ internal sealed partial class PortalTokenIssuer(
             AuthSchemeName,
             ClaimTypes.Name,
             ClaimTypes.Role);
+
+        // auth_type and the client binding are projected from the server-side token
+        // record, never from the presented token value, so mark them framework-owned
+        // and they survive shared claim sanitization.
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+
         return new ClaimsPrincipal(identity);
     }
 
@@ -337,7 +521,7 @@ internal sealed partial class PortalTokenIssuer(
                 payload,
                 new DistributedCacheEntryOptions
                 {
-                    AbsoluteExpiration = expiresAt
+                    AbsoluteExpiration = expiresAt + DistributedEntryExpiryMargin
                 },
                 cancellationToken).ConfigureAwait(false);
             _memoryCache.Set(key, payload, expiresAt);
@@ -410,7 +594,7 @@ internal sealed partial class PortalTokenIssuer(
         return value;
     }
 
-    private async Task RemoveAsync(string key, CancellationToken cancellationToken)
+    private async Task RemoveAsync(string key, CancellationToken cancellationToken, bool requireSharedRemoval = false)
     {
         _memoryCache.Remove(key);
 
@@ -425,9 +609,33 @@ internal sealed partial class PortalTokenIssuer(
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional: removal is best-effort; the entry's own TTL is the safety net,
-            // and the failure is already logged for diagnosis.
             PortalTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
+            if (!requireSharedRemoval)
+            {
+                // Expiry cleanup is best-effort. Revocation is not: the caller must
+                // learn that the authoritative copy may still be live (honua-server#6164).
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // A direct shared-store miss confirms idempotent revocation. Never
+                // use the memory fallback or interpret a failed read as absence.
+                if (await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false) is null)
+                {
+                    return;
+                }
+            }
+            catch (Exception readException) when (readException is not OutOfMemoryException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                PortalTokenLog.DistributedCacheReadFailed(
+                    _logger, LogValueRedactor.Hash(key), readException);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new ServiceUnavailableException("The shared portal token could not be revoked.", ex);
         }
     }
 }
@@ -474,7 +682,44 @@ internal sealed class PortalTokenRecord
 
     public required string BindingValue { get; init; }
 
+    /// <summary>
+    /// When true, a referer-bound token is accepted if the request omits
+    /// <c>Referer</c>. Set only for <c>generateToken</c>. Absent on older records,
+    /// which fails closed and still requires the header.
+    /// </summary>
+    public bool AcceptMissingReferer { get; init; }
+
     public required DateTimeOffset ExpiresAt { get; init; }
+
+    /// <summary>
+    /// The credential this token was minted from (SEC-9), re-checked on every restore.
+    /// </summary>
+    /// <remarks>
+    /// NULLABLE on purpose, for the same reason as the claims-mapping provenance flags above:
+    /// a record persisted before this field existed deserializes with the member absent, and
+    /// absent means UNKNOWN provenance, not "no source". Unknown fails closed — such a token
+    /// is refused and its holder re-authenticates — because the alternative is honouring
+    /// exactly the unbounded issuance-time snapshot this field exists to replace. Every record
+    /// written by this build carries a source, including
+    /// <see cref="PortalCredentialSourceKind.None"/> for flows with no separately revocable
+    /// backing credential.
+    /// </remarks>
+    public PortalTokenSourceRecord? Source { get; init; }
+}
+
+/// <summary>
+/// Persisted reference to the credential a token was minted from. Identifiers and
+/// non-reversible version markers only — never credential material.
+/// </summary>
+internal sealed class PortalTokenSourceRecord
+{
+    public required PortalCredentialSourceKind Kind { get; init; }
+
+    public string? Reference { get; init; }
+
+    public string? Version { get; init; }
+
+    public DateTimeOffset? ExpiresAt { get; init; }
 }
 
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

@@ -100,6 +100,9 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 clauses.Add($"{MySqlIdentifier.Quote(clause.Field)} {direction}");
             }
 
+            // Caller ORDER BY is kept as supplied. Appending the primary key would change
+            // tie-breaking the caller did not request. Distinct selects do not call this
+            // method; unpaged and paged caller sorts share this path.
             sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
             return;
         }
@@ -116,6 +119,49 @@ internal sealed partial class MySqlFeatureQueryBuilder
             sb.Append(CultureInfo.InvariantCulture,
                 $" ORDER BY {mapping.QuotedPrimaryKeyColumn} ASC");
         }
+    }
+
+    /// <summary>
+    /// Orders a DISTINCT projection by columns that appear in the select list. MySQL
+    /// rejects ORDER BY expressions outside that list, and the primary key is omitted
+    /// so it cannot uniquify every distinct tuple.
+    /// </summary>
+    private static void AppendDistinctOrderBy(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> projectedAttributes)
+    {
+        var clauses = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (query.OrderBy is { IsDefaultOrEmpty: false } orderBy)
+        {
+            foreach (var clause in orderBy)
+            {
+                var match = projectedAttributes.FirstOrDefault(column =>
+                    string.Equals(column, clause.Field, StringComparison.OrdinalIgnoreCase));
+                if (match is null || !seen.Add(match))
+                {
+                    continue;
+                }
+
+                MySqlIdentifier.ValidateAttributeName(match);
+                var direction = clause.Ascending ? "ASC" : "DESC";
+                clauses.Add($"{MySqlIdentifier.Quote(match)} {direction}");
+            }
+        }
+
+        foreach (var column in projectedAttributes)
+        {
+            if (!seen.Add(column))
+            {
+                continue;
+            }
+
+            MySqlIdentifier.ValidateAttributeName(column);
+            clauses.Add($"{MySqlIdentifier.Quote(column)} ASC");
+        }
+
+        sb.Append(" ORDER BY ");
+        sb.Append(clauses.Count == 0
+            ? "1"
+            : string.Join(", ", clauses));
     }
 
     private static void AppendPagination(
@@ -180,7 +226,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         // Minimal safe parser for legacy WHERE strings — restricts to single-field comparisons
         // and IS [NOT] NULL chained by AND. CQL2/OGC filters should reach here as SqlFilter
         // (via ISqlFilterTranslator), not Where.
-        var expressions = SplitOnAnd(whereClause);
+        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
         if (expressions.Count == 0)
         {
             throw new ArgumentException("WHERE clause format not supported.");
@@ -286,61 +332,5 @@ internal sealed partial class MySqlFeatureQueryBuilder
         return token;
     }
 
-    private static List<string> SplitOnAnd(string whereClause)
-    {
-        var parts = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
 
-        for (var i = 0; i < whereClause.Length; i++)
-        {
-            var c = whereClause[i];
-            if (!inQuotes && c == '\'')
-            {
-                inQuotes = true;
-                current.Append(c);
-            }
-            else if (inQuotes && c == '\'')
-            {
-                if (i + 1 < whereClause.Length && whereClause[i + 1] == '\'')
-                {
-                    current.Append("''");
-                    i++;
-                }
-                else
-                {
-                    inQuotes = false;
-                    current.Append(c);
-                }
-            }
-            else if (!inQuotes && i + 3 <= whereClause.Length &&
-                     whereClause.AsSpan(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
-            {
-                parts.Add(current.ToString());
-                current.Clear();
-                i += 2;
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-
-        if (current.Length > 0)
-        {
-            parts.Add(current.ToString());
-        }
-
-        return parts;
-    }
-
-    // Identifier-boundary helper used by SplitOnAnd. Mirrors the regex character class
-    // [a-zA-Z0-9_] used by ComparisonRegex / NullCheckRegex so column names that contain
-    // or begin with "and" (e.g. start_and_end, and_flag) are not falsely split as
-    // logical AND boundaries. Underscore is a legal identifier character in MySQL/MariaDB
-    // and must not separate tokens.
-    private static bool IsIdentifierChar(char c)
-        => char.IsLetterOrDigit(c) || c == '_';
 }

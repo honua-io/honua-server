@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -23,6 +25,36 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobExecutionServiceTests
 {
+    [UnitTest]
+    public async Task ProcessJob_OrdinaryCompletionAfterEarlierCommittedEffect_HonoursCancellationAndReturnsOnlyReceipt()
+    {
+        var durable = CreateProvisioningJob();
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var context = call.Arg<IJobExecutionContext>();
+                await context.RecordCommittedEffectAsync("earlier-committed-receipt");
+                durable = durable with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                Assert.False(await context.TryPublishArtifactAsync("ordinary-later-output"));
+                return JobExecutionResult.Succeeded();
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+
+        Assert.Equal(ExecutionJobStatus.Cancelled, durable.Status);
+        Assert.Equal("Cancelled after committed effects", durable.CurrentPhase);
+        Assert.Equal(new[] { "earlier-committed-receipt" }, durable.ArtifactReferences);
+        Assert.Contains(durable.Warnings, warning => warning.Contains("committed", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -102,6 +134,52 @@ public sealed class JobExecutionServiceTests
             Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.ExecutorModeEnvironmentVariable, previousMode);
             root.Delete(recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(ExecutionJobKind.TileExport, true, false)]
+    [InlineData(ExecutionJobKind.TileExport, true, true)]
+    [InlineData(ExecutionJobKind.TileExport, false, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, true, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, true, true)]
+    [InlineData(ExecutionJobKind.Geoprocessing, false, false)]
+    [Trait("Tier", "Fast")]
+    public async Task ProcessJob_ExecutorReceivesSubmitterScope_AndRestoresAmbientScope(
+        ExecutionJobKind kind, bool captured, bool throwDuringExecution)
+    {
+        var submitter = captured
+            ? new JobSecurityContext("user-1", "tenant-1", [new JobSecurityClaim("role", "reader")])
+            : null;
+        var job = CreateProvisioningJob() with
+        {
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = submitter }
+        };
+        job = job with { Spec = job.Spec with { Kind = kind } };
+        var store = Substitute.For<IExecutionJobStore>().WithTrySet();
+        store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
+        JobSecurityScopeState? observed = null;
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(kind);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Yield();
+                observed = JobSecurityScope.Current;
+                if (throwDuringExecution)
+                    throw new InvalidOperationException("Test execution failed.");
+                return JobExecutionResult.Succeeded();
+            });
+        var outer = new JobSecurityContext("outer", null, []);
+        using var outerScope = JobSecurityScope.Begin(outer);
+        using var service = new JobExecutionService(
+            Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
+            [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, job.OperationId, job.ClaimedBy!);
+
+        Assert.NotNull(observed);
+        Assert.Same(submitter, observed.Submitter);
+        Assert.Same(outer, JobSecurityScope.Current!.Submitter);
     }
 
     private static ExecutionJobRecord CreateProvisioningJob(
@@ -565,6 +643,110 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// A stale worker that loses its claim must cancel the job token so the
+    /// executor stops, not only stop the heartbeat pump (#6154).
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatPump_CancelsJobCts_WhenOwnershipChanges()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var running = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var reclaimed = running with
+        {
+            ClaimedBy = "worker-new",
+            ClaimedAt = now
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(reclaimed);
+
+        using var jobCts = new CancellationTokenSource();
+        using var context = new JobExecutionContext(
+            running.OperationId, "worker-stale", jobStore, null,
+            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
+            jobCts, NullLogger.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await context.RunHeartbeatPumpAsync(cts.Token);
+
+        // The pump queues the cancel so it cannot resume the executor on the pump
+        // stack (that deadlocks the terminal-write skip). The token is cancelled
+        // before this assertion settles.
+        var cancelDeadline = DateTime.UtcNow.AddSeconds(2);
+        while (!jobCts.IsCancellationRequested && DateTime.UtcNow < cancelDeadline)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(jobCts.IsCancellationRequested);
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Losing the claim during execution must not be recorded as operator cancellation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_SkipsTerminalWrite_WhenOwnershipChangesDuringExecution()
+    {
+        var provisioning = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            HeartbeatPolicy = new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromMilliseconds(10),
+                Timeout = TimeSpan.FromSeconds(30)
+            }
+        };
+        var reclaimed = provisioning with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-new",
+            AttemptCount = provisioning.AttemptCount + 1
+        };
+
+        var reads = 0;
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(_ => Interlocked.Increment(ref reads) <= 2 ? provisioning : reclaimed);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                return JobExecutionResult.Succeeded();
+            });
+
+        var service = new JobExecutionService(
+            Substitute.For<IJobQueue>(),
+            jobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(),
+            null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.Status == ExecutionJobStatus.Cancelled || job.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Regression: a stale worker's progress report must be silently
     /// dropped when ownership has moved to another worker.
     /// </summary>
@@ -624,7 +806,7 @@ public sealed class JobExecutionServiceTests
             JobHeartbeatPolicy.Default,
             null, NullLogger.Instance);
 
-        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
+        Assert.False(await context.TryPublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None));
 
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
@@ -698,7 +880,7 @@ public sealed class JobExecutionServiceTests
             JobHeartbeatPolicy.Default,
             null, NullLogger.Instance);
 
-        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
+        Assert.False(await context.TryPublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None));
 
         // One conflicting write, then the terminal re-read stops the retry loop.
         await jobStore.Received(1).TrySetAsync(
@@ -782,6 +964,42 @@ public sealed class JobExecutionServiceTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None));
+    }
+
+    [UnitTest]
+    public async Task ProcessJob_PermanentFailure_StopsAtFirstAttemptAndPreservesDetails()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            AttemptCount = 1,
+            RetryPolicy = new JobRetryPolicy { MaxAttempts = 3 }
+        };
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>()).Returns(provisioning);
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Workspace provider is unavailable.", ["Output was not created."])
+                with
+            { IsRetryable = false });
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+        using var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], new ExecutionJobCancellationTokens(),
+            [terminalCallback], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await jobStore.Received().TrySetAsync(Arg.Is<ExecutionJobRecord>(job =>
+            job.Status == ExecutionJobStatus.Failed && job.AttemptCount == 1 && job.CompletedAt.HasValue &&
+            job.ErrorMessage == "Workspace provider is unavailable." &&
+            job.Warnings.SequenceEqual(new[] { "Output was not created." })),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await jobQueue.DidNotReceiveWithAnyArgs().RequeueAsync(default!, default, default, default);
+        await jobQueue.Received().RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>());
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Failed && job.AttemptCount == 1),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -2218,12 +2436,15 @@ public sealed class JobExecutionServiceTests
     /// Regression: a durable cancellation signal that arrives before the terminal
     /// fail write (retries exhausted) must be honoured by the pre-fail re-read.
     /// </summary>
-    [UnitTest]
-    public async Task AbandonJob_HonoursCancellation_WhenSignalArrivesBeforeFailWrite()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task AbandonJob_HonoursCancellation_WhenSignalArrivesBeforeFailWrite(bool permanentFailure)
     {
         var provisioning = CreateProvisioningJob() with
         {
-            RetryPolicy = JobRetryPolicy.None
+            RetryPolicy = permanentFailure ? new JobRetryPolicy { MaxAttempts = 3 } : JobRetryPolicy.None
         };
 
         var withCancel = provisioning with
@@ -2249,7 +2470,7 @@ public sealed class JobExecutionServiceTests
                 Arg.Any<ExecutionJobRecord>(),
                 Arg.Any<IJobExecutionContext>(),
                 Arg.Any<CancellationToken>())
-            .Returns(JobExecutionResult.Failed("Permanent failure"));
+            .Returns(JobExecutionResult.Failed("Permanent failure") with { IsRetryable = !permanentFailure });
 
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
@@ -2514,6 +2735,477 @@ public sealed class JobExecutionServiceTests
         Assert.NotNull(capturedProfiles);
         Assert.Contains(RuntimeProfiles.Native, capturedProfiles);
         Assert.DoesNotContain(RuntimeProfiles.Managed, capturedProfiles);
+    }
+
+    /// <summary>
+    /// A store fault at any step between the claim and executor dispatch must hand the
+    /// claimed attempt back to the queue at once (no heartbeat-expiry wait), release the
+    /// per-job cancellation registration, and let the next claim run the job to success.
+    /// </summary>
+    [UnitTheory]
+    [InlineData(PreDispatchFaultStore.InitialRead)]
+    [InlineData(PreDispatchFaultStore.ReRead)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLost)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLanded)]
+    [InlineData(PreDispatchFaultStore.PartitionLeaseAcquire)]
+    public async Task ExecuteAsync_RequeuesAndRunsClaimedJob_WhenStoreFaultsBeforeDispatch(string faultPoint)
+    {
+        var queued = CreateQueuedJob(withPartitionLease: faultPoint == PreDispatchFaultStore.PartitionLeaseAcquire);
+        var store = new PreDispatchFaultStore(queued, faultPoint);
+        var queue = new SingleJobQueue(store, queued.OperationId);
+        var executor = new CountingSuccessExecutor();
+        var callback = new CompletionTerminalCallback();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var stoppingCts = new CancellationTokenSource();
+
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, [callback], null,
+            NullLogger<JobExecutionService>.Instance,
+            partitionLeaseDuration: TimeSpan.FromMinutes(1),
+            partitionLeaseRenewInterval: TimeSpan.FromSeconds(20),
+            partitionLeaseContentionDelay: TimeSpan.FromMinutes(5));
+
+        await service.StartAsync(stoppingCts.Token);
+        ExecutionJobRecord terminal;
+        try
+        {
+            terminal = await callback.Completed.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        finally
+        {
+            await stoppingCts.CancelAsync();
+            await service.StopAsync(CancellationToken.None);
+        }
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(ExecutionJobStatus.Succeeded, terminal.Status);
+        Assert.Equal(1, executor.Calls);
+        Assert.Equal(2, queue.Claims);
+        Assert.Equal(1, queue.Requeues);
+        Assert.Null(queue.FirstRequeueDelay);
+        // The faulted attempt counts against the retry budget, like a heartbeat-expiry requeue.
+        Assert.Equal(2, terminal.AttemptCount);
+        Assert.False(cancellationTokens.Cancel(queued.OperationId));
+        if (faultPoint == PreDispatchFaultStore.PartitionLeaseAcquire)
+        {
+            // The acquire may have landed before the fault surfaced; it is released before requeue.
+            Assert.True(store.ReleasesBeforeSecondClaim >= 1);
+        }
+    }
+
+    /// <summary>
+    /// When the store stays unavailable, the best-effort requeue after a pre-dispatch fault
+    /// also fails. That must be absorbed (reconciliation recovers the job), must not
+    /// escape into the claim loop, and must still drop the per-job cancellation entry.
+    /// </summary>
+    [UnitTheory]
+    [InlineData(PreDispatchFaultStore.InitialRead)]
+    [InlineData(PreDispatchFaultStore.ReRead)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLost)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLanded)]
+    [InlineData(PreDispatchFaultStore.PartitionLeaseAcquire)]
+    public async Task ProcessJob_LeavesJobToReconciliation_WhenRequeueAfterPreDispatchFaultAlsoFails(string faultPoint)
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            Concurrency = faultPoint == PreDispatchFaultStore.PartitionLeaseAcquire
+                ? new OperationConcurrencyPolicy { PartitionKey = "tilecache:svc:default", RequiresExclusiveLease = true }
+                : new OperationConcurrencyPolicy()
+        };
+        var store = new PreDispatchFaultStore(provisioning, faultPoint) { FailAfterFirstFault = true };
+        var queue = Substitute.For<IJobQueue>();
+        var executor = new CountingSuccessExecutor();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(0, executor.Calls);
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+        await queue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A pre-dispatch store fault consumes the claimed attempt, so a job whose retry budget
+    /// is spent fails terminally instead of cycling through requeues.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_FailsJob_WhenStoreFaultsBeforeDispatchWithRetryBudgetSpent()
+    {
+        var provisioning = CreateProvisioningJob() with { RetryPolicy = JobRetryPolicy.None };
+        var store = new PreDispatchFaultStore(provisioning, PreDispatchFaultStore.RunningTransitionLost);
+        var queue = Substitute.For<IJobQueue>();
+        var executor = new CountingSuccessExecutor();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(0, executor.Calls);
+        Assert.Equal(ExecutionJobStatus.Failed, store.Current.Status);
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+        await queue.Received(1).RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>());
+        await queue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A write that lands between the recovery's re-read and its requeue makes that requeue's CAS
+    /// lose. The claim must still be resolved on the spot — here the durable cancellation signal that
+    /// caused the conflict is honoured — rather than left for heartbeat-expiry reconciliation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_ResolvesClaim_WhenRequeueAfterPreDispatchFaultLosesTheCas()
+    {
+        var provisioning = CreateProvisioningJob();
+        var store = new PreDispatchFaultStore(provisioning, PreDispatchFaultStore.RunningTransitionLost)
+        {
+            CancelOnFirstRequeue = true,
+        };
+        var queue = Substitute.For<IJobQueue>();
+        var executor = new CountingSuccessExecutor();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(0, executor.Calls);
+        Assert.Equal(ExecutionJobStatus.Cancelled, store.Current.Status);
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+    }
+
+    private static ExecutionJobRecord CreateQueuedJob(bool withPartitionLease)
+        => CreateProvisioningJob(operationId: $"job-{Guid.NewGuid():N}") with
+        {
+            Status = ExecutionJobStatus.Queued,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            AttemptCount = 0,
+            Concurrency = withPartitionLease
+                ? new OperationConcurrencyPolicy { PartitionKey = "tilecache:svc:default", RequiresExclusiveLease = true }
+                : new OperationConcurrencyPolicy()
+        };
+
+    /// <summary>
+    /// Single-record job store that throws once at a chosen step of the worker's
+    /// pre-dispatch sequence, optionally failing every later call too.
+    /// </summary>
+    private sealed class PreDispatchFaultStore(ExecutionJobRecord initial, string faultPoint) : IExecutionJobStore
+    {
+        public const string InitialRead = "initial-read";
+        public const string ReRead = "re-read";
+        public const string RunningTransitionLost = "running-transition-lost";
+        public const string RunningTransitionLanded = "running-transition-landed";
+        public const string PartitionLeaseAcquire = "partition-lease-acquire";
+
+        private readonly Lock _gate = new();
+        private readonly Dictionary<string, string> _leases = new(StringComparer.Ordinal);
+        private ExecutionJobRecord _job = initial;
+        private int _getCalls;
+        private int _releases;
+        private bool _cancelStamped;
+
+        public bool FailAfterFirstFault { get; init; }
+
+        /// <summary>
+        /// Makes the first requeue write lose its CAS the way a concurrent operator cancellation
+        /// would: the durable signal is stamped on the record and the write is rejected.
+        /// </summary>
+        public bool CancelOnFirstRequeue { get; init; }
+
+        public bool FaultInjected { get; private set; }
+
+        public int ReleasesBeforeSecondClaim { get; private set; } = -1;
+
+        public ExecutionJobRecord Current
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _job;
+                }
+            }
+        }
+
+        public void Claim(string workerId, int claimNumber)
+        {
+            lock (_gate)
+            {
+                if (claimNumber == 2)
+                {
+                    ReleasesBeforeSecondClaim = _releases;
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                _job = _job with
+                {
+                    Status = ExecutionJobStatus.Provisioning,
+                    ClaimedBy = workerId,
+                    ClaimedAt = now,
+                    LastHeartbeatAt = now,
+                    AttemptCount = _job.AttemptCount + 1,
+                    UpdatedAt = now,
+                    CurrentPhase = "Claimed",
+                    NextRetryAt = null
+                };
+            }
+        }
+
+        private void ThrowIfFailingAfterFault()
+        {
+            if (FaultInjected && FailAfterFirstFault)
+            {
+                throw new TimeoutException("Store unavailable.");
+            }
+        }
+
+        private void InjectFault()
+        {
+            FaultInjected = true;
+            throw new TimeoutException("Store timeout.");
+        }
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                _getCalls++;
+                if (!FaultInjected
+                    && ((faultPoint == InitialRead && _getCalls == 1) || (faultPoint == ReRead && _getCalls == 2)))
+                {
+                    InjectFault();
+                }
+
+                return Task.FromResult<ExecutionJobRecord?>(_job);
+            }
+        }
+
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (!FaultInjected
+                    && job.Status == ExecutionJobStatus.Running
+                    && faultPoint is RunningTransitionLost or RunningTransitionLanded)
+                {
+                    if (faultPoint == RunningTransitionLanded)
+                    {
+                        _job = job;
+                    }
+
+                    InjectFault();
+                }
+
+                if (CancelOnFirstRequeue && !_cancelStamped && job.Status == ExecutionJobStatus.Queued)
+                {
+                    _cancelStamped = true;
+                    _job = _job with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                    return Task.FromResult(false);
+                }
+
+                _job = job;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> TrySetIfLeaseOwnedAsync(
+            ExecutionJobRecord job,
+            string leaseOperationId,
+            string leaseOwnerId,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (!_leases.TryGetValue(leaseOperationId, out var owner) || owner != leaseOwnerId)
+                {
+                    return Task.FromResult(false);
+                }
+
+                _job = job;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> TryAcquireLeaseAsync(
+            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (_leases.ContainsKey(operationId))
+                {
+                    return Task.FromResult(false);
+                }
+
+                _leases[operationId] = ownerId;
+                if (!FaultInjected && faultPoint == PartitionLeaseAcquire)
+                {
+                    // The acquire lands, but the reply is lost.
+                    InjectFault();
+                }
+
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> RenewLeaseAsync(
+            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                return Task.FromResult(_leases.TryGetValue(operationId, out var owner) && owner == ownerId);
+            }
+        }
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (_leases.TryGetValue(operationId, out var owner) && owner == ownerId)
+                {
+                    _leases.Remove(operationId);
+                    _releases++;
+                }
+
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
+            ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    /// <summary>Queue holding one job id; a claim stamps the store record like the real queue does.</summary>
+    private sealed class SingleJobQueue(PreDispatchFaultStore store, string operationId) : IJobQueue
+    {
+        private readonly Lock _gate = new();
+        private bool _pending = true;
+
+        public int Claims { get; private set; }
+
+        public int Requeues { get; private set; }
+
+        public TimeSpan? FirstRequeueDelay { get; private set; }
+
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (!_pending)
+                {
+                    return Task.FromResult<string?>(null);
+                }
+
+                _pending = false;
+                Claims++;
+                store.Claim(workerId, Claims);
+                return Task.FromResult<string?>(operationId);
+            }
+        }
+
+        public Task RequeueAsync(
+            string id, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (Requeues == 0)
+                {
+                    FirstRequeueDelay = visibleAfter;
+                }
+
+                Requeues++;
+                _pending = true;
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task EnqueueAsync(
+            string id, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                _pending = true;
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task RemoveAsync(string id, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                _pending = false;
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                return Task.FromResult(_pending ? 1L : 0L);
+            }
+        }
+    }
+
+    private sealed class CountingSuccessExecutor : IJobExecutor
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
+
+        public Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job, IJobExecutionContext context, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _calls);
+            return Task.FromResult(JobExecutionResult.Succeeded());
+        }
+    }
+
+    private sealed class CompletionTerminalCallback : IJobTerminalCallback
+    {
+        public TaskCompletionSource<ExecutionJobRecord> Completed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            Completed.TrySetResult(job);
+            return ValueTask.CompletedTask;
+        }
     }
 
     /// <summary>

@@ -1,13 +1,22 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Import;
 
@@ -21,6 +30,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
+    private string? _publishedServiceName;
 
     public async Task InitializeAsync()
     {
@@ -28,7 +38,76 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         _client = _fixture.Client;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        try
+        {
+            if (_publishedServiceName is not null)
+            {
+                // This fixture reseeds shared catalog connections before services. Remove
+                // only our publication first so its connection FK cannot poison the next test.
+                await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "DELETE FROM honua.services WHERE service_name = @service";
+                command.Parameters.AddWithValue("service", _publishedServiceName);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+        finally
+        {
+            await _fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("POST /api/v1/admin/connections/{connectionId}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries()
+    {
+        const int rowCount = 10000;
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "query-export", Name = "query_export" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "geometry"
+            }
+        };
+        var writer = new WKBWriter();
+        var features = Enumerable.Range(1, rowCount).Select(id => Feature.Create(id,
+            writer.Write(new Point(-120 + id * 0.001, 35 + id * 0.0001)),
+            ImmutableDictionary<string, object?>.Empty.Add("name", $"export-{id}"))).ToImmutableArray();
+        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(rowCount, features), resource, "objectid", true, 4326,
+            false, false, new GeometryLimits());
+        using var content = CreateUploadContent(payload, "query-export.parquet", "geoparquet_query_roundtrip");
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseJson = await response.Content.ReadAsStringAsync();
+        using var result = JsonDocument.Parse(responseJson);
+        result.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(responseJson);
+
+        var rows = await ReadImportedRowsAsync(responseJson, rowCount, "id IN (1,1024,1025,9999,10000)");
+        rows.Select(row => row.ObjectId).Should().BeEquivalentTo(new long?[] { 1, 1024, 1025, 9999, 10000 });
+        foreach (var row in rows)
+        {
+            var id = row.ObjectId!.Value;
+            row.Name.Should().Be($"export-{id}");
+            var point = row.Geometry.Should().BeOfType<Point>().Subject;
+            point.X.Should().BeApproximately(-120 + id * 0.001, 1e-9);
+            point.Y.Should().BeApproximately(35 + id * 0.0001, 1e-9);
+            point.SRID.Should().Be(4326);
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
@@ -53,6 +132,25 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("geoparquet_import_test");
         responseContent.Should().Contain("GeoParquet");
         responseContent.Should().Contain("\"success\":true");
+
+        // honua-server#4396: the response substring above proves the import *reported* success.
+        // Read the persisted rows back and assert the values the fixture actually wrote, so an
+        // import that committed the wrong geometry, dropped the attributes or reprojected the
+        // point cannot pass. The import stages into a provider-chosen physical table
+        // (honua_data.imported_geoparquet_import_test), which the response reports through
+        // physicalTableName/schema -- use those rather than the caller-supplied logical name.
+        var rows = await ReadImportedRowsAsync(responseContent);
+        var row = rows.Should().ContainSingle().Subject;
+        row.ObjectId.Should().Be(1L);
+        row.Name.Should().Be("Test Feature");
+
+        // GeoParquetTestFactory writes POINT(-122.4194 37.7749) in EPSG:4326 and the upload
+        // requests TargetSrid=4326, so the stored point must be that point, unmoved.
+        row.Geometry.Should().BeOfType<Point>();
+        var point = (Point)row.Geometry!;
+        point.X.Should().BeApproximately(-122.4194, 1e-9);
+        point.Y.Should().BeApproximately(37.7749, 1e-9);
+        point.SRID.Should().Be(4326);
     }
 
     [IntegrationTest]
@@ -130,6 +228,13 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("\"featureCount\":1");
         // Null-geometry skip should be surfaced as a warning
         responseContent.Should().Contain("skipped because geometry was null");
+        var rows = await ReadImportedRowsAsync(responseContent);
+        var row = rows.Should().ContainSingle().Subject;
+        row.ObjectId.Should().Be(1);
+        row.Name.Should().Be("Test Feature");
+        var point = row.Geometry.Should().BeOfType<Point>().Which;
+        point.X.Should().BeApproximately(-122.4194, 1e-9);
+        point.Y.Should().BeApproximately(37.7749, 1e-9);
     }
 
     [IntegrationTest]
@@ -182,6 +287,9 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers/jobs/{jobId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Upload_WithLargeSingleRowGroup_ImportsFeatures()
     {
         // pyarrow/GeoPandas writes a 150,000-row table as one row group by default.
@@ -202,6 +310,15 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("geoparquet_large_rg_test");
         responseContent.Should().Contain("\"success\":true");
         responseContent.Should().Contain("\"featureCount\":150000");
+        var rows = await ReadImportedRowsAsync(responseContent, 150_000, "id IN (1,75000,150000)", expectAsyncPublish: true);
+        rows.Select(row => row.ObjectId).Should().BeEquivalentTo(new long?[] { 1, 75000, 150000 });
+        foreach (var row in rows)
+        {
+            row.Name.Should().Be($"Feature {row.ObjectId}");
+            var point = row.Geometry.Should().BeOfType<Point>().Which;
+            point.X.Should().BeApproximately(-122.4194, 1e-9);
+            point.Y.Should().BeApproximately(37.7749, 1e-9);
+        }
     }
 
     [IntegrationTest]
@@ -228,6 +345,116 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         // Must surface the specific validation reason, not "Import failed."
         responseContent.Should().Contain("geo");
     }
+
+    // Publish the actual imported table, then read it through the same public query route
+    // a client uses. No copied rows or response-reported feature counts serve as the oracle.
+    private async Task<IReadOnlyList<ImportedRow>> ReadImportedRowsAsync(
+        string importResponseJson, int expectedCount = 1, string where = "1=1", bool expectAsyncPublish = false)
+    {
+        using var document = JsonDocument.Parse(importResponseJson);
+        var root = document.RootElement;
+        var connectionId = await _fixture.GetTestSecureConnectionIdAsync();
+        connectionId.Should().NotBeNull();
+        _publishedServiceName = $"geoparquet_readback_{Guid.NewGuid():N}";
+        using var publishResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/connections/{connectionId}/layers",
+            new
+            {
+                Schema = root.GetProperty("schema").GetString(),
+                Table = root.GetProperty("physicalTableName").GetString(),
+                LayerName = "GeoParquet readback",
+                ServiceName = _publishedServiceName,
+                GeometryColumn = "geometry",
+                PrimaryKey = "id",
+                Fields = new[] { "id", "properties" },
+                Enabled = true
+            });
+        var publishJson = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(
+            expectAsyncPublish ? HttpStatusCode.Accepted : HttpStatusCode.Created, publishJson);
+        using var published = JsonDocument.Parse(publishJson);
+        var layer = published.RootElement.GetProperty("data");
+        var serviceName = _publishedServiceName;
+        int layerId;
+        if (expectAsyncPublish)
+        {
+            var jobId = layer.GetProperty("jobId").GetString();
+            Guid.TryParseExact(jobId, "N", out _).Should().BeTrue(publishJson);
+            var statusUrl = $"/api/v1/admin/connections/{connectionId}/layers/jobs/{jobId}";
+            layer.GetProperty("statusUrl").GetString().Should().Be(statusUrl);
+            publishResponse.Headers.Location.Should().NotBeNull();
+            publishResponse.Headers.Location!.OriginalString.Should().Be(statusUrl);
+            layer.GetProperty("rowsTotal").GetInt64().Should().Be(expectedCount);
+            layer.GetProperty("status").GetString().Should().Be("Queued");
+            layerId = await WaitForPublishedLayerAsync(statusUrl, jobId!, expectedCount);
+        }
+        else
+        {
+            layer.GetProperty("serviceName").GetString().Should().Be(serviceName);
+            layerId = layer.GetProperty("layerId").GetInt32();
+        }
+
+        var queryPath = $"/rest/services/{serviceName}/FeatureServer/{layerId}/query";
+        using var countResponse = await _client.GetAsync($"{queryPath}?where=1%3D1&returnCountOnly=true&f=json");
+        countResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var countDocument = JsonDocument.Parse(await countResponse.Content.ReadAsStringAsync());
+        countDocument.RootElement.GetProperty("count").GetInt32().Should().Be(expectedCount);
+
+        using var response = await _client.GetAsync(
+            $"{queryPath}?where={Uri.EscapeDataString(where)}&outFields=*&returnGeometry=true&outSR=4326&f=json");
+        var responseJson = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseJson);
+        using var queried = JsonDocument.Parse(responseJson);
+        queried.RootElement.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        var rows = new List<ImportedRow>();
+        foreach (var feature in queried.RootElement.GetProperty("features").EnumerateArray())
+        {
+            var propertiesValue = feature.GetProperty("attributes").GetProperty("properties");
+            using var propertiesDocument = JsonDocument.Parse(propertiesValue.ValueKind == JsonValueKind.String
+                ? propertiesValue.GetString()!
+                : propertiesValue.GetRawText());
+            var properties = propertiesDocument.RootElement;
+            Point? point = null;
+            if (feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind != JsonValueKind.Null)
+            {
+                point = new Point(geometry.GetProperty("x").GetDouble(), geometry.GetProperty("y").GetDouble()) { SRID = 4326 };
+            }
+
+            rows.Add(new ImportedRow(properties.GetProperty("objectid").GetInt64(), properties.GetProperty("name").GetString(), point));
+        }
+
+        return rows;
+    }
+
+    private async Task<int> WaitForPublishedLayerAsync(string statusUrl, string jobId, int expectedCount)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        while (true)
+        {
+            using var response = await _client.GetAsync(statusUrl, deadline.Token);
+            var json = await response.Content.ReadAsStringAsync(deadline.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK, json);
+            using var document = JsonDocument.Parse(json);
+            var progress = document.RootElement.GetProperty("data");
+            progress.GetProperty("jobId").GetString().Should().Be(jobId);
+            progress.GetProperty("rowsTotal").GetInt64().Should().Be(expectedCount);
+            var materialized = progress.GetProperty("rowsMaterialized").GetInt64();
+            materialized.Should().BeInRange(0, expectedCount);
+            var status = progress.GetProperty("status").GetString();
+            status.Should().BeOneOf(["Queued", "Processing", "Completed"], json);
+            if (status == "Completed")
+            {
+                materialized.Should().Be(expectedCount);
+                var layerId = progress.GetProperty("layerId").GetInt32();
+                layerId.Should().BeGreaterThan(0);
+                return layerId;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250), deadline.Token);
+        }
+    }
+
+    private sealed record ImportedRow(long? ObjectId, string? Name, Geometry? Geometry);
 
     private static MultipartFormDataContent CreateUploadContent(byte[] fileBytes, string fileName, string tableName)
     {

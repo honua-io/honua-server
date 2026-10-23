@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore;
@@ -24,7 +25,7 @@ namespace Honua.Db.SqlServer.Features.FeatureStore;
 /// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
 /// <see cref="FeatureProviderQueryRouter"/>.</para>
 /// </remarks>
-internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
+internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IDistinctFeatureReader
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
     {
@@ -47,24 +48,34 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
     private readonly IMetadataV2GraphProvider? _v2Provider;
+    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly IFilterExpressionService? _filterExpressions;
 
     public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess)
-        : this(dataAccess, v2Provider: null, binding: null)
+        : this(dataAccess, v2Provider: null, readSecurity: null, binding: null, filterExpressions: null)
     {
     }
 
-    public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess, IMetadataV2GraphProvider? v2Provider)
-        : this(dataAccess, v2Provider, binding: null)
+    public SqlServerFeatureStore(
+        SqlServerFeatureDataAccess dataAccess,
+        IMetadataV2GraphProvider? v2Provider,
+        LayerReadSecurityResolver? readSecurity = null,
+        IFilterExpressionService? filterExpressions = null)
+        : this(dataAccess, v2Provider, readSecurity, binding: null, filterExpressions)
     {
     }
 
     private SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
         IMetadataV2GraphProvider? v2Provider,
-        FeatureProviderBinding? binding)
+        LayerReadSecurityResolver? readSecurity,
+        FeatureProviderBinding? binding,
+        IFilterExpressionService? filterExpressions)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _v2Provider = v2Provider;
+        _readSecurity = readSecurity;
+        _filterExpressions = filterExpressions;
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -86,13 +97,13 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new SqlServerFeatureStore(_dataAccess, _v2Provider, binding);
+        return new SqlServerFeatureStore(_dataAccess, _v2Provider, _readSecurity, binding, _filterExpressions);
     }
 
     /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var query = new FeatureQuery
         {
@@ -108,8 +119,9 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
         // without paying for a separate COUNT query. The probe row is trimmed before returning.
@@ -131,7 +143,16 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
             features = features.RemoveAt(features.Length - 1);
         }
 
-        return QueryResult<Feature>.Create(features.Length, features, hasMore);
+        var offset = query.Offset ?? 0;
+        long exactMatchCount = features.Length;
+        if (hasMore || offset > 0)
+        {
+            var countSql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
+            exactMatchCount = await _dataAccess.ExecuteCountAsync(mapping, countSql, _boundConnection, cancellationToken).ConfigureAwait(false);
+        }
+
+        var totalCount = FeatureQueryPageTotals.ResolveReportedTotalCount(features.Length, hasMore, offset, exactMatchCount);
+        return QueryResult<Feature>.Create(totalCount, features, hasMore);
     }
 
     /// <inheritdoc />
@@ -145,8 +166,9 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
         var sql = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -154,17 +176,19 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
+        var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = query is { } extentQuery ? PrepareQuery(extentQuery, mapping.PrimaryKeyColumn) : null;
         var sql = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -182,7 +206,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         var emptyQuery = new FeatureQuery();
@@ -216,6 +240,21 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
+
+    /// <summary>
+    /// Refuses the read when the layer carries a read policy this provider cannot enforce: a
+    /// permanent filter, or a row-level security / field-mask policy that applies to the request.
+    /// </summary>
+    private async Task EnsureReadPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
+    {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (_readSecurity is not null)
+        {
+            await _readSecurity
+                .EnsureNoUnenforcedPolicyAsync("SQL Server", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// Throws <see cref="NotSupportedException"/> when the layer has a permanent filter configured,
@@ -266,6 +305,19 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
 
         return Task.FromResult<(SqlServerLayerMapping, IReadOnlyList<string>)>((mapping, attributeColumns));
     }
+
+    /// <summary>
+    /// Drops a SqlFilter that is exactly the shared translator's rendering of <see cref="FeatureQuery.Where"/>,
+    /// and lets the builder lift an integral object-id IN list. A missing filter service or a failed
+    /// translation stays unproved so the builder still fails closed instead of executing Postgres SQL.
+    /// </summary>
+    private FeatureQuery PrepareQuery(FeatureQuery query, string primaryKeyColumn)
+        => NonPostgresObjectIdConstraintNormalizer.Prepare(
+            query,
+            SqlServerFeatureQueryBuilder.ProviderLabel,
+            primaryKeyColumn,
+            _filterExpressions,
+            _binding?.Resource);
 
     private static NotSupportedException NotSupported(string operation, int layerId)
         => new($"SQL Server provider does not support '{operation}' for layer {layerId} in this slice.");

@@ -1,9 +1,14 @@
-# Routing geoprocessing jobs to AWS Batch (#2165)
+---
+type: guide
+title: "Routing geoprocessing jobs to AWS Batch"
+description: "By default Honua runs geoprocessing (GP) jobs on the local / Kubernetes Job baseline workload (geoprocessing-local)."
+---
+# Routing geoprocessing jobs to AWS Batch
 
 By default Honua runs geoprocessing (GP) jobs on the **local / Kubernetes Job**
 baseline workload (`geoprocessing-local`). To run GP jobs on **AWS Batch**
 instead — using the Fargate job-definition pool provisioned by the
-[honua-iac](https://github.com/honua-io) serverless substrate — you supply the
+[honua-iac](https://github.com/honua-io/honua-iac) serverless substrate — you supply the
 substrate ARNs to the `geoprocessing-aws-batch` execution workload that already
 ships (gated off) in `appsettings.json`.
 
@@ -27,6 +32,60 @@ is not a supported output store.
 4. The backend selects the job-definition **tier** from the job's ephemeral
    storage need (`batch.ephemeral_gib` → `s`/`m`/`l`/`xl`) and submits to the
    queue.
+
+## The worker container
+
+The job definition runs the same Honua image as the server. The backend passes the job to the
+container as environment overrides: `HONUA_OPERATION_ID`, `HONUA_JOB_KIND`,
+`HONUA_WORKLOAD_NAME`, `HONUA_EXECUTION_ATTEMPT`, `HONUA_CONTRACT_VERSION` and any `env.*`
+workload parameters. A workload parameter can never set one of the `HONUA_*` launch variables.
+
+Because `HONUA_OPERATION_ID` is set, the container starts as a **single-job execution worker**:
+
+- It claims only the attempt it was launched for in the shared Redis job store. A stale container,
+  or one AWS Batch retried on its own, never runs a newer attempt.
+- It runs the GP executor and writes the result, or the typed failure, back to the job record. The
+  serving host sees the terminal record.
+- A retryable failure, or an interruption such as a Spot reclaim, hands the attempt back. The
+  server's reconciler then submits a new Batch job.
+- It exits `0` whenever the job record no longer depends on this Batch job: the job finished, was
+  handed back, or moved to another attempt. It exits nonzero only when it could not run or report
+  the job. A Batch retry strategy therefore never competes with the server's own retry.
+
+The worker composes no job dispatch, control-plane reconcilers, scheduled background services,
+proposal gateway or HTTP surface. It never submits jobs to AWS Batch, so the job role does not need
+`batch:SubmitJob`. It does need what the server uses to run and report the job: the database
+connection, `ConnectionStrings__redis` and the operation key-ring certificate. Without Redis it
+refuses to start, because nobody could see the result.
+
+### Large layer publishes
+
+Layer publishing also uses this shared execution worker. Above
+`LayerPublishing:AsyncPublishRowThreshold`, the accepting host prefers a configured
+remote `LayerPublish` workload, then a managed `Geoprocessing` workload. The
+workload must have a registered backend, a managed runtime profile, and the
+existing durable Redis job substrate. Native and custom-code workloads are not
+eligible. Publishing reads a database table, so it does not require the shared
+file-storage prerequisite used by file imports.
+
+The API returns an accepted job and its relative status URL. A disconnected
+request does not cancel accepted dispatch or the worker's publication budget.
+The worker resolves the secure connection after restoring the accepting tenant
+and operational schema; connection strings are not persisted in job parameters.
+Poll documents are scoped to that tenant. The durable execution record retains
+the selected workload, backend, provider operation ID, and execution attempt for
+operator evidence.
+
+Deploy a worker image that includes the `LayerPublish` executor and remote
+publish support before enabling this route. Both the API and the Batch job
+definition must use that implementation and share the database, Redis, and
+connection-encryption key material. Advancing only the API image is insufficient.
+Use immutable images and a versioned job definition when qualifying the rollout.
+
+A Lambda host without a compatible remote durable runner returns the existing
+typed 503 (`durable-runner-required`) for large publishes, including Redis-off
+deployments. A long-lived host retains the local durable runner or its in-process
+fallback. Tables at or below the threshold retain synchronous publication.
 
 ## The activation gate
 
@@ -59,13 +118,13 @@ The four tiers differ only by ephemeral (scratch) storage:
 timeout / retry stay per-submit overrides and are unaffected by tier selection.
 
 > **Tier selection.** The runtime tier selector that maps `batch.ephemeral_gib`
-> to the right `batch.job_definition_arn.{tier}` is on `trunk` (#2181). When no
+> to the right `batch.job_definition_arn.{tier}` ships with the server. When no
 > per-tier keys are configured the backend honors the **single**
 > `batch.job_definition_arn` key for back-compat. The parameter-key contract
 > (`batch.job_queue_arn`, `batch.region`, `batch.job_definition_arn`,
 > `batch.job_definition_arn.{s,m,l,xl}`) is identical on both sides.
 
-## Per-job resource sizing (#2165)
+## Per-job resource sizing
 
 Per-job sizing is **runtime and instant** — no terraform, no agent in the job
 path. Each GP job carries a resource profile that is mapped onto the
@@ -90,6 +149,14 @@ per-job request values supplied under the `gp.resource.*` keys (for example
 profile &gt; workload baseline. The local/Kubernetes baseline does **not**
 carry these keys (they are meaningless off AWS Batch), preserving the GP Devkit
 local-runner spec parity.
+
+The `gp.resource.*` sizing keys are the only sizing input a job submission
+accepts. Every other parameter the workload definition or a compute backend
+owns — `batch.*`, `env.*`, `process.*`, `k8s.*`, `azure.*` — comes from the
+registered workload definition (or is stamped by the server) and is
+authoritative: a job submission whose protocol metadata names a key in one of
+those namespaces is refused with a validation error, and a submission-supplied
+key can never replace a value the workload definition declares.
 
 ## Health-gating a GP substrate deploy
 

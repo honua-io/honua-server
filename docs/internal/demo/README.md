@@ -1,3 +1,8 @@
+---
+type: index
+title: "Demo runbooks"
+description: "Entry point for the demo runbooks, which now live in honua-demo."
+---
 # Demo runbooks — moved
 
 Recording and operator runbooks for the live demo deployment live in the
@@ -15,7 +20,7 @@ alongside the demo's Terraform stack, seeds, and drift CI:
 They are operator documentation for a specific live deployment, so they live
 with that deployment's infrastructure rather than in this public repository.
 
-What remains in this directory is repo-local: `nvidia-construction.md`
-documents a deterministic test fixture served by this codebase. Schema-coupled
-demo seed SQL also stays in this repo under `tests/seed/` (validated against
-this repo's migrations) and is referenced from honua-demo by pinned ref.
+Schema-coupled demo seed SQL stays in this repo under `tests/seed/`
+(validated against this repo's migrations) and is referenced from honua-demo by
+pinned ref. Deterministic scene fixtures live under `tests/fixtures/scenes/` and
+are documented by the tests that assert against them.

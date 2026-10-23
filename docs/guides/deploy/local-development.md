@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Run a local development environment"
+description: "You'll run Honua from source with .NET Aspire — one command that starts PostGIS, Redis, and the server with a dashboard for logs, traces, and metrics."
+---
 # Run a local development environment
 
 You'll run Honua from source with .NET Aspire — one command that starts PostGIS, Redis, and the server with a dashboard for logs, traces, and metrics.

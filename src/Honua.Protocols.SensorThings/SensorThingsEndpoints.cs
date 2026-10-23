@@ -1,6 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Infrastructure.Helpers;
@@ -8,6 +12,7 @@ using Honua.Infrastructure.Models;
 using Honua.Protocols.SensorThings.Models;
 using Honua.Protocols.SensorThings.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Protocols.SensorThings;
 
@@ -17,7 +22,13 @@ namespace Honua.Protocols.SensorThings;
 /// envelopes are STA-conformance-shaped (<c>@iot.id</c>/<c>@iot.selfLink</c>/
 /// <c>@iot.navigationLink</c>, <c>value</c> arrays, <c>@iot.nextLink</c> paging).
 /// </summary>
-internal static class SensorThingsEndpoints
+/// <remarks>
+/// Every request's system query options are turned into a <see cref="StaQueryPlan"/>
+/// before the store is touched. An option the plan cannot honour fails the request —
+/// 400 when it is malformed or names an unknown property, 501 when it is recognised but
+/// unimplemented — rather than being dropped (STA 1.1 Req 28-35, OData 4.0 §8.2.1).
+/// </remarks>
+internal static partial class SensorThingsEndpoints
 {
     internal const string BasePath = "/sta/v1.1";
 
@@ -35,33 +46,50 @@ internal static class SensorThingsEndpoints
     /// </remarks>
     public static IEndpointRouteBuilder MapSensorThingsEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/sta/v1.1", HandleServiceRoot)
+            .WithDisplayName("STA Service Document")
+            .WithName("StaServiceDocument")
+            .WithSummary("Discover the available SensorThings entity sets")
+            .WithTags("SensorThings")
+            .Produces<StaServiceDocument>(200, "application/json");
+
         // Each route is a literal first argument to MapGet so the source-scan
         // governance can anchor every EndpointRegistry entry to a concrete
         // MapGet call; the typed {id:long} constraint normalises to {id}.
-        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Things", HandleListThings), "Things");
-        ConfigureById(endpoints.MapGet("/sta/v1.1/Things({id:long})", HandleGetThing), "Things");
-        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Sensors", HandleListSensors), "Sensors");
-        ConfigureById(endpoints.MapGet("/sta/v1.1/Sensors({id:long})", HandleGetSensor), "Sensors");
-        ConfigureCollection(endpoints.MapGet("/sta/v1.1/ObservedProperties", HandleListObservedProperties), "ObservedProperties");
-        ConfigureById(endpoints.MapGet("/sta/v1.1/ObservedProperties({id:long})", HandleGetObservedProperty), "ObservedProperties");
-        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Datastreams", HandleListDatastreams), "Datastreams");
-        ConfigureById(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})", HandleGetDatastream), "Datastreams");
-        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Observations", HandleListObservations), "Observations");
-        ConfigureById(endpoints.MapGet("/sta/v1.1/Observations({id:long})", HandleGetObservation), "Observations");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Things", HandleCoreRead), "Things");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Things({id:long})", HandleCoreRead), "Things");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Sensors", HandleCoreRead), "Sensors");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Sensors({id:long})", HandleCoreRead), "Sensors");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/ObservedProperties", HandleCoreRead), "ObservedProperties");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/ObservedProperties({id:long})", HandleCoreRead), "ObservedProperties");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Datastreams", HandleCoreRead), "Datastreams");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})", HandleCoreRead), "Datastreams");
+        ConfigureCollection(endpoints.MapGet("/sta/v1.1/Observations", HandleCoreRead), "Observations");
+        ConfigureById(endpoints.MapGet("/sta/v1.1/Observations({id:long})", HandleCoreRead), "Observations");
 
-        endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Observations", HandleDatastreamObservations)
+        endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Observations", HandleCoreRead)
             .WithDisplayName("STA Datastream Observations")
             .WithName("StaDatastreamObservations")
             .WithSummary("Get the Observations of a Datastream")
             .WithTags("SensorThings")
             .Produces<StaEntitySet<StaObservation>>(200, "application/json")
-            .Produces(404);
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Things({id:long})/Datastreams", HandleCoreRead), "ThingsDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Sensors({id:long})/Datastreams", HandleCoreRead), "SensorsDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/ObservedProperties({id:long})/Datastreams", HandleCoreRead), "ObservedPropertiesDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Thing", HandleCoreRead), "DatastreamsThing");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Sensor", HandleCoreRead), "DatastreamsSensor");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/ObservedProperty", HandleCoreRead), "DatastreamsObservedProperty");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Observations({id:long})/Datastream", HandleCoreRead), "ObservationsDatastream");
 
         // Phase 2 ingest (REST/bulk observation creation + datastream creation) and
         // Phase 3 real-time streaming (SSE/WebSocket) are mapped from their partial-class
         // files so each route stays a literal MapPost/MapGet the source-scan governance can
         // anchor to an EndpointRegistry entry.
-        endpoints.MapSensorThingsIngestEndpoints();
+        MapCoreEntityEndpoints(endpoints);
         Streaming.ObservationStreamEndpoints.MapSensorThingsStreamEndpoints(endpoints);
 
         return endpoints;
@@ -74,7 +102,8 @@ internal static class SensorThingsEndpoints
             .WithSummary($"List {entitySet}")
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
-            .Produces(400);
+            .Produces(400)
+            .Produces(501);
 
     private static void ConfigureById(RouteHandlerBuilder builder, string entitySet) =>
         builder
@@ -83,210 +112,38 @@ internal static class SensorThingsEndpoints
             .WithSummary($"Get a single {entitySet} entity by id")
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
-            .Produces(404);
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
 
     private static string StaBase(HttpContext context) => $"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}";
 
-    private static string? NextLink(HttpContext context, StaQueryOptions options, int returnedCount)
-    {
-        if (returnedCount < options.Top)
-        {
-            return null;
-        }
-
-        var staBase = BaseUrlResolver.GetBaseUrl(context);
-        var path = context.Request.Path.Value ?? string.Empty;
-        return $"{staBase}{path}?$top={options.Top}&$skip={options.Skip + options.Top}";
-    }
-
-    // ---- Things ----
-
-    private static async Task<IResult> HandleListThings(HttpContext context, [FromServices] IObservationStore store)
-    {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var ct = context.RequestAborted;
-        var things = await store.ListThingsAsync(options.Skip, options.Top, ct).ConfigureAwait(false);
-        var staBase = StaBase(context);
-        var value = things.Select(t => StaEntityMapper.MapThing(t, staBase)).ToList();
-        return Results.Json(
-            new StaEntitySet<StaThing> { Value = value, NextLink = NextLink(context, options, value.Count) },
-            SensorThingsJsonContext.Default.StaEntitySetStaThing);
-    }
-
-    private static async Task<IResult> HandleGetThing(long id, HttpContext context, [FromServices] IObservationStore store)
-    {
-        var thing = await store.GetThingAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return thing is null
-            ? StandardErrorHelpers.CreateNotFound(context, $"Thing({id}) not found.")
-            : Results.Json(StaEntityMapper.MapThing(thing, StaBase(context)), SensorThingsJsonContext.Default.StaThing);
-    }
-
-    // ---- Sensors ----
-
-    private static async Task<IResult> HandleListSensors(HttpContext context, [FromServices] IObservationStore store)
-    {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var sensors = await store.ListSensorsAsync(options.Skip, options.Top, context.RequestAborted).ConfigureAwait(false);
-        var staBase = StaBase(context);
-        var value = sensors.Select(s => StaEntityMapper.MapSensor(s, staBase)).ToList();
-        return Results.Json(
-            new StaEntitySet<StaSensor> { Value = value, NextLink = NextLink(context, options, value.Count) },
-            SensorThingsJsonContext.Default.StaEntitySetStaSensor);
-    }
-
-    private static async Task<IResult> HandleGetSensor(long id, HttpContext context, [FromServices] IObservationStore store)
-    {
-        var sensor = await store.GetSensorAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return sensor is null
-            ? StandardErrorHelpers.CreateNotFound(context, $"Sensor({id}) not found.")
-            : Results.Json(StaEntityMapper.MapSensor(sensor, StaBase(context)), SensorThingsJsonContext.Default.StaSensor);
-    }
-
-    // ---- ObservedProperties ----
-
-    private static async Task<IResult> HandleListObservedProperties(HttpContext context, [FromServices] IObservationStore store)
-    {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var properties = await store.ListObservedPropertiesAsync(options.Skip, options.Top, context.RequestAborted).ConfigureAwait(false);
-        var staBase = StaBase(context);
-        var value = properties.Select(p => StaEntityMapper.MapObservedProperty(p, staBase)).ToList();
-        return Results.Json(
-            new StaEntitySet<StaObservedProperty> { Value = value, NextLink = NextLink(context, options, value.Count) },
-            SensorThingsJsonContext.Default.StaEntitySetStaObservedProperty);
-    }
-
-    private static async Task<IResult> HandleGetObservedProperty(long id, HttpContext context, [FromServices] IObservationStore store)
-    {
-        var property = await store.GetObservedPropertyAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return property is null
-            ? StandardErrorHelpers.CreateNotFound(context, $"ObservedProperty({id}) not found.")
-            : Results.Json(StaEntityMapper.MapObservedProperty(property, StaBase(context)), SensorThingsJsonContext.Default.StaObservedProperty);
-    }
-
-    // ---- Datastreams ----
-
-    private static async Task<IResult> HandleListDatastreams(HttpContext context, [FromServices] IObservationStore store)
-    {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var ct = context.RequestAborted;
-        var datastreams = await store.ListDatastreamsAsync(options.Skip, options.Top, ct).ConfigureAwait(false);
-        var staBase = StaBase(context);
-
-        var value = new List<StaDatastream>(datastreams.Count);
-        foreach (var datastream in datastreams)
-        {
-            value.Add(StaEntityMapper.MapDatastream(
-                datastream,
-                staBase,
-                await ExpandObservationsAsync(options, store, datastream.Id, staBase, ct).ConfigureAwait(false)));
-        }
-
-        return Results.Json(
-            new StaEntitySet<StaDatastream> { Value = value, NextLink = NextLink(context, options, value.Count) },
-            SensorThingsJsonContext.Default.StaEntitySetStaDatastream);
-    }
-
-    private static async Task<IResult> HandleGetDatastream(long id, HttpContext context, [FromServices] IObservationStore store)
-    {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var ct = context.RequestAborted;
-        var datastream = await store.GetDatastreamAsync(id, ct).ConfigureAwait(false);
-        if (datastream is null)
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Datastream({id}) not found.");
-        }
-
-        var staBase = StaBase(context);
-        var expanded = await ExpandObservationsAsync(options, store, id, staBase, ct).ConfigureAwait(false);
-        return Results.Json(
-            StaEntityMapper.MapDatastream(datastream, staBase, expanded),
-            SensorThingsJsonContext.Default.StaDatastream);
-    }
-
-    private static async Task<IReadOnlyList<StaObservation>?> ExpandObservationsAsync(
-        StaQueryOptions options,
-        IObservationStore store,
-        long datastreamId,
-        string staBase,
-        CancellationToken ct)
-    {
-        if (!options.ExpandsTo("Observations"))
-        {
-            return null;
-        }
-
-        var observations = await store.QueryObservationsAsync(
-            new ObservationQuery(datastreamId, null, Array.Empty<object?>(), OrderByDescending: true, Skip: 0, Top: StaQueryOptions.DefaultTop),
-            ct).ConfigureAwait(false);
-        return observations.Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
-    }
-
-    // ---- Observations ----
-
-    private static async Task<IResult> HandleListObservations(
+    private static async Task<IResult> HandleServiceRoot(
         HttpContext context,
-        [FromServices] IObservationStore store,
-        [FromServices] StaObservationFilterTranslator filterTranslator)
+        [FromServices] ISensorThingsEntityStore store)
     {
-        return await QueryObservationsAsync(context, store, filterTranslator, datastreamId: null).ConfigureAwait(false);
-    }
-
-    private static async Task<IResult> HandleDatastreamObservations(
-        long id,
-        HttpContext context,
-        [FromServices] IObservationStore store,
-        [FromServices] StaObservationFilterTranslator filterTranslator)
-    {
-        var datastream = await store.GetDatastreamAsync(id, context.RequestAborted).ConfigureAwait(false);
-        if (datastream is null)
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Datastream({id}) not found.");
-        }
-
-        return await QueryObservationsAsync(context, store, filterTranslator, datastreamId: id).ConfigureAwait(false);
-    }
-
-    private static async Task<IResult> QueryObservationsAsync(
-        HttpContext context,
-        IObservationStore store,
-        StaObservationFilterTranslator filterTranslator,
-        long? datastreamId)
-    {
-        var options = StaQueryOptions.FromRequest(context.Request);
-
-        var translation = filterTranslator.Translate(options.Filter);
-        if (!translation.IsSuccess)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, translation.Error ?? "Invalid $filter.");
-        }
-
-        var query = new ObservationQuery(
-            datastreamId,
-            translation.Sql,
-            translation.Parameters,
-            options.OrderByDescending,
-            options.Skip,
-            options.Top);
-
-        var observations = await store.QueryObservationsAsync(query, context.RequestAborted).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = observations.Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
-
-        return Results.Json(
-            new StaEntitySet<StaObservation>
-            {
-                Value = value,
-                Count = options.Count ? value.Count : null,
-                NextLink = NextLink(context, options, value.Count)
-            },
-            SensorThingsJsonContext.Default.StaEntitySetStaObservation);
+        var unresolved = await store.CountUnresolvedFeaturesAsync(context.RequestAborted).ConfigureAwait(false);
+        if (context.RequestServices.GetRequiredService<IConfiguration>().GetValue<bool>("SensorThings:ConformantProfile") && unresolved > 0)
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "The conformant sensing profile requires explicit reconciliation of legacy FeatureOfInterest associations.");
+        // This preview adapter implements partial requirement classes. Do not
+        // advertise complete conformance classes or unimplemented entity sets.
+        var document = new StaServiceDocument
+        {
+            Value =
+            [
+                new() { Name = "Things", Url = $"{staBase}/Things" },
+                new() { Name = "Sensors", Url = $"{staBase}/Sensors" },
+                new() { Name = "ObservedProperties", Url = $"{staBase}/ObservedProperties" },
+                new() { Name = "Datastreams", Url = $"{staBase}/Datastreams" },
+                new() { Name = "Observations", Url = $"{staBase}/Observations" },
+                new() { Name = "Locations", Url = $"{staBase}/Locations" },
+                new() { Name = "HistoricalLocations", Url = $"{staBase}/HistoricalLocations" },
+                new() { Name = "FeaturesOfInterest", Url = $"{staBase}/FeaturesOfInterest" }
+            ],
+            ServerSettings = new StaServerSettings { UnresolvedFeatureOfInterestCount = unresolved }
+        };
+        return Results.Json(document, SensorThingsJsonContext.Default.StaServiceDocument);
     }
 
-    private static async Task<IResult> HandleGetObservation(long id, HttpContext context, [FromServices] IObservationStore store)
-    {
-        var observation = await store.GetObservationAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return observation is null
-            ? StandardErrorHelpers.CreateNotFound(context, $"Observation({id}) not found.")
-            : Results.Json(StaEntityMapper.MapObservation(observation, StaBase(context)), SensorThingsJsonContext.Default.StaObservation);
-    }
 }

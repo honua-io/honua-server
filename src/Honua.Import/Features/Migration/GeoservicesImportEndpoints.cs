@@ -287,6 +287,15 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
+        if (!ImportValidationHelpers.IsPermittedTargetSchema(request.TargetSchema, context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
         var startUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(
             request.ServiceUrl,
@@ -317,7 +326,16 @@ internal static partial class GeoservicesImportEndpoints
         try
         {
             jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
-            if (jobManager is IImportCoordinationHealth { CanAcceptNewJobs: false })
+            // Probe recovery before refusing: the cached health flags only clear through
+            // component operations, so gating first would keep admission closed after
+            // Redis returns (#4877). Still-unavailable coordination is refused below.
+            if (jobManager is IImportCoordinationHealth coordinationHealth &&
+                !await ImportCoordinationRecovery.TryAdmitAsync(
+                    coordinationHealth,
+                    jobManager.JobQueue,
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    cancellationToken).ConfigureAwait(false))
             {
                 await AdminResponseWriter.WriteErrorAsync(
                     context,
@@ -539,7 +557,10 @@ internal static partial class GeoservicesImportEndpoints
     }
 
     private static bool IsActiveStatus(GeoservicesImportStatus status)
-        => status is not (GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled);
+        => status is not (GeoservicesImportStatus.Completed
+            or GeoservicesImportStatus.Failed
+            or GeoservicesImportStatus.Cancelled
+            or GeoservicesImportStatus.NeedsReview);
 
     private static ILogger<GeoservicesImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<GeoservicesImportEndpointsLog>>();

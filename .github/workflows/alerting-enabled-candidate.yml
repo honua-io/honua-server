@@ -36,8 +36,9 @@ jobs:
   receipt-contract:
     name: Reject incomplete or unbound receipts
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run fail-closed negative matrix
         run: python3 -m unittest scripts/qualification/test_validate_alerting_candidate.py
 
@@ -63,7 +64,7 @@ jobs:
           echo "sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Check out exact candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.candidate.outputs.sha }}
 
@@ -73,7 +74,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Download exact-candidate hosted evidence
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: alerting-hosted-evidence-${{ steps.candidate.outputs.sha }}
           path: artifacts/alerting-enabled-candidate
@@ -109,7 +110,7 @@ jobs:
 
       - name: Retain immutable candidate receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: alerting-enabled-candidate-${{ steps.candidate.outputs.sha }}
           path: artifacts/alerting-enabled-candidate/

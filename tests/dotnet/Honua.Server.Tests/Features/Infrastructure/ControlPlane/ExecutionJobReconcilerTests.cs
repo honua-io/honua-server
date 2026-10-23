@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.ControlPlane;
 using Honua.ServiceDefaults;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -20,6 +21,75 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class ExecutionJobReconcilerTests
 {
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_HostStopsDuringObservation_PreservesJobForReplacementServer()
+    {
+        using var shutdown = new CancellationTokenSource();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<BatchComputeObservation>>(_ =>
+            {
+                shutdown.Cancel();
+                throw new OperationCanceledException(shutdown.Token);
+            });
+        var job = CreateJobRecord("handoff", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch)
+            with
+        { ProviderOperationId = "existing-batch-job" };
+        var store = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(store, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync(job.OperationId, shutdown.Token);
+
+        var stored = (await store.GetAsync(job.OperationId))!;
+        stored.Status.Should().Be(ExecutionJobStatus.Running);
+        stored.ProviderOperationId.Should().Be("existing-batch-job");
+        stored.CompletedAt.Should().BeNull();
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Succeeded });
+        var replacement = new ExecutionJobReconciler(store, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+        await replacement.ReconcileExecutionJobAsync(job.OperationId);
+        (await store.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ReconcileExecutionJob_PersistedTerminalTransition_NotifiesCallbackOnce()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Succeeded });
+        var job = CreateJobRecord(
+            "terminal-callback",
+            ExecutionJobStatus.Running,
+            "aws-batch",
+            BatchComputeTargetKind.AwsBatch);
+        var store = new InMemoryExecutionJobStore(job);
+        var callback = new RecordingTerminalCallback();
+        var sut = new ExecutionJobReconciler(
+            store,
+            [backend],
+            new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance,
+            terminalCallbacks: [callback]);
+
+        await sut.ReconcileExecutionJobAsync(job.OperationId);
+
+        Assert.Single(callback.Calls);
+        Assert.Equal(ExecutionJobStatus.Succeeded, callback.Calls[0].Job.Status);
+        Assert.Equal(CancellationToken.None, callback.Calls[0].Token);
+
+        await sut.ReconcileExecutionJobAsync(job.OperationId);
+
+        Assert.Single(callback.Calls);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -127,7 +197,7 @@ public sealed class ExecutionJobReconcilerTests
         await progressStore.SetProgressAsync(
             "job-local",
             GeoprocessingProgress.CreateForSubmittedJob("job-local", "plan-local"));
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -158,7 +228,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentPhase = "Executing buffer analysis"
         };
         await progressStore.SetProgressAsync("job-local-running", workerProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -193,7 +263,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentPhase = "Prior attempt progress"
         };
         await progressStore.SetProgressAsync("job-local-retry", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -238,7 +308,7 @@ public sealed class ExecutionJobReconcilerTests
             TotalSteps = 10
         };
         await progressStore.SetProgressAsync("job-local-retry-terminal", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -279,7 +349,7 @@ public sealed class ExecutionJobReconcilerTests
         var progressStore = new InMemoryProgressStore();
         var freshProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-retry-idempotent", "plan-local");
         await progressStore.SetProgressAsync("job-local-retry-idempotent", freshProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -309,7 +379,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentStageStatus = GeoprocessingStageStatus.Pending
         };
         await progressStore.SetProgressAsync("job-retry-cancel", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+        var backend = new LocalBatchComputeBackend(progressStore, [notifier]);
 
         var job = CreateJobRecord(
             operationId: "job-retry-cancel",
@@ -348,7 +418,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentStageStatus = GeoprocessingStageStatus.Pending
         };
         await progressStore.SetProgressAsync("job-local-q-cancel", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+        var backend = new LocalBatchComputeBackend(progressStore, [notifier]);
 
         var job = CreateJobRecord(
             operationId: "job-local-q-cancel",
@@ -970,7 +1040,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentStageStatus = GeoprocessingStageStatus.Pending
         };
         await progressStore.SetProgressAsync("job-local-cancel", workerProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+        var backend = new LocalBatchComputeBackend(progressStore, [notifier]);
 
         var job = CreateJobRecord(
             operationId: "job-local-cancel",
@@ -1150,6 +1220,54 @@ public sealed class ExecutionJobReconcilerTests
         await backend.Received(1).CancelAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_TransientRedisTimeoutWhileObserving_LeavesTheRunningJobAlone()
+    {
+        // honua-server#6507: a Redis timeout during a sweep used to stamp a healthy, heartbeating
+        // Batch import terminal Failed, so its worker lost the execution lease 30 s in.
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new StackExchange.Redis.RedisTimeoutException("Timeout awaiting response", StackExchange.Redis.CommandStatus.Unknown));
+        var job = CreateJobRecord("job-redis-timeout", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(jobStore, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        var act = () => sut.ReconcileExecutionJobAsync("job-redis-timeout");
+        await act.Should().ThrowAsync<StackExchange.Redis.RedisTimeoutException>();
+
+        var stored = (await jobStore.GetAsync("job-redis-timeout"))!;
+        stored.Status.Should().Be(ExecutionJobStatus.Running);
+        stored.CompletedAt.Should().BeNull();
+        stored.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_ProgressStoreFallbackOutage_LeavesTheRunningJobAlone()
+    {
+        // The progress store answers with its own unavailable-state exception, not a Redis one,
+        // until its recovery probe; later sweeps must stay non-terminal too.
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException(
+                "Distributed import progress state is unavailable while attempting to read progress."));
+        var job = CreateJobRecord("job-progress-outage", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(jobStore, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        var act = () => sut.ReconcileExecutionJobAsync("job-progress-outage");
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        (await jobStore.GetAsync("job-progress-outage"))!.Status.Should().Be(ExecutionJobStatus.Running);
     }
 
     [Fact]
@@ -2036,6 +2154,17 @@ public sealed class ExecutionJobReconcilerTests
 
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
         => tags.FirstOrDefault(tag => tag.Key == name).Value?.ToString();
+
+    private sealed class RecordingTerminalCallback : IJobTerminalCallback
+    {
+        public List<(ExecutionJobRecord Job, CancellationToken Token)> Calls { get; } = [];
+
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            Calls.Add((job, cancellationToken));
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class InMemoryExecutionJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {

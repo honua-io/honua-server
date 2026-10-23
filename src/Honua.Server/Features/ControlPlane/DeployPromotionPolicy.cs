@@ -75,8 +75,8 @@ internal static class DeployPromotionPolicy
                 case "manual":
                     return DeployPromotionGateMode.Manual;
                 default:
-                    // An unrecognized value falls back to the kind-aware default below rather than
-                    // failing the deploy outright.
+                    // Plan-time Validate rejects an unrecognized value (#4617); this fallback only
+                    // applies to operations persisted before that validation existed.
                     break;
             }
         }
@@ -84,5 +84,21 @@ internal static class DeployPromotionPolicy
         return spec.TargetKind == DeployTargetKind.SelfHostedRolling
             ? DeployPromotionGateMode.Health
             : DeployPromotionGateMode.Telemetry;
+    }
+
+    /// <summary>
+    /// Returns a plan-blocking reason when <see cref="PromotionGateParameterKey"/> is set to a value
+    /// that is not recognized, so a typo cannot silently fall back to a different gate (#4617).
+    /// </summary>
+    public static string? Validate(DeployOperationSpec spec)
+    {
+        if (!spec.Parameters.TryGetValue(PromotionGateParameterKey, out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        return raw.Trim().ToLowerInvariant() is "telemetry" or "health" or "health-only" or "manual"
+            ? null
+            : $"{PromotionGateParameterKey} '{raw.Trim()}' is not recognized; use telemetry, health or manual.";
     }
 }

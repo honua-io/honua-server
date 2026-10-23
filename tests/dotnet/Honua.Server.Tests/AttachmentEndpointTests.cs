@@ -2,16 +2,24 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
@@ -31,15 +39,101 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        // The default test graph declares no edit capabilities. applyEdits treats that as
+        // Query-only, and attachment writes now use the same resolver (#6135).
+        _fixture.EnableV2ServiceEditingCapabilities(
+            TestServiceId,
+            ["Query", "Create", "Update", "Delete"]);
         var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId, _fixture.CurrentSchema!);
     }
 
     public async Task DisposeAsync()
     {
         var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId, _fixture.CurrentSchema!);
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task FeatureDelete_CleansOnlyItsFixtureAttachmentsAfterCommit(bool isolatedHost)
+    {
+        var target = new WebAppFixture();
+        var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        target.ReplaceRequestService<ILicenseEntitlementService>(license)
+            .ReplaceRequestService<ILicenseStatusProvider>(license);
+        if (isolatedHost)
+        {
+            target.ConfigureServices(_ => { });
+        }
+
+        await target.InitializeAsync();
+        var storage = target.GetService<ICloudFileStorage>();
+        try
+        {
+            target.EnableV2ServiceEditingCapabilities(TestServiceId, ["Query", "Create", "Update", "Delete"]);
+            await AttachmentTestData.SeedAsync(target.Postgres, storage, TestLayerId, TestFeatureId, target.CurrentSchema!);
+            var targetPath = await GetStoragePathAsync(target, 1);
+            var otherPath = await GetStoragePathAsync(1);
+            targetPath.Should().NotBe(otherPath);
+
+            // A later missing feature rolls the whole delete back, including attachment
+            // metadata. The backing objects must remain available until a confirmed commit.
+            using var failedForm = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["deletes"] = $"{TestFeatureId},999999",
+                ["rollbackOnFailure"] = "true",
+                ["f"] = "json"
+            });
+            using var failed = await target.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", failedForm);
+            failed.BeSuccessful();
+            var failedBody = await failed.Content.ReadAsStringAsync();
+            using var failedJson = JsonDocument.Parse(failedBody);
+            failedJson.RootElement.TryGetProperty("deleteResults", out var failedDeletes).Should()
+                .BeTrue("response should contain deleteResults; body: {0}", failedBody);
+            failedDeletes.EnumerateArray()
+                .Should().Contain(result => !result.GetProperty("success").GetBoolean());
+            (await GetStoragePathAsync(target, 1)).Should().Be(targetPath);
+            (await storage.ExistsAsync(targetPath)).Should().BeTrue();
+
+            using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["deletes"] = TestFeatureId.ToString(CultureInfo.InvariantCulture),
+                ["rollbackOnFailure"] = "true",
+                ["f"] = "json"
+            });
+            using var deleted = await target.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", form);
+            deleted.BeSuccessful();
+            var deletedBody = await deleted.Content.ReadAsStringAsync();
+            using var deletedJson = JsonDocument.Parse(deletedBody);
+            deletedJson.RootElement.TryGetProperty("deleteResults", out var deletedResults).Should()
+                .BeTrue("response should contain deleteResults; body: {0}", deletedBody);
+            deletedResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
+
+            await using var connection = await target.Postgres.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT count(*) FROM {QuoteSchema(target.CurrentSchema!)}.attachments WHERE layer_id = @layer AND feature_id = @feature";
+            command.Parameters.AddWithValue("layer", TestLayerId);
+            command.Parameters.AddWithValue("feature", TestFeatureId);
+            (await command.ExecuteScalarAsync()).Should().Be(0L);
+            (await storage.ExistsAsync(targetPath)).Should().BeFalse();
+
+            // The other fixture owns the same layer/feature/attachment identifiers.
+            // Its row and exact bytes must survive this fixture's committed delete.
+            (await GetStoragePathAsync(1)).Should().Be(otherPath);
+            (await DownloadAttachmentBytesAsync(1)).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
+        }
+        finally
+        {
+            await AttachmentTestData.CleanupAsync(target.Postgres, storage, TestLayerId, TestFeatureId, target.CurrentSchema!);
+            await target.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -78,7 +172,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // group['parentGlobalId'] unconditionally and raises KeyError when the key
         // is absent. Esri always emits the key (empty string when there is no
         // global-id column). Assert the raw JSON carries the key on every group,
-        // including groups with no attachments.
+        // Missing parents must not acquire a visible attachment group.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId},999");
 
@@ -87,7 +181,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var groups = document.RootElement.GetProperty("attachmentGroups");
-        groups.GetArrayLength().Should().Be(2);
+        groups.GetArrayLength().Should().Be(1, "the nonexistent parent must not be exposed");
+        groups[0].GetProperty("parentObjectId").GetInt64().Should().Be(TestFeatureId);
         foreach (var group in groups.EnumerateArray())
         {
             group.TryGetProperty("parentGlobalId", out var parentGlobalId).Should().BeTrue(
@@ -129,15 +224,22 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
-        result!.AttachmentGroups.Should().HaveCount(2);
-        result.AttachmentInfos.Should().BeNull();
+        result!.AttachmentGroups.Should().ContainSingle("nonexistent parents are not visible");
 
         var seededGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == TestFeatureId);
+        result.AttachmentInfos.Should().BeEquivalentTo(seededGroup.AttachmentInfos,
+            "the legacy flattened list contains only the one visible parent's attachments");
         seededGroup.AttachmentInfos.Should().NotBeEmpty();
         seededGroup.AttachmentInfos.Should().OnlyContain(attachment => !string.IsNullOrWhiteSpace(attachment.Url));
 
-        var emptyGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == 999);
-        emptyGroup.AttachmentInfos.Should().BeEmpty();
+        // #4404: a non-blank URL was never dereferenced, so a wrong or unroutable URL passed.
+        // Fetch the advertised URL for the seeded text attachment and compare the bytes.
+        var textAttachment = seededGroup.AttachmentInfos.Single(attachment => attachment.Name == "test1.txt");
+        var urlResponse = await _fixture.Client.GetAsync(ResolveAdvertisedUrl(textAttachment.Url!));
+        urlResponse.BeSuccessful();
+        (await urlResponse.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
+
+        result.AttachmentGroups.Should().NotContain(group => group.ParentObjectId == 999);
     }
 
     [IntegrationTest]
@@ -194,6 +296,51 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.Should().NotBeNull();
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
+
+        // #4404: a successful insert over a missing or garbled blob used to pass here.
+        // Read the bytes back through the public download route.
+        var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
+        downloaded.Should().Equal(fileContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_WhenOnlyQueryIsDeclared_DoesNotStore()
+    {
+        _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Query"]);
+        try
+        {
+            var before = await CountStoredAttachmentsAsync();
+            using var response = await PostPdfAttachmentAsync("query-only.pdf");
+            await response.AssertGeoServicesErrorAsync(400);
+            (await CountStoredAttachmentsAsync()).Should().Be(before);
+        }
+        finally
+        {
+            _fixture.EnableV2ServiceEditingCapabilities(
+                TestServiceId,
+                ["Query", "Create", "Update", "Delete"]);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_WhenLayerDoesNotSupportAttachments_DoesNotStore()
+    {
+        SetLayerEditing(new MetadataV2ResourceEditing { SupportsAttachments = false });
+        try
+        {
+            var before = await CountStoredAttachmentsAsync();
+            using var response = await PostPdfAttachmentAsync("unsupported.pdf");
+            await response.AssertGeoServicesErrorAsync(400);
+            (await CountStoredAttachmentsAsync()).Should().Be(before);
+        }
+        finally
+        {
+            SetLayerEditing(null);
+        }
     }
 
     [IntegrationTest]
@@ -267,6 +414,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.Should().NotBeNull();
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
+
+        // #4404: a successful insert over a missing or garbled blob used to pass here.
+        // Read the bytes back through the public download route.
+        var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
+        downloaded.Should().Equal(fileContent);
     }
 
     [IntegrationTest]
@@ -286,6 +438,38 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Assert
         await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTheory]
+    [InlineData("text/plain", "field-notes.txt", "Inspected 2026-09-21; hydrant cap replaced.")]
+    [InlineData("text/csv", "tally.csv", "species,count\nsalmon,12\ntrout,4\n")]
+    [InlineData("application/json", "reading.json", "{\"ph\":7.2,\"turbidity\":3}")]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_TextMimeTypeWithDefaultAllowList_IsStoredAndDownloadable(
+        string contentType, string fileName, string text)
+    {
+        // #5017: the default allow-list was image/*,application/pdf, so text notes, CSV tallies and
+        // JSON payloads were refused with "File type '...' is not allowed".
+        var payload = Encoding.UTF8.GetBytes(text);
+        var attachmentId = await AddAttachmentAsync(payload, fileName, contentType);
+
+        var downloaded = await DownloadAttachmentBytesAsync(attachmentId);
+        downloaded.Should().Equal(payload);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_TextFileWithScriptContent_IsStored()
+    {
+        // Script substrings in a text note are attribute data. The content scan applies to
+        // executable upload types (.html, .svg, .js), not to text/plain.
+        var payload = "note <script>1</script>"u8.ToArray();
+        var attachmentId = await AddAttachmentAsync(payload, "note.txt", "text/plain");
+
+        var downloaded = await DownloadAttachmentBytesAsync(attachmentId);
+        downloaded.Should().Equal(payload);
     }
 
     [IntegrationTest]
@@ -322,7 +506,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
             requestContent);
 
-        await response.AssertGeoServicesErrorAsync(415, 500);
+        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
+        // test. The endpoint must answer an unsupported media type with 415.
+        await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -446,7 +632,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
             requestContent);
 
-        await response.AssertGeoServicesErrorAsync(415, 500);
+        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
+        // test. The endpoint must answer an unsupported media type with 415.
+        await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -478,6 +666,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.DeleteAttachmentResults.Should().OnlyContain(r => r.Success);
         result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 1);
         result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 2);
+        using var document = JsonDocument.Parse(content);
+        foreach (var item in document.RootElement.GetProperty("deleteAttachmentResults").EnumerateArray())
+        {
+            item.TryGetProperty("error", out _).Should().BeFalse();
+        }
     }
 
     [IntegrationTest]
@@ -553,6 +746,31 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
+    public async Task DeleteAttachments_WithSuccessfulAndMissingIds_EmitsErrorOnlyForFailure()
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("1,999"), "attachmentIds" }
+        };
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var results = document.RootElement.GetProperty("deleteAttachmentResults");
+        results.GetArrayLength().Should().Be(2);
+        results[0].GetProperty("objectId").GetInt64().Should().Be(1);
+        results[0].GetProperty("success").GetBoolean().Should().BeTrue();
+        results[0].TryGetProperty("error", out _).Should().BeFalse();
+        results[1].GetProperty("objectId").GetInt64().Should().Be(999);
+        results[1].GetProperty("success").GetBoolean().Should().BeFalse();
+        results[1].GetProperty("error").GetProperty("code").GetInt32().Should().Be(1000);
+        results[1].GetProperty("error").GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithMalformedAttachmentIdsDelimiter_Returns400()
     {
         using var form = new MultipartFormDataContent
@@ -594,7 +812,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
             requestContent);
 
-        await response.AssertGeoServicesErrorAsync(415, 500);
+        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
+        // test. The endpoint must answer an unsupported media type with 415.
+        await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -621,6 +841,73 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.DownloadAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task AttachmentInfos_WithFormPost_ReturnsSameAttachmentInfosAsGet()
+    {
+        // honua-server#5012: ArcGIS Pro lists a feature's attachments with a form-encoded POST.
+        // The GeoServices REST contract is that a resource answers GET and POST alike, so the
+        // POST must return the same attachment infos as the GET rather than an error envelope.
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json");
+        getResponse.BeSuccessful();
+        var viaGet = JsonSerializer.Deserialize(
+            await getResponse.Content.ReadAsStringAsync(),
+            FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var postResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments",
+            form);
+
+        postResponse.BeSuccessful();
+        postResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var content = await postResponse.Content.ReadAsStringAsync();
+        content.Should().NotContain("\"error\"", "the route must answer POST instead of returning an error envelope");
+
+        var viaPost = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentInfosResponse);
+        viaPost.Should().NotBeNull();
+        viaPost!.AttachmentInfos.Should().HaveCount(2);
+        viaPost.AttachmentInfos.Should().Contain(a => a.Name == "test1.txt");
+        viaPost.AttachmentInfos.Should().Contain(a => a.Name == "test2.jpg");
+        viaPost.AttachmentInfos.Select(static info => info.Id)
+            .Should().BeEquivalentTo(viaGet!.AttachmentInfos.Select(static info => info.Id));
+    }
+
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("?f=json")]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task AttachmentInfos_WithUnsupportedFormFormat_ReturnsValidationError(string query)
+    {
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "geojson")]);
+        using var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments{query}", form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
+    public async Task DownloadAttachment_WithFormPost_ReturnsFileContent()
+    {
+        // honua-server#5012: the per-attachment download answers POST as well as GET.
+        const long attachmentId = 1;
+
+        using var form = new FormUrlEncodedContent([]);
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}",
+            form);
+
+        response.BeSuccessful();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
     public async Task DownloadAttachment_WithValidId_ReturnsFileContent()
     {
@@ -635,8 +922,10 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
 
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().NotBeEmpty();
+        // #4404: `NotBeEmpty` passed for a truncated or wrong object. The seeded content is
+        // known exactly (AttachmentTestData), so assert it exactly.
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
     }
 
     [IntegrationTest]
@@ -679,6 +968,266 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         content.Should().Contain("exceeds maximum allowed size");
     }
 
+    /// <summary>
+    /// The core attachment promise: what goes in comes back out, byte for byte, through the
+    /// public API. Before this test exactly one assertion in the whole endpoint suite compared
+    /// bytes, and it was on the replace path — an <c>addAttachment</c> that committed a row
+    /// over a garbled or truncated blob passed (honua-server#4404).
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_ThenDownload_RoundTripsBinaryBytesExactly()
+    {
+        // A deterministic binary payload that is not valid UTF-8 and contains embedded NULs,
+        // CR and LF, so any text decoding, newline translation or truncation shows up as a
+        // byte mismatch rather than passing a "non-empty" check.
+        var payload = BuildBinaryPayload(4096);
+        var expectedHash = Convert.ToHexString(SHA256.HashData(payload));
+
+        var attachmentId = await AddAttachmentAsync(payload, "roundtrip.png", BinaryContentType);
+
+        var downloaded = await DownloadAttachmentBytesAsync(attachmentId);
+        downloaded.Should().HaveCount(payload.Length, "a truncated object must not pass");
+        downloaded.Should().Equal(payload);
+        Convert.ToHexString(SHA256.HashData(downloaded)).Should().Be(expectedHash);
+
+        // The indexed size column must agree with the object that was actually stored, so a
+        // drifted size cannot make a size filter lie.
+        var info = await GetAttachmentInfoAsync(attachmentId);
+        info.Size.Should().Be(payload.Length);
+        info.ContentType.Should().Be(BinaryContentType);
+        info.Name.Should().Be("roundtrip.png");
+    }
+
+    /// <summary>
+    /// <c>deleteAttachments</c> must remove both halves of the two-store write. The existing
+    /// test asserted only that the response said success and never re-queried, making it
+    /// strictly weaker than the store-level test one layer down (honua-server#4404).
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
+    public async Task DeleteAttachments_RemovesTheMetadataRowAndTheStoredObject()
+    {
+        var payload = BuildBinaryPayload(512);
+        var attachmentId = await AddAttachmentAsync(payload, "doomed.png", BinaryContentType);
+
+        // Capture the storage path while the row still exists; after the delete there is no
+        // way to learn which object should have gone.
+        var storagePath = await GetStoragePathAsync(attachmentId);
+        var storage = _fixture.GetService<ICloudFileStorage>();
+        (await storage.ExistsAsync(storagePath)).Should().BeTrue("precondition: the object was stored");
+
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { new StringContent(attachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentIds" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
+        response.BeSuccessful();
+
+        var result = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            FeatureServerJsonContext.Default.DeleteAttachmentsResponse);
+        result!.DeleteAttachmentResults.Should().OnlyContain(r => r.Success);
+
+        // Metadata row is gone: neither the listing nor a direct download sees it.
+        var infos = await ListAttachmentInfosAsync();
+        infos.Should().NotContain(info => info.Id == attachmentId);
+
+        var download = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}");
+        await download.AssertGeoServicesErrorAsync(404);
+
+        // And the object is gone from storage, not merely unreferenced.
+        (await storage.ExistsAsync(storagePath)).Should().BeFalse(
+            "a deleted attachment must not leave its object behind");
+    }
+
+    /// <summary>
+    /// A rejected upload must leave neither a row nor a partial object. The 413 and 415 tests
+    /// asserted only the status, so a handler that streamed the body to storage before
+    /// rejecting it would have passed (honua-server#4404).
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_RejectedUploads_LeaveNoPartialObjectAndNoRow()
+    {
+        var storage = _fixture.GetService<ICloudFileStorage>();
+        var objectsBefore = await ListStoredObjectIdsAsync(storage);
+        var infosBefore = (await ListAttachmentInfosAsync()).Select(info => info.Id).ToHashSet();
+
+        // Oversize: 15 MB against the 10 MB default limit.
+        using (var oversize = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { new ByteArrayContent(new byte[15 * 1024 * 1024]), "attachment", "large.txt" }
+        })
+        {
+            var response = await _fixture.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", oversize);
+            await response.AssertGeoServicesErrorAsync(413);
+        }
+
+        // Unsupported media type on the request itself (same shape as
+        // AddAttachment_WithUnsupportedContentType_Returns415).
+        using (var unsupported = new StringContent("objectId=1", Encoding.UTF8, "text/plain"))
+        {
+            var response = await _fixture.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", unsupported);
+            await response.AssertGeoServicesErrorAsync(415);
+        }
+
+        (await ListStoredObjectIdsAsync(storage)).Should().BeEquivalentTo(
+            objectsBefore, "a rejected upload must not leave a partial object in storage");
+        (await ListAttachmentInfosAsync()).Select(info => info.Id).Should().BeEquivalentTo(
+            infosBefore, "a rejected upload must not leave a metadata row");
+    }
+
+    /// <summary>
+    /// Two uploads to the same feature at the same time must both land as distinct, complete
+    /// attachments — no id collision, no crossed blobs. No attachment test had any concurrency
+    /// at all before this (honua-server#4404, see also #4250).
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_ConcurrentUploadsToTheSameFeature_BothPersistWithTheirOwnBytes()
+    {
+        // Distinct payloads of different lengths: a crossed blob shows up as both a byte and a
+        // length mismatch, and an id collision shows up as a duplicate object id.
+        var first = BuildBinaryPayload(1024, seed: 11);
+        var second = BuildBinaryPayload(2048, seed: 29);
+
+        var uploads = await Task.WhenAll(
+            AddAttachmentAsync(first, "concurrent-a.png", BinaryContentType),
+            AddAttachmentAsync(second, "concurrent-b.png", BinaryContentType));
+
+        uploads.Should().OnlyHaveUniqueItems("two concurrent uploads must not share one attachment id");
+
+        (await DownloadAttachmentBytesAsync(uploads[0])).Should().Equal(first);
+        (await DownloadAttachmentBytesAsync(uploads[1])).Should().Equal(second);
+
+        var infos = await ListAttachmentInfosAsync();
+        infos.Single(info => info.Id == uploads[0]).Size.Should().Be(first.Length);
+        infos.Single(info => info.Id == uploads[1]).Size.Should().Be(second.Length);
+    }
+
+    /// <summary>
+    /// An upload racing the delete of a different attachment on the same feature must leave
+    /// both outcomes intact: the survivor keeps its exact bytes and the deleted attachment
+    /// takes its object with it (honua-server#4404).
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_RacingADeleteOnTheSameFeature_LeavesBothStoresConsistent()
+    {
+        var doomed = BuildBinaryPayload(768, seed: 41);
+        var doomedId = await AddAttachmentAsync(doomed, "racing-doomed.png", BinaryContentType);
+        var doomedPath = await GetStoragePathAsync(doomedId);
+
+        var arriving = BuildBinaryPayload(1536, seed: 53);
+
+        using var deleteForm = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { new StringContent(doomedId.ToString(CultureInfo.InvariantCulture)), "attachmentIds" }
+        };
+
+        var uploadTask = AddAttachmentAsync(arriving, "racing-arriving.png", BinaryContentType);
+        var deleteTask = _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", deleteForm);
+
+        await Task.WhenAll(uploadTask, deleteTask);
+
+        var arrivingId = await uploadTask;
+        (await deleteTask).BeSuccessful();
+
+        // The arriving attachment survives intact.
+        (await DownloadAttachmentBytesAsync(arrivingId)).Should().Equal(arriving);
+
+        // The deleted one is gone from both stores.
+        var infos = await ListAttachmentInfosAsync();
+        infos.Should().NotContain(info => info.Id == doomedId);
+        infos.Should().Contain(info => info.Id == arrivingId);
+
+        var storage = _fixture.GetService<ICloudFileStorage>();
+        (await storage.ExistsAsync(doomedPath)).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Attachment authorization with the development authentication bypass disabled
+    /// (honua-server#4404).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every other test in this file runs as the dev-bypass principal, and a grep for
+    /// "attachment" across both security test projects returns nothing — so the attachment
+    /// surface had no authorization evidence at all. This runs on an isolated host with
+    /// <c>HONUA_DEV_AUTH_ALLOW_BYPASS=false</c>.
+    /// </para>
+    /// <para>
+    /// The refusal is a GeoServices error envelope (HTTP 200 with <c>error.code</c> 499), not a
+    /// transport 401 — the convention this surface uses. The assertion that matters either way is
+    /// that the object's bytes are never in the response body.
+    /// </para>
+    /// </remarks>
+    [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
+    public async Task DownloadAttachment_WithoutCredentials_IsRefusedAndNeverReturnsTheBytes()
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var storage = fixture.GetService<ICloudFileStorage>();
+            await AttachmentTestData.SeedAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId, fixture.CurrentSchema!);
+
+            try
+            {
+                var seeded = AttachmentTestData.SeededTextFileBytes.ToArray();
+                using var anonymous = fixture.CreateClient();
+
+                var download = await anonymous.GetAsync(
+                    $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
+                await download.AssertGeoServicesErrorAsync(499);
+                (await download.Content.ReadAsByteArrayAsync()).Should().NotEqual(
+                    seeded, "an unauthenticated caller must never receive the attachment bytes");
+
+                var query = await anonymous.GetAsync(
+                    $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}");
+                await query.AssertGeoServicesErrorAsync(499);
+
+                // Positive control: with credentials the same request succeeds and returns the
+                // exact bytes, so the refusal above is authorization and not a broken route.
+                using var admin = fixture.CreateAdminClient();
+                var authorized = await admin.GetAsync(
+                    $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
+                authorized.StatusCode.Should().Be(HttpStatusCode.OK);
+                (await authorized.Content.ReadAsByteArrayAsync()).Should().Equal(seeded);
+            }
+            finally
+            {
+                await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId, fixture.CurrentSchema!);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.QueryAttachments)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
@@ -696,5 +1245,197 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().BeEmpty();
+    }
+    /// <summary>
+    /// Media type used for the binary round-trip payloads. The upload validator's default
+    /// allowlist is <c>image/*,application/pdf,text/plain,text/csv,application/json</c>
+    /// (<c>LimitsOptions.AllowedMimeTypes</c>), so an
+    /// <c>application/octet-stream</c> upload is rejected before it ever reaches storage.
+    /// </summary>
+    private const string BinaryContentType = "image/png";
+
+    /// <summary>
+    /// Deterministic binary payload: not valid UTF-8, contains NUL/CR/LF, and is a pure
+    /// function of (length, seed) so an expected value can be recomputed rather than
+    /// snapshotted from the server's own output.
+    /// </summary>
+    /// <remarks>
+    /// It opens with the PNG signature, which is both what makes the declared
+    /// <see cref="BinaryContentType"/> honest and a built-in tripwire: the signature itself
+    /// contains <c>0x0D 0x0A 0x1A 0x0A</c>, so any newline translation or text round-trip
+    /// corrupts it. The bytes immediately after it force a NUL and a 0xFF as well.
+    /// </remarks>
+    private static byte[] BuildBinaryPayload(int length, int seed = 7)
+    {
+        var payload = new byte[length];
+        for (var index = 0; index < length; index++)
+        {
+            payload[index] = (byte)((index * 37 + seed * 101 + (index % 13)) % 256);
+        }
+
+        ReadOnlySpan<byte> pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        if (length >= pngSignature.Length + 2)
+        {
+            pngSignature.CopyTo(payload);
+            payload[pngSignature.Length] = 0x00;
+            payload[pngSignature.Length + 1] = 0xFF;
+        }
+
+        return payload;
+    }
+
+    private async Task<HttpResponseMessage> PostPdfAttachmentAsync(string filename)
+    {
+        var byteContent = new ByteArrayContent("refused"u8.ToArray());
+        byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { byteContent, "attachment", filename }
+        };
+        return await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
+            form);
+    }
+
+    private async Task<long> CountStoredAttachmentsAsync()
+    {
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT COUNT(*)
+            FROM {QuoteSchema(_fixture.CurrentSchema!)}.attachments
+            WHERE layer_id = @layerId AND feature_id = @featureId
+            """;
+        command.Parameters.AddWithValue("layerId", TestLayerId);
+        command.Parameters.AddWithValue("featureId", TestFeatureId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private void SetLayerEditing(MetadataV2ResourceEditing? editing)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == TestLayerId);
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource =>
+                resource.Metadata.Id == publication.ResourceId
+                    ? resource with { Editing = editing }
+                    : resource).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+    }
+
+    private async Task<long> AddAttachmentAsync(byte[] payload, string filename, string contentType)
+    {
+        var body = new ByteArrayContent(payload);
+        body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { body, "attachment", filename }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
+        response.BeSuccessful();
+
+        var result = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            FeatureServerJsonContext.Default.AddAttachmentResponse);
+        result.Should().NotBeNull();
+        result!.AddAttachmentResult.Success.Should().BeTrue();
+        result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
+        return result.AddAttachmentResult.ObjectId;
+    }
+
+    private async Task<byte[]> DownloadAttachmentBytesAsync(long attachmentId)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}");
+        response.BeSuccessful();
+        return await response.Content.ReadAsByteArrayAsync();
+    }
+
+    private async Task<AttachmentInfo[]> ListAttachmentInfosAsync()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}");
+        response.BeSuccessful();
+
+        var result = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            FeatureServerJsonContext.Default.AttachmentQueryResponse);
+        return result?.AttachmentInfos ?? [];
+    }
+
+    private async Task<AttachmentInfo> GetAttachmentInfoAsync(long attachmentId)
+    {
+        var infos = await ListAttachmentInfosAsync();
+        return infos.Should().ContainSingle(info => info.Id == attachmentId).Subject;
+    }
+
+    /// <summary>
+    /// Reads the storage identifier of an attachment straight from the metadata table, so a
+    /// test can assert on the object after the row that names it has been deleted.
+    /// </summary>
+    private static string QuoteSchema(string schema)
+    {
+        using var builder = new Npgsql.NpgsqlCommandBuilder();
+        return builder.QuoteIdentifier(schema);
+    }
+
+    private Task<string> GetStoragePathAsync(long attachmentId)
+        => GetStoragePathAsync(_fixture, attachmentId);
+
+    private static async Task<string> GetStoragePathAsync(WebAppFixture fixture, long attachmentId)
+    {
+        await using var connection = await fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT storage_path FROM {QuoteSchema(fixture.CurrentSchema!)}.attachments WHERE id = @id";
+        command.Parameters.AddWithValue("id", attachmentId);
+        var value = await command.ExecuteScalarAsync();
+        value.Should().BeOfType<string>("attachment {0} must have a storage path", attachmentId);
+        return (string)value!;
+    }
+
+    private static async Task<HashSet<string>> ListStoredObjectIdsAsync(ICloudFileStorage storage)
+    {
+        var files = await storage.ListFilesAsync(maxResults: 5000);
+        return files.Select(file => file.FileId).ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The <c>returnUrl</c> form emits either an absolute URL (when a base URL is
+    /// configured) or a base-path-relative one. The test client routes every request to the
+    /// in-memory server regardless of the authority in the URI, so an absolute URL naming
+    /// the wrong scheme, host or port would still be fetched successfully; assert the
+    /// authority explicitly before dereferencing, or the round trip proves nothing about
+    /// whether the advertised URL is usable by a real client (honua-server#4468).
+    /// </summary>
+    private Uri ResolveAdvertisedUrl(string url)
+    {
+        var baseAddress = _fixture.Client.BaseAddress;
+        baseAddress.Should().NotBeNull("the test client must be rooted at the test server");
+
+        // On Unix, Uri.TryCreate with UriKind.Absolute parses a leading-slash path as a
+        // file:// URI, so the presence of an http/https scheme — not absoluteness alone — is
+        // what distinguishes an advertised absolute URL from a base-path-relative one.
+        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute) &&
+            (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+        {
+            absolute.Scheme.Should().Be(baseAddress!.Scheme, "the advertised URL must keep the serving scheme");
+            absolute.Authority.Should().Be(
+                baseAddress.Authority,
+                "the advertised URL must point at the serving host, not some other authority");
+            return absolute;
+        }
+
+        url.Should().StartWith("/", "a non-absolute advertised URL must be rooted so a client can resolve it");
+        return new Uri(baseAddress!, url);
     }
 }

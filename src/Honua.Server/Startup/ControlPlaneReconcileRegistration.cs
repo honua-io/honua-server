@@ -5,6 +5,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -97,6 +98,26 @@ internal static class ControlPlaneReconcileRegistration
         // the scheduler drives SweepOnceAsync instead, so the timer is not hosted.
         services.AddSingleton<ExecutionJobBackstopSweepService>();
 
+        // The workflow-operation backstop is resolvable for the same reason: a control-plane
+        // event-handler Lambda hosts neither backstop timer, so its backstop invocation drives both
+        // sweeps through IControlPlaneLambdaEventTargets.
+        services.AddSingleton<WorkflowOperationBackstopSweepService>();
+        services.AddHonuaControlPlaneLambdaEventTargets();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers what the control-plane Lambda event route resolves: the event targets and the
+    /// scheduled-tick dispatcher. Independent of Redis (honua-release run 38242272260): on a
+    /// Redis-off cell the dispatcher sees only the tick handlers that were composed, and the
+    /// targets refuse the work that needs the durable stores with a typed 503 instead of the route
+    /// failing to bind. Idempotent, so the Redis-backed graph and the host can both call it.
+    /// </summary>
+    public static IServiceCollection AddHonuaControlPlaneLambdaEventTargets(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IScheduledTickDispatcher, ScheduledTickDispatcher>();
+        services.TryAddSingleton<IControlPlaneLambdaEventTargets, ControlPlaneLambdaEventTargets>();
         return services;
     }
 }

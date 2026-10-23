@@ -218,6 +218,21 @@ internal static class GeoServicesRequestValueHelpers
     internal static string? GetValueString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 
+    internal static async Task<string?> ReadFormValueOrDefaultAsync(
+        HttpRequest request, string key, string? fallback, CancellationToken cancellationToken)
+    {
+        if (HttpMethods.IsPost(request.Method) && request.HasFormContentType)
+        {
+            var form = await request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+            if (form.TryGetValue(key, out var value))
+            {
+                return value.ToString();
+            }
+        }
+
+        return fallback;
+    }
+
     internal static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
     {
         if (context.Items.TryGetValue(QueryTimeoutTokenKey, out var existing) && existing is CancellationToken cachedToken)

@@ -1,0 +1,305 @@
+{
+  "format": "honua.live-auth-boundary-replay.v1",
+  "generatedAt": "2026-09-15T03:49:42.191Z",
+  "candidate": {
+    "image": "ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "digest": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "revision": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+    "observedRevision": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+    "deploymentFingerprint": "sha256:3bc871386a814216d9802542a4ac0dd33764212f97994e0e685887dce6308eb8",
+    "configuration": {
+      "ASPNETCORE_ENVIRONMENT": "Staging",
+      "ASPNETCORE_URLS": "http://+:8080",
+      "PUBLIC_BASE_URL": "http://127.0.0.1:18190",
+      "HONUA_ADMIN_PASSWORD": "<per-run secret>",
+      "ConnectionStrings__DefaultConnection": "<per-run secret>",
+      "ConnectionStrings__honua": "<per-run secret>",
+      "ConnectionStrings__Redis": "<per-run secret>",
+      "Security__ConnectionEncryption__MasterKey": "<per-run secret>",
+      "Security__ConnectionEncryption__Salt": "<per-run secret>",
+      "HostValidation__AllowedHosts__0": "localhost",
+      "HostValidation__AllowedHosts__1": "127.0.0.1",
+      "Metadata__Environment": "Production",
+      "Licensing__DevGrantEdition": "Pro",
+      "Capabilities__Experimental__Enabled": "true",
+      "MultiTenancy__MultiTenantAdminRoles__0": "admin",
+      "Authentication__PortalToken__RequireHttps": "false",
+      "Authentication__PortalCredentialVerifier__UseOidc": "true",
+      "Oidc__Enabled": "true",
+      "Oidc__RequireHttps": "true",
+      "Oidc__Generic__Enabled": "true",
+      "Oidc__Generic__Authority": "https://issuer.realtime-conformance.invalid",
+      "Oidc__Generic__ClientId": "honua-realtime-conformance",
+      "Oidc__Generic__ClientSecret": "<per-run secret>",
+      "Oidc__TokenValidation__SymmetricSigningKey": "<per-run secret>",
+      "Oidc__TokenValidation__ValidIssuers__0": "https://issuer.realtime-conformance.invalid",
+      "Oidc__TokenValidation__ValidAudiences__0": "honua-realtime-conformance",
+      "Oidc__TokenValidation__ClockSkew": "00:00:00",
+      "Operations__SecretChannel__KeyRingCertificatePath": "/app/keyring.p12",
+      "Operations__SecretChannel__KeyRingCertificatePassword": "<per-run secret>"
+    },
+    "seed": {
+      "source": "honua-server@548b7a5263da5a3f2381eb43f232687cdf92b0bf:tests/seed/client-compat-v1.sql",
+      "sha256": "538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757"
+    },
+    "tenantOverlay": {
+      "source": "test/fixtures/realtime/live-authorization-tenants.sql",
+      "sha256": "549dfdfdcdae0fe4234ec54e3f0db31eed2d839112c5a3b1b5c38a70a2db79a8"
+    }
+  },
+  "summary": {
+    "cells": 17,
+    "passed": 17,
+    "failed": []
+  },
+  "cells": [
+    {
+      "issue": "#4778",
+      "cell": "odata/control/tenant-a-reader-own-layer",
+      "expectation": "200 with rows",
+      "observed": {
+        "status": 200,
+        "sentAt": 1789444114693,
+        "at": 1789444114805,
+        "wwwAuthenticate": null,
+        "contentType": "application/json;odata.metadata=minimal",
+        "payloadRows": 0,
+        "error": null,
+        "bodyBytes": 194
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/anonymous/layer-10",
+      "expectation": "401 + a WWW-Authenticate challenge, no rows",
+      "observed": {
+        "status": 401,
+        "sentAt": 1789444114805,
+        "at": 1789444114833,
+        "wwwAuthenticate": "ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"",
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "Unauthorized",
+        "bodyBytes": 362
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/anonymous/layer-11",
+      "expectation": "401 + a WWW-Authenticate challenge, no rows",
+      "observed": {
+        "status": 401,
+        "sentAt": 1789444114834,
+        "at": 1789444114866,
+        "wwwAuthenticate": "ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"",
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "Unauthorized",
+        "bodyBytes": 362
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/invalid-bearer/layer-10",
+      "expectation": "401 + WWW-Authenticate Bearer, no rows",
+      "observed": {
+        "status": 401,
+        "sentAt": 1789444114867,
+        "at": 1789444114910,
+        "wwwAuthenticate": "Bearer",
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "Unauthorized",
+        "bodyBytes": 362
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/query-token-not-a-transport/layer-10",
+      "expectation": "refused (4xx), no rows",
+      "observed": {
+        "status": 400,
+        "sentAt": 1789444114911,
+        "at": 1789444114935,
+        "wwwAuthenticate": null,
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "InvalidQueryOption",
+        "bodyBytes": 324
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/cross-tenant/tenant-b-reader-on-layer-10",
+      "expectation": "404 (tenant concealment)",
+      "observed": {
+        "status": 404,
+        "sentAt": 1789444114937,
+        "at": 1789444114959,
+        "wwwAuthenticate": null,
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "ResourceNotFound",
+        "bodyBytes": 304
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/cross-tenant/tenant-a-reader-on-layer-11",
+      "expectation": "404 (tenant concealment)",
+      "observed": {
+        "status": 404,
+        "sentAt": 1789444114962,
+        "at": 1789444114987,
+        "wwwAuthenticate": null,
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "ResourceNotFound",
+        "bodyBytes": 304
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/token-revocation/before",
+      "expectation": "200",
+      "observed": {
+        "status": 200,
+        "sentAt": 1789444115011,
+        "at": 1789444115072,
+        "wwwAuthenticate": null,
+        "contentType": "application/json;odata.metadata=minimal",
+        "payloadRows": 0,
+        "error": null,
+        "bodyBytes": 194
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/token-revocation/after",
+      "expectation": "401 + WWW-Authenticate Bearer, no rows",
+      "observed": {
+        "status": 401,
+        "sentAt": 1789444116373,
+        "at": 1789444116392,
+        "wwwAuthenticate": "Bearer",
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "Unauthorized",
+        "bodyBytes": 362
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4776",
+      "cell": "websocket/token-revocation/attempt-1",
+      "expectation": "close 1008 authorization-ended within 5 s of the boundary",
+      "observed": {
+        "code": 1008,
+        "reason": "authorization-ended",
+        "msAfterBoundary": 986,
+        "error": null
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4776",
+      "cell": "websocket/token-revocation/attempt-2",
+      "expectation": "close 1008 authorization-ended within 5 s of the boundary",
+      "observed": {
+        "code": 1008,
+        "reason": "authorization-ended",
+        "msAfterBoundary": 993,
+        "error": null
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4776",
+      "cell": "websocket/token-revocation/attempt-3",
+      "expectation": "close 1008 authorization-ended within 5 s of the boundary",
+      "observed": {
+        "code": 1008,
+        "reason": "authorization-ended",
+        "msAfterBoundary": 999,
+        "error": null
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4777",
+      "cell": "odata/token-expiry/valid-until-advertised-expiry",
+      "expectation": "no refusal received before expires, no admission sent after expires, refused within 5 s of expires",
+      "observed": {
+        "lastAdmission": {
+          "sentMsFromExpiry": -107,
+          "receivedMsFromExpiry": -12
+        },
+        "firstRefusal": {
+          "sentMsFromExpiry": 89,
+          "receivedMsFromExpiry": 141
+        }
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4778",
+      "cell": "odata/token-expiry/after",
+      "expectation": "401 + WWW-Authenticate Bearer, no rows",
+      "observed": {
+        "status": 401,
+        "sentAt": 1789444181278,
+        "at": 1789444181330,
+        "wwwAuthenticate": "Bearer",
+        "contentType": "application/json",
+        "payloadRows": null,
+        "error": "Unauthorized",
+        "bodyBytes": 362
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4776",
+      "cell": "websocket/token-expiry/socket-1",
+      "expectation": "close 1008 authorization-ended within 5 s of the boundary",
+      "observed": {
+        "code": 1008,
+        "reason": "authorization-ended",
+        "msAfterBoundary": 974,
+        "error": null
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4776",
+      "cell": "websocket/token-expiry/socket-2",
+      "expectation": "close 1008 authorization-ended within 5 s of the boundary",
+      "observed": {
+        "code": 1008,
+        "reason": "authorization-ended",
+        "msAfterBoundary": 990,
+        "error": null
+      },
+      "result": "passed"
+    },
+    {
+      "issue": "#4776",
+      "cell": "websocket/token-expiry/socket-3",
+      "expectation": "close 1008 authorization-ended within 5 s of the boundary",
+      "observed": {
+        "code": 1008,
+        "reason": "authorization-ended",
+        "msAfterBoundary": 1002,
+        "error": null
+      },
+      "result": "passed"
+    }
+  ]
+}

@@ -68,13 +68,9 @@ Known gap (until #1810/#1811):
 - The view will request `nodes/{id}/geometries/0` and receive 404 — geometry
   does not render. This is expected and tracked.
 
-## Procedure — ArcGIS Pro
+## ArcGIS Pro
 
-1. Add Data → From Path → paste the `…/SceneServer` URL.
-2. Confirm the scene layer appears in the Contents pane with the correct
-   `layerType` (3D Object / Building / Point Cloud).
-3. Confirm Pro traverses node pages without descriptor errors.
-4. Geometry render and Identify are blocked until #1810/#1811.
-
-Record the Pro / browser version and the observed behaviour in the PR or the
-epic (#1805) when running this probe.
+ArcGIS Pro scene compatibility is nominative. Certification detail stays in
+private `honua-esri-compat` (ruling R30). Geometry render and Identify remain
+blocked until #1810/#1811. Record the evidence identifier on epic #1805; do not
+restate the client procedure here.

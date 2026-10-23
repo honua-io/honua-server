@@ -1363,6 +1363,7 @@ internal static class GeoServicesToMapLibreConverter
             return "-Infinity";
         }
 
+        // codeql[cs/equality-on-floats]: exact zero, including negative zero, is the ECMAScript "0" spelling; a tolerance would collapse tiny stops
         if (value == 0d)
         {
             // Covers negative zero, which ECMAScript renders as "0".

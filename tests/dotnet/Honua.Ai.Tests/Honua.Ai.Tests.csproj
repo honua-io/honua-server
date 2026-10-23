@@ -65,4 +65,22 @@
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpTestFactory.cs" Link="Shared/McpTestFactory.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpTelemetryCollectionDefinition.cs" Link="Shared/McpTelemetryCollectionDefinition.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/StudioAiProxyTestHttp.cs" Link="Shared/StudioAiProxyTestHttp.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpTaxonomyAlignmentTests.Shared.cs" Link="Shared/McpTaxonomyAlignmentTests.Shared.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpSessionSharedStoreTests.Shared.cs" Link="Shared/McpSessionSharedStoreTests.Shared.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpServiceCollectionExtensionsTests.Shared.cs" Link="Shared/McpServiceCollectionExtensionsTests.Shared.cs" />
+  </ItemGroup>
 </Project>

@@ -1,15 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Protocols.GeoServices.ImageServer.Models;
-using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -63,7 +64,7 @@ internal sealed class ImageServerIdentifyHandler
         {
             // Validate layer exists in the Metadata v2 graph
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -88,6 +89,9 @@ internal sealed class ImageServerIdentifyHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid geometry coordinates");
             }
 
+            var maskedFields = await ImageServerCatalogSecurity.ResolveMasksAsync(
+                context, resolved.Resource, cancellationToken).ConfigureAwait(false);
+
             if (!ImageServerMultidimensionalDefinition.TryParse(
                     request.MultidimensionalDefinition, out var dimensionConstraints, out var multidimensionalError))
             {
@@ -108,6 +112,7 @@ internal sealed class ImageServerIdentifyHandler
                         layerId,
                         request,
                         resolved.DisplayName,
+                        maskedFields,
                         x.Value,
                         y.Value,
                         srid,
@@ -116,7 +121,7 @@ internal sealed class ImageServerIdentifyHandler
                     .ConfigureAwait(false);
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, timeError ?? "Invalid time parameter");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
@@ -138,20 +143,59 @@ internal sealed class ImageServerIdentifyHandler
                     : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
             }
 
-            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, request.MosaicRule);
+            // identify parses mosaicRule with the same parser as exportImage (#4064), so an
+            // esriMosaicLockRaster rule pins the identified catalog items exactly as export does
+            // and a malformed rule is rejected instead of silently falling back to the mosaic.
+            if (!ImageServerMosaicRule.TryParse(request.MosaicRule, out var mosaicRule, out var mosaicRuleError, out var mosaicRuleNotImplemented))
+            {
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, mosaicRuleError);
+                return mosaicRuleNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError)
+                    : StandardErrorHelpers.CreateBadRequest(context, mosaicRuleError);
+            }
+
+            try
+            {
+                ImageServerCatalogSecurity.Validate(new ImageServerCatalogQuery
+                {
+                    Time = timestamp,
+                    TimeStart = timeStart,
+                    OrderBy = string.IsNullOrWhiteSpace(request.MosaicRule) || string.IsNullOrWhiteSpace(mosaicRule.SortField)
+                        ? [] : [new ImageServerCatalogOrderBy(mosaicRule.SortField, !mosaicRule.Ascending)]
+                }, maskedFields);
+            }
+            catch (ImageServerCatalogFilterException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Identify references a masked catalog field.");
+            }
+
+            var mergeStrategy = mosaicRule.Operation
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
+            var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
+
+            // A locked raster set is independent of the temporal newest-batch snapshot (as in
+            // exportImage), so the time filter is dropped and the locked ids are intersected with
+            // the rasters under the point.
             var selectionQuery = new RasterSelectionQuery
             {
                 Geometry = ImageServerMosaicHelpers.CreatePointGeometry(x.Value, y.Value),
                 GeometrySrid = srid,
-                Timestamp = timestamp
+                Timestamp = isLockRaster ? null : timestamp,
+                TimeStart = isLockRaster ? null : timeStart
             };
             var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            if (isLockRaster)
+            {
+                var lockedIds = new HashSet<long>(mosaicRule.LockRasterIds ?? []);
+                selectedRasters = selectedRasters.Where(raster => lockedIds.Contains(raster.Id)).ToArray();
+            }
+
             if (selectedRasters.Length == 0)
             {
                 // ArcGIS ImageServer identify returns a 200 NoData document (not a 404) when the
@@ -162,12 +206,15 @@ internal sealed class ImageServerIdentifyHandler
                 var noDataResponse = new IdentifyResponse
                 {
                     ObjectId = null,
-                    Name = resolved.DisplayName,
+                    Name = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name") ? null : resolved.DisplayName,
                     Value = "NoData",
+                    // No raster was sampled, and raster selection reads an sr-less geometry in each
+                    // raster's own CRS, so the reference is only stated when the request supplied one.
                     Location = new Point
                     {
                         X = x.Value,
-                        Y = y.Value
+                        Y = y.Value,
+                        SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid)
                     },
                     Properties = new Dictionary<string, object?>
                     {
@@ -177,11 +224,20 @@ internal sealed class ImageServerIdentifyHandler
                         ["BandCount"] = 0
                     },
                     CatalogItems = request.ReturnCatalogItems == true
-                        ? Array.Empty<CatalogItem>()
+                        ? new IdentifyCatalogItems { SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) }
                         : null
                 };
 
                 return Results.Json(noDataResponse, ImageServerJsonContext.Default.IdentifyResponse);
+            }
+
+            // A method this service cannot execute only changes a composited pixel, so it is rejected
+            // (as in exportImage) when more than one raster would be merged.
+            if (mosaicRule.Method == MosaicMethod.Unsupported && selectedRasters.Length > 1)
+            {
+                const string unsupportedMessage = "mosaicRule mosaicMethod is not implemented on this service.";
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, unsupportedMessage);
+                return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
             }
 
             ImageServerLog.IdentifyStarted(_logger, layerId, x.Value, y.Value);
@@ -197,10 +253,12 @@ internal sealed class ImageServerIdentifyHandler
                     y.Value,
                     srid,
                     rendering,
+                    mosaicRule.ToOrdering(),
+                    mosaicRule.ToAttributeSort(),
                     cancellationToken);
 
             // returnGeometry controls whether catalog item footprints are emitted. ArcGIS
-            // returns the footprint envelope on each participating catalog item when
+            // returns a polygon footprint on each participating catalog feature when
             // returnGeometry=true (the default) and omits it when false.
             var includeFootprint = request.ReturnGeometry != false;
 
@@ -208,21 +266,18 @@ internal sealed class ImageServerIdentifyHandler
             var response = new IdentifyResponse
             {
                 ObjectId = selectedRasters.Length == 1 ? selectedRasters[0].Id : null,
-                Name = selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{resolved.DisplayName} mosaic",
+                Name = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name")
+                    ? null : selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{resolved.DisplayName} mosaic",
                 Value = FormatPixelValues(pixelResult.BandValues),
                 Location = new Point
                 {
                     X = pixelResult.X,
-                    Y = pixelResult.Y
+                    Y = pixelResult.Y,
+                    SpatialReference = CreateLocationSpatialReference(pixelResult.Srid ?? srid)
                 },
                 Properties = CreateProperties(pixelResult, request.PixelSize),
                 CatalogItems = request.ReturnCatalogItems == true
-                    ? selectedRasters.Select(r => new CatalogItem
-                    {
-                        Id = r.Id,
-                        Name = r.Name,
-                        Footprint = includeFootprint ? BuildFootprint(r) : null,
-                    }).ToArray()
+                    ? BuildCatalogItems(selectedRasters, includeFootprint, maskedFields)
                     : null
             };
 
@@ -251,6 +306,7 @@ internal sealed class ImageServerIdentifyHandler
         int layerId,
         IdentifyRequest request,
         string displayName,
+        ImmutableArray<string> maskedFields,
         double x,
         double y,
         int? srid,
@@ -312,9 +368,11 @@ internal sealed class ImageServerIdentifyHandler
         var response = new IdentifyResponse
         {
             ObjectId = null,
-            Name = read.Variable ?? displayName,
+            Name = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name") ? null : read.Variable ?? displayName,
             Value = hasData ? value.ToString(CultureInfo.InvariantCulture) : "NoData",
-            Location = new Point { X = x, Y = y },
+            // The slice reader samples an sr-less point in the coverage's native CRS, so the
+            // location reference is only stated when the request supplied one.
+            Location = new Point { X = x, Y = y, SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) },
             Properties = new Dictionary<string, object?>
             {
                 ["HasData"] = hasData,
@@ -323,7 +381,9 @@ internal sealed class ImageServerIdentifyHandler
                 ["SRID"] = srid,
                 ["DimensionCount"] = constraints.Count,
             },
-            CatalogItems = request.ReturnCatalogItems == true ? [] : null,
+            CatalogItems = request.ReturnCatalogItems == true
+                ? new IdentifyCatalogItems { SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) }
+                : null,
         };
 
         ImageServerLog.IdentifyCompleted(_logger, layerId, hasData, hasData ? 1 : 0);
@@ -409,6 +469,15 @@ internal sealed class ImageServerIdentifyHandler
             }
         }
 
+        // The native ArcGIS REST raster provider sends a two-key point literal.
+        // Reuse MapServer's finite-coordinate parser without relaxing general JSON.
+        if ((string.IsNullOrWhiteSpace(request.GeometryType) ||
+             request.GeometryType.Equals(PointGeometryType, StringComparison.OrdinalIgnoreCase)) &&
+            GeoServicesPointGeometryParser.TryParsePointLiteral(request.Geometry, out var literalX, out var literalY))
+        {
+            return (literalX, literalY, srid);
+        }
+
         // Handle JSON geometry: point ({x,y}), envelope, or polygon (rings). For area
         // geometries the centroid of the bounding envelope is the representative identify
         // location. ImageServerGeometryHelpers centralises the Esri-JSON envelope math so the
@@ -430,20 +499,30 @@ internal sealed class ImageServerIdentifyHandler
         return (null, null, null);
     }
 
+    // Esri identify reports the pixel as the band values in band order joined by ", "
+    // ("17, 22, 39, 45"), or "NoData" when no band holds a value (#4064). Values are formatted
+    // with the invariant culture so a client splitting on "," always recovers one value per band.
     private static string FormatPixelValues(Dictionary<int, object?> bandValues)
     {
-        if (bandValues.Count == 0)
+        if (bandValues.Values.All(static value => value is null))
             return "NoData";
 
-        if (bandValues.Count == 1)
-            return bandValues.First().Value?.ToString() ?? "NoData";
+        return string.Join(", ", bandValues.OrderBy(kvp => kvp.Key).Select(kvp => FormatBandValue(kvp.Value)));
+    }
 
-        // Format multi-band values
-        var values = bandValues.OrderBy(kvp => kvp.Key)
-            .Select(kvp => $"Band {kvp.Key}: {kvp.Value ?? "NoData"}")
-            .ToArray();
+    private static string FormatBandValue(object? value) => value switch
+    {
+        null => "NoData",
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? "NoData"
+    };
 
-        return string.Join("; ", values);
+    // The raster store interprets identify coordinates without an sr as WGS84, so the location
+    // is labelled with the reference its coordinates are actually in.
+    private static SpatialReference CreateLocationSpatialReference(int? srid)
+    {
+        var wkid = srid ?? 4326;
+        return new SpatialReference { Wkid = wkid, LatestWkid = wkid };
     }
 
     private static Dictionary<string, object?> CreateProperties(
@@ -476,25 +555,50 @@ internal sealed class ImageServerIdentifyHandler
         return properties;
     }
 
+    private static IdentifyCatalogItems BuildCatalogItems(RasterInfo[] rasters, bool returnGeometry, ImmutableArray<string> maskedFields)
+    {
+        // Footprints are in each raster's own CRS, independently of the identify point.
+        // Only advertise a shared reference when all catalog features agree.
+        var srids = rasters.Select(raster => raster.Extent?.Srid ?? raster.Srid).Distinct().ToArray();
+        return new IdentifyCatalogItems
+        {
+            SpatialReference = srids.Length == 1 ? CreateLocationSpatialReference(srids[0]) : null,
+            Features = rasters.Select(raster => new CatalogQueryFeature
+            {
+                Attributes = new Dictionary<string, object?>
+                {
+                    ["OBJECTID"] = raster.Id,
+                    ["Name"] = raster.Name
+                }.Where(attribute => !ImageServerCatalogSecurity.IsMasked(maskedFields, attribute.Key))
+                    .ToDictionary(attribute => attribute.Key, attribute => attribute.Value, StringComparer.OrdinalIgnoreCase),
+                Geometry = returnGeometry ? BuildFootprint(raster) : null
+            }).ToArray()
+        };
+    }
+
     /// <summary>
-    /// Builds an Esri envelope object for a raster footprint from its extent, used to
-    /// populate <see cref="CatalogItem.Footprint"/> when <c>returnGeometry</c> is true.
+    /// Builds the Esri polygon geometry of a raster footprint from its extent.
     /// </summary>
-    private static ImageServerExtent? BuildFootprint(Core.Features.Raster.Domain.RasterInfo raster)
+    private static CatalogQueryGeometry? BuildFootprint(RasterInfo raster)
     {
         if (raster.Extent is not { } extent)
         {
             return null;
         }
 
-        var srid = extent.Srid ?? 4326;
-        return new ImageServerExtent
+        return new CatalogQueryGeometry
         {
-            XMin = extent.XMin,
-            YMin = extent.YMin,
-            XMax = extent.XMax,
-            YMax = extent.YMax,
-            SpatialReference = new SpatialReference { Wkid = srid, LatestWkid = srid },
+            Rings =
+            [
+                [
+                    [extent.XMin, extent.YMin],
+                    [extent.XMin, extent.YMax],
+                    [extent.XMax, extent.YMax],
+                    [extent.XMax, extent.YMin],
+                    [extent.XMin, extent.YMin]
+                ]
+            ],
+            SpatialReference = CreateLocationSpatialReference(extent.Srid ?? raster.Srid)
         };
     }
 }

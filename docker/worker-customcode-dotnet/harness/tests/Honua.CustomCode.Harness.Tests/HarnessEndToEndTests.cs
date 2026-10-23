@@ -107,6 +107,34 @@ public sealed class HarnessEndToEndTests
         };
     }
 
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_MissingFinalJournalCannotReportSuccess()
+    {
+        var env = JobEnv();
+        var options = BuildOptions(env, out _);
+        env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ProbeTool).FullName}";
+        options.UploaderFactory = prefix => new ArtifactUploader(prefix, (_, key, _) =>
+        {
+            if (key.EndsWith(EventJournal.FileName, StringComparison.Ordinal))
+            {
+                throw new IOException("broker unavailable");
+            }
+        });
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_ExpiredQueueBudgetRefusesSourceBeforeUserCode()
+    {
+        var env = JobEnv();
+        env["HONUA_JOB_START_DEADLINE"] = "1";
+        var options = BuildOptions(env, out _);
+        options.SourceFetch = new SourceFetch((_, _) => throw new InvalidOperationException("user source must not execute"));
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
+    }
+
     private sealed class TestScopedClient(string token)
     {
         public string Token { get; } = token;
@@ -154,9 +182,39 @@ public sealed class HarnessEndToEndTests
         env.Should().NotContainKey("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
         env.Should().ContainKey("HONUA_BASE_URL"); // non-credential env preserved.
 
-        // The artifact was uploaded under the per-job prefix.
-        uploads.Should().ContainSingle();
+        // The artifact was uploaded under the per-job prefix, then the event journal.
+        uploads.Should().HaveCount(2);
         uploads[0].Key.Should().Be("outputs/job-1/out.geojson");
+        uploads[1].Key.Should().Be("outputs/job-1/honua-events.v1.jsonl");
+        var events = EventJournal.Read(uploads[1].Path).ToList();
+        events.Select(e => e["kind"]!.GetValue<string>()).Where(k => k == "phase").Should().HaveCount(6);
+        events.Where(e => e["kind"]!.GetValue<string>() == "phase").Select(e => e["phase"]!.GetValue<string>())
+            .Should().Equal("inputs", "source", "build", "client", "execute", "upload");
+        events.Should().Contain(e => e["kind"]!.GetValue<string>() == "progress" && e["percent"]!.GetValue<double>() == 100.0);
+        events.Should().Contain(e => e["kind"]!.GetValue<string>() == "artifact" && e["artifact"]!["name"]!.GetValue<string>() == "out.geojson");
+        events[^1]["kind"]!.GetValue<string>().Should().Be("terminal");
+        events[^1]["status"]!.GetValue<string>().Should().Be("succeeded");
+        events[^1]["exitCode"]!.GetValue<int>().Should().Be(0);
+        events.Should().OnlyContain(e => e["attempt"]!.GetValue<string>() == "1");
+    }
+
+    [Fact]
+    public async Task Run_EventsPathAndAttempt_ComeFromEnvironment()
+    {
+        var env = JobEnv();
+        ProbeTool.ObservedEnv = env;
+        ProbeTool.ArtifactToWrite = null;
+        var options = BuildOptions(env, out _);
+        var eventsPath = Path.Join(Path.GetDirectoryName(options.WorkDir)!, "evidence", "ev.jsonl");
+        env["CUSTOMCODE_EVENTS_PATH"] = eventsPath;
+        env["AWS_BATCH_JOB_ATTEMPT"] = "3";
+        env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ProbeTool).FullName}";
+
+        var exit = await new Harness(options).RunAsync(env);
+
+        exit.Should().Be(Harness.ExitOk);
+        var events = EventJournal.Read(eventsPath).ToList();
+        events.Should().NotBeEmpty().And.OnlyContain(e => e["attempt"]!.GetValue<string>() == "3");
     }
 
     [Fact]
@@ -189,12 +247,19 @@ public sealed class HarnessEndToEndTests
     {
         var env = JobEnv();
         env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ThrowingTool).FullName}";
-        var options = BuildOptions(env, out _);
+        var options = BuildOptions(env, out var uploads);
         options.EntrypointLoader = new EntrypointLoader(_ => typeof(HarnessEndToEndTests).Assembly);
 
         var exit = await new Harness(options).RunAsync(env);
 
         exit.Should().Be(Harness.ExitToolFailed);
+        uploads.Should().ContainSingle(item => item.Item2.EndsWith(EventJournal.FileName, StringComparison.Ordinal));
+        var events = EventJournal.Read(Path.Join(options.WorkDir, EventJournal.FileName)).ToList();
+        events[^2]["kind"]!.GetValue<string>().Should().Be("failure");
+        events[^2]["error"]!["type"]!.GetValue<string>().Should().Be(nameof(InvalidOperationException));
+        events[^1]["kind"]!.GetValue<string>().Should().Be("terminal");
+        events[^1]["status"]!.GetValue<string>().Should().Be("failed");
+        events[^1]["phase"]!.GetValue<string>().Should().Be("execute");
     }
 
     [Fact]
@@ -208,5 +273,9 @@ public sealed class HarnessEndToEndTests
         var exit = await new Harness(options).RunAsync(env);
 
         exit.Should().Be(Harness.ExitCancelled);
+        var events = EventJournal.Read(Path.Join(options.WorkDir, EventJournal.FileName)).ToList();
+        events[^1]["kind"]!.GetValue<string>().Should().Be("terminal");
+        events[^1]["status"]!.GetValue<string>().Should().Be("cancelled");
+        events[^1]["exitCode"]!.GetValue<int>().Should().Be(Harness.ExitCancelled);
     }
 }

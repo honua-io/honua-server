@@ -6,6 +6,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -71,6 +72,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(StatusCodes.Status422UnprocessableEntity);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Features (GET)")
             .WithName("QueryFeaturesGet")
             .WithSummary("Query features from a FeatureServer layer using GET")
@@ -88,6 +90,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
             .WithSummary("Query features from a FeatureServer layer using POST")
@@ -108,6 +111,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Service (GET)")
             .WithName("QueryFeatureServiceGet")
             .WithSummary("Query features from a FeatureServer service using GET")
@@ -123,6 +127,7 @@ internal static partial class FeatureServerEndpoints
         // (honua-server#1825). The POST companion shares the read-only handler and is
         // anonymous by design (per-layer access is enforced by the handler).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Service (POST)")
             .WithName("QueryFeatureServicePost")
             .WithSummary("Query features from a FeatureServer service using POST")
@@ -162,55 +167,66 @@ internal static partial class FeatureServerEndpoints
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/applyEdits", HandleServiceApplyEdits)
             .WithDisplayName("Apply Service-Level Feature Edits")
             .WithName("ServiceApplyEdits")
+            // A refused edit must be observable by clients that use only HTTP status.
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Apply feature edits across multiple layers")
             .WithDescription("Apply feature edits to multiple layers in a single request including add, update, and delete operations")
             .WithTags("FeatureServer")
             .AllowAnonymous()
-            .Produces<ServiceApplyEditsResponse>(200, "application/json")
+            .Produces<ServiceLayerEditResult[]>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/applyEdits", HandleApplyEdits)
             .WithDisplayName("Apply Feature Edits")
             .WithName("ApplyEdits")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Apply feature edits (add, update, delete)")
             .WithDescription("Apply feature edits to a layer including add, update, and delete operations")
             .WithTags("FeatureServer")
             .AllowAnonymous()
         .Produces<ApplyEditsResponse>(200, "application/json")
+        .Produces(StatusCodes.Status403Forbidden)
         .Produces(400)
         .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/addFeatures", HandleAddFeatures)
             .WithDisplayName("Add Features")
             .WithName("AddFeatures")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Add new features to a layer")
             .WithDescription("Adds one or more features to a layer")
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<ApplyEditsResponse>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/updateFeatures", HandleUpdateFeatures)
             .WithDisplayName("Update Features")
             .WithName("UpdateFeatures")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Update existing features in a layer")
             .WithDescription("Updates one or more features in a layer")
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<ApplyEditsResponse>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/deleteFeatures", HandleDeleteFeatures)
             .WithDisplayName("Delete Features")
             .WithName("DeleteFeatures")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Delete features from a layer")
             .WithDescription("Deletes one or more features from a layer")
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<ApplyEditsResponse>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 
@@ -346,18 +362,10 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
-            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
-            .WithDisplayName("Calculate")
-            .WithName("Calculate")
-            .WithSummary("Calculate field values for features")
-            .WithDescription("Calculates new field values using expressions for matching features")
-            .WithTags("FeatureServer")
-            .AllowAnonymous()
-            .Produces<CalculateResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
-
+        // calculate is a bulk field rewrite, so it is POST-only like the ArcGIS REST contract
+        // and every other FeatureServer edit route (#6100): a GET mapping let a cross-site
+        // top-level navigation carrying a SameSite=Lax session cookie rewrite layer data, and
+        // bypassed the degraded-startup write block, which only refuses unsafe methods.
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
             .WithDisplayName("Calculate (POST)")
             .WithName("CalculatePost")

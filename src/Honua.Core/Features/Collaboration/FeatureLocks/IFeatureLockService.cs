@@ -65,6 +65,22 @@ public interface IFeatureLockService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Indicates whether the store currently tracks any lease at all.
+    /// </summary>
+    /// <remarks>
+    /// Write paths consult the edit guard once per feature in a batch (#4402). This
+    /// lets them answer "is anything locked anywhere?" once per request and skip the
+    /// per-feature lookups entirely on the overwhelmingly common uncontended path.
+    /// The default implementation is deliberately conservative — an implementation
+    /// that cannot answer cheaply reports <see langword="true"/> and every feature is
+    /// checked individually, which is correct, just slower.
+    /// </remarks>
+    /// <param name="cancellationToken">A token to observe for cancellation.</param>
+    /// <returns><see langword="true"/> when a lease may be held; otherwise <see langword="false"/>.</returns>
+    ValueTask<bool> HasAnyActiveLeasesAsync(CancellationToken cancellationToken = default)
+        => ValueTask.FromResult(true);
+
+    /// <summary>
     /// Removes all expired leases.
     /// </summary>
     /// <param name="cancellationToken">A token to observe for cancellation.</param>

@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -34,6 +36,11 @@ public static class GdalWorkerServiceCollectionExtensions
 {
     internal static void AddLicenseSecretResolvers(IServiceCollection services, IConfiguration configuration)
     {
+        if (LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]) == LicenseMode.Disabled)
+        {
+            return;
+        }
+
         Honua.Cloud.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
             .AddAwsLicenseSecretResolver(services, configuration);
         Honua.Licensing.AzureLicenseSecretResolverServiceCollectionExtensions
@@ -62,27 +69,57 @@ public static class GdalWorkerServiceCollectionExtensions
                 + "coordination layer per ADR-0031 / ADR-0038).");
 
         services.Configure<LicenseOptions>(configuration.GetSection(LicenseOptions.SectionName));
-        AddLicenseSecretResolvers(services, configuration);
-        services.TryAddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
-        services.TryAddSingleton<FileBackedLicenseService>();
-        services.TryAddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<FileBackedLicenseService>());
-        services.AddHostedService(sp => sp.GetRequiredService<FileBackedLicenseService>());
+        if (LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]) == LicenseMode.Disabled)
+        {
+            services.TryAddSingleton<DisabledLicenseService>();
+            services.TryAddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseManager>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseCapacityMeter, DisabledLicenseCapacityMeter>();
+        }
+        else
+        {
+            AddLicenseSecretResolvers(services, configuration);
+            services.TryAddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
+            services.TryAddSingleton<FileBackedLicenseService>();
+            services.TryAddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<FileBackedLicenseService>());
+            services.AddHostedService(sp => sp.GetRequiredService<FileBackedLicenseService>());
+        }
 
         var redisOptions = ConfigurationOptions.Parse(redisConnectionString, ignoreUnknown: true);
         redisOptions.AllowAdmin = true;
         redisOptions.AbortOnConnectFail = true;
         var redis = ConnectionMultiplexer.Connect(redisOptions);
+        // The durability attestation is INFORMATION (owner ruling 2026-10-10): a connected Redis
+        // runs the worker whatever it says, so the worker starts on managed Redis that blocks
+        // CONFIG (AWS ElastiCache, MemoryDB). Only the explicit Jobs:RequireDurableStore=true
+        // opt-in turns a non-attested outcome into a typed startup refusal, exactly as on the
+        // serving host.
         var durability = RedisDurabilityAttestor.InspectAsync(redis).GetAwaiter().GetResult();
-        if (!durability.Accepted)
+        var requireDurableStore = bool.TryParse(
+                configuration[$"{JobDurabilityOptions.SectionName}:{nameof(JobDurabilityOptions.RequireDurableStore)}"],
+                out var required)
+            && required;
+        if (!durability.Accepted && requireDurableStore)
         {
             redis.Dispose();
-            throw new InvalidOperationException(
-                $"The GDAL worker requires an accepted Redis durability attestation, but Redis was "
-                + $"rejected ({durability.FailureCause}): {durability.FailureDetail}");
+            throw new DurableJobSubstrateNotAttestedException(
+                durability.FailureCause ?? DurableJobSubstrateCause.RedisAttestationUnavailable,
+                durability.FailureDetail);
         }
 
         services.TryAddSingleton<IConnectionMultiplexer>(redis);
-        services.TryAddSingleton(durability.Attestation!);
+        if (durability.Attestation is not null)
+        {
+            services.TryAddSingleton(durability.Attestation);
+        }
+
+        services.AddHostedService(sp => new GdalWorkerRedisDurabilityReporter(
+            durability.Attestation is not null,
+            durability.FailureCause,
+            durability.FailureDetail,
+            sp.GetRequiredService<ILogger<GdalWorkerRedisDurabilityReporter>>()));
 
         // Shared durable substrate stores. These are the same internal Redis-backed
         // implementations the API/serving host registers; the worker host reuses them

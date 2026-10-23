@@ -105,6 +105,7 @@ public sealed class GeoServicesSqlParser
 
         var expression = ParseExpression();
         Consume(TokenType.EndOfFile, "Unexpected trailing tokens.");
+        FilterParserGuard.EnsureExpressionTree(expression);
         return expression;
     }
 
@@ -113,8 +114,10 @@ public sealed class GeoServicesSqlParser
     private FilterExpression ParseOr()
     {
         var expression = ParseAnd();
+        var operands = 1;
         while (Match(TokenType.Or))
         {
+            FilterParserGuard.EnsureLogicalOperandCount(++operands);
             var right = ParseAnd();
             expression = new BinaryExpression(expression, BinaryOperator.Or, right);
         }
@@ -125,8 +128,10 @@ public sealed class GeoServicesSqlParser
     private FilterExpression ParseAnd()
     {
         var expression = ParseNot();
+        var operands = 1;
         while (Match(TokenType.And))
         {
+            FilterParserGuard.EnsureLogicalOperandCount(++operands);
             var right = ParseNot();
             expression = new BinaryExpression(expression, BinaryOperator.And, right);
         }
@@ -1289,7 +1294,11 @@ public sealed class GeoServicesSqlParser
 
         private void AddToken(TokenType type, object? literal)
         {
-            var text = _source[_start.._current];
+            // Identifier readers consume Lexeme, so use the decoded name from
+            // the lexer instead of retaining SQL quote/bracket delimiters.
+            var text = type == TokenType.Identifier && literal is string identifier
+                ? identifier
+                : _source[_start.._current];
             _tokens.Add(new Token(type, text, literal, _start));
         }
     }

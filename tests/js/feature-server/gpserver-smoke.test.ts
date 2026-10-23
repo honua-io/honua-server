@@ -40,7 +40,12 @@ describe('GPServer Smoke', () => {
     expect(data.executionType).toBe('esriExecutionTypeAsynchronous');
     expect(data.resultMapServerName).toBe('');
     expect(Array.isArray(data.tasks)).toBe(true);
-    expect(data.tasks).toContain('geometry.buffer');
+    // Discovery publishes Python-safe task names (#4616): "Honua_" + the hex of
+    // the UTF-8 process ID, plus the Esri alias. The dotted canonical ID stays
+    // addressable (see below) but is no longer advertised.
+    expect(data.tasks).toContain(`Honua_${Buffer.from('geometry.buffer', 'utf8').toString('hex').toUpperCase()}`);
+    expect(data.tasks).toContain('Buffer');
+    expect(data.tasks).not.toContain('geometry.buffer');
     expect(data.serviceDescription).toContain(config.serviceId);
   });
 

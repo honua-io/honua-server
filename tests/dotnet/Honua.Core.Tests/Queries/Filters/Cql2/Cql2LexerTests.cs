@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
 public class Cql2LexerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_SimpleComparison_ReturnsCorrectTokens()
     {
@@ -28,6 +29,7 @@ public class Cql2LexerTests
         tokens[3].Type.Should().Be(Cql2TokenType.EndOfInput);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("=", Cql2TokenType.Equal)]
     [InlineData("<>", Cql2TokenType.NotEqual)]
@@ -48,6 +50,7 @@ public class Cql2LexerTests
         tokens[1].Value.Should().Be(op);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("AND", Cql2TokenType.And)]
     [InlineData("OR", Cql2TokenType.Or)]
@@ -78,6 +81,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be(keyword);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("S_INTERSECTS", Cql2TokenType.S_Intersects)]
     [InlineData("S_CONTAINS", Cql2TokenType.S_Contains)]
@@ -102,6 +106,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be(predicate);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("POINT", Cql2TokenType.Point)]
     [InlineData("LINESTRING", Cql2TokenType.LineString)]
@@ -124,6 +129,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be(geometryType);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("42", "42")]
     [InlineData("42.5", "42.5")]
@@ -142,6 +148,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be(expectedValue);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_MultipleDecimalPoints_StopsAtSecondDot()
     {
@@ -155,6 +162,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be("1.2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_StringLiteral_HandlesEscapedQuotes()
     {
@@ -169,6 +177,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be("O'Brien");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_QuotedIdentifier_ReturnsCorrectToken()
     {
@@ -183,6 +192,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be("field name");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("(", Cql2TokenType.LeftParen)]
     [InlineData(")", Cql2TokenType.RightParen)]
@@ -206,6 +216,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be(punctuation);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_WhitespaceHandling_IgnoresWhitespace()
     {
@@ -222,6 +233,7 @@ public class Cql2LexerTests
         tokens[2].Value.Should().Be("John");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_CaseInsensitiveKeywords_ReturnsCorrectTypes()
     {
@@ -238,6 +250,7 @@ public class Cql2LexerTests
         tokens[3].Type.Should().Be(Cql2TokenType.Like);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_ComplexExpression_ReturnsAllTokens()
     {
@@ -260,6 +273,7 @@ public class Cql2LexerTests
         tokens[11].Type.Should().Be(Cql2TokenType.In);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("@")]
     [InlineData("#")]
@@ -274,6 +288,7 @@ public class Cql2LexerTests
         action.Should().Throw<ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_NegativeNumber_ReturnsMinusAndNumberTokens()
     {
@@ -289,6 +304,7 @@ public class Cql2LexerTests
         tokens[1].Value.Should().Be("5");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_IdentifierWithNamespace_ReturnsIdentifierToken()
     {
@@ -303,6 +319,7 @@ public class Cql2LexerTests
         tokens[0].Value.Should().Be("ns:field.subfield");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_BareIntersects_IsLexedAsIdentifierNotSpatialPredicate()
     {

@@ -48,8 +48,61 @@ internal sealed record OgcCoverageCollection
     [JsonPropertyName("domain")]
     public CoverageDomain? Domain { get; init; }
 
+    // The coverage domain/range representation understood by desktop OGCAPI
+    // clients. Keep the existing grid/domain fields for current consumers.
+    [JsonPropertyName("domainset")]
+    public CoverageDomainSet? DomainSet { get; init; }
+
+    [JsonPropertyName("rangetype")]
+    public CoverageRangeType? RangeType { get; init; }
+
     [JsonPropertyName("defaultFields")]
     public required ImmutableArray<string> DefaultFields { get; init; }
+}
+
+internal sealed record CoverageDomainSet
+{
+    [JsonPropertyName("generalGrid")]
+    public required CoverageGeneralGrid GeneralGrid { get; init; }
+}
+
+internal sealed record CoverageGeneralGrid
+{
+    [JsonPropertyName("srsName")]
+    public required string SrsName { get; init; }
+
+    [JsonPropertyName("axisLabels")]
+    public required ImmutableArray<string> AxisLabels { get; init; }
+
+    [JsonPropertyName("axis")]
+    public required ImmutableArray<CoverageGridAxis> Axes { get; init; }
+}
+
+internal sealed record CoverageGridAxis
+{
+    [JsonPropertyName("lowerBound")]
+    public required double LowerBound { get; init; }
+
+    [JsonPropertyName("upperBound")]
+    public required double UpperBound { get; init; }
+
+    [JsonPropertyName("resolution")]
+    public required double Resolution { get; init; }
+}
+
+internal sealed record CoverageRangeType
+{
+    [JsonPropertyName("field")]
+    public required ImmutableArray<CoverageRangeField> Fields { get; init; }
+}
+
+internal sealed record CoverageRangeField
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    [JsonPropertyName("definition")]
+    public required string Definition { get; init; }
 }
 
 internal sealed record CoverageGrid

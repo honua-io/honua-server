@@ -1,0 +1,20 @@
+{
+  "description": "Esri field types a GeoServices client must accept in FeatureServer and MapServer field metadata. Shared by the JavaScript metadata contract (tests/js/feature-server/metadata.test.ts) and the .NET GeoServicesFieldTypeClientContractTests, so a new server field type fails a PR Gate test until the client contract accepts it.",
+  "fieldTypes": [
+    "esriFieldTypeSmallInteger",
+    "esriFieldTypeInteger",
+    "esriFieldTypeBigInteger",
+    "esriFieldTypeSingle",
+    "esriFieldTypeDouble",
+    "esriFieldTypeString",
+    "esriFieldTypeDate",
+    "esriFieldTypeDateOnly",
+    "esriFieldTypeOID",
+    "esriFieldTypeGeometry",
+    "esriFieldTypeBlob",
+    "esriFieldTypeRaster",
+    "esriFieldTypeGUID",
+    "esriFieldTypeGlobalID",
+    "esriFieldTypeXML"
+  ]
+}

@@ -15,7 +15,8 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed partial class AwsLambdaGitOpsDeployBackend(
     IAwsLambdaAliasClient aliasClient,
-    ILogger<AwsLambdaGitOpsDeployBackend> logger) : IDeployBackend
+    ILogger<AwsLambdaGitOpsDeployBackend> logger,
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
 {
     private static readonly Regex LambdaArnRegionPattern = new("^arn:(aws[a-zA-Z-]*)?:lambda:(?<region>[^:]+):", RegexOptions.Compiled);
 
@@ -194,13 +195,13 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                     string.Equals(aliasState.FunctionVersion, rollbackVersion, StringComparison.Ordinal) &&
                     !hasWeightedTraffic)
                 {
-                    return new DeployObservation
-                    {
-                        Status = WorkflowOperationStatus.RolledBack,
-                        ProviderOperationId = aliasState.AliasArn ?? operation.ProviderOperationId,
-                        ObservedRevision = aliasState.FunctionVersion,
-                        Message = $"Lambda alias '{aliasName}' now points to rollback version '{rollbackVersion}'."
-                    };
+                    return await CompleteLambdaRollbackAsync(
+                            operation,
+                            spec,
+                            aliasState.FunctionVersion,
+                            aliasState.AliasArn,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 return new DeployObservation
@@ -271,6 +272,39 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                 Message = "Lambda alias lookup failed due to a transient AWS error. The reconciler will retry."
             };
         }
+    }
+
+    private async Task<DeployObservation> CompleteLambdaRollbackAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        string? servingVersion,
+        string? aliasArn,
+        CancellationToken cancellationToken)
+    {
+        var readiness = await RollbackDataPlaneCompletion.ProbeReadinessAsync(
+                dataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var functionalQuery = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(
+                dataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = string.Equals(servingVersion, spec.CurrentRevision, StringComparison.Ordinal),
+                ServingRevision = servingVersion,
+                HealthyEndpointCount = readiness == true ? 1 : 0,
+                RegisteredEndpointCount = readiness.HasValue ? 1 : 0,
+                FunctionalQuery = functionalQuery,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, aliasArn ?? operation.ProviderOperationId);
     }
 
     public async Task<DeployObservation> PromoteAsync(

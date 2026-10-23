@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -109,7 +110,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -204,10 +206,15 @@ internal static partial class FeatureServerEndpoints
                 [outSrError ?? "outSR must be a WKID or spatialReference object."]);
         }
 
-        // Build query from common parameters
-        var query = new FeatureQuery
+        // Translate where through the shared filter pipeline, then overlay the
+        // top-features parameters. A raw Where string skips SqlFilter translation.
+        if (!TryBuildAnalyticsFeatureQuery(context, resource, GetValueString(values, "where"), out var query, out var whereError))
         {
-            Where = GetValueString(values, "where"),
+            return whereError!;
+        }
+
+        query = query with
+        {
             TopFilter = topFilter,
             SpatialReferenceSrid = resource.ReadSrid(),
             OutputSrid = outputSrid,
@@ -224,8 +231,28 @@ internal static partial class FeatureServerEndpoints
             };
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
+        var (filteredQuery, filterError) = await ApplyAnalyticsFiltersAsync(
+            context, resource, values, query, cancellationToken).ConfigureAwait(false);
+        if (filterError != null)
+        {
+            return filterError;
+        }
+
+        query = filteredQuery;
+
+        QueryResult<Feature> result;
+        try
+        {
+            var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "queryTopFeatures is not supported by the configured feature provider for this layer.");
+        }
 
         // returnIdsOnly: return the objectId-set payload, mirroring the normal query
         // operation. pbf returns the ObjectIdsResult arm; JSON returns
@@ -291,18 +318,34 @@ internal static partial class FeatureServerEndpoints
             return Results.Bytes(pbfPayload, pbfContentType);
         }
 
-        var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
+        return CreateTopFeaturesJsonResult(
+            BuildTopFeaturesJsonResponse(result, resource, returnGeometry, outputSrid), topFeaturesIsPretty);
+    }
+
+    internal static QueryResponse BuildTopFeaturesJsonResponse(
+        QueryResult<Feature> result,
+        MetadataV2Resource resource,
+        bool returnGeometry,
+        int? outputSrid)
+    {
+        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
+        var responseFeatures = result.Items.Select(feature =>
         {
-            Attributes = feature.Attributes
+            var attributes = feature.Attributes
                 .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-            Geometry = returnGeometry
-                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                    feature.Geometry, null, null, false, false)
-                : null,
-            // returnGeometry=false must omit the geometry property entirely (not emit
-            // null), matching the normal query operation (#1906).
-            IncludeGeometry = returnGeometry
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
+            return new GeoServicesFeature
+            {
+                Attributes = attributes,
+                Geometry = returnGeometry
+                    ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                        feature.Geometry, null, null, false, false)
+                    : null,
+                // returnGeometry=false must omit the geometry property entirely (not emit
+                // null), matching the normal query operation (#1906).
+                IncludeGeometry = returnGeometry
+            };
         }).ToArray();
 
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
@@ -321,7 +364,7 @@ internal static partial class FeatureServerEndpoints
             ExceededTransferLimit = result.HasMoreResults
         };
 
-        return CreateTopFeaturesJsonResult(response, topFeaturesIsPretty);
+        return response;
     }
 
     /// <summary>

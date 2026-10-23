@@ -4,7 +4,7 @@ This is the prose half of the frozen 2026.1 client-certification fixture, server
 and auth-policy contract. Its machine-readable half is
 [`docs/gis/data/client-certification-fixture.v1.json`](data/client-certification-fixture.v1.json),
 and the two are paired 1:1: `CanonicalFixtureManifestTests` in
-`tests/dotnet/Honua.Architecture.Tests/CanonicalFixtureManifestTests.cs` fails the build if this
+`tests/dotnet/Honua.Architecture.SourceTests/CanonicalFixtureManifestTests.cs` fails the build if this
 document and that manifest disagree about the case-id set, the auth-profile set, or the published
 revisions.
 
@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:0a0919c3b92b55387d7186f6c4427f01b7594752b50f7e4b31927ddb40516126` |
+| `fixtureRevision` | `sha256:d47356f507b694089fdac77e241ddd0521c14c09de3cfbd03c466966f1021f59` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -40,11 +40,14 @@ lowercase hex characters. Reproduce with `sha256sum <path>`.
 Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is reproducible by hand:
 
 ```console
-$ LC_ALL=C sha256sum docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
+$ LC_ALL=C sha256sum docker/client-compat/seed/publish-attachments.py \
+    docker/client-compat/seed/publish-cog.py \
+    docker/client-compat/seed/publish-pmtiles.py docker/client-compat/seed/publish-scene.py \
+    docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-0a0919c3b92b55387d7186f6c4427f01b7594752b50f7e4b31927ddb40516126  -
+d47356f507b694089fdac77e241ddd0521c14c09de3cfbd03c466966f1021f59  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
@@ -60,12 +63,20 @@ not file-backed, which is why it is digested from its declaration rather than fr
 
 | Path | Role |
 |---|---|
+| `docker/client-compat/seed/publish-attachments.py` | fixture |
+| `docker/client-compat/seed/publish-cog.py` | fixture |
+| `docker/client-compat/seed/publish-pmtiles.py` | fixture |
+| `docker/client-compat/seed/publish-scene.py` | fixture |
 | `tests/seed/client-compat-v1.sql` | fixture |
 | `tests/seed/browser-compat.yaml` | fixture |
 | `tests/seed/portal-compat.yaml` | fixture |
+| `tests/seed/client-compat-auth-wave1.yaml` | fixture |
 | `tests/seed/apply-yaml-seed.sh` | fixture |
 | `docker/client-compat/seed/run.sh` | fixture |
 | `tests/config/client-compat-server-v1.json` | server-config |
+
+`docker/client-compat/seed/publish-*.py` are fixture inputs because they determine the derived
+attachment payloads and PMTiles, COG, and scene artifacts. Their code changes must advance `fixtureRevision`.
 
 `docker/client-compat/seed/run.sh` is a fixture input because it defines *which* seed files are
 applied and in what order; adding a fixture input necessarily edits it and therefore moves
@@ -85,10 +96,25 @@ symbol, so a comment edit does not force a manifest revision while a value chang
 | Service | Role | Layers | Source |
 |---|---|---|---|
 | `test_service` | canonical vector | `0` (Point, 10 features) | `tests/seed/client-compat-v1.sql` |
+| `cert_relations` | desktop attachments and relationships | `20` attachment parents, `21` assets, `22` inspections | `tests/seed/client-compat-v1.sql` |
 | `browser_compat` | render and raster | `2000` Point + raster, `2001` LineString, `2002` Polygon | `tests/seed/browser-compat.yaml` |
 | `portal_public` / `portal_org` / `portal_private` | authorization ladder | `3000` / `3001` / `3002` | `tests/seed/portal-compat.yaml` |
 
 Ordering rules:
+
+The additive `cert_relations` service leaves `test_service`'s four layer identities
+and canonical read rows unchanged. Layer 20 advertises attachment support and has
+parents 9001/9002. `docker/client-compat/seed/publish-attachments.py` uploads two
+deterministic text files through `addAttachment`, verifies their downloaded bytes,
+and reuses them on subsequent runs. A failed upload, corrupt download, or invalid relationship fails seed bootstrap rather than yielding an
+empty desktop fixture. The runner uses `HONUA_BASE_URL` and `HONUA_ADMIN_PASSWORD`.
+
+Relationship 1 connects assets 9101/9102 on layer 21 to inspections 9201/9202 and
+9203 respectively on layer 22 via `asset_id`. Both directions are advertised and
+queried by the bootstrap verifier. Explicit fixture object IDs reserve the range
+through 9203; the seed advances the shared sequence without lowering it on reruns.
+This changes the fixture revision and requires fresh candidate-bound client
+receipts. Fixture verification alone does not close any native UI cell (Refs #5259).
 
 - `features.objectid` is a `BIGSERIAL`. PostgreSQL evaluates the seed's `VALUES` scan in
   declaration order, so on a fresh database the ids run `alpha` = 1 through `lambda` = 10, and the
@@ -126,13 +152,13 @@ Not covered, recorded as gaps rather than claimed:
 | `line-and-polygon-not-on-canonical-service` | Line and polygon coverage lives on `browser_compat`, whose layers carry only `objectid`, `name`, and `shape`. |
 | `edit-path-uncertified` | The OWSLib lane certifies WFS-T insert/update/delete on scratch layers 10-12, but no lane mutates canonical layer 0 and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified. |
 
-Supporting fixtures: the deterministic raster (64×64, single 8BUI band, every pixel 180) and the
-render geometry layers are realized on `browser_compat`; STAC is realized on the canonical service
-with `eo:cloud_cover` as a real numeric queryable; a GP buffer fixture is **not required** for
-2026.1 because no lane binds the GPServer surface; map and dashboard inputs are limited to Portal
-service items (`portal-map-and-dashboard-items-absent`). Raster on the canonical service
-(`raster-absent-on-canonical-service`) and stored style documents (`style-resources-absent`) are
-gaps.
+Supporting fixtures: the deterministic rasters (64×64, single 8BUI band, every pixel 180 on
+`browser_compat` layer 2000 and every pixel 128 on canonical `test_service` layer 0) and the
+render geometry layers are realized by the fixture; STAC is realized on the canonical service with
+`eo:cloud_cover` as a real numeric queryable; a GP buffer fixture is **not required** for 2026.1
+because no lane binds the GPServer surface; map and dashboard inputs are limited to Portal service
+items (`portal-map-and-dashboard-items-absent`). Stored style documents
+(`style-resources-absent`) remain a gap.
 
 ## 4. Auth profiles
 
@@ -178,8 +204,9 @@ principal in this fixture, which is what makes the private tier the denial arm o
   same applier. Additive only — it may pin the image digest and enable TLS and may not change any
   seeded identity, count, extent, or access policy. All three revisions carry through unchanged; a
   different value is drift, not an overlay. `CERT-CONN-02` becomes applicable.
-- **licensed** (release): the entitlement-bound overlay for ArcGIS Pro/arcpy, Excel, Power BI, and
-  Tableau. It binds the same identities and the same auth policy plus an entitlement; it may not
+- **licensed** (release): entitlement-bound overlay named for ArcGIS Pro/arcpy, Excel, Power BI, and
+  Tableau. Seat and licence configuration stay in the owning evidence repository. The overlay
+  binds the same identities and the same auth policy; it may not
   substitute its own seed for the canonical fixture.
 
 ## 6. Case and scenario-facet identities
@@ -199,8 +226,9 @@ rendering and style `CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-SYM-01`, `CERT-RN
 `CERT-PRTL-TOKN-02`, `CERT-PRTL-AUTH-01`, `CERT-PRTL-OAUTH-01`, `CERT-PRTL-OAUTH-02`,
 `CERT-PRTL-COMM-01`, `CERT-PRTL-COMM-02`.
 
-**Lane extensions (23).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
+**Lane extensions (24).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
 `JS-EXT-OL-ITEMTYPE-01`, `JS-EXT-OL-ITEMS-01`, `JS-EXT-OL-GEOJSON-01`, `JS-EXT-OL-GEOJSON-02`,
+`JS-EXT-OL-WFS-GETFEATURE-01` (unfiltered parsing only; no core filtering credit),
 `JS-EXT-TILES-DISC-01`, `JS-EXT-TILES-DISC-02`, `JS-EXT-TILES-SCHM-01`, `JS-EXT-OGC-MAPS-01`.
 Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02`, `EL-EXT-03`,
 `EL-EXT-04`. Desktop: `DSK-EXT-01`, `DSK-EXT-02`. CLI: `CLI-EXT-01`, `CLI-EXT-02`. BI:
@@ -538,7 +566,7 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-STAC-ITEM-06` | `SF-EXT-CLIENT-IDIOM` | Catalog: validated against the published STAC JSON Schemas; Collection: validated against the published STAC JSON Schemas; Item: validated against the published STAC JSON Schemas. |
 | `NB-STAC-PAGE-01` | `SF-PAGE-LIMIT` | pages() walked to exhaustion in page sizes [3, 3, 3, 1], collecting all 10 seeded items with no duplicates and terminating without a next link. |
 | `NB-STAC-PAGE-02` | `SF-PAGE-LIMIT` | ItemSearch.matched()=10 agrees with numberMatched=10 and numberReturned=3 equals the actual feature count on the page. |
-| `NB-STAC-PAGE-03` | `SF-PAGE-LIMIT` | GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page. |
+| `NB-STAC-PAGE-03` | `SF-PAGE-LIMIT` | GET next uses a next cursor query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page. |
 | `NB-STAC-PAGE-04` | `SF-PAGE-LIMIT` | limit=1000000 clamped to the server maximum and still answered 200; limit=0 was rejected with status=400 title='Bad Request' detail='limit must be greater than or equal to 1.'. Raw httpx.... |
 | `NB-STAC-PAGE-05` | `SF-PAGE-LIMIT` | A token past the end returned an empty FeatureCollection with no next link; a malformed token was rejected with status=400 title='Bad Request' detail='Invalid pagination token.'. |
 | `NB-STAC-SEARCH-01` | `SF-QFLT-SPATIAL` | intersects(Polygon) and the equivalent bbox both returned ['1', '2', '3']. |

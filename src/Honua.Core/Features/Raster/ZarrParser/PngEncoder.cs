@@ -16,6 +16,43 @@ internal static class PngEncoder
 {
     private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
+    internal static byte[] EncodeSamples(byte[] samples, int width, int height, int bands,
+        int bits, byte[]? transparency)
+    {
+        var stride = checked(width * bands * (bits / 8));
+        if (samples.Length != checked(stride * height))
+        {
+            throw new InvalidDataException("PNG samples do not match the declared tile dimensions.");
+        }
+
+        using var output = new MemoryStream();
+        output.Write(Signature);
+        Span<byte> ihdr = stackalloc byte[13];
+        ihdr.Clear();
+        BinaryPrimitives.WriteInt32BigEndian(ihdr[..4], width);
+        BinaryPrimitives.WriteInt32BigEndian(ihdr.Slice(4, 4), height);
+        ihdr[8] = (byte)bits;
+        ihdr[9] = bands == 1 ? (byte)0 : (byte)2;
+        WriteChunk(output, "IHDR", ihdr);
+        if (transparency is not null)
+        {
+            WriteChunk(output, "tRNS", transparency);
+        }
+
+        using var compressed = new MemoryStream();
+        using (var zlib = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            for (var y = 0; y < height; y++)
+            {
+                zlib.WriteByte(0);
+                zlib.Write(samples.AsSpan(y * stride, stride));
+            }
+        }
+        WriteChunk(output, "IDAT", compressed.ToArray());
+        WriteChunk(output, "IEND", ReadOnlySpan<byte>.Empty);
+        return output.ToArray();
+    }
+
     /// <summary>
     /// Encodes an 8-bit RGBA pixel buffer (row-major, 4 bytes/pixel) to a PNG.
     /// </summary>

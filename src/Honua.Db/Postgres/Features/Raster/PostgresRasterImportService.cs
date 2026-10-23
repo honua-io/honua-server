@@ -162,7 +162,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                         "Pre-generating tiles", rasterId: rasterId);
 
                     tilesGenerated = await GenerateAndStoreTilesAsync(
-                        connection, transaction, rasterId, request.TileZoomLevels,
+                        connection, transaction, rasterId, srid, request.TileZoomLevels,
                         progress, operationId, startedAt, cancellationToken).ConfigureAwait(false);
 
                     PostgresRasterImportLog.TilesPreGenerated(_logger, rasterId, tilesGenerated, request.TileZoomLevels.Length);
@@ -172,14 +172,15 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     warnings.Add("Tile pre-generation skipped: raster has no known CRS (SRID 0). Set 'srid' explicitly to enable tiling.");
                 }
 
-                // Phase 5: Build persisted overview pyramids (reduced-resolution copies in
-                // EPSG:3857) so the dynamic tile read path reuses a pyramid level instead of
-                // recomputing an ST_Rescale reduction per low-zoom request (#1836). Best-effort:
-                // a missing raster_overviews table (schema predates migration 061) is tolerated.
+                // Phase 5: Optional persisted overview pyramids. Dynamic tile reads sample the
+                // original raster because these rows have no native-source lineage (#5848), so
+                // the default request leaves OverviewFactors empty (#5856). Best-effort when a
+                // caller still sets factors: a missing raster_overviews table (schema predates
+                // migration 061) is tolerated.
                 if (request.OverviewFactors.Length > 0 && srid > 0)
                 {
                     await GenerateAndStoreOverviewsAsync(
-                        connection, transaction, rasterId, request.OverviewFactors, warnings, cancellationToken).ConfigureAwait(false);
+                        connection, transaction, rasterId, srid, request.OverviewFactors, warnings, cancellationToken).ConfigureAwait(false);
                 }
                 else if (request.OverviewFactors.Length > 0 && srid <= 0)
                 {
@@ -301,6 +302,24 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         // PostGIS ST_FromGDALRaster handles COG files correctly (reads base resolution).
         // COG internal overviews are not preserved as separate entities in PostGIS;
         // tile pre-generation at configured zoom levels provides the overview mechanism.
+    }
+
+    /// <summary>
+    /// True when the PNG IHDR color type is grayscale-plus-alpha. Pixel type is not a substitute:
+    /// PostGIS does not retain GDAL color interpretation after <c>ST_FromGDALRaster</c>.
+    /// </summary>
+    internal static bool PngDeclaresGrayAlpha(ReadOnlySpan<byte> png)
+    {
+        if (png.Length < 26 || !png[..8].SequenceEqual(_pngSignature))
+        {
+            return false;
+        }
+
+        return png[12] == (byte)'I'
+            && png[13] == (byte)'H'
+            && png[14] == (byte)'D'
+            && png[15] == (byte)'R'
+            && png[25] == 4;
     }
 
     private static void ValidateFileContent(byte[] fileBytes, SupportedRasterFormat format)
@@ -425,8 +444,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         if (request.Srid.HasValue && request.Format is SupportedRasterFormat.GeoTiff or SupportedRasterFormat.CloudOptimizedGeoTiff)
         {
             command.CommandText = $"""
-                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, raster)
-                VALUES (@layerId, @name, @description, @acquisitionDate,
+                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, second_band_is_alpha, raster)
+                VALUES (@layerId, @name, @description, @acquisitionDate, @secondBandIsAlpha,
                     ST_SetSRID(ST_FromGDALRaster(@rasterData), @srid))
                 RETURNING id
                 """;
@@ -435,8 +454,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         else
         {
             command.CommandText = $"""
-                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, raster)
-                VALUES (@layerId, @name, @description, @acquisitionDate, ST_FromGDALRaster(@rasterData))
+                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, second_band_is_alpha, raster)
+                VALUES (@layerId, @name, @description, @acquisitionDate, @secondBandIsAlpha, ST_FromGDALRaster(@rasterData))
                 RETURNING id
                 """;
         }
@@ -446,6 +465,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         command.AddParameter("@description", (object?)request.Description ?? DBNull.Value);
         command.AddParameter("@acquisitionDate", (object?)request.AcquisitionDate ?? DBNull.Value);
         command.AddParameter("@rasterData", fileBytes);
+        command.AddParameter("@secondBandIsAlpha", PngDeclaresGrayAlpha(fileBytes));
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return (long)result!;
@@ -782,6 +802,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         DbConnection connection,
         DbTransaction transaction,
         long rasterId,
+        int sourceSrid,
         int[] zoomLevels,
         IProgress<RasterImportProgress>? progress,
         string operationId,
@@ -789,6 +810,34 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         CancellationToken cancellationToken)
     {
         var totalTiles = 0;
+        // Geographic ±90 corners fail bare ST_Transform to EPSG:3857. Clip through the
+        // shared geometry chokepoint before the tile-index math and the raster warp.
+        var mercatorEnvelope = RasterWebMercatorSql.BuildEnvelopeExpression("ST_Envelope(r.raster)", sourceSrid);
+
+        // Import has already persisted all band statistics in this transaction. Use the same
+        // display stretch as dynamic tiles, without rescanning the raster for every tile.
+        var statistics = new List<RasterStatistics>();
+        await using (var statisticsCommand = connection.CreateCommand())
+        {
+            statisticsCommand.Transaction = transaction;
+            statisticsCommand.CommandText = $"""
+                SELECT band_number, min_value, max_value FROM {_rasterStatisticsTable}
+                WHERE raster_data_id = @rasterId ORDER BY band_number
+                """;
+            statisticsCommand.AddParameter("@rasterId", rasterId);
+            await using var reader = await statisticsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                statistics.Add(new RasterStatistics
+                {
+                    Band = reader.GetInt32(0),
+                    MinValue = reader.IsDBNull(1) ? null : reader.GetDouble(1),
+                    MaxValue = reader.IsDBNull(2) ? null : reader.GetDouble(2)
+                });
+            }
+        }
+        var stretchBounds = PostgresRasterStore.BuildAutoTileStretchBounds([.. statistics]);
+        await RasterTileExecution.DisableJitAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
 
         foreach (var zoom in zoomLevels)
         {
@@ -796,6 +845,24 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
+
+            var envelope = zoom == 0
+                ? "ST_TileEnvelope(0, 0, 0)"
+                : "ST_TileEnvelope(@zoom, t.x, t.y)";
+            var grid = $"""
+                ST_MakeEmptyRaster(256, 256,
+                    ST_XMin({envelope}), ST_YMax({envelope}),
+                    (ST_XMax({envelope}) - ST_XMin({envelope})) / 256.0,
+                    -((ST_YMax({envelope}) - ST_YMin({envelope})) / 256.0),
+                    0.0, 0.0, 3857)
+                """;
+            var framedRaster = RasterCorrectedNearestSql.Sample("r.raster", grid);
+            var displayRaster = PostgresRasterStore.BuildTileDisplayRasterExpression(
+                framedRaster, grid, RasterFormat.PNG, stretchBounds,
+                $"SELECT second_band_is_alpha FROM {_rasterDataTable} WHERE id = @rasterId");
+            // Keep one encoded payload per tile for both the body and its digest. OFFSET 0
+            // prevents expression flattening without materializing an entire zoom's tiles.
+            var encodedTile = $"(SELECT ST_AsGDALRaster({displayRaster}, 'PNG') AS tile_data OFFSET 0)";
 
             if (zoom == 0)
             {
@@ -806,27 +873,17 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 // seeded tile covers exactly the world bbox (not just the raster's own extent
                 // stretched to fill the tile, which misregisters partial-world datasets).
                 command.CommandText = $"""
-                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
+                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type,
+                        renderer_version, renderer_payload_sha256)
                     SELECT @rasterId, 0, 0, 0,
-                        ST_AsGDALRaster(
-                            ST_Resample(
-                                ST_Transform(r.raster, 3857),
-                                ST_MakeEmptyRaster(
-                                    256, 256,
-                                    ST_XMin(ST_TileEnvelope(0, 0, 0)),
-                                    ST_YMax(ST_TileEnvelope(0, 0, 0)),
-                                    (ST_XMax(ST_TileEnvelope(0, 0, 0)) - ST_XMin(ST_TileEnvelope(0, 0, 0))) / 256.0,
-                                    -((ST_YMax(ST_TileEnvelope(0, 0, 0)) - ST_YMin(ST_TileEnvelope(0, 0, 0))) / 256.0),
-                                    0.0, 0.0, 3857
-                                )
-                            ),
-                            'PNG'
-                        ),
-                        'image/png'
+                        encoded.tile_data, 'image/png', @rendererVersion, sha256(encoded.tile_data)
                     FROM {_rasterDataTable} r
+                    CROSS JOIN LATERAL {encodedTile} encoded
                     WHERE r.id = @rasterId
                     ON CONFLICT (raster_data_id, zoom_level, tile_x, tile_y) DO UPDATE SET
                         tile_data = EXCLUDED.tile_data,
+                        renderer_version = EXCLUDED.renderer_version,
+                        renderer_payload_sha256 = EXCLUDED.renderer_payload_sha256,
                         created_at = NOW()
                     """;
                 command.AddParameter("@rasterId", rasterId);
@@ -840,45 +897,36 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 // the frame â€” fixing the spatial misregistration the previous ST_Clip+ST_Resize
                 // approach produced for edge tiles and non-3857 source rasters.
                 command.CommandText = $"""
-                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
+                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type,
+                        renderer_version, renderer_payload_sha256)
                     SELECT @rasterId, @zoom, t.x, t.y,
-                        ST_AsGDALRaster(
-                            ST_Resample(
-                                ST_Transform(r.raster, 3857),
-                                ST_MakeEmptyRaster(
-                                    256, 256,
-                                    ST_XMin(ST_TileEnvelope(@zoom, t.x, t.y)),
-                                    ST_YMax(ST_TileEnvelope(@zoom, t.x, t.y)),
-                                    (ST_XMax(ST_TileEnvelope(@zoom, t.x, t.y)) - ST_XMin(ST_TileEnvelope(@zoom, t.x, t.y))) / 256.0,
-                                    -((ST_YMax(ST_TileEnvelope(@zoom, t.x, t.y)) - ST_YMin(ST_TileEnvelope(@zoom, t.x, t.y))) / 256.0),
-                                    0.0, 0.0, 3857
-                                )
-                            ),
-                            'PNG'
-                        ),
-                        'image/png'
+                        encoded.tile_data, 'image/png', @rendererVersion, sha256(encoded.tile_data)
                     FROM {_rasterDataTable} r
                     CROSS JOIN LATERAL (
                         SELECT x, y
                         FROM generate_series(
-                            GREATEST(0, floor(ST_XMin(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1))),
-                            LEAST((1 << @zoom) - 1, floor(ST_XMax(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1)))
+                            GREATEST(0, floor(ST_XMin({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1))),
+                            LEAST((1 << @zoom) - 1, floor(ST_XMax({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1)))
                         ) AS x,
                         generate_series(
-                            GREATEST(0, ((1 << (@zoom - 1)) - floor(ST_YMax(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int - 1)),
-                            LEAST((1 << @zoom) - 1, ((1 << (@zoom - 1)) - floor(ST_YMin(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int))
+                            GREATEST(0, ((1 << (@zoom - 1)) - floor(ST_YMax({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int - 1)),
+                            LEAST((1 << @zoom) - 1, ((1 << (@zoom - 1)) - floor(ST_YMin({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int))
                         ) AS y
                     ) t
+                    CROSS JOIN LATERAL {encodedTile} encoded
                     WHERE r.id = @rasterId
                       AND ST_Intersects(ST_ConvexHull(r.raster), ST_Transform(ST_TileEnvelope(@zoom, t.x, t.y), ST_SRID(r.raster)))
                     ON CONFLICT (raster_data_id, zoom_level, tile_x, tile_y) DO UPDATE SET
                         tile_data = EXCLUDED.tile_data,
+                        renderer_version = EXCLUDED.renderer_version,
+                        renderer_payload_sha256 = EXCLUDED.renderer_payload_sha256,
                         created_at = NOW()
                     """;
                 command.AddParameter("@rasterId", rasterId);
                 command.AddParameter("@zoom", zoom);
             }
 
+            command.AddParameter("@rendererVersion", RasterCorrectedNearestSql.RendererVersion);
             var tilesInserted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             totalTiles += tilesInserted;
 
@@ -905,6 +953,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         DbConnection connection,
         DbTransaction transaction,
         long rasterId,
+        int sourceSrid,
         int[] overviewFactors,
         List<string> warnings,
         CancellationToken cancellationToken)
@@ -938,9 +987,10 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     // ground resolution. ground_resolution caches the resulting metres/pixel so the
                     // read path can pick a level without detoasting the raster payload. The factor is
                     // skipped when it would not coarsen the source (target res <= source res).
+                    var mercatorRaster = RasterWebMercatorSql.BuildRasterExpression("raster", sourceSrid);
                     command.CommandText = $"""
                         WITH src AS (
-                            SELECT ST_Transform(raster, 3857) AS rast
+                            SELECT {mercatorRaster} AS rast
                             FROM {_rasterDataTable}
                             WHERE id = @rasterId
                         ),

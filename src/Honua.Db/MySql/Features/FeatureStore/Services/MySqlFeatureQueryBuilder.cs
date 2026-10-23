@@ -14,7 +14,7 @@ namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
 /// <summary>
 /// Builds parameterized SQL for the MySQL/MariaDB read-only feature provider.
-/// Targets MySQL 8.0.11+ and MariaDB 10.6+; spatial functions are limited to
+/// Targets MySQL 8.0.12+ and MariaDB 10.6+; spatial functions are limited to
 /// the operations both engines share (no <c>ST_Transform</c>, no native MVT, no KNN).
 /// </summary>
 internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
@@ -43,10 +43,21 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
-        var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
+        var projectedAttributes = ResolveProjectedAttributeColumns(mapping, query);
+        var columnsExpr = string.Join(", ", projectedAttributes.Select(MySqlIdentifier.Quote));
 
-        sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT {mapping.QuotedPrimaryKeyColumn}, {MySqlSpatialSql.AsWkb(mapping.QuotedGeometryColumn, _engineFlavor)} AS geometry");
+        if (query.Distinct)
+        {
+            // Distinct values are attribute tuples. Literal 0 keeps the reader contract
+            // (GetInt64 on column 0) without uniquifying every row via the primary key.
+            sb.Append(CultureInfo.InvariantCulture,
+                $"SELECT DISTINCT 0 AS {mapping.QuotedPrimaryKeyColumn}, NULL AS geometry");
+        }
+        else
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"SELECT {mapping.QuotedPrimaryKeyColumn}, {MySqlSpatialSql.AsWkb(mapping.QuotedGeometryColumn, _engineFlavor)} AS geometry");
+        }
 
         if (!string.IsNullOrEmpty(columnsExpr))
         {
@@ -57,7 +68,18 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
 
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
         AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
-        AppendOrderByClause(sb, mapping, query);
+        if (query.Distinct)
+        {
+            if (query.Limit.HasValue || query.Offset is > 0)
+            {
+                AppendDistinctOrderBy(sb, query, projectedAttributes);
+            }
+        }
+        else
+        {
+            AppendOrderByClause(sb, mapping, query);
+        }
+
         AppendPagination(sb, query, ref paramIndex, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
@@ -76,11 +98,27 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
+        if (!query.Distinct)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"SELECT COUNT(*) FROM {mapping.QualifiedTableSql} WHERE 1=1");
+
+            AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
+
+            return new ParameterizedQuery(sb.ToString(), parameters);
+        }
+
+        var projectedAttributes = ResolveProjectedAttributeColumns(mapping, query);
+        var distinctColumns = projectedAttributes.Count == 0
+            ? "1"
+            : string.Join(", ", projectedAttributes.Select(MySqlIdentifier.Quote));
         sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT COUNT(*) FROM {mapping.QualifiedTableSql} WHERE 1=1");
+            $"SELECT COUNT(*) FROM (SELECT DISTINCT {distinctColumns} FROM {mapping.QualifiedTableSql} WHERE 1=1");
 
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
         AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
+        sb.Append(") AS distinct_values");
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
@@ -99,7 +137,7 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
-        // Extent SQL must work on both MySQL 8.0.11+ and MariaDB 10.6+. Two engine
+        // Extent SQL must work on both MySQL 8.0.12+ and MariaDB 10.6+. Two engine
         // divergences shape the strategy:
         //   * MariaDB only supports the 1-arg ST_SRID(geom). The 2-arg setter is MySQL-only,
         //     so we cannot retag geometries to Cartesian inline.
@@ -116,22 +154,36 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         // are rejected explicitly — callers should compute extents in the application
         // layer or use a PostGIS-backed layer.
         //
-        // Axis order: ST_X/ST_Y return the first/second stored axis. For MySQL 8 with a
-        // geographic SRS (e.g. 4326) that is latitude-first; for MariaDB it is the WKB
-        // order. The slice does not normalize this; the documented contract is "as stored".
+        // MySQL geographic SRS definitions are latitude-first, so ST_X/ST_Y return latitude
+        // as X. ST_Longitude/ST_Latitude keep both point columns and polygon envelope corners
+        // aligned with the axis-normalized WKB read path. Those accessors were added in 8.0.12,
+        // which is this provider's floor: the same release redefined ST_X/ST_Y to follow SRS
+        // axis order (bugs 27125600 / 88503), so swapping them is not a correct 8.0.11 substitute.
+        // MariaDB does not provide these accessors and keeps ST_X/ST_Y.
+        var useGeographicAxes = _engineFlavor == MySqlEngineFlavor.Mysql
+            && GeographicSridClassifier.IsGeographicSrid(mapping.Srid);
+        string AxisX(string pointExpression) => useGeographicAxes
+            ? $"ST_Longitude({pointExpression})"
+            : $"ST_X({pointExpression})";
+        string AxisY(string pointExpression) => useGeographicAxes
+            ? $"ST_Latitude({pointExpression})"
+            : $"ST_Y({pointExpression})";
+        var geometryColumn = mapping.QuotedGeometryColumn;
+        var envelopeCorner1 = $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), 1)";
+        var envelopeCorner3 = $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), 3)";
         var extentSelect = mapping.GeometryType switch
         {
             GeometryType.Point => $"""
-                MIN(ST_X({mapping.QuotedGeometryColumn})),
-                MIN(ST_Y({mapping.QuotedGeometryColumn})),
-                MAX(ST_X({mapping.QuotedGeometryColumn})),
-                MAX(ST_Y({mapping.QuotedGeometryColumn}))
+                MIN({AxisX(geometryColumn)}),
+                MIN({AxisY(geometryColumn)}),
+                MAX({AxisX(geometryColumn)}),
+                MAX({AxisY(geometryColumn)})
                 """,
             GeometryType.Polygon or GeometryType.MultiPolygon => $"""
-                MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 1))),
-                MIN(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 1))),
-                MAX(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3))),
-                MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3)))
+                MIN({AxisX(envelopeCorner1)}),
+                MIN({AxisY(envelopeCorner1)}),
+                MAX({AxisX(envelopeCorner3)}),
+                MAX({AxisY(envelopeCorner3)})
                 """,
             _ => throw MySqlUnsupportedFeature.Create(
                 $"Extent queries on {mapping.GeometryType} layers are not supported by the MySQL/MariaDB " +
@@ -188,25 +240,27 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildSelectQuery(layerId, query, geometryStorageType);
     }
 
-    private static string BuildAttributeColumnsExpression(MySqlLayerMapping mapping, FeatureQuery query)
+    private static List<string> ResolveProjectedAttributeColumns(MySqlLayerMapping mapping, FeatureQuery query)
     {
         if (query.ExcludeAttributes)
         {
-            return string.Empty;
+            return [];
         }
 
-        IEnumerable<string> columns;
-        if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+        // Null/default OutFields projects every column. An explicit empty array projects
+        // none. IsEmpty throws on a default ImmutableArray, so test IsDefault first.
+        if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
         {
-            var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
-            columns = mapping.AttributeColumns.Where(c => requested.Contains(c));
-        }
-        else
-        {
-            columns = mapping.AttributeColumns;
+            return mapping.AttributeColumns.ToList();
         }
 
-        return string.Join(", ", columns.Select(MySqlIdentifier.Quote));
+        if (query.OutFields.Value.IsEmpty)
+        {
+            return [];
+        }
+
+        var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
+        return mapping.AttributeColumns.Where(c => requested.Contains(c)).ToList();
     }
 
     private static void EnsureSridCompatibility(MySqlLayerMapping mapping, FeatureQuery query)

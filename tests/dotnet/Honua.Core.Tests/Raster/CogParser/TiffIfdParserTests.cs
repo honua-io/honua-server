@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Raster.CogParser;
 /// </summary>
 public class TiffIfdParserTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseHeader_LittleEndianClassicTiff_ReturnsCorrectOffset()
     {
@@ -27,6 +28,7 @@ public class TiffIfdParserTests
         firstIfdOffset.Should().Be(8);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseHeader_BigEndianClassicTiff_ReturnsCorrectOffset()
     {
@@ -42,6 +44,7 @@ public class TiffIfdParserTests
         firstIfdOffset.Should().Be(8);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseHeader_BigTiffLittleEndian_ReturnsCorrectProperties()
     {
@@ -64,6 +67,7 @@ public class TiffIfdParserTests
         firstIfdOffset.Should().Be(16);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseHeader_InvalidByteOrder_ThrowsInvalidDataException()
     {
@@ -75,6 +79,7 @@ public class TiffIfdParserTests
         act.Should().Throw<InvalidDataException>().WithMessage("*byte order*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseHeader_InvalidMagic_ThrowsInvalidDataException()
     {
@@ -86,6 +91,7 @@ public class TiffIfdParserTests
         act.Should().Throw<InvalidDataException>().WithMessage("*magic*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseHeader_TooSmall_ThrowsInvalidDataException()
     {
@@ -97,6 +103,7 @@ public class TiffIfdParserTests
         act.Should().Throw<InvalidDataException>().WithMessage("*too small*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseIfd_ClassicTiffWithOneEntry_ReturnsEntry()
     {
@@ -127,6 +134,7 @@ public class TiffIfdParserTests
         nextIfdOffset.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseIfd_BigEndianInlineShort_ReadsValueCorrectly()
     {
@@ -157,6 +165,7 @@ public class TiffIfdParserTests
         entries[0].IsInline.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetCompressionName_KnownValues_ReturnsCorrectNames()
     {
@@ -168,6 +177,7 @@ public class TiffIfdParserTests
         TiffConstants.GetCompressionName(50000).Should().Be("ZSTD");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetTypeSize_AllTypes_ReturnsCorrectSizes()
     {
@@ -178,6 +188,7 @@ public class TiffIfdParserTests
         TiffConstants.GetTypeSize(TiffConstants.TypeLong8).Should().Be(8);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileDecompressor_IsSupported_ReturnsCorrectResults()
     {
@@ -191,6 +202,7 @@ public class TiffIfdParserTests
         TileDecompressor.IsSupported("PACKBITS").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileDecompressor_JpegPassthrough_ReturnsSameData()
     {
@@ -205,6 +217,7 @@ public class TiffIfdParserTests
         contentType.Should().Be("image/jpeg");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileDecompressor_None_ReturnsOctetStreamContentType()
     {
@@ -219,6 +232,7 @@ public class TiffIfdParserTests
         contentType.Should().Be("application/octet-stream");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileDecompressor_Deflate_ReturnsOctetStreamContentType()
     {
@@ -238,6 +252,7 @@ public class TiffIfdParserTests
         contentType.Should().Be("application/octet-stream");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileDecompressor_EmptyString_TreatedAsNone()
     {
@@ -252,6 +267,7 @@ public class TiffIfdParserTests
         contentType.Should().Be("application/octet-stream");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileDecompressor_UnsupportedCompression_ThrowsNotSupportedException()
     {

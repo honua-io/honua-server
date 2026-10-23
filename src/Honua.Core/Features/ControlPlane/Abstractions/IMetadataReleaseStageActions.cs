@@ -34,13 +34,62 @@ public sealed record MetadataReleasePreflightResult
 }
 
 /// <summary>
-/// Result of running the post-publish layer Smoke check.
+/// Which revision a metadata-release smoke check exercises, and why.
+/// </summary>
+public enum MetadataReleaseSmokePhase
+{
+    /// <summary>
+    /// The staged candidate, explicitly, before activation. Canonical readers are still on the
+    /// prior revision.
+    /// </summary>
+    Candidate,
+
+    /// <summary>
+    /// The live revision after activation (post-activation regression check).
+    /// </summary>
+    Activated,
+
+    /// <summary>
+    /// The live revision after rollback, proving recovered functional behavior.
+    /// </summary>
+    Recovered
+}
+
+/// <summary>
+/// Identifies the revision a smoke check must exercise and the behavior it must observe.
+/// </summary>
+public sealed record MetadataReleaseSmokeRequest
+{
+    /// <summary>
+    /// Lifecycle moment of the check.
+    /// </summary>
+    public required MetadataReleaseSmokePhase Phase { get; init; }
+
+    /// <summary>
+    /// Retained revision to exercise. The check never reads "whatever is current".
+    /// </summary>
+    public required long Revision { get; init; }
+
+    /// <summary>
+    /// Revision whose authorization behavior the exercised revision must preserve. Null skips the
+    /// comparison (for example when no prior revision is retained).
+    /// </summary>
+    public long? BaselineRevision { get; init; }
+
+    /// <summary>
+    /// Whether the plan's new field must be present (true) or absent (false) in the exercised schema.
+    /// </summary>
+    public required bool ExpectNewField { get; init; }
+}
+
+/// <summary>
+/// Result of running a metadata-release smoke check.
 /// </summary>
 public sealed record MetadataReleaseSmokeResult
 {
     /// <summary>
-    /// Whether the smoke check passed: the canonical query returned rows and the activated schema
-    /// includes the newly added field.
+    /// Whether every check passed: schema expectation, bindings, rendering references,
+    /// authorization parity and the canonical query.
     /// </summary>
     public required bool Passed { get; init; }
 
@@ -50,7 +99,7 @@ public sealed record MetadataReleaseSmokeResult
     public long RowCount { get; init; }
 
     /// <summary>
-    /// Whether the activated revision's schema includes the expected new field.
+    /// Whether the exercised revision's schema includes the plan's new field.
     /// </summary>
     public bool NewFieldPresent { get; init; }
 
@@ -58,6 +107,86 @@ public sealed record MetadataReleaseSmokeResult
     /// Safe operator-facing message describing the smoke outcome.
     /// </summary>
     public required string Message { get; init; }
+}
+
+/// <summary>
+/// Result of preparing a graph from a script: the transformed graph and the operations that
+/// actually changed it (idempotent no-ops are excluded).
+/// </summary>
+public sealed record MetadataReleaseScriptResult
+{
+    /// <summary>
+    /// Transformed graph. Not persisted by the script executor.
+    /// </summary>
+    public required MetadataV2Graph Graph { get; init; }
+
+    /// <summary>
+    /// Operations that changed the graph.
+    /// </summary>
+    public IReadOnlyList<MetadataReleaseScriptOperation> AppliedOperations { get; init; } = Array.Empty<MetadataReleaseScriptOperation>();
+}
+
+/// <summary>
+/// Raised when a candidate cannot be prepared (or an inverse cannot be applied) without breaking
+/// the protected-change contract. Nothing live has been mutated when this is thrown.
+/// </summary>
+public sealed class MetadataReleasePreparationException : Exception
+{
+    /// <summary>
+    /// Creates a preparation failure with a stable blocker code.
+    /// </summary>
+    public MetadataReleasePreparationException(string code, string message)
+        : base(message)
+    {
+        Code = code;
+    }
+
+    /// <summary>
+    /// Stable, machine-readable blocker code.
+    /// </summary>
+    public string Code { get; }
+}
+
+/// <summary>
+/// Outcome of a conditional candidate activation.
+/// </summary>
+public enum MetadataReleaseActivationOutcome
+{
+    /// <summary>
+    /// The candidate became current in one atomic pointer move.
+    /// </summary>
+    Activated,
+
+    /// <summary>
+    /// The candidate was already current (a resumed activation).
+    /// </summary>
+    AlreadyActive,
+
+    /// <summary>
+    /// A newer update became current first; nothing was overwritten.
+    /// </summary>
+    Conflict
+}
+
+/// <summary>
+/// Result of a conditional candidate activation.
+/// </summary>
+public sealed record MetadataReleaseActivationResult
+{
+    /// <summary>
+    /// Activation outcome.
+    /// </summary>
+    public required MetadataReleaseActivationOutcome Outcome { get; init; }
+
+    /// <summary>
+    /// Revision current after the attempt.
+    /// </summary>
+    public required long CurrentRevision { get; init; }
+
+    /// <summary>
+    /// ETag current after the attempt.
+    /// </summary>
+    public required string CurrentEtag { get; init; }
 }
 
 /// <summary>
@@ -75,24 +204,32 @@ public interface IMetadataReleasePreflightGate
 }
 
 /// <summary>
-/// Executes the additive forward schema script and its reversible inverse.
+/// Applies the additive forward schema script, or the inverse of the operations a release owns,
+/// to a graph in memory. Never persists: staging and activation belong to
+/// <see cref="IMetadataReleaseActivator"/>.
 /// </summary>
 public interface IMetadataReleaseScriptExecutor
 {
     /// <summary>
-    /// Applies the additive forward schema operations (for example add-nullable-column).
-    /// Idempotent: re-applying an already-applied additive change must succeed.
+    /// Applies the plan's forward operations to <paramref name="baseline"/>. Idempotent: an add of
+    /// an identical existing field is a no-op and is not reported as applied.
     /// </summary>
-    Task ApplyForwardAsync(
+    /// <exception cref="MetadataReleasePreparationException">The target resource is missing or an
+    /// existing field conflicts with the declared definition.</exception>
+    MetadataReleaseScriptResult PrepareForward(
         MetadataReleaseExecutionPlan plan,
-        CancellationToken cancellationToken = default);
+        MetadataV2Graph baseline);
 
     /// <summary>
-    /// Executes the reversible inverse (for example drop-added-column). Idempotent.
+    /// Reverts exactly <paramref name="ownedOperations"/> on <paramref name="current"/>, leaving
+    /// every other resource, field and service untouched. Idempotent: an already-reverted change is
+    /// a no-op.
     /// </summary>
-    Task ApplyInverseAsync(
-        MetadataReleaseExecutionPlan plan,
-        CancellationToken cancellationToken = default);
+    /// <exception cref="MetadataReleasePreparationException">An owned field was changed by someone
+    /// else since activation, so reverting it would destroy an unrelated update.</exception>
+    MetadataReleaseScriptResult PrepareInverse(
+        IReadOnlyList<MetadataReleaseScriptOperation> ownedOperations,
+        MetadataV2Graph current);
 }
 
 /// <summary>
@@ -111,44 +248,67 @@ public interface IMetadataReleaseDataJobDispatcher
 }
 
 /// <summary>
-/// Activates and reactivates Metadata v2 revisions for the metadata-release lifecycle.
+/// Stages, activates and reverts Metadata v2 revisions for the metadata-release lifecycle through
+/// the canonical graph store. Reads always go to the persisted store, never a cached snapshot, so
+/// optimistic-concurrency preconditions are exact.
 /// </summary>
 public interface IMetadataReleaseActivator
 {
     /// <summary>
-    /// Captures the prior current revision so a reversible rollback can reactivate it. Returns null
-    /// when no current revision exists yet.
+    /// Returns the persisted current revision.
     /// </summary>
-    Task<long?> GetCurrentRevisionAsync(
-        MetadataReleaseExecutionPlan plan,
-        CancellationToken cancellationToken = default);
+    Task<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Activates the new revision for the additive release (MetadataApply stage).
+    /// Returns a retained revision, or null when it is no longer retained.
     /// </summary>
-    Task ActivateNewRevisionAsync(
-        MetadataReleaseExecutionPlan plan,
-        CancellationToken cancellationToken = default);
+    Task<MetadataV2GraphSnapshot?> GetRevisionAsync(long revision, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reactivates a prior revision during reversible rollback.
+    /// Persists <paramref name="candidate"/> as an immutable retained revision without moving the
+    /// current pointer.
     /// </summary>
-    Task ReactivateRevisionAsync(
-        MetadataReleaseExecutionPlan plan,
+    /// <exception cref="MetadataReleasePreparationException">The graph store cannot stage revisions.</exception>
+    Task<MetadataV2GraphSnapshot> StageAsync(MetadataV2Graph candidate, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Discards a staged revision that never became current. Idempotent.
+    /// </summary>
+    Task DiscardAsync(long revision, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Makes <paramref name="revision"/> current only if <paramref name="expectedCurrentEtag"/> is
+    /// still current. A newer update is reported as <see cref="MetadataReleaseActivationOutcome.Conflict"/>,
+    /// never overwritten.
+    /// </summary>
+    Task<MetadataReleaseActivationResult> ActivateAsync(
         long revision,
+        string expectedCurrentEtag,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists a reverted graph as the new current revision only if
+    /// <paramref name="expectedCurrentEtag"/> is still current.
+    /// </summary>
+    /// <exception cref="Honua.Core.Features.Metadata.Abstractions.MetadataV2GraphConcurrencyException">
+    /// Another writer advanced the current revision.</exception>
+    Task<MetadataV2GraphSnapshot> CommitRevertAsync(
+        MetadataV2Graph reverted,
+        string expectedCurrentEtag,
         CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Runs the post-publish layer Smoke check through the canonical query pipeline.
+/// Runs a metadata-release smoke check against an explicit retained revision.
 /// </summary>
 public interface IMetadataReleaseSmokeChecker
 {
     /// <summary>
-    /// Queries the just-published layer through the shared canonical query path and asserts rows
-    /// return and the activated schema includes the new field.
+    /// Exercises the requested revision through the canonical query pipeline and checks schema,
+    /// bindings, rendering references and authorization parity with the baseline revision.
     /// </summary>
     Task<MetadataReleaseSmokeResult> RunAsync(
         MetadataReleaseExecutionPlan plan,
+        MetadataReleaseSmokeRequest request,
         CancellationToken cancellationToken = default);
 }

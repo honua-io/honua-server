@@ -13,6 +13,17 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal interface IGeoprocessingJobTerminalService
 {
+    /// <summary>Cancels an owned GP job within the resolved service/task scope.</summary>
+    Task<GeoprocessingCancelResult> CancelGPServerAsync(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal,
+        TimeSpan timeout, CancellationToken clientDisconnect = default)
+        => CancelAsync(jobId, principal, timeout, clientDisconnect);
+
+    /// <summary>Retains the GP binding when cleaning up an abandoned synchronous execution.</summary>
+    void DispatchGPServerOrphanedCancellation(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal, TimeSpan timeout)
+        => DispatchOrphanedCancellation(jobId, principal, timeout);
+
     /// <summary>Waits for a visible job to reach a terminal state within a fixed budget.</summary>
     Task<GeoprocessingTerminalWaitResult> WaitForTerminalAsync(
         string jobId,

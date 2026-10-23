@@ -53,7 +53,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v7.0.1
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
@@ -233,7 +233,7 @@ jobs:
 
     - name: Upload CITE test artifacts
       if: always()
-      uses: actions/upload-artifact@v7.0.1
+      uses: actions/upload-artifact@v7
       with:
         name: wfs20-cite-results-${{ matrix.profile }}-${{ github.run_number }}
         path: cite-wfs20-results/

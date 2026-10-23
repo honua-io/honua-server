@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -86,10 +87,154 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(tableName + "_geom_idx")} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
+        // Derived like PostgreSQL's own implicit names. A plain "<table>_geom_idx" is truncated to 63
+        // bytes, which for a 63-byte table name is the table's own name, so IF NOT EXISTS silently
+        // skipped the index (#4600).
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(PostgresDerivedRelationNames.Build(tableName, "geom", "idx"))} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
+    }
+
+    /// <summary>True when a relation (table, index or sequence) with this name exists in the schema.</summary>
+    private static async Task<bool> RelationExistsAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string relationName,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT to_regclass(@qualifiedName) IS NOT NULL";
+        cmd.Parameters.AddWithValue("qualifiedName", $"{QuoteIdentifier(schemaName)}.{QuoteIdentifier(relationName)}");
+        return await cmd.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    /// <summary>
+    /// Takes the import lease for one target table without waiting. The lease is a session-level
+    /// advisory lock on the import connection, so it outlives the data commit and also covers
+    /// publishing, attachment copy and reconciliation. <see cref="ReleaseTargetImportLockAsync"/> ends
+    /// it, and a dropped connection (a crashed worker) releases it. Returns <c>false</c> when another
+    /// import already holds the lease.
+    /// </summary>
+    private static async Task<bool> TryAcquireTargetImportLockAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT pg_try_advisory_lock(hashtextextended(@lockKey, 0))";
+        cmd.Parameters.AddWithValue("lockKey", BuildTargetImportLockKey(schemaName, tableName));
+        return await cmd.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    /// <summary>
+    /// Ends the lease taken by <see cref="TryAcquireTargetImportLockAsync"/>. Runs after the import
+    /// transaction has committed or rolled back, so the connection is never in an aborted transaction.
+    /// </summary>
+    private static async Task ReleaseTargetImportLockAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT pg_advisory_unlock(hashtextextended(@lockKey, 0))";
+        cmd.Parameters.AddWithValue("lockKey", BuildTargetImportLockKey(schemaName, tableName));
+        await cmd.ExecuteScalarAsync(CancellationToken.None);
+    }
+
+    private static string BuildTargetImportLockKey(string schemaName, string tableName)
+        => $"honua.geoservices-import:{QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}";
+
+    /// <summary>
+    /// Fences writes to the prior target for the rest of the import transaction. EXCLUSIVE mode
+    /// conflicts with INSERT/UPDATE/DELETE but not with SELECT, so readers keep the prior rows while
+    /// an edit waits for the swap instead of committing against a table the swap then discards.
+    /// </summary>
+    private static async Task FenceTargetWritesAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"LOCK TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} IN EXCLUSIVE MODE";
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Name prefix of the staging table a replacement import loads into.</summary>
+    internal const string StagingTablePrefix = "honua_import_stage_";
+
+    /// <summary>
+    /// Staging table for a replacement import. Derived from the job identity and the target, so two
+    /// concurrent jobs never share one, and short enough that PostgreSQL's derived <c>_pkey</c> and
+    /// <c>_objectid_seq</c> names are never truncated.
+    /// </summary>
+    internal static string BuildStagingTableName(string tableName, string jobId)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"{jobId}\n{tableName}"));
+        return StagingTablePrefix + Convert.ToHexStringLower(hash.AsSpan(0, 8));
+    }
+
+    /// <summary>
+    /// Replaces the target with the fully loaded staging table inside the import transaction. The
+    /// exclusive lock on the prior target is taken here, at the end of the transfer, not at its start.
+    /// </summary>
+    private static async Task SwapStagingIntoTargetAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string stagingTable,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, tableName, cancellationToken);
+        await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTable, cancellationToken);
+        var schema = QuoteIdentifier(schemaName);
+        var target = QuoteIdentifier(tableName);
+        await using (var swap = connection.CreateCommand())
+        {
+            swap.CommandText =
+                (targetExists ? $"DROP TABLE {schema}.{target} CASCADE; " : string.Empty)
+                + $"ALTER TABLE {schema}.{QuoteIdentifier(stagingTable)} RENAME TO {target};";
+            await swap.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // The rename keeps the staging-derived primary-key and sequence names. Give them the names a
+        // first import of the target creates, unless another relation already holds that name.
+        await RenameDerivedRelationAsync(
+            connection,
+            schemaName,
+            PostgresDerivedRelationNames.Build(stagingTable, null, "pkey"),
+            PostgresDerivedRelationNames.Build(tableName, null, "pkey"),
+            (current, renamed) => $"ALTER TABLE {schema}.{target} RENAME CONSTRAINT {current} TO {renamed}",
+            cancellationToken);
+        await RenameDerivedRelationAsync(
+            connection,
+            schemaName,
+            PostgresDerivedRelationNames.Build(stagingTable, FieldNames.ObjectId, "seq"),
+            PostgresDerivedRelationNames.Build(tableName, FieldNames.ObjectId, "seq"),
+            (current, renamed) => $"ALTER SEQUENCE {schema}.{current} RENAME TO {renamed}",
+            cancellationToken);
+    }
+
+    private static async Task RenameDerivedRelationAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string currentName,
+        string renamedName,
+        Func<string, string, string> buildRenameSql,
+        CancellationToken cancellationToken)
+    {
+        if (!await RelationExistsAsync(connection, schemaName, currentName, cancellationToken)
+            || await RelationExistsAsync(connection, schemaName, renamedName, cancellationToken))
+        {
+            return;
+        }
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = buildRenameSql(QuoteIdentifier(currentName), QuoteIdentifier(renamedName));
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task AnalyzeTableAsync(
@@ -107,18 +252,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);
 
     private string ResolveTargetSchema(string? requestedSchema)
-    {
-        var schema = string.IsNullOrWhiteSpace(requestedSchema)
-            ? _schemaConfiguration.DefaultOperationalSchema
-            : requestedSchema.Trim();
-
-        if (!SchemaSearchPath.IsValidIdentifier(schema))
-        {
-            throw new ArgumentException("Target schema contains invalid characters.", nameof(requestedSchema));
-        }
-
-        return schema;
-    }
+        => _schemaConfiguration.ResolveImportTargetSchema(requestedSchema);
 
     /// <summary>
     /// Emits a progress report for an import phase. Shared with
@@ -139,7 +273,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         int attachmentsProcessed = 0,
         int failedAttachments = 0,
         MigrationReconciliationArtifact? reconciliationArtifact = null,
-        MigrationCatalogReconciliationReport? catalogReconciliationReport = null)
+        MigrationCatalogReconciliationReport? catalogReconciliationReport = null,
+        string? fidelityVerdict = null,
+        MigrationFidelityDifference[]? fidelityDifferences = null)
     {
         progress?.Report(new GeoservicesImportProgress
         {
@@ -158,7 +294,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             AttachmentsProcessed = attachmentsProcessed,
             FailedAttachments = failedAttachments,
             ReconciliationArtifact = reconciliationArtifact,
-            CatalogReconciliationReport = catalogReconciliationReport
+            CatalogReconciliationReport = catalogReconciliationReport,
+            FidelityVerdict = fidelityVerdict,
+            FidelityDifferences = fidelityDifferences ?? []
         });
     }
 
@@ -286,5 +424,34 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         [LoggerMessage(7841, LogLevel.Warning,
             "Reconciliation gate could not run for table {TableName}; import completed without a reconciliation verdict")]
         public static partial void ReconciliationGateUnavailable(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7842, LogLevel.Warning,
+            "Migration fidelity difference on table {TableName}: [{Code}/{Severity}] {Summary}")]
+        public static partial void FidelityDifference(
+            ILogger logger, string tableName, string code, string severity, string summary);
+
+        [LoggerMessage(7843, LogLevel.Warning,
+            "Replacement of table {TableName} refused: {FailedCount} source records failed to load; the prior target was retained")]
+        public static partial void ReplacementRefused(ILogger logger, string tableName, int failedCount);
+
+        [LoggerMessage(7844, LogLevel.Warning,
+            "Import into table {TableName} refused: another import is already writing the target")]
+        public static partial void TargetImportInProgress(ILogger logger, string tableName);
+
+        [LoggerMessage(7845, LogLevel.Warning,
+            "Source population for table {TableName} could not be read; source changes during the transfer are unverified")]
+        public static partial void SourcePopulationUnavailable(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7846, LogLevel.Warning,
+            "Import lease on table {TableName} could not be released explicitly; it ends with the connection")]
+        public static partial void TargetLeaseReleaseFailed(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7848, LogLevel.Warning,
+            "Queried source extent was unavailable for {TableName}; reconciliation keeps the advertised extent")]
+        public static partial void SourceExtentUnavailable(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7847, LogLevel.Warning,
+            "Rollback of failed import into table {TableName} did not complete; the originating failure is reported and the server discards the transaction with the session")]
+        public static partial void ImportRollbackFailed(ILogger logger, string tableName, Exception exception);
     }
 }

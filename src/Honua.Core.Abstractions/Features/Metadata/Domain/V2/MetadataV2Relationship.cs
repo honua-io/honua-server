@@ -60,6 +60,14 @@ public sealed record MetadataV2Relationship
     public string Cardinality { get; init; } = "one-to-many";
 
     /// <summary>
+    /// True when the source declares composite ownership. Such relationships are
+    /// currently readable only; ownership-aware edits and cascades are unsupported.
+    /// </summary>
+    [JsonPropertyName("composite")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Composite { get; init; }
+
+    /// <summary>
     /// Field on this resource whose value identifies the foreign key.
     /// </summary>
     [JsonPropertyName("originField")]

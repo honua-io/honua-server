@@ -351,4 +351,10 @@ internal sealed record ReplicaState(
     /// cursor so a replica does not receive its own just-applied edits back (#1272).
     /// </summary>
     public long UploadBaseGeneration { get; init; }
+
+    /// <summary>
+    /// Serialized <see cref="Models.ReplicaScopeDefinition"/> captured at createReplica, or null for a
+    /// replica that covers its layers whole (#4018).
+    /// </summary>
+    public string? ScopeDefinition { get; init; }
 }

@@ -64,6 +64,7 @@ internal sealed partial class StreamingFileImportService
             }
 
             using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
+            EnsureArchiveEntryCount(archive, _limits.MaxArchiveEntries);
             var entries = SelectShapefileEntries(archive)
                 ?? throw new InvalidDataException("Zip does not contain required .shp and .dbf files.");
             var extractionBudget = CreateArchiveExtractionBudget();
@@ -190,6 +191,7 @@ internal sealed partial class StreamingFileImportService
             }
 
             using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
+            EnsureArchiveEntryCount(archive, _limits.MaxArchiveEntries);
             var kmlEntry = SelectKmzKmlEntry(archive)
                 ?? throw new InvalidDataException("KMZ does not contain a .kml file.");
             var extractionBudget = CreateArchiveExtractionBudget();
@@ -318,6 +320,7 @@ internal sealed partial class StreamingFileImportService
             }
 
             using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
+            EnsureArchiveEntryCount(archive, _limits.MaxArchiveEntries);
             var extractionBudget = CreateArchiveExtractionBudget();
 
             // Extract all entries, maintaining directory structure
@@ -493,6 +496,18 @@ internal sealed partial class StreamingFileImportService
         }
 
         return firstMatch;
+    }
+
+    internal static void EnsureArchiveEntryCount(ZipArchive archive, int maxEntries)
+    {
+        ArgumentNullException.ThrowIfNull(archive);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxEntries, 1);
+
+        if (archive.Entries.Count > maxEntries)
+        {
+            throw new InvalidDataException(
+                $"Archive contains {archive.Entries.Count} entries, which exceeds the maximum of {maxEntries}.");
+        }
     }
 
     private ArchiveExtractionBudget CreateArchiveExtractionBudget()

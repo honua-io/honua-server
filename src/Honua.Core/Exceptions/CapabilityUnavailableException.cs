@@ -10,12 +10,14 @@ public sealed class CapabilityUnavailableException : InvalidOperationException
         string detail,
         string missingDependency,
         string remediation,
-        string remediationRef)
+        string remediationRef,
+        string? capability = null)
         : base(detail)
     {
         MissingDependency = missingDependency;
         Remediation = remediation;
         RemediationRef = remediationRef;
+        Capability = capability;
     }
 
     /// <summary>Machine-readable dependency identifier.</summary>
@@ -26,4 +28,11 @@ public sealed class CapabilityUnavailableException : InvalidOperationException
 
     /// <summary>Canonical documentation reference for remediation.</summary>
     public string RemediationRef { get; }
+
+    /// <summary>
+    /// Capability-manifest id the missing dependency disables (for example
+    /// <c>operations.proposals</c>), or <see langword="null"/> when no manifest id covers the
+    /// refused surface.
+    /// </summary>
+    public string? Capability { get; }
 }

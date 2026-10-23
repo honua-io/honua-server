@@ -20,9 +20,10 @@ public sealed class AdoptedLifecycleDefaultsTests
         { "scene.pointcloud-ingest", CapabilityMaturity.Experimental },
         { "alerts.geofence", CapabilityMaturity.Preview },
         { "sync.offline", CapabilityMaturity.Preview },
-        { "admin.multi-tenancy", CapabilityMaturity.Preview },
+        { "admin.multi-tenancy", CapabilityMaturity.Internal },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(AdoptedDescriptors))]
     public void AdoptedDescriptor_HasLifecycleAndFourteenStateDenominator(
@@ -49,6 +50,7 @@ public sealed class AdoptedLifecycleDefaultsTests
         enabled.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CustomerAlertingLifecycle_RemainsPreviewWithoutGaReceipts()
     {

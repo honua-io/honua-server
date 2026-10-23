@@ -15,6 +15,13 @@ namespace Honua.Core.Features.Scene.Conversion;
 /// </summary>
 public sealed class I3sSceneLayerDocument
 {
+    /// <summary>Typed fields backed by actual node attribute resources.</summary>
+    [JsonPropertyName("fields")]
+    public IReadOnlyList<I3sField>? Fields { get; set; }
+
+    /// <summary>Object-id field used to identify the cached features.</summary>
+    [JsonPropertyName("objectIdField")]
+    public string? ObjectIdField { get; set; }
     /// <summary>Integer layer id within the scene service (usually <c>0</c>).</summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -34,6 +41,10 @@ public sealed class I3sSceneLayerDocument
     /// <summary>I3S spec version string (e.g. <c>1.7</c>, <c>1.8</c>).</summary>
     [JsonPropertyName("version")]
     public string? Version { get; set; }
+
+    /// <summary>Operations supported by this layer.</summary>
+    [JsonPropertyName("capabilities")]
+    public IReadOnlyList<string>? Capabilities { get; set; }
 
     /// <summary>Spatial reference of the layer's coordinates.</summary>
     [JsonPropertyName("spatialReference")]
@@ -67,10 +78,13 @@ public sealed class I3sSceneLayerDocument
     [JsonPropertyName("attributeStorageInfo")]
     public IReadOnlyList<I3sAttributeStorageInfo>? AttributeStorageInfo { get; set; }
 
+    /// <summary>I3S 1.7 paged-access index description.</summary>
+    [JsonPropertyName("nodePages")]
+    public I3sNodePageDefinition? NodePages { get; set; }
+
     /// <summary>
-    /// Default geometry schema (OGC 19-008 <c>store.defaultGeometrySchema</c> is
-    /// commonly surfaced at the layer level by 1.7 producers): the vertex/face
-    /// layout a node's geometry buffer conforms to. Descriptive only.
+    /// Geometry definitions describing the vertex and feature streams carried
+    /// by node geometry resources.
     /// </summary>
     [JsonPropertyName("geometryDefinitions")]
     public IReadOnlyList<I3sGeometryDefinition>? GeometryDefinitions { get; set; }
@@ -163,6 +177,10 @@ public sealed class I3sAttributeValues
 /// </summary>
 public sealed class I3sGeometryDefinition
 {
+    /// <summary>Primitive topology represented by the geometry buffers.</summary>
+    [JsonPropertyName("topology")]
+    public string? Topology { get; set; }
+
     /// <summary>Geometry encodings the layer's nodes use.</summary>
     [JsonPropertyName("geometryBuffers")]
     public IReadOnlyList<I3sGeometryBuffer>? GeometryBuffers { get; set; }
@@ -171,6 +189,10 @@ public sealed class I3sGeometryDefinition
 /// <summary>I3S geometry-buffer descriptor (compressed / uncompressed layout).</summary>
 public sealed class I3sGeometryBuffer
 {
+    /// <summary>Byte offset from the resource start to the geometry data.</summary>
+    [JsonPropertyName("offset")]
+    public int? Offset { get; set; }
+
     /// <summary>Whether the buffer is compressed (e.g. <c>draco</c>).</summary>
     [JsonPropertyName("compressedAttributes")]
     public I3sCompressedAttributes? CompressedAttributes { get; set; }
@@ -186,6 +208,22 @@ public sealed class I3sGeometryBuffer
     /// <summary>Uncompressed offset descriptor for the UV0 stream.</summary>
     [JsonPropertyName("uv0")]
     public I3sVertexLayout? Uv0 { get; set; }
+
+    /// <summary>Uncompressed descriptor for the second source UV stream.</summary>
+    [JsonPropertyName("uv1")]
+    public I3sVertexLayout? Uv1 { get; set; }
+
+    /// <summary>Uncompressed descriptor for the per-vertex RGBA color stream.</summary>
+    [JsonPropertyName("color")]
+    public I3sVertexLayout? Color { get; set; }
+
+    /// <summary>Per-feature identifier stream.</summary>
+    [JsonPropertyName("featureId")]
+    public I3sVertexLayout? FeatureId { get; set; }
+
+    /// <summary>Per-feature inclusive face range stream.</summary>
+    [JsonPropertyName("faceRange")]
+    public I3sVertexLayout? FaceRange { get; set; }
 }
 
 /// <summary>I3S compressed-attribute (Draco) descriptor.</summary>
@@ -210,6 +248,54 @@ public sealed class I3sVertexLayout
     /// <summary>Components per vertex (e.g. 3 for position).</summary>
     [JsonPropertyName("component")]
     public int? Component { get; set; }
+
+    /// <summary>Association of the stream with vertices or features.</summary>
+    [JsonPropertyName("binding")]
+    public string? Binding { get; set; }
+}
+
+/// <summary>I3S legacy geometry-buffer schema required by a mesh-pyramid store.</summary>
+public sealed class I3sDefaultGeometrySchema
+{
+    /// <summary>Primitive type stored in the geometry resource.</summary>
+    [JsonPropertyName("geometryType")]
+    public string? GeometryType { get; set; }
+
+    /// <summary>Fields at the start of the geometry resource.</summary>
+    [JsonPropertyName("header")]
+    public IReadOnlyList<I3sGeometryHeader>? Header { get; set; }
+
+    /// <summary>Organization of the geometry attribute arrays.</summary>
+    [JsonPropertyName("topology")]
+    public string? Topology { get; set; }
+
+    /// <summary>Serialized order of the vertex attribute arrays.</summary>
+    [JsonPropertyName("ordering")]
+    public IReadOnlyList<string>? Ordering { get; set; }
+
+    /// <summary>Vertex attribute layouts keyed by attribute name.</summary>
+    [JsonPropertyName("vertexAttributes")]
+    public IReadOnlyDictionary<string, I3sAttributeValues>? VertexAttributes { get; set; }
+
+    /// <summary>Serialized order of the feature attribute arrays.</summary>
+    [JsonPropertyName("featureAttributeOrder")]
+    public IReadOnlyList<string>? FeatureAttributeOrder { get; set; }
+
+    /// <summary>Feature attribute layouts keyed by attribute name.</summary>
+    [JsonPropertyName("featureAttributes")]
+    public IReadOnlyDictionary<string, I3sAttributeValues>? FeatureAttributes { get; set; }
+}
+
+/// <summary>I3S geometry-buffer header entry.</summary>
+public sealed class I3sGeometryHeader
+{
+    /// <summary>Name of the count represented by this header field.</summary>
+    [JsonPropertyName("property")]
+    public string? Property { get; set; }
+
+    /// <summary>Scalar type used to encode the header field.</summary>
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
 }
 
 /// <summary>
@@ -218,6 +304,29 @@ public sealed class I3sVertexLayout
 /// </summary>
 public sealed class I3sMaterialDefinition
 {
+    /// <summary>Face culling for the source mesh's counterclockwise winding.</summary>
+    [JsonPropertyName("cullFace")]
+    public string? CullFace { get; set; }
+
+    /// <summary>Original normal-map texture.</summary>
+    [JsonPropertyName("normalTexture")]
+    public I3sMaterialTexture? NormalTexture { get; set; }
+
+    /// <summary>Original occlusion texture.</summary>
+    [JsonPropertyName("occlusionTexture")]
+    public I3sMaterialTexture? OcclusionTexture { get; set; }
+
+    /// <summary>Original emissive texture.</summary>
+    [JsonPropertyName("emissiveTexture")]
+    public I3sMaterialTexture? EmissiveTexture { get; set; }
+
+    /// <summary>Emissive color in the I3S material's sRGB color space.</summary>
+    [JsonPropertyName("emissiveFactor")]
+    public IReadOnlyList<double>? EmissiveFactor { get; set; }
+
+    /// <summary>Mask threshold when alphaMode is mask.</summary>
+    [JsonPropertyName("alphaCutoff")]
+    public double? AlphaCutoff { get; set; }
     /// <summary>Metallic-roughness PBR block.</summary>
     [JsonPropertyName("pbrMetallicRoughness")]
     public I3sPbrMetallicRoughness? PbrMetallicRoughness { get; set; }
@@ -234,7 +343,13 @@ public sealed class I3sMaterialDefinition
 /// <summary>I3S PBR metallic-roughness descriptor.</summary>
 public sealed class I3sPbrMetallicRoughness
 {
-    /// <summary>Linear-space base color factor (RGBA).</summary>
+    /// <summary>Original packed metallic-roughness texture.</summary>
+    [JsonPropertyName("metallicRoughnessTexture")]
+    public I3sMaterialTexture? MetallicRoughnessTexture { get; set; }
+    /// <summary>Reference to the original base-color texture set, when present.</summary>
+    [JsonPropertyName("baseColorTexture")]
+    public I3sMaterialTexture? BaseColorTexture { get; set; }
+    /// <summary>I3S sRGB base color factor (RGBA).</summary>
     [JsonPropertyName("baseColorFactor")]
     public IReadOnlyList<double>? BaseColorFactor { get; set; }
 
@@ -343,6 +458,13 @@ public sealed class I3sFullExtent
 /// <summary>I3S store block: geometry/node-page layout descriptor.</summary>
 public sealed class I3sStore
 {
+    /// <summary>CRS of the node index bounds.</summary>
+    [JsonPropertyName("indexCRS")]
+    public string? IndexCrs { get; set; }
+
+    /// <summary>CRS of geometry positions, matching the layer spatial reference.</summary>
+    [JsonPropertyName("vertexCRS")]
+    public string? VertexCrs { get; set; }
     /// <summary>Store id.</summary>
     [JsonPropertyName("id")]
     public string? Id { get; set; }
@@ -368,24 +490,46 @@ public sealed class I3sStore
     public string? NormalReferenceFrame { get; set; }
 
     /// <summary>
-    /// Node-page pagination descriptor (I3S 1.7 <c>store.nodePages</c>): the
-    /// fixed number of nodes carried per page plus the LOD selection metric. Its
-    /// presence tells a conformant client to traverse the layer through
-    /// <c>nodepages/{n}</c> rather than a legacy node tree.
-    /// </summary>
-    [JsonPropertyName("nodePages")]
-    public I3sNodePageDefinition? NodePages { get; set; }
-
-    /// <summary>
     /// Default geometry schema the node geometry buffers conform to (I3S 1.7
     /// <c>store.defaultGeometrySchema</c>).
     /// </summary>
     [JsonPropertyName("defaultGeometrySchema")]
-    public I3sGeometryDefinition? DefaultGeometrySchema { get; set; }
+    public I3sDefaultGeometrySchema? DefaultGeometrySchema { get; set; }
+}
+
+/// <summary>One published field's GeoServices type and display name.</summary>
+public sealed class I3sField
+{
+    /// <summary>Field name in the source feature metadata.</summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
+    /// <summary>GeoServices field type matching the binary storage layout.</summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; set; }
+
+    /// <summary>Display alias.</summary>
+    [JsonPropertyName("alias")]
+    public required string Alias { get; set; }
+}
+
+/// <summary>Reference to one texture set in a scene layer.</summary>
+public sealed class I3sMaterialTexture
+{
+    /// <summary>UV set used by the original material.</summary>
+    [JsonPropertyName("texCoord")]
+    public int TexCoord { get; set; }
+
+    /// <summary>Normal scale or occlusion strength.</summary>
+    [JsonPropertyName("factor")]
+    public double? Factor { get; set; }
+    /// <summary>Index in the layer texture-set definitions.</summary>
+    [JsonPropertyName("textureSetDefinitionId")]
+    public int TextureSetDefinitionId { get; set; }
 }
 
 /// <summary>
-/// I3S node-page pagination descriptor (OGC 19-008 <c>store.nodePages</c>).
+/// I3S node-page pagination descriptor (OGC 19-008 <c>nodePages</c>).
 /// </summary>
 public sealed class I3sNodePageDefinition
 {

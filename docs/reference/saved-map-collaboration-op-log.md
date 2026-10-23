@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Saved-map collaborative edit operation log"
+description: "Server-owned durable ordering and conflict behavior for multi-user saved-map editing."
+resource: "honua://capability/collaboration.map-sessions"
+---
 # Saved-map collaborative edit operation log
 
 Server-owned durable ordering and conflict behavior for multi-user saved-map editing. Where presence and live cursors are ephemeral ([collaboration session transport](#related-surfaces)), saved-map edits are durable: every accepted edit is appended to a per-map operation log, assigned a monotonic server cursor, and replayable for reconnecting clients. This page is the contract for `honua-sdk-js` and Portal consumers.
@@ -83,7 +89,7 @@ Each `kind` maps to a conflict **family**. The MVP policy treats per-aspect fami
 | `PatchStyle` | Style | safe scalar | Yes |
 | `ReplaceWebMapDocument` | WebMapDocument | unsafe | Yes |
 
-### `SetMetadataField` is not accepted (honua-server#2999)
+### `SetMetadataField` is not accepted
 
 The append endpoint rejects `SetMetadataField` with `400`. The checkpoint applier persists
 operations onto the Studio composition body, which carries no metadata bag, so there is no
@@ -149,6 +155,6 @@ Durable edits are never accepted on the strength of authentication alone.
 
 ## Related surfaces
 
-- **Session transport** (presence, live cursors, follow): `POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join`, `GET …/sessions/stream`. Ephemeral; see issue #971.
+- **Session transport** (presence, live cursors, follow): `POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join`, `GET …/sessions/stream`. Ephemeral.
 - **Feature-service edit locks/conflicts**: row/geometry edit persistence is a separate seam from saved-map document edits.
 - **Capability discovery**: `GET /api/v1/capabilities/manifest` reports realtime/transport availability — see [integration patterns](integration-patterns.md#runtime-capability-discovery). Discovery only; authorization still happens at the operation endpoint.

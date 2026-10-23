@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Linq;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -47,7 +48,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
             }
 
-            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
+            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt);
             _items[draft.ItemId] = existingItem is { } existingOwnerItem
                 && !string.Equals(existingOwnerItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
                 ? item
@@ -96,7 +97,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             EnsurePackageKeyAvailable(draft);
             var updated = draft with { Generation = existing.Generation + 1 };
             _drafts[draft.DraftId] = updated;
-            _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt) with
+            _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt) with
             {
                 PackageKey = draft.PackageKey,
                 WorkspaceId = draft.WorkspaceId,
@@ -221,17 +222,20 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new KeyNotFoundException("Studio package draft was not found.");
             }
 
-            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
+            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt);
             var versions = GetVersions(draft.ItemId);
+            var hashInput = StudioPackageHash.ComputeInput(draft.Envelope);
             var version = new StudioContentVersion
             {
                 ItemId = draft.ItemId,
                 PackageKey = draft.PackageKey,
                 WorkspaceId = draft.WorkspaceId,
                 OwnerId = draft.OwnerId,
+                TenantId = draft.TenantId,
                 VersionId = Guid.NewGuid(),
                 VersionNumber = versions.Count == 0 ? 1 : versions[^1].VersionNumber + 1,
-                ContentHash = StudioPackageHash.Compute(draft.Envelope),
+                ContentHash = StudioPackageHash.ComputeFromInput(hashInput),
+                ContentHashInput = Convert.ToBase64String(hashInput),
                 Envelope = draft.Envelope,
                 Validation = draft.Validation,
                 Dependencies = draft.Envelope.Dependencies,
@@ -293,6 +297,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     CurrentVersionId = item.CurrentVersionId,
                     PublishedVersionId = item.PublishedVersionId,
                     OwnerId = item.OwnerId,
+                    TenantId = item.TenantId,
                 }
                 : null);
         }
@@ -406,6 +411,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             return false;
         }
 
+        if (!MatchesTenant(item.TenantId, query.Tenant))
+        {
+            return false;
+        }
+
         if (query.States is { Count: > 0 } states && !states.Contains(ResolveState(item.CurrentVersionId, item.PublishedVersionId)))
         {
             return false;
@@ -439,6 +449,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             return false;
         }
 
+        if (!MatchesTenant(draft.TenantId, query.Tenant))
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(query.SearchTerm) &&
             !draft.PackageKey.Contains(query.SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
         {
@@ -446,6 +461,24 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Applies the honua-server#4905 tenant scope to one row. A row with no recorded tenant
+    /// belongs to the deployment default, so it is only enumerable when the caller's scope says
+    /// the request resolved to that default.
+    /// </summary>
+    private static bool MatchesTenant(string? recordTenantId, TenantScopeFilter? scope)
+    {
+        if (scope is null)
+        {
+            return true;
+        }
+
+        var recorded = TenantOwnership.Normalize(recordTenantId);
+        return recorded is null
+            ? scope.IncludeUnassigned
+            : string.Equals(recorded, scope.TenantId, StringComparison.Ordinal);
     }
 
     private static StudioContentItemSummary ToSummary(StudioContentItemRecord item) => new()
@@ -474,6 +507,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     /// <inheritdoc />
     public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -492,6 +526,37 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new KeyNotFoundException("Studio content version was not found.");
             }
 
+            // honua-server#3980: the caller validated the proposal against the item's current
+            // pointer outside this lock, so re-compare here -- inside the same lock that performs
+            // the published-pointer write -- before anything is persisted. A draft saved in the
+            // meantime moves current_version_id and must fail the proposal rather than publish a
+            // version the reviewer never approved as current.
+            if (expectedCurrentVersionId is { } expectedCurrent &&
+                request.Status == StudioPublicationRequestStatus.Accepted)
+            {
+                var actualCurrent = _items.TryGetValue(request.ItemId, out var pointerItem)
+                    ? pointerItem.CurrentVersionId
+                    : null;
+                if (actualCurrent != expectedCurrent)
+                {
+                    throw new StudioPublicationPointerConflictException(request.ItemId, expectedCurrent, actualCurrent);
+                }
+            }
+
+            var route = request.Intent?.Route;
+            if (request.Status == StudioPublicationRequestStatus.Accepted &&
+                !string.IsNullOrWhiteSpace(route))
+            {
+                var governing = FindGoverningPublicationRequest(route);
+                if (governing is not null && governing.ItemId != request.ItemId)
+                {
+                    throw new StudioPublicationRouteConflictException(
+                        route,
+                        request.ItemId,
+                        governing.ItemId);
+                }
+            }
+
             _publicationRequests.Add(request.RequestId, request);
             if (request.Status != StudioPublicationRequestStatus.Accepted)
             {
@@ -504,6 +569,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 version.WorkspaceId,
                 version.Envelope.Family,
                 version.OwnerId,
+                version.TenantId,
                 request.RequestedBy,
                 request.CreatedAt);
             _items[request.ItemId] = item with
@@ -533,6 +599,36 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     ? request
                     : null);
         }
+    }
+
+    /// <inheritdoc />
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(route);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            return Task.FromResult(FindGoverningPublicationRequest(route));
+        }
+    }
+
+    private StudioPublicationRequest? FindGoverningPublicationRequest(string route)
+    {
+        // Each item is governed by its newest accepted request. A route has one governing
+        // item; CreatePublicationRequestAsync rejects a different item's claim.
+        return _publicationRequests.Values
+            .Where(static request => request.Status == StudioPublicationRequestStatus.Accepted)
+            .GroupBy(static request => request.ItemId)
+            .Select(static requests => requests
+                .OrderByDescending(static request => request.CreatedAt)
+                .ThenByDescending(static request => request.RequestId)
+                .First())
+            .Where(request => string.Equals(request.Intent?.Route, route, StringComparison.Ordinal))
+            .OrderByDescending(static request => request.CreatedAt)
+            .ThenByDescending(static request => request.RequestId)
+            .FirstOrDefault();
     }
 
     /// <inheritdoc />
@@ -580,6 +676,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     CurrentVersionId = updatedItem.CurrentVersionId,
                     PublishedVersionId = updatedItem.PublishedVersionId,
                     OwnerId = updatedItem.OwnerId,
+                    TenantId = updatedItem.TenantId,
                 },
                 RequestedBy = actorId,
                 Reason = reason,
@@ -596,6 +693,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         string? workspaceId,
         StudioPackageFamily family,
         string? ownerId,
+        string? tenantId,
         string? actorId,
         DateTimeOffset timestamp)
     {
@@ -614,6 +712,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             CurrentVersionId: null,
             PublishedVersionId: null,
             OwnerId: ownerId,
+            TenantId: tenantId,
             CreatedBy: actorId,
             UpdatedBy: actorId,
             CreatedAt: timestamp,
@@ -653,6 +752,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         Guid? CurrentVersionId,
         Guid? PublishedVersionId,
         string? OwnerId,
+        string? TenantId,
         string? CreatedBy,
         string? UpdatedBy,
         DateTimeOffset CreatedAt,

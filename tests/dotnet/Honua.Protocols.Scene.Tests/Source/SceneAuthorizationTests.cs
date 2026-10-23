@@ -3,8 +3,10 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
@@ -27,6 +29,8 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         var fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
 
         _fixture = new WebAppFixture()
+            // Exercise the output-cache middleware, which requires a Pro entitlement.
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -77,6 +81,29 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    [InlineData("honua:5000", "host.docker.internal:18443")]
+    [InlineData("host.docker.internal:18443", "honua:5000")]
+    public async Task GetTileset_ChangingHost_DoesNotReplayProtectedResponseToAnonymousCaller(
+        string authenticatedHost, string anonymousHost)
+    {
+        var path = $"/scenes/{SceneFixturePaths.ProtectedSceneId}/tileset.json";
+        using var authorizedRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        authorizedRequest.Headers.Host = authenticatedHost;
+        using var authorized = await _authenticatedClient.SendAsync(authorizedRequest);
+        authorized.StatusCode.Should().Be(HttpStatusCode.OK);
+        authorized.Headers.CacheControl?.NoStore.Should().BeTrue();
+
+        using var anonymousRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        anonymousRequest.Headers.Host = anonymousHost;
+        using var anonymous = await _fixture.Client.SendAsync(anonymousRequest);
+
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymous.Headers.Age.Should().BeNull();
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
@@ -108,12 +135,13 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         // therefore declare `private` cacheability and vary on every header
         // that may have authorized it: `Authorization` (Bearer / Basic-compat)
         // and `X-API-Key` (canonical API-key transport — what this fixture
-        // sends). Omitting either risks a private cache reusing a response
-        // across credentials.
+        // sends). The final authentication policy must also add no-store:
+        // revocation changes server state without changing either header.
         var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tileset.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
         response.Headers.Vary.Should().Contain("Authorization");
@@ -130,11 +158,13 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         // likely to traverse intermediary caches. Vary must also list every
         // credential header that could have authorized the body so a private
         // cache cannot reuse a response across requests authenticated by a
-        // different transport.
+        // different transport. No-store also prevents reuse with the same
+        // credential bytes after that credential is revoked.
         var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.Vary.Should().Contain("Authorization");
         response.Headers.Vary.Should().Contain("X-API-Key");

@@ -1,0 +1,21 @@
+# Before recreate — fixture on 8862065 (sha256:0b160465…), Postgres started without the PostGIS GDAL variables
+
+$ docker inspect gpserver-4614-4616-postgres --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1
+PATH
+GOSU_VERSION
+LANG
+PG_MAJOR
+PG_VERSION
+PGDATA
+POSTGIS_MAJOR
+POSTGIS_VERSION
+
+$ curl --cacert <fixture root> '/rest/services/native_raster_public/ImageServer/exportImage?f=image&format=tiff&bbox=-122.44,37.74,-122.40,37.78&bboxSR=4326&imageSR=4326&size=256,256'
+{"error":{"code":501,"message":"Not Implemented","details":["The requested raster export is not supported by the configured provider."]}}
+-> HTTP 200 application/json; charset=utf-8 262 bytes
+
+$ ./ready-check.sh sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388
+# identity
+gpserver-4614-4616-server image=sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388 state=running health=healthy revision=886206527cc97bad1bbaa5fa6358910ebc45e9c0
+NOT READY: gpserver-4614-4616-postgres lacks POSTGIS_GDAL_ENABLED_DRIVERS=ENABLE_ALL
+exit=1

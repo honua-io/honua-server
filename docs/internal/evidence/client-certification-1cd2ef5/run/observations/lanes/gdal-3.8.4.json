@@ -1,0 +1,38 @@
+{
+  "lane": "gdal-3.8.4",
+  "started_at": "2026-09-21T09:58:19.094199Z",
+  "python": "3.10.12",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "cells": [
+    "gdal_ogc_cells.features_landing",
+    "gdal_ogc_cells.features_collections",
+    "gdal_ogc_cells.features_collection",
+    "gdal_ogc_cells.features_items",
+    "gdal_ogc_cells.features_item",
+    "gdal_ogc_cells.features_queryables",
+    "gdal_ogc_cells.features_service",
+    "gdal_ogc_cells.wfs_operation",
+    "gdal_ogc_cells.wfs_service",
+    "gdal_ogc_cells.wcs_operation",
+    "gdal_ogc_cells.wcs_service",
+    "gdal_cng_cells.flatgeobuf",
+    "gdal_cng_cells.cog_dataset_read"
+  ],
+  "excluded_cells": [
+    {
+      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+      "reason": "Not required by pinned release denominator .13 (release#351/#359, PR #361)"
+    },
+    {
+      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+      "reason": "Not required by pinned release denominator .13 (release#351/#359, PR #361)"
+    },
+    {
+      "test_case_id": "client-cert/gdal/ogc-api-coverages/serve.ogc-api-coverages",
+      "reason": "Not required by pinned release denominator .13 (release#351/#359, PR #361)"
+    }
+  ],
+  "client_identity": "GDAL 3.8.4, released 2024/02/08",
+  "finished_at": "2026-09-21T09:58:23.831212Z",
+  "harness_failures": []
+}

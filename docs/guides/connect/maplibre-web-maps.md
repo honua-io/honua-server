@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Build a web map with MapLibre"
+description: "Render a Honua layer in the browser from vector tiles (MVT) using TileJSON metadata and the server-generated MapLibre style."
+---
 # Build a web map with MapLibre
 
 Render a Honua layer in the browser from vector tiles (MVT) using TileJSON metadata and the server-generated MapLibre style.

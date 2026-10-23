@@ -53,6 +53,48 @@ public sealed record DagSourceRequest
     public string? Bbox { get; init; }
 
     /// <summary>
+    /// Optional comma-separated list of feature identifiers to restrict the read to
+    /// (GeoServices-style <c>objectIds</c>). <see langword="null"/> selects every row
+    /// the other filters admit.
+    /// </summary>
+    public string? ObjectIds { get; init; }
+
+    /// <summary>
+    /// Optional GeoServices geometry selection filter (Esri JSON or the compact
+    /// <c>x,y</c> / <c>xmin,ymin,xmax,ymax</c> forms) for <c>source.honua-layer</c>.
+    /// Interpreted together with <see cref="GeometryType"/>, <see cref="InSr"/> and
+    /// <see cref="SpatialRel"/> by the canonical <c>ILayerSelectionFilterTranslator</c>,
+    /// the same interpretation the synchronous analytics endpoints apply (#4624).
+    /// </summary>
+    public string? Geometry { get; init; }
+
+    /// <summary>GeoServices <c>geometryType</c> paired with <see cref="Geometry"/>.</summary>
+    public string? GeometryType { get; init; }
+
+    /// <summary>GeoServices <c>inSR</c> of <see cref="Geometry"/>.</summary>
+    public string? InSr { get; init; }
+
+    /// <summary>GeoServices <c>spatialRel</c> paired with <see cref="Geometry"/>.</summary>
+    public string? SpatialRel { get; init; }
+
+    /// <summary>
+    /// Optional FeatureServer-style temporal filter (instant or <c>start,end</c> extent)
+    /// for <c>source.honua-layer</c>, evaluated against the layer's configured temporal
+    /// fields by the canonical <c>ILayerSelectionFilterTranslator</c> (#4624).
+    /// </summary>
+    public string? Time { get; init; }
+
+    /// <summary>FeatureServer <c>timeRelation</c> paired with <see cref="Time"/>.</summary>
+    public string? TimeRelation { get; init; }
+
+    /// <summary>
+    /// True when the request carries a geometry or temporal selector, which only the
+    /// canonical selection translator can interpret.
+    /// </summary>
+    public bool HasCanonicalSelectors =>
+        !string.IsNullOrWhiteSpace(Geometry) || !string.IsNullOrWhiteSpace(Time);
+
+    /// <summary>
     /// Optional comma-separated output field allow-list. <see langword="null"/> selects all.
     /// </summary>
     public string? OutFields { get; init; }

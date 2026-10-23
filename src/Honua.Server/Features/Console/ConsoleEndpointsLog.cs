@@ -37,4 +37,8 @@ internal static partial class ConsoleEndpointsLog
     [LoggerMessage(EventId = 4809, Level = LogLevel.Error,
         Message = "Console endpoint failure: {Operation}")]
     public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
+
+    [LoggerMessage(EventId = 4810, Level = LogLevel.Warning,
+        Message = "Console content, share, and open-data stores are process-local (in-memory). They are not durable and are not shared across replicas. Configured replica count is {ReplicaCount}.")]
+    public static partial void InMemoryConsoleStores(ILogger logger, int replicaCount);
 }

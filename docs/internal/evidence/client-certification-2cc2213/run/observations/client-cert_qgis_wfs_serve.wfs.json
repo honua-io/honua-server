@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/wfs/serve.wfs",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "wfs",
+  "operation": "serve.wfs",
+  "protocol_version": "2.0.0",
+  "protocol_profile": "WFS 2.0 simple",
+  "started_at": "2026-09-16T21:48:02.609455Z",
+  "finished_at": "2026-09-16T21:48:02.967919Z",
+  "duration_ms": 358,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "media-schema"
+  ],
+  "summary": "all 3 checks passed across 3 governed facets",
+  "primary_request_url": "http://honua:5000/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "GetCapabilities, DescribeFeatureType and GetFeature through the WFS provider",
+      "outcome": "pass",
+      "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; requests ['DescribeFeatureType', 'GetCapabilities', 'GetFeature']",
+      "request_url": null,
+      "duration_ms": 215
+    },
+    {
+      "facet": "metadata",
+      "name": "capabilities title and extent become layer metadata",
+      "outcome": "pass",
+      "detail": "crs EPSG:4326; extent -122.500,37.700 : -122.350,37.840; title ''",
+      "request_url": null,
+      "duration_ms": 3
+    },
+    {
+      "facet": "media-schema",
+      "name": "GML GetFeature responses decode against DescribeFeatureType types",
+      "outcome": "pass",
+      "detail": "fields {'name': 'xsd:string', 'objectid': 'xsd:int', 'description': 'xsd:string', 'status': 'xsd:string', 'count': 'xsd:int', 'ratio': 'xsd:double', 'active': 'xsd:boolean', 'created_at': 'xsd:dateTime', 'event_date': 'xsd:date', 'event_time': 'xsd:time', 'uid': 'xsd:string', 'tags': 'xsd:string', 'numbers': 'xsd:string', 'eo_x003A_cloud_cover': 'xsd:double'}; responses [('GetFeature', 'application/gml+xml; version=3.2; charset=utf-8'), ('GetFeature', 'application/gml+xml; version=3.2; charset=utf-8')]",
+      "request_url": null,
+      "duration_ms": 136
+    }
+  ]
+}

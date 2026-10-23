@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Use the JavaScript Studio agent"
+description: "@honua/sdk-js/studio-agent is experimental and matches the 2026.1 preview proxy and MCP contracts."
+---
 # Use the JavaScript Studio agent
 
 `@honua/sdk-js/studio-agent` is experimental and matches the 2026.1 preview

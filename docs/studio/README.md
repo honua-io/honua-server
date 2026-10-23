@@ -1,3 +1,8 @@
+---
+type: index
+title: "Honua Studio"
+description: "One typed map, app, and dashboard composition that a person or an agent edits through the same tools, in browser preview for 2026.1."
+---
 # Honua Studio
 
 {% hint style="warning" %}
@@ -6,28 +11,32 @@ change. Preview does not carry a promise of general-availability support or
 compatibility. The server APIs they use have their own documented contracts.
 {% endhint %}
 
-Honua Studio is one JavaScript map-application composer. A person or model
+Honua Studio is the realtime JavaScript map-application composer. A person or model
 works on the same typed composition: the canvas renders it, while typed tools
 add layers and controls, change styles and view state, bind interactions, and
-manage drafts. The model never edits the DOM or invents server routes.
+manage drafts. Changes appear on the canvas as tools execute; the user refines
+the result conversationally and can undo or redo composition changes. The model
+never edits the DOM or invents server routes.
+
+This replaces the former approval-first Console builders. Ordinary composition
+is an interactive editing loop, not a proposal queue. Publication and operational
+actions retain their separately documented policies; they do not define the
+authoring experience. Console owns administration, Catalog, Operate, Share,
+and its retained package/style editors.
 
 Use the preview by embedding `<honua-studio-app>`, using Honua's model proxy
 with the JavaScript `StudioAgentSession`, or connecting another MCP host to
 `/mcp` and calling the same composition tools.
 
-The server candidate verified for this section is
-`d4da482c95db7cb4d0dc06958b232c64a52a7b36`. Verification covered names,
-routes, configuration shapes, documentation links, and the repository's
-documentation-only pre-PR gate. It did not turn an unreleased browser bundle
-into a supported distribution.
-
 ## Release boundary
 
-The embeddable element contract, AI proxy, MCP tools, and SDK clients exist.
-A versioned standalone Studio bundle/container and its runtime `/config.json`
-contract have not shipped: [honua-studio#41](https://github.com/honua-io/honua-studio/issues/41)
-is blocking. The approval-backed publication journey is also blocked by
-[honua-server#3304](https://github.com/honua-io/honua-server/issues/3304).
-These pages document composition, durable save/reopen, and currently
-executable client surfaces, but do not claim a completed browser publication
-journey.
+The embeddable element, AI proxy, MCP tools, SDK-owned live agent loop, and
+self-hosted packaging workflow exist. Studio's current source drives live turns
+through `StudioAgentSession` and updates the canvas as tool calls stream.
+
+Source implementation, published artifacts, and supported release scope are
+separate. Check the [Studio README](https://github.com/honua-io/honua-studio/blob/main/README.md)
+and [Preview release posture](https://github.com/honua-io/honua-studio/blob/main/docs/preview-release-posture.md)
+for current packaging, model-quality, and browser evidence. The
+[sharing posture](https://github.com/honua-io/honua-studio/blob/main/docs/share-preview-posture.md)
+documents the separate publication journey. Realtime composition remains Preview.

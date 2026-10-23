@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Licensing.Abstractions;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -28,19 +30,22 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly PrintJobCancellationTokens _cancellationTokens;
     private readonly ILogger<PrintingToolsBackgroundService> _logger;
+    private readonly PrintJobTracker? _jobTracker;
 
     public PrintingToolsBackgroundService(
         Channel<PrintJob> channel,
         IServiceScopeFactory scopeFactory,
         PrintJobCancellationTokens cancellationTokens,
         ILogger<PrintingToolsBackgroundService> logger,
-        ILicenseOperationPolicy? licensePolicy = null)
+        ILicenseOperationPolicy? licensePolicy = null,
+        PrintJobTracker? jobTracker = null)
     {
         _licensePolicy = licensePolicy;
         _channel = channel;
         _scopeFactory = scopeFactory;
         _cancellationTokens = cancellationTokens;
         _logger = logger;
+        _jobTracker = jobTracker;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -102,11 +107,13 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
         finally
         {
             _cancellationTokens.Remove(job.JobId);
+            _jobTracker?.Forget(job.JobId);
         }
     }
 
     private async Task ProcessJobCoreAsync(PrintJob job, CancellationToken cancellationToken)
     {
+        using var securityScope = JobSecurityScope.Begin(job.SubmitterSecurityContext);
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("print.job", ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "PrintingTools");
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "job");
@@ -121,7 +128,6 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
         var metadataGraphProvider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
         var featureReader = scope.ServiceProvider.GetRequiredService<IFeatureReader>();
         var styleCatalog = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
-        var accessPolicyEvaluator = scope.ServiceProvider.GetRequiredService<IAccessPolicyEvaluator>();
         var temporaryFileService = scope.ServiceProvider.GetRequiredService<ITemporaryFileService>();
 
         // Check if the job was cancelled before we start processing
@@ -133,16 +139,25 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
 
         // Advance to processing state
         var progress = existing is PrintProgress queued
-            ? queued with { Status = OperationStatus.Processing, CurrentPhase = "Rendering map" }
+            ? queued with
+            {
+                Status = OperationStatus.Processing,
+                CurrentPhase = "Rendering map",
+                HeartbeatAt = DateTimeOffset.UtcNow
+            }
             : PrintProgress.CreateInitial(job.JobId, job.Format, job.TemplateName, job.TotalElements) with
             {
                 Status = OperationStatus.Processing,
-                CurrentPhase = "Rendering map"
+                CurrentPhase = "Rendering map",
+                HeartbeatAt = DateTimeOffset.UtcNow
             };
         await progressStore.SetProgressAsync(job.JobId, progress, PrintingToolsRequestHandlers.ResultTtl, cancellationToken);
 
         try
         {
+            if (job.SubmitterSecurityContext is null)
+                throw new UnauthorizedAccessException("Print job has no submitter security context.");
+            var principal = JobSecurityContextCapture.Restore(job.SubmitterSecurityContext);
             var result = await PrintingToolsRequestHandlers.ExecuteAsync(
                 job.WebMap,
                 job.Format,
@@ -154,8 +169,10 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 styleCatalog,
                 _logger,
                 cancellationToken,
-                callerPrincipal: job.CallerPrincipal,
-                accessPolicyEvaluator: accessPolicyEvaluator);
+                callerPrincipal: principal,
+                crsRegistry: scope.ServiceProvider.GetService<ICrsRegistry>(),
+                authorizationServices: scope.ServiceProvider,
+                tenantId: job.SubmitterSecurityContext.TenantId);
 
             if (result is null)
             {
@@ -203,7 +220,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                     outputBytes,
                     contentType,
                     PrintingToolsRequestHandlers.ResultTtl,
-                    principal: job.CallerPrincipal,
+                    principal: principal,
                     cancellationToken: CancellationToken.None);
             }
             catch (TemporaryStorageLimitExceededException)

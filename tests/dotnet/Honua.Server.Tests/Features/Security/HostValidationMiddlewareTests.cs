@@ -106,6 +106,48 @@ public sealed class HostValidationFallbackTests : IAsyncLifetime
 
 public sealed class HostValidationMiddlewareUnitTests
 {
+    [Theory]
+    [InlineData(null, "alias.honua.test", true)]
+    [InlineData("", "alias.honua.test", true)]
+    [InlineData(" \t ", "alias.honua.test", true)]
+    [InlineData("", "attacker.example", false)]
+    [InlineData("https://primary.honua.test", "primary.honua.test", true)]
+    [InlineData("https://primary.honua.test", "alias.honua.test", false)]
+    public async Task InvokeAsync_PublicUrlAlias_PreservesPrimaryPrecedenceAndRejectsForgedHost(
+        string? primaryUrl, string requestHost, bool expectedAllowed)
+    {
+        var (middleware, tracker) = CreateMiddleware(settings: new Dictionary<string, string?>
+        {
+            ["Public:BaseUrl"] = primaryUrl,
+            ["PUBLIC_BASE_URL"] = "https://alias.honua.test"
+        });
+        var context = CreateContext(requestHost, IPAddress.Parse("203.0.113.10"));
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().Be(expectedAllowed);
+        context.Response.StatusCode.Should().Be(expectedAllowed
+            ? StatusCodes.Status204NoContent : StatusCodes.Status400BadRequest);
+    }
+
+    [Theory]
+    [InlineData("allowed.honua.test", true)]
+    [InlineData("alias.honua.test", false)]
+    public async Task InvokeAsync_PublicUrlAlias_ExplicitHostAllowlistRetainsPrecedence(string requestHost, bool expectedAllowed)
+    {
+        var (middleware, tracker) = CreateMiddleware(settings: new Dictionary<string, string?>
+        {
+            ["Public:BaseUrl"] = string.Empty,
+            ["PUBLIC_BASE_URL"] = "https://alias.honua.test",
+            ["HostValidation:AllowedHosts:0"] = "allowed.honua.test"
+        });
+        var context = CreateContext(requestHost, IPAddress.Parse("203.0.113.10"));
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().Be(expectedAllowed);
+    }
+
     [Fact]
     public async Task InvokeAsync_FallbackMode_LocalhostWithNonLoopbackLocalAddress_ReturnsBadRequest()
     {
@@ -179,7 +221,67 @@ public sealed class HostValidationMiddlewareUnitTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status204NoContent);
     }
 
-    private static (HostValidationMiddleware Middleware, InvocationTracker Tracker) CreateMiddleware(string environmentName = "Production")
+    // honua-release e2e-cloud-aws run 38133126673: the control-plane event Lambdas carry the public
+    // allowlist, and the web adapter's POST http://127.0.0.1:8080/events was rejected as untrusted.
+    private static readonly Dictionary<string, string?> EventHandlerLambdaSettings = new()
+    {
+        ["HostValidation:AllowedHosts:0"] = "api.honua.test",
+        [HostValidationMiddleware.ControlPlaneLambdaHandlerKey] = "scheduled-tick",
+    };
+
+    [UnitTheory]
+    [InlineData("127.0.0.1:8080")]
+    [InlineData("localhost:8080")]
+    [InlineData("[::1]:8080")]
+    public async Task InvokeAsync_EventHandlerLambda_AdapterLoopbackRequest_IsAllowed(string host)
+    {
+        var (middleware, tracker) = CreateMiddleware(settings: EventHandlerLambdaSettings);
+        var context = CreateContext(host, IPAddress.Loopback, IPAddress.Loopback, path: "/events");
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_WithoutHandlerSelector_AdapterLoopbackRequest_IsStillRejectedByTheAllowlist()
+    {
+        var (middleware, tracker) = CreateMiddleware(settings: new Dictionary<string, string?>
+        {
+            ["HostValidation:AllowedHosts:0"] = "api.honua.test",
+        });
+        var context = CreateContext("127.0.0.1:8080", IPAddress.Loopback, IPAddress.Loopback, path: "/events");
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().BeFalse("the API host keeps strict host validation");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTheory]
+    [InlineData("127.0.0.1:8080", "203.0.113.10", "127.0.0.1")]
+    [InlineData("127.0.0.1:8080", "127.0.0.1", "10.0.1.15")]
+    [InlineData("127.0.0.1:8080", null, null)]
+    [InlineData("attacker.example", "127.0.0.1", "127.0.0.1")]
+    [InlineData("10.0.1.15", "127.0.0.1", "127.0.0.1")]
+    public async Task InvokeAsync_EventHandlerLambda_AnythingButTheAdapterLoopback_IsRejected(
+        string host, string? remoteIp, string? localIp)
+    {
+        var (middleware, tracker) = CreateMiddleware(settings: EventHandlerLambdaSettings);
+        var context = CreateContext(
+            host,
+            localIp is null ? null : IPAddress.Parse(localIp),
+            remoteIp is null ? null : IPAddress.Parse(remoteIp),
+            path: "/events");
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    private static (HostValidationMiddleware Middleware, InvocationTracker Tracker) CreateMiddleware(
+        string environmentName = "Production", Dictionary<string, string?>? settings = null)
     {
         var tracker = new InvocationTracker();
         var configuration = new ConfigurationBuilder()
@@ -187,6 +289,7 @@ public sealed class HostValidationMiddlewareUnitTests
             {
                 ["HostValidation:Enabled"] = "true"
             })
+            .AddInMemoryCollection(settings ?? [])
             .Build();
 
         Task Next(HttpContext context)

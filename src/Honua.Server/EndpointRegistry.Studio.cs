@@ -28,6 +28,8 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
+        // Studio published-route resolver: serves an Active publication's activeUrl (#4907).
+        new("GET", "/api/v1/studio/published/{*route}"),
         // Deterministic map/app package draft creation (#1180; re-founded by ADR-0076 #3255).
         new("POST", "/api/v1/studio/app-packages/generate"),
         new("POST", "/api/v1/studio/map-packages/generate"),
@@ -41,8 +43,9 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/console/maps/{mapId}/collab/comments/{threadId}/resolve"),
         new("GET", "/api/v1/console/maps/{mapId}/collab/activity"),
 
-        // v1 content publication registry for Studio-generated artifacts (#1183)
+        // v1 content publication registry for Studio-generated artifacts (#1183, list #3357)
         new("POST", "/api/v1/console/publications"),
+        new("GET", "/api/v1/console/publications"),
         new("GET", "/api/v1/console/publications/{publicationId}"),
         new("GET", "/api/v1/console/publications/{publicationId}/versions/{versionSelector}"),
         new("POST", "/api/v1/console/publications/{publicationId}/republish"),

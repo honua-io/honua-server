@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/cog/dataset-read",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal-cog",
+  "client_version": "3.8.4",
+  "client_version_detail": "GDAL 3.8.4, released 2024/02/08",
+  "surface": "cog",
+  "operation": "dataset-read",
+  "protocol_version": "COG 1.0",
+  "protocol_profile": "ImageServer tile format=cog",
+  "started_at": "2026-09-16T21:42:23.154670Z",
+  "finished_at": "2026-09-16T21:44:29.162353Z",
+  "duration_ms": 126131,
+  "status": "fail",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "crs-axis"
+  ],
+  "summary": "failed checks positive:open the served COG tile and read the fixture's pixel gradient, metadata:COG layout, block size and overviews, crs-axis:EPSG:3857 georeferencing of the WebMercatorQuad tile",
+  "primary_request_url": "http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "open the served COG tile and read the fixture's pixel gradient",
+      "outcome": "fail",
+      "detail": "CheckFailed: GDAL could not open http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog: `/vsicurl?use_head=no&list_dir=no&url=http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621%3Fformat%3Dcog' not recognized as a supported file format.; requests ['http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.aux', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.xml', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.xml']",
+      "request_url": null,
+      "duration_ms": 126130
+    },
+    {
+      "facet": "metadata",
+      "name": "COG layout, block size and overviews",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the COG tile was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    },
+    {
+      "facet": "crs-axis",
+      "name": "EPSG:3857 georeferencing of the WebMercatorQuad tile",
+      "outcome": "fail",
+      "detail": "CheckFailed: not exercisable: the COG tile was not served (see the positive check)",
+      "request_url": null,
+      "duration_ms": 0
+    }
+  ]
+}

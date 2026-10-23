@@ -4,6 +4,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -147,8 +149,11 @@ internal static partial class MapServerEndpoints
             }
 
             var serviceSrid = ResolveExportServiceSrid(service, publishedLayers);
-            bboxSrid ??= serviceSrid;
-            imageSrid ??= serviceSrid;
+            // The service resource advertises the Web Mercator tile cache (#5504).
+            // Clients that omit bboxSR/imageSR therefore send coordinates in that
+            // CRS. serviceSrid stays the native CRS used to read features.
+            bboxSrid ??= CachedMapSpatialReferenceId;
+            imageSrid ??= CachedMapSpatialReferenceId;
             var bboxCrsDefinition = SpatialReferenceHelpers.TryParseCrsDefinition(
                 bboxSrRaw ?? bboxSrid.Value.ToString(CultureInfo.InvariantCulture),
                 out var resolvedBboxDefinition)
@@ -159,14 +164,19 @@ internal static partial class MapServerEndpoints
                     AxisOrder.EastNorth,
                     SpatialReference.Create(bboxSrid.Value).IsGeographic);
 
+            if (!TryNormalizeMapEnvelope(bboxValue, "bbox", out var normalizedBbox, out var bboxError))
+            {
+                return CreateExportBadRequest(context, responseFormat, bboxError!);
+            }
+
             // GeoServices bbox is always xmin,ymin,xmax,ymax in CRS x/y (EastNorth) order
             // regardless of the bboxSR datum. Esri never sends lat/lon-first bbox strings;
             // passing the geographic CRS axis order (NorthEast) silently transposes extents
             // where |lon|<=90 (Europe, Africa, India, etc.).
-            if (!TryParseBbox(bboxValue, AxisOrder.EastNorth, bboxCrsDefinition.IsGeographic, out var extent))
+            if (!TryParseBbox(normalizedBbox, AxisOrder.EastNorth, bboxCrsDefinition.IsGeographic, out var extent))
             {
                 return CreateExportBadRequest(context, responseFormat,
-                    "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");
+                    "Invalid or missing bbox parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.");
             }
 
             var transformResult = await TryTransformExtentAsync(
@@ -229,7 +239,7 @@ internal static partial class MapServerEndpoints
 
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
-            var layersValue = GetValue(values, "layers");
+            var layersValue = NormalizeEmptyLayerSelection(GetValue(values, "layers"));
             if (HasEmptyLayerToken(layersValue))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "layers parameter contains an empty layer id.");
@@ -251,10 +261,13 @@ internal static partial class MapServerEndpoints
             activity?.SetTag("honua.mapserver.height", imageHeight);
             activity?.SetTag("honua.mapserver.format", imageFormat);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
                 publishedLayers.Select(static layer => layer.Resource),
-                service);
+                service,
+                AuthorizationOperation.Export,
+                cancellationToken).ConfigureAwait(false);
+            var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
             if (accessError != null)
             {
                 return accessError;
@@ -288,7 +301,7 @@ internal static partial class MapServerEndpoints
 
             var (renderLayers, renderLayersError) = ResolveRenderLayers(
                 publishedLayers,
-                service,
+                access,
                 parameters.Layers,
                 dynamicLayers,
                 context);
@@ -329,7 +342,12 @@ internal static partial class MapServerEndpoints
                     cancellationToken);
             }
 
-            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, bboxSrid.Value);
+            var linearUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+                context.RequestServices.GetService<ICrsRegistry>(),
+                bboxSrid.Value,
+                cancellationToken).ConfigureAwait(false);
+            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(
+                extent, imageWidth, dpi, bboxSrid.Value, linearUnitFactor);
 
             // Esri layer min/max scale gating (IsLayerVisibleAtScale) and MapLibre minzoom/maxzoom
             // gating are independent: the former is layer metadata, the latter belongs to the bound
@@ -553,7 +571,12 @@ internal static partial class MapServerEndpoints
                     ex.RetryAfterSeconds);
             }
 
-            var scale = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, imageSrid);
+            var reportedUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+                context.RequestServices.GetService<ICrsRegistry>(),
+                imageSrid,
+                cancellationToken).ConfigureAwait(false);
+            var scale = CoordinateTransformer.CalculateScaleDenominator(
+                extent, imageWidth, dpi, imageSrid, reportedUnitFactor);
 
             var response = new ExportImageResponse
             {
@@ -605,15 +628,6 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        if (isGeographic &&
-            (minX < -180.0 || minX > 180.0 ||
-             maxX < -180.0 || maxX > 180.0 ||
-             minY < -90.0 || minY > 90.0 ||
-             maxY < -90.0 || maxY > 90.0))
-        {
-            return false;
-        }
-
         if (minY >= maxY)
             return false;
 
@@ -633,14 +647,7 @@ internal static partial class MapServerEndpoints
         out double maxX,
         out double maxY)
     {
-        if (RasterParsingHelpers.TryParseBoundingBox(
-                bbox,
-                axisOrder,
-                isGeographic,
-                out minX,
-                out minY,
-                out maxX,
-                out maxY))
+        if (TryParseMapServerBoundingBox(bbox, axisOrder, isGeographic, out minX, out minY, out maxX, out maxY))
         {
             return true;
         }
@@ -650,18 +657,44 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
+        // Strict geographic parsing still accepts an in-range NorthEast envelope
+        // whose EastNorth reading is out of range. That fallback has to win before
+        // the relaxed parse, which would otherwise keep the wrong axis order.
         var fallbackAxisOrder = axisOrder == AxisOrder.NorthEast
             ? AxisOrder.EastNorth
             : AxisOrder.NorthEast;
-        return RasterParsingHelpers.TryParseBoundingBox(
+        if (TryParseMapServerBoundingBox(bbox, fallbackAxisOrder, isGeographic: true, out minX, out minY, out maxX, out maxY))
+        {
+            return true;
+        }
+
+        // #5503: a geographic view padded past ±180/±90 is still a finite, ordered
+        // envelope. RasterParsingHelpers rejects that range before MapServer can
+        // see the ordinates, so retry without the geographic range gate.
+        if (TryParseMapServerBoundingBox(bbox, axisOrder, isGeographic: false, out minX, out minY, out maxX, out maxY))
+        {
+            return true;
+        }
+
+        return TryParseMapServerBoundingBox(bbox, fallbackAxisOrder, isGeographic: false, out minX, out minY, out maxX, out maxY);
+    }
+
+    private static bool TryParseMapServerBoundingBox(
+        string bbox,
+        AxisOrder axisOrder,
+        bool isGeographic,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
+        => RasterParsingHelpers.TryParseBoundingBox(
             bbox,
-            fallbackAxisOrder,
+            axisOrder,
             isGeographic,
             out minX,
             out minY,
             out maxX,
             out maxY);
-    }
 
     private static bool TryParseSize(
         string? size,
@@ -794,6 +827,21 @@ internal static partial class MapServerEndpoints
         var candidate = format.Trim().ToLowerInvariant();
         switch (candidate)
         {
+            case "jpgpng":
+                // Esri "jpgpng" means "JPEG where opaque, PNG where transparency is needed".
+                // This handler emits a single concrete encoding, so normalise to png: it
+                // preserves transparency and is the safe lossless choice for the combined
+                // token. ImageServerExportHandler.TryResolveOutputFormat already does
+                // exactly this, and the two services should not disagree about a format
+                // Esri defines identically for both.
+                //
+                // Omitting it was a real interop break, not a style choice: jpgpng is the
+                // Image Encoding QGIS's ArcGIS REST Server connection defaults to, so a
+                // stock QGIS user adding a Honua MapServer got an empty canvas and
+                // "Error 400: Bad Request" while identify, legend and the service document
+                // all worked.
+                normalized = "png";
+                return true;
             case "png":
             case "png8":
             case "png24":
@@ -1122,7 +1170,7 @@ internal static partial class MapServerEndpoints
 
     private static (ExportRenderLayer[] Layers, IResult? Error) ResolveRenderLayers(
         IReadOnlyList<MapServerMetadataLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
+        ResourceAccessSet access,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
         HttpContext context)
@@ -1131,7 +1179,7 @@ internal static partial class MapServerEndpoints
         if (dynamicLayers.Count == 0)
         {
             var accessibleLayers = publishedLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
 
             if (string.IsNullOrWhiteSpace(layersParam))
@@ -1149,7 +1197,9 @@ internal static partial class MapServerEndpoints
                 return (Array.Empty<ExportRenderLayer>(), null);
             }
 
-            if (requestedStaticLayerIds.Count == 0)
+            // An empty show list is malformed. An empty include or exclude list is the
+            // default-visible set (include nothing extra, exclude nothing), not a 400.
+            if (requestedStaticLayerIds.Count == 0 && visibility == ExportLayerVisibility.Show)
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
             }
@@ -1227,7 +1277,7 @@ internal static partial class MapServerEndpoints
                     var dynamicLayer = dynamicLayers.FirstOrDefault(layer => layer.Id == requestedId);
                     if (dynamicLayer is null ||
                         !layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var requestedMapLayer) ||
-                        !AccessPolicyHelpers.IsResourceAccessible(context, requestedMapLayer.Resource, service))
+                        !access.IsAccessible(requestedMapLayer.Resource))
                     {
                         return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                             context,
@@ -1247,7 +1297,7 @@ internal static partial class MapServerEndpoints
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            if (!access.IsAccessible(layer.Resource))
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
@@ -1259,7 +1309,7 @@ internal static partial class MapServerEndpoints
             // authorization model identical across export/identify/metadata.
             if (dynamicLayer.Join is { } exportJoin &&
                 (!layerLookup.TryGetValue(exportJoin.RightMapLayerId, out var rightLayer) ||
-                 !AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service)))
+                 !access.IsAccessible(rightLayer.Resource)))
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
@@ -1787,6 +1837,46 @@ internal static partial class MapServerEndpoints
         return (ExportLayerVisibility.Show, ParseLayerIds(spec));
     }
 
+    /// <summary>
+    /// Treat an empty <c>show:</c> selection as the default layer view.
+    /// </summary>
+    /// <remarks>
+    /// Stock QGIS sends exactly <c>layers=show:</c> when its ArcGIS REST Server
+    /// connection is pointed at a MapServer's "(All layers)" entry, meaning "no
+    /// restriction". Read literally that is a selection keyword with one empty id, and
+    /// the empty-token guard answered HTTP 400 - so the layer never drew in QGIS, on a
+    /// service whose layers all render individually. An empty <c>layers=</c> already
+    /// takes the no-filter path and produces the default-visible image, so this only
+    /// routes that one spelling to the same place.
+    ///
+    /// Empty <c>include:</c> and <c>exclude:</c> are not the same request. They must
+    /// keep their prefix so <c>ResolveRenderLayers</c> selects only the default-visible
+    /// layers. Collapsing them to null would draw every dynamic layer, including ones
+    /// whose source has <c>DefaultVisibility=false</c>. An empty <c>hide:</c> means
+    /// hide nothing, including layers hidden by default, so it keeps its prefix too.
+    ///
+    /// Deliberately narrow. An empty id *inside* a list ("show:1,,2") is still a
+    /// malformed request and still rejected; only a wholly empty <c>show:</c> list is
+    /// normalised. This follows #4043, where export likewise had to accept the layer
+    /// spelling a real client emits rather than the one the parameter grammar implies.
+    /// </remarks>
+    private static string? NormalizeEmptyLayerSelection(string? layersParam)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return layersParam;
+        }
+
+        var spec = layersParam.Trim();
+        if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase)
+            && spec["show:".Length..].Trim().Length == 0)
+        {
+            return null;
+        }
+
+        return layersParam;
+    }
+
     private static bool HasEmptyLayerToken(string? layersParam)
     {
         if (string.IsNullOrWhiteSpace(layersParam))
@@ -1795,6 +1885,11 @@ internal static partial class MapServerEndpoints
         }
 
         var spec = layersParam.Trim();
+        if (spec.Equals("hide:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
         {
             spec = spec["show:".Length..];

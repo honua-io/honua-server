@@ -59,4 +59,50 @@ public sealed class WorkflowPackageServiceValidationTests
                 orchestrationAvailable: false)
             .Should().BeTrue();
     }
+
+    [Fact]
+    public void BuildRunProvenance_RunParameters_AreCarriedUnderTheRunParameterNamespace()
+    {
+        var publicationProvenance = new Dictionary<string, string>
+        {
+            [WorkflowPackageMetadataKeys.PackageId] = "pkg-1",
+            [WorkflowPackageMetadataKeys.PackageHash] = "hash-1"
+        };
+
+        var provenance = WorkflowPackageService.BuildRunProvenance(
+            publicationProvenance,
+            new Dictionary<string, string>
+            {
+                ["analysis.region"] = "pacific",
+                ["process.executable"] = "request-value",
+                ["env.SAMPLE_SETTING"] = "request-value",
+                ["batch.job_queue_arn"] = "request-value",
+                [WorkflowPackageMetadataKeys.PackageId] = "other-package",
+                [" "] = "ignored"
+            });
+
+        // Run parameters stay traceable on the run, under their own namespace.
+        provenance.Should().Contain("workflow.parameter.analysis.region", "pacific");
+        provenance.Should().Contain("workflow.parameter.process.executable", "request-value");
+        provenance.Should().Contain("workflow.parameter.env.SAMPLE_SETTING", "request-value");
+        provenance.Should().Contain("workflow.parameter.batch.job_queue_arn", "request-value");
+
+        // No run parameter is carried under its bare name, and stamped provenance is unchanged.
+        provenance.Keys.Should().OnlyContain(key => key.StartsWith("workflow.", StringComparison.Ordinal));
+        provenance.Should().Contain(WorkflowPackageMetadataKeys.PackageId, "pkg-1");
+        provenance.Should().Contain(WorkflowPackageMetadataKeys.PackageHash, "hash-1");
+        provenance.Should().HaveCount(6);
+    }
+
+    [Fact]
+    public void BuildRunProvenance_WithoutRunParameters_ReturnsPublicationProvenance()
+    {
+        var publicationProvenance = new Dictionary<string, string>
+        {
+            [WorkflowPackageMetadataKeys.PackageId] = "pkg-1"
+        };
+
+        WorkflowPackageService.BuildRunProvenance(publicationProvenance, requestParameters: null)
+            .Should().BeEquivalentTo(publicationProvenance);
+    }
 }

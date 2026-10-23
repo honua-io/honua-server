@@ -201,10 +201,15 @@ must publish to a `Schedule` target so the orchestration engine can chain
 upstream outputs into downstream inputs.
 
 Disabled publications return ProblemDetails `409` when a run is requested.
-`RunWorkflowPublicationRequest.parameters` are merged into run provenance; they
-do not rewrite the immutable graph parameters captured in the package version,
-and caller-supplied values for the reserved `workflow.*` provenance keys below
-are ignored so traceability cannot be spoofed.
+`RunWorkflowPublicationRequest.parameters` are recorded in run provenance under
+the `workflow.parameter.` prefix (a run parameter `analysis.region` is stamped as
+`workflow.parameter.analysis.region`). They annotate the run for traceability
+only: they do not rewrite the immutable graph parameters captured in the package
+version, they are never carried under their bare names, and they therefore
+cannot name a parameter that belongs to the server, the execution workload
+definition or a compute backend. Caller-supplied values for the reserved
+`workflow.*` provenance keys below are ignored so traceability cannot be
+spoofed.
 
 Run responses include either `jobId` or `workflowRunId`. The `Location` header
 points at `/api/v1/admin/jobs/{jobId}` for job-backed runs and

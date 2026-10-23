@@ -455,29 +455,36 @@ internal sealed partial class RedisExecutionJobStore(
     {
         var jobId = (RedisValue)job.OperationId;
 
-        // Each key's remove/add targets an independent sorted set, so within a phase
+        // Each key's add/remove targets an independent sorted set, so within a phase
         // the calls have no ordering dependency on one another and can be dispatched
         // concurrently (StackExchange.Redis pipelines them over the shared
         // multiplexer connection instead of issuing ~30 sequential round trips).
-        // The removal phase still fully completes before the addition phase starts,
-        // preserving remove-before-add ordering for any key present in both sets.
-        if (previous != null)
-        {
-            var previousKeys = GetQueryIndexKeys(previous);
-            await Task.WhenAll(previousKeys.Select(key => _database.SortedSetRemoveAsync(key, jobId)))
-                .ConfigureAwait(false);
-        }
-
         var score = job.CreatedAt.ToUnixTimeMilliseconds();
         var newKeys = GetQueryIndexKeys(job);
         // Index keys are derived from the job and must not outlive the payload they index.
         // This is especially important for per-plan metadata indexes, where each OGC
         // execution can otherwise leave a unique immortal sorted set behind (#28).
+        // ZADD on a member that is already present only refreshes its score, so the job
+        // stays continuously visible in every index it keeps across this update.
         await Task.WhenAll(newKeys.Select(async key =>
         {
             await _database.SortedSetAddAsync(key, jobId, score).ConfigureAwait(false);
             await _database.KeyExpireAsync(key, DefaultRetention).ConfigureAwait(false);
         })).ConfigureAwait(false);
+
+        // Leave only the indexes the job no longer belongs to (for example its previous
+        // status), and only after it is in its new ones. Removing and re-adding an index the
+        // job keeps (the created-order index behind every unfiltered query, its kind, owner or
+        // queue) opened a window in which a concurrent query could not list a job whose
+        // payload it could already read (#4965). A reader that still finds the job under a
+        // departed key filters it out, because QueryAsync re-checks the payload it loads.
+        if (previous != null)
+        {
+            var departedKeys = GetQueryIndexKeys(previous);
+            departedKeys.ExceptWith(newKeys);
+            await Task.WhenAll(departedKeys.Select(key => _database.SortedSetRemoveAsync(key, jobId)))
+                .ConfigureAwait(false);
+        }
     }
 
     private async Task RemoveStaleMembersAsync(string activeKey, IReadOnlyList<RedisValue> staleIds)

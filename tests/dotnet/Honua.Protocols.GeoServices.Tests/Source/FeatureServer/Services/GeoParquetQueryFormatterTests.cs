@@ -2,20 +2,162 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text.Json;
 using Apache.Arrow;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Honua.TestKit.Attributes;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-public sealed class GeoParquetQueryFormatterTests
+public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 {
+    [UnitTheory]
+    [InlineData(7)]
+    [InlineData(1024)]
+    public async Task FormatAsGeoParquet_MultipleRowGroups_PreservesOrderFieldsAndFinalGeometryType(int batchSize)
+    {
+        const int rowCount = 2051;
+        var resource = CreateResource(
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("name", MetadataV2FieldType.String),
+            Field("excluded", MetadataV2FieldType.String));
+        var features = Enumerable.Range(1, rowCount).Reverse().Select(id => Feature.Create(id,
+            id == 1 ? CreatePointWkbWithZm(10, 20, 42, 9) : CreatePointWkb(10, 20),
+            new Dictionary<string, object?> { ["name"] = $"row-{id}", ["excluded"] = "private" }.ToImmutableDictionary()))
+            .ToImmutableArray();
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(rowCount, features), resource, true, 4326, true, false,
+            new GeometryLimits(), outFields: ["name"],
+            encodingLimits: new GeoParquetLimits { MaxRowsPerBatch = batchSize });
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        reader.NumRowGroups.Should().Be((rowCount + batchSize - 1) / batchSize);
+        using var batches = reader.GetRecordBatchReader();
+        var ids = new List<long?>();
+        while (await batches.ReadNextRecordBatchAsync() is { } batch)
+        {
+            using (batch)
+            {
+                batch.Schema.FieldsList.Select(field => field.Name).Should().Equal("objectid", "geometry", "name", "bbox");
+                var objectIds = (Int64Array)batch.Column("objectid");
+                var names = (StringArray)batch.Column("name");
+                for (var row = 0; row < batch.Length; row++)
+                {
+                    var id = objectIds.GetValue(row);
+                    ids.Add(id);
+                    names.GetString(row).Should().Be($"row-{id}");
+                    var point = new WKBReader().Read(((BinaryArray)batch.Column("geometry")).GetBytes(row).ToArray());
+                    point.Coordinate.X.Should().Be(10);
+                    point.Coordinate.Y.Should().Be(20);
+                    if (id == 1)
+                    {
+                        point.Coordinate.Z.Should().Be(42);
+                    }
+                }
+            }
+        }
+        ids.Should().Equal(Enumerable.Range(1, rowCount).Reverse().Select(id => (long?)id));
+        using var metadata = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        metadata.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point", "Point Z");
+    }
+
+    [UnitTest]
+    public async Task FormatAsGeoParquet_UndefinedJsonAttribute_PreservesEmptyString()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var feature = Feature.Create(1, null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", default(JsonElement)));
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, false, 4326, false, false, new GeometryLimits());
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batches = reader.GetRecordBatchReader();
+        using var batch = await batches.ReadNextRecordBatchAsync();
+        ((StringArray)batch!.Column("name")).GetString(0).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_WideSingleRow_RejectsBeforeNativeEncoding()
+    {
+        var feature = Feature.Create(1, null,
+            new Dictionary<string, object?> { ["name"] = new string('x', 4096) }.ToImmutableDictionary());
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxEstimatedBatchBytes = 1024 });
+        act.Should().Throw<GeoParquetLimitExceededException>().WithMessage(GeoParquetLimitExceededException.ClientMessage);
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_InputBudget_RejectsCumulativeRows()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var features = Enumerable.Range(1, 20).Select(id => Feature.Create(id, null,
+            new Dictionary<string, object?> { ["name"] = new string('x', 100) }.ToImmutableDictionary())).ToImmutableArray();
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(20, features), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxEstimatedInputBytes = 4096 });
+        act.Should().Throw<GeoParquetLimitExceededException>();
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_FooterExceedsOutputBudget_UsesSharedBudgetRejection()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(0, []), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxResponseBytes = 32 });
+        act.Should().Throw<GeoParquetLimitExceededException>();
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_ByteBoundSplitsBeforeRowBound()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var features = Enumerable.Range(1, 10).Select(id => Feature.Create(id, null,
+            new Dictionary<string, object?> { ["name"] = new string('x', 100) }.ToImmutableDictionary())).ToImmutableArray();
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(10, features), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxEstimatedBatchBytes = 2048 });
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        reader.NumRowGroups.Should().BeGreaterThan(1);
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_WideGeometryPage_RecordsMemoryAndBoundsRowGroups()
+    {
+        const int rowCount = 10000;
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var line = new LineString(Enumerable.Range(0, 32).Select(i => new Coordinate(-120 + i * 0.001, 35 + i * 0.001)).ToArray());
+        var geometry = new WKBWriter().Write(line);
+        var features = Enumerable.Range(1, rowCount).Select(id => Feature.Create(id, geometry.ToArray(),
+            new Dictionary<string, object?> { ["name"] = $"{id}:" + new string('x', 512) }.ToImmutableDictionary())).ToImmutableArray();
+        using var process = Process.GetCurrentProcess();
+        var before = GC.GetTotalMemory(false);
+        var allocatedBefore = GC.GetTotalAllocatedBytes();
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(rowCount, features), resource, true, 4326, false, false, new GeometryLimits());
+        process.Refresh();
+        output.WriteLine($"GeoParquet memory receipt: rows={rowCount}; inputWkbBytes={geometry.Length}; textChars=512; " +
+            $"managedBefore={before}; managedAfter={GC.GetTotalMemory(false)}; " +
+            $"allocatedDuring={GC.GetTotalAllocatedBytes() - allocatedBefore}; processPeakWorkingSet={process.PeakWorkingSet64}; payloadBytes={payload.Length}");
+        payload.Length.Should().BeLessThanOrEqualTo(new GeoParquetLimits().MaxResponseBytes);
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        reader.NumRowGroups.Should().BeGreaterThanOrEqualTo(10);
+    }
+
     [Fact]
     public async Task FormatAsGeoParquet_WithFeatures_WritesReadableParquetWithGeoMetadata()
     {
@@ -1132,6 +1274,188 @@ public sealed class GeoParquetQueryFormatterTests
         };
         return ((DoubleArray)bbox.Fields[index]).GetValue(row);
     }
+
+    /// <summary>
+    /// honua-server#4666: a resource may declare geometry through its schema alone —
+    /// <see cref="MetadataV2Resource.Spatial"/> is nullable, so a graph compiled from a source
+    /// that carries a geometry column but no declared layer geometry type leaves the slot unset.
+    /// The writer used to read only the typed slot, so such a layer was served as an
+    /// attribute-only Parquet file: silent, unsignalled geometry loss for every consumer.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoParquet_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
+    {
+        // The expected ordinates are chosen here, encoded to WKB by NetTopologySuite and read back
+        // by ParquetSharp + a fresh WKBReader — the oracle is this literal, not a captured payload.
+        const double ExpectedX = -157.8583;
+        const double ExpectedY = 21.3069;
+
+        var resource = CreateResourceWithoutSpatialSlot(
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("name", MetadataV2FieldType.String, length: 255));
+        resource.Spatial.Should().BeNull("this fixture is the no-spatial-slot shape under test");
+        resource.ReadGeometryType().Should().Be(MetadataV2GeometryType.None,
+            "the geometry type is unresolvable without the spatial slot - that is the trigger condition");
+
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(ExpectedX, ExpectedY),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "Honolulu Harbor"
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Schema.FieldsList.Select(f => f.Name)
+            .Should().Contain("geometry", "a GeoParquet payload without a geometry column is data loss");
+
+        var geometryArray = batch.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        geometryArray.IsNull(0).Should().BeFalse();
+        var decoded = new WKBReader().Read(geometryArray.GetBytes(0).ToArray());
+        decoded.Should().BeOfType<Point>();
+        ((Point)decoded).X.Should().BeApproximately(ExpectedX, 1e-9);
+        ((Point)decoded).Y.Should().BeApproximately(ExpectedY, 1e-9);
+
+        // The `geo` key is what tells a reader the binary column is geometry; a file carrying the
+        // column but not the metadata is still a plain Parquet file to GDAL/GeoPandas.
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("encoding").GetString().Should().Be("WKB");
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("geometry_types").EnumerateArray()
+            .Select(e => e.GetString()).Should().Equal("Point");
+    }
+
+    /// <summary>
+    /// honua-server#4747: the shipped server runs with JSON reflection disabled, and the writer
+    /// encoded a non-empty <c>geometry_types</c> with the reflection-based serializer overload, so
+    /// every <c>f=parquet</c> page with a concrete geometry type became a 500 envelope. This runs
+    /// the writer in a child process with the switch off and decodes the file it produced.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoParquet_WithReflectionDisabled_WritesConcreteGeometryTypesValuesAndMetadata()
+    {
+        var run = await ReflectionDisabledCloudNativeProbe.RunAsync(ReflectionDisabledCloudNativeProbe.GeoParquetFormat);
+
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.ReflectionStatePrefix}False",
+            "the probe is only meaningful when the child really runs without reflection. {0}", run.Transcript);
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.CanaryPrefix}threw",
+            "a reflection-based serializer call must fail in the child, as it does on the image. {0}", run.Transcript);
+        run.ExitCode.Should().Be(0, "the writer must not depend on reflection metadata. {0}", run.Transcript);
+
+        var rows = ReflectionDisabledCloudNativeProbe.Rows;
+        using var stream = new MemoryStream(run.Payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Length.Should().Be(rows.Length);
+        batch.Schema.FieldsList.Select(f => f.Name)
+            .Should().Equal("objectid", "geometry", "name", "population", "bbox");
+
+        var objectIds = batch.Column("objectid").Should().BeOfType<Int64Array>().Which;
+        var names = batch.Column("name").Should().BeOfType<StringArray>().Which;
+        var populations = batch.Column("population").Should().BeOfType<Int32Array>().Which;
+        var geometries = batch.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        var bbox = batch.Column("bbox").Should().BeOfType<StructArray>().Which;
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = rows[index];
+            objectIds.GetValue(index).Should().Be(row.ObjectId);
+            names.GetString(index).Should().Be(row.Name);
+            populations.GetValue(index).Should().Be(row.Population);
+
+            var point = new WKBReader().Read(geometries.GetBytes(index).ToArray())
+                .Should().BeOfType<Point>().Which;
+            point.X.Should().BeApproximately(row.X, 1e-9);
+            point.Y.Should().BeApproximately(row.Y, 1e-9);
+            if (row.Z is { } z)
+            {
+                point.Coordinate.Z.Should().BeApproximately(z, 1e-9);
+            }
+            else
+            {
+                double.IsNaN(point.Coordinate.Z).Should().BeTrue("row {0} is a 2D point", row.ObjectId);
+            }
+
+            BboxOrdinate(bbox, "xmin", index).Should().BeApproximately(row.X, 1e-9);
+            BboxOrdinate(bbox, "ymin", index).Should().BeApproximately(row.Y, 1e-9);
+            BboxOrdinate(bbox, "xmax", index).Should().BeApproximately(row.X, 1e-9);
+            BboxOrdinate(bbox, "ymax", index).Should().BeApproximately(row.Y, 1e-9);
+        }
+
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("version").GetString().Should().Be("1.1.0");
+        geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
+        var geometryColumn = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geometryColumn.GetProperty("encoding").GetString().Should().Be("WKB");
+        geometryColumn.GetProperty("geometry_types").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("Point", "Point Z");
+        geometryColumn.TryGetProperty("crs", out _).Should().BeFalse("EPSG:4326 output keeps the OGC:CRS84 default");
+        geometryColumn.GetProperty("covering").GetProperty("bbox").GetProperty("xmin").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("bbox", "xmin");
+    }
+
+    /// <summary>
+    /// honua-server#4747: the AOT-safe encoder must keep the ordinal sort and the JSON escaping the
+    /// reflection-based call produced. Expected text is written out by hand, not captured.
+    /// </summary>
+    [Fact]
+    public void SerializeGeometryTypes_SortsOrdinallyAndEscapesLikeTheDefaultSerializer()
+    {
+        string[] geometryTypes = ["Polygon", "Point Z", "Point", "\"odd\\<type>+"];
+
+        var encoded = GeoParquetFeatureWriter.SerializeGeometryTypes(geometryTypes);
+
+        // JSON text: [""odd\\<type>+","Point","Point Z","Polygon"]
+        encoded.Should().Be("[\"\\u0022odd\\\\\\u003Ctype\\u003E\\u002B\",\"Point\",\"Point Z\",\"Polygon\"]");
+        JsonDocument.Parse(encoded).RootElement.EnumerateArray().Select(element => element.GetString())
+            .Should().Equal("\"odd\\<type>+", "Point", "Point Z", "Polygon");
+        GeoParquetFeatureWriter.SerializeGeometryTypes([]).Should().Be("[]");
+    }
+
+    /// <summary>
+    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
+    /// schema field, with no <see cref="MetadataV2Resource.Spatial"/> slot at all.
+    /// </summary>
+    private static MetadataV2Resource CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "test-layer",
+                Name = "test_layer",
+                Description = "Test Layer"
+            },
+            SchemaFields =
+            [
+                .. fields,
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true
+                }
+            ]
+        };
 
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);

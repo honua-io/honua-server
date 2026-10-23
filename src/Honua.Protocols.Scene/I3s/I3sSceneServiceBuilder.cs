@@ -4,6 +4,7 @@
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Scene;
+using Honua.Scene.Assets;
 
 namespace Honua.Protocols.Scene.I3s;
 
@@ -16,23 +17,36 @@ namespace Honua.Protocols.Scene.I3s;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This slice serves the service and layer descriptor JSON only: it is a
-/// metadata/descriptor preview. Per-node geometry streaming (node pages,
-/// geometry/attribute/texture binary resources, the <c>nodes/*</c> store) is a
-/// tracked follow-up (#1202) and the server maps no node/geometry routes yet.
+/// Production descriptors use the same validated persisted revision as node
+/// pages and binary resources. Explicit transcoder-backed hosts can continue
+/// to use the legacy descriptor builder.
 /// </para>
 /// <para>
-/// The descriptor therefore deliberately does NOT advertise a fetchable
-/// <c>store.rootNode</c> / node-page resource: doing so would make a conformant
-/// I3S/ArcGIS client request a node URL that 404s. It carries only the
-/// spec-required scalar fields that are honestly knowable today (id, name,
-/// version, spatialReference, heightModelInfo, fullExtent, and store id/profile/
-/// version), so the advertised contract matches what the server can actually
-/// serve until per-node geometry lands.
+/// Unavailable revisions omit node pages and resource definitions rather than
+/// advertising geometry or attributes that cannot be served.
 /// </para>
 /// </remarks>
 internal static class I3sSceneServiceBuilder
 {
+    /// <summary>Builds descriptors using the same canonical revision as the served resources.</summary>
+    public static I3sSceneLayerDocument BuildPersistedLayer(SceneDataset scene, I3sSceneResources? resources,
+        SceneDatasetType datasetType = SceneDatasetType.HostedTiles)
+    {
+        var layer = BuildLayer(scene, resources?.Extent, datasetType,
+            advertiseNodePages: resources is not null);
+        layer.Fields = resources?.Fields ?? [];
+        layer.ObjectIdField = resources is not null ? "OBJECTID" : null;
+        layer.AttributeStorageInfo = resources?.Attributes ?? [];
+        layer.GeometryDefinitions = resources is not null ? [I3sPersistedResourceEncoder.GeometryDefinition] : [];
+        layer.MaterialDefinitions = resources?.Materials ?? [];
+        layer.TextureSetDefinitions = resources?.TextureSets ?? [];
+        layer.Store!.NormalReferenceFrame = "earth-centered";
+        layer.Store.IndexCrs = "http://www.opengis.net/def/crs/EPSG/0/4326";
+        layer.Store.VertexCrs = layer.Store.IndexCrs;
+        layer.Store.DefaultGeometrySchema = resources is not null ? I3sPersistedResourceEncoder.GeometrySchema : null;
+        return layer;
+    }
+
     /// <summary>Default I3S layer type Honua serves for hosted scenes.</summary>
     public const string DefaultLayerType = "3DObject";
 
@@ -120,18 +134,13 @@ internal static class I3sSceneServiceBuilder
         };
 
         // #1809: once the layer's tileset projects to fetchable node pages, the
-        // store advertises store.nodePages so a conformant client traverses the
+        // layer advertises nodePages so a conformant client traverses the
         // layer through nodepages/{n}. When no node pages are available (e.g. a
         // config-registry scene with no loadable tileset) the store stays a
         // descriptor-only block rather than advertising a node URL that 404s.
         if (advertiseNodePages)
         {
-            store.NodePages = new I3sNodePageDefinition
-            {
-                NodesPerPage = I3sNodePageProjector.NodesPerPage,
-                LodSelectionMetricType = I3sNodePageProjector.LodSelectionMetricType,
-            };
-            store.DefaultGeometrySchema = DefaultGeometryDefinitions[0];
+            store.DefaultGeometrySchema = DefaultGeometrySchema;
         }
 
         return new I3sSceneLayerDocument
@@ -141,6 +150,7 @@ internal static class I3sSceneServiceBuilder
             Name = scene.Name,
             Description = scene.Description,
             Version = I3sVersion,
+            Capabilities = ["View"],
             SpatialReference = spatialReference,
             HeightModelInfo = new I3sHeightModelInfo
             {
@@ -150,6 +160,13 @@ internal static class I3sSceneServiceBuilder
             },
             FullExtent = fullExtent,
             Store = store,
+            NodePages = advertiseNodePages
+                ? new I3sNodePageDefinition
+                {
+                    NodesPerPage = I3sNodePageProjector.NodesPerPage,
+                    LodSelectionMetricType = I3sNodePageProjector.LodSelectionMetricType,
+                }
+                : null,
             // Format definitions/schema that DESCRIBE the served format
             // (vertex/material/texture/attribute layout) and bind the node-page
             // resource references emitted by I3sNodePageProjector.
@@ -173,6 +190,10 @@ internal static class I3sSceneServiceBuilder
         {
             Key = "f_0",
             Name = "OBJECTID",
+            Header =
+            [
+                new I3sAttributeHeader { Property = "count", ValueType = "UInt32" },
+            ],
             Ordering = ["attributeValues"],
             AttributeValues = new I3sAttributeValues
             {
@@ -183,25 +204,55 @@ internal static class I3sSceneServiceBuilder
     ];
 
     /// <summary>
-    /// Default node geometry schema: a single uncompressed buffer carrying
-    /// interleaved position/normal/uv0 vertex streams. Describes the format the
-    /// hosted 3D Tiles content maps to; no geometry buffer is fetchable here.
+    /// Default node geometry schema: one uncompressed <c>PerAttributeArray</c>
+    /// buffer (position, normal, uv0, color, then per-feature id and faceRange).
+    /// Matches the bytes <see cref="I3sGeometryTranscoder"/> writes.
     /// </summary>
     private static readonly IReadOnlyList<I3sGeometryDefinition> DefaultGeometryDefinitions =
     [
         new I3sGeometryDefinition
         {
+            Topology = "triangle",
             GeometryBuffers =
             [
                 new I3sGeometryBuffer
                 {
+                    Offset = 8,
                     Position = new I3sVertexLayout { Type = "Float32", Component = 3 },
                     Normal = new I3sVertexLayout { Type = "Float32", Component = 3 },
                     Uv0 = new I3sVertexLayout { Type = "Float32", Component = 2 },
+                    Color = new I3sVertexLayout { Type = "UInt8", Component = 4 },
+                    FeatureId = new I3sVertexLayout { Type = "UInt64", Component = 1, Binding = "per-feature" },
+                    FaceRange = new I3sVertexLayout { Type = "UInt32", Component = 2, Binding = "per-feature" },
                 },
             ],
         },
     ];
+
+    private static readonly I3sDefaultGeometrySchema DefaultGeometrySchema = new()
+    {
+        GeometryType = "triangles",
+        Header =
+        [
+            new I3sGeometryHeader { Property = "vertexCount", Type = "UInt32" },
+            new I3sGeometryHeader { Property = "featureCount", Type = "UInt32" },
+        ],
+        Topology = "PerAttributeArray",
+        Ordering = ["position", "normal", "uv0", "color"],
+        VertexAttributes = new Dictionary<string, I3sAttributeValues>
+        {
+            ["position"] = new() { ValueType = "Float32", ValuesPerElement = 3 },
+            ["normal"] = new() { ValueType = "Float32", ValuesPerElement = 3 },
+            ["uv0"] = new() { ValueType = "Float32", ValuesPerElement = 2 },
+            ["color"] = new() { ValueType = "UInt8", ValuesPerElement = 4 },
+        },
+        FeatureAttributeOrder = ["id", "faceRange"],
+        FeatureAttributes = new Dictionary<string, I3sAttributeValues>
+        {
+            ["id"] = new() { ValueType = "UInt64", ValuesPerElement = 1 },
+            ["faceRange"] = new() { ValueType = "UInt32", ValuesPerElement = 2 },
+        },
+    };
 
     /// <summary>
     /// Default PBR material the served geometry references. Descriptive only.
@@ -210,7 +261,7 @@ internal static class I3sSceneServiceBuilder
     [
         new I3sMaterialDefinition
         {
-            AlphaMode = "OPAQUE",
+            AlphaMode = "opaque",
             DoubleSided = false,
             PbrMetallicRoughness = new I3sPbrMetallicRoughness
             {

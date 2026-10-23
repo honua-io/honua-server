@@ -15,6 +15,53 @@ namespace Honua.Core.Security.Tests;
 /// </summary>
 public sealed class DataConnectionTests
 {
+    [Trait("Tier", "Fast")]
+    [SecurityTest]
+    [Theory]
+    [InlineData(null, "environment")]
+    [InlineData("env:TEST_CONNECTION", null)]
+    [InlineData("", "environment")]
+    [InlineData("env:TEST_CONNECTION", "")]
+    public void Validate_UndeclaredPortWithoutCompleteSecretMetadata_IsInvalid(string? reference, string? secretType)
+    {
+        var connection = new DataConnection
+        {
+            Name = "test",
+            Host = "localhost",
+            Port = 0,
+            DatabaseName = "test",
+            Username = "test",
+            IsEncrypted = false,
+            SecretRef = reference,
+            SecretType = secretType
+        };
+
+        Assert.False(connection.Validate());
+    }
+
+    [Trait("Tier", "Fast")]
+    [SecurityTest]
+    [Theory]
+    [InlineData(false, 0, false)]
+    [InlineData(true, 0, true)]
+    [InlineData(false, 5432, true)]
+    [InlineData(true, 6432, true)]
+    [InlineData(false, -1, false)]
+    [InlineData(true, -1, false)]
+    [InlineData(false, 65536, false)]
+    [InlineData(true, 65536, false)]
+    public void Validate_PortUndeclared_OnlyAcceptedForExternalSecret(bool external, int port, bool valid)
+    {
+        var connection = external
+            ? DataConnection.CreateWithSecretReference("test", "localhost", port, "test", "test",
+                "env:TEST_CONNECTION", "environment", "test", SslMode.Require)
+            : DataConnection.CreateWithEncryptedCredentials("test", "localhost", port, "test", "test",
+                [1, 2, 3], 1, "test", sslRequired: true, sslMode: SslMode.Require);
+
+        Assert.Equal(valid, connection.Validate());
+    }
+
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(null, "postgis")]
@@ -30,6 +77,7 @@ public sealed class DataConnectionTests
         Assert.Equal(expected, connection.NormalizedProvider);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(SslMode.Allow)]
@@ -52,6 +100,7 @@ public sealed class DataConnectionTests
         Assert.Equal("SSL mode must require encrypted transport when SslRequired is true", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(SslMode.Require)]
@@ -75,6 +124,7 @@ public sealed class DataConnectionTests
         Assert.Equal("postgis", connection.NormalizedProvider);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public void Serialize_DoesNotEmitRawConnectionString()

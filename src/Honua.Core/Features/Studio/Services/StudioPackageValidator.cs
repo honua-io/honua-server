@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Studio.Services;
 /// <summary>
 /// Envelope and baseline family validator for Studio package lifecycle operations.
 /// </summary>
-public sealed class StudioPackageValidator : IStudioPackageValidator
+public sealed partial class StudioPackageValidator : IStudioPackageValidator
 {
     private readonly IStudioPackageFamilyRegistry _registry;
     private readonly TimeProvider _timeProvider;
@@ -268,28 +268,15 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             ValidateCompositionBlocks(envelope, diagnostics);
         }
 
+        if (envelope.Family == StudioPackageFamily.Map)
+        {
+            ValidateMapBody(envelope.Body.Value, diagnostics);
+            return;
+        }
+
         try
         {
-            if (envelope.Family == StudioPackageFamily.Map)
-            {
-                var map = envelope.Body.Value.Deserialize(PackagingJsonContext.Default.MapPackage);
-                if (map is null)
-                {
-                    diagnostics.Add(Error("studio.map.body.invalid", "/body", "map body must match honua_map_package.v1."));
-                    return;
-                }
-
-                if (!string.Equals(map.Format, "honua_map_package.v1", StringComparison.Ordinal))
-                {
-                    diagnostics.Add(Error("studio.map.format.invalid", "/body/format", "map body format must be honua_map_package.v1."));
-                }
-
-                if (map.InitialView is not null)
-                {
-                    ValidateInitialView(map.InitialView, "/body/initialView", diagnostics);
-                }
-            }
-            else if (envelope.Family == StudioPackageFamily.App)
+            if (envelope.Family == StudioPackageFamily.App)
             {
                 var app = envelope.Body.Value.Deserialize(PackagingJsonContext.Default.AppPackage);
                 if (app is null)
@@ -1060,25 +1047,6 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             $"{codePrefix}.{suffix}",
             path,
             StudioInteractionVocabulary.DescribeResolution(reference, resolution)));
-    }
-
-    private static void ValidateInitialView(MapInitialView initialView, string path, List<StudioValidationDiagnostic> diagnostics)
-    {
-        if (initialView.Bbox is null || initialView.Bbox.Length != 4)
-        {
-            diagnostics.Add(Error("studio.map.initial-view.bbox.invalid", $"{path}/bbox", "bbox must contain [minX,minY,maxX,maxY]."));
-            return;
-        }
-
-        if (initialView.Bbox[0] > initialView.Bbox[2] || initialView.Bbox[1] > initialView.Bbox[3])
-        {
-            diagnostics.Add(Error("studio.map.initial-view.bbox.order", $"{path}/bbox", "bbox min values must be less than or equal to max values."));
-        }
-
-        if (string.IsNullOrWhiteSpace(initialView.Crs) || !IsValidCrs(initialView.Crs))
-        {
-            diagnostics.Add(Error("studio.map.initial-view.crs.invalid", $"{path}/crs", "initial view CRS must be an EPSG identifier or CRS URI."));
-        }
     }
 
     private static StudioPackageValidationStatus ResolveStatus(List<StudioValidationDiagnostic> diagnostics)

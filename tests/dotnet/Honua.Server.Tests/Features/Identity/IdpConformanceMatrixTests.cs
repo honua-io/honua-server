@@ -39,6 +39,7 @@ public sealed class IdpConformanceMatrixTests
             RoleAttribute = roleAttribute,
             EmailAttribute = emailAttribute,
             DisplayNameAttribute = displayNameAttribute,
+            AssertionConsumerServiceUrl = SamlTestAssertions.AcsUrl,
         };
         return new SamlAssertionValidator(Options.Create(options));
     }
@@ -184,6 +185,7 @@ public sealed class IdpConformanceMatrixTests
             EmailAttribute = emailAttr,
             DisplayNameAttribute = nameAttr,
             DefaultRole = "viewer",
+            AssertionConsumerServiceUrl = SamlTestAssertions.AcsUrl,
         };
         var validator = new SamlAssertionValidator(Options.Create(options));
         var response = Decode(SamlTestAssertions.CreateSignedResponseWithAttributes(

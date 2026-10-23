@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Domain;
+
 namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
@@ -42,6 +44,13 @@ internal sealed record MigrationObservabilityResponse
     /// Migration scripts that would run if upgrades were applied now.
     /// </summary>
     public IReadOnlyList<string> PendingScripts { get; init; } = Array.Empty<string>();
+
+    /// <summary>Exact physical binding and resource/rendered SQL identities.</summary>
+    public IReadOnlyList<DatabaseMigrationScriptBinding> ScriptBindings { get; init; }
+        = Array.Empty<DatabaseMigrationScriptBinding>();
+
+    /// <summary>Approval nonce bound to this exact plan and custom rendering context.</summary>
+    public string? ContractApprovalNonce { get; init; }
 
     /// <summary>
     /// Executed scripts that are no longer discovered by the current binary.

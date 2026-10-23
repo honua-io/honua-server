@@ -1,6 +1,22 @@
+---
+type: reference
+title: "GeoServices REST (ArcGIS-compatible)"
+description: "Honua serves a GeoServices REST surface under /rest/services, plus a Portal Sharing slice under /sharing/rest for token issuance and item discovery."
+resource: "honua://capability/serve.geoservices-root"
+resources:
+  - "honua://capability/analytics.h3"
+  - "honua://capability/analytics.spatial-join"
+  - "honua://capability/serve.geoservices-featureserver"
+  - "honua://capability/serve.geoservices-mapserver"
+  - "honua://capability/serve.geoservices-geometry-service"
+  - "honua://capability/identity.portal-sharing"
+  - "honua://capability/editing.branch-versioning"
+  - "honua://capability/printing.pdf-output"
+  - "honua://capability/printing.layout-templates"
+---
 # GeoServices REST (ArcGIS-compatible)
 
-Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the client workflows covered by the [cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md); it does not imply blanket support for ArcGIS Pro, Field Maps, Koop, or the ArcGIS Maps SDK for JavaScript.
+Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the certified client workflows; it does not imply blanket support for ArcGIS Pro, Field Maps, Koop, or the ArcGIS Maps SDK for JavaScript.
 
 ## Catalog and portal routes
 
@@ -20,6 +36,25 @@ Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sh
 ## FeatureServer
 
 Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metadata via GET or POST).
+
+### Calendar dates and timestamps
+
+Esri service imports preserve `esriFieldTypeDateOnly` as PostgreSQL `DATE` and
+canonical `Date`. GeoServices metadata advertises `esriFieldTypeDateOnly`, and
+JSON/PBF attributes carry ISO `yyyy-MM-dd` calendar dates or null. Calendar dates
+have no time zone. Date-only filters use SQL `DATE` literals, for example
+`DateOfFlight >= DATE '2026-01-11' AND DateOfFlight < DATE '2026-01-12'`.
+Invalid non-null source dates count as failed import rows rather than silently
+becoming null or text. Arrow queries encode declared calendar dates as Date32.
+
+This corrects the previous output for existing canonical `Date` fields, which
+advertised `esriFieldTypeDate` and emitted epoch milliseconds (or Arrow timestamps).
+Clients must read the declared field type and retain calendar dates as dates.
+Canonical `DateTime` fields continue to advertise `esriFieldTypeDate` and emit
+epoch milliseconds. Existing imports whose date-only fields became text require
+a fresh import; this correction does not rewrite those tables in place.
+
+### Operations
 
 | Operation group | Routes | Notes |
 | --- | --- | --- |
@@ -44,6 +79,33 @@ Use the `@honua/sdk-js` FeatureLayer client and call `applyEdits({ adds: [{ geom
 
 Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata via GET or POST).
 
+### Publication drawing mode
+
+Set `options.mapServerDrawingMode` on the canonical metadata service to `"cached"`
+or `"dynamic"`. The option applies to every map publication in that service.
+An absent option preserves cached drawing. Values are case-insensitive strings;
+explicit nulls, unknown modes and other JSON types fail metadata graph validation.
+
+```json
+{
+  "options": {
+    "mapServerDrawingMode": "dynamic"
+  }
+}
+```
+
+Cached services advertise `singleFusedMapCache: true` and `tileInfo`, and provide
+cached tiles, MapServer WMTS and tile-package export. Dynamic services advertise
+`singleFusedMapCache: false`, omit `tileInfo`, and disable tile export. Their tile
+and tile-export requests return 400; MapServer WMTS requests return 404. Map
+export, identify, legend, find and REST query remain available in both modes.
+This option does not enable the separate ArcGIS `dynamicLayers` contract.
+
+The canonical `/ogc/services/{serviceId}/wmts` publication remains independent
+of MapServer drawing mode when the service enables WMTS. To expose cached and
+dynamic maps over the same data, create two services whose publications reference
+the same resources and storage bindings, with the corresponding drawing modes.
+
 | Operation | Routes | Notes |
 | --- | --- | --- |
 | Export map | `/export` (GET, POST) | `bbox`, `bboxSR`, `imageSR`, `size`, `format`, `transparent`, `layers`, `layerDefs`, `time`, `f`. |
@@ -52,10 +114,16 @@ Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata 
 | Find | `/find` (GET, POST) | `searchText`, `searchFields`, `layers`, `contains`. |
 | Generate KML | `/generateKml` (GET, POST) | |
 | Query | `/{layerId}/query`, `/query` (GET, POST) | Same query parameters as FeatureServer. |
-| Layer metadata | `/layers`, `/allLayersAndTables`, `/{layerId}/{featureId}`, `/queryDomains` | |
+| Layer metadata | `/layers`, `/allLayersAndTables`, `/queryDomains` (GET, POST); `/{layerId}/{featureId}` (GET) | |
 | Related/attachments | `/{layerId}/queryRelatedRecords`, `/{layerId}/queryAttachments`, `/{layerId}/generateRenderer` | |
 | Cached tiles | `/tile/{z}/{y}/{x}` | |
 | OGC pass-through | `/WMS`, `/WMTS`, `/WMTS/{**restPath}` | See [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
+
+Map export accepts `bbox` as either `xmin,ymin,xmax,ymax` or an Esri JSON envelope
+with those four properties, including the envelope representation emitted by
+ArcGIS Pro. Both representations use CRS x/y coordinate order and the same finite
+coordinate, extent and geographic-range validation. `bboxSR` controls the input
+CRS and defaults to the service CRS when omitted.
 
 > Open `https://server.example.com/rest/services/roads/MapServer/export?bbox=-122.5,37.7,-122.3,37.9&size=800,600&format=png&f=image` in a browser.
 
@@ -127,7 +195,9 @@ Operations: `findAddressCandidates`, `reverseGeocode`, `suggest`, `geocodeAddres
 
 ## NAServer (network analysis)
 
-GET and POST solves are available for Route, ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation under `/rest/services/{serviceId}/NAServer`; see the parity matrix for per-solver limitations.
+Route and ServiceArea solves are available over GET and POST; ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only. All five live under `/rest/services/{serviceId}/NAServer` and read query-string or form parameters; see the parity matrix for per-solver limitations.
+
+The synchronous `FindRoutes` subset is available at both `GPServer/FindRoutes/execute` and `NAServer/FindRoutes/execute` over GET and POST, with task metadata at the corresponding `FindRoutes` URL. It visits stops in input order and reports travel time in minutes. `Measurement_Units` supports only `Minutes`; `Reorder_Stops_to_Find_Optimal_Routes` supports only `false`. Other units, reordering, unknown options and conflicting aliases return errors before solving. An omitted `Travel_Mode` uses the provider default; supplied modes and barriers must be supported by that provider. This subset does not establish full `arcpy.nax` ready-to-use routing compatibility (tracked in #5192).
 
 ## SceneServer (I3S)
 

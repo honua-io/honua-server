@@ -47,4 +47,4 @@ internal sealed record CachedExistenceResult(bool Exists);
 /// <summary>
 /// Wrapper for tracked cache-key indexes used to avoid full keyspace scans.
 /// </summary>
-internal sealed record CachedCacheKeyIndex(string[] Keys);
+internal sealed record CachedCacheKeyIndex(string[] Keys, Dictionary<string, long>? ExpiresAtUtcTicks = null);

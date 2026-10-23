@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class MigrationInventoryHelpersTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BuildSpatialReferenceAsync_WithWkt1Datum_ReturnsDatumNodeValue()
     {
@@ -27,6 +28,7 @@ public sealed class MigrationInventoryHelpersTests
         spatialReference!.Datum.Should().Be("WGS_1984");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BuildSpatialReferenceAsync_WithWkt2Datum_ReturnsDatumNodeValue()
     {

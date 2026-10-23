@@ -165,7 +165,7 @@ public sealed class StudioFamilyPersistenceBridgeTests
             VersionId = version.VersionId,
             Status = StudioPublicationRequestStatus.Accepted,
             CreatedAt = DateTimeOffset.UtcNow,
-        }));
+        }, expectedCurrentVersionId: null));
     }
 
     private static StudioPackageDraft BuildDraft(StudioPackageFamily family)

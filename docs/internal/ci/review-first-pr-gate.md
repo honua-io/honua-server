@@ -74,12 +74,25 @@ runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
 name rather than scanning the repository's unrelated artifacts. It reads one
 paginated repository artifact catalog and joins artifacts to trusted run IDs
 locally; it never makes one artifact-list request per run. The promotion policy
-caps the worst case at 300 run-query pages, three repository-artifact pages, and
-300 receipt downloads: 603 requests under a 650-request policy ceiling, with at
-least 350 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
-repository per hour. Every page must report the same total, IDs must be unique,
+uses a three-day rolling collection window and caps the worst case at 30
+run-query pages, 50 repository-artifact pages, and 300 receipt downloads:
+380 requests within the unchanged 650-request policy ceiling, with at
+least 620 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
+repository per hour. The 50-page catalog bound (5,000 artifacts) keeps at least
+2x headroom over the 1,601-artifact retained catalog observed in #5363. Every page must report the same total, IDs must be unique,
 the complete count must fit the page bound, and the selected receipt count must
 fit the download bound. Any inconsistency or exhausted bound fails closed.
+
+The three-day collection window addresses the observed #5364 download-budget
+failure without sampling an incomplete window or granting a stronger credential.
+A successful default-branch collection remains required. On 2026-10-13 the catalog held 181
+unexpired receipts created in three days, versus 437 in seven days and 1,187 in
+30 days. Every indexed receipt in the configured window is still required;
+growth beyond 300 fails collection rather than silently dropping the tail.
+The minimum remains 20 distinct current-policy heads with zero integrity
+failures. Changing the policy digest starts a new measurement cohort, so old
+receipts cannot make the new cohort ready. The collection window does not
+shorten the 30-day artifact/report retention or alter release qualification.
 
 The pre-ledger audit found seven conservative API-derived candidates among 53
 distinct heads. Those remain useful supporting evidence, but they are not
@@ -152,6 +165,48 @@ that the rerun was already accepted; all other API errors fail visibly.
 Bridge delivery is intentionally best-effort. It improves status freshness but
 is never used as proof that review evidence is still valid. The merge train is
 a manual batch merge authority and re-attests from source evidence twice.
+
+### Shedding a superseded subject
+
+A review event is worth trusted work only while its subject can still consume
+the result, and there are two moments where that can stop being true:
+
+1. **When the event arrives.** `resolve` (and the bridge) compares the event's
+   subject SHA with the PR's live head and sheds a closed PR or a moved head
+   before admitting `attest`.
+2. **When the trusted job finally starts.** `attest` serializes on the PR number
+   with `cancel-in-progress: false`, deliberately, so it can queue behind other
+   events for minutes, and the pull request can *close* inside that queue.
+   `attest` therefore re-reads the pull request as its first step — before the
+   checkout, the policy digest, and the bounded GraphQL snapshot — and sheds a
+   subject that closed while it waited. Measured on trunk before this check
+   existed, 27 of 63 sampled `attest` failures (43%) were
+   `pull request is not open`: the whole trusted job spent to stamp a red
+   `Review Gate` status onto an already-merged commit.
+
+Both sheds are **neutral and one-directional**. They write no commit status,
+fail no run, and record one job-summary line. They can only *withhold* an
+attestation, never publish one, so shedding can never admit a pull request that
+would otherwise have been blocked — it can only withhold a status that no
+admission could have consumed. `reopened` re-fires the workflow.
+
+**A closed subject is the only staleness `attest` may shed, and that asymmetry
+is load-bearing.** `resolve` uses one PR-wide `cancel-in-progress: true` group
+and GitHub guarantees no ordering within a concurrency group, so a
+late-delivered event for an *old* head can cancel the resolver for the *newest*
+head and then shed itself. The attestation already queued behind it is then the
+only thing left that will stamp the live head, and `Review Gate` is required at
+the exact current head. `attest` therefore binds to the **live head**, never to
+the subject its event named: shedding a moved subject there would leave that
+head permanently unattested and the PR unmergeable until some unrelated comment
+or label event happened to wake the gate again. For the same reason an event
+that names no subject SHA — `issue_comment`, the highest-volume trigger — is
+never shed on staleness anywhere: its entire purpose is that review evidence
+moved while the head did not.
+
+`claude-review.yml` applies the same rule one step earlier, deciding closed,
+draft, and moved subjects from the API before it checks out the trusted reviewer
+policy at all.
 
 Closing and reopening a PR can create multiple runs for an unchanged head. The
 dispatcher deterministically selects the newest canonical run by GitHub

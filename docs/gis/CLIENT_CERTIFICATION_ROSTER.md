@@ -9,6 +9,20 @@ The external Claude artifact that seeded this roster ([`https://claude.ai/code/a
 
 Owning issue: [#3395](https://github.com/honua-io/honua-server/issues/3395) - parent [#3389](https://github.com/honua-io/honua-server/issues/3389).
 
+### This roster is not the 2026.1 release denominator
+
+This roster answers "which clients exist, and what status does each hold here". It is
+deliberately broader than the set the 2026.1 release gate requires, and its `requiredTier`
+values are this repository's own nightly/release wiring.
+
+The frozen bounded roster the 2026.1 gate is scored against is
+[`certification/client-protocol-requirements.v1.json`](../../certification/client-protocol-requirements.v1.json)
+([#3434](https://github.com/honua-io/honua-server/issues/3434)) — 59 rows projected from the
+authoritative denominator in `honua-release`, naming every required external-client
+operation, client and pinned client version, plus whether a honua-server producer can emit a
+receipt that joins to it. A row being `active`/`activated` here does **not** make it a
+certified 2026.1 cell; only a joined, candidate-bound pass in that profile does.
+
 ## What a status means
 
 | Field | Meaning |
@@ -81,7 +95,7 @@ linked requirements JSON; version sets here do not imply interchangeable version
 | Frozen operation/client/version profile | The linked release catalog enumerates operations and versions. Reconciliation with the supported maturity profile remains pre-cut work: for example its QGIS 3.40 requirement differs from this roster's 3.44.13 runtime policy. Do not silently accept a different version or demote supported operations. |
 | Public client APIs against immutable image and #3393 fixture/config/auth digests | Released to exact-candidate qualification: the final cut image and its bound fixture/config/auth tuple do not yet exist. The working-snapshot ledger above cannot satisfy this criterion. |
 | Complete identity and durable receipt fields | Schema/producer preparation remains pre-cut work. Fresh execution receipts with cut ID, server/client integrity, fixture/config/auth revisions, operation ID, target, timestamps and durable URI must be produced after the final tuple exists. Historical catalog rows are not receipts. |
-| Positive and applicable credential, role/scope, tenant-isolation, pagination/limit, metadata and media/schema cases | Required cells must execute against that same tuple. Candidate execution is released for the same reason; producer coverage gaps remain pre-cut obligations. Multi-tenancy Preview does not waive applicable isolation denial checks. |
+| Positive and applicable credential, role/scope, tenant-isolation, pagination/limit, metadata and media/schema cases | Required cells must execute against that same tuple. Candidate execution is released for the same reason; producer coverage gaps remain pre-cut obligations. |
 | Reject missing/skipped/stale/mismatched/source-built required cells | Required at intake and final release validation. The 59 skipped rows and mismatched identity above are non-passing evidence. Do not rebind this ledger as a substitute for execution. |
 | Explicit planned/excluded rows | Retained in the roster below with target/rationale. They neither pass nor enlarge the bounded release roster. A conflict with a required release operation must be resolved explicitly by the release-owned profile. |
 | No duplicate OWSLib/PySTAC producers | Reuse `owslib` and `pystac` in `client-interop-nightly.yml`, their `docker/client-compat` harnesses and `py-owslib` / `py-pystac` bindings. #3386 and #3392 must not add parallel producers for the same cells. |
@@ -113,7 +127,7 @@ The note deltas below sum to 3, which closes the gap between 41 and 44. No row w
 | `headline-status-split-differs-from-tier-tables` | 0 | `desktop-arcgis`, `esri-dotnet` | The headline tally claims 4 'Built, unrun' and 22 'Proposed'. The tier tables mark only 2 rows 'Built, unrun' (desktop-arcgis, esri-dotnet) and enumerate 24 unbuilt rows (16 Tier 1 'Proposed' plus 8 Tier 2 'On demand'). The two differences offset exactly, so the 41 total is unchanged. The per-row tier tables are authoritative; the artifact gives no basis for identifying which two additional rows the headline counted as built. |
 | `certified-live-headline-counts-partial-rows` | 0 | `esri-js-maps-sdk`, `py-pystac` | The headline '11 certified live' equals the 9 rows the tier tables label Live, Live nightly, or 1117/1117, plus the 2 rows labelled 'Partial'. This roster does not treat 'Partial' as activated at the source artifact's revision: esri-js-maps-sdk was active but awaiting-federation, and py-pystac was planned and awaiting-evidence. esri-js-maps-sdk still declares requiredTier `none`; py-pystac was promoted to `active` with requiredTier `nightly` in #3392, which committed its envelope. The 41 total is unchanged. |
 | `registry-lane-absent-from-artifact` | +1 | `arcgis-stub` | client-certification-matrix.v1.json registers an active `arcgis-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro. |
-| `registry-sublane-absent-from-artifact` | +1 | `js-esri-leaflet` | CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/esri-leaflet implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. |
+| `registry-sublane-absent-from-artifact` | +1 | `js-esri-leaflet` | CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/leaflet-client implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. |
 
 ## Roster
 
@@ -217,17 +231,17 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Built, unrun
 - **Lane binding**: desktop-arcgis (planned-lane)
-- **Client version policy**: Licensed ArcGIS Pro build recorded per run from the self-hosted Windows runner; evidence is entitlement-bound and content-addressed.
+- **Client version policy**: ArcGIS Pro build is the build named on the `desktop-arcgis` evidence identifier in honua-esri-compat. Evidence is content-addressed.
 - **Protocol surfaces**: `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
 - **Structurally not applicable**: (none)
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
-- **Licensing**: entitlement-bound - Licensed evidence must be entitlement-bound and content-addressed at release.
+- **Licensing**: entitlement-bound - desktop entitlement detail stays in honua-esri-compat. This roster does not configure it.
 - **Runtime**: windows-license
 - **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/75
-- **Notes**: Lane code exists and records honest skips because no Windows ArcGIS Pro runner is provisioned. The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane, so activation targets 2026.2 via workstream A of #3389.
+- **Notes**: The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo.
 
 ### `js` - OpenLayers
 
@@ -256,7 +270,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Required tier**: nightly (intended on activation: nightly)
 - **Roster origin**: artifact; artifact status Live nightly
 - **Lane binding**: js (sub-lane)
-- **Client version policy**: npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 5.22.0).
+- **Client version policy**: npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 6.9.0).
 - **Protocol surfaces**: `mvt`, `ogc-maps`, `ogc-tiles`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
@@ -794,9 +808,9 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: browser-playwright
 - **Fixture projection**: canonical-client-fixture - Converges on the single logical fixture + server-config revision tracked by #3393.
-- **Evidence producer**: tests/js-browser/esri-leaflet (evidence emitted per run to tests/js-browser/evidence/, not committed under tests/baselines)
+- **Evidence producer**: tests/js-browser/leaflet-client (evidence emitted per run to tests/js-browser/evidence/, not committed under tests/baselines)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3391 (needsOwningIssue: no dedicated issue exists yet)
-- **Notes**: Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/esri-leaflet, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`.
+- **Notes**: Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/leaflet-client, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`.
 
 ### `arcgis-field-maps` - ArcGIS Field Maps
 

@@ -160,6 +160,90 @@ public sealed class GeoprocessingHardeningTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task TerminalCallback_ArtifactFailure_RenotifiesEarlierCallbacksWithFailed()
+    {
+        const string operationId = "test-pa209-renotify";
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        var processCatalog = Substitute.For<IProcessCatalog>();
+        var resultPackageStore = Substitute.For<IGeoprocessingResultPackageStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
+        options.CurrentValue.Returns(new GeoprocessingExecutorOptions { ResultRetention = TimeSpan.FromDays(1) });
+        resultPackageStore
+            .SetAsync(Arg.Any<string>(), Arg.Any<AnalysisResultPackage>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("Storage backend unavailable")));
+        progressStore
+            .GetProgressAsync<GeoprocessingProgress>(operationId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<GeoprocessingProgress?>(new GeoprocessingProgress
+            {
+                OperationId = operationId,
+                WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+                CurrentStage = GeoprocessingStageKind.Execute,
+                StartedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            }));
+
+        var seen = new List<ExecutionJobStatus>();
+        var earlier = new RecordingTerminalCallback(seen);
+        var scope = Substitute.For<IServiceScope>();
+        var provider = Substitute.For<IServiceProvider>();
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(scope);
+        scope.ServiceProvider.Returns(provider);
+
+        var callback = new GeoprocessingJobTerminalCallback(
+            progressStore,
+            processCatalog,
+            options,
+            resultPackageStore,
+            scopeFactory,
+            NullLogger<GeoprocessingJobTerminalCallback>.Instance,
+            executionJobStore: jobStore);
+        provider
+            .GetService(typeof(IEnumerable<IJobTerminalCallback>))
+            .Returns(new IJobTerminalCallback[] { earlier, callback });
+
+        var job = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "managed",
+                WorkloadName = "test-workload",
+                Parameters = new Dictionary<string, string> { [ProcessDefinitionsKey] = "geometry.buffer" }
+            }
+        };
+        jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<ExecutionJobRecord?>(job));
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        await callback.OnTerminalAsync(job, CancellationToken.None);
+
+        seen.Should().Equal(ExecutionJobStatus.Failed);
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(stored => stored.Status == ExecutionJobStatus.Failed
+                && stored.ErrorMessage != null
+                && stored.ErrorMessage.Contains("result package", StringComparison.Ordinal)),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    private sealed class RecordingTerminalCallback(List<ExecutionJobStatus> seen) : IJobTerminalCallback
+    {
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            seen.Add(job.Status);
+            return ValueTask.CompletedTask;
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------

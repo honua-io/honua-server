@@ -5,12 +5,15 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Collaboration.FeatureLocks;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Validation;
@@ -103,7 +106,7 @@ internal sealed class ODataCrudHandler(
                 layerValidation.Publication, storageLayerId, FeatureProviderReadOperation.Query,
                 effectiveToken).ConfigureAwait(false);
         var result = await _crudService.GetFeatureAsync(
-            layerId, objectId, baseUrl, reader, storageLayerId, effectiveToken);
+            layerId, objectId, baseUrl, reader, storageLayerId, layerValidation.Resource, effectiveToken);
         if (result.IsSuccess && result.Data is Dictionary<string, object?> payload)
         {
             if (!string.IsNullOrWhiteSpace(result.ETag))
@@ -186,7 +189,7 @@ internal sealed class ODataCrudHandler(
                 layerValidation.Publication, storageLayerId, FeatureProviderReadOperation.Query,
                 effectiveToken).ConfigureAwait(false);
         var result = await _crudService.GetFeatureAsync(
-            layerId, objectId, baseUrl, reader, storageLayerId, effectiveToken);
+            layerId, objectId, baseUrl, reader, storageLayerId, layerValidation.Resource, effectiveToken);
         if (!result.IsSuccess)
         {
             return ODataUtilityService.CreateResultFromCrudResult(context, result);
@@ -346,6 +349,13 @@ internal sealed class ODataCrudHandler(
             return providerWriteError;
         }
 
+        var (createStorageLayerId, createStorageError) = ResolveWriteStorageLayerId(
+            context, resolvedLayerId.Value, layerValidation);
+        if (createStorageError is not null)
+        {
+            return createStorageError;
+        }
+
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -372,7 +382,8 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(createOutboxScopeData))
         {
-            result = await _crudService.CreateFeatureAsync(resolvedLayerId.Value, payload, baseUrl, effectiveToken);
+            result = await _crudService.CreateFeatureAsync(
+                resolvedLayerId.Value, payload, baseUrl, createStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -566,6 +577,27 @@ internal sealed class ODataCrudHandler(
             return providerWriteError;
         }
 
+        var (updateStorageLayerId, updateStorageError) = ResolveWriteStorageLayerId(
+            context, layerId, layerValidation);
+        if (updateStorageError is not null)
+        {
+            return updateStorageError;
+        }
+
+        // Collaborative-editing lease enforcement (#4402): a feature another editor
+        // holds a lease on cannot be replaced or merged out from under them, on this surface as
+        // much as on GeoServices applyEdits and OGC API Features.
+        var lockConflict = await EvaluateVisibleFeatureLockAsync(
+            context, layerValidation, layerId, updateStorageLayerId!.Value, objectId, "update", effectiveToken).ConfigureAwait(false);
+        if (lockConflict is not null)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "FeatureLocked",
+                lockConflict,
+                statusCode: 423);
+        }
+
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -606,7 +638,9 @@ internal sealed class ODataCrudHandler(
                 baseUrl,
                 ifMatch,
                 ifNoneMatch,
+                updateStorageLayerId!.Value,
                 replace,
+                layerValidation.Resource,
                 effectiveToken);
         }
         if (result.IsSuccess)
@@ -696,6 +730,27 @@ internal sealed class ODataCrudHandler(
             return providerWriteError;
         }
 
+        var (deleteStorageLayerId, deleteStorageError) = ResolveWriteStorageLayerId(
+            context, layerId, layerValidation);
+        if (deleteStorageError is not null)
+        {
+            return deleteStorageError;
+        }
+
+        // Collaborative-editing lease enforcement (#4402): a feature another editor
+        // holds a lease on cannot be deleted out from under them, on this surface as
+        // much as on GeoServices applyEdits and OGC API Features.
+        var lockConflict = await EvaluateVisibleFeatureLockAsync(
+            context, layerValidation, layerId, deleteStorageLayerId!.Value, objectId, "delete", effectiveToken).ConfigureAwait(false);
+        if (lockConflict is not null)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "FeatureLocked",
+                lockConflict,
+                statusCode: 423);
+        }
+
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -718,7 +773,8 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<object> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
         {
-            result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
+            result = await _crudService.DeleteFeatureAsync(
+                layerId, objectId, ifMatch, ifNoneMatch, deleteStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -900,8 +956,78 @@ internal sealed class ODataCrudHandler(
             operation,
             cancellationToken);
 
+    /// <summary>
+    /// Evaluates the collaborative-editing lease for a feature the caller can actually see,
+    /// returning the client-facing conflict description or <see langword="null"/> to proceed.
+    /// </summary>
+    /// <remarks>
+    /// The row-visibility read is the point. A lease is keyed on identifiers a caller can
+    /// guess, so answering "423, locked by Alice" for an id the caller may not read would
+    /// turn the lock surface into an existence oracle and leak the holder's identity —
+    /// row-level security hides those rows behind an indistinguishable 404, and this must
+    /// not undo that. Missing or hidden rows therefore fall through to the normal path,
+    /// which reports the same 404 it always did. The read only happens when a lease exists
+    /// somewhere, so the uncontended path is unchanged.
+    /// </remarks>
+    private static async Task<string?> EvaluateVisibleFeatureLockAsync(
+        HttpContext context,
+        LayerValidationHelpers.MetadataV2ValidationResult layerValidation,
+        int layerId,
+        int storageLayerId,
+        long objectId,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        var locks = context.RequestServices.GetService<IFeatureLockService>();
+        if (!await FeatureEditLockEnforcement.IsEvaluationRequiredAsync(locks, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var reader = context.RequestServices.GetService<IFeatureReader>();
+        if (reader is not null && !(await reader.GetAsync(storageLayerId, objectId, cancellationToken).ConfigureAwait(false)).HasValue)
+        {
+            return null;
+        }
+
+        var conflict = await FeatureEditLockEnforcement.EvaluateRequestAsync(
+            context,
+            FeatureEditLockEnforcement.ResolveServiceName(layerValidation.Service, layerValidation.Publication),
+            FeatureEditLockEnforcement.ResolveLayerId(layerValidation.Publication, layerId),
+            objectId,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+
+        return conflict is null ? null : FeatureEditLockEnforcement.Describe(conflict);
+    }
+
     private static int ResolveLayerSrid(LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
         => layerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
+
+    /// <summary>
+    /// Translates a validated OData layer into the storage-layer handle the feature
+    /// reader/writer boundary is keyed on, through the shared snapshot resolver.
+    /// Returns the OData "not configured" error when the publication is not bound to
+    /// integer-keyed feature storage, so a write fails closed rather than falling back
+    /// to the service-local route id.
+    /// </summary>
+    private static (int? StorageLayerId, IResult? Error) ResolveWriteStorageLayerId(
+        HttpContext context,
+        int layerId,
+        LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
+    {
+        var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+            layerValidation.Snapshot!,
+            layerValidation.Publication,
+            layerValidation.Resource!);
+        return storageLayerId.HasValue
+            ? (storageLayerId, null)
+            : (null, ODataUtilityService.CreateODataError(
+                context,
+                "InternalServerError",
+                $"Layer {layerId} storage binding is not configured.",
+                StatusCodes.Status500InternalServerError));
+    }
 
     private static async Task<IResult?> RejectUnsupportedProviderWriteAsync(
         HttpContext context,

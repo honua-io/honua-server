@@ -186,13 +186,22 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
         },
         new EsriConstructCapabilityDescriptor
         {
+            // #4600: domains stayed "assisted / enforcement not automated" long after the importer began
+            // persisting them onto the published fields (#1255) and the shared FeatureMutationValidator
+            // began enforcing coded-value and range domains on FeatureServer applyEdits, OGC API Features
+            // and WFS-T edits. Catalog reconciliation verifies the persisted domain against the source.
             ConstructKey = Keys.ResourceDomains,
-            AutomationStatus = MigrationFidelityAutomationStatuses.Assisted,
-            Code = ImportCompatibilityCodes.ManualReview,
-            Reason = "Domain metadata was captured for review; target domain enforcement is not automated by this import slice.",
-            ManualSteps = ["Review coded-value and range domains before publishing target field configuration."],
-            CanTransform = false,
-            CanServe = false,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+            Code = ImportCompatibilityCodes.Compatible,
+            Reason = "Coded-value and range domains are persisted onto the published fields, served on FeatureServer field "
+                + "metadata and queryDomains, enforced on applyEdits and OGC/WFS edits, and verified by catalog reconciliation.",
+            UnsupportedAutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
+            UnsupportedCode = ImportCompatibilityCodes.ArcGisDomainTruncated,
+            UnsupportedReason = "At least one coded-value domain exceeds the capture cap and is not persisted, so the target "
+                + "field carries no domain and does not enforce it.",
+            UnsupportedManualSteps = ["Recreate the truncated coded-value domain on the target field configuration before cutover."],
+            CanTransform = true,
+            CanServe = true,
             RequiresCheck = true
         },
         new EsriConstructCapabilityDescriptor
@@ -200,32 +209,58 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
             ConstructKey = Keys.ResourceSubtypes,
             AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
             Code = ImportCompatibilityCodes.ArcGisSubtypesManualReview,
-            Reason = "Subtype metadata was detected and captured for operator review; automated subtype migration is not implemented.",
+            Reason = "Subtype metadata is captured and carried through publish onto the target resource; the subtype-driven "
+                + "editing behavior (per-subtype defaults and domain overrides on applyEdits) still needs operator review "
+                + "before cutover.",
             ManualSteps = ["Recreate subtype behavior or document an accepted gap before cutover."],
+            // #4824 REQ-002: a source editing construct the canonical model cannot represent
+            // (multiple templates per type, explicit domain clearing, an unusable type identity)
+            // is not captured at all. It takes this fallback tier, and EsriSubtypeFidelityClassifier
+            // supplies the construct-specific code and reason so the finding names what was lost.
+            UnsupportedAutomationStatus = MigrationFidelityAutomationStatuses.Unsupported,
+            UnsupportedCode = ImportCompatibilityCodes.ArcGisSubtypesManualReview,
+            UnsupportedReason = "The source editing model uses a subtype construct this migration slice cannot represent, "
+                + "so no subtype or feature type was captured for this resource.",
+            UnsupportedManualSteps = ["Recreate the source editing model on the target resource, or document an accepted gap, before cutover."],
             CanTransform = false,
             CanServe = false,
             RequiresCheck = true
         },
         new EsriConstructCapabilityDescriptor
         {
+            // #4600: the classifier emitted simple relationships as automated while this descriptor said
+            // manual review for every relationship, so the two disagreed. The descriptor now reads per
+            // relationship: simple classes are automated (relationship apply persists each and reports its
+            // outcome); composite, attributed and many-to-many classes take the fallback.
             ConstructKey = Keys.ResourceRelationships,
-            AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
-            Code = ImportCompatibilityCodes.ArcGisRelationshipsManualReview,
-            Reason = "Relationship metadata was detected and captured for operator review; automated relationship migration is not implemented.",
-            ManualSteps = ["Map related layers or tables to target relationship configuration before cutover."],
-            CanTransform = false,
-            CanServe = false,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+            Code = ImportCompatibilityCodes.Compatible,
+            Reason = "Simple relationship class captured for automated migration to honua.relationships and MetadataV2Resource.Relationships.",
+            UnsupportedAutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
+            UnsupportedCode = ImportCompatibilityCodes.ArcGisRelationshipsManualReview,
+            UnsupportedReason = "Composite, attributed and many-to-many relationship classes need their junction or cascade "
+                + "behavior modelled before cutover; automated relationship apply reports them as deferred.",
+            UnsupportedManualSteps = ["Map related layers or tables to target relationship configuration before cutover."],
+            CanTransform = true,
+            CanServe = true,
             RequiresCheck = true
         },
         new EsriConstructCapabilityDescriptor
         {
+            // #4600: the classifier already emitted attachments as automated while this descriptor said manual
+            // review. Attachment copy is automated and reconciled on its own evidence (#4661); the fallback
+            // covers an import that cannot run the copy.
             ConstructKey = Keys.ResourceAttachments,
-            AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
-            Code = ImportCompatibilityCodes.ArcGisAttachments,
-            Reason = "Attachment capability was detected, but attachment content migration is not implemented by this slice.",
-            ManualSteps = ["Plan a separate attachment migration alongside the core data import."],
-            CanTransform = false,
-            CanServe = false,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+            Code = ImportCompatibilityCodes.Compatible,
+            Reason = "Attachments are automatically copied to the Honua attachment store during import when ImportAttachments is enabled and auto-publish succeeds.",
+            UnsupportedAutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
+            UnsupportedCode = ImportCompatibilityCodes.ArcGisAttachments,
+            UnsupportedReason = "Attachment capability was detected, but the import cannot copy attachments (ImportAttachments "
+                + "disabled, no attachment store, or no auto-publish), so an operator-planned attachment migration is needed.",
+            UnsupportedManualSteps = ["Plan a separate attachment migration alongside the core data import."],
+            CanTransform = true,
+            CanServe = true,
             RequiresCheck = true
         },
         new EsriConstructCapabilityDescriptor

@@ -6,11 +6,9 @@ using Honua.Core.Features.SensorThings.Domain;
 namespace Honua.Core.Features.SensorThings.Abstractions;
 
 /// <summary>
-/// Publishes newly-ingested SensorThings observations to real-time stream subscribers
-/// (Phase 3). The SensorThings ingest path (Phase 2) calls this after a successful write
-/// so the observation-stream transport (SSE / WebSocket) can fan it out to connected
-/// clients. The default no-op implementation keeps ingest decoupled from streaming when
-/// the streaming surface is not registered.
+/// Publishes newly-ingested SensorThings observations to real-time stream subscribers.
+/// The SensorThings ingest path calls this after a successful write so the
+/// observation-stream transport can fan observations out to connected clients.
 /// </summary>
 public interface IObservationChangeEventPublisher
 {
@@ -20,20 +18,4 @@ public interface IObservationChangeEventPublisher
     /// </summary>
     /// <param name="observations">The observations that were persisted.</param>
     void PublishObservations(IReadOnlyList<SensorThingsObservation> observations);
-}
-
-/// <summary>
-/// Default <see cref="IObservationChangeEventPublisher"/> that discards events. Registered
-/// when no streaming transport is wired so the ingest path always has a publisher to call.
-/// </summary>
-public sealed class NullObservationChangeEventPublisher : IObservationChangeEventPublisher
-{
-    /// <summary>Shared instance.</summary>
-    public static NullObservationChangeEventPublisher Instance { get; } = new();
-
-    /// <inheritdoc />
-    public void PublishObservations(IReadOnlyList<SensorThingsObservation> observations)
-    {
-        // Intentionally empty: no streaming transport registered.
-    }
 }

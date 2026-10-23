@@ -140,6 +140,17 @@ public readonly record struct MapRenderRequest
     public IReadOnlyList<ResolvedMapLayer>? ResolvedLayers { get; init; }
 
     /// <summary>
+    /// Storage layer id → MapLibre style JSON of the style currently applied to that
+    /// layer (its primary binding in the styleId-keyed style catalog, as written by
+    /// <c>style.apply-preset</c> or the OGC API - Styles authoring surface). When an
+    /// entry is present, the styled vector path renders the layer with this document
+    /// instead of the layer's stored default style; an entry whose document has no
+    /// style layers draws nothing for that layer. <see langword="null"/> (or a missing
+    /// entry) preserves rendering with the layer's stored default style.
+    /// </summary>
+    public IReadOnlyDictionary<int, string>? AppliedStyleJsonByLayerId { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the MapRenderRequest struct.
     /// </summary>
     public MapRenderRequest(double[] boundingBox, int width, int height)

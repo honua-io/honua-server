@@ -51,7 +51,10 @@ internal sealed record CapabilityManifestScope
 {
     public string? TenantId { get; init; }
 
-    public required string TenantSource { get; init; }
+    // Null, and omitted from the response, when tenant context resolution is off -
+    // which is every deployment a licensee may run. A field that is always null
+    // invites the question of how to populate it.
+    public string? TenantSource { get; init; }
 
     public string? Environment { get; init; }
 
@@ -159,6 +162,46 @@ internal sealed record CapabilityManifestCapability
     public string? MinimumEdition { get; init; }
 
     public string? MessageKey { get; init; }
+
+    /// <summary>
+    /// Per-target rollback claims. Present only on <c>deploy.rollback</c>, and only for an
+    /// authenticated caller holding <c>deploy.rollback</c> or <c>admin.rbac.write</c>.
+    /// Other callers receive the capability flags without target identifiers. A global
+    /// <see cref="Available"/> value does not apply to every target; each entry says
+    /// whether that target can execute a rollback and why.
+    /// </summary>
+    public CapabilityManifestRollbackTarget[]? RollbackTargets { get; init; }
+
+    /// <summary>
+    /// Background-import runner: <c>batch</c>, <c>in-process</c> or <c>unavailable</c>. Present
+    /// only on <c>import.background</c> (honua-server#5916).
+    /// </summary>
+    public string? Runner { get; init; }
+
+    /// <summary>
+    /// Object-store URI schemes this host can import. Present on <c>import.objectStore</c>.
+    /// </summary>
+    public string[]? Schemes { get; init; }
+}
+
+/// <summary>
+/// One deploy target's rollback claim inside <c>deploy.rollback</c>.
+/// </summary>
+internal sealed record CapabilityManifestRollbackTarget
+{
+    public required string TargetId { get; init; }
+
+    public required string Backend { get; init; }
+
+    /// <summary>
+    /// <c>executable</c>, <c>handoff</c>, <c>missing-backend</c>, <c>probe-failed</c>,
+    /// or <c>no-prior-revision</c>.
+    /// </summary>
+    public required string State { get; init; }
+
+    public required bool Executable { get; init; }
+
+    public required string ReasonCode { get; init; }
 }
 
 internal sealed record CapabilityManifestTransports
@@ -297,6 +340,34 @@ internal sealed record CapabilityManifestJobLimits
     /// missing dependency from an unentitled licence.
     /// </summary>
     public required bool DurableJobRuntimeAvailable { get; init; }
+
+    /// <summary>
+    /// The startup Redis durability attestation outcome, published as information (owner ruling
+    /// 2026-10-10). It never withholds <c>jobs.runner</c> or <c>operations.proposals</c>: a
+    /// connected Redis enables both, and durability is an operator property of the Redis
+    /// deployment. Omitted when no attestation ran against a connected Redis.
+    /// </summary>
+    public CapabilityManifestRedisDurability? RedisDurability { get; init; }
+}
+
+/// <summary>
+/// Informational Redis durability outcome on the capability manifest
+/// (<c>limits.job.redisDurability</c>).
+/// </summary>
+internal sealed record CapabilityManifestRedisDurability
+{
+    /// <summary>
+    /// <c>attested</c> (AOF on, <c>appendfsync</c> everysec/always, <c>noeviction</c>),
+    /// <c>unverified</c> (policy unreadable, e.g. <c>CONFIG</c> blocked on AWS ElastiCache or
+    /// MemoryDB), or <c>not-durable</c> (policy read and not durable).
+    /// </summary>
+    public required string Status { get; init; }
+
+    /// <summary>The typed attestation outcome cause; omitted when attested.</summary>
+    public string? Cause { get; init; }
+
+    /// <summary>Operator guidance for the outcome; omitted when attested.</summary>
+    public string? Remediation { get; init; }
 }
 
 internal sealed record CapabilityManifestUploadLimits

@@ -341,6 +341,13 @@ internal sealed partial class OgcFilterProcessor
             return FilterLanguageResult.Success(resolved);
         }
 
+        // GDAL 3.8 emits the draft spelling for its CQL attribute expressions.
+        // Parse and validate it through the same CQL2 text pipeline.
+        if (string.Equals(filterLang, "cql-text", StringComparison.OrdinalIgnoreCase))
+        {
+            return FilterLanguageResult.Success(FilterLangCql2Text);
+        }
+
         if (string.Equals(filterLang, FilterLangCql2Text, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(filterLang, FilterLangCql2Json, StringComparison.OrdinalIgnoreCase))
         {
@@ -608,7 +615,8 @@ internal sealed partial class OgcFilterProcessor
             EnvelopeMinX = bbox.MinX <= bbox.MaxX ? bbox.MinX : null,
             EnvelopeMinY = bbox.MinX <= bbox.MaxX ? bbox.MinY : null,
             EnvelopeMaxX = bbox.MinX <= bbox.MaxX ? bbox.MaxX : null,
-            EnvelopeMaxY = bbox.MinX <= bbox.MaxX ? bbox.MaxY : null
+            EnvelopeMaxY = bbox.MinX <= bbox.MaxX ? bbox.MaxY : null,
+            AntimeridianSplit = bbox.MinX > bbox.MaxX
         };
     }
 

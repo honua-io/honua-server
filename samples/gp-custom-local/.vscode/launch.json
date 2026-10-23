@@ -1,0 +1,50 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Python GP",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "honua_customcode_harness.local",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/../../docker/worker-customcode-python/harness"
+      },
+      "args": [
+        "--source",
+        "python",
+        "--entrypoint",
+        "summary_tool:execute",
+        "--params",
+        "params.json",
+        "--input",
+        "features=input.geojson",
+        "--output",
+        ".honua/python-runs"
+      ],
+      "justMyCode": false
+    },
+    {
+      "name": "Debug .NET GP",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Build GP sample",
+      "program": "${workspaceFolder}/../../docker/worker-customcode-dotnet/harness/src/Honua.CustomCode.Harness/bin/Debug/net10.0/Honua.CustomCode.Harness.dll",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "local",
+        "--assembly-dir",
+        "dotnet/bin/Debug/net10.0",
+        "--entrypoint",
+        "SummaryTool::Honua.Samples.SummaryTool",
+        "--params",
+        "params.json",
+        "--input",
+        "features=input.geojson",
+        "--output",
+        ".honua/dotnet-runs"
+      ],
+      "stopAtEntry": false
+    }
+  ]
+}

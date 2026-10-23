@@ -44,6 +44,8 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         Title = "Add Studio layer",
         Description =
             "Add a layer to a map/app/dashboard-family Studio draft's composition, with optimistic-generation checking. "
+            + "For a catalog-backed layer copy studioSourceId from layer discovery into layer.sourceId; layer.id identifies the presentation layer. "
+            + "Catalog-backed editing does not require portable sourceBindings or a mapSpec export. "
             + "Fails with invalid_argument if a layer with the same id already exists, or if the draft's family is not map/app/dashboard.",
         InputSchema = StudioMcpSchemas.AddLayerArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,

@@ -89,6 +89,15 @@ internal static partial class OgcApiFeaturesImportEndpoints
             return;
         }
 
+        if (!ImportValidationHelpers.IsPermittedTargetSchema(request.TargetSchema, context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         if (request.TimeoutSeconds is <= 0)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "TimeoutSeconds must be greater than 0.", StatusCodes.Status400BadRequest);
@@ -150,6 +159,7 @@ internal static partial class OgcApiFeaturesImportEndpoints
             MaxPages = request.MaxPages ?? 1_000,
             TimeoutSeconds = request.TimeoutSeconds ?? 300,
             AllowUnsafeLocalUrls = allowUnsafeLocalUrls,
+            AllowedServiceHostSuffixes = allowedHostSuffixes,
             Filter = request.Filter,
             Bbox = request.Bbox,
             Datetime = request.Datetime
@@ -170,6 +180,7 @@ internal static partial class OgcApiFeaturesImportEndpoints
                 OgcApiFeaturesImportErrorCodes.MissingItemsEndpoint => StatusCodes.Status422UnprocessableEntity,
                 OgcApiFeaturesImportErrorCodes.SourceUnreachable => StatusCodes.Status502BadGateway,
                 OgcApiFeaturesImportErrorCodes.Timeout => StatusCodes.Status504GatewayTimeout,
+                ImportTableOwnershipException.Code => StatusCodes.Status409Conflict,
                 OgcApiFeaturesImportErrorCodes.SinkFailure => StatusCodes.Status500InternalServerError,
                 _ => StatusCodes.Status500InternalServerError
             };

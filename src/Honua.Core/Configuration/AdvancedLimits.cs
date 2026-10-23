@@ -3,9 +3,14 @@ using System.ComponentModel.DataAnnotations;
 namespace Honua.Core.Configuration;
 
 /// <summary>
-/// Limits for file preview and import operations.
+/// Size ceilings bound from <c>Limits:Imports:*</c>: preview size, synchronous import size,
+/// package cap, and the preview batch size. This is not
+/// <see cref="Honua.Core.Features.Import.Domain.ImportLimits"/>, the import pipeline record bound from
+/// <c>Import:Limits:*</c>. The two types share property names such as <c>BatchSize</c> and
+/// <c>MaxPreviewFeatures</c> but different defaults, and neither is derived from the other.
+/// Those names stay independent so each section keeps the value operators already set (#3346).
 /// </summary>
-public class ImportLimits
+public class ImportSizeLimits
 {
     /// <summary>
     /// Maximum file size that can be previewed.
@@ -24,6 +29,14 @@ public class ImportLimits
     /// </summary>
     [Range(52_428_800, 5_368_709_120L)]
     public long MaxImportSize { get; set; } = FileSizeConstants.FiveHundredMB;
+
+    /// <summary>
+    /// Maximum uploaded Esri tile-cache package (.tpk/.tpkx/.vtpk) in bytes.
+    /// The tile-package route and the import handler share this value so a package
+    /// is not rejected by the edit-payload ceiling before the package cap applies.
+    /// </summary>
+    [Range(52_428_800, 5_368_709_120L)]
+    public long MaxTilePackageSize { get; set; } = 2L * FileSizeConstants.OneGB;
 
     /// <summary>
     /// Maximum number of features returned in a preview.
@@ -57,6 +70,15 @@ public class AnalyticsLimits
     /// </summary>
     [Range(1, 1_000_000)]
     public int MaxInputFeatures { get; set; } = 100_000;
+
+    /// <summary>
+    /// Maximum cumulative serialized size, in bytes, of the geometry and attribute payload a
+    /// layer-sourced geoprocessing job may stream in from one layer before it computes
+    /// (#4629). Charged while streaming, independently of <see cref="MaxInputFeatures"/>, so a
+    /// modest number of very large features cannot exhaust a worker's memory.
+    /// </summary>
+    [Range(1, long.MaxValue)]
+    public long MaxInputBytes { get; set; } = 512L * 1024 * 1024;
 
     /// <summary>
     /// Maximum cluster count returned by clustering queries.

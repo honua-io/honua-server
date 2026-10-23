@@ -1,3 +1,13 @@
+---
+type: reference
+title: "Terrain and elevation"
+description: "Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox raster-dem rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries."
+resource: "honua://capability/serve.elevation"
+resources:
+  - "honua://capability/analytics.line-of-sight"
+  - "honua://capability/analytics.sun-shadow"
+  - "honua://capability/analytics.slice"
+---
 # Terrain and elevation
 
 Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox `raster-dem` rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries. Both surfaces share the same raster catalog and mosaic pipeline.
@@ -16,6 +26,8 @@ Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for 
 | POST | `/elevation/{datasetId}/slice` | Vertical slice through the elevation surface. |
 
 `{datasetId}` accepts a numeric layer id or a layer collection name. The Terrain protocol must be enabled for the tile routes and the Elevation protocol for the query routes (both are part of the default protocol set when `EnabledProtocols` is omitted). Tile coordinates are validated against the configured `Limits:Tiles` zoom range.
+
+Terrain tiles are 8-bit RGBA PNGs. Finite elevation samples have alpha `255` and retain the Terrain-RGB formula `meters = -10000 + (R * 65536 + G * 256 + B) * 0.1`. Source NoData, non-finite samples and uncovered pixels have RGBA `[0, 0, 0, 0]`. Honor alpha when interpreting missing data: a valid elevation of `-10000 m` has the same RGB bytes but alpha `255`. A fully uncovered valid tile returns a transparent PNG with `200`, not `404`.
 
 ## Point query parameters — `/elevation/{datasetId}/value`
 

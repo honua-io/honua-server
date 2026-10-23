@@ -45,6 +45,8 @@ on:
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'scripts/ci/serving-image-reuse.py'
+      - 'scripts/ci/verify-native-migration-refusal.py'
+      - 'scripts/ci/fixtures/validate-native-migration-refusal.py'
       - 'scripts/ci/fixtures/validate-serving-image-boundary.py'
       - '.github/workflows/serving-image-boundary.yml'
   workflow_dispatch:
@@ -70,7 +72,7 @@ jobs:
       input_digests: ${{ steps.digests.outputs.value }}
       freshness_epoch: ${{ steps.freshness.outputs.value }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -114,7 +116,7 @@ jobs:
           # both and fails closed when they diverge.
           while IFS= read -r path; do
             case "$path" in
-              .dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
+              .dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
                 generic=true
                 lambda=true
                 functions=true
@@ -179,21 +181,20 @@ jobs:
             description: canonical native-AOT serving image
             dockerfile: docker/Dockerfile.aot
             tag: honua-server:aot-boundary
-            # Cache scopes are unchanged from the serial job on purpose: warm
-            # `pr-*-boundary` caches survive this refactor.
-            cache_scope: pr-aot-boundary
+            # Share the nightly/release cache for this Dockerfile and architecture.
+            cache_scope: honua-aot-amd64
           - variant: lambda
             digest_key: serving_lambda
             description: Lambda native-AOT serving image
             dockerfile: docker/Dockerfile.lambda.aot
             tag: honua-server:lambda-aot-boundary
-            cache_scope: pr-lambda-aot-boundary
+            cache_scope: honua-lambda-aot-amd64
           - variant: functions
             digest_key: serving_functions
             description: Azure Functions native-AOT serving image
             dockerfile: docker/Dockerfile.functions.aot
             tag: honua-server:functions-aot-boundary
-            cache_scope: pr-functions-aot-boundary
+            cache_scope: honua-functions-aot-amd64
     env:
       # `matrix` is not available in a job-level `if`, so selection is applied
       # per step. An unselected leg costs one shallow checkout instead of the
@@ -207,7 +208,7 @@ jobs:
     steps:
       # No `fetch-depth: 0` here: only `detect` diffs base..head. A build leg
       # needs the build context, not the history.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         if: env.IMPACTED == 'true'
 
       - name: Restore exact verification marker
@@ -219,7 +220,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
+          key: honua-serving-image-verification-v3-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
           lookup-only: false
 
       - name: Decide content-addressed verification reuse
@@ -264,6 +265,7 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: ${{ matrix.tag }}
+          build-args: HONUA_GIT_SHA=${{ github.sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -305,8 +307,24 @@ jobs:
           docker logs honua-aot-boundary
           exit 1
 
+      - name: Verify native migration refusal shutdown
+        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
+        run: |
+          python3 scripts/ci/fixtures/validate-native-migration-refusal.py
+          python3 scripts/ci/verify-native-migration-refusal.py \
+            --image '${{ matrix.tag }}' --source-sha '${{ github.sha }}' \
+            --output native-migration-refusal-evidence
+
+      - name: Upload native migration refusal evidence
+        if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-migration-refusal-${{ github.sha }}
+          path: native-migration-refusal-evidence/
+          if-no-files-found: error
+
       # The marker is prepared only after every check for this variant has
-      # succeeded. For generic, that includes the HTTP smoke test above.
+      # succeeded. For generic, that includes HTTP smoke and native migration refusal shutdown above.
       - name: Prepare successful verification marker
         if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
         run: |
@@ -323,7 +341,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
+          key: honua-serving-image-verification-v3-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
 
       - name: Clean up serving-image smoke container
         if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'

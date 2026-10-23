@@ -63,7 +63,7 @@ public sealed record TileCachePackageImportResult
     /// <summary>Resolved maximum zoom imported.</summary>
     public required int MaxZoom { get; init; }
 
-    /// <summary>Number of tiles inserted (zero for dry-run or fully-deduplicated re-imports).</summary>
+    /// <summary>Number of tiles inserted or replaced. Zero for a dry run.</summary>
     public required int TilesImported { get; init; }
 
     /// <summary>Number of tiles skipped because they already existed in the catalog.</summary>
@@ -71,4 +71,10 @@ public sealed record TileCachePackageImportResult
 
     /// <summary>Whether this was a dry-run (no tiles written).</summary>
     public required bool DryRun { get; init; }
+
+    /// <summary>
+    /// Assumption recorded while resolving the tiling scheme, when the package did not
+    /// name a WKID but its origin and resolutions matched a supported scheme.
+    /// </summary>
+    public string? Assumption { get; init; }
 }

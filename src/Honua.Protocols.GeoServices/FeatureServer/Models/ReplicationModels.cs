@@ -31,6 +31,12 @@ public sealed class CreateReplicaRequest
     /// <summary>
     /// Return attachments with the replica.
     /// </summary>
+    /// <remarks>
+    /// Not supported. This server does not replicate attachments; <c>createReplica</c>
+    /// rejects <c>returnAttachments=true</c> with a 400 rather than silently producing a
+    /// replica without them (honua-server#4405). The property is retained so the Esri
+    /// request shape still binds.
+    /// </remarks>
     [JsonPropertyName("returnAttachments")]
     public bool ReturnAttachments { get; set; }
 
@@ -93,6 +99,34 @@ public sealed class CreateReplicaResponse
     /// </summary>
     [JsonPropertyName("creationDate")]
     public long CreationDate { get; set; }
+
+    /// <summary>
+    /// Transport the replica data is delivered with. Always <c>esriTransportTypeEmbedded</c>: the data is
+    /// carried inline in <see cref="Layers"/>. A request for <c>esriTransportTypeUrl</c> is answered with
+    /// the embedded transport and says so here, because this server publishes no replica files (#4018).
+    /// </summary>
+    [JsonPropertyName("transportType")]
+    public string? TransportType { get; set; }
+
+    /// <summary>
+    /// Esri replica response type; <c>esriReplicaResponseTypeData</c> for createReplica.
+    /// </summary>
+    [JsonPropertyName("responseType")]
+    public string? ResponseType { get; set; }
+
+    /// <summary>
+    /// Per-layer server generation the delivered data reflects.
+    /// </summary>
+    [JsonPropertyName("layerServerGens")]
+    public ReplicaInfoLayerServerGeneration[]? LayerServerGens { get; set; }
+
+    /// <summary>
+    /// True when the replica scope held more changes per layer than <c>Limits:Replica:MaxChangesPerLayer</c>:
+    /// the data covers generations up to <see cref="ServerGen"/> and the rest is delivered by
+    /// synchronizeReplica downloads from that generation (#4019). Omitted otherwise.
+    /// </summary>
+    [JsonPropertyName("exceededTransferLimit")]
+    public bool? ExceededTransferLimit { get; set; }
 }
 
 /// <summary>
@@ -149,10 +183,12 @@ public sealed class ReplicaInfoResponse
     public long? ReplicaServerGen { get; set; }
 
     /// <summary>
-    /// Layer generation metadata encoded using the ArcGIS replicas resource shape.
+    /// Per-layer server generations for per-layer sync models, emitted as a JSON array of
+    /// <c>{id, serverGen, serverSibGen}</c> objects like the ArcGIS replica resource and the
+    /// <c>synchronizeReplica</c> response (#4020). Omitted for per-replica sync models.
     /// </summary>
     [JsonPropertyName("layerServerGens")]
-    public string? LayerServerGens { get; set; }
+    public ReplicaInfoLayerServerGeneration[]? LayerServerGens { get; set; }
 
     /// <summary>
     /// Timestamp when the replica was created, in Unix milliseconds.
@@ -249,6 +285,13 @@ public sealed class ReplicaLayerInfo
     /// </summary>
     [JsonPropertyName("serverGen")]
     public long ServerGen { get; set; }
+
+    /// <summary>
+    /// The layer's replica data (Esri JSON features within the replica scope, in the replica spatial
+    /// reference). Empty for a layer whose <c>queryOption</c> is <c>none</c>.
+    /// </summary>
+    [JsonPropertyName("features")]
+    public GeoServicesFeature[]? Features { get; set; }
 }
 
 /// <summary>
@@ -315,6 +358,95 @@ public sealed class ExtractChangesResponse
     /// </summary>
     [JsonPropertyName("maxServerGen")]
     public long MaxServerGen { get; set; }
+
+    /// <summary>
+    /// Esri transport of the change payload; always <c>esriTransportTypeEmbedded</c> (see
+    /// <see cref="CreateReplicaResponse.TransportType"/>).
+    /// </summary>
+    [JsonPropertyName("transportType")]
+    public string? TransportType { get; set; }
+
+    /// <summary>
+    /// Esri response type; <c>esriReplicaResponseTypeEdits</c>.
+    /// </summary>
+    [JsonPropertyName("responseType")]
+    public string? ResponseType { get; set; }
+
+    /// <summary>
+    /// Per-layer generation each layer's changes were extracted through. A client echoes these as the
+    /// next request's <c>layerServerGens</c> (#4017).
+    /// </summary>
+    [JsonPropertyName("layerServerGens")]
+    public ReplicaInfoLayerServerGeneration[]? LayerServerGens { get; set; }
+
+    /// <summary>
+    /// Esri change envelope: per layer, <c>features.adds</c>/<c>features.updates</c>/<c>features.deleteIds</c>,
+    /// or <c>objectIds.adds</c>/<c>updates</c>/<c>deletes</c> for <c>returnIdsOnly=true</c>. The legacy
+    /// Honua <see cref="LayerChanges"/> projection carries the same changes.
+    /// </summary>
+    [JsonPropertyName("edits")]
+    public ExtractChangesLayerEdits[]? Edits { get; set; }
+
+    /// <summary>
+    /// True when a layer held more changes than <c>Limits:Replica:MaxChangesPerLayer</c>: the response
+    /// covers generations through <see cref="MaxServerGen"/> and the client continues from there (#4019).
+    /// </summary>
+    [JsonPropertyName("exceededTransferLimit")]
+    public bool? ExceededTransferLimit { get; set; }
+}
+
+/// <summary>
+/// One layer of the Esri <c>extractChanges</c> change envelope.
+/// </summary>
+public sealed class ExtractChangesLayerEdits
+{
+    /// <summary>Layer identifier.</summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>Feature payloads of the changes; omitted for <c>returnIdsOnly=true</c>.</summary>
+    [JsonPropertyName("features")]
+    public ExtractChangesFeatureEdits? Features { get; set; }
+
+    /// <summary>Object ids of the changes; present only for <c>returnIdsOnly=true</c>.</summary>
+    [JsonPropertyName("objectIds")]
+    public ExtractChangesObjectIdEdits? ObjectIds { get; set; }
+}
+
+/// <summary>
+/// Feature payloads of one layer's extracted changes.
+/// </summary>
+public sealed class ExtractChangesFeatureEdits
+{
+    /// <summary>Inserted features.</summary>
+    [JsonPropertyName("adds")]
+    public GeoServicesFeature[] Adds { get; set; } = [];
+
+    /// <summary>Updated features.</summary>
+    [JsonPropertyName("updates")]
+    public GeoServicesFeature[] Updates { get; set; } = [];
+
+    /// <summary>Object ids of deleted features.</summary>
+    [JsonPropertyName("deleteIds")]
+    public long[] DeleteIds { get; set; } = [];
+}
+
+/// <summary>
+/// Object ids of one layer's extracted changes (<c>returnIdsOnly=true</c>).
+/// </summary>
+public sealed class ExtractChangesObjectIdEdits
+{
+    /// <summary>Object ids of inserted features.</summary>
+    [JsonPropertyName("adds")]
+    public long[] Adds { get; set; } = [];
+
+    /// <summary>Object ids of updated features.</summary>
+    [JsonPropertyName("updates")]
+    public long[] Updates { get; set; } = [];
+
+    /// <summary>Object ids of deleted features.</summary>
+    [JsonPropertyName("deletes")]
+    public long[] Deletes { get; set; } = [];
 }
 
 /// <summary>
@@ -345,6 +477,13 @@ public sealed class LayerChanges
     /// </summary>
     [JsonPropertyName("deletes")]
     public int Deletes { get; set; }
+
+    /// <summary>
+    /// Spatial reference of every geometry in <see cref="AddFeatures"/> and
+    /// <see cref="UpdateFeatures"/>: the layer's storage spatial reference (#4027).
+    /// </summary>
+    [JsonPropertyName("spatialReference")]
+    public GeoServicesSpatialReference? SpatialReference { get; set; }
 
     /// <summary>
     /// Actual feature data for inserts since last sync.
@@ -391,10 +530,11 @@ public sealed class SynchronizeReplicaRequest
     /// <summary>
     /// When true, each layer's uploaded edits are applied atomically: a single failing edit rolls back
     /// that layer's whole batch, leaving the server state unchanged. Mirrors the Esri
-    /// <c>rollbackOnFailure</c> sync parameter. Defaults to false (best-effort per-row apply) (#2136).
+    /// <c>rollbackOnFailure</c> sync parameter (#2136). Defaults to true, the Esri default (#4031);
+    /// best-effort per-row apply requires an explicit false.
     /// </summary>
     [JsonPropertyName("rollbackOnFailure")]
-    public bool RollbackOnFailure { get; set; }
+    public bool RollbackOnFailure { get; set; } = true;
 
     /// <summary>
     /// Output format parameter.
@@ -445,11 +585,12 @@ public sealed class FeatureServerSyncCapabilities
     public bool SupportsPerReplicaSync { get; init; } = true;
 
     /// <summary>
-    /// Whether the <c>none</c> sync model (snapshot replicas that never sync back) is supported. Not
-    /// supported.
+    /// Whether the <c>none</c> sync model (snapshot replicas that never sync back) is supported. True:
+    /// createReplica with <c>syncModel=none</c> returns the scoped data without registering a replica
+    /// (#4018).
     /// </summary>
     [JsonPropertyName("supportsSyncModelNone")]
-    public bool SupportsSyncModelNone { get; init; }
+    public bool SupportsSyncModelNone { get; init; } = true;
 
     /// <summary>
     /// Whether uploaded edits can be applied atomically via <c>rollbackOnFailure</c>. True (#2136).
@@ -538,12 +679,30 @@ public sealed class SynchronizeReplicaResponse
     public int? AppliedDeletes { get; set; }
 
     /// <summary>
+    /// Per-layer results of the uploaded adds, returned when the request sets
+    /// <c>returnIdsForAdds=true</c>: each entry carries the layer <c>id</c> and an <c>addResults</c>
+    /// array index-aligned with that layer's uploaded adds, holding the server-assigned
+    /// <c>objectId</c> (and <c>globalId</c> when the layer has one). Clients use it to map local rows to
+    /// the rows the server created (#4016). Omitted otherwise.
+    /// </summary>
+    [JsonPropertyName("editResults")]
+    public ServiceLayerEditResult[]? EditResults { get; set; }
+
+    /// <summary>
     /// Conflicts detected while applying the uploaded edits, when any. A non-empty list does not by
     /// itself fail the sync under last-write-wins; durable conflict records are written for review
     /// when supported (#1287).
     /// </summary>
     [JsonPropertyName("conflicts")]
     public SynchronizeReplicaConflict[]? Conflicts { get; set; }
+
+    /// <summary>
+    /// True when the download backlog held more changes per layer than
+    /// <c>Limits:Replica:MaxChangesPerLayer</c>: <see cref="ServerGen"/> is the generation delivered
+    /// through, and the client repeats the download until this is omitted (#4019).
+    /// </summary>
+    [JsonPropertyName("exceededTransferLimit")]
+    public bool? ExceededTransferLimit { get; set; }
 }
 
 /// <summary>
@@ -669,4 +828,49 @@ public sealed class SuccessResponse
     /// </summary>
     [JsonPropertyName("success")]
     public bool Success { get; set; }
+}
+
+/// <summary>
+/// Data scope a replica was created with, persisted with the replica so every later synchronization
+/// delivers the same scope (#4018).
+/// </summary>
+internal sealed class ReplicaScopeDefinition
+{
+    /// <summary>Esri JSON filter geometry as supplied; features intersecting it are replicated.</summary>
+    [JsonPropertyName("geometry")]
+    public string? Geometry { get; set; }
+
+    /// <summary>Esri geometry type of <see cref="Geometry"/>.</summary>
+    [JsonPropertyName("geometryType")]
+    public string? GeometryType { get; set; }
+
+    /// <summary>Spatial reference of <see cref="Geometry"/>; null means each layer's stored SRID.</summary>
+    [JsonPropertyName("inSR")]
+    public int? InputSrid { get; set; }
+
+    /// <summary>Spatial reference replica geometries are delivered in; null keeps the stored SRID.</summary>
+    [JsonPropertyName("replicaSR")]
+    public int? OutputSrid { get; set; }
+
+    /// <summary>Per-layer query options keyed by layer id.</summary>
+    [JsonPropertyName("layerQueries")]
+    public Dictionary<string, ReplicaLayerQueryDefinition>? LayerQueries { get; set; }
+}
+
+/// <summary>
+/// One layer's Esri <c>layerQueries</c> entry.
+/// </summary>
+internal sealed class ReplicaLayerQueryDefinition
+{
+    /// <summary><c>none</c>, <c>all</c> or <c>useFilter</c>; null behaves as <c>useFilter</c>.</summary>
+    [JsonPropertyName("queryOption")]
+    public string? QueryOption { get; set; }
+
+    /// <summary>Where clause applied under <c>useFilter</c>.</summary>
+    [JsonPropertyName("where")]
+    public string? Where { get; set; }
+
+    /// <summary>Whether the replica geometry filters this layer under <c>useFilter</c>; null means true.</summary>
+    [JsonPropertyName("useGeometry")]
+    public bool? UseGeometry { get; set; }
 }

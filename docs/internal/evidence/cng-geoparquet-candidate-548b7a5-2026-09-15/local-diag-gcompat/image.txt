@@ -1,0 +1,3 @@
+image=sha256:50f2aa362dccb884929b617dcf69ddddd0d35148b74eee82557b99ad73e2ce1c
+revision=548b7a5263da5a3f2381eb43f232687cdf92b0bf
+architecture=amd64

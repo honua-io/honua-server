@@ -11,6 +11,7 @@ using Honua.Io.Export.Writers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.IO;
 using NetTopologySuite.IO.Esri;
+using NetTopologySuite.IO.Esri.Shapefiles.Readers;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
@@ -45,7 +46,10 @@ public sealed class ShapefileNullRoundtripTests
             output.Position = 0;
             using var zip = new ZipArchive(output, ZipArchiveMode.Read, leaveOpen: true);
             zip.ExtractToDirectory(scratch);
-            var roundtrip = Shapefile.ReadAllFeatures(Path.Join(scratch, "export.shp")).ToArray();
+            // NTS 1.2.0 mutates the DBF row count in its shared default options.
+            // Give each reader its own options so parallel exports cannot truncate readback.
+            var roundtrip = Shapefile.ReadAllFeatures(
+                Path.Join(scratch, "export.shp"), new ShapefileReaderOptions()).ToArray();
             Assert.Equal(source.Count, roundtrip.Length);
             var shapeBytes = await File.ReadAllBytesAsync(Path.Join(scratch, "export.shp"));
             var recordOffset = 100;

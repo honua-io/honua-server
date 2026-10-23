@@ -1,6 +1,7 @@
 {
   "nodes": [
     {
+      "index": 0,
       "lodThreshold": 0.0,
       "children": [1, 2],
       "obb": {
@@ -10,6 +11,7 @@
       }
     },
     {
+      "index": 1,
       "lodThreshold": 5.0,
       "parentIndex": 0,
       "obb": {
@@ -24,6 +26,7 @@
       }
     },
     {
+      "index": 2,
       "lodThreshold": 5.0,
       "parentIndex": 0,
       "obb": {

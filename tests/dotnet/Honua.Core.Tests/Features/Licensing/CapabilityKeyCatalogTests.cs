@@ -18,12 +18,14 @@ public sealed class CapabilityKeyCatalogTests
         "^[a-z0-9]+(-[a-z0-9]+)*\\.[a-z0-9]+(-[a-z0-9]+)*$",
         RegexOptions.Compiled);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CommunityKeys_IsNotEmpty()
     {
         CapabilityKeyCatalog.CommunityKeys.Should().NotBeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CommunityKeys_AllCarryCommunityEdition()
     {
@@ -33,6 +35,7 @@ public sealed class CapabilityKeyCatalogTests
             capability => capability.Edition == HonuaEdition.Community);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CommunityKeys_HaveUniqueKeys()
     {
@@ -40,6 +43,7 @@ public sealed class CapabilityKeyCatalogTests
             .Should().OnlyHaveUniqueItems();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CommunityKeys_DoNotOverlapFeatureCatalogKeys()
     {
@@ -51,6 +55,7 @@ public sealed class CapabilityKeyCatalogTests
         communityKeys.Should().NotContain(key => featureKeys.Contains(key));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(AllCommunityKeys))]
     public void CommunityKeys_FollowDotNamespacedLowercaseFormat(string key)
@@ -59,6 +64,7 @@ public sealed class CapabilityKeyCatalogTests
             $"capability key '{key}' must be dot-namespaced lowercase, e.g. 'editing.feature-edits'");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CommunityKeys_EachHasRequiredProperties()
     {
@@ -71,6 +77,7 @@ public sealed class CapabilityKeyCatalogTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_IsUnionOfCommunityLifecycleDescriptiveAndFeatureCatalogKeys()
     {
@@ -83,6 +90,7 @@ public sealed class CapabilityKeyCatalogTests
             - CapabilityKeyCatalog.RoutedPreviewKeys.Count);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DescriptiveKeys_AreEditionQualifiedWithoutMutatingFeatureCatalog()
     {
@@ -92,12 +100,14 @@ public sealed class CapabilityKeyCatalogTests
             ["provider.redshift", "provider.snowflake", "provider.databricks"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_HasUniqueKeys()
     {
         CapabilityKeyCatalog.All.Select(c => c.Key).Should().OnlyHaveUniqueItems();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_DoesNotMutateFeatureCatalog()
     {
@@ -108,6 +118,7 @@ public sealed class CapabilityKeyCatalogTests
         FeatureCatalog.All.Should().HaveCount(beforeCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_EveryProEnterpriseEntryMatchesItsFeatureCatalogSource()
     {
@@ -127,6 +138,7 @@ public sealed class CapabilityKeyCatalogTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DeployableKeys_ExcludesDescriptiveKeysButKeepsEverythingElse()
     {
@@ -139,6 +151,7 @@ public sealed class CapabilityKeyCatalogTests
             CapabilityKeyCatalog.All.Select(k => k.Key).Except(descriptive, StringComparer.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DeployableKeys_IncludesRoutedExperimentalKeys()
     {
@@ -147,6 +160,7 @@ public sealed class CapabilityKeyCatalogTests
                 && capability.Status == CapabilityKeyCatalog.ExperimentalStatus);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DescriptiveKeys_AreAllMarkedExperimental()
     {
@@ -156,6 +170,7 @@ public sealed class CapabilityKeyCatalogTests
             k => k.Status == CapabilityKeyCatalog.ExperimentalStatus);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CustomerAlertingKeys_AreAllMarkedPreview()
     {

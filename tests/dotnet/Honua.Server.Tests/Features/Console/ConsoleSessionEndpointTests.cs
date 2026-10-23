@@ -77,6 +77,9 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
         Assert.NotEmpty(envelope.Data.NavigationEntitlements);
         Assert.Contains("admin.rbac.write", envelope.Data.Capabilities);
         Assert.Contains(envelope.Data.NavigationEntitlements, e => e.RouteKey == "admin" && e.Allowed);
+        Assert.Equal(ConsolePersistenceNotice.InMemoryMode, envelope.Data.Persistence.Mode);
+        Assert.False(envelope.Data.Persistence.Durable);
+        Assert.False(envelope.Data.Persistence.SharedAcrossReplicas);
     }
 
     [IntegrationTest]

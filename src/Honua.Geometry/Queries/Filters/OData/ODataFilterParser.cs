@@ -23,7 +23,16 @@ public sealed class ODataFilterParser
     /// <param name="filter">The OData $filter string.</param>
     /// <returns>Parsed filter expression AST.</returns>
     /// <exception cref="ArgumentException">Thrown when parsing fails.</exception>
-    public FilterExpression Parse(string filter)
+    public FilterExpression Parse(string filter) => ParseCore(filter, requireBooleanPredicate: true);
+
+    /// <summary>
+    /// Parses one <c>$orderby</c> term. A bare property or arithmetic expression is a
+    /// sort key, so this does not apply the <c>$filter</c> boolean-predicate rule.
+    /// </summary>
+    public FilterExpression ParseOrderExpression(string expression) =>
+        ParseCore(expression, requireBooleanPredicate: false);
+
+    private FilterExpression ParseCore(string filter, bool requireBooleanPredicate)
     {
         if (string.IsNullOrWhiteSpace(filter))
         {
@@ -46,14 +55,30 @@ public sealed class ODataFilterParser
         // filter — the translator would otherwise silently coerce it into an unbounded
         // attribute lookup and return 200 with all features instead of rejecting the
         // request as malformed. Reject up-front for a clearer 400.
-        if (expression is PropertyReference || expression is Literal)
+        // $orderby sorts by the value itself, so a bare property stays valid there.
+        if (requireBooleanPredicate && expression is PropertyReference or Literal)
         {
             throw new ODataFilterParseException(
                 "$filter must be a boolean expression (e.g. 'field op value'); a bare property reference or literal is not valid.",
                 position: 0);
         }
 
+        EnsureWithinGuard(() => FilterParserGuard.EnsureExpressionTree(expression), position: 0);
         return expression;
+    }
+
+    // Surfaces shared guard failures as the parser's own exception type so every
+    // rejection from this parser carries a position and maps to the same response.
+    private static void EnsureWithinGuard(Action guard, int position)
+    {
+        try
+        {
+            guard();
+        }
+        catch (ArgumentException ex) when (ex is not ODataFilterParseException)
+        {
+            throw new ODataFilterParseException(ex.Message, position);
+        }
     }
 
     private FilterExpression ParseExpression()
@@ -62,9 +87,12 @@ public sealed class ODataFilterParser
     private FilterExpression ParseOrExpression()
     {
         var expression = ParseAndExpression();
+        var operands = 1;
 
         while (Match(ODataFilterTokenType.Or))
         {
+            var count = ++operands;
+            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), Previous().Position);
             var right = ParseAndExpression();
             expression = new BinaryExpression(expression, BinaryOperator.Or, right);
         }
@@ -75,9 +103,12 @@ public sealed class ODataFilterParser
     private FilterExpression ParseAndExpression()
     {
         var expression = ParseComparisonExpression();
+        var operands = 1;
 
         while (Match(ODataFilterTokenType.And))
         {
+            var count = ++operands;
+            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), Previous().Position);
             var right = ParseComparisonExpression();
             expression = new BinaryExpression(expression, BinaryOperator.And, right);
         }
@@ -166,7 +197,7 @@ public sealed class ODataFilterParser
             if (Match(ODataFilterTokenType.Not))
             {
                 var operand = ParseUnaryExpression();
-                return new UnaryExpression(UnaryOperator.Not, operand);
+                return RewriteNegatedComparison(operand);
             }
 
             if (Match(ODataFilterTokenType.Minus))
@@ -270,7 +301,13 @@ public sealed class ODataFilterParser
 
         if (Match(ODataFilterTokenType.StringLiteral))
         {
-            return new Literal(Previous().Value, LiteralType.Text);
+            // The lexer bounds every quoted token by the geometry text limit, because typed
+            // literals such as geography'...' share it; text literals get the tighter limit here.
+            var text = Previous();
+            EnsureWithinGuard(
+                () => FilterParserGuard.EnsureStringLiteralLength(text.Value.Length, "OData string literal"),
+                text.Position);
+            return new Literal(text.Value, LiteralType.Text);
         }
 
         if (Match(ODataFilterTokenType.Identifier))
@@ -322,6 +359,7 @@ public sealed class ODataFilterParser
             do
             {
                 args.Add(ParseExpression());
+                FilterParserGuard.EnsureValueListSize(args.Count, "OData function argument list");
             } while (Match(ODataFilterTokenType.Comma));
         }
 
@@ -337,6 +375,7 @@ public sealed class ODataFilterParser
         return name switch
         {
             "contains" => BuildContainsExpression(args, identifier),
+            "substringof" => BuildSubstringOfExpression(args, identifier),
             "startswith" => BuildStartsWithExpression(args, identifier),
             "endswith" => BuildEndsWithExpression(args, identifier),
             "substring" => BuildSubstringExpression(args, identifier),
@@ -358,11 +397,44 @@ public sealed class ODataFilterParser
             "hour" => BuildUnaryFunction("HOUR", args, identifier),
             "minute" => BuildUnaryFunction("MINUTE", args, identifier),
             "second" => BuildUnaryFunction("SECOND", args, identifier),
+            "fractionalseconds" => BuildUnaryFunction("FRACTIONALSECONDS", args, identifier),
+            "date" => BuildUnaryFunction("DATE", args, identifier),
+            "time" => BuildUnaryFunction("TIME", args, identifier),
+            "totaloffsetminutes" => BuildUnaryFunction("TOTALOFFSETMINUTES", args, identifier),
+            "mindatetime" => BuildZeroArgFunction("MINDATETIME", args, identifier),
+            "maxdatetime" => BuildZeroArgFunction("MAXDATETIME", args, identifier),
             "geo.distance" => BuildGeoDistanceExpression(args, identifier),
             "geo.length" => BuildGeoLengthExpression(args, identifier),
             "geo.intersects" => BuildGeoIntersectsExpression(args, identifier),
+            "st_equals" => BuildSpatialRelation(args, identifier, SpatialOperator.Equals),
+            "st_disjoint" => BuildSpatialRelation(args, identifier, SpatialOperator.Disjoint),
+            "st_touches" => BuildSpatialRelation(args, identifier, SpatialOperator.Touches),
+            "st_within" => BuildSpatialRelation(args, identifier, SpatialOperator.Within),
+            "st_overlaps" => BuildSpatialRelation(args, identifier, SpatialOperator.Overlaps),
+            "st_crosses" => BuildSpatialRelation(args, identifier, SpatialOperator.Crosses),
+            "st_intersects" => BuildSpatialRelation(args, identifier, SpatialOperator.Intersects),
+            "st_contains" => BuildSpatialRelation(args, identifier, SpatialOperator.Contains),
+            "st_relate" => BuildStaRelate(args, identifier),
             _ => throw new ODataFilterParseException($"Unsupported function '{identifier}'", Previous().Position)
         };
+    }
+
+    private static SpatialPredicate BuildSpatialRelation(IReadOnlyList<FilterExpression> args, string identifier, SpatialOperator op)
+    {
+        EnsureArgumentCount(identifier, args, 2);
+        return new SpatialPredicate(op, args[0], args[1]);
+    }
+
+    private static FunctionCall BuildStaRelate(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        EnsureArgumentCount(identifier, args, 3);
+        return new FunctionCall("ST_RELATE", args);
+    }
+
+    private static BinaryExpression BuildSubstringOfExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        EnsureArgumentCount(identifier, args, 2);
+        return BuildContainsExpression([args[1], args[0]], identifier);
     }
 
     private static BinaryExpression BuildContainsExpression(IReadOnlyList<FilterExpression> args, string identifier)
@@ -720,6 +792,115 @@ public sealed class ODataFilterParser
         return new BinaryExpression(start, BinaryOperator.Add, new Literal(1, LiteralType.Number));
     }
 
+    // `not (x eq v)` must match bare `x ne v`, including rows whose attribute is null.
+    // Relational comparisons are false with one null operand, so their negation
+    // keeps those rows. Inclusive comparisons are true when both operands are null.
+    // `in` uses the same equality as eq.
+    private static FilterExpression RewriteNegatedComparison(FilterExpression operand)
+    {
+        if (operand is not BinaryExpression binary)
+        {
+            return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+
+        switch (binary.Operator)
+        {
+            case BinaryOperator.Equal:
+                return BuildNullSafeNotEqual(binary.Left, binary.Right);
+            case BinaryOperator.GreaterThan:
+            case BinaryOperator.GreaterThanOrEqual:
+            case BinaryOperator.LessThan:
+            case BinaryOperator.LessThanOrEqual:
+                return BuildNullSafeNegatedRelational(binary);
+            case BinaryOperator.In:
+                return RewriteNegatedIn(binary);
+            case BinaryOperator.Or when IsNullSafeEquality(binary):
+                var equal = (BinaryExpression)binary.Left;
+                return BuildNullSafeNotEqual(equal.Left, equal.Right);
+            default:
+                return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+    }
+
+    private static bool IsNullSafeEquality(BinaryExpression or)
+    {
+        if (or.Left is not BinaryExpression equal || equal.Operator != BinaryOperator.Equal)
+        {
+            return false;
+        }
+
+        if (or.Right is not BinaryExpression bothNull || bothNull.Operator != BinaryOperator.And)
+        {
+            return false;
+        }
+
+        if (bothNull.Left is not UnaryExpression leftNull || leftNull.Operator != UnaryOperator.IsNull
+            || bothNull.Right is not UnaryExpression rightNull || rightNull.Operator != UnaryOperator.IsNull)
+        {
+            return false;
+        }
+
+        return ReferenceEquals(leftNull.Operand, equal.Left)
+            && ReferenceEquals(rightNull.Operand, equal.Right);
+    }
+
+    private static FilterExpression BuildNullSafeNegatedRelational(BinaryExpression comparison)
+    {
+        FilterExpression result = new UnaryExpression(UnaryOperator.Not, comparison);
+        if (!IsNonNullValue(comparison.Left))
+        {
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.Or,
+                new UnaryExpression(UnaryOperator.IsNull, comparison.Left));
+        }
+
+        if (!IsNonNullValue(comparison.Right))
+        {
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.Or,
+                new UnaryExpression(UnaryOperator.IsNull, comparison.Right));
+        }
+
+        if (comparison.Operator is BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThanOrEqual
+            && !IsNonNullValue(comparison.Left) && !IsNonNullValue(comparison.Right))
+        {
+            // OData ge/le include equality: null equals null, so their negation
+            // must exclude that row rather than accepting either IS NULL arm.
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.And,
+                new BinaryExpression(
+                    new UnaryExpression(UnaryOperator.IsNotNull, comparison.Left),
+                    BinaryOperator.Or,
+                    new UnaryExpression(UnaryOperator.IsNotNull, comparison.Right)));
+        }
+
+        return result;
+    }
+
+    private static FilterExpression RewriteNegatedIn(BinaryExpression membership)
+    {
+        if (membership.Right is not ValueList values || values.Values.Count == 0)
+        {
+            return new UnaryExpression(UnaryOperator.Not, membership);
+        }
+
+        FilterExpression? combined = null;
+        foreach (var value in values.Values)
+        {
+            FilterExpression term = value is Literal { Type: LiteralType.Null }
+                ? new UnaryExpression(UnaryOperator.IsNotNull, membership.Left)
+                : BuildNullSafeNotEqual(membership.Left, value);
+            combined = combined is null
+                ? term
+                : new BinaryExpression(combined, BinaryOperator.And, term);
+        }
+
+        return combined!;
+    }
+
     private static FilterExpression NormalizeComparison(FilterExpression left, BinaryOperator op, FilterExpression right, int position)
     {
         if (left is Literal { Type: LiteralType.Null } || right is Literal { Type: LiteralType.Null })
@@ -732,9 +913,20 @@ public sealed class ODataFilterParser
                     : new UnaryExpression(UnaryOperator.IsNotNull, operand);
             }
 
-            // OData v4.01 §5.1.1.1.3–5.1.1.1.6: if any operand of a relational
-            // operator (gt/ge/lt/le) is null, the operator returns false.
-            return new Literal(false, LiteralType.Boolean);
+            // OData v4.01 §5.1.1.1.4/.6 include equality: with a literal null,
+            // ge/le are true exactly when the other operand is also null.
+            if (op is BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThanOrEqual)
+            {
+                var operand = left is Literal { Type: LiteralType.Null } ? right : left;
+                return new UnaryExpression(UnaryOperator.IsNull, operand);
+            }
+
+            // Strict gt/lt are false whenever either operand is null. Keep the
+            // normalized result a predicate; bare literals are invalid $filter inputs.
+            return new BinaryExpression(
+                new Literal(0, LiteralType.Number),
+                BinaryOperator.Equal,
+                new Literal(1, LiteralType.Number));
         }
 
         // OData v4.01 eq/ne use two-valued logic where "the null value is equal to
@@ -782,7 +974,13 @@ public sealed class ODataFilterParser
             // false when both are null, plain '<>' when both are non-null.
             return new BinaryExpression(
                 new BinaryExpression(
-                    notEqual,
+                    new BinaryExpression(
+                        notEqual,
+                        BinaryOperator.And,
+                        new BinaryExpression(
+                            new UnaryExpression(UnaryOperator.IsNotNull, left),
+                            BinaryOperator.And,
+                            new UnaryExpression(UnaryOperator.IsNotNull, right))),
                     BinaryOperator.Or,
                     new BinaryExpression(
                         new UnaryExpression(UnaryOperator.IsNull, left),

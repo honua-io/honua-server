@@ -340,6 +340,10 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         int[]? bands = null;
         RasterBandArithmetic? bandArithmetic = null;
         RasterTerrainFunction? terrain = null;
+        // Set when a single-band terrain function sits inside an ExtractBand whose
+        // indexes have not yet been bound to a source selection. Those indexes
+        // address the terrain output, not the next inner ExtractBand.
+        string? singleBandConsumer = null;
         var current = document;
         for (var depth = 1; ; depth++)
         {
@@ -395,8 +399,41 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
                     return mapping;
                 }
 
-                // A later (outer) ExtractBand supersedes an inner one.
-                bands = mapping.Bands ?? bands;
+                // The walk visits the outer function first. Its BandIds are positions in
+                // the inner function's output, not a replacement source selection.
+                // A Hillshade, Slope, or Aspect between the two selections emits one
+                // band, so the outer indexes address that output and the inner
+                // selection stays the terrain function's input.
+                if (mapping.Bands is { } selected)
+                {
+                    if (bands is null)
+                    {
+                        bands = selected;
+                    }
+                    else if (singleBandConsumer is not null)
+                    {
+                        for (var i = 0; i < bands.Length; i++)
+                        {
+                            if (bands[i] != 1)
+                            {
+                                var index = (bands[i] - 1).ToString(CultureInfo.InvariantCulture);
+                                return RenderingRuleMapping.Invalid(
+                                    $"ExtractBand selection index {index} is outside the 1 band produced by the inner {singleBandConsumer}.");
+                            }
+                        }
+
+                        bands = selected;
+                        singleBandConsumer = null;
+                    }
+                    else if (!TryComposeExtractBandSelection(bands, selected, out var composed, out var reason))
+                    {
+                        return RenderingRuleMapping.Invalid(reason);
+                    }
+                    else
+                    {
+                        bands = composed;
+                    }
+                }
             }
             else if (string.Equals(current.RasterFunction, "BandArithmetic", StringComparison.OrdinalIgnoreCase))
             {
@@ -421,6 +458,10 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
                 // A later (outer) terrain function supersedes an inner one.
                 terrain = mapping.Terrain ?? terrain;
+                if (bands is not null)
+                {
+                    singleBandConsumer = current.RasterFunction;
+                }
             }
             else if (!string.Equals(current.RasterFunction, "Identity", StringComparison.OrdinalIgnoreCase))
             {
@@ -655,6 +696,33 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         return RenderingRuleMapping.Executable(null, null, null, bands.ToArray());
     }
 
+    // outerOneBasedIndexes addresses the inner selection. Index 1 is the first
+    // band that selection emits, which may itself be a reordered source band.
+    private static bool TryComposeExtractBandSelection(
+        int[] outerOneBasedIndexes,
+        int[] innerOneBasedBands,
+        out int[] composed,
+        out string reason)
+    {
+        composed = new int[outerOneBasedIndexes.Length];
+        for (var i = 0; i < outerOneBasedIndexes.Length; i++)
+        {
+            var position = outerOneBasedIndexes[i];
+            if (position < 1 || position > innerOneBasedBands.Length)
+            {
+                composed = [];
+                reason =
+                    $"ExtractBand selection index {(position - 1).ToString(CultureInfo.InvariantCulture)} is outside the {innerOneBasedBands.Length.ToString(CultureInfo.InvariantCulture)} band(s) produced by the inner ExtractBand.";
+                return false;
+            }
+
+            composed[i] = innerOneBasedBands[position - 1];
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
     private static bool TryGetBandIdsElement(Dictionary<string, object?> arguments, out JsonElement element)
     {
         element = default;
@@ -670,21 +738,22 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
     private static RenderingRuleMapping MapClipArguments(Dictionary<string, object?> arguments)
     {
-        // Clip masks the raster to an area of interest. esriClippingType controls which side
-        // is kept: 0 (default) keeps pixels inside the geometry; 1 ("clip inside / keep
-        // outside") removes pixels inside the geometry and keeps everything outside, executed
-        // by the raster store as an inverted clip (RasterClipRegion.Inverted).
+        // Esri esriRasterClippingType: 1 (esriRasterClippingOutside, the default) keeps
+        // pixels inside the geometry. 2 (esriRasterClippingInside) keeps pixels outside
+        // the geometry. ClipType is the same value under the alternate argument name.
+        // Any other value, including 0, is rejected.
         var inverted = false;
-        if (TryGetInt(arguments, "ClippingType", out var clippingType))
+        if (TryGetInt(arguments, "ClippingType", out var clippingType) ||
+            TryGetInt(arguments, "ClipType", out clippingType))
         {
-            if (clippingType == 1)
+            if (clippingType == 2)
             {
                 inverted = true;
             }
-            else if (clippingType != 0)
+            else if (clippingType != 1)
             {
-                return RenderingRuleMapping.NotImplemented(
-                    $"Clip ClippingType {clippingType.ToString(CultureInfo.InvariantCulture)} is not implemented. Supported: 0 (keep inside), 1 (keep outside).");
+                return RenderingRuleMapping.Invalid(
+                    $"Clip ClippingType {clippingType.ToString(CultureInfo.InvariantCulture)} is not a valid esriRasterClippingType. Supported: 1 (keep inside), 2 (keep outside).");
             }
         }
 

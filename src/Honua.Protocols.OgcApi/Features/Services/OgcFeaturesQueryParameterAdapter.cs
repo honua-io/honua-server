@@ -79,9 +79,15 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
     {
         try
         {
+            var allowedCoreFields = SortByCoreFields.Except(resource.SchemaFields
+                .Where(field => field.Hidden).Select(field => field.Name));
+            var visibleResource = resource with
+            {
+                SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
+            };
             var filterResult = await _filterProcessor.ProcessFiltersAsync(
                 parameters.Request,
-                resource,
+                visibleResource,
                 parameters.Filter,
                 parameters.Bbox,
                 parameters.Datetime,
@@ -114,12 +120,12 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
                 return QueryAdapterResult.Failure(idsError ?? "Invalid ids parameter.");
             }
 
-            if (!TryParseProperties(parameters.Properties, resource, out var selectedProperties, out var propertiesError))
+            if (!TryParseProperties(parameters.Properties, visibleResource, out var selectedProperties, out var propertiesError))
             {
                 return QueryAdapterResult.Failure(propertiesError ?? "Invalid properties parameter.");
             }
 
-            if (!TryParseSortBy(parameters.Sortby, resource, out var orderBy, out var sortByError))
+            if (!TryParseSortBy(parameters.Sortby, visibleResource, allowedCoreFields, out var orderBy, out var sortByError))
             {
                 return QueryAdapterResult.Failure(sortByError ?? "Invalid sortby parameter.");
             }
@@ -233,6 +239,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
     private static bool TryParseSortBy(
         string? rawSortBy,
         MetadataV2Resource resource,
+        IReadOnlySet<string> allowedCoreFields,
         out ImmutableArray<OrderByClause>? orderBy,
         out string? error)
     {
@@ -294,7 +301,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             orderBy = OrderByParsing.ParseFeatureServerOrderBy(
                 string.Join(",", normalized),
                 resource,
-                SortByCoreFields);
+                allowedCoreFields);
             return true;
         }
         catch (InvalidOperationException ex)

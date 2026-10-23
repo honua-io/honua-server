@@ -317,9 +317,10 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     //
     // Both tests model the finding's principal exactly: Process.Execute is held, but the
     // caller has NO layer-read grant, so the coarse AccessPolicy decides the read. The
-    // default InMemoryRoleStore seeds `admin` with a wildcard `*:*:*` grant that would
-    // authorize every layer regardless of policy, so it is replaced with a store that
-    // grants only `process:*:execute` — otherwise the test would pass vacuously.
+    // default InMemoryRoleStore seeds `admin` with a wildcard `*:*:*` grant. That grant
+    // still allows a layer with no role list, so the store is replaced with one that
+    // grants only `process:*:execute`. An explicit role list is not skipped by the
+    // wildcard (#6358); the replacement keeps the accepted control on the coarse policy.
     //
     // Each test submits the SAME request twice against the same fixture — once with the
     // seed policy (accepted) and once with the layer restricted to a role the caller does
@@ -454,11 +455,10 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
 
     /// <summary>
     /// Replaces the default role store — whose seeded <c>admin</c> role carries a wildcard
-    /// <c>*:*:*</c> grant that authorizes every layer read regardless of the layer's
-    /// <see cref="AccessPolicy"/> — with one granting only <c>process:*:execute</c>. That
-    /// leaves the caller with process-execution authority and NO layer-read grant, which is
-    /// precisely the principal the finding describes; layer reads then fall through to the
-    /// coarse access policy.
+    /// <c>*:*:*</c> grant — with one granting only <c>process:*:execute</c>. That leaves the
+    /// caller with process-execution authority and NO layer-read grant, so layer reads fall
+    /// through to the coarse access policy. An explicit role list is not skipped by a
+    /// built-in wildcard grant (#6358).
     /// </summary>
     private static void SeedProcessExecuteOnlyRole(IServiceCollection services)
     {

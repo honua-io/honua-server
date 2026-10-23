@@ -59,7 +59,16 @@ public sealed record SpatialDistancePredicate(
     SpatialOperator Operator,
     FilterExpression Left,
     FilterExpression Right,
-    FilterExpression Distance) : FilterExpression;
+    FilterExpression Distance) : FilterExpression
+{
+    /// <summary>
+    /// True when the parser normalised <see cref="Distance"/> to metres from an explicit unit of
+    /// measure (FES <c>uom</c>, NL query units). A planar translator over a projected CRS must
+    /// convert it to the CRS's native unit. False means the value is unitless and is read in the
+    /// layer's own unit on planar paths (metres on geodesic paths), the historical behavior.
+    /// </summary>
+    public bool DistanceInMeters { get; init; }
+}
 
 /// <summary>
 /// Temporal predicate: AFTER, BEFORE, INTERSECTS, etc.

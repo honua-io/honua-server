@@ -521,12 +521,15 @@ internal static class FileUploadSecurity
     /// </summary>
     private static bool IsTextFile(string extension)
     {
-        var textExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        // Script-substring scanning is only meaningful for types a browser would
+        // execute. Data imports (.csv, .json, .kml, .geojson, …) routinely contain
+        // those substrings as attribute text.
+        var executableExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            ".txt", ".csv", ".tsv", ".json", ".xml", ".kml", ".gml", ".gpx", ".prj"
+            ".html", ".htm", ".svg", ".js", ".mjs", ".xhtml", ".shtml", ".hta"
         };
 
-        return textExtensions.Contains(extension);
+        return executableExtensions.Contains(extension);
     }
 
     private static string GetBaseFileName(string fileName)

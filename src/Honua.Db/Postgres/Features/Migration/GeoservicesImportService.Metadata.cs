@@ -65,7 +65,8 @@ internal sealed partial class GeoservicesImportService
     {
         var wkid = GetOptionalIntProperty(spatialReference, "wkid");
         var latestWkid = GetOptionalIntProperty(spatialReference, "latestWkid");
-        var wkt = GetOptionalStringProperty(spatialReference, "wkt");
+        var wkt = GetOptionalStringProperty(spatialReference, "wkt")
+            ?? GetOptionalStringProperty(spatialReference, "latestWkt");
         var sourceValue = BuildArcGisSourceValue(wkid, latestWkid, wkt);
         var normalizedSrid = latestWkid ?? NormalizeArcGisWkid(wkid);
         var allowFallbackCrsUri = latestWkid.HasValue || IsKnownArcGisAlias(wkid);
@@ -87,19 +88,15 @@ internal sealed partial class GeoservicesImportService
         GeoservicesCredentialDescriptor? credentials,
         CancellationToken cancellationToken)
     {
-        using var countDocument = await _restClient.GetJsonDocumentAsync(
-            $"{normalizedUrl}/{resourceId}/query?where=1%3D1&returnCountOnly=true&f=json",
-            ResiliencePolicyOptions.Default.MaxRetryAttempts,
+        var count = await _restClient.QueryFeatureCountAsync(
+            normalizedUrl,
+            resourceId,
+            whereClause: null,
             timeoutSeconds,
-            credentials,
-            cancellationToken).ConfigureAwait(false);
-
-        if (TryReadArcGisError(countDocument.RootElement, out _, out _))
-        {
-            return null;
-        }
-
-        return GetOptionalIntProperty(countDocument.RootElement, "count");
+            ResiliencePolicyOptions.Default.MaxRetryAttempts,
+            cancellationToken,
+            credentials).ConfigureAwait(false);
+        return checked((int)count);
     }
 
     private static MigrationInventoryField[] ExtractFieldMetadata(JsonElement resourceElement, out string[] warnings)

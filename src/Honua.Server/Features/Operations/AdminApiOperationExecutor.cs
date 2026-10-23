@@ -12,7 +12,7 @@ using Honua.Infrastructure.Authentication;
 namespace Honua.Server.Features.Operations;
 
 /// <summary>Thin executor that binds an operation to its existing authenticated Admin REST route.</summary>
-internal sealed class AdminApiOperationExecutor : IOperationExecutor
+internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperationDryRunExecutor
 {
     public const string HttpClientName = "admin-operation-loopback";
     private readonly AdminApiOperationCatalog.Definition _definition;
@@ -80,6 +80,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
             Query = query is { Length: > 0 } ? string.Join('&', query) : string.Empty
         }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
+        message.Headers.Host = current.Request.Host.Value;
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))

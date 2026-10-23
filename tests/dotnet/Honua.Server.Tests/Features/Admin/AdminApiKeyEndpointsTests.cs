@@ -348,6 +348,73 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial()
+    {
+        // Rotation preserves ExpiresAt, so a "successful" rotation of an expired key would
+        // hand back a credential authentication rejects on the very next request.
+        var created = await CreateApiKeyAsync("expired-rotate-key", expiresAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+        Assert.Equal("expired", created.ApiKey.Status);
+
+        var rotate = await _client.PostAsync($"/api/v1/admin/api-keys/{created.ApiKey.Id}/rotate", content: null);
+
+        Assert.Equal(HttpStatusCode.NotFound, rotate.StatusCode);
+        var effective = await _client.GetFromJsonAsync<ApiResponse<AdminApiKeyEffectivePermissionsResponse>>(
+            $"/api/v1/admin/api-keys/{created.ApiKey.Id}/effective-permissions", _jsonOptions);
+        Assert.NotNull(effective);
+        Assert.NotNull(effective.Data);
+        Assert.Equal("expired", effective.Data.Status);
+        Assert.False(effective.Data.CanAuthenticate);
+
+        using var expiredClient = CreateApiKeyClient(created.Key);
+        var denied = await expiredClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task CreateApiKey_WithReadWildcardGrants_RoundTripsThroughEffectivePermissions()
+    {
+        string[] grants = ["admin:read", "admin:write", "read:*", "read:catalog/*"];
+        var created = await CreateApiKeyAsync("agent-read-wildcard-key", permissions: grants);
+        Assert.Equal(grants, created.ApiKey.Permissions);
+
+        var response = await _client.GetAsync($"/api/v1/admin/api-keys/{created.ApiKey.Id}/effective-permissions");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var effective = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyEffectivePermissionsResponse>>(
+            await response.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        Assert.NotNull(effective);
+        Assert.NotNull(effective.Data);
+        Assert.True(effective.Data.CanAuthenticate);
+        Assert.Equal(grants, effective.Data.Permissions);
+
+        using var agentClient = CreateApiKeyClient(created.Key);
+        var adminRead = await agentClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.OK, adminRead.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithMalformedResourceGrant_ReturnsBadRequest()
+    {
+        foreach (var grant in new[] { "read:", "read:*/roads", "read:catalog/", "write:*", "write:catalog/*", "execute:catalog", "execute:catalog/*", "execute:*/geometry.area", "execute:catalog/geometry.area/extra" })
+        {
+            var response = await _client.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest { Name = "malformed-grant-key", Permissions = ["admin:read", grant] },
+                _jsonOptions);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("read:*", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
         string name,
         DateTimeOffset? expiresAt = null,

@@ -1,0 +1,67 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/maplibre-gl-js/ogc-api-maps/serve.ogc-api-maps",
+  "canonical_client": "MapLibre GL JS",
+  "client_lane": "js-maplibre",
+  "client_version": "5.7",
+  "client_version_detail": "maplibre-gl@5.7.3",
+  "surface": "ogc-api-maps",
+  "operation": "serve.ogc-api-maps",
+  "protocol_version": "OGC API - Maps 1.0",
+  "protocol_profile": "core+collection-map+crs",
+  "started_at": "2026-09-21T10:00:06.945676Z",
+  "finished_at": "2026-09-21T10:00:11.820712Z",
+  "duration_ms": 4875,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 5 checks passed across 5 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/maps/collections/2000/map",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "EPSG:3857 bbox maps tiled through a raster source",
+      "outcome": "pass",
+      "detail": "painted 72 px around pt-alpha; {\"idle\": true, \"errors\": [], \"responses\": 10, \"status_types\": [[200, \"image/png\"], [200, \"text/javascript\"]]}",
+      "request_url": null,
+      "duration_ms": 531
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown collection map surfaces as a MapLibre error",
+      "outcome": "pass",
+      "detail": "responses [404]; nothing rendered; MapLibre error statuses []",
+      "request_url": null,
+      "duration_ms": 374
+    },
+    {
+      "facet": "auth",
+      "name": "transformRequest credentials gate the protected collection map",
+      "outcome": "pass",
+      "detail": "(painted, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (65, [200]), 'oidc-bearer': (65, [200])}",
+      "request_url": null,
+      "duration_ms": 2136
+    },
+    {
+      "facet": "crs-axis",
+      "name": "EPSG:3857 content lands on pt-alpha's projected pixel and nowhere empty",
+      "outcome": "pass",
+      "detail": "painted pixels around pt-alpha 72; around empty sea 0",
+      "request_url": null,
+      "duration_ms": 879
+    },
+    {
+      "facet": "media-schema",
+      "name": "responses decode as image/png",
+      "outcome": "pass",
+      "detail": "['image/png']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 9, \"status_types\": [[200, \"image/png\"]]}",
+      "request_url": null,
+      "duration_ms": 395
+    }
+  ]
+}

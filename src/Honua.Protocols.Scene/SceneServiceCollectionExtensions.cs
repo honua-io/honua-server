@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Infrastructure.Scene;
+using Honua.Scene.Assets;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.Scene;
@@ -43,6 +44,7 @@ internal static class SceneServiceCollectionExtensions
             .Bind(configuration.GetSection(SceneAccessSigningOptions.SectionName));
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<II3sSceneResourceProvider, HostedI3sSceneResourceProvider>();
         services.TryAddSingleton<ISceneAccessEnvelopeService, SceneAccessEnvelopeService>();
 
         return services;

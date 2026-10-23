@@ -14,6 +14,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.IO;
 
@@ -42,6 +43,8 @@ internal static class AlertAdminEndpoints
             // Customer alerting is Preview in 2026.1 and gated off by default
             // (404 with the stable experimental-disabled reason until explicitly opted in).
             .WithCapabilityGate("alerts.geofence")
+            .AddEndpointFilter<AlertAdminIsolationFilter>()
+            .AddEndpointFilter(ExecuteAuditedMutationAsync)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Alerts")
@@ -87,14 +90,22 @@ internal static class AlertAdminEndpoints
             // IAlertEditionPolicy instead of a boot-time gate.
             .AddEndpointFilter((invocationContext, next) =>
             {
-                var gate = LicenseGate.RequireEntitlement(
-                    invocationContext.HttpContext,
-                    FeatureCatalog.AlertsEvaluationKey,
-                    "Alert rule evaluation");
+                var context = invocationContext.HttpContext;
+                var decision = LicenseGate.CheckEntitlement(
+                    context.RequestServices,
+                    FeatureCatalog.AlertsEvaluationKey);
+                if (decision.IsActive)
+                {
+                    return next(invocationContext);
+                }
 
-                return gate is null
-                    ? next(invocationContext)
-                    : ValueTask.FromResult<object?>(gate);
+                // Expired paid licenses keep RequiredEdition but replace the catalog sentence
+                // with a renewal sentence. Name the edition here so the 402 still says which
+                // tier the evaluation engine needs.
+                return ValueTask.FromResult<object?>(StandardErrorHelpers.CreatePaymentRequired(
+                    context,
+                    AppendExpiredEdition(decision, FeatureCatalog.AlertsEvaluationKey, decision.UpgradeMessage),
+                    [$"entitlement: {FeatureCatalog.AlertsEvaluationKey}"]));
             });
 
         group.MapPut("/rules/{ruleId:long}", HandleUpdateRule)
@@ -123,6 +134,11 @@ internal static class AlertAdminEndpoints
         [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            return BadRequest("An explicit serviceId is required to list alert zones.");
+        }
+
         var zones = await store.ListZonesAsync(serviceId, cancellationToken).ConfigureAwait(false);
         var payload = zones.Select(MapZoneResponse).ToArray();
         return Results.Json(ApiResponse<AlertZoneResponse[]>.CreateSuccess(payload), AlertAdminJsonContext.Default.ApiResponseAlertZoneResponseArray);
@@ -217,6 +233,11 @@ internal static class AlertAdminEndpoints
         [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            return BadRequest("An explicit serviceId is required to list alert rules.");
+        }
+
         var rules = await store.ListRulesAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
         var payload = rules.Select(MapRuleResponse).ToArray();
         return Results.Json(ApiResponse<AlertRuleResponse[]>.CreateSuccess(payload), AlertAdminJsonContext.Default.ApiResponseAlertRuleResponseArray);
@@ -625,8 +646,12 @@ internal static class AlertAdminEndpoints
     /// #2998: license-entitlement gate for alert-rule mutations. Collects every
     /// <c>alerts.*</c>/<c>channels.*</c> entitlement the rule requires but the active license does
     /// not carry, and returns the standard 402 payment-required response naming each missing key
-    /// (one <c>entitlement: {key}</c> detail per key, mirroring <c>LicenseGate.RequireEntitlement</c>)
-    /// so the block is observable as an entitlement denial. Returns null when nothing is missing.
+    /// (one <c>entitlement: {key}</c> detail per key) and that key's required edition in the same
+    /// upgrade sentence <c>LicenseGate</c> / <c>FileBackedLicenseService</c> use
+    /// (<c>requires an active {edition} entitlement</c>). An expired or otherwise invalid paid
+    /// license keeps <c>RequiredEdition</c> while <see cref="LicenseGate.CheckEntitlement"/>
+    /// replaces the catalog upgrade sentence, so that 402 also names the required edition.
+    /// Returns null when nothing is missing.
     /// </summary>
     /// <remarks>
     /// Only <see cref="AlertEditionDenialReason.MissingEntitlement"/> produces the 402. A denial
@@ -686,10 +711,71 @@ internal static class AlertAdminEndpoints
             return null;
         }
 
+        var messages = new string[deniedKeys.Count];
+        for (var i = 0; i < deniedKeys.Count; i++)
+        {
+            messages[i] = DescribeMissingEntitlement(context, deniedKeys[i]);
+        }
+
         return StandardErrorHelpers.CreatePaymentRequired(
             context,
-            "The active license does not include the entitlements this alert rule requires.",
+            string.Join(' ', messages),
             deniedKeys.Select(key => $"entitlement: {key}").ToArray());
+    }
+
+    /// <summary>
+    /// Upgrade sentence for one denied alert or channel key. Prefers the live
+    /// <see cref="LicenseGate"/> decision so the wording stays identical to every other
+    /// entitlement 402, and falls back to the catalog edition when that decision has no message.
+    /// An invalid paid license keeps <see cref="LicenseEntitlementDecision.RequiredEdition"/>
+    /// while the renewal sentence omits it, so that edition is appended.
+    /// </summary>
+    private static string DescribeMissingEntitlement(HttpContext context, string entitlementKey)
+    {
+        var decision = LicenseGate.CheckEntitlement(context.RequestServices, entitlementKey);
+        if (!string.IsNullOrWhiteSpace(decision.UpgradeMessage))
+        {
+            return AppendExpiredEdition(decision, entitlementKey, decision.UpgradeMessage);
+        }
+
+        var feature = FeatureCatalog.All.FirstOrDefault(item =>
+            string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
+        var requiredEdition = (decision.RequiredEdition ?? feature?.MinimumEdition)?.ToString() ?? "paid";
+        var featureName = feature?.DisplayName ?? entitlementKey;
+        return AppendExpiredEdition(
+            decision,
+            entitlementKey,
+            $"{featureName} requires an active {requiredEdition} entitlement. " +
+            $"Current edition is {decision.Edition}; install a license that includes '{entitlementKey}'.");
+    }
+
+    /// <summary>
+    /// Adds the required-edition sentence when an invalid paid license's message does not
+    /// already name it. Valid licenses and Community keep the message unchanged.
+    /// </summary>
+    private static string AppendExpiredEdition(
+        LicenseEntitlementDecision decision,
+        string entitlementKey,
+        string message)
+    {
+        if (decision.Edition <= HonuaEdition.Community
+            || decision.ValidationState == LicenseValidationState.Valid
+            || decision.RequiredEdition is not { } required)
+        {
+            return message;
+        }
+
+        var edition = required.ToString();
+        if (message.Contains(edition, StringComparison.Ordinal))
+        {
+            return message;
+        }
+
+        var feature = FeatureCatalog.All.FirstOrDefault(item =>
+            string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
+        var featureName = feature?.DisplayName ?? entitlementKey;
+        var sentence = $"{featureName} requires an active {edition} entitlement.";
+        return string.IsNullOrWhiteSpace(message) ? sentence : $"{message} {sentence}";
     }
 
     /// <summary>
@@ -1330,7 +1416,7 @@ internal static class AlertAdminEndpoints
             cancellationToken);
     }
 
-    private static Task<string?> RecordAuditAsync(
+    private static async Task<string?> RecordAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         string resourceType,
@@ -1339,15 +1425,13 @@ internal static class AlertAdminEndpoints
         AlertAdminAuditDetails details,
         CancellationToken cancellationToken)
     {
-        var actor = ResolveActor(context);
+        var actor = AuditContextResolver.ResolveActor(context, out var actorType);
         var auditEvent = new AuditEvent
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = AuditEventType.ConfigChange,
             Actor = actor,
-            ActorType = string.Equals(actor, AuditEvent.AnonymousActor, StringComparison.Ordinal)
-                ? AuditActorType.Anonymous
-                : AuditActorType.UserId,
+            ActorType = actorType,
             ResourceType = resourceType,
             ResourceId = resourceId,
             Action = action,
@@ -1356,13 +1440,49 @@ internal static class AlertAdminEndpoints
             Details = JsonSerializer.Serialize(details, AlertAdminJsonContext.Default.AlertAdminAuditDetails)
         };
 
-        return auditLog.RecordAsync(auditEvent, cancellationToken);
+        var identity = await auditLog.RecordAsync(auditEvent, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(identity))
+        {
+            throw new AlertAuditUnavailableException();
+        }
+
+        return identity;
     }
 
-    private static string ResolveActor(HttpContext context)
+    private static async ValueTask<object?> ExecuteAuditedMutationAsync(
+        EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
     {
-        return context.User?.Identity?.Name ?? AuditEvent.AnonymousActor;
+        var context = invocation.HttpContext;
+        if (HttpMethods.IsGet(context.Request.Method) ||
+            context.Request.Path.Value?.TrimEnd('/').EndsWith("/rules/test", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return await next(invocation).ConfigureAwait(false);
+        }
+
+        var audit = context.RequestServices.GetRequiredService<IAuditLog>();
+        if (!audit.IsPersisted)
+        {
+            return AuditUnavailable();
+        }
+
+        var executor = context.RequestServices.GetRequiredService<IAlertMutationExecutor>();
+        try
+        {
+            return await executor.ExecuteAsync(() => next(invocation),
+                static result => result is IStatusCodeHttpResult { StatusCode: null or < 400 },
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (AlertAuditUnavailableException)
+        {
+            return AuditUnavailable();
+        }
     }
+
+    private static IResult AuditUnavailable() => ProblemDetailsHelpers.CreateAdminProblem(
+        StatusCodes.Status503ServiceUnavailable, "Service Unavailable",
+        "The alert mutation could not be committed with durable audit evidence. Retry when the audit store is available.");
+
+    private sealed class AlertAuditUnavailableException : Exception;
 
     private static IResult BadRequest(string message)
     {

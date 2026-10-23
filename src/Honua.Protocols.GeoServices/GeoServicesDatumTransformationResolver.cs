@@ -40,6 +40,11 @@ internal static class GeoServicesDatumTransformationResolver
     /// <param name="errorMessage">
     /// On failure, an Esri-style error message describing why the request was rejected.
     /// </param>
+    /// <param name="envelope">
+    /// Optional longitude/latitude envelope. When set, the catalog picks the single
+    /// area of use that contains it. No match, or more than one match, leaves the
+    /// pipeline unset instead of using the CONUS default.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> when resolution succeeds (including the no-transformation
     /// case); <see langword="false"/> with <paramref name="errorMessage"/> set when the
@@ -51,7 +56,8 @@ internal static class GeoServicesDatumTransformationResolver
         int fromSrid,
         int toSrid,
         out DatumTransformationSelection? selection,
-        [NotNullWhen(false)] out string? errorMessage)
+        [NotNullWhen(false)] out string? errorMessage,
+        DatumAreaEnvelope? envelope = null)
         => TryResolveWithDirection(
             catalog,
             datumTransformationValue,
@@ -59,7 +65,8 @@ internal static class GeoServicesDatumTransformationResolver
             fromSrid,
             toSrid,
             out selection,
-            out errorMessage);
+            out errorMessage,
+            envelope);
 
     /// <summary>
     /// Resolves a transformation with an optional Geometry Service top-level
@@ -72,7 +79,8 @@ internal static class GeoServicesDatumTransformationResolver
         int fromSrid,
         int toSrid,
         out DatumTransformationSelection? selection,
-        [NotNullWhen(false)] out string? errorMessage)
+        [NotNullWhen(false)] out string? errorMessage,
+        DatumAreaEnvelope? envelope = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
 
@@ -134,9 +142,24 @@ internal static class GeoServicesDatumTransformationResolver
             return true;
         }
 
-        // No client choice: apply the Esri default for the pair when one exists.
-        // When no curated default exists, leave selection null so PROJ uses its default
-        // pipeline (correct for identity/no-shift pairs).
+        // No client choice. An envelope selects the single grid whose area contains it.
+        // No match, or more than one match, leaves the pipeline unset so PROJ's
+        // 2-argument transform is used instead of the CONUS default.
+        if (envelope is { } area)
+        {
+            if (catalog.TryGetForEnvelope(fromSrid, toSrid, area.West, area.South, area.East, area.North, out var areaSelection))
+            {
+                selection = areaSelection;
+            }
+            else if (!catalog.HasAreaOfUse(fromSrid, toSrid)
+                && catalog.TryGetDefault(fromSrid, toSrid, out var fallback))
+            {
+                selection = fallback;
+            }
+
+            return true;
+        }
+
         if (catalog.TryGetDefault(fromSrid, toSrid, out var defaultSelection))
         {
             selection = defaultSelection;

@@ -31,7 +31,11 @@ internal sealed class ExecutionJobCancellationTokens : IJobCancellationNotifier
     /// </summary>
     public CancellationTokenSource CreateLinkedTokenSource(string jobId, string claimHandle, params CancellationToken[] linkedTokens)
     {
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
+        // CreateLinkedTokenSource rejects an empty token list. Callers that only need the
+        // tracked source, with no host or timeout token, still have to be able to register one.
+        var cts = linkedTokens is { Length: > 0 }
+            ? CancellationTokenSource.CreateLinkedTokenSource(linkedTokens)
+            : new CancellationTokenSource();
         var newEntry = new CancellationEntry(cts, claimHandle);
         _tokens.AddOrUpdate(jobId, newEntry, (_, existing) =>
         {

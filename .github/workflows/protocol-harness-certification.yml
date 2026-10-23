@@ -1,4 +1,5 @@
 name: Protocol harness certification
+run-name: ${{ inputs.nightly_dispatch_id && format('Protocol harness certification [{0}]', inputs.nightly_dispatch_id) || 'Protocol harness certification' }}
 
 on:
   schedule:
@@ -17,6 +18,14 @@ on:
         description: Candidate cut timestamp; blank uses the candidate commit timestamp
         required: false
         type: string
+      nightly_dispatch_id:
+        description: Exact nightly orchestration identity; requires governed context
+        required: false
+        type: string
+      requirements_context:
+        description: Closed producer context JSON, at most 60000 UTF-8 bytes; required for certification
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -30,11 +39,37 @@ jobs:
   certify:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      NIGHTLY_DISPATCH_ID: ${{ inputs.nightly_dispatch_id }}
     steps:
       - name: Check out producer contract
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: producer
+
+      - name: Resolve certification context availability
+        id: context
+        env:
+          REQUIREMENTS_CONTEXT: ${{ inputs.requirements_context }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          raw = os.environ.get('REQUIREMENTS_CONTEXT', '')
+          requested = bool(os.environ.get('NIGHTLY_DISPATCH_ID'))
+          if requested != bool(raw.strip()):
+              raise SystemExit('Certification requires both nightly_dispatch_id and requirements_context')
+          if len(raw.encode('utf-8')) > 60000:
+              raise SystemExit('requirements_context exceeds 60000 UTF-8 bytes')
+          path = Path(os.environ['RUNNER_TEMP']) / 'protocol-harness-context.json'
+          if requested:
+              json.loads(raw)
+              path.write_text(raw, encoding='utf-8')
+          else:
+              print('Runtime tests only: no governed context supplied; no certification fragment will be emitted.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'enabled={str(requested).lower()}\npath={path}\n')
+          PY
 
       - name: Resolve candidate identity
         id: identity
@@ -50,24 +85,25 @@ jobs:
             echo "source-host certification requires candidate and producer SHAs to be identical" >&2
             exit 1
           }
-          normalized_cut=""
+          validated_cut=""
           if [[ -n "${REQUESTED_CUT}" ]]; then
             [[ ! "${REQUESTED_CUT}" =~ [[:cntrl:]] ]] || {
               echo "candidate cut must be a single-line timestamp" >&2
               exit 1
             }
-            normalized_cut="$(python3 -c '
+            validated_cut="$(python3 -c '
           from datetime import datetime
           import sys
           value = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
           if value.tzinfo is None:
               raise SystemExit("candidate cut must include a timezone")
-          print(value.isoformat().replace("+00:00", "Z"))
+          # The context and receipt bind the supplied representation exactly.
+          print(sys.argv[1])
           ' "${REQUESTED_CUT}")"
           fi
           echo "producer_sha=${producer_sha}" >> "$GITHUB_OUTPUT"
           echo "candidate_sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
-          echo "requested_cut=${normalized_cut}" >> "$GITHUB_OUTPUT"
+          echo "requested_cut=${validated_cut}" >> "$GITHUB_OUTPUT"
 
       - name: Set up .NET
         # NOT routed through ./.github/actions/setup-dotnet-ci: this job checks the
@@ -140,6 +176,18 @@ jobs:
           [[ "${image_digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "invalid resolved image digest" >&2; exit 1; }
           echo "digest=${image_digest}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate exact governed context before test execution
+        if: steps.context.outputs.enabled == 'true'
+        run: |
+          python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
+            --contract producer/docs/gis/data/protocol-harness-assignments.v1.json \
+            --requirements-context "${{ steps.context.outputs.path }}" \
+            --source-sha "${{ steps.identity.outputs.candidate_sha }}" \
+            --producer-source-sha "${{ steps.identity.outputs.producer_sha }}" \
+            --image-digest "${{ steps.image.outputs.digest }}" \
+            --candidate-cut-at "${{ steps.identity.outputs.requested_cut }}" \
+            --validate-context
+
       - name: Execute exact governed test roster
         id: tests
         env:
@@ -187,10 +235,12 @@ jobs:
           exit 0
 
       - name: Generate closed certification fragment
+        if: steps.context.outputs.enabled == 'true'
         run: |
           generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
             --contract producer/docs/gis/data/protocol-harness-assignments.v1.json \
+            --requirements-context "${{ steps.context.outputs.path }}" \
             --trx evidence/geoservices.trx --trx-exit-code "${{ steps.tests.outputs.exit_geoservices }}" \
             --trx evidence/ogcapi.trx --trx-exit-code "${{ steps.tests.outputs.exit_ogcapi }}" \
             --trx evidence/ogcclassic.trx --trx-exit-code "${{ steps.tests.outputs.exit_ogcclassic }}" \
@@ -205,10 +255,11 @@ jobs:
             --generated-at "${generated_at}" \
             --output evidence/protocol-certification-fragment.json
 
-      - name: Upload immutable producer fragment
+      - name: Retain runtime results and optional certification fragment
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: server-protocol-harness-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.context.outputs.enabled == 'true' && format('server-protocol-harness-{0}-{1}', github.run_id, github.run_attempt) || format('server-protocol-harness-runtime-{0}-{1}', github.run_id, github.run_attempt) }}
           path: |
             evidence/protocol-certification-fragment.json
             evidence/*.trx

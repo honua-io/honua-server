@@ -65,6 +65,16 @@ on:
         required: false
         type: string
         default: ''
+      release-suite-id:
+        description: 'Release suite identity; retain containers and publish an exact image receipt when set'
+        required: false
+        type: string
+        default: ''
+      release-compose-file:
+        description: 'Compose file whose honua-server container supplied the release suite results'
+        required: false
+        type: string
+        default: ''
       tested-honua-git-sha:
         description: >-
           Optional checked-out Honua workflow commit. Suites that retain
@@ -91,7 +101,7 @@ jobs:
     timeout-minutes: ${{ inputs.job-timeout-minutes }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -117,14 +127,37 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull and retag the release-candidate image
+        id: candidate
         if: inputs.honua-image != ''
+        env:
+          CANDIDATE_IMAGE: ${{ inputs.honua-image }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.tested-honua-git-sha }}
         run: |
           set -euo pipefail
-          image='${{ inputs.honua-image }}'
+          image="$CANDIDATE_IMAGE"
           echo "Pulling release-candidate image: ${image}"
           docker pull "${image}"
           docker tag "${image}" honua-server:latest
           echo "Retagged ${image} -> honua-server:latest for the CITE run"
+          source_sha="$(docker image inspect honua-server:latest --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::candidate image must identify its source commit'; exit 1;
+          }
+          if [[ -n "$EXPECTED_SOURCE_SHA" && "$source_sha" != "$EXPECTED_SOURCE_SHA" ]]; then
+            echo '::error::candidate image source does not match tested-honua-git-sha'; exit 1
+          fi
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout candidate migration manifest
+        if: inputs.honua-image != ''
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.candidate.outputs.source_sha }}
+          path: .cite-source
+
+      - name: Select candidate migration manifest
+        if: inputs.honua-image != ''
+        run: echo "HONUA_CITE_MIGRATIONS_DIR=$GITHUB_WORKSPACE/.cite-source/src/Honua.Server/Migrations" >> "$GITHUB_ENV"
 
       - name: Build Honua Server image
         if: inputs.honua-image == ''
@@ -157,6 +190,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y curl jq
 
+      - name: Verify WFS migration-first bootstrap and stale-schema rejection
+        if: contains(inputs.runner-script, 'wfs')
+        env:
+          HONUA_CITE_SERVER_IMAGE: honua-server:latest
+        run: bash docker/cite/shared/tests/test-wfs-bootstrap.sh
+
+      - name: Verify WCS raster migration and seed restart
+        if: contains(inputs.runner-script, 'wcs')
+        env:
+          HONUA_CITE_SERVER_IMAGE: honua-server:latest
+        run: bash docker/cite/shared/tests/test-wcs-bootstrap.sh
+
       - name: Run ${{ inputs.display-name }} CITE conformance tests
         id: run-suite
         env:
@@ -166,10 +211,13 @@ jobs:
           HONUA_CITE_REQUIRE_SERVER_PROVENANCE: ${{ inputs.tested-honua-git-sha != '' && 'true' || 'false' }}
           HONUA_CITE_SERVER_BUILD_MODE: ${{ inputs.honua-image == '' && 'source-build' || 'prebuilt' }}
           HONUA_CITE_REQUESTED_SERVER_IMAGE: ${{ inputs.honua-image }}
+          RELEASE_SUITE_ID: ${{ inputs.release-suite-id }}
         run: |
+          receipt_args=()
+          [[ -z "$RELEASE_SUITE_ID" ]] || receipt_args+=(--no-cleanup)
           set +e
           timeout ${{ inputs.timeout-seconds }} ${{ inputs.runner-script }} \
-            --profile "$CITE_PROFILE" --verbose
+            --profile "$CITE_PROFILE" --verbose "${receipt_args[@]}"
           cite_exit_code=$?
           set -e
 
@@ -249,7 +297,7 @@ jobs:
           echo "executed_tests=${EXECUTED_TESTS:-0}" >> $GITHUB_OUTPUT
 
       - name: Upload CITE test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: cite-${{ inputs.suite }}-conformance-results-${{ github.run_number }}
@@ -317,3 +365,47 @@ jobs:
           echo "CantTell tests: ${{ steps.parse-results.outputs.canttell_tests }}"
           echo "Review the test results and fix conformance issues"
           exit 1
+
+
+      - name: Write release suite receipt
+        if: success() && inputs.release-suite-id != '' && inputs.diagnostic-only != true
+        env:
+          CANDIDATE_IMAGE: ${{ inputs.honua-image }}
+          RELEASE_SUITE_ID: ${{ inputs.release-suite-id }}
+          CITE_COMPOSE_FILE: ${{ inputs.release-compose-file }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_IMAGE" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]]
+          digest="${CANDIDATE_IMAGE##*@}"
+          container="$(docker compose -f "$CITE_COMPOSE_FILE" ps -q honua-server)"
+          [[ "$container" =~ ^[a-f0-9]{12,64}$ ]]
+          running="$(docker inspect "$container")"
+          candidate="$(docker image inspect "$CANDIDATE_IMAGE")"
+          # Bind the receipt to the container that actually served the suite,
+          # including its image ID and the pulled candidate repository digest.
+          jq -e --argjson candidate "$candidate" --arg digest "$digest" '
+            length == 1 and .[0].State.Running == true and
+            ($candidate | length) == 1 and .[0].Image == $candidate[0].Id and
+            any($candidate[0].RepoDigests[]; endswith("@" + $digest))' <<<"$running" >/dev/null
+          workflow="$(basename "${GITHUB_WORKFLOW_REF%%@*}")"
+          jq -n --arg id "$RELEASE_SUITE_ID" --arg repo "$GITHUB_REPOSITORY" \
+            --arg workflow "$workflow" --argjson runId "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" --arg sha "$GITHUB_SHA" \
+            --arg image "$CANDIDATE_IMAGE" --arg digest "$digest" \
+            '{id:$id, owningRepo:$repo, workflow:$workflow, runId:$runId, runAttempt:$attempt,
+              headSha:$sha, image:$image, imageDigest:$digest}' > release-suite-receipt.json
+
+      - name: Upload release suite receipt
+        if: success() && inputs.release-suite-id != '' && inputs.diagnostic-only != true
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-suite-receipt
+          path: release-suite-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Clean up retained release suite containers
+        if: always() && inputs.release-suite-id != ''
+        env:
+          CITE_COMPOSE_FILE: ${{ inputs.release-compose-file }}
+        run: docker compose -f "$CITE_COMPOSE_FILE" down --remove-orphans --volumes

@@ -6,6 +6,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
+using Honua.Core.Features.Studio.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Operations.Services;
@@ -20,13 +21,23 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
     private readonly IGuardrailLadder _legacyGuardrails;
 
     /// <summary>Initializes the canonical policy decision point.</summary>
+    /// <param name="options">The bound typed operation policy options.</param>
+    /// <param name="legacyGuardrails">The legacy guardrail ladder for compatibility requests.</param>
+    /// <param name="productionEnvironment">
+    /// Whether the host runs in the Production environment, which appends the built-in
+    /// administrator rules (<see cref="OperationPolicyBuiltInRules.Production"/>) to the typed policy.
+    /// </param>
     public CanonicalOperationPolicyDecisionPoint(
         IOptions<OperationPolicyOptions> options,
-        IGuardrailLadder legacyGuardrails)
+        IGuardrailLadder legacyGuardrails,
+        bool productionEnvironment = false)
     {
-        _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(options);
+        _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(options, productionEnvironment);
         _legacyGuardrails = legacyGuardrails;
     }
+
+    /// <summary>The effective typed operation policy (operator rules, built-in rules, default).</summary>
+    public OperationPolicyComposition TypedPolicy => _typedPolicy.Composition;
 
     /// <inheritdoc />
     public Task<PolicyDecision> EvaluateAsync(
@@ -49,6 +60,16 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         // Carry that decision into this single PDP instead of masquerading it as an
         // approved proposal (proposal identity must only identify a real proposal).
         if (string.Equals(context.AuthorizationOutcome, "autonomy-authorized", StringComparison.Ordinal))
+        {
+            return Task.FromResult(PolicyDecision.Allowed);
+        }
+
+        // An admin Studio publication executes before the proposal guardrail. The
+        // outcome is scoped to that one operation so it cannot loosen any other class.
+        // It is not an approved proposal: the same principal must not be sent through
+        // the approve route (honua-server#5207).
+        if (string.Equals(context.AuthorizationOutcome, StudioDraftMutationContext.AdminDirectPublicationOutcome, StringComparison.Ordinal)
+            && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal))
         {
             return Task.FromResult(PolicyDecision.Allowed);
         }

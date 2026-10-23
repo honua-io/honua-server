@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 import re
 from pathlib import Path
 
@@ -54,6 +56,28 @@ def mode(source: str, path: Path) -> str:
     return matches[0]
 
 
+def validate_synthetic_artifact_catalog(
+    page_counts: list[int], declared_total: int, maximum_pages: int
+) -> None:
+    """Exercise the workflow's bounded, fail-closed catalog pagination contract."""
+    discovered = 0
+    for page, page_count in enumerate(page_counts[:maximum_pages], start=1):
+        discovered += page_count
+        if page * 100 >= declared_total:
+            if discovered < declared_total:
+                raise AssertionError(
+                    "repository artifact catalog ended before its declared total"
+                )
+            return
+        if page_count != 100:
+            raise AssertionError("repository artifact catalog ended before its declared total")
+
+    raise AssertionError(
+        "review-first-observation-v1 artifact catalog needs more than "
+        f"{maximum_pages} page(s) of 100 (declared total {declared_total})"
+    )
+
+
 def main() -> None:
     pr_gate = read_text(PR_GATE)
     review_gate = read_text(REVIEW_GATE)
@@ -93,7 +117,16 @@ def main() -> None:
         "Await exact-head review",
         "Free disk space",
     ]
-    build_test_job = pr_gate[pr_gate.index("  pr-gate:\n") : pr_gate.index("  required:\n")]
+    def job(name: str) -> str:
+        match = re.search(r"^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", pr_gate, re.M | re.S)
+        if match is None:
+            raise AssertionError(f"missing required job {name}")
+        return match.group(1)
+
+    build_test_job = job("pr-gate")
+    require(build_test_job, "name: PR Gate / Build and tests", "exact admission job name must remain stable")
+    consumer_job = job("pr-gate-tests")
+    require(consumer_job, "needs: pr-gate", "consumer must depend on producer admission")
     positions = [build_test_job.index(f"- name: {name}") for name in ordered_steps]
     if positions != sorted(positions):
         raise AssertionError("admission receipt/wait must precede every expensive step")
@@ -103,35 +136,75 @@ def main() -> None:
         "'pull_request' && github.run_attempt == 1"
     )
     require(pr_gate, wait_condition, "attempt 1 does not fail closed in enforce mode")
-    full_condition = (
-        "if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
+    review_clause = (
+        "env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
         "'pull_request' || github.run_attempt > 1"
     )
-    # Eight expensive steps live in build/test (including real raster proof,
-    # PostGIS pre-pull, and server boot smoke); four live in parallel format.
-    # All twelve must remain attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) != 12:
-        raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
-    raster_step = build_test_job.split("- name: Prove raster catalog execution with production GDAL", 1)[1].split("- name:", 1)[0]
-    require(raster_step, full_condition, "real raster execution must remain behind exact-head review")
+    full_condition = f"if: {review_clause}"
+    # The docs-only exit (scripts/ci/docs-only-diff.sh) ANDs one clause onto the
+    # expensive steps that follow its classification. The review clause stays
+    # whole and parenthesised, so a docs-only verdict can only skip more on
+    # attempt 1; it can never release a step early.
+    docs_gated_condition = (
+        f"if: ({review_clause}) && steps.docs-only.outputs.docs_only != 'true'"
+    )
+    generated_gated_condition = (
+        f"if: ({review_clause}) && steps.generated-only.outputs.generated_only != 'true'"
+    )
+
+    def review_gated(step: str) -> bool:
+        return any(condition in step for condition in (
+            full_condition, docs_gated_condition, generated_gated_condition,
+            docs_gated_condition.replace("steps.docs-only", "needs.pr-gate"),
+            generated_gated_condition.replace("steps.generated-only", "needs.pr-gate"),
+            f"if: ({review_clause}) && needs.pr-gate.outputs.skip != 'true'",
+        ))
+
+    # Pin named expensive steps rather than a global condition count. A producer
+    # failure on enforced attempt 1 also blocks its dependent consumer job.
+    for source, names in [
+        (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
+        (consumer_job, ["Setup .NET", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
+    ]:
+        for name in names:
+            step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+            if not review_gated(step):
+                raise AssertionError(f"{name} must remain behind exact-head review")
+    for name, message in [
+        ("Prepare secondary Testcontainers proof images", "secondary proof-image preparation must remain behind exact-head review"),
+        ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
+        ("Prove remote source execution with real HTTP and PostGIS", "real remote-source execution must remain behind exact-head review"),
+        ("Prove the real-GDAL CLI cases run on the required gate", "real GDAL CLI execution must remain behind exact-head review"),
+        ("Build production PDAL native tools", "Build production PDAL native tools must remain behind exact-head review"),
+        ("Prove point-cloud execution with production PDAL", "Prove point-cloud execution with production PDAL must remain behind exact-head review"),
+    ]:
+        proof_step = consumer_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+        if not review_gated(proof_step):
+            raise AssertionError(message)
 
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"
     )
-    if pr_gate.count(revalidation_condition) != 3:
-        raise AssertionError(
-            "attempt 2 must revalidate before build/tests, after build/tests, "
-            "and after both parallel jobs"
-        )
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
-    if pr_gate.count("github.rest.repos.listCommitStatusesForRef") != 3:
-        raise AssertionError("all three attempt-2 review checks must read exact-head status")
-    before = pr_gate.index("- name: Revalidate exact-head review before verification")
-    expensive = pr_gate.index("- name: Free disk space")
-    after = pr_gate.index("- name: Revalidate exact-head review before success")
-    if not before < expensive < after:
-        raise AssertionError("review evidence must bracket every expensive verification step")
+    for source, label, expensive_name in [
+        (build_test_job, "producer", "Free disk space"),
+        (consumer_job, "consumer", "Setup .NET"),
+    ]:
+        before_name = "Revalidate exact-head review before verification"
+        after_name = "Revalidate exact-head review before success"
+        before = source.index(f"- name: {before_name}")
+        expensive = source.index(f"- name: {expensive_name}")
+        after = source.index(f"- name: {after_name}")
+        if not before < expensive < after:
+            raise AssertionError(f"review evidence must bracket {label} verification")
+        for name in [before_name, after_name]:
+            step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+            require(step, revalidation_condition, f"{label} {name} must be attempt-2-only")
+            require(step, "github.rest.repos.listCommitStatusesForRef", f"{label} {name} must read exact-head review status")
+    aggregate_check = job("required").split("- name: Revalidate exact-head review before success", 1)[1]
+    require(aggregate_check, revalidation_condition, "aggregate must revalidate exact-head review")
+    require(aggregate_check, "github.rest.repos.listCommitStatusesForRef", "aggregate must read exact-head review status")
 
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
@@ -451,9 +524,76 @@ def main() -> None:
     )
     require(
         promotion_policy,
-        '"maximum_artifact_catalog_pages": 3',
+        '"maximum_artifact_catalog_pages": 50',
         "repository artifact discovery must remain bounded",
     )
+    # The scheduled ledger went red when the retained catalog (1,601 receipts,
+    # #5363) outgrew a 3-page budget. Keep the finite bound at least twice the
+    # observed catalog, and keep the worst-case request total inside the
+    # declared API budget so raising one bound cannot silently spend another.
+    policy = json.loads(promotion_policy)
+    observed_catalog = 1601
+    if policy["maximum_artifact_catalog_pages"] * 100 < 2 * observed_catalog:
+        raise AssertionError(
+            "artifact catalog budget must keep 2x headroom over the observed catalog"
+        )
+    partitions = math.ceil(policy["receipt_retention_days"] * 24 / policy["query_partition_hours"])
+    worst_case_requests = (
+        partitions * math.ceil(policy["maximum_runs_per_partition"] / 100)
+        + policy["maximum_artifact_catalog_pages"]
+        + policy["maximum_receipt_downloads"]
+    )
+    if worst_case_requests > policy["maximum_github_api_requests"]:
+        raise AssertionError(
+            f"ledger worst case of {worst_case_requests} requests exceeds the API budget"
+        )
+
+    # Exercise the boundary with catalogs rather than only matching workflow
+    # source. The current-sized catalog must be complete, while the first
+    # catalog outside the finite budget must fail instead of yielding partial
+    # evidence that could be reported as green.
+    current_catalog_pages = [100] * (observed_catalog // 100) + [observed_catalog % 100]
+    validate_synthetic_artifact_catalog(
+        current_catalog_pages,
+        observed_catalog,
+        policy["maximum_artifact_catalog_pages"],
+    )
+    beyond_budget_total = policy["maximum_artifact_catalog_pages"] * 100 + 1
+    try:
+        validate_synthetic_artifact_catalog(
+            [100] * policy["maximum_artifact_catalog_pages"] + [1],
+            beyond_budget_total,
+            policy["maximum_artifact_catalog_pages"],
+        )
+    except AssertionError as error:
+        if "needs more than" not in str(error) or str(beyond_budget_total) not in str(error):
+            raise AssertionError("catalog truncation error must be actionable") from error
+    else:
+        raise AssertionError("catalog beyond the declared page budget must fail closed")
+    for needle, message in (
+        (
+            "while (( page <= maximum_pages )); do",
+            "artifact discovery must stop at its catalog-page budget",
+        ),
+        (
+            "if (( page * 100 >= expected_total )); then\n              catalog_complete=true",
+            "artifact discovery is complete only once it covers the declared total",
+        ),
+        (
+            'echo "repository artifact total changed during pagination" >&2',
+            "artifact discovery must reject a catalog that changes mid-pagination",
+        ),
+        (
+            'echo "repository artifact catalog ended before its declared total" >&2',
+            "artifact discovery must reject a short page before the declared total",
+        ),
+        (
+            'if [[ "${catalog_complete}" != true ]]; then\n'
+            "            printf '::error::review-first-observation-v1 artifact catalog needs more than",
+            "a truncated artifact catalog must fail with an actionable error",
+        ),
+    ):
+        require(evidence_ledger, needle, message)
     require(
         promotion_policy,
         '"maximum_receipt_downloads": 300',

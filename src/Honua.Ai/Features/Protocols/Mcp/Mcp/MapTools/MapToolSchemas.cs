@@ -32,6 +32,9 @@ internal static class MapToolSchemas
     /// <summary>Maximum render width/height per side (caps cost and payload).</summary>
     public const int MaxRenderSize = 1024;
 
+    /// <summary>Maximum layers accepted by <c>honua_render_map</c> in one call.</summary>
+    public const int MaxRenderLayers = 16;
+
     /// <summary>
     /// Default number of decimal places returned <c>honua_query_features</c>
     /// geometry coordinates are rounded to (~0.1&#160;m at the equator). Trims
@@ -106,7 +109,7 @@ internal static class MapToolSchemas
             "outFields": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "Optional attribute fields to return; omit for all fields."
+              "description": "Optional visible attribute fields to return; omit or use '*' for all visible fields. Unknown or publisher-hidden names are refused."
             },
             "limit": {
               "type": "integer",
@@ -158,6 +161,7 @@ internal static class MapToolSchemas
             "layers": {
               "type": "array",
               "minItems": 1,
+              "maxItems": 16,
               "description": "Ordered layers to draw, bottom-to-top.",
               "items": {
                 "type": "object",

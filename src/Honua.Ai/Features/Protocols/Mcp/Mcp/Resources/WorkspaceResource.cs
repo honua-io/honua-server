@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 
@@ -75,40 +76,90 @@ internal sealed class WorkspaceResource : IMcpResource
     {
         McpTelemetry.EnrichActivity("GetWorkspace");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        await _jobService
-            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Workspace, OperatorOperation.Read, cancellationToken)
-            .ConfigureAwait(false);
-
         var workspaceId = uri[McpResourceUris.WorkspacesPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);
 
-        McpWorkspaceResource resource;
+        // No lifecycle store: there is no owner or scope to authorize against, so the
+        // type-level gate still applies and the stable degraded envelope is unchanged.
+        using var lifecycle = OpenLifecycle();
+        if (lifecycle is null)
+        {
+            await _jobService
+                .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Workspace, OperatorOperation.Read, cancellationToken)
+                .ConfigureAwait(false);
+            return McpResourceHelpers.SingleJsonContent(
+                uri, CreateDegradedResource(workspaceId), McpJsonContext.Default.McpWorkspaceResource);
+        }
+
+        var workspace = await lifecycle.Service.GetWorkspaceAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+        if (workspace is null || workspace.State == WorkspaceLifecycleState.Deleted)
+        {
+            throw new GeoprocessingNotFoundException($"Workspace '{workspaceId}' not found.");
+        }
+
+        // Load first, then authorize with the workspace's owner or scope. A denial is
+        // not_found so a caller cannot probe which workspace ids exist (honua-server#5629).
+        try
+        {
+            await _jobService
+                .EnsureCallerAuthorizedAsync(principal, AuthorizationFor(httpContext, workspace), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (GeoprocessingAuthorizationException ex) when (!ex.RequiresAuthentication)
+        {
+            throw new GeoprocessingNotFoundException($"Workspace '{workspaceId}' not found.");
+        }
+
+        return McpResourceHelpers.SingleJsonContent(
+            uri, ToResource(workspace), McpJsonContext.Default.McpWorkspaceResource);
+    }
+
+    private LifecycleRead? OpenLifecycle()
+    {
         if (_scopeFactory is null)
         {
-            resource = CreateDegradedResource(workspaceId);
+            return null;
         }
-        else
+
+        var scope = _scopeFactory.CreateScope();
+        var lifecycle = scope.ServiceProvider.GetService<IWorkspaceLifecycleService>();
+        if (lifecycle is null)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var lifecycle = scope.ServiceProvider.GetService<IWorkspaceLifecycleService>();
-            if (lifecycle is null)
-            {
-                resource = CreateDegradedResource(workspaceId);
-            }
-            else
-            {
-                var workspace = await lifecycle.GetWorkspaceAsync(workspaceId, cancellationToken).ConfigureAwait(false);
-                if (workspace is null || workspace.State == WorkspaceLifecycleState.Deleted)
-                {
-                    throw new GeoprocessingNotFoundException($"Workspace '{workspaceId}' not found.");
-                }
-
-                resource = ToResource(workspace);
-            }
+            scope.Dispose();
+            return null;
         }
 
-        var result = McpResourceHelpers.SingleJsonContent(uri, resource, McpJsonContext.Default.McpWorkspaceResource);
-        return result;
+        return new LifecycleRead(scope, lifecycle);
+    }
+
+    private static OperatorAuthorizationRequest AuthorizationFor(HttpContext httpContext, Workspace workspace)
+    {
+        // GeoprocessingDispatchJobExecutor stores the submitter's tenant id in ScopeId.
+        // The shipped authorizer checks a shared scope only against the configured
+        // workspace-scope claim (groups by default), not the tenant, so a scope that
+        // is the effective tenant stays personal and the owner can still read it.
+        var scopeId = string.IsNullOrWhiteSpace(workspace.ScopeId) ? null : workspace.ScopeId.Trim();
+        var tenantId = httpContext.RequestServices?.GetService<ITenantContext>()?.TenantId;
+        tenantId = string.IsNullOrWhiteSpace(tenantId) ? null : tenantId.Trim();
+        var shared = scopeId is not null
+            && tenantId is not null
+            && !string.Equals(scopeId, tenantId, StringComparison.Ordinal);
+        return new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            ResourceId = workspace.WorkspaceId,
+            WorkspaceVisibility = shared ? WorkspaceVisibility.Shared : WorkspaceVisibility.Personal,
+            WorkspaceOwnerId = shared ? null : workspace.OwnerId,
+            WorkspaceScopeId = shared ? scopeId : null
+        };
+    }
+
+    private sealed class LifecycleRead(IServiceScope scope, IWorkspaceLifecycleService service) : IDisposable
+    {
+        public IWorkspaceLifecycleService Service { get; } = service;
+
+        public void Dispose() => scope.Dispose();
     }
 
     private static McpWorkspaceResource CreateDegradedResource(string workspaceId) => new()

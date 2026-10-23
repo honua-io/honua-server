@@ -164,17 +164,30 @@ cat > "$RESULTS_DIR/candidate.json" <<EOF
 }
 EOF
 
-# Keep the declaration boundary executable. The building-block validators
-# validate live queryables and exercise CQL2/filter behavior, but they are not a
-# complete ETS-equivalent class suite. Only queryables is therefore advertised;
-# this check prevents a future endpoint edit from silently widening the public
-# claim without widening the evidence lane.
+# Keep the declaration boundary executable. These are the implemented discovery
+# classes required by GDAL/QGIS (#4995), proven by live building-block behavior,
+# seeded integration assertions and the pinned-client receipts under
+# docs/internal/evidence/client-certification-2cc2213/fixes-4994-4995/.
+# This lane is not a complete ETS-equivalent class certification. Part 2 CRS
+# also has the complete ETS class in cite-evidence-report.yml. Exact equality
+# continues to reject unevidenced optional classes. Features Part 4 discovery
+# was enabled in #5147; OgcFeaturesTransactionTests exercises create, replace,
+# update, delete, and conditional writes, and OgcFeaturesEnhancementsTests
+# asserts this same declaration boundary.
 python3 - "$RESULTS_DIR/conformance.json" <<'PY'
 import json
 import sys
 
 expected = {
+    "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
     "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+    "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+    "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+    "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+    "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+    "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
+    "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete",
+    "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/update",
 }
 target_prefixes = (
     "http://www.opengis.net/spec/ogcapi-features-2/",
@@ -195,7 +208,7 @@ if actual != expected:
     print(f"  missing: {sorted(expected - actual)}", file=sys.stderr)
     print(f"  extra:   {sorted(actual - expected)}", file=sys.stderr)
     raise SystemExit(1)
-print(f"declaration boundary valid ({len(actual)} evidenced Part 3/CQL2 classes)")
+print(f"declaration boundary valid ({len(actual)} evidenced Part 2/3/4/CQL2 classes)")
 PY
 
 run_validator() {

@@ -48,6 +48,11 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string jobId);
 
+    [LoggerMessage(8042, LogLevel.Information, "Job results expired: JobId={JobId} is past the configured result retention")]
+    public static partial void JobResultsExpired(
+        ILogger logger,
+        string jobId);
+
     [LoggerMessage(8007, LogLevel.Warning, "Authorization denied for geoprocessing: ResourceType={ResourceType}, Operation={Operation}")]
     public static partial void AuthorizationDenied(
         ILogger logger,
@@ -245,4 +250,21 @@ internal static partial class GeoprocessingServiceLog
     public static partial void OgcProjectedProcessCount(
         ILogger logger,
         int count);
+
+    [LoggerMessage(8041, LogLevel.Warning, "Job submission refused: metadata key {MetadataKey} uses a reserved parameter namespace")]
+    public static partial void ReservedMetadataKeyRejected(
+        ILogger logger,
+        string metadataKey);
+
+    [LoggerMessage(8043, LogLevel.Warning, "Terminal callback failed during job result replay for {JobId}")]
+    public static partial void TerminalCallbackReplayFailed(
+        ILogger logger,
+        string jobId,
+        Exception exception);
+
+    [LoggerMessage(8044, LogLevel.Warning, "Local dispatch acknowledgement for queued job {JobId} did not complete; the job stays queued and the active-job sweep repairs the acknowledgement")]
+    public static partial void LocalDispatchAcknowledgementDeferred(
+        ILogger logger,
+        string jobId,
+        Exception exception);
 }

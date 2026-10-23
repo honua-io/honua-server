@@ -95,6 +95,11 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
             "the failed edit released its reservation, so a retry is a fresh attempt rather than a " +
             $"concurrent request: {retryBody}");
         retryCode.Should().Be(405, retryBody);
+
+        // #4406: the response code alone cannot distinguish "the retry was refused" from "the
+        // retry ran and inserted a row". Only the table can.
+        (await _fixture.CountStoredFeaturesByNameAsync(LayerId, $"Rejected-{idempotencyKey}"))
+            .Should().Be(0, "a read-only provider rejects the write outright, so neither attempt may leave a row");
     }
 
     private async Task<HttpResponseMessage> PostApplyEditsAsync(string json, string idempotencyKey)
@@ -183,6 +188,10 @@ public sealed class FeatureServerApplyEditsTransactionalCancellationTests : IAsy
         FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(retryBody).Should().NotBe(
             409,
             "the cancelled all-or-nothing transaction could not commit, so its reservation must be released");
+
+        // #4406: releasing the reservation is only safe because nothing was written. Prove it.
+        (await _fixture.CountStoredFeaturesByNameAsync(0, $"Cancelled-{idempotencyKey}"))
+            .Should().Be(0, "neither the cancelled attempt nor the released retry may leave a row behind");
     }
 
     private async Task<HttpResponseMessage> PostApplyEditsAsync(
@@ -285,6 +294,11 @@ public sealed class FeatureServerApplyEditsPostCommitExceptionTests : IAsyncLife
         FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(retryBody).Should().Be(
             409,
             "a post-commit exception must not be mistaken for the provider's read-only rejection");
+
+        // #4406: the refusal is what stops a second row. The substituted writer never touches
+        // Postgres, so the table must be untouched by both the original and the refused retry.
+        (await _fixture.CountStoredFeaturesByNameAsync(0, "post-commit"))
+            .Should().Be(0, "the retry was refused, so it cannot have written a row");
     }
 
     private async Task<HttpResponseMessage> PostApplyEditsAsync(string json, string idempotencyKey)
@@ -411,6 +425,10 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
             409,
             "the write may have committed rows before it threw, so the reservation must be kept " +
             $"and the retry refused rather than re-applied: {retryBody}");
+
+        // #4406: the refused retry must be a no-op on the table, not merely a 409 in the envelope.
+        (await _fixture.CountStoredFeaturesByNameAsync(LayerId, $"Ambiguous-{idempotencyKey}"))
+            .Should().Be(0, "a refused retry must not add a row");
     }
 
     [IntegrationTest]
@@ -451,6 +469,9 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
             409,
             "the generic NotSupportedException does not prove that no rows were committed, so the " +
             $"reservation must remain held: {retryBody}");
+
+        (await _fixture.CountStoredFeaturesByNameAsync(LayerId, $"Unsupported-{idempotencyKey}"))
+            .Should().Be(0, "a refused retry must not add a row");
     }
 
     [IntegrationTest]
@@ -490,6 +511,9 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
         FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(retryBody).Should().Be(
             409,
             "a zero-count provider result with an unknown commit outcome must retain the reservation");
+
+        (await _fixture.CountStoredFeaturesByNameAsync(LayerId, $"AmbiguousResult-{idempotencyKey}"))
+            .Should().Be(0, "a refused retry must not add a row");
     }
 
     private async Task<HttpResponseMessage> PostApplyEditsAsync(string json, string idempotencyKey)

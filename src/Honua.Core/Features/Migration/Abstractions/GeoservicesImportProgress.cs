@@ -136,6 +136,9 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     /// </summary>
     public string? ErrorMessage { get; init; }
 
+    /// <summary>Stable machine-readable failure code, when available.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>
     /// List of warning messages encountered during import.
     /// </summary>
@@ -158,6 +161,21 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     /// when a published Metadata v2 entry was available to reconcile against. <c>null</c> otherwise.
     /// </summary>
     public MigrationCatalogReconciliationReport? CatalogReconciliationReport { get; init; }
+
+    /// <summary>
+    /// Unified migration fidelity verdict for the run (issue #4600). <c>null</c> until the terminal
+    /// phase, where it is one of <see cref="MigrationFidelityVerdicts.FullFidelity"/>,
+    /// <see cref="MigrationFidelityVerdicts.Unverified"/> or
+    /// <see cref="MigrationFidelityVerdicts.Incomplete"/>. The status says whether the job finished;
+    /// this says whether the migrated layer is equivalent to the source.
+    /// </summary>
+    public string? FidelityVerdict { get; init; }
+
+    /// <summary>
+    /// Actionable per-resource differences (and unexecuted checks) behind
+    /// <see cref="FidelityVerdict"/>, ordered deterministically by code then subject.
+    /// </summary>
+    public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
 
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;

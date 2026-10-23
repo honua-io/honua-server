@@ -170,9 +170,11 @@ internal sealed class PMTilesProxyService
         {
             try
             {
-                payload = await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, cancellationToken).ConfigureAwait(false);
+                payload = string.IsNullOrWhiteSpace(metadata.ETag)
+                    ? await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, cancellationToken).ConfigureAwait(false)
+                    : await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, metadata.ETag, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsProviderNotFound(ex, _notFoundClassifiers))
+            catch (Exception ex) when (ex is NotSupportedException || IsProviderNotFound(ex, _notFoundClassifiers))
             {
                 // S3 NoSuchKey / Azure 404. Match the download-fallback path
                 // by surfacing a missing underlying object as NotFound so the
@@ -230,6 +232,28 @@ internal sealed class PMTilesProxyService
     public async Task<Stream?> OpenFullAsync(string artifactId, CancellationToken cancellationToken)
     {
         return await _cloudStorage.DownloadAsync(artifactId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<Stream?> OpenFullAsync(
+        string artifactId,
+        CloudFile authorized,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authorized);
+        if (!string.IsNullOrWhiteSpace(authorized.ETag))
+        {
+            var current = await ResolveAsync(artifactId, cancellationToken).ConfigureAwait(false);
+            if (!current.Exists ||
+                current.Metadata is null ||
+                !string.Equals(current.Metadata.ETag, authorized.ETag, StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        // DownloadAsync is not conditional. A writer can replace the object
+        // after this ETag check and before the download.
+        return await OpenFullAsync(artifactId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<DownloadFallbackResult> ReadRangeViaDownloadAsync(

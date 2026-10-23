@@ -17,10 +17,11 @@ namespace Honua.Core.Features.Raster.Multidimensional.Services;
 /// </summary>
 /// <remarks>
 /// Extent and resolution are read from the GDAL geotransform / corner
-/// coordinates of the 2D view. Non-spatial axes are enumerated from
-/// <c>NETCDF_DIM_EXTRA</c> and classified by their CF <c>units</c>: an axis whose
-/// units contain "since" is the temporal axis (decoded against the CF epoch);
-/// any other extra axis is treated as vertical.
+/// coordinates of the 2D view. Non-spatial axes come from either the classic
+/// NetCDF metadata (<c>NETCDF_DIM_EXTRA</c>) or, for a derived Zarr opened
+/// without the netCDF driver, per-band <c>DIM_&lt;axis&gt;_VALUE</c> /
+/// <c>DIM_&lt;axis&gt;_UNIT</c> items. An axis whose units contain "since" is
+/// temporal (decoded against the CF epoch); any other extra axis is vertical.
 /// </remarks>
 public static class GdalInfoCoverageEnricher
 {
@@ -60,15 +61,18 @@ public static class GdalInfoCoverageEnricher
             var resolution = ReadResolution(root) ?? baseMetadata.Resolution;
             var extent = ReadExtent(root, baseMetadata.Srid) ?? baseMetadata.Extent;
             var (temporal, vertical) = ReadAxes(root);
-            var yAxisAscending = ReadYAxisAscending(root) ?? baseMetadata.YAxisAscending;
+            var fromBands = ReadBandAxes(root);
+            var yAxisAscending = ReadYAxisAscending(root);
 
             return baseMetadata with
             {
                 Extent = extent,
                 Resolution = resolution,
-                Temporal = temporal ?? baseMetadata.Temporal,
-                Vertical = vertical ?? baseMetadata.Vertical,
-                YAxisAscending = yAxisAscending,
+                Temporal = temporal ?? fromBands.Temporal ?? baseMetadata.Temporal,
+                Vertical = vertical ?? fromBands.Vertical ?? baseMetadata.Vertical,
+                YAxisAscending = yAxisAscending ?? baseMetadata.YAxisAscending,
+                HasYAxisOrientation = yAxisAscending.HasValue || baseMetadata.HasYAxisOrientation,
+                Statistics = ReadStatistics(root) ?? baseMetadata.Statistics,
             };
         }
     }
@@ -173,6 +177,216 @@ public static class GdalInfoCoverageEnricher
         }
 
         return (temporal, vertical);
+    }
+
+    private static (TemporalExtent? Temporal, VerticalExtent? Vertical) ReadBandAxes(JsonElement root)
+    {
+        var axes = new Dictionary<string, AxisSamples>(StringComparer.Ordinal);
+        CollectDimensionMetadata(root, axes);
+        if (root.TryGetProperty("bands", out var bands) && bands.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var band in bands.EnumerateArray())
+            {
+                CollectDimensionMetadata(band, axes);
+            }
+        }
+
+        TemporalExtent? temporal = null;
+        VerticalExtent? vertical = null;
+        foreach (var samples in axes.Select(static axis => axis.Value))
+        {
+            if (samples.Unit is not null && samples.Unit.Contains(" since ", StringComparison.OrdinalIgnoreCase))
+            {
+                if (temporal is null &&
+                    samples.Numeric.Count > 0 &&
+                    TryDecodeCfTime(samples.Unit, samples.Numeric.Min(), samples.Numeric.Max(), out var start, out var end))
+                {
+                    temporal = new TemporalExtent(start, end, samples.Numeric.Count);
+                }
+
+                continue;
+            }
+
+            if (samples.Dates.Count > 0 && temporal is null)
+            {
+                var ordered = samples.Dates.Order().ToArray();
+                temporal = new TemporalExtent(ordered[0], ordered[^1], ordered.Length);
+                continue;
+            }
+
+            if (vertical is null &&
+                samples.Numeric.Count > 0 &&
+                !IsGeographicUnit(samples.Unit))
+            {
+                vertical = new VerticalExtent(samples.Numeric.Min(), samples.Numeric.Max(), samples.Numeric.Count, samples.Unit ?? string.Empty);
+            }
+        }
+
+        return (temporal, vertical);
+    }
+
+    private static void CollectDimensionMetadata(JsonElement owner, Dictionary<string, AxisSamples> axes)
+    {
+        if (owner.ValueKind != JsonValueKind.Object ||
+            !owner.TryGetProperty("metadata", out var metadata) ||
+            metadata.ValueKind != JsonValueKind.Object ||
+            !metadata.TryGetProperty("", out var domain) ||
+            domain.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        foreach (var property in domain.EnumerateObject())
+        {
+            if (!property.Name.StartsWith("DIM_", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var isValue = property.Name.EndsWith("_VALUE", StringComparison.Ordinal);
+            var isUnit = property.Name.EndsWith("_UNIT", StringComparison.Ordinal);
+            if (!isValue && !isUnit)
+            {
+                continue;
+            }
+
+            var suffixLength = isValue ? "_VALUE".Length : "_UNIT".Length;
+            var axisName = property.Name["DIM_".Length..^suffixLength];
+            if (axisName.Length == 0)
+            {
+                continue;
+            }
+
+            if (!axes.TryGetValue(axisName, out var samples))
+            {
+                samples = new AxisSamples();
+                axes[axisName] = samples;
+            }
+
+            if (isUnit)
+            {
+                samples.Unit ??= property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : null;
+                continue;
+            }
+
+            if (TryReadDouble(property.Value, out var number))
+            {
+                samples.Numeric.Add(number);
+            }
+            else if (property.Value.ValueKind == JsonValueKind.String &&
+                     DateTimeOffset.TryParse(
+                         property.Value.GetString(),
+                         CultureInfo.InvariantCulture,
+                         DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                         out var instant))
+            {
+                samples.Dates.Add(instant);
+            }
+        }
+    }
+
+    private static CoverageSampleStatistics? ReadStatistics(JsonElement root)
+    {
+        if (!root.TryGetProperty("bands", out var bands) || bands.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        double? minimum = null;
+        double? maximum = null;
+        double meanSum = 0;
+        var meanCount = 0;
+        double? onlyStandardDeviation = null;
+        var standardDeviationCount = 0;
+        foreach (var band in bands.EnumerateArray())
+        {
+            if (band.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (ReadBandStat(band, "minimum", "STATISTICS_MINIMUM") is double bandMin)
+            {
+                minimum = minimum is null ? bandMin : Math.Min(minimum.Value, bandMin);
+            }
+
+            if (ReadBandStat(band, "maximum", "STATISTICS_MAXIMUM") is double bandMax)
+            {
+                maximum = maximum is null ? bandMax : Math.Max(maximum.Value, bandMax);
+            }
+
+            if (ReadBandStat(band, "mean", "STATISTICS_MEAN") is double bandMean)
+            {
+                meanSum += bandMean;
+                meanCount++;
+            }
+
+            if (ReadBandStat(band, "stdDev", "STATISTICS_STDDEV") is double bandStd)
+            {
+                onlyStandardDeviation = bandStd;
+                standardDeviationCount++;
+            }
+        }
+
+        if (minimum is null || maximum is null)
+        {
+            return null;
+        }
+
+        return new CoverageSampleStatistics(
+            minimum.Value,
+            maximum.Value,
+            meanCount > 0 ? meanSum / meanCount : null,
+            standardDeviationCount == 1 ? onlyStandardDeviation : null);
+    }
+
+    private static double? ReadBandStat(JsonElement band, string property, string metadataKey)
+    {
+        if (band.TryGetProperty(property, out var direct) && TryReadDouble(direct, out var directValue))
+        {
+            return directValue;
+        }
+
+        if (band.TryGetProperty("metadata", out var metadata) &&
+            metadata.ValueKind == JsonValueKind.Object &&
+            metadata.TryGetProperty("", out var domain) &&
+            domain.ValueKind == JsonValueKind.Object &&
+            domain.TryGetProperty(metadataKey, out var stored) &&
+            TryReadDouble(stored, out var storedValue))
+        {
+            return storedValue;
+        }
+
+        return null;
+    }
+
+    private static bool TryReadDouble(JsonElement element, out double value)
+    {
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out value))
+        {
+            return double.IsFinite(value);
+        }
+
+        if (element.ValueKind == JsonValueKind.String &&
+            double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+        {
+            return double.IsFinite(value);
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool IsGeographicUnit(string? unit)
+        => unit is not null && unit.Trim().ToLowerInvariant() is "degrees_east" or "degrees_north" or "degree" or "degrees";
+
+    private sealed class AxisSamples
+    {
+        public HashSet<double> Numeric { get; } = [];
+
+        public HashSet<DateTimeOffset> Dates { get; } = [];
+
+        public string? Unit { get; set; }
     }
 
     private static bool TryDecodeCfTime(string units, double min, double max, out DateTimeOffset start, out DateTimeOffset end)

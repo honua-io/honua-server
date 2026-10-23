@@ -6,6 +6,8 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -82,16 +84,24 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveTileLayerDescriptors(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
                 publishedLayers.Select(static layer => layer.Resource),
-                service);
+                service,
+                AuthorizationOperation.Export,
+                cancellationToken).ConfigureAwait(false);
+            var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
             if (accessError != null)
             {
                 return accessError;
             }
 
             MapServerLog.TileRequested(logger, serviceId, z, y, x);
+            if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide cached tiles.");
+            }
+
             var stopwatch = Stopwatch.StartNew();
             using var activity = HonuaTelemetry.ActivitySource.StartActivity(
                 HonuaTelemetry.Activities.MapServerExport, ActivityKind.Internal);
@@ -105,10 +115,7 @@ internal static partial class MapServerEndpoints
             var renderResources = publishedLayers
                 .Where(layer => IsTileLayerVisibleByDefault(layer.Resource))
                 .Where(layer => IsTileLayerVisibleAtScale(layer.Resource, z))
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
-                .ToArray();
-            var renderLayers = renderResources
-                .Select(BuildTileRenderDescriptor)
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
             var maxFeatures = service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
             var serviceSrid = ResolveTileServiceSrid(service, publishedLayers);
@@ -124,7 +131,25 @@ internal static partial class MapServerEndpoints
                 rlsFilterSource,
                 renderResources,
                 cancellationToken).ConfigureAwait(false);
+            // Field masks can change style filters and symbol values just as RLS changes
+            // rendered geometry. Partition cached PNGs by both effective policies.
+            var fieldMaskSource = context.RequestServices.GetService<IFieldMaskSource>();
+            var (fieldMaskFingerprint, renderLayers) = await ResolveTileFieldMaskSnapshotAsync(
+                fieldMaskSource,
+                renderResources,
+                cancellationToken).ConfigureAwait(false);
+            // A disabled cloud cache never reads the object, so it must not open the
+            // feature database just to number a key. An enabled cache reuses a short-lived
+            // observation: a hot hit does not wait on Postgres, and a database outage still
+            // serves the last generation's tiles.
+            var generation = await ResolveTileCacheGenerationAsync(
+                storage,
+                storageOptions,
+                context.RequestServices.GetService<IChangeTracker>(),
+                TimeProvider.System,
+                cancellationToken).ConfigureAwait(false);
             var tileCacheKey = BuildMapServerTileCacheKey(
+                generation,
                 storageOptions,
                 snapshot,
                 serviceId,
@@ -133,6 +158,7 @@ internal static partial class MapServerEndpoints
                 serviceSrid,
                 maxFeatures,
                 rlsFingerprint,
+                fieldMaskFingerprint,
                 z,
                 y,
                 x);
@@ -317,7 +343,132 @@ internal static partial class MapServerEndpoints
         return GeoServicesCloudTileCache.Hash(string.Join('|', parts));
     }
 
-    private static string BuildMapServerTileCacheKey(
+    internal static async Task<string> BuildTileFieldMaskFingerprintAsync(
+        IFieldMaskSource? fieldMaskSource,
+        TileLayerDescriptor[] renderResources,
+        CancellationToken cancellationToken)
+        => (await ResolveTileFieldMaskSnapshotAsync(fieldMaskSource, renderResources, cancellationToken)
+            .ConfigureAwait(false)).Fingerprint;
+
+    private static async Task<(string Fingerprint, RenderLayerDescriptor[] RenderLayers)> ResolveTileFieldMaskSnapshotAsync(
+        IFieldMaskSource? fieldMaskSource,
+        TileLayerDescriptor[] renderResources,
+        CancellationToken cancellationToken)
+    {
+        var renderLayers = new List<RenderLayerDescriptor>(renderResources.Length);
+        foreach (var layer in renderResources)
+        {
+            var fields = fieldMaskSource is null
+                ? ImmutableArray<string>.Empty
+                : await fieldMaskSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+            // Pin even an empty set: the provider must not resolve a newer policy while
+            // rendering or paging bytes that will be cached under this snapshot's key.
+            renderLayers.Add(BuildTileRenderDescriptor(layer) with { EnforcedMaskedFields = fields });
+        }
+
+        var parts = new List<string>(renderResources.Length);
+        foreach (var layer in renderLayers.OrderBy(static layer => layer.LayerId))
+        {
+            var normalized = layer.EnforcedMaskedFields!.Value
+                .Where(static field => !string.IsNullOrWhiteSpace(field))
+                .Select(static field => field.Trim())
+                .OrderBy(static field => field, StringComparer.Ordinal)
+                .ToArray();
+            // Length prefixes keep literal commas, pipes and colons inside field names
+            // distinct from boundaries between fields and layers.
+            var encoded = string.Concat(normalized.Select(static field =>
+                $"{field.Length.ToString(CultureInfo.InvariantCulture)}:{field}"));
+            parts.Add($"{layer.LayerId.ToString(CultureInfo.InvariantCulture)}:{normalized.Length.ToString(CultureInfo.InvariantCulture)}:{encoded}");
+        }
+
+        return (GeoServicesCloudTileCache.Hash(string.Join('|', parts)), [.. renderLayers]);
+    }
+
+    /// <summary>
+    /// How long a tile request may reuse the last observed change-log generation.
+    /// Editors are visible on the next observation. Holding the value briefly keeps a
+    /// cache hit off the feature database, including while that database is down.
+    /// </summary>
+    private static readonly TimeSpan TileGenerationFreshness = TimeSpan.FromSeconds(2);
+
+    private static readonly object TileGenerationGate = new();
+
+    private static long _tileGeneration;
+
+    private static long _tileGenerationObservedTicks;
+
+    private static bool _tileGenerationKnown;
+
+    internal static void ResetTileGenerationCacheForTests()
+    {
+        lock (TileGenerationGate)
+        {
+            _tileGeneration = 0;
+            _tileGenerationObservedTicks = 0;
+            _tileGenerationKnown = false;
+        }
+    }
+
+    /// <summary>
+    /// Generation folded into the cloud tile key. Returns 0 without touching
+    /// <paramref name="changeTracker"/> when cloud caching cannot store or serve a tile.
+    /// A recent observation is reused. A failed read keeps the last observation, or 0
+    /// when this process has never seen one, and does not fail the tile request.
+    /// </summary>
+    internal static async Task<long> ResolveTileCacheGenerationAsync(
+        ICloudFileStorage? storage,
+        CloudStorageOptions? storageOptions,
+        IChangeTracker? changeTracker,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        if (storage is null || storageOptions?.Enabled == false || changeTracker is null)
+        {
+            return 0;
+        }
+
+        var nowTicks = timeProvider.GetUtcNow().UtcTicks;
+        lock (TileGenerationGate)
+        {
+            if (_tileGenerationKnown
+                && nowTicks - _tileGenerationObservedTicks < TileGenerationFreshness.Ticks)
+            {
+                return _tileGeneration;
+            }
+        }
+
+        try
+        {
+            var generation = await changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
+            lock (TileGenerationGate)
+            {
+                _tileGeneration = generation;
+                _tileGenerationObservedTicks = nowTicks;
+                _tileGenerationKnown = true;
+            }
+
+            return generation;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            lock (TileGenerationGate)
+            {
+                // Remember the failed attempt so the next tiles do not each wait on a down database.
+                // A process that has never observed a generation keeps the stable 0 key.
+                _tileGenerationObservedTicks = nowTicks;
+                if (!_tileGenerationKnown)
+                {
+                    _tileGeneration = 0;
+                    _tileGenerationKnown = true;
+                }
+
+                return _tileGeneration;
+            }
+        }
+    }
+
+    internal static string BuildMapServerTileCacheKey(
+        long generation,
         CloudStorageOptions? storageOptions,
         MetadataV2GraphSnapshot snapshot,
         string serviceId,
@@ -326,10 +477,15 @@ internal static partial class MapServerEndpoints
         int serviceSrid,
         int maxFeatures,
         string rlsFingerprint,
+        string fieldMaskFingerprint,
         int z,
         int y,
         int x)
     {
+        // Feature edits advance the change-log generation without changing the
+        // metadata etag. Fold that generation into the key so a rendered tile is
+        // not served after an edit. Generation 0 is the stable key when no tracker
+        // observation is available.
         var renderLayerKey = string.Join(
             ',',
             renderLayers
@@ -346,7 +502,9 @@ internal static partial class MapServerEndpoints
             serviceSrid.ToString(CultureInfo.InvariantCulture),
             maxFeatures.ToString(CultureInfo.InvariantCulture),
             renderLayerKey,
-            rlsFingerprint));
+            rlsFingerprint,
+            fieldMaskFingerprint,
+            generation.ToString(CultureInfo.InvariantCulture)));
 
         return GeoServicesCloudTileCache.BuildObjectKey(
             storageOptions,

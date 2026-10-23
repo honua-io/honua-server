@@ -8,6 +8,7 @@ using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
@@ -18,15 +19,18 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertOptions _options;
     private readonly AlertDestinationGuard _destinationGuard;
+    private readonly ISecretProvider? _secretProvider;
 
     public WebhookAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
         IOptions<AlertOptions> options,
-        AlertDestinationGuard? destinationGuard = null)
+        AlertDestinationGuard? destinationGuard = null,
+        ISecretProvider? secretProvider = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
+        _secretProvider = secretProvider;
     }
 
     public AlertChannelType ChannelType => AlertChannelType.Webhook;
@@ -78,12 +82,18 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
                 };
             }
 
+            var signingSecret = await ResolveSigningSecretAsync(cancellationToken).ConfigureAwait(false);
+            if (signingSecret.Failure is { } unresolved)
+            {
+                return unresolved;
+            }
+
             using var request = new HttpRequestMessage(HttpMethod.Post, destinationCheck.Uri)
             {
                 Content = new StringContent(alertEvent.PayloadJson, Encoding.UTF8, "application/json")
             };
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-            var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.DefaultWebhookSecret, timestamp, alertEvent.PayloadJson);
+            var signature = WebhookDeliveryHelper.ComputeSignature(signingSecret.Value!, timestamp, alertEvent.PayloadJson);
 
             // Ops notifications are not linked to an alert rule; emit the ops source
             // instead of a misleading "0" rule reference (#2427).
@@ -140,4 +150,49 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             };
         }
     }
+
+    /// <summary>
+    /// Literal signing secrets stay inline. A secret reference is resolved through the production
+    /// provider so a warm process keeps the cached value until <see cref="Honua.Core.Features.Configuration.SecretProviderOptions.CacheDuration"/>
+    /// and never signs with the reference text.
+    /// </summary>
+    private async Task<SigningSecretResolution> ResolveSigningSecretAsync(CancellationToken cancellationToken)
+    {
+        var configured = _options.Dispatch.DefaultWebhookSecret;
+        if (string.IsNullOrWhiteSpace(configured) || _secretProvider is null || !_secretProvider.IsSecretReference(configured))
+        {
+            return new SigningSecretResolution(configured, null);
+        }
+
+        string? resolved;
+        try
+        {
+            resolved = await _secretProvider.GetSecretAsync(configured, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new SigningSecretResolution(null, UnresolvedSecret());
+        }
+
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            return new SigningSecretResolution(null, UnresolvedSecret());
+        }
+
+        return new SigningSecretResolution(resolved, null);
+    }
+
+    private static AlertDeliveryResult UnresolvedSecret()
+        => new()
+        {
+            Succeeded = false,
+            Retryable = true,
+            Error = "Webhook signing secret could not be resolved."
+        };
+
+    private readonly record struct SigningSecretResolution(string? Value, AlertDeliveryResult? Failure);
 }

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
@@ -265,6 +266,9 @@ internal sealed class AwsBatchExecutionOptions
     /// <summary>Configuration section name.</summary>
     public const string SectionName = "ControlPlane:AwsBatch";
 
+    /// <summary>Maximum custom-code queue/start wait, in seconds; enforced before user source executes.</summary>
+    public int CustomCodeMaxQueueWaitSeconds { get; set; } = 3600;
+
     /// <summary>
     /// Job-definition contract attestations. Each ARN/revision is stored as an entry value instead
     /// of a dictionary key because colons in an ARN are configuration-path delimiters.
@@ -288,7 +292,8 @@ internal sealed class AwsBatchJobDefinitionContractOptions
 internal sealed partial class AwsBatchComputeBackend(
     IAwsBatchJobClient batchClient,
     IOptions<AwsBatchExecutionOptions> options,
-    ILogger<AwsBatchComputeBackend> logger) : IBatchComputeBackend
+    ILogger<AwsBatchComputeBackend> logger,
+    IScopedJobTokenIssuer? scopedTokenIssuer = null) : IBatchComputeBackend, IBatchComputeSubmissionPreparer
 {
     internal const string AdapterBackendName = "honua-aws-batch";
 
@@ -378,18 +383,25 @@ internal sealed partial class AwsBatchComputeBackend(
     }
 
     /// <summary>
-    /// True when the exception is part of the AWS SDK runtime exception family
-    /// (<see cref="AmazonServiceException"/> for service-level failures or
-    /// <see cref="AmazonClientException"/> for client-side identity/transport failures).
-    /// In AWS SDK v4 these are sibling types rooted at <see cref="Exception"/>, so both
-    /// must be caught explicitly — the adapter comments promise uncertain-submit and
-    /// status-preservation behavior for the entire class.
+    /// Identifies SDK failures and independently cancelled provider requests (such as
+    /// transport deadlines). A cancelled request does not prove the provider job stopped
+    /// or that a submission was rejected. Caller cancellation must still propagate so
+    /// host shutdown and lease loss retain the reconciler's ownership semantics.
     /// </summary>
-    private static bool IsAwsRuntimeException(Exception ex)
-        => ex is AmazonServiceException or AmazonClientException;
+    private static bool IsProviderRequestException(Exception ex, CancellationToken cancellationToken)
+        => ex is AmazonServiceException or AmazonClientException
+            || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested);
 
     private static bool IsSubmissionOutcomeUncertain(Exception ex)
     {
+        if (ex is OperationCanceledException)
+        {
+            // The request may have reached Batch before its response was interrupted.
+            // The catch filter excludes controller cancellation; discover this submission
+            // by its original name instead of failing or repeating a non-idempotent call.
+            return true;
+        }
+
         // AmazonClientException (credential resolution, DNS, socket) never reached AWS —
         // the SubmitJob call did not get far enough to be rejected, so the outcome is
         // ambiguous by definition. In AWS SDK v4 AmazonClientException and
@@ -425,6 +437,51 @@ internal sealed partial class AwsBatchComputeBackend(
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(CreateCapabilitiesSnapshot());
 
+    public async Task<IReadOnlyDictionary<string, string>?> PrepareSubmissionAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (job.Audit.CustomCodeOwnerScope is not { } owner)
+        {
+            return null;
+        }
+        if (scopedTokenIssuer is null)
+        {
+            throw new InvalidOperationException("Custom-code artifact capability issuer is unavailable.");
+        }
+        var queueWait = options.Value.CustomCodeMaxQueueWaitSeconds;
+        if (queueWait is < 1 or > 86400)
+        {
+            throw new InvalidOperationException("Custom-code queue wait must be between 1 and 86400 seconds.");
+        }
+        var startDeadline = DateTimeOffset.UtcNow.AddSeconds(queueWait);
+        var attempt = checked(job.AttemptCount + 1);
+        var issuance = await scopedTokenIssuer.IssueAsync(new ScopedJobTokenRequest(
+            owner.PrincipalId, owner.TenantId, owner.Roles, owner.Grants,
+            job.OperationId, owner.DeclaredScope,
+            startDeadline.AddSeconds(TryParseInt(job.Spec.Parameters, AwsBatchParameterKeys.TimeoutSeconds) ?? 3600).AddMinutes(5))
+        { Attempt = attempt }, cancellationToken).ConfigureAwait(false);
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["env.HONUA_JOB_TOKEN"] = issuance.Token,
+            ["env.HONUA_JOB_ID"] = job.OperationId,
+            ["env.HONUA_JOB_ATTEMPT"] = attempt.ToString(CultureInfo.InvariantCulture),
+            ["env.HONUA_JOB_START_DEADLINE"] = startDeadline.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
+        };
+    }
+
+    public async Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)
+    {
+        if (previous.Audit.CustomCodeOwnerScope is not null && scopedTokenIssuer is not null &&
+            previous.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var oldToken) &&
+            prepared.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var newToken) &&
+            !string.Equals(oldToken, newToken, StringComparison.Ordinal))
+        {
+            // Never revoke before the preparation CAS: a stale dispatcher must not revoke
+            // another live attempt. Callback handlers also compare the durable current token,
+            // covering a process crash between this CAS and the cache revocation below.
+            await scopedTokenIssuer.RevokeAsync(oldToken, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default)
@@ -452,18 +509,39 @@ internal sealed partial class AwsBatchComputeBackend(
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
         var serviceUrl = GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
 
+        Dictionary<string, string>? resolvedParameters = null;
+        var environmentOverrides = BuildEnvironmentOverrides(job);
+        if (job.Audit.CustomCodeOwnerScope is not null)
+        {
+            var expectedAttempt = checked(job.AttemptCount + 1).ToString(CultureInfo.InvariantCulture);
+            if (!parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var token) || string.IsNullOrWhiteSpace(token) ||
+                !parameters.TryGetValue("env.HONUA_JOB_ATTEMPT", out var attempt) || attempt != expectedAttempt ||
+                !parameters.TryGetValue("env.HONUA_JOB_ID", out var jobId) || jobId != job.OperationId)
+            {
+                return new BatchComputeSubmissionResult { Status = ExecutionJobStatus.Failed, Message = "Custom-code attempt capability was not durably prepared before dispatch." };
+            }
+            resolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["env.HONUA_JOB_TOKEN"] = token,
+                ["env.HONUA_JOB_ID"] = jobId,
+                ["env.HONUA_JOB_ATTEMPT"] = attempt
+            };
+        }
+
         var jobName = BuildJobName(job.OperationId, job.AttemptCount);
         var submission = new AwsBatchJobSubmission
         {
             JobName = jobName,
             JobDefinition = jobDefinition,
             JobQueue = jobQueue,
-            EnvironmentOverrides = BuildEnvironmentOverrides(job),
+            EnvironmentOverrides = environmentOverrides,
+            RequireCredentialFreeCustomCode = job.Audit.CustomCodeOwnerScope is not null,
+            ExpectedCustomCodeImage = job.Spec.Artifact,
             Vcpus = TryParseInt(parameters, AwsBatchParameterKeys.Vcpus),
             MemoryMib = TryParseInt(parameters, AwsBatchParameterKeys.MemoryMib),
             GpuCount = TryParseInt(parameters, AwsBatchParameterKeys.GpuCount),
             AttemptDurationSeconds = TryParseInt(parameters, AwsBatchParameterKeys.TimeoutSeconds),
-            RetryAttempts = TryParseInt(parameters, AwsBatchParameterKeys.RetryAttempts),
+            RetryAttempts = job.Audit.CustomCodeOwnerScope is not null ? 1 : TryParseInt(parameters, AwsBatchParameterKeys.RetryAttempts),
             ShareIdentifier = GetOptionalParameter(parameters, AwsBatchParameterKeys.ShareIdentifier)
         };
 
@@ -477,10 +555,23 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Queued,
                 ProviderOperationId = result.JobId,
+                ResolvedParameters = resolvedParameters,
                 Message = $"Submitted AWS Batch job '{result.JobName}' ({result.JobId}) to queue '{jobQueue}'."
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex) && IsSubmissionOutcomeUncertain(ex))
+        catch (InvalidOperationException) when (job.Audit.CustomCodeOwnerScope is not null)
+        {
+            if (resolvedParameters is not null && scopedTokenIssuer is not null)
+            {
+                await scopedTokenIssuer.RevokeAsync(resolvedParameters["env.HONUA_JOB_TOKEN"], CancellationToken.None).ConfigureAwait(false);
+            }
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = "Custom-code provider definition does not satisfy the credential-free Fargate boundary."
+            };
+        }
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken) && IsSubmissionOutcomeUncertain(ex))
         {
             // Transport-ambiguous submit (5xx/429/408/credential/network): AWS Batch may
             // have accepted the job even though we never got a response. Preserve the
@@ -493,6 +584,7 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Queued,
                 ProviderOperationId = PendingSubmissionMarkerPrefix + jobName,
+                ResolvedParameters = resolvedParameters,
                 Message = "AWS Batch submission outcome is uncertain. Reconciliation will verify whether the provider accepted the job."
             };
         }
@@ -575,6 +667,16 @@ internal sealed partial class AwsBatchComputeBackend(
                 };
             }
 
+            if (await EnforceCustomCodeQueueDeadlineAsync(job, state, region, serviceUrl, cancellationToken).ConfigureAwait(false))
+            {
+                // Keep observing until the provider confirms termination.
+                return new BatchComputeObservation
+                {
+                    Status = job.Status,
+                    ProviderOperationId = state.JobId,
+                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution."
+                };
+            }
             var mapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
             var message = BuildObservationMessage(state);
             Log.BatchJobObserved(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN", mapped.ToString());
@@ -586,7 +688,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = message
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             // Preserve durable state on provider/transport/auth failures, covering both
             // AmazonServiceException (HTTP-level errors) and AmazonClientException
@@ -603,6 +705,28 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = "AWS Batch observation failed."
             };
         }
+    }
+
+    private async Task<bool> EnforceCustomCodeQueueDeadlineAsync(ExecutionJobRecord job, AwsBatchJobState state,
+        string? region, string? serviceUrl, CancellationToken cancellationToken)
+    {
+        if (job.Audit.CustomCodeOwnerScope is null || state.Status is not ("SUBMITTED" or "PENDING" or "RUNNABLE" or "STARTING") ||
+            !job.Spec.Parameters.TryGetValue("env.HONUA_JOB_START_DEADLINE", out var raw) ||
+            !long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var deadline) ||
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds() <= deadline)
+        {
+            return false;
+        }
+        const string reason = "Custom-code queue-wait deadline exceeded.";
+        if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
+        {
+            await batchClient.CancelJobAsync(state.JobId, reason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await batchClient.TerminateJobAsync(state.JobId, reason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
+        }
+        return true;
     }
 
     private async Task<BatchComputeObservation> ObservePendingDiscoveryAsync(
@@ -667,6 +791,16 @@ internal sealed partial class AwsBatchComputeBackend(
             }
 
             var summary = matches[0];
+            if (await EnforceCustomCodeQueueDeadlineAsync(job, summary, region, serviceUrl, cancellationToken).ConfigureAwait(false))
+            {
+                // Keep observing until the provider confirms termination.
+                return new BatchComputeObservation
+                {
+                    Status = job.Status,
+                    ProviderOperationId = summary.JobId,
+                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution."
+                };
+            }
             var mapped = AwsBatchStateMapper.MapStatusWithReason(summary.Status, summary.StatusReason);
             Log.BatchJobDiscoveryResolved(
                 logger,
@@ -679,10 +813,15 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = mapped,
                 ProviderOperationId = summary.JobId,
+                RecoveredAttemptCount = string.IsNullOrWhiteSpace(job.ProviderOperationId)
+                    && job.Audit.CustomCodeOwnerScope is not null
+                    && job.Spec.Parameters.TryGetValue("env.HONUA_JOB_ATTEMPT", out var preparedAttempt)
+                    && int.TryParse(preparedAttempt, NumberStyles.None, CultureInfo.InvariantCulture, out var recoveredAttempt)
+                    && recoveredAttempt == job.AttemptCount + 1 ? recoveredAttempt : null,
                 Message = $"Discovered AWS Batch job '{summary.JobId}' by name '{pendingJobName}' in state {summary.Status ?? "UNKNOWN"}."
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ex.Message);
             return new BatchComputeObservation
@@ -799,7 +938,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = message
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             // Preserve durable state on provider/transport/auth failures, covering both
             // AmazonServiceException (HTTP-level errors) and AmazonClientException
@@ -890,7 +1029,7 @@ internal sealed partial class AwsBatchComputeBackend(
             var hydrated = job with { ProviderOperationId = summary.JobId };
             return await CancelAsync(hydrated, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ex.Message);
             return new BatchComputeObservation
@@ -930,43 +1069,20 @@ internal sealed partial class AwsBatchComputeBackend(
 
     private static List<AwsBatchEnvironmentOverride> BuildEnvironmentOverrides(ExecutionJobRecord job)
     {
-        var overrides = new List<AwsBatchEnvironmentOverride>
-        {
-            new("HONUA_OPERATION_ID", job.OperationId),
-            new("HONUA_WORKLOAD_NAME", job.Spec.WorkloadName),
-            new("HONUA_JOB_KIND", job.Spec.Kind.ToString())
-        };
-
-        if (!string.IsNullOrWhiteSpace(job.Spec.WorkloadId))
-        {
-            overrides.Add(new("HONUA_WORKLOAD_ID", job.Spec.WorkloadId));
-        }
-
-        if (!string.IsNullOrWhiteSpace(job.Spec.RuntimeProfile))
-        {
-            overrides.Add(new("HONUA_RUNTIME_PROFILE", job.Spec.RuntimeProfile));
-        }
-
+        var overrides = new List<AwsBatchEnvironmentOverride>();
         foreach (var entry in job.Spec.Parameters)
         {
-            if (entry.Key.StartsWith("batch.", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!entry.Key.StartsWith("env.", StringComparison.Ordinal))
+            if (entry.Key.StartsWith("batch.", StringComparison.Ordinal)
+                || !entry.Key.StartsWith("env.", StringComparison.Ordinal))
             {
                 continue;
             }
 
             var name = entry.Key["env.".Length..];
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
 
-            // Never let a workload passthrough shadow the contract-version gate; it is stamped last below.
-            if (string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal))
+            // Never let a workload passthrough shadow a launch variable (operation id, kind, attempt,
+            // contract version): the worker-mode switch and its claim fence read them.
+            if (string.IsNullOrWhiteSpace(name) || ExecutionWorkerLaunchEnvironment.IsReserved(name))
             {
                 continue;
             }
@@ -974,10 +1090,13 @@ internal sealed partial class AwsBatchComputeBackend(
             overrides.Add(new(name, entry.Value ?? string.Empty));
         }
 
-        // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this and
-        // fails closed if it exceeds the version it can run. Appended AFTER the env.* passthrough so a
-        // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
-        overrides.Add(new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
+        // The launch contract (HONUA_OPERATION_ID, kind, attempt, and the serving-to-worker contract
+        // version of ADR-0060 #3b) is stamped AFTER the passthrough. StartAsync receives the record
+        // before the submission is counted, so this launch runs attempt AttemptCount + 1.
+        foreach (var variable in ExecutionWorkerLaunchEnvironment.Build(job, job.AttemptCount + 1))
+        {
+            overrides.Add(new(variable.Key, variable.Value));
+        }
 
         return overrides;
     }

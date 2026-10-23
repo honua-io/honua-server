@@ -4,6 +4,7 @@
   "trackingIssue": "honua-release#100",
   "description": "Hand-maintained, reviewed DEMOTION-ONLY maturity table for capability keys whose feature-catalog entries would otherwise project the default `implemented` tier. It exists because the only runtime maturity lever (a CapabilityRegistry CapabilityDescriptor read through CapabilityGateResolver) reaches just the ~30 curated /mcp + honua.capability_manifest.v1 ids, so a key outside that roster had no way to express 'shipped, but not advertised as GA in this release' — the gap docs/gis/capability-ga-regrade-2026-07.md recorded as a documentation-only demotion for want of a lever. Rows are applied per capability key by FeatureCatalogGenerator.ResolveMaturity, which takes the LOWER of the registry-resolved tier and the tier named here: an override can only demote, never promote, so it can never be used to advertise a capability as more mature than the live registry says. Adding a row changes what the capability matrix reports (docs/gis/data/capability-matrix.v1.json rolls the per-entry tiers up into `maturity`, and honua-release's tools/check_ga_surface.py treats a key with `maturity.implemented == 0` as not advertised GA). It changes NO runtime behaviour: the routes stay registered, gated and served exactly as before. Drift-gated by CapabilityKeyDriftTests.",
   "maturityTiers": {
+    "internal": "Used only by Honua-operated infrastructure; not offered for customer deployment and carries no availability, performance, or support claim.",
     "planned": "Planned but not yet built; declared for roadmap visibility only.",
     "deferred": "Deferred out of the current release scope by an owner decision; present and serving on trunk but not advertised as part of this release's GA surface.",
     "experimental": "Implemented but off by default and gated behind an explicitly-named configuration flag, so it is not part of the default advertised surface.",
@@ -13,7 +14,8 @@
   "reasonCodes": {
     "release-deferred": "An owner decision moved the capability out of the current release; the code ships but the claim does not.",
     "config-gated-off-by-default": "Served only when a named, default-off configuration flag is set; not part of the default advertised surface.",
-    "release-preview": "A shipped opt-in capability outside the current release's GA operational, SLA, and scale commitments."
+    "release-preview": "A shipped opt-in capability outside the current release's GA operational, SLA, and scale commitments.",
+    "internal-only": "Used only by Honua-operated infrastructure and excluded from GA and Preview product counts."
   },
   "overrides": [
     {
@@ -39,10 +41,10 @@
     },
     {
       "capability": "admin.multi-tenancy",
-      "maturity": "preview",
-      "reasonCode": "release-preview",
-      "reason": "Honua 2026.1 GA is single-tenant. Multi-tenant lifecycle, schema routing, and usage are Preview/trial only for non-production demo or evaluation areas; do not use customer production data. No GA, availability, performance, durability, SLA, SLO, or scale commitment. Honua provides no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect regardless of lifecycle status.",
-      "decision": "honua-release#210; honua-server#3906; operator contract amendment (2026-09-04)"
+      "maturity": "internal",
+      "reasonCode": "internal-only",
+      "reason": "Multi-tenant lifecycle, schema routing, and usage exist only on Honua's demo infrastructure at demo.honua.io. They are not offered for customer deployment and carry no availability, performance, or support claim. Cross-tenant disclosure remains a full-severity security defect on that stack.",
+      "decision": "honua-release#376 ruling R29 (2026-10-03)"
     },
     {
       "capability": "demo.showcase",

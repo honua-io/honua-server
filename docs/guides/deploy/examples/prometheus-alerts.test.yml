@@ -27,7 +27,7 @@ tests:
       exp_annotations:
         summary: Honua error rate is critical
         description: Error rate is 100% - immediate investigation required
-        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+        runbook_url: https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage
   - eval_time: 6m
     alertname: HonuaErrorRateHigh
     exp_alerts:
@@ -37,7 +37,7 @@ tests:
       exp_annotations:
         summary: Honua error rate is elevated
         description: Error rate is 100% for more than 5 minutes
-        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+        runbook_url: https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage
 - name: Aggregate operations and status classes within each scrape target
   interval: 1m
   input_series:
@@ -65,7 +65,7 @@ tests:
       exp_annotations:
         summary: Honua error rate is critical
         description: Error rate is 100% - immediate investigation required
-        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+        runbook_url: https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage
   - eval_time: 10m
     alertname: HonuaErrorRateHigh
     exp_alerts:
@@ -77,7 +77,7 @@ tests:
       exp_annotations:
         summary: Honua error rate is elevated
         description: Error rate is 100% for more than 5 minutes
-        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+        runbook_url: https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage
 - name: Elevated errors fire warning only
   interval: 1m
   input_series:
@@ -95,7 +95,7 @@ tests:
       exp_annotations:
         summary: Honua error rate is elevated
         description: Error rate is 3% for more than 5 minutes
-        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+        runbook_url: https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage
   - eval_time: 10m
     alertname: HonuaErrorRateCritical
     exp_alerts: []
@@ -172,4 +172,4 @@ tests:
       exp_annotations:
         summary: Honua error rate is critical
         description: Error rate is 100% - immediate investigation required
-        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+        runbook_url: https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage

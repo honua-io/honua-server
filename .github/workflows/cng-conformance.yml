@@ -7,8 +7,28 @@ on:
   schedule:
     # Weekly, offset from the CITE suites (Mon/Tue) to spread runner load.
     - cron: '0 6 * * 3'
+  # honua-server#4398: the validator's own unit tests were in no testpaths and in no
+  # workflow, so the code that decides what the certification fragment claims was
+  # itself unverified. The `validator-selftest` job below is cheap (no Docker, no
+  # geospatial toolchain), so it runs on every change to the lane, not weekly.
+  pull_request:
+    paths:
+      - 'scripts/conformance/cng/**'
+      - '.github/workflows/cng-conformance.yml'
+      - '.github/workflows/cng-candidate.yml'
+  push:
+    branches: [trunk]
+    paths:
+      - 'scripts/conformance/cng/**'
+      - '.github/workflows/cng-conformance.yml'
+      - '.github/workflows/cng-candidate.yml'
   workflow_dispatch:
     inputs:
+      derived_zarr_rehearsal:
+        description: Engineering only; build a matching local worker and inspect its actual derived Zarr output
+        required: false
+        default: false
+        type: boolean
       server_image:
         description: Exact digest-addressed candidate image; omit only for a diagnostic local build
         required: false
@@ -22,25 +42,142 @@ on:
         required: false
         type: string
 
+  workflow_call:
+    inputs:
+      derived_zarr_rehearsal:
+        required: false
+        default: false
+        type: boolean
+      harness_ref:
+        required: true
+        type: string
+      server_image:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      candidate_cut_at:
+        required: true
+        type: string
+
 permissions:
   contents: read
   packages: read
 
 concurrency:
-  group: cng-conformance-${{ github.ref }}
+  # honua-server#4479: the cheap push/PR self-test must never cancel an in-flight
+  # heavyweight run. A push to `trunk` touching these paths shares `refs/heads/trunk`
+  # with the scheduled and dispatched lane, and the replacement push run skips the
+  # `cng` job entirely (it is restricted to schedule/workflow_dispatch), so the
+  # cancellation would destroy a full conformance result and produce nothing in its
+  # place. Split the group by tier: self-tests serialise against self-tests, the lane
+  # against the lane.
+  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '') && 'lane' || 'selftest' }}
   cancel-in-progress: true
 
 jobs:
-  cng:
-    name: CNG Conformance
+  validator-selftest:
+    name: CNG Validator Self-Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.harness_ref || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Run CNG validator self-tests
+        # These assert the governed assignment roster, the artifact-producer
+        # attribution and the budget-profile evaluation that decides whether a
+        # certification cell may pass. They import the validator module directly and
+        # need none of the geospatial client toolchain the lane installs.
+        run: python3 -m unittest discover -s scripts/conformance/cng -p 'test_*.py' -v
+
+      - name: Run canonical JavaScript metadata observation tests
+        run: node --test scripts/conformance/cng/test-artifact-metadata.mjs scripts/conformance/cng/test-http-range-observer.mjs
+
+  cng:
+    name: CNG Conformance
+    runs-on: ubuntu-24.04
+    # The lane must not run against a validator whose own tests are red.
+    needs: validator-selftest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != ''
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.harness_ref || github.sha }}
+
+      - name: Check out the exact candidate source for offline Honua consumers
+        if: inputs.server_image != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.source_sha }}
+          path: candidate-source
+
+      - name: Verify candidate identity before installing tools
+        if: inputs.server_image != ''
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CUT_AT: ${{ inputs.candidate_cut_at }}
+        run: |
+          set -euo pipefail
+          python3 scripts/conformance/cng/artifact-gen/candidate_identity.py validate-inputs
+          actual="$(git -C candidate-source rev-parse HEAD)"
+          test "$actual" = "$SOURCE_SHA"
+          echo "HONUA_CNG_SOURCE_ROOT=$GITHUB_WORKSPACE/candidate-source" >> "$GITHUB_ENV"
+          echo "CNG_GENERATOR_SOURCE_SHA=$actual" >> "$GITHUB_ENV"
+
+      - name: Require a published candidate for the derived-output rehearsal
+        if: inputs.derived_zarr_rehearsal
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+        run: test -n "$SERVER_IMAGE"
+
+      - name: Start runner-local worker registry
+        if: inputs.derived_zarr_rehearsal
+        run: docker run --detach --name cng-zarr-registry -p 127.0.0.1:5000:5000 registry:3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: ${{ inputs.derived_zarr_rehearsal && 'network=host' || '' }}
+
+      - name: Authenticate read access to worker cache and base images
+        if: inputs.derived_zarr_rehearsal
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build unchanged matching worker into runner-local registry
+        if: inputs.derived_zarr_rehearsal
+        id: zarr_worker
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: candidate-source
+          file: candidate-source/docker/worker-gdal/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: localhost:5000/cng-zarr-worker:engineering
+          build-args: |
+            HONUA_GIT_SHA=${{ inputs.source_sha }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64
 
       - name: Set up .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -93,10 +230,11 @@ jobs:
           # Canonical artifact consumers. Exact pins are evidence identities.
           python3 -m pip install \
             dask==2026.7.1 \
-            fsspec==2026.7.0 \
+            "fsspec[http]==2026.7.0" \
             geopandas==1.1.4 \
             h5netcdf==1.8.1 \
             h5py==3.16.0 \
+            numcodecs==0.16.5 \
             numpy==2.5.2 \
             pyarrow==25.0.1 \
             pyogrio==0.13.0 \
@@ -115,6 +253,11 @@ jobs:
       - name: Run CNG conformance lane
         id: run
         env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CUT_AT: ${{ inputs.candidate_cut_at }}
+          HONUA_CNG_DERIVED_ZARR: ${{ inputs.derived_zarr_rehearsal || false }}
+          HONUA_CNG_WORKER_IMAGE: ${{ inputs.derived_zarr_rehearsal && format('localhost:5000/cng-zarr-worker@{0}', steps.zarr_worker.outputs.digest) || '' }}
           HONUA_CNG_SKIP_BUILD: ${{ inputs.server_image != '' }}
           HONUA_CNG_CLEANUP: 'false'
           # Official OSGeo ubuntu-full image includes the Arrow/Parquet driver
@@ -124,45 +267,69 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           HONUA_DOCKER_GITHUB_TOKEN: ${{ github.token }}
         run: |
-          set +e
-          trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
-          if [[ -n "${{ inputs.server_image }}" ]]; then
-            if [[ ! "${{ inputs.server_image }}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+          set -uo pipefail
+          harness_sha="$(git rev-parse HEAD)"
+          compose_args=(-f docker/cng/compose.yml)
+          if [[ "$HONUA_CNG_DERIVED_ZARR" == "true" ]]; then compose_args+=(-f docker/cng/derived-zarr.yml); fi
+          trap 'docker compose "${compose_args[@]}" --profile derived-zarr down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
+          if [[ -n "$SERVER_IMAGE" ]]; then
+            if [[ ! "$SERVER_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
               echo "server_image must be digest-addressed" >&2
               exit 1
             fi
-            docker pull "${{ inputs.server_image }}"
-            docker tag "${{ inputs.server_image }}" honua-server:latest
+            docker pull "$SERVER_IMAGE" || exit 1
+            revision="$(docker image inspect "$SERVER_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+            if [[ "$revision" != "$SOURCE_SHA" ]]; then
+              echo "Candidate image revision $revision differs from $SOURCE_SHA" >&2
+              exit 1
+            fi
+            docker tag "$SERVER_IMAGE" honua-server:latest
           fi
-          bash ./scripts/conformance/cng/run-cng-conformance.sh
-          cng_exit=$?
+          if [[ "$HONUA_CNG_DERIVED_ZARR" == "true" ]]; then
+            docker pull "$HONUA_CNG_WORKER_IMAGE" || exit 1
+            worker_revision="$(docker image inspect "$HONUA_CNG_WORKER_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+            test "$worker_revision" = "$SOURCE_SHA" || exit 1
+            export CNG_WORKER_REVISION="$worker_revision" CNG_SERVER_REVISION="$revision"
+            mkdir -p cng-results/artifacts
+            python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipt = {"source_sha": os.environ["SOURCE_SHA"], "server_image": os.environ["SERVER_IMAGE"],
+                     "server_revision": os.environ["CNG_SERVER_REVISION"], "worker_image": os.environ["HONUA_CNG_WORKER_IMAGE"],
+                     "worker_revision": os.environ["CNG_WORKER_REVISION"], "qualification": False}
+          Path("cng-results/artifacts/derived-zarr-identity.json").write_text(json.dumps(receipt, indent=2))
+          PY
+          fi
+          cng_exit=0
+          bash ./scripts/conformance/cng/run-cng-conformance.sh || cng_exit=$?
 
-          if [[ -n "${{ inputs.server_image }}" ]]; then
-            image_digest="${{ inputs.server_image }}"; image_digest="${image_digest##*@}"
-            source_sha="${{ inputs.source_sha }}"
-            candidate_cut_at="${{ inputs.candidate_cut_at }}"
+          if [[ -n "$SERVER_IMAGE" ]]; then
+            image_digest="$SERVER_IMAGE"; image_digest="${image_digest##*@}"
+            source_sha="$SOURCE_SHA"
+            candidate_cut_at="$CUT_AT"
             if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ || -z "$candidate_cut_at" ]]; then
               echo "Digest-addressed dispatch requires source_sha and candidate_cut_at" >&2
               exit 1
             fi
           else
             image_digest="$(docker image inspect --format '{{.Id}}' honua-server:latest 2>/dev/null)"
-            source_sha="$GITHUB_SHA"
+            source_sha="$harness_sha"
             candidate_cut_at="$(git show -s --format=%cI HEAD)"
           fi
+          client_exit=0
           python3 ./scripts/conformance/cng/validate-canonical-artifacts.py \
             --artifacts cng-results/artifacts \
             --native-results cng-results \
             --output cng-results/protocol-certification-fragment.json \
             --source-sha "$source_sha" \
+            --generator-source-sha "${CNG_GENERATOR_SOURCE_SHA:-$harness_sha}" \
             --image-digest "$image_digest" \
             --candidate-cut-at "$candidate_cut_at" \
-            --fixture-revision "docker/cng/seed.sql@$source_sha" \
+            --fixture-revision "docker/cng/seed.sql@$harness_sha" \
             --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --base-url "http://localhost:8094"
-          client_exit=$?
+            --base-url "http://localhost:8094" || client_exit=$?
 
-          docker compose -f docker/cng/compose.yml logs --no-color honua-server \
+          docker compose "${compose_args[@]}" logs --no-color honua-server \
             > cng-results/honua-server.log 2>&1 || true
 
           if [[ "$cng_exit" -ne 0 || "$client_exit" -ne 0 ]]; then exit_code=1; else exit_code=0; fi
@@ -170,11 +337,14 @@ jobs:
 
       - name: Upload CNG results
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: cng-conformance-results-${{ github.run_number }}
           path: |
             cng-results/
+          # Zarr metadata uses dotfiles; retain actual bytes for receipt audits.
+          # Build credentials are held in mktemp outside this results directory.
+          include-hidden-files: true
           retention-days: 30
 
       - name: Fail on conformance issues

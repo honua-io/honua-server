@@ -4,6 +4,7 @@
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Honua.Db.Postgres.Features.Attachments;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
@@ -11,7 +12,14 @@ internal sealed partial class GeoservicesImportService
 {
     private const int AttachmentQueryBatchSize = 50;
 
-    private async Task<(int Copied, int Failed)> CopyAttachmentsAsync(
+    /// <summary>
+    /// Copies the source layer's attachments into the Honua attachment store and reports the
+    /// attachment inventory independently of the feature counts (issue #4600). The advertised total
+    /// is what the source said exists; <c>UnverifiedParents</c> counts imported features whose
+    /// attachment inventory could not be read at all, so the fidelity gate can tell "no attachments"
+    /// apart from "we never found out".
+    /// </summary>
+    private async Task<AttachmentCopyOutcome> CopyAttachmentsAsync(
         GeoservicesImportRequest request,
         GeoservicesLayerInfo layerInfo,
         int publishedLayerId,
@@ -23,10 +31,44 @@ internal sealed partial class GeoservicesImportService
         int featuresProcessed,
         CancellationToken cancellationToken)
     {
-        if (_attachmentStore == null || objectIdMap.Count == 0)
+        var importedStore = _attachmentStore as IImportedAttachmentStore;
+        if (importedStore == null)
         {
-            return (0, 0);
+            warnings.Add("The attachment store does not support source identity reconciliation; attachment copying was skipped.");
         }
+        else
+        {
+            try
+            {
+                if (await importedStore.HasLegacyAttachmentsAsync(publishedLayerId, cancellationToken).ConfigureAwait(false))
+                {
+                    warnings.Add("Untracked attachments were preserved. Review legacy attachment ownership before copying another imported set.");
+                    return new AttachmentCopyOutcome { TargetUnverified = true };
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.AttachmentQueryBatchFailed(_logger, request.LayerId, objectIdMap.Count, ex);
+                warnings.Add("Attachment ownership could not be verified; copying was skipped to preserve the existing set.");
+                return new AttachmentCopyOutcome { TargetUnverified = true };
+            }
+        }
+
+        var generation = Guid.NewGuid();
+        // Credentials are deliberately excluded; source identity survives token rotation.
+        var serviceUri = new UriBuilder(request.ServiceUrl)
+        {
+            UserName = string.Empty,
+            Password = string.Empty,
+            Query = string.Empty,
+            Fragment = string.Empty
+        }.Uri;
+        var source = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"{serviceUri.GetLeftPart(UriPartial.Path).TrimEnd('/')}:{request.LayerId}")));
 
         Log.AttachmentCopyStarting(_logger, request.LayerId, objectIdMap.Count);
         ReportProgress(
@@ -45,13 +87,16 @@ internal sealed partial class GeoservicesImportService
 
         var attachmentsCopied = 0;
         var failedAttachments = 0;
+        var advertisedAttachments = 0;
+        var unverifiedParents = 0;
+        var targetUnverified = importedStore == null;
 
         // Stable batches of source ObjectIds keep attachment-group ordering deterministic for tests.
         var sourceObjectIds = objectIdMap.Keys
             .OrderBy(static value => value)
             .ToArray();
 
-        for (var batchStart = 0; batchStart < sourceObjectIds.Length; batchStart += AttachmentQueryBatchSize)
+        for (var batchStart = 0; layerInfo.HasAttachments && batchStart < sourceObjectIds.Length; batchStart += AttachmentQueryBatchSize)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -81,6 +126,10 @@ internal sealed partial class GeoservicesImportService
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.AttachmentQueryBatchFailed(_logger, request.LayerId, batch.Length, ex);
+                // #4600: the advertised attachment count for these parents is now unknowable, so the
+                // attachment check cannot be reported as passing. Record the parents as unverified
+                // rather than letting the run imply they simply had no attachments.
+                unverifiedParents += batch.Length;
                 warnings.Add(
                     $"Attachment metadata query failed for {batch.Length} parent features; "
                     + "this batch of attachments was skipped.");
@@ -99,6 +148,8 @@ internal sealed partial class GeoservicesImportService
                     continue;
                 }
 
+                advertisedAttachments += group.AttachmentInfos.Length;
+
                 if (!objectIdMap.TryGetValue(group.ParentObjectId, out var honuaFeatureId))
                 {
                     // Parent feature was not inserted (filtered out or insert failed). Count
@@ -116,6 +167,11 @@ internal sealed partial class GeoservicesImportService
 
                     try
                     {
+                        if (importedStore == null)
+                        {
+                            throw new InvalidOperationException("Source identity reconciliation is unavailable.");
+                        }
+
                         await using var download = await _restClient.DownloadAttachmentAsync(
                             request.ServiceUrl,
                             request.LayerId,
@@ -133,9 +189,13 @@ internal sealed partial class GeoservicesImportService
                             ? download.ContentType
                             : attachmentInfo.ContentType!;
 
-                        await _attachmentStore!.UploadAsync(
+                        await importedStore.UploadImportedAsync(
                             publishedLayerId,
                             honuaFeatureId,
+                            source,
+                            group.ParentObjectId,
+                            attachmentInfo.Id,
+                            generation,
                             filename,
                             contentType,
                             download.Content,
@@ -178,6 +238,38 @@ internal sealed partial class GeoservicesImportService
             }
         }
 
+        // A partial inventory or copy must never delete the prior imported set. The next
+        // complete retry upserts the same source identities, then retires unseen attachments,
+        // including attachments whose parent disappeared and a newly empty source inventory.
+        if (importedStore != null && failedAttachments == 0 && unverifiedParents == 0)
+        {
+            try
+            {
+                if (await importedStore.CompleteImportAsync(publishedLayerId, generation, cancellationToken).ConfigureAwait(false))
+                {
+                    // Old imports have no provenance and cannot be distinguished from files
+                    // added through Honua. Preserve them and require an ownership review.
+                    targetUnverified = true;
+                    warnings.Add("Untracked attachments were preserved. They may include legacy imported attachments; "
+                        + "verify their ownership and remove obsolete legacy copies before accepting attachment fidelity.");
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                targetUnverified = true;
+                Log.AttachmentQueryBatchFailed(_logger, request.LayerId, objectIdMap.Count, ex);
+                warnings.Add("Imported attachment reconciliation failed; prior attachments may remain and fidelity requires review.");
+            }
+        }
+
+        // Source inventory failures also leave the retained target set unverified. The
+        // target discrepancy blocks completion even when the source check alone is unverified.
+        targetUnverified |= unverifiedParents > 0;
+
         Log.AttachmentCopyCompleted(_logger, request.LayerId, attachmentsCopied, failedAttachments);
 
         if (failedAttachments > 0)
@@ -187,6 +279,35 @@ internal sealed partial class GeoservicesImportService
                 + "but some attachments are missing from the target store.");
         }
 
-        return (attachmentsCopied, failedAttachments);
+        return new AttachmentCopyOutcome
+        {
+            Copied = attachmentsCopied,
+            Failed = failedAttachments,
+            Advertised = advertisedAttachments,
+            UnverifiedParents = unverifiedParents,
+            TargetUnverified = targetUnverified
+        };
+    }
+
+    /// <summary>
+    /// Attachment-copy accounting for one import run. Kept separate from the feature counters so
+    /// attachment parity is reconciled on its own evidence (issue #4600 acceptance criterion 6).
+    /// </summary>
+    internal readonly record struct AttachmentCopyOutcome
+    {
+        /// <summary>Attachments whose bytes reached the Honua attachment store.</summary>
+        public int Copied { get; init; }
+
+        /// <summary>Advertised attachments that could not be copied.</summary>
+        public int Failed { get; init; }
+
+        /// <summary>Attachments the source advertised across every parent feature that was probed.</summary>
+        public int Advertised { get; init; }
+
+        /// <summary>Imported features whose source attachment inventory could not be read.</summary>
+        public int UnverifiedParents { get; init; }
+
+        /// <summary>Retained untracked rows or failed reconciliation prevent verifying the target set.</summary>
+        public bool TargetUnverified { get; init; }
     }
 }

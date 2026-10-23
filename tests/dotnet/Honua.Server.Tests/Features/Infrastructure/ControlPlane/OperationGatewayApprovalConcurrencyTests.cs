@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 /// <summary>
 /// Regression coverage for BH4-031: concurrent calls to
-/// <see cref="OperationGateway.ApplyApprovedProposalAsync"/> must execute the
+/// <see cref="OperationGateway.ApplyApprovedProposalAsync(string,string,CancellationToken)"/> must execute the
 /// underlying operation exactly once, even when two callers both read
 /// <see cref="OperationProposalStatus.AwaitingApproval"/> before either claims.
 ///

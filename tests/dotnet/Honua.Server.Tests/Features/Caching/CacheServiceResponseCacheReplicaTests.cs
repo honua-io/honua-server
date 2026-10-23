@@ -4,7 +4,6 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
-using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Infrastructure.Caching;
 
 namespace Honua.Server.Tests.Features.Caching;
@@ -87,7 +86,7 @@ public sealed class CacheServiceResponseCacheReplicaTests
     {
         var shared = new SharedCache();
         var writer = new CacheServiceResponseCache(shared);
-        IResponseCache reader = new CacheServiceResponseCache(shared);
+        var reader = new CacheServiceResponseCache(shared);
         var fillKey = await reader.BindKeyAsync(key);
         Assert.Null(await reader.GetAsync<string>(fillKey));
 

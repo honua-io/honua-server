@@ -172,6 +172,16 @@ public sealed record MigrationCatalogReconciliationInput
     /// </summary>
     public double[]? SourceBbox { get; init; }
 
+    /// <summary>Target CRS recorded in the reviewed import request, when supplied.</summary>
+    public int? PlannedTargetSrid { get; init; }
+
+    /// <summary>
+    /// Independently queried native target-row extent. For a planned reprojection the catalog
+    /// bbox is checked against this observation, while data reconciliation compares target rows
+    /// with the frozen source extent in a common CRS. This is not a source-fidelity verdict.
+    /// </summary>
+    public ExtentBox? ObservedTargetExtent { get; init; }
+
     /// <summary>
     /// Optional target resource identifier (e.g. from the manifest's identity record) recorded
     /// alongside each outcome so reports can cross-reference the catalog entry.
@@ -233,6 +243,13 @@ public static class MigrationCatalogReconciliationCodes
 
     /// <summary>A relationship captured at manifest time is missing from the published resource.</summary>
     public const string RelationshipMissing = "catalog.relationship.missing";
+
+    /// <summary>
+    /// A published relationship matches a composite source record but dropped composite ownership
+    /// or no longer agrees on role, cardinality, or key fields. A name match is not enough to
+    /// treat that publication as a simple relationship.
+    /// </summary>
+    public const string RelationshipCompositeDowngraded = "catalog.relationship.composite-downgraded";
 
     /// <summary>
     /// The source resource advertised attachments but the published resource does not declare

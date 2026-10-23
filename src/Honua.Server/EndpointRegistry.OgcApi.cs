@@ -32,6 +32,7 @@ public static partial class EndpointRegistry
 
         // OGC API Records
         new("GET", "/ogc/records"),
+        new("GET", "/ogc/records/openapi.json"),
         new("GET", "/ogc/records/conformance"),
         new("GET", "/ogc/records/collections"),
         new("GET", "/ogc/records/collections/{collectionId}"),

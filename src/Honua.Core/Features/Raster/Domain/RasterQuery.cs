@@ -14,6 +14,16 @@ public readonly record struct RasterQuery
     public RasterClipRegion? ClipRegion { get; init; }
 
     /// <summary>
+    /// When <c>true</c> and both <see cref="ClipRegion"/> and explicit output dimensions are set,
+    /// the exported image covers the clip region's envelope exactly (the Esri exportImage
+    /// <c>bbox</c> contract): the raster is warped onto an <see cref="OutputWidth"/> x
+    /// <see cref="OutputHeight"/> grid spanning that envelope in the output SRID, and pixels outside
+    /// the raster footprint are NoData. When <c>false</c> the output covers only the intersection of
+    /// the clip region and the raster (trim semantics).
+    /// </summary>
+    public bool CoverClipExtent { get; init; }
+
+    /// <summary>
     /// Optional additional clip region from a renderingRule <c>Clip</c> raster function.
     /// Applied as a second mask after <see cref="ClipRegion"/> so a non-rectangular
     /// area-of-interest can refine the output window. When <c>null</c> no extra clip applies.
@@ -203,7 +213,8 @@ public enum RasterFormat
     TIFF = 2,
 
     /// <summary>
-    /// Raw pixel data as byte array.
+    /// Little-endian, band-sequential raw pixel samples with per-band validity masks
+    /// in <see cref="RasterResult.BandValidityMasks"/>. Providers encode this directly.
     /// </summary>
     Raw = 3,
 
@@ -221,6 +232,7 @@ public static class RasterFormatExtensions
 {
     /// <summary>
     /// Gets the GDAL driver name for the format (e.g., "PNG", "JPEG", "GTiff", "COG").
+    /// Raw returns the provider sentinel "Raw" and must be encoded without a GDAL driver.
     /// </summary>
     public static string ToGdalDriverName(this RasterFormat format) => format switch
     {
@@ -228,6 +240,7 @@ public static class RasterFormatExtensions
         RasterFormat.JPEG => "JPEG",
         RasterFormat.TIFF => "GTiff",
         RasterFormat.COG => "COG",
+        RasterFormat.Raw => "Raw",
         _ => "PNG"
     };
 

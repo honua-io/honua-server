@@ -70,7 +70,7 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         OperationId = "admin.server.status",
         ProviderId = ServicePublishOperation.ProviderId,
         Title = "Read server status",
-        Description = "Reads the server readiness and version status without changing durable state.",
+        Description = "Reads the server readiness, version, and instance identity without changing durable state.",
         Category = "admin",
         ExecutionKind = OperationExecutionKind.Synchronous,
         ApprovalModel = OperationApprovalModel.None,
@@ -96,6 +96,13 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
                 Name = "version",
                 Title = "Server version",
                 Required = true,
+                Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text }
+            },
+            new OperationParameterDescriptor
+            {
+                Name = "instanceId",
+                Title = "Server instance id (matches the Honua-Instance response header)",
+                Required = false,
                 Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text }
             }
         ]

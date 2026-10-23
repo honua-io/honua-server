@@ -19,6 +19,33 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// </summary>
 public sealed class DeployWorkflowReconcilerLeaseContentionTests
 {
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData(WorkflowOperationStatus.Reconciling)]
+    [InlineData(WorkflowOperationStatus.RollbackRequested)]
+    public async Task ReconcileWorkflowOperationAsync_HostStops_ReplacementResumes(WorkflowOperationStatus status)
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backend = new CountingObserveBackend(entered, release);
+        var operation = CreateOperation() with { Status = status };
+        await store.TryCreateAsync(operation);
+        using var shutdown = new CancellationTokenSource();
+        var source = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        var reconcile = source.ReconcileWorkflowOperationAsync(operation.OperationId, shutdown.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        shutdown.Cancel();
+        await reconcile;
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(status);
+        (await store.GetAsync(operation.OperationId))!.CompletedAt.Should().BeNull();
+
+        release.TrySetResult();
+        var target = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await target.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.ObserveCalls.Should().Be(2, "shutdown must release ownership for the replacement reconciler");
+    }
+
     [Fact]
     public async Task ReconcileWorkflowOperationAsync_TwoReconcilersOneOperation_OnlyOneAdvances()
     {

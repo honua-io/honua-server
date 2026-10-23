@@ -43,7 +43,8 @@ public static class TileDecompressor
 
     /// <summary>
     /// Decompresses tile data and returns the content type for the response.
-    /// JPEG tiles are standalone images and served directly (zero-copy passthrough).
+    /// JPEG tiles pass through unchanged (zero-copy); callers must first assemble TIFF-JPEG tiles
+    /// that reference shared JPEGTables into a standalone stream with <see cref="JpegTileAssembler"/>.
     /// DEFLATE, LZW, ZSTD, and NONE tiles contain raw pixel data (not a valid image file);
     /// they are returned as <c>application/octet-stream</c> because re-encoding
     /// into a renderable image format requires band/dimension context that is
@@ -71,7 +72,7 @@ public static class TileDecompressor
         switch (compression)
         {
             case "JPEG":
-                return (tileData, "image/jpeg"); // Zero-copy passthrough — tile is a standalone JPEG
+                return (tileData, "image/jpeg"); // Zero-copy passthrough of an already-assembled JPEG stream
 
             case "NONE" or "":
                 // NONE tiles are already pixel data; a predictor still has to be reversed, but the

@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class CsvFormatReaderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PostgisEwktExport_ImportsWithGeometry()
     {
@@ -34,6 +35,60 @@ public sealed class CsvFormatReaderTests
         features[0].Attributes.Exists("geom").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_EwktProjectedSrid_KeepsEmbeddedSrid()
+    {
+        // #6171: the per-value SRID is part of the geometry. Callers must not replace it
+        // with the 4326 factory default.
+        var csv = """
+            id,geom
+            1,SRID=3857;POINT(-13627361 4544761)
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        var point = features.Should().ContainSingle().Which.Geometry.Should().BeOfType<Point>().Subject;
+        point.SRID.Should().Be(3857);
+        point.X.Should().BeApproximately(-13627361, 0.5);
+        point.Y.Should().BeApproximately(4544761, 0.5);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task TryDetectGeometrySridAsync_EwkbHex_ReturnsEmbeddedSrid()
+    {
+        var writer = new WKBWriter { Strict = false, HandleSRID = true };
+        var hex = Convert.ToHexString(writer.Write(new Point(-13627361, 4544761) { SRID = 3857 }));
+        var csv = $"""
+            id,geom
+            1,{hex}
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        var srid = await CsvFormatReader.TryDetectGeometrySridAsync(stream, CancellationToken.None);
+
+        srid.Should().Be(3857);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task TryDetectGeometrySridAsync_PlainWkt_ReturnsNull()
+    {
+        var csv = """
+            id,geom
+            1,POINT(-122.4194 37.7749)
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        var srid = await CsvFormatReader.TryDetectGeometrySridAsync(stream, CancellationToken.None);
+
+        srid.Should().BeNull();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PostgisEwkbHexExport_ImportsWithGeometry()
     {
@@ -52,6 +107,7 @@ public sealed class CsvFormatReaderTests
         point.X.Should().BeApproximately(-122.4194, 1e-6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_UnparseableGeometry_WarnsAndPreservesRawValueInsteadOfSilentNull()
     {
@@ -72,6 +128,7 @@ public sealed class CsvFormatReaderTests
         features[0].Attributes["name"].Should().Be("Broken");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ValidWkt_DoesNotReportUnparseableGeometry()
     {
@@ -92,6 +149,147 @@ public sealed class CsvFormatReaderTests
     // honua_ingest_dataset options ride through these on the shared pipeline.
     // -------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_StrayQuoteInUnquotedField_DoesNotMergeFollowingRows()
+    {
+        // #6173: an inch mark is not a quoted-field opener. Three physical rows stay three features.
+        var csv = """
+            id,part,code
+            1,12" pipe,a
+            2,coupling,b
+            3,12" valve,c
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().HaveCount(3);
+        features[0].Attributes["part"].Should().Be("12\" pipe");
+        features[0].Attributes["code"].Should().Be("a");
+        features[1].Attributes["id"].Should().Be("2");
+        features[1].Attributes["part"].Should().Be("coupling");
+        features[2].Attributes["part"].Should().Be("12\" valve");
+        features[2].Attributes["code"].Should().Be("c");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_QuotedFieldWithCommaAndEscapedQuote_StaysOneField()
+    {
+        var csv = """
+            name,address
+            Capitol,"1100 Congress Ave, ""Austin"", TX"
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Attributes["address"].Should().Be("1100 Congress Ave, \"Austin\", TX");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_QuotedFieldSpanningLines_JoinsUntilClosingQuote()
+    {
+        var csv = "id,note\n1,\"line1\nline2\",tail\n";
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Attributes["note"].Should().Be("line1\nline2");
+        features[0].Attributes["id"].Should().Be("1");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_OpenQuoteWithManyContinuationLines_FinishesWithinOneSecond()
+    {
+        // #6174: an unclosed quote must not rescan the whole record on every continuation line.
+        const int continuationLines = 200_000;
+        var csv = new StringBuilder(continuationLines * 2 + 8);
+        csv.Append('"');
+        csv.Append('\n');
+        for (var i = 0; i < continuationLines; i++)
+        {
+            csv.Append('a');
+            csv.Append('\n');
+        }
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv.ToString()));
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        var act = async () =>
+        {
+            await foreach (var _ in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
+            {
+                // Drain the reader. The assertion is that the unclosed quote throws, not that a row is yielded.
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+        started.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_SingleCoordinateHeader_KeepsColumnAsAttribute()
+    {
+        // #6172: one coordinate-like header is not half of a point, so its values must
+        // survive as an attribute beside a real geometry column.
+        var csv = """
+            id,x,wkt
+            1,42,POINT(1 2)
+            """;
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Attributes["x"].Should().Be("42");
+        features[0].Attributes["id"].Should().Be("1");
+        var point = features[0].Geometry.Should().BeOfType<Point>().Subject;
+        point.X.Should().BeApproximately(1, 1e-6);
+        point.Y.Should().BeApproximately(2, 1e-6);
+        diagnostics.UnparseableGeometryRows.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_UnpairedLongitudeHeader_KeepsColumnAsAttribute()
+    {
+        var csv = """
+            site,long,notes
+            pier,very,north
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Geometry.Should().BeNull();
+        features[0].Attributes["long"].Should().Be("very");
+        features[0].Attributes["site"].Should().Be("pier");
+        features[0].Attributes["notes"].Should().Be("north");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_HeuristicCoordinates_UnparseableValues_AreKeptAndCounted()
+    {
+        var csv = """
+            name,lon,lat
+            Broken,N/A,37.7
+            """;
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        diagnostics.UnparseableGeometryRows.Should().Be(1);
+        features.Should().ContainSingle();
+        features[0].Geometry.Should().BeNull();
+        features[0].Attributes["lon"].Should().Be("N/A");
+        features[0].Attributes["lat"].Should().Be("37.7");
+        features[0].Attributes["name"].Should().Be("Broken");
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ExplicitCoordinateColumns_OverrideHeuristics()
     {
@@ -118,6 +316,7 @@ public sealed class CsvFormatReaderTests
         features[0].Attributes.Exists("northing").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ExplicitCoordinateColumns_UnparseableValues_AreRecorded()
     {
@@ -137,6 +336,7 @@ public sealed class CsvFormatReaderTests
         diagnostics.UnparseableGeometryRows.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ExplicitCoordinateColumn_Missing_ThrowsCsvImportOptionsException()
     {
@@ -155,6 +355,7 @@ public sealed class CsvFormatReaderTests
             .Which.Message.Should().Contain("no_such_column").And.Contain("Available columns");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_AddressColumn_GeocodesRowsAndKeepsAddressAttribute()
     {
@@ -190,6 +391,7 @@ public sealed class CsvFormatReaderTests
         geocoded.Should().Equal("1100 Congress Ave, Austin, TX", "nowhere at all");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_AddressColumn_RowCapExceeded_ThrowsCsvImportOptionsException()
     {
@@ -210,6 +412,7 @@ public sealed class CsvFormatReaderTests
             .Which.Message.Should().Contain("capped at 2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_AddressAndCoordinateColumns_ThrowsCsvImportOptionsException()
     {

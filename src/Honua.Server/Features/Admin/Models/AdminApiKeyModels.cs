@@ -23,7 +23,10 @@ public sealed class CreateAdminApiKeyRequest
     /// <c>write:{service}/{layer}</c>) and that carries no full-admin grant
     /// (<c>admin</c> or <c>*</c>) is minted as a low-blast-radius, write-only,
     /// layer-scoped credential (#1637): it authenticates as a non-admin principal
-    /// and is authorized only for writes to the named service(s)/layer(s).
+    /// and is authorized only for writes to the named service(s)/layer(s). Data read
+    /// grants use <c>read:{service}</c>, <c>read:{service}/{layer}</c>,
+    /// <c>read:{service}/*</c> or <c>read:*</c>; wildcards are rejected on
+    /// <c>write:</c> grants.
     /// </summary>
     public IReadOnlyList<string> Permissions { get; init; } = [];
 

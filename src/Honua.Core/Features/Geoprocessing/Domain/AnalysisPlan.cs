@@ -67,7 +67,10 @@ public sealed record AnalysisPlanStep
     /// <c>source</c>). Reference descriptors are projected onto the durable worker
     /// contract without materializing raster bytes in the serving process.
     /// </summary>
-    public IReadOnlyDictionary<string, RasterSourceDescriptor> RasterSources { get; init; } =
+    // A setter preserves this default when .NET 10 source-generated JSON omits the
+    // optional property. An init-only member is assigned null even when absent
+    // (dotnet/runtime#84484). Explicit JSON null must still reach validation.
+    public IReadOnlyDictionary<string, RasterSourceDescriptor> RasterSources { get; set; } =
         new Dictionary<string, RasterSourceDescriptor>();
 
     /// <summary>

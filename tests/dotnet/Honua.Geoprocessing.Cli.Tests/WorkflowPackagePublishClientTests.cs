@@ -8,6 +8,7 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class WorkflowPackagePublishClientTests
 {
     private const string PackageJson = """{"packageId":"my-flow","name":"My Flow","graph":{"schemaVersion":"workflow-package.v1","nodes":[]},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}""";

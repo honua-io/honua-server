@@ -6,12 +6,14 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
+using Honua.TestKit.Formats;
 using Xunit;
 
 namespace Honua.Core.Tests.Raster.ZarrParser;
 
 public sealed class ZarrRasterSliceReaderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_OversizedOutput_IsRejectedBeforeCatalogLookup()
     {
@@ -27,6 +29,7 @@ public sealed class ZarrRasterSliceReaderTests
         store.ListCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_DuplicateDimensions_AreRejectedBeforeCatalogLookup()
     {
@@ -48,6 +51,7 @@ public sealed class ZarrRasterSliceReaderTests
         store.ListCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_NonNativeSpatialReference_IsRejectedAfterOneCatalogLookup()
     {
@@ -61,6 +65,7 @@ public sealed class ZarrRasterSliceReaderTests
         store.ListCalls.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_NonIntersectingBounds_ReturnsTypedOutsideCoverage()
     {

@@ -11,6 +11,7 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.GeocodeServer;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -64,19 +65,13 @@ internal sealed class GeocodingHandler(
                 return Task.FromResult(StandardErrorHelpers.CreateBadRequest(context, "Geocoding provider not found or not configured."));
             }
 
-            var capabilities = provider.Capabilities;
-            if (!context.RequestServices
-                    .GetRequiredService<ILicenseEntitlementService>()
-                    .CheckEntitlement(FeatureCatalog.BatchGeocodingKey)
-                    .IsActive)
-            {
-                capabilities = capabilities with { SupportsBatch = false };
-            }
+            var capabilities = GeocodeServerCapabilities.ApplyLicense(
+                provider.Capabilities, context.RequestServices.GetRequiredService<ILicenseEntitlementService>());
 
             var response = new GeocodeServerInfoResponse
             {
                 ServiceDescription = "Honua GeocodeServer",
-                Capabilities = BuildCapabilitiesString(capabilities),
+                Capabilities = GeocodeServerCapabilities.Format(capabilities),
                 SpatialReference = new GeocodeSpatialReference
                 {
                     Wkid = _options.DefaultSpatialReferenceWkid,
@@ -138,6 +133,16 @@ internal sealed class GeocodingHandler(
                 "singleLine is required, or provide structured fields: address, city, region, postal, countryCode.");
         }
 
+        try
+        {
+            // Cap length and distinct tokens before any provider builds a predicate per token.
+            GeocodeQueryLimits.EnsureBounded(query, "singleLine");
+        }
+        catch (GeocodeRequestException ex)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
+
         // The forward category filter narrows candidates by their provider-supplied address type.
         // A magicKey's encoded category is honored when the request itself carries no explicit one.
         var requestedCategories = GeocodeCategoryFilter.ParseCategories(GetValue(values, "category"))
@@ -160,6 +165,11 @@ internal sealed class GeocodingHandler(
         if (!TryParseOutFields(GetValue(values, "outFields"), out var outFields, out var outFieldsError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, outFieldsError ?? "Invalid outFields parameter.");
+        }
+
+        if (!TryParseCountryFilter(values, out var countryCodes, out var countryError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, countryError!);
         }
 
         try
@@ -198,7 +208,7 @@ internal sealed class GeocodingHandler(
                 Query: query,
                 MaxResults: maxLocations,
                 SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
-                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"),
+                CountryCodes: countryCodes,
                 InputType: structuredAddress is not null
                     ? Honua.Geocoding.Features.Geocoding.Domain.GeocodeInputType.Structured
                     : Honua.Geocoding.Features.Geocoding.Domain.GeocodeInputType.SingleLine,
@@ -258,7 +268,7 @@ internal sealed class GeocodingHandler(
                             LatestWkid = outSrid
                         }
                     },
-                    Attributes = ProjectAttributes(candidate.Attributes, outFields)
+                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -393,11 +403,9 @@ internal sealed class GeocodingHandler(
                 return CreateUnsupportedOutSrResult(context, outSrid);
             }
 
-            var address = new Dictionary<string, string?>(match.Attributes, StringComparer.Ordinal)
-            {
-                ["Match_addr"] = match.Address,
-                ["LongLabel"] = match.Address
-            };
+            var address = new Dictionary<string, string?>(
+                EsriGeocodeAddressFields.Apply(match.Address, match.AddressType, match.StructuredAddress, match.Attributes),
+                StringComparer.Ordinal);
 
             var response = new ReverseGeocodeResponse
             {
@@ -643,12 +651,17 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, outFieldsError ?? "Invalid outFields parameter.");
         }
 
+        if (!TryParseCountryFilter(values, out var countryCodes, out var countryError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, countryError!);
+        }
+
         try
         {
             var batchRequest = new Honua.Geocoding.Features.Geocoding.Domain.BatchGeocodeRequest(
                 Queries: queries,
                 SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
-                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
+                CountryCodes: countryCodes);
 
             var stopwatch = Stopwatch.StartNew();
             var result = await _coordinatorService.BatchGeocodeAsync(
@@ -706,7 +719,7 @@ internal sealed class GeocodingHandler(
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = location,
-                    Attributes = ProjectAttributes(candidate.Attributes, outFields)
+                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -774,6 +787,17 @@ internal sealed class GeocodingHandler(
             {
                 if (!string.IsNullOrWhiteSpace(address))
                 {
+                    try
+                    {
+                        GeocodeQueryLimits.EnsureBounded(address, "records");
+                    }
+                    catch (GeocodeRequestException ex)
+                    {
+                        queries = null;
+                        error = ex.Message;
+                        return false;
+                    }
+
                     queries.Add(address);
                 }
                 else
@@ -975,6 +999,37 @@ internal sealed class GeocodingHandler(
         return null;
     }
 
+    private static bool TryParseCountryFilter(
+        IReadOnlyDictionary<string, StringValues> values,
+        out string? countryCodes,
+        out string? error)
+    {
+        error = null;
+        countryCodes = GetValue(values, "countryCodes");
+        if (countryCodes is not null)
+        {
+            if (GeocodeCountryCodes.TryParse(countryCodes, out _))
+            {
+                return true;
+            }
+
+            error = GeocodeCountryCodes.InvalidMessage;
+            return false;
+        }
+
+        var singularCountry = GetValue(values, "countryCode");
+        if (GeocodeCountryCodes.TryParseGeoServicesCountry(singularCountry, out _))
+        {
+            // External providers already receive the GeoServices spelling. The local
+            // provider resolves its own equivalent forms without changing that contract.
+            countryCodes = singularCountry;
+            return true;
+        }
+
+        error = "Invalid countryCode: expected a country name or two- or three-letter ISO country code.";
+        return false;
+    }
+
     private static string? BuildForwardQuery(IReadOnlyDictionary<string, StringValues> values)
     {
         var singleLine = GetValue(values, "singleLine") ?? GetValue(values, "SingleLine");
@@ -1042,49 +1097,25 @@ internal sealed class GeocodingHandler(
     // metadata is fidelity-accurate per provider (#2147): SuggestedBatchSize reflects the provider's
     // MaxBatchSize, and batch-specific properties are advertised only when the provider supports
     // batch (an unsupported capability is absent/false rather than falsely advertised).
-    private Dictionary<string, string> BuildLocatorProperties(
+    private GeocodeLocatorProperties BuildLocatorProperties(
         string providerName,
         Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
     {
-        var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+        // The handler enforces this same provider limit. Both batch properties are JSON
+        // numbers in the Esri service contract; omit them when batch is unavailable.
+        int? batchSize = capabilities.SupportsBatch
+            ? (capabilities.MaxBatchSize > 0 ? capabilities.MaxBatchSize : 100)
+            : null;
+        return new GeocodeLocatorProperties
         {
-            ["LocatorName"] = _options.LocatorName,
-            ["Provider"] = providerName,
-            ["SupportsSuggest"] = capabilities.SupportsSuggest ? "true" : "false",
-            ["SupportsBatch"] = capabilities.SupportsBatch ? "true" : "false",
-            ["MaxResultsPerRequest"] = capabilities.MaxResultsPerRequest.ToString(CultureInfo.InvariantCulture)
+            LocatorName = _options.LocatorName,
+            Provider = providerName,
+            SupportsSuggest = capabilities.SupportsSuggest ? "true" : "false",
+            SupportsBatch = capabilities.SupportsBatch ? "true" : "false",
+            MaxResultsPerRequest = capabilities.MaxResultsPerRequest.ToString(CultureInfo.InvariantCulture),
+            MaxBatchSize = batchSize,
+            SuggestedBatchSize = batchSize
         };
-
-        // SuggestedBatchSize is the batch-call sizing hint ArcGIS clients read before chunking a
-        // geocodeAddresses request. Advertise it only when the active provider actually supports
-        // batch, and derive it from that provider's MaxBatchSize rather than a hard-coded constant.
-        if (capabilities.SupportsBatch && capabilities.MaxBatchSize > 0)
-        {
-            properties["SuggestedBatchSize"] = capabilities.MaxBatchSize.ToString(CultureInfo.InvariantCulture);
-        }
-
-        return properties;
-    }
-
-    private static string BuildCapabilitiesString(Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
-    {
-        var availableCapabilities = new List<string>(capacity: 4)
-        {
-            "Geocode",
-            "ReverseGeocode"
-        };
-
-        if (capabilities.SupportsSuggest)
-        {
-            availableCapabilities.Add("Suggest");
-        }
-
-        if (capabilities.SupportsBatch)
-        {
-            availableCapabilities.Add("BatchGeocode");
-        }
-
-        return string.Join(',', availableCapabilities);
     }
 
     private static bool IsSupportedFormat(string? format)
@@ -1318,6 +1349,14 @@ internal sealed class GeocodingHandler(
 
         return positionalIndex;
     }
+
+    private static IReadOnlyDictionary<string, string?> EsriAddressAttributes(
+        Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate)
+        => EsriGeocodeAddressFields.Apply(
+            candidate.Address,
+            candidate.AddressType,
+            candidate.StructuredAddress,
+            candidate.Attributes);
 
     // Projects a provider attribute bag down to the requested outFields, matching
     // field names case-insensitively and preserving the original key casing.

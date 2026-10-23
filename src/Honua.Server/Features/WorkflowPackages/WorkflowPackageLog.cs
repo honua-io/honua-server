@@ -62,4 +62,11 @@ internal static partial class WorkflowPackageLog
         string packageId,
         int version,
         string publicationId);
+
+    [LoggerMessage(118511, LogLevel.Warning, "Workflow schedule publication {PublicationId} definition {WorkflowDefinitionId} was not persisted; the publication row was removed")]
+    public static partial void ScheduleDefinitionPersistFailed(
+        ILogger logger,
+        string publicationId,
+        string workflowDefinitionId,
+        Exception exception);
 }

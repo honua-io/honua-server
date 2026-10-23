@@ -308,6 +308,8 @@
             "in": "query",
             "required": false,
             "description": "CQL2 filter expression",
+            "style": "form",
+            "explode": false,
             "schema": {
               "type": "string"
             }
@@ -316,12 +318,14 @@
             "name": "filter-lang",
             "in": "query",
             "required": false,
-            "description": "Filter language (default cql2-text)",
+            "description": "Filter language (default cql2-text); cql-text is a legacy desktop-client alias for cql2-text",
             "schema": {
               "type": "string",
+              "default": "cql2-text",
               "enum": [
                 "cql2-text",
-                "cql2-json"
+                "cql2-json",
+                "cql-text"
               ]
             }
           },

@@ -1,0 +1,325 @@
+{
+  "artifact": "/data/cng.parquet",
+  "rows": 6,
+  "geo": {
+    "version": "1.1.0",
+    "primary_column": "geometry",
+    "columns": {
+      "geometry": {
+        "encoding": "WKB",
+        "geometry_types": [
+          "Point"
+        ],
+        "covering": {
+          "bbox": {
+            "xmin": [
+              "bbox",
+              "xmin"
+            ],
+            "ymin": [
+              "bbox",
+              "ymin"
+            ],
+            "xmax": [
+              "bbox",
+              "xmax"
+            ],
+            "ymax": [
+              "bbox",
+              "ymax"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "checks": [
+    {
+      "check": "pyarrow/row-count",
+      "ok": true,
+      "detail": "6 rows (expected 6)"
+    },
+    {
+      "check": "metadata/geo-present",
+      "ok": true,
+      "detail": "`geo` key in the Parquet schema metadata"
+    },
+    {
+      "check": "metadata/geo-exact",
+      "ok": true,
+      "detail": "matches the expected document"
+    },
+    {
+      "check": "metadata/geometry-types-non-empty",
+      "ok": true,
+      "detail": "geometry_types=['Point'] (must be the concrete non-empty branch #4747 could not serialize)"
+    },
+    {
+      "check": "metadata/geo-is-valid-json",
+      "ok": true,
+      "detail": "the `geo` value round-trips as UTF-8 JSON (escaping preserved)"
+    },
+    {
+      "check": "pyarrow/names",
+      "ok": true,
+      "detail": "decoded names ['Baytown', 'Dateline Post', 'Equator Station', 'Harbor City', 'Meridian Marker', 'Polar Outpost']"
+    },
+    {
+      "check": "row[Harbor City]/ordinates",
+      "ok": true,
+      "detail": "WKB point (-122.4194, 37.7749) vs seeded (-122.4194, 37.7749)"
+    },
+    {
+      "check": "row[Harbor City]/category",
+      "ok": true,
+      "detail": "'city' vs 'city'"
+    },
+    {
+      "check": "row[Harbor City]/population",
+      "ok": true,
+      "detail": "1000000 vs 1000000"
+    },
+    {
+      "check": "row[Harbor City]/ratio",
+      "ok": true,
+      "detail": "0.91 vs 0.91"
+    },
+    {
+      "check": "row[Harbor City]/active",
+      "ok": true,
+      "detail": "True vs True"
+    },
+    {
+      "check": "row[Harbor City]/observed_at",
+      "ok": true,
+      "detail": "datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc)"
+    },
+    {
+      "check": "row[Harbor City]/covering-bbox",
+      "ok": true,
+      "detail": "{'xmin': -122.4194, 'ymin': 37.7749, 'xmax': -122.4194, 'ymax': 37.7749} vs point (-122.4194, 37.7749)"
+    },
+    {
+      "check": "row[Baytown]/ordinates",
+      "ok": true,
+      "detail": "WKB point (-122.2711, 37.8044) vs seeded (-122.2711, 37.8044)"
+    },
+    {
+      "check": "row[Baytown]/category",
+      "ok": true,
+      "detail": "'city' vs 'city'"
+    },
+    {
+      "check": "row[Baytown]/population",
+      "ok": true,
+      "detail": "430000 vs 430000"
+    },
+    {
+      "check": "row[Baytown]/ratio",
+      "ok": true,
+      "detail": "0.42 vs 0.42"
+    },
+    {
+      "check": "row[Baytown]/active",
+      "ok": true,
+      "detail": "True vs True"
+    },
+    {
+      "check": "row[Baytown]/observed_at",
+      "ok": true,
+      "detail": "datetime.datetime(2026, 2, 11, 12, 0, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 2, 11, 12, 0, tzinfo=datetime.timezone.utc)"
+    },
+    {
+      "check": "row[Baytown]/covering-bbox",
+      "ok": true,
+      "detail": "{'xmin': -122.2711, 'ymin': 37.8044, 'xmax': -122.2711, 'ymax': 37.8044} vs point (-122.2711, 37.8044)"
+    },
+    {
+      "check": "row[Meridian Marker]/ordinates",
+      "ok": true,
+      "detail": "WKB point (0.0, 51.4779) vs seeded (0.0, 51.4779)"
+    },
+    {
+      "check": "row[Meridian Marker]/category",
+      "ok": true,
+      "detail": "'reference' vs 'reference'"
+    },
+    {
+      "check": "row[Meridian Marker]/population",
+      "ok": true,
+      "detail": "0 vs 0"
+    },
+    {
+      "check": "row[Meridian Marker]/ratio",
+      "ok": true,
+      "detail": "0.0 vs 0.0"
+    },
+    {
+      "check": "row[Meridian Marker]/active",
+      "ok": true,
+      "detail": "False vs False"
+    },
+    {
+      "check": "row[Meridian Marker]/observed_at",
+      "ok": true,
+      "detail": "datetime.datetime(2026, 3, 21, 0, 0, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 3, 21, 0, 0, tzinfo=datetime.timezone.utc)"
+    },
+    {
+      "check": "row[Meridian Marker]/covering-bbox",
+      "ok": true,
+      "detail": "{'xmin': 0.0, 'ymin': 51.4779, 'xmax': 0.0, 'ymax': 51.4779} vs point (0.0, 51.4779)"
+    },
+    {
+      "check": "row[Equator Station]/ordinates",
+      "ok": true,
+      "detail": "WKB point (-75.0, 0.0) vs seeded (-75.0, 0.0)"
+    },
+    {
+      "check": "row[Equator Station]/category",
+      "ok": true,
+      "detail": "'reference' vs 'reference'"
+    },
+    {
+      "check": "row[Equator Station]/population",
+      "ok": true,
+      "detail": "0 vs 0"
+    },
+    {
+      "check": "row[Equator Station]/ratio",
+      "ok": true,
+      "detail": "0.5 vs 0.5"
+    },
+    {
+      "check": "row[Equator Station]/active",
+      "ok": true,
+      "detail": "True vs True"
+    },
+    {
+      "check": "row[Equator Station]/observed_at",
+      "ok": true,
+      "detail": "datetime.datetime(2026, 4, 1, 6, 30, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 4, 1, 6, 30, tzinfo=datetime.timezone.utc)"
+    },
+    {
+      "check": "row[Equator Station]/covering-bbox",
+      "ok": true,
+      "detail": "{'xmin': -75.0, 'ymin': 0.0, 'xmax': -75.0, 'ymax': 0.0} vs point (-75.0, 0.0)"
+    },
+    {
+      "check": "row[Dateline Post]/ordinates",
+      "ok": true,
+      "detail": "WKB point (179.5, 0.5) vs seeded (179.5, 0.5)"
+    },
+    {
+      "check": "row[Dateline Post]/category",
+      "ok": true,
+      "detail": "'reference' vs 'reference'"
+    },
+    {
+      "check": "row[Dateline Post]/population",
+      "ok": true,
+      "detail": "0 vs 0"
+    },
+    {
+      "check": "row[Dateline Post]/ratio",
+      "ok": true,
+      "detail": "0.75 vs 0.75"
+    },
+    {
+      "check": "row[Dateline Post]/active",
+      "ok": true,
+      "detail": "False vs False"
+    },
+    {
+      "check": "row[Dateline Post]/observed_at",
+      "ok": true,
+      "detail": "datetime.datetime(2026, 5, 9, 18, 45, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 5, 9, 18, 45, tzinfo=datetime.timezone.utc)"
+    },
+    {
+      "check": "row[Dateline Post]/covering-bbox",
+      "ok": true,
+      "detail": "{'xmin': 179.5, 'ymin': 0.5, 'xmax': 179.5, 'ymax': 0.5} vs point (179.5, 0.5)"
+    },
+    {
+      "check": "row[Polar Outpost]/ordinates",
+      "ok": true,
+      "detail": "WKB point (0.0, 86.0) vs seeded (0.0, 86.0)"
+    },
+    {
+      "check": "row[Polar Outpost]/category",
+      "ok": true,
+      "detail": "'reference' vs 'reference'"
+    },
+    {
+      "check": "row[Polar Outpost]/population",
+      "ok": true,
+      "detail": "0 vs 0"
+    },
+    {
+      "check": "row[Polar Outpost]/ratio",
+      "ok": true,
+      "detail": "0.1 vs 0.1"
+    },
+    {
+      "check": "row[Polar Outpost]/active",
+      "ok": true,
+      "detail": "True vs True"
+    },
+    {
+      "check": "row[Polar Outpost]/observed_at",
+      "ok": true,
+      "detail": "datetime.datetime(2026, 6, 15, 9, 15, tzinfo=datetime.timezone.utc) vs datetime.datetime(2026, 6, 15, 9, 15, tzinfo=datetime.timezone.utc)"
+    },
+    {
+      "check": "row[Polar Outpost]/covering-bbox",
+      "ok": true,
+      "detail": "{'xmin': 0.0, 'ymin': 86.0, 'xmax': 0.0, 'ymax': 86.0} vs point (0.0, 86.0)"
+    },
+    {
+      "check": "geopandas/row-count",
+      "ok": true,
+      "detail": "6 rows"
+    },
+    {
+      "check": "geopandas[Harbor City]",
+      "ok": true,
+      "detail": "<POINT (-122.419 37.775)> vs seeded (-122.4194, 37.7749)"
+    },
+    {
+      "check": "geopandas[Baytown]",
+      "ok": true,
+      "detail": "<POINT (-122.271 37.804)> vs seeded (-122.2711, 37.8044)"
+    },
+    {
+      "check": "geopandas[Meridian Marker]",
+      "ok": true,
+      "detail": "<POINT (0 51.478)> vs seeded (0.0, 51.4779)"
+    },
+    {
+      "check": "geopandas[Equator Station]",
+      "ok": true,
+      "detail": "<POINT (-75 0)> vs seeded (-75.0, 0.0)"
+    },
+    {
+      "check": "geopandas[Dateline Post]",
+      "ok": true,
+      "detail": "<POINT (179.5 0.5)> vs seeded (179.5, 0.5)"
+    },
+    {
+      "check": "geopandas[Polar Outpost]",
+      "ok": true,
+      "detail": "<POINT (0 86)> vs seeded (0.0, 86.0)"
+    },
+    {
+      "check": "geopandas/total-bounds",
+      "ok": true,
+      "detail": "[np.float64(-122.4194), np.float64(0.0), np.float64(179.5), np.float64(86.0)] vs [-122.4194, 0.0, 179.5, 86.0]"
+    },
+    {
+      "check": "geopandas/crs",
+      "ok": true,
+      "detail": "crs=OGC:CRS84 (GeoParquet default for an omitted `crs`)"
+    }
+  ],
+  "failed": [],
+  "verdict": "pass"
+}

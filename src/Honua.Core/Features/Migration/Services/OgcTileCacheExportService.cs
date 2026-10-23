@@ -354,6 +354,38 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
         }
 
         var serviceUri = new Uri(request.ServiceUrl, UriKind.Absolute);
+        var linkedUrlPolicy = new MigrationLinkedUrlPolicy(request.AllowUnsafeLocalUrls, request.AllowedServiceHostSuffixes);
+        var (sampleMinCol, _, sampleMinRow, _) = ResolveWindow(request.Window, request.MinZoom);
+        var sampleTileUri = BuildTileUri(
+            template,
+            serviceUri,
+            layerResource.Name,
+            descriptor.TileMatrixSetIdentifier,
+            styleIdentifier,
+            tileFormat,
+            request.MinZoom,
+            sampleMinCol,
+            sampleMinRow);
+        if (!linkedUrlPolicy.Allows(sampleTileUri))
+        {
+            warnings.Add(
+                $"WMTS tile URL host '{sampleTileUri.Host}' is not allowed by the migration host policy. Tile fetches were skipped.");
+            return new OgcTileCacheExportedTileSet
+            {
+                LayerIdentifier = layerResource.Name,
+                TileMatrixSetIdentifier = descriptor.TileMatrixSetIdentifier,
+                TargetTileCacheId = targetTileCacheId,
+                MinZoom = request.MinZoom,
+                MaxZoom = request.MaxZoom,
+                TilesPersisted = 0,
+                TilesAlreadyPresent = 0,
+                TilesFailed = 0,
+                Classification = MigrationFidelityAutomationStatuses.ManualReview,
+                Code = ImportCompatibilityCodes.OgcWmtsTileCacheFetchFailed,
+                Warnings = [.. warnings]
+            };
+        }
+
         var inserted = 0;
         var alreadyPresent = 0;
         var failed = 0;
@@ -370,6 +402,17 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var tileUri = BuildTileUri(template, serviceUri, layerResource.Name, descriptor.TileMatrixSetIdentifier, styleIdentifier, tileFormat, z, x, y);
+                    if (!linkedUrlPolicy.Allows(tileUri))
+                    {
+                        if (warnings.Count == 0)
+                        {
+                            warnings.Add(
+                                $"WMTS tile URL host '{tileUri.Host}' is not allowed by the migration host policy. Tile fetches were skipped.");
+                        }
+
+                        failed++;
+                        continue;
+                    }
 
                     if (request.DryRun)
                     {

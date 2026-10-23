@@ -58,6 +58,14 @@ public static partial class EndpointRegistry
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
 
+        // Persisted I3S geometry, typed attributes and textures, including aliases.
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}"),
+
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 
@@ -114,5 +122,9 @@ public static partial class EndpointRegistry
         // Durable PMTiles publish range proxy (#845).
         new("GET", "/api/v1/tiles/pmtiles/{*artifactId}"),
         new("HEAD", "/api/v1/tiles/pmtiles/{*artifactId}"),
+
+        // Published Cloud Optimized GeoTIFF range proxy (client certification cog/range-read).
+        new("GET", "/api/v1/rasters/cog/{*artifactId}"),
+        new("HEAD", "/api/v1/rasters/cog/{*artifactId}"),
     ];
 }

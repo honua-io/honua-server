@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Pilot onboarding runbook"
+description: "Use this runbook before handing a self-hosted pilot to an operator or customer team."
+---
 # Pilot onboarding runbook
 
 Use this runbook before handing a self-hosted pilot to an operator or customer team. It focuses on the first-hour failures that look like generic server errors but usually come from missing runtime prerequisites, Redis, or an inactive Metadata v2 snapshot.

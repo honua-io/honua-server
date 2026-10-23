@@ -1,127 +1,5 @@
--- OGC CITE WFS 2.0 Test Data Initialization
--- Seeds the actual Honua catalog tables so WFS can advertise and transact on the data.
-
-CREATE EXTENSION IF NOT EXISTS postgis;
-
-CREATE SCHEMA IF NOT EXISTS honua;
-
-CREATE TABLE IF NOT EXISTS honua.services (
-    service_name VARCHAR(64) PRIMARY KEY,
-    description TEXT NOT NULL DEFAULT '',
-    srid INT NOT NULL DEFAULT 4326,
-    max_record_count INT NOT NULL DEFAULT 1000,
-    supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
-    capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
-    service_extent GEOMETRY,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    metadata JSONB,
-    connection_id UUID
-);
-
-CREATE TABLE IF NOT EXISTS honua.layers (
-    layer_id SERIAL PRIMARY KEY,
-    layer_name TEXT NOT NULL,
-    description TEXT,
-    table_schema TEXT NOT NULL DEFAULT current_schema(),
-    table_name TEXT NOT NULL,
-    primary_key_column TEXT NOT NULL DEFAULT 'objectid',
-    geometry_column TEXT DEFAULT 'geometry',
-    storage_srid INT,
-    temporal_column TEXT,
-    storage_options JSONB NOT NULL DEFAULT '{}'::jsonb,
-    geometry_type TEXT NOT NULL,
-    srid INT NOT NULL DEFAULT 4326,
-    extent GEOMETRY(POLYGON, 4326),
-    min_scale DOUBLE PRECISION,
-    max_scale DOUBLE PRECISION,
-    default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    metadata JSONB,
-    maplibre_style JSONB,
-    geoservices_drawing_info JSONB,
-    style_version INT DEFAULT 0,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE
-);
-
-CREATE TABLE IF NOT EXISTS honua.service_layers (
-    service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
-    layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    layer_order INT NOT NULL,
-    PRIMARY KEY (service_name, layer_id),
-    UNIQUE (service_name, layer_order)
-);
-
-CREATE TABLE IF NOT EXISTS honua.layer_fields (
-    layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    field_name VARCHAR(64) NOT NULL,
-    field_type VARCHAR(32) NOT NULL,
-    field_order INT NOT NULL,
-    max_length INT,
-    nullable BOOLEAN NOT NULL DEFAULT TRUE,
-    default_value TEXT,
-    description TEXT,
-    domain JSONB,
-    hidden BOOLEAN NOT NULL DEFAULT FALSE,
-    PRIMARY KEY (layer_id, field_name)
-);
-
-CREATE TABLE IF NOT EXISTS honua.relationships (
-    layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    relationship_id INT NOT NULL,
-    name TEXT NOT NULL,
-    related_layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    relationship_type TEXT NOT NULL,
-    origin_foreign_key TEXT NOT NULL,
-    destination_foreign_key TEXT NOT NULL,
-    description TEXT,
-    PRIMARY KEY (layer_id, relationship_id)
-);
-
-CREATE TABLE IF NOT EXISTS features (
-    objectid BIGSERIAL PRIMARY KEY,
-    layer_id INT NOT NULL,
-    geometry GEOMETRY,
-    attributes JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
-    outbox_id        uuid        NOT NULL DEFAULT gen_random_uuid(),
-    service_id       text        NOT NULL,
-    layer_id         integer     NOT NULL,
-    object_id        bigint      NOT NULL,
-    operation        text        NOT NULL,
-    protocol         text        NOT NULL,
-    source_id        text,
-    request_id       text        NOT NULL,
-    event_id         text        NOT NULL,
-    event_payload    jsonb       NOT NULL,
-    status           text        NOT NULL DEFAULT 'pending',
-    retry_count      integer     NOT NULL DEFAULT 0,
-    last_error       text,
-    created_at       timestamptz NOT NULL DEFAULT now(),
-    claimed_at       timestamptz,
-    claim_node_id    text,
-    claim_expires_at timestamptz,
-    dispatched_at    timestamptz,
-    CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
-    CONSTRAINT feature_change_outbox_status_chk CHECK (
-        status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
-    )
-);
-
-CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);
-CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
-CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
-CREATE INDEX IF NOT EXISTS idx_relationships_layer_id ON honua.relationships(layer_id);
-CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
-CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
-CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
-CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');
-CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';
-CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';
+-- OGC CITE WFS fixture data. Schema is owned by the pinned server migrations.
+-- Applied only after Honua has migrated and passed readiness.
 
 BEGIN;
 
@@ -137,7 +15,6 @@ INSERT INTO honua.services (
     service_name,
     description,
     srid,
-    max_record_count,
     supported_formats,
     capabilities,
     service_extent,
@@ -147,7 +24,6 @@ VALUES (
     'cite',
     'Seeded WFS 2.0 service for OGC CITE conformance tests',
     4326,
-    1000,
     ARRAY['JSON', 'GeoJSON'],
     ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete'],
     ST_MakeEnvelope(-123.0, 37.1, -122.2, 37.9, 4326),
@@ -156,7 +32,6 @@ VALUES (
 ON CONFLICT (service_name) DO UPDATE SET
     description = EXCLUDED.description,
     srid = EXCLUDED.srid,
-    max_record_count = EXCLUDED.max_record_count,
     supported_formats = EXCLUDED.supported_formats,
     capabilities = EXCLUDED.capabilities,
     service_extent = EXCLUDED.service_extent,

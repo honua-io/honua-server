@@ -28,17 +28,20 @@ internal sealed class AlertEvaluationHealthCheck : IHealthCheck
 {
     private readonly IAlertEvaluationHealth _evaluationHealth;
     private readonly AlertOptions _options;
+    private readonly TimeProvider _time;
 
     public AlertEvaluationHealthCheck(
         IAlertEvaluationHealth evaluationHealth,
-        IOptions<AlertOptions> options)
+        IOptions<AlertOptions> options,
+        TimeProvider? time = null)
     {
         _evaluationHealth = evaluationHealth ?? throw new ArgumentNullException(nameof(evaluationHealth));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _time = time ?? TimeProvider.System;
     }
 
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
-        => Task.FromResult(Evaluate(DateTimeOffset.UtcNow));
+        => Task.FromResult(Evaluate(_time.GetUtcNow()));
 
     internal HealthCheckResult Evaluate(DateTimeOffset now)
     {

@@ -24,6 +24,13 @@ namespace Honua.Server.Features.Studio.Export;
 /// page layout onto a PDF canvas. This keeps the dependency surface to the already-referenced
 /// SkiaSharp package (no new PDF library) and produces a vector-text PDF rather than a raster wrapper.
 /// </para>
+/// <para>
+/// Every family — including <see cref="StudioPackageFamily.Map"/> — renders a text summary of the
+/// package body (title, metadata, and, for a map, its layer/basemap listing via
+/// <see cref="AppendMapSummary"/>); this deliverable never draws the map's layers or features onto
+/// the page (honua-server#4908). A rendered map preview, if one is needed, belongs on a separate
+/// route backed by the raster map render pipeline, not this text-summary deliverable.
+/// </para>
 /// </remarks>
 public static class StudioDeliverableComposer
 {
@@ -42,14 +49,23 @@ public static class StudioDeliverableComposer
     /// <param name="format">Output format.</param>
     /// <returns>The encoded deliverable artifact.</returns>
     public static StudioDeliverableArtifact Compose(StudioContentVersion version, StudioDeliverableFormat format)
+        => Compose(version, format, RenderingTypeface.Default);
+
+    /// <summary>
+    /// Test seam for <see cref="Compose(StudioContentVersion, StudioDeliverableFormat)"/> that
+    /// takes the rendering typeface explicitly instead of resolving it from the process-wide
+    /// <see cref="RenderingTypeface"/> singleton.
+    /// </summary>
+    internal static StudioDeliverableArtifact Compose(StudioContentVersion version, StudioDeliverableFormat format, SKTypeface? typeface)
     {
         ArgumentNullException.ThrowIfNull(version);
+        EnsureRenderable(typeface);
 
         var layout = BuildLayout(version);
         var bytes = format switch
         {
-            StudioDeliverableFormat.Pdf => RenderPdf(layout),
-            _ => RenderPng(layout),
+            StudioDeliverableFormat.Pdf => RenderPdf(layout, typeface),
+            _ => RenderPng(layout, typeface),
         };
 
         var family = version.Envelope.Family;
@@ -67,12 +83,12 @@ public static class StudioDeliverableComposer
         };
     }
 
-    private static byte[] RenderPng(DeliverableLayout layout)
+    private static byte[] RenderPng(DeliverableLayout layout, SKTypeface? typeface)
     {
         var info = new SKImageInfo((int)PageWidth, (int)PageHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
         using var surface = SKSurface.Create(info)
             ?? throw new InvalidOperationException("Skia failed to allocate a deliverable render surface.");
-        DrawPage(surface.Canvas, layout);
+        DrawPage(surface.Canvas, layout, typeface);
         surface.Canvas.Flush();
         using var image = surface.Snapshot();
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
@@ -80,14 +96,14 @@ public static class StudioDeliverableComposer
             ?? throw new InvalidOperationException("Skia failed to encode the deliverable PNG.");
     }
 
-    private static byte[] RenderPdf(DeliverableLayout layout)
+    private static byte[] RenderPdf(DeliverableLayout layout, SKTypeface? typeface)
     {
         using var stream = new MemoryStream();
         using (var document = SKDocument.CreatePdf(stream)
             ?? throw new InvalidOperationException("Skia failed to create a PDF document."))
         {
             var canvas = document.BeginPage(PageWidth, PageHeight);
-            DrawPage(canvas, layout);
+            DrawPage(canvas, layout, typeface);
             document.EndPage();
             document.Close();
         }
@@ -95,11 +111,30 @@ public static class StudioDeliverableComposer
         return stream.ToArray();
     }
 
-    private static void DrawPage(SKCanvas canvas, DeliverableLayout layout)
+    /// <summary>
+    /// Guards against the silent-blank-export defect (honua-server#4908): a typeface that
+    /// resolves but carries no glyphs draws nothing, yet <see cref="SKCanvas.DrawText(string, float, float, SKFont, SKPaint)"/>
+    /// never reports that failure, so the composer must check it before drawing rather than
+    /// let the caller ship a 200 response over a blank page.
+    /// </summary>
+    private static void EnsureRenderable(SKTypeface? typeface)
+    {
+        if (!HasRenderableGlyphs(typeface?.GlyphCount))
+        {
+            throw new StudioDeliverableRenderException(
+                "studio_deliverable/no_renderable_typeface",
+                "No rendering typeface with glyphs is available on this host, so the deliverable's " +
+                "text cannot be drawn. Refusing to export a blank artifact.");
+        }
+    }
+
+    /// <summary>Pure predicate behind <see cref="EnsureRenderable"/>, exposed for unit testing.</summary>
+    internal static bool HasRenderableGlyphs(int? glyphCount) => glyphCount is > 0;
+
+    private static void DrawPage(SKCanvas canvas, DeliverableLayout layout, SKTypeface? typeface)
     {
         canvas.Clear(SKColors.White);
 
-        var typeface = RenderingTypeface.Default;
         using var titleFont = new SKFont(typeface, 34f);
         using var badgeFont = new SKFont(typeface, 16f);
         using var labelFont = new SKFont(typeface, 14f);

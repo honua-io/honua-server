@@ -44,6 +44,9 @@ internal static class StandardErrorHelpers
     /// Creates the Esri GeoServices invalid-token envelope. The HTTP response remains
     /// 200 per the GeoServices wire convention while the body carries code 498, which
     /// distinguishes a supplied-but-invalid token from a missing credential (499).
+    /// The GeoServices body code applies only to GeoServices requests: OGC protocol
+    /// requests (WMS/WFS/WCS/WMTS aliases, OGC API) keep HTTP 401 and receive the same
+    /// protocol- and version-specific auth exception as a missing credential.
     /// </summary>
     internal static IResult CreateInvalidToken(HttpContext context, string detail = "Invalid token.")
     {
@@ -132,6 +135,25 @@ internal static class StandardErrorHelpers
     internal static IResult CreateInternalServerError(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.InternalServerError(detail, additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
+    /// Creates a Method Not Allowed error response. Used when the request method is
+    /// unavailable for the target resource itself (e.g. an edit kind the publication does
+    /// not declare) rather than unavailable to this particular caller.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Method Not Allowed response.</returns>
+    internal static IResult CreateMethodNotAllowed(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status405MethodNotAllowed,
+            "Method Not Allowed",
+            detail,
+            additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
     }
 

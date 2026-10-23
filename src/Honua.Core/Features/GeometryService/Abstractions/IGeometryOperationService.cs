@@ -140,4 +140,29 @@ public interface IGeometryOperationService
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Length value in meters.</returns>
     Task<double> LengthAsync(byte[] wkb, int srid, CancellationToken ct = default);
+
+    /// <summary>
+    /// Spheroidal distance in meters between two geometries. Vertices are transformed
+    /// to EPSG:4326 and the minimum distance is evaluated on the WGS 84 spheroid.
+    /// </summary>
+    /// <param name="wkbA">First geometry in WKB format.</param>
+    /// <param name="wkbB">Second geometry in WKB format.</param>
+    /// <param name="srid">Spatial reference ID of both geometries.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Minimum spheroidal distance in meters.</returns>
+    Task<double> DistanceAsync(byte[] wkbA, byte[] wkbB, int srid, CancellationToken ct = default)
+        => throw new NotSupportedException();
+
+    /// <summary>
+    /// Densifies every edge into equal geodesic pieces no longer than
+    /// <paramref name="maxSegmentLengthMeters"/> on the WGS 84 spheroid, and returns
+    /// the geometry in <paramref name="srid"/>.
+    /// </summary>
+    /// <param name="wkb">Geometry in WKB format.</param>
+    /// <param name="srid">Spatial reference ID of the geometry.</param>
+    /// <param name="maxSegmentLengthMeters">Maximum geodesic segment length in meters.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Densified geometry in WKB format, in <paramref name="srid"/>.</returns>
+    Task<byte[]> SegmentizeGeodesicAsync(byte[] wkb, int srid, double maxSegmentLengthMeters, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }

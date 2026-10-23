@@ -176,12 +176,123 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             await InsertLayerAsync(schemaName);
 
             var service = CreateService(schemaName);
-            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326, tileZoomLevels: [0]));
+            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326, tileZoomLevels: [0, 1]));
 
             result.Success.Should().BeTrue();
             result.RasterId.Should().NotBeNull();
             result.TilesGenerated.Should().BeGreaterThan(0);
             (await CountTilesAsync(schemaName, result.RasterId!.Value)).Should().BeGreaterThan(0);
+
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT zoom_level, ST_Width(ST_FromGDALRaster(tile_data)), ST_Height(ST_FromGDALRaster(tile_data)),
+                       renderer_version, renderer_payload_sha256 = sha256(tile_data)
+                FROM raster_tiles WHERE raster_data_id = @id;
+                """;
+            command.Parameters.AddWithValue("id", result.RasterId!.Value);
+            await using var reader = await command.ExecuteReaderAsync();
+            var zooms = new HashSet<int>();
+            while (await reader.ReadAsync())
+            {
+                zooms.Add(reader.GetInt32(0));
+                reader.GetInt32(1).Should().Be(256, "cached PNG bytes must span the complete tile grid");
+                reader.GetInt32(2).Should().Be(256);
+                reader.GetInt32(3).Should().Be(RasterCorrectedNearestSql.RendererVersion,
+                    "the importer uses the corrected nearest-grid sampler");
+                reader.GetBoolean(4).Should().BeTrue("the stored digest must bind the exact generated PNG bytes");
+            }
+            zooms.Should().BeEquivalentTo(new[] { 0, 1 });
+        }
+        finally
+        {
+            TryDeleteFile(filePath);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ImportAsync_NumericPngOpacity_UsesValidityAndRetainsScientificSource(int bands)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-numeric-opacity-{Guid.NewGuid():N}.tif");
+        try
+        {
+            await CreateRasterImportSchemaAsync(schemaName);
+            await InsertLayerAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH first_band AS (
+                    SELECT ST_SetValues(ST_AddBand(
+                        ST_MakeEmptyRaster(2, 2, 1000, 3000, 1000, -1000, 0, 0, 3857),
+                        '32BF'::text, -9999, -9999), 1, 1, 1,
+                        ARRAY[[-17.25, 101], [-9999, 0]]::double precision[][]) AS rast
+                )
+                SELECT ST_AsGDALRaster(CASE WHEN @bands = 1 THEN rast ELSE
+                    ST_SetValues(ST_AddBand(rast, '32BF'::text, -9999, -9999), 2, 1, 1,
+                        ARRAY[[-9999, -4.5], [600, 1100]]::double precision[][])
+                    END, 'GTiff') FROM first_band;
+                """;
+            command.Parameters.AddWithValue("bands", bands);
+            await File.WriteAllBytesAsync(filePath, (byte[])(await command.ExecuteScalarAsync())!);
+            var result = await CreateService(schemaName).ImportAsync(new RasterImportRequest
+            {
+                LayerId = LayerId,
+                Name = "numeric-opacity",
+                FilePath = filePath,
+                FileName = Path.GetFileName(filePath),
+                Format = SupportedRasterFormat.GeoTiff,
+                TileZoomLevels = [10]
+            });
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("id", result.RasterId!.Value);
+            command.CommandText = """
+                WITH image AS (
+                    SELECT ST_FromGDALRaster(tile_data) AS rast, renderer_version,
+                           renderer_payload_sha256 = sha256(tile_data) AS digest_ok
+                    FROM raster_tiles WHERE raster_data_id = @id
+                      AND zoom_level = 10 AND tile_x = 512 AND tile_y = 511
+                ), reference AS (
+                    SELECT ST_MakeEmptyRaster(256, 256, 0, 40075016.68557849 / 1024,
+                        40075016.68557849 / 1024 / 256, -40075016.68557849 / 1024 / 256,
+                        0, 0, 3857) AS rast
+                )
+                SELECT renderer_version, digest_ok,
+                    ST_Value(i.rast, 1, ST_WorldToRasterCoordX(r.rast, x), ST_WorldToRasterCoordY(r.rast, y), FALSE),
+                    ST_Value(i.rast, ST_NumBands(i.rast), ST_WorldToRasterCoordX(r.rast, x), ST_WorldToRasterCoordY(r.rast, y), FALSE),
+                    expected_gray, expected_alpha
+                FROM image i, reference r, (VALUES
+                    (1500.0, 2500.0, 0.0, 255.0), (2500.0, 2500.0, 255.0, 255.0),
+                    (1500.0, 1500.0, 0.0, 0.0), (2500.0, 1500.0, 37.0, 255.0)
+                ) v(x, y, expected_gray, expected_alpha);
+                """;
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                var count = 0;
+                while (await reader.ReadAsync())
+                {
+                    count++;
+                    reader.GetInt32(0).Should().Be(RasterCorrectedNearestSql.RendererVersion);
+                    reader.GetBoolean(1).Should().BeTrue();
+                    reader.GetDouble(2).Should().Be((double)reader.GetDecimal(4));
+                    reader.GetDouble(3).Should().Be((double)reader.GetDecimal(5));
+                }
+                count.Should().Be(4);
+            }
+            command.CommandText = """
+                SELECT ST_NumBands(raster), ST_Value(raster, 1, 1, 1),
+                       CASE WHEN ST_NumBands(raster) = 2 THEN ST_Value(raster, 2, 1, 2) ELSE NULL END
+                FROM raster_data WHERE id = @id;
+                """;
+            await using var source = await command.ExecuteReaderAsync();
+            (await source.ReadAsync()).Should().BeTrue();
+            source.GetInt32(0).Should().Be(bands);
+            source.GetDouble(1).Should().Be(-17.25);
+            if (bands == 2) source.GetDouble(2).Should().Be(600);
         }
         finally
         {
@@ -239,7 +350,8 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
                 height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
                 band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
                 pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
-                srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+                srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED,
+                second_band_is_alpha BOOLEAN NOT NULL DEFAULT FALSE
             );
 
             CREATE TABLE IF NOT EXISTS raster_statistics (
@@ -263,6 +375,8 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
                 tile_x INTEGER NOT NULL,
                 tile_y INTEGER NOT NULL,
                 tile_data BYTEA NOT NULL,
+                renderer_version INTEGER NOT NULL DEFAULT 0,
+                renderer_payload_sha256 BYTEA,
                 content_type VARCHAR(50) NOT NULL DEFAULT 'image/png',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)

@@ -23,6 +23,32 @@ public sealed class GeoArrowQueryFormatterTests
     private const string FixtureFileName = "honua-server-geoarrow-02-point.arrow";
 
     [Fact]
+    public async Task FormatAsGeoArrowAsync_CalendarDates_UseDate32AndPreserveNulls()
+    {
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date },
+            new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime });
+        object?[] values = ["2024-02-28", new DateOnly(2024, 2, 29),
+            new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.FromHours(14)), null];
+        var timestamp = new DateTimeOffset(2024, 2, 29, 12, 0, 0, TimeSpan.Zero);
+        var features = values.Select((value, index) => Feature.Create(index + 1, null,
+            new Dictionary<string, object?> { ["day"] = value, ["timestamp"] = timestamp }.ToImmutableDictionary())).ToImmutableArray();
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(features.Length, features), resource, false, null, false, false, new GeometryLimits());
+
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        reader.Schema.GetFieldByName("day").DataType.Should().BeOfType<Date32Type>();
+        reader.Schema.GetFieldByName("timestamp").DataType.Should().BeOfType<TimestampType>();
+        var dates = batch!.Column("day").Should().BeOfType<Date32Array>().Subject;
+        dates.GetDateTime(0).Should().Be(new DateTime(2024, 2, 28));
+        dates.GetDateTime(1).Should().Be(new DateTime(2024, 2, 29));
+        dates.GetDateTime(2).Should().Be(new DateTime(2024, 3, 1));
+        dates.IsNull(3).Should().BeTrue();
+        batch.Column("timestamp").Should().BeOfType<TimestampArray>().Subject.GetTimestamp(0).Should().Be(timestamp);
+    }
+
+    [Fact]
     public async Task FormatAsGeoArrowAsync_WithFeatures_WritesReadableArrowStreamWithGeoMetadata()
     {
         var layer = CreateLayer(
@@ -662,6 +688,148 @@ public sealed class GeoArrowQueryFormatterTests
         GeoParquetProjJsonCatalog.TryGetProjJson(4326, out var projJson).Should().BeTrue(
             "the embedded PROJJSON catalog must contain EPSG:4326");
         return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
+    }
+
+    /// <summary>
+    /// honua-server#4666: the GeoArrow writer shared the GeoParquet writer's one-sided spatial
+    /// predicate, so a resource declaring geometry only through its schema fields (no
+    /// <see cref="MetadataV2Resource.Spatial"/> slot) was streamed as attribute-only Arrow.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
+    {
+        // Independently chosen ordinates: written as WKB by NetTopologySuite, read back by a
+        // fresh WKBReader over the Arrow stream. No captured payload is involved.
+        const double ExpectedX = -157.8583;
+        const double ExpectedY = 21.3069;
+
+        var resource = CreateResourceWithoutSpatialSlot(
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 });
+        resource.Spatial.Should().BeNull("this fixture is the no-spatial-slot shape under test");
+        resource.ReadGeometryType().Should().Be(MetadataV2GeometryType.None,
+            "the geometry type is unresolvable without the spatial slot - that is the trigger condition");
+
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(ExpectedX, ExpectedY),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "Honolulu Harbor"
+            }.ToImmutableDictionary());
+
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ArrowStreamReader(stream);
+        var batch = await reader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        reader.Schema.FieldsList.Select(f => f.Name)
+            .Should().Contain("geometry", "a GeoArrow stream without a geometry column is data loss");
+
+        var geometryField = reader.Schema.GetFieldByName("geometry");
+        geometryField.Metadata["ARROW:extension:name"].Should().Be("geoarrow.wkb");
+
+        var geometryArray = batch!.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        geometryArray.IsNull(0).Should().BeFalse();
+        var decoded = new WKBReader().Read(geometryArray.GetBytes(0).ToArray());
+        decoded.Should().BeOfType<Point>();
+        ((Point)decoded).X.Should().BeApproximately(ExpectedX, 1e-9);
+        ((Point)decoded).Y.Should().BeApproximately(ExpectedY, 1e-9);
+    }
+
+    /// <summary>
+    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
+    /// schema field, with no <see cref="MetadataV2Resource.Spatial"/> slot at all.
+    /// </summary>
+    private static MetadataV2Resource CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "harbors",
+                Name = "harbors",
+                Description = "Harbors"
+            },
+            SchemaFields =
+            [
+                .. fields,
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true
+                }
+            ]
+        };
+
+    /// <summary>
+    /// honua-server#4747: GeoArrow encoded <c>geometry_types</c> with the same reflection-based
+    /// serializer overload as GeoParquet, and unconditionally, so every <c>f=geoarrow</c> response
+    /// with geometry failed on the shipped server. This runs the formatter in a child process with
+    /// JSON reflection disabled and decodes the stream it produced.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_WithReflectionDisabled_WritesConcreteGeometryTypesAndValues()
+    {
+        var run = await ReflectionDisabledCloudNativeProbe.RunAsync(ReflectionDisabledCloudNativeProbe.GeoArrowFormat);
+
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.ReflectionStatePrefix}False",
+            "the probe is only meaningful when the child really runs without reflection. {0}", run.Transcript);
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.CanaryPrefix}threw",
+            "a reflection-based serializer call must fail in the child, as it does on the image. {0}", run.Transcript);
+        run.ExitCode.Should().Be(0, "the formatter must not depend on reflection metadata. {0}", run.Transcript);
+
+        var rows = ReflectionDisabledCloudNativeProbe.Rows;
+        using var stream = new MemoryStream(run.Payload);
+        using var reader = new ArrowStreamReader(stream);
+        var batch = await reader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Length.Should().Be(rows.Length);
+        reader.Schema.FieldsList.Select(f => f.Name).Should().Equal("objectid", "name", "population", "geometry");
+
+        var objectIds = batch.Column("objectid").Should().BeOfType<Int64Array>().Which;
+        var names = batch.Column("name").Should().BeOfType<StringArray>().Which;
+        var populations = batch.Column("population").Should().BeOfType<Int32Array>().Which;
+        var geometries = batch.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = rows[index];
+            objectIds.GetValue(index).Should().Be(row.ObjectId);
+            names.GetString(index).Should().Be(row.Name);
+            populations.GetValue(index).Should().Be(row.Population);
+
+            var point = new WKBReader().Read(geometries.GetBytes(index).ToArray())
+                .Should().BeOfType<Point>().Which;
+            point.X.Should().BeApproximately(row.X, 1e-9);
+            point.Y.Should().BeApproximately(row.Y, 1e-9);
+            if (row.Z is { } z)
+            {
+                point.Coordinate.Z.Should().BeApproximately(z, 1e-9);
+            }
+            else
+            {
+                double.IsNaN(point.Coordinate.Z).Should().BeTrue("row {0} is a 2D point", row.ObjectId);
+            }
+        }
+
+        reader.Schema.GetFieldByName("geometry").Metadata["ARROW:extension:name"].Should().Be("geoarrow.wkb");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
+        var geometryColumn = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geometryColumn.GetProperty("encoding").GetString().Should().Be("WKB");
+        geometryColumn.GetProperty("geometry_types").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("Point", "Point Z");
     }
 
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)

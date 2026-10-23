@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.EnrichmentCatalog.Abstractions;
@@ -119,28 +120,31 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// </summary>
     private const int MaxInputFeaturesCeiling = 1_000_000;
 
-    /// <summary>
-    /// Cumulative ceiling on carried match values across an entire join. Bounds the
-    /// Cartesian growth the per-layer input caps cannot see (targets x matches x
-    /// carried fields), so two individually permitted but highly overlapping layers
-    /// cannot exhaust the worker before the artifact-size check.
-    /// </summary>
-    private const long DefaultMaxCarriedMatchValues = 20_000_000L;
-
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<EnrichmentJobExecutor> _logger;
+    private readonly int _maxVerticesPerGeometry;
+    private readonly long _maxGeometryBytes;
+    private readonly long _maxInputBytes;
     private IReadOnlySet<string>? _processIds;
 
     /// <summary>Initializes a new instance of the <see cref="EnrichmentJobExecutor"/> class.</summary>
     public EnrichmentJobExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger<EnrichmentJobExecutor> logger)
+        ILogger<EnrichmentJobExecutor> logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
     {
         _serviceScopeFactory = serviceScopeFactory;
         _options = options;
         _logger = logger;
+        // Same per-geometry vertex ceiling the layer-sourced executors charge (#4629): a
+        // feature-count cap alone does not bound a single deliberately oversized geometry.
+        var limits = limitsOptions?.Value ?? new LimitsOptions();
+        _maxVerticesPerGeometry = limits.Geometry.MaxVerticesPerGeometry;
+        // ... and the same serialized-size budgets, per geometry and per layer read.
+        _maxGeometryBytes = limits.Geometry.MaxGeometrySize;
+        _maxInputBytes = limits.Analytics.MaxInputBytes;
     }
 
     /// <inheritdoc />
@@ -152,6 +156,26 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
     /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
+        ExecutionJobRecord job,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var seconds = _options.CurrentValue.MaxLayerExecutionSeconds;
+        deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
+        try
+        {
+            return await ExecuteCoreAsync(job, context, deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            return LayerComputationBudget.Refusal(
+                $"{HandledProcessId} exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds={seconds}; " +
+                "narrow the selection or simplify the input, then resubmit.");
+        }
+    }
+
+    private async Task<JobExecutionResult> ExecuteCoreAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
         CancellationToken cancellationToken)
@@ -171,7 +195,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var hasInline = inputs.TryGet("input", out var inlineUri);
         if (hasLayerId == hasInline)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Invalid {HandledProcessId} inputs: supply exactly one source — 'layerId' (registered source layer) "
                 + "or 'input' (staged FeatureCollection data URI).");
         }
@@ -184,7 +208,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         // as layer-source-only, so the combination is refused rather than quietly ignored.
         if (hasInline && FindLayerOnlySourceFilter(inputs) is { } layerOnlyFilter)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Invalid {HandledProcessId} inputs: '{layerOnlyFilter}' windows the registered source layer read "
                 + "and is only valid with 'layerId'; a staged 'input' FeatureCollection is enriched verbatim. "
                 + $"Remove '{layerOnlyFilter}', or filter the staged collection before submitting it.");
@@ -192,7 +216,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         if (!inputs.TryGetRequired("datasetId", out var datasetId, out var missingDataset))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {missingDataset}.");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {missingDataset}.");
         }
 
         using var scope = _serviceScopeFactory.CreateScope();
@@ -213,7 +237,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var dataset = await resolver.ResolveAsync(datasetId, cancellationToken).ConfigureAwait(false);
         if (dataset is null)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Unknown enrichment dataset '{datasetId}': no managed or configured dataset matches this id.");
         }
 
@@ -241,7 +265,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
 
         var source = ResolveHonuaLayerSource(services);
@@ -262,7 +286,9 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         {
             targets = hasInline
                 ? ParseInlineSource(inlineUri!, plan.MaxInputFeatures)
-                : await ReadSourceLayerAsync(source, inputs, plan, cancellationToken).ConfigureAwait(false);
+                : await ReadSourceLayerAsync(
+                        source, inputs, plan, _maxVerticesPerGeometry, _maxGeometryBytes, _maxInputBytes, _options.CurrentValue.MaxLayerVertices, cancellationToken)
+                    .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(45, "Reading enrichment dataset layer", cancellationToken).ConfigureAwait(false);
@@ -275,12 +301,16 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                     new DagSourceRequest { LayerId = dataset.LayerId, OutputSrid = JoinSrid },
                     cancellationToken,
                     plan.MaxInputFeatures,
-                    $"enrichment dataset layer {dataset.LayerId}")
+                    $"enrichment dataset layer {dataset.LayerId}",
+                    _maxVerticesPerGeometry,
+                    _maxGeometryBytes,
+                    _maxInputBytes,
+                    _options.CurrentValue.MaxLayerVertices)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -302,6 +332,10 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
+            LayerComputationBudget.EnsureTopologyWork(
+                LayerComputationBudget.CountVertices(targets),
+                LayerComputationBudget.CountVertices(joinFeatures),
+                _options.CurrentValue.MaxTopologyWork);
             output = Enrich(targets, joinFeatures, plan, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -313,7 +347,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             // The cumulative match budget surfaces here with concrete remedies (narrow
             // where/bbox, carry fewer outputFields, use a less permissive method), so it
             // must reach the caller verbatim rather than collapsing to a type name.
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -324,13 +358,16 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(85, "Encoding enrichment artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(
-            output, HandledProcessId, BuildProvenanceMembers(dataset, plan));
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
-        if (payload.Length > maxBytes)
+        byte[] payload;
+        try
         {
-            return JobExecutionResult.Failed(
-                $"{HandledProcessId} artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}.");
+            payload = BoundedArtifactWriter.WriteFeatureCollection(
+                output, HandledProcessId, maxBytes, cancellationToken, BuildProvenanceMembers(dataset, plan));
+        }
+        catch (TransformInputException ex)
+        {
+            return LayerComputationBudget.Refusal($"{HandledProcessId} {ex.PublicMessage}");
         }
 
         await context.PublishArtifactAsync(FeatureCollectionArtifact.BuildDataUri(payload), cancellationToken)
@@ -426,7 +463,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private List<IFeature> ParseInlineSource(string inlineUri, int maxFeatures)
     {
         if (!FeatureCollectionArtifact.TryParseDataUri(
-                inlineUri, out var collection, out var error, _options.CurrentValue.MaxArtifactBytes))
+                inlineUri, out var collection, out var error, Math.Min(_options.CurrentValue.MaxArtifactBytes, _maxInputBytes)))
         {
             throw new TransformInputException($"'input' {error}");
         }
@@ -441,6 +478,15 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                 + "stage fewer features or raise the limit.");
         }
 
+        var totalVertices = LayerComputationBudget.CountVertices(collection);
+        if (totalVertices > _options.CurrentValue.MaxLayerVertices
+            || collection.Any(feature => (feature.Geometry?.NumPoints ?? 0) > _maxVerticesPerGeometry))
+        {
+            throw new TransformInputException(
+                "staged 'input' exceeds the configured MaxLayerVertices or MaxVerticesPerGeometry budget; " +
+                "simplify the input or stage fewer features, then resubmit.");
+        }
+
         return [.. collection];
     }
 
@@ -448,6 +494,10 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         IDagFeatureSource source,
         StepInputReader inputs,
         EnrichmentPlan plan,
+        int maxVerticesPerGeometry,
+        long maxGeometryBytes,
+        long maxInputBytes,
+        int maxTotalVertices,
         CancellationToken cancellationToken)
     {
         if (!inputs.TryGet("layerId", out var raw)
@@ -469,7 +519,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         };
 
         return LayerSourcedFeatureExecutor.ReadLayerAsync(
-            source, request, cancellationToken, plan.MaxInputFeatures, $"source layer {layerId}");
+            source, request, cancellationToken, plan.MaxInputFeatures, $"source layer {layerId}", maxVerticesPerGeometry,
+            maxGeometryBytes, maxInputBytes, maxTotalVertices);
     }
 
     // Resolves the effective join behavior from the enrichment vocabulary: the
@@ -556,8 +607,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         // Same posture as the input cap: the caller may only LOWER the join budget.
         var maxCarriedMatchValues = Math.Min(
-            TryReadNonNegativeLong(inputs, "maxCarriedMatchValues") ?? DefaultMaxCarriedMatchValues,
-            DefaultMaxCarriedMatchValues);
+            TryReadNonNegativeLong(inputs, "maxCarriedMatchValues") ?? SpatialJoinSupport.DefaultMaxCarriedMatchValues,
+            SpatialJoinSupport.DefaultMaxCarriedMatchValues);
 
         return new EnrichmentPlan(
             methodName, nearest, predicate, distance, carryFields, stats, maxInputFeatures, maxCarriedMatchValues);

@@ -92,6 +92,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var document = await ReadDocumentAsync(response);
             var root = document.RootElement;
 
+            // codeql[cs/linq/missed-select]: asserts each experimental capability stayed disabled
             foreach (var experimentalId in ExperimentalCapabilityIds)
             {
                 var experimental = GetCapability(root, experimentalId);
@@ -100,6 +101,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 experimental.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
             }
 
+            // codeql[cs/linq/missed-select]: asserts each opt-in preview capability stayed disabled
             foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "realtime.feature-streams", "serve.sensorthings",
                 "serve.ogc-api-edr" })
             {
@@ -110,6 +112,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 preview.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
             }
 
+            // codeql[cs/linq/missed-select]: asserts each in-release preview capability stayed available
             foreach (var previewId in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages" })
             {
                 var preview = GetCapability(root, previewId);

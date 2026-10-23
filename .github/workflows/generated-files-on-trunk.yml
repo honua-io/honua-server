@@ -1,0 +1,106 @@
+name: Regenerate Generated Files on Trunk
+
+# Nightly, not per trunk push (operator 2026-10-07): a per-push generated-files PR
+# held a WIP slot and moved trunk after every landing, re-gating every open PR.
+# Drift is advisory on PRs and trunk (scripts/ci/report-generated-file-drift.sh),
+# so a day of drift costs nothing. Run on demand with workflow_dispatch.
+on:
+  schedule:
+    - cron: '30 10 * * *'
+  workflow_dispatch:
+    inputs:
+      retry_count:
+        description: 'Internal nightly retry count (maximum 2)'
+        default: '0'
+      retry_date:
+        description: 'Internal nightly UTC date; empty for a manual run'
+        default: ''
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+concurrency:
+  group: generated-files-on-trunk
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # PR Gate already enforces analyzers. Match the trailing foundation
+      # rebuild: compiler errors and generator/input validation remain hard.
+      - name: Regenerate repository projections
+        run: |
+          python3 -m pip install -r scripts/ci/okf-requirements.txt
+          bash scripts/ci/regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false
+
+      - name: Validate authored inputs against fresh projections
+        run: |
+          python3 scripts/ci/validate-cite-openapi-compliance.py
+          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            --filter 'FullyQualifiedName~FeatureCatalog|FullyQualifiedName~GeoServicesParityMatrixDriftTests|FullyQualifiedName~PublicInterfaceProofLedgerTests'
+
+      # Never a direct trunk write; see the header of publish-generated-files.sh
+      # for why (#3213, #4540/#4653). Merging the PR this opens does not
+      # re-trigger this workflow (it runs on a schedule), and the next nightly
+      # run finds nothing to publish when trunk is already current.
+      # The job token cannot create PRs under repository Actions policy and
+      # would suppress the PR/push events that start admission checks. Expose
+      # the existing automation PAT only to publication; never push trunk.
+      - name: Open or refresh the generated-files PR
+        id: publish
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
+        run: bash scripts/ci/publish-generated-files.sh
+
+      - name: Record validated generated-output identity
+        if: always() && steps.publish.outputs.published == 'true'
+        env:
+          PROOF_PATH: ${{ runner.temp }}/generated-output-proof.json
+        run: |
+          python3 - <<'PYPROOF'
+          import json, os, subprocess
+          def git(ref):
+              return subprocess.check_output(['git', 'rev-parse', ref], text=True).strip()
+          proof = dict(source_sha=os.environ['GITHUB_SHA'], head_sha=git('HEAD'),
+                       output_tree_sha=git('HEAD^{tree}'), run_id=os.environ['GITHUB_RUN_ID'],
+                       run_attempt=os.environ['GITHUB_RUN_ATTEMPT'])
+          with open(os.environ['PROOF_PATH'], 'w') as stream:
+              json.dump(proof, stream)
+          PYPROOF
+
+      - name: Upload validated generated-output identity
+        if: always() && steps.publish.outputs.published == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: generated-output-proof-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/generated-output-proof.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retry a stale nightly source on current trunk
+        if: steps.publish.outputs.stale_source == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
+          RETRY_COUNT: ${{ inputs.retry_count }}
+          RETRY_DATE: ${{ inputs.retry_date }}
+        run: bash scripts/ci/retry-generated-files.sh

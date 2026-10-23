@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog;
 
@@ -29,6 +31,11 @@ internal static class AuditChainVerificationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        // A present key that is not usable fails startup. An absent key leaves
+        // verification unable to succeed for a hashed chain; writes continue.
+        services.TryAddSingleton(new AuditChainKeySnapshot(
+            configuration[AuditChainVerificationOptions.SectionName + ":Key"]));
+
         services
             .AddOptions<AuditChainVerificationOptions>()
             .Bind(configuration.GetSection(AuditChainVerificationOptions.SectionName));
@@ -37,7 +44,12 @@ internal static class AuditChainVerificationServiceCollectionExtensions
         services.AddSingleton<AuditChainVerificationBackgroundService>();
         services.AddSingleton<IAuditChainIntegritySignal>(
             static sp => sp.GetRequiredService<AuditChainVerificationBackgroundService>());
-        services.AddHostedService(static sp => sp.GetRequiredService<AuditChainVerificationBackgroundService>());
+        // The verification pass opens a connection on its interval. Skip it on the
+        // event-handler Lambdas, whose pool is released when the invocation ends.
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService(static sp => sp.GetRequiredService<AuditChainVerificationBackgroundService>());
+        }
 
         return services;
     }

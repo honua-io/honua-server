@@ -7,7 +7,7 @@ namespace Honua.Core.Features.Authorization.Abstractions;
 
 /// <summary>
 /// Issues and verifies opaque ArcGIS-compatible portal tokens that bind a request
-/// principal to a referer or client IP for the lifetime of the token.
+/// principal to a referer or client IP, or issues an unbound native OAuth bearer token.
 /// </summary>
 /// <remarks>
 /// Tokens are short-lived bearer credentials backed by the distributed cache; the
@@ -39,6 +39,30 @@ public interface IPortalTokenIssuer
     Task<PortalTokenValidation?> ValidateAsync(
         string token,
         PortalTokenBinding binding,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Exchanges a token presented on the current request for a new token bound to a new
+    /// client binding: the federated <c>generateToken</c> exchange, where a client trades its
+    /// portal token for one scoped to a server (#5491).
+    /// </summary>
+    /// <remarks>
+    /// The presented token is the credential that authenticates the exchange, so it must be
+    /// usable from the current request exactly as <see cref="ValidateAsync"/> requires:
+    /// active, bound to <see cref="PortalTokenExchangeRequest.PresentedBinding"/>, and still
+    /// backed by the credential it was minted from. The new token is a derivation of the
+    /// presented one, not a fresh issuance: it carries the same principal, tenant, roles,
+    /// claims-mapping provenance and backing-credential source, and never outlives the
+    /// presented token. The same backing-credential and claims-mapping checks continue to apply.
+    /// </remarks>
+    /// <param name="request">The presented token, the request's binding and the new binding.</param>
+    /// <param name="cancellationToken">Token used to abort the exchange.</param>
+    /// <returns>
+    /// The new token, or <see langword="null"/> when the presented token is not usable from
+    /// this request.
+    /// </returns>
+    Task<PortalTokenExchange?> ExchangeAsync(
+        PortalTokenExchangeRequest request,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -101,8 +125,8 @@ public sealed record PortalTokenIntrospection(
 /// <param name="DisplayName">Optional display name surfaced through the hydrated principal.</param>
 /// <param name="TenantId">Tenant the token is scoped to, or <see langword="null"/> for the tenant-less default.</param>
 /// <param name="Roles">Roles granted to the principal for the lifetime of the token.</param>
-/// <param name="ClientType">Whether the binding is a referer or an IP address.</param>
-/// <param name="BindingValue">Bound referer URL or client IP address.</param>
+/// <param name="ClientType">Whether the token binds to a referer, an IP address, or is a native OAuth bearer.</param>
+/// <param name="BindingValue">Bound referer URL or client IP address; empty for a native OAuth bearer.</param>
 /// <param name="ExpiresAt">Absolute expiry instant for the token.</param>
 /// <param name="RolesRequireClaimsMappingEntitlement">
 /// Whether <paramref name="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
@@ -131,6 +155,19 @@ public sealed record PortalTokenIntrospection(
 /// list is a known role-free fallback.
 /// </param>
 /// <param name="IsClientCredentials">Whether the token was minted for the OAuth2 client-credentials grant.</param>
+/// <param name="Source">
+/// The credential this token is derived from (SEC-9). The issuer clamps
+/// <paramref name="ExpiresAt"/> to the source's own expiry and re-checks the source on every
+/// restore, so a revoked, expired or rotated credential stops its tokens. <see langword="null"/>
+/// is recorded as <see cref="PortalCredentialSource.None"/>: an issuance flow with no
+/// separately revocable backing credential, bounded by the token's own lifetime.
+/// </param>
+/// <param name="AcceptMissingReferer">
+/// When <see langword="true"/> and <paramref name="ClientType"/> is
+/// <see cref="PortalTokenClientType.Referer"/>, a later request may omit the Referer header.
+/// A different Referer still mismatches. Browser OAuth tokens leave this
+/// <see langword="false"/> (honua-server#5558).
+/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -142,7 +179,40 @@ public sealed record PortalTokenIssueRequest(
     bool? RolesRequireClaimsMappingEntitlement = false,
     bool? TenantRequiresClaimsMappingEntitlement = false,
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
-    bool IsClientCredentials = false);
+    bool IsClientCredentials = false,
+    PortalCredentialSource? Source = null,
+    bool AcceptMissingReferer = false);
+
+/// <summary>
+/// Inputs for exchanging a presented portal token for a token bound to a new client binding.
+/// </summary>
+/// <param name="Token">The presented token.</param>
+/// <param name="PresentedBinding">Binding observed on the request that presents the token.</param>
+/// <param name="ClientType">The requested new binding type, or <see langword="null"/> to inherit the presented token's binding.</param>
+/// <param name="BindingValue">The requested new binding value, or <see langword="null"/> when inheriting.</param>
+/// <param name="ExpiresAt">
+/// Requested absolute expiry of the new token. The issuer clamps it to the presented token's
+/// own expiry.
+/// </param>
+public sealed record PortalTokenExchangeRequest(
+    string Token,
+    PortalTokenBinding PresentedBinding,
+    PortalTokenClientType? ClientType,
+    string? BindingValue,
+    DateTimeOffset ExpiresAt);
+
+/// <summary>
+/// Result of a portal token exchange.
+/// </summary>
+/// <param name="Issuance">The new token and its expiry.</param>
+/// <param name="PrincipalId">Principal the presented token, and so the new token, belongs to.</param>
+/// <param name="TenantId">Tenant the new token is scoped to, when present.</param>
+/// <param name="ClientType">Binding type of the new token.</param>
+public sealed record PortalTokenExchange(
+    PortalTokenIssuance Issuance,
+    string PrincipalId,
+    string? TenantId,
+    PortalTokenClientType ClientType);
 
 /// <summary>
 /// Token issuance result.
@@ -171,8 +241,9 @@ public sealed record PortalTokenBinding(string? Referer, string? ClientIp);
 public enum PortalTokenClientType
 {
     /// <summary>
-    /// Bind to a referer URL. The token is honored only when the request supplies a
-    /// matching <c>Referer</c> header.
+    /// Bind to a referer URL. A request that supplies a different <c>Referer</c> is
+    /// refused. A <c>generateToken</c> token may omit the header. A browser OAuth
+    /// token with this binding still requires the matching header.
     /// </summary>
     Referer = 0,
 
@@ -180,4 +251,10 @@ public enum PortalTokenClientType
     /// Bind to a client IP address. The token is honored only from that address.
     /// </summary>
     Ip = 1,
+
+    /// <summary>
+    /// Native OAuth bearer token. No Referer or client IP is required; expiry,
+    /// revocation and principal validation still apply. Not a generateToken client mode.
+    /// </summary>
+    Bearer = 2,
 }

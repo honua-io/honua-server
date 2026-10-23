@@ -99,7 +99,20 @@ public interface IResourceValidator
 public readonly record struct MetadataV2ServiceLayerTriple(
     MetadataV2Service Service,
     MetadataV2Publication Publication,
-    MetadataV2Resource Resource);
+    MetadataV2Resource Resource)
+{
+    /// <summary>
+    /// Storage handle resolved from the same immutable snapshot as the validated triple.
+    /// Null means the publication has no feature storage binding.
+    /// </summary>
+    public int? StorageLayerId { get; init; }
+
+    /// <summary>
+    /// Immutable metadata snapshot used to validate and resolve this triple.
+    /// Provider routing must use this snapshot to avoid concurrent publication rebinds.
+    /// </summary>
+    public MetadataV2GraphSnapshot? Snapshot { get; init; }
+}
 
 /// <summary>
 /// Result of resource validation containing either the resource or error details.

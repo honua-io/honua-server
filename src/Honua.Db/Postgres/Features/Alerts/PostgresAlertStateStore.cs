@@ -168,12 +168,17 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
             SELECT s.rule_id, s.layer_id, s.objectid, s.inside, s.entered_at, s.last_alert_at, s.last_generation, s.threshold_state
             FROM honua.alert_state s
             INNER JOIN honua.alert_rules r ON r.rule_id = s.rule_id
-            WHERE s.inside = TRUE
-              AND s.entered_at IS NOT NULL
-              AND s.entered_at <= @due_before
-              AND r.is_active = TRUE
-              AND r.trigger_type = @dwell_trigger_type
-            ORDER BY s.entered_at
+            WHERE r.is_active = TRUE
+              AND (
+                    (r.trigger_type = @dwell_trigger_type
+                     AND s.inside = TRUE
+                     AND s.entered_at IS NOT NULL
+                     AND s.entered_at <= @due_before)
+                 OR (s.threshold_state ? 'pendingDueAt'
+                     AND NULLIF(s.threshold_state->>'pendingDueAt', '') IS NOT NULL
+                     AND (s.threshold_state->>'pendingDueAt')::timestamptz <= @due_before)
+                  )
+            ORDER BY s.entered_at NULLS LAST, s.rule_id
             LIMIT @max_count
             """;
 

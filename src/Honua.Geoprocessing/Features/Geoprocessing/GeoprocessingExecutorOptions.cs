@@ -25,6 +25,22 @@ internal sealed class GeoprocessingExecutorOptions
     [Range(1024, 1024L * 1024L * 1024L, ErrorMessage = "MaxArtifactBytes must be between 1 KiB and 1 GiB")]
     public long MaxArtifactBytes { get; set; } = 50L * 1024L * 1024L;
 
+    /// <summary>Cancellation deadline for layer execution; checked between admitted managed topology calls.</summary>
+    [Range(1, 3600)]
+    public int MaxLayerExecutionSeconds { get; set; } = 300;
+
+    /// <summary>Maximum cumulative vertices materialized from each layer or in buffered intermediates.</summary>
+    [Range(1, 1_000_000)]
+    public int MaxLayerVertices { get; set; } = 100_000;
+
+    /// <summary>
+    /// Maximum conservative segment-pair work admitted to non-preemptible managed topology.
+    /// Unary topology charges the square of all input vertices; joins charge both sides' product.
+    /// This is an admission ceiling, not a claim that every admitted input takes equal time.
+    /// </summary>
+    [Range(1, 1_000_000_000)]
+    public long MaxTopologyWork { get; set; } = 4_000_000;
+
     /// <summary>
     /// Maximum decoded byte length accepted for a deliberately inline raster source.
     /// Larger sources must use PostGIS, object-store, Zarr, or staged-artifact references.
@@ -69,10 +85,22 @@ internal sealed class GeoprocessingExecutorOptions
         Path.Join(Path.GetTempPath(), "honua-import-staging");
 
     /// <summary>
-    /// Retention TTL applied to durable geoprocessing result packages produced
-    /// by built-in executors. Mirrors the default Redis store retention so
-    /// configuration here is authoritative for both reads and writes.
+    /// How long a finished geoprocessing job's results stay available, measured from the
+    /// job's completion. It is the TTL of the durable result package, and it is enforced
+    /// on every results read: once it has elapsed, results requests answer not-found
+    /// even though the terminal job record (kept by the job store's own retention) can
+    /// still be read for status, and no package is re-synthesized from that record.
     /// </summary>
     [Range(typeof(TimeSpan), "00:01:00", "30.00:00:00", ErrorMessage = "ResultRetention must be between 1 minute and 30 days")]
     public TimeSpan ResultRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Maximum feature count that the <c>sink.honua-layer</c> executor will materialize into
+    /// a single transactional catalog load. A spilled <c>honua-feature-stream</c> input is
+    /// read incrementally, but is still loaded through one transactional batch (server#4628),
+    /// so this is the explicit enforced bound that keeps that buffering finite regardless of
+    /// upstream dataset size.
+    /// </summary>
+    [Range(1, int.MaxValue, ErrorMessage = "MaxSinkFeatureCount must be a positive integer")]
+    public int MaxSinkFeatureCount { get; set; } = 2_000_000;
 }

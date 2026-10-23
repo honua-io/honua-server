@@ -5,6 +5,7 @@ using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
@@ -19,6 +20,39 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Collection("HonuaTelemetry")]
 public sealed class GeoServicesErrorTelemetryTests
 {
+    [UnitTest]
+    public void SRV_INF_014_UnknownPathSegment_UsesBoundedOperationLabel()
+    {
+        var context = CreateContext("/rest/services/a/b/callerControlledValue");
+        using var collector = new ErrorMetricsCollector("honua_geoservices_error_total");
+
+        _ = StandardErrorResponseFormatter.FormatError(context, StandardErrorResponse.NotFound("Missing"));
+
+        collector.Match("honua_geoservices_error_total", ("operation", "unknown"))
+            .Should().ContainSingle();
+        collector.Match("honua_geoservices_error_total", ("operation", "callercontrolledvalue"))
+            .Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("/rest/services/Parcels/FeatureServer/0/queryTopFeatures", "querytopfeatures")]
+    [InlineData("/rest/services/Parcels/FeatureServer/0/queryDateBins", "querydatebins")]
+    [InlineData("/rest/services/Parcels/FeatureServer/0/validateSQL", "validatesql")]
+    [InlineData("/rest/services/Parcels/FeatureServer/createReplica", "createreplica")]
+    [InlineData("/rest/services/Parcels/FeatureServer/synchronizeReplica", "synchronizereplica")]
+    [InlineData("/rest/services/Parcels/MapServer/0/generateRenderer", "generaterenderer")]
+    [InlineData("/rest/services/Parcels/FeatureServer/0/append", "append")]
+    public void SRV_INF_014_SupportedOperationTerminal_KeepsOperationLabel(string path, string expected)
+    {
+        var context = CreateContext(path);
+        using var collector = new ErrorMetricsCollector("honua_geoservices_error_total");
+
+        _ = StandardErrorResponseFormatter.FormatError(context, StandardErrorResponse.NotFound("Missing"));
+
+        collector.Match("honua_geoservices_error_total", ("operation", expected))
+            .Should().ContainSingle();
+    }
+
     [Fact]
     public void FormatError_GeoServicesInBand200Envelope_IncrementsCountersWithInBandTrue()
     {

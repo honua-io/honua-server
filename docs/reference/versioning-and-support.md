@@ -1,10 +1,34 @@
+---
+type: reference
+title: "Versioning and support"
+description: "How each public surface of Honua is versioned, what counts as a breaking change, and how deprecations are rolled out."
+---
 # Versioning and support
 
 How each public surface of Honua is versioned, what counts as a breaking change, and how deprecations are rolled out. Standards-based protocols are versioned by their specifications; only the admin/control-plane API and the gRPC contract carry Honua-owned version numbers.
 
+## Current release availability
+
+Honua Server currently provides source and nightly **evaluation builds**. A supported
+versioned server release has not yet been published. The API policies below describe
+compatibility commitments for those contracts; an API path named `v1` or a capability
+marked GA does not establish a qualified Stable server release.
+
+Public SDK packages are available, but no general supported SDK/server version window
+is published. For evaluation, record exact client versions and the server image digest
+and source revision. For a supported deployment, use the combination identified by a
+published release manifest, its matching evidence, and its release notes. Conformance,
+client, upgrade, and recovery results apply to the revisions and configurations they
+actually exercised. Historical results do not automatically cover a newer image.
+
+Check [server releases](https://github.com/honua-io/honua-server/releases) for release
+availability, [client compatibility](compatibility/clients.md) for operation scope,
+and [OGC evidence](../cite-status.md) for the dated source-bound conformance snapshot.
+No LTS designation or new support duration is established by this page.
+
 ## Admin API (`/api/v1/admin/*`)
 
-The current and only published major version is `v1`. Within `v1`, all changes are additive and backward compatible:
+The current implemented major API path is `v1`. Within `v1`, the compatibility policy requires additive, backward-compatible changes:
 
 - Allowed without a version bump: new optional request fields, new response fields, new endpoints/resources, new optional authentication alternatives.
 - Breaking (requires a new major path such as `/api/v2/admin/*`, except emergency security fixes): removing an endpoint or HTTP method, removing request/response fields, making optional fields required, removing supported media types or security schemes, changing a field type/enum in a way older clients cannot parse.
@@ -13,7 +37,7 @@ The current and only published major version is `v1`. Within `v1`, all changes a
 
 | Channel | Guarantee |
 | --- | --- |
-| Stable | Backward compatibility for the published major path; all changes additive. This is the currently published channel. |
+| Stable | When a Stable server release is published: backward compatibility for its published major API path; all changes additive. No Stable server release is currently published. |
 | Preview | Opt-in; may change or be removed without a major bump; must graduate or be removed within 3 minor releases. No preview path is currently published. |
 | LTS | When designated: security fixes for at least 12 months from designation; no new features. Designations are published in release notes. |
 
@@ -25,9 +49,7 @@ The current and only published major version is `v1`. Within `v1`, all changes a
 
 ### Contract governance
 
-The admin OpenAPI baseline is `docs/developer/api-specs/admin-api.json`, served at runtime at `/api/v1/admin/openapi.json` ([details](openapi-and-explorer.md)). CI validates the contract shape and diffs against the baseline on every PR; breaking diffs fail by default. An intentional break must be described in the PR, update the migration/deprecation documentation, and check the exact `OPENAPI_BREAKING_CHANGE_APPROVED` marker in the PR template. CI accepts the PR marker only when the diff also updates the control-plane migration guide, versioning policy, or release checklist. The acknowledgement keeps the governance job green but emits a warning annotation and a job-summary list of every suppressed finding. SDK regeneration from the baseline is validated by a separate CI workflow.
-
-The repository-wide `OPENAPI_ALLOW_BREAKING_CHANGES` variable is a temporary pre-publication override. It produces the same visible warnings when it suppresses findings and must be `false` before the first published control-plane release; that release-time verification is tracked as the `honua-release#71` first-release gate. Once reset, acknowledgment is scoped to the PR that introduces the change rather than silently authorizing future PRs.
+The admin OpenAPI baseline is `docs/developer/api-specs/admin-api.json`, served at runtime at `/api/v1/admin/openapi.json` ([details](openapi-and-explorer.md)). Every change is validated against that baseline; a breaking diff fails unless it is deliberate, documented in the migration guide, and announced in release notes.
 
 SDK generation, usage examples, and the breaking-change upgrade flow are covered in the standalone [control plane migration guide](control-plane-migration-guide.md).
 
@@ -48,7 +70,9 @@ Connection details and service list: [gRPC reference](protocols/grpc.md).
 
 ## Database migrations
 
-Schema migrations are forward-only and additive where possible. Destructive changes are staged across at least two releases (stop writing, then drop) and must ship rollback scripts. Migrations can be skipped at startup with `HONUA_SKIP_MIGRATIONS=true` (run them out of band instead).
+Schema migrations are forward-only and additive where possible. Honua does not ship per-migration rollback scripts or a schema downgrade command. Destructive changes are staged across at least two releases (stop writing, then drop); recovery from a destructive migration requires restoring a pre-migration database backup, including the migration journal. Follow [backup and restore](../guides/deploy/backup-and-restore.md) and capture a recoverable backup before applying migrations.
+
+Application rollback and database recovery are separate operations. Reverting the server image does not undo a migration. Use an older image against the migrated database only when that compatibility has been qualified; otherwise restore the matching backup before starting the compatible image. N-1 upgrade and rollback from a published 2026.1 baseline remain unverified until that baseline exists. Migrations can be skipped at startup with `HONUA_SKIP_MIGRATIONS=true` (run them out of band instead); skipping does not reverse migrations already applied.
 
 ## Related pages
 

@@ -3,12 +3,15 @@
 
 using System.Net;
 using System.Globalization;
+using System.Text;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using NetTopologySuite.IO;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
@@ -31,6 +34,104 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData("/ogc/services/{0}/wcs")]
+    [InlineData("/rest/services/{0}/ImageServer/WCS")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WCS")]
+    public async Task Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName(string routeTemplate)
+    {
+        var endpoint = string.Format(CultureInfo.InvariantCulture, routeTemplate, WebAppFixture.TestServiceId);
+        var response = await _fixture.Client.GetAsync(
+            $"{endpoint}?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var subtype = XDocument.Parse(content).Descendants(XName.Get("CoverageSubtype", "http://www.opengis.net/wcs/2.0")).Single();
+        subtype.Value.Should().Be("RectifiedGridCoverage");
+        subtype.GetDefaultNamespace().NamespaceName.Should().Be("http://www.opengis.net/gmlcov/1.0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_DescribeCoverage_GeographicGrid_UsesLongitudeLatitudeAndPixelCenters()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        var envelope = document.Descendants(gml + "Envelope").Single();
+        envelope.Element(gml + "lowerCorner")!.Value.Should().Be("-122.5 37.7");
+        envelope.Element(gml + "upperCorner")!.Value.Should().Be("-122.35 37.84");
+        document.Descendants().Attributes("srsName").Select(attribute => attribute.Value)
+            .Should().HaveCount(4).And.OnlyContain(value => value == "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+        var position = document.Descendants(gml + "pos").Single().Value.Split(' ')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+        position[0].Should().BeApproximately(-122.498828125, 1e-10);
+        position[1].Should().BeApproximately(37.83890625, 1e-10);
+        var subtype = document.Descendants(XName.Get("CoverageSubtype", "http://www.opengis.net/wcs/2.0")).Single();
+        subtype.Value.Should().Be("RectifiedGridCoverage");
+        subtype.GetDefaultNamespace().NamespaceName.Should().Be("http://www.opengis.net/gmlcov/1.0");
+        document.Descendants(XName.Get("nilValue", "http://www.opengis.net/swe/2.0")).Single().Value.Should().Be("-9999");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_DescribeCoverage_RotatedProjectedGrid_CentersBothOffsetVectors()
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Srid = 3857,
+            GeoTransform = [100, 10, 2, 200, 4, -20],
+            Extent = new RasterExtent { XMin = 100, YMin = -1080, XMax = 868, YMax = 456, Srid = 3857 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        document.Descendants(gml + "pos").Single().Value.Should().Be("106 192");
+        document.Descendants(gml + "offsetVector").Select(element => element.Value).Should().Equal("10 4", "2 -20");
+        document.Descendants().Attributes("srsName").Select(attribute => attribute.Value)
+            .Should().HaveCount(4).And.OnlyContain(value => value == "http://www.opengis.net/def/crs/EPSG/0/3857");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_DescribeCoverage_WithoutGeoTransform_CentersExtentDerivedGrid()
+    {
+        var raster = CreateRasterInfo() with
+        {
+            GeoTransform = null,
+            Width = 4,
+            Height = 2,
+            Extent = new RasterExtent { XMin = 10, YMin = 20, XMax = 18, YMax = 28, Srid = 4326 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        document.Descendants(gml + "pos").Single().Value.Should().Be("11 26");
+        document.Descendants(gml + "offsetVector").Select(element => element.Value).Should().Equal("2 0", "0 -4");
+        document.Descendants(gml + "high").Single().Value.Should().Be("3 1");
+    }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -102,9 +203,65 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<wcs:ServiceMetadata>");
         content.Should().Contain("<wcs:Extension>");
         content.Should().Contain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/3857</crs:crsSupported>");
-        content.Should().Contain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/4326</crs:crsSupported>");
+        // Longitude/latitude is advertised as CRS84, matching the axis order this service
+        // actually parses subsets and bboxes in; EPSG:4326 declares the reverse order and
+        // is therefore never offered as a choice.
+        content.Should().Contain(
+            "<crs:crsSupported>http://www.opengis.net/def/crs/OGC/1.3/CRS84</crs:crsSupported>");
+        content.Should().NotContain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/4326</crs:crsSupported>");
         // Advertisement only — the CRS-extension conformance class must not be claimed.
         content.Should().NotContain("crs-extension");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCapabilities_AdvertisesTheSameLonLatIdentifierDescribeCoverageDeclares()
+    {
+        var capabilities = await _fixture.Client.GetStringAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+        var describe = await _fixture.Client.GetStringAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+
+        // A client picking a subsetting/output CRS out of crsSupported must be able to pick
+        // the very identifier the coverage description declares, or it builds its requests
+        // against a different axis order than the coverage it just described.
+        capabilities.Should().Contain(
+            "<crs:crsSupported>http://www.opengis.net/def/crs/OGC/1.3/CRS84</crs:crsSupported>");
+        describe.Should().Contain("srsName=\"http://www.opengis.net/def/crs/OGC/1.3/CRS84\"");
+        describe.Should().NotContain("srsName=\"http://www.opengis.net/def/crs/EPSG/0/4326\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithAdvertisedCrs84Identifier_UsesLongitudeLatitudeSubset()
+    {
+        // The advertised CRS84 URI, used verbatim as a client would copy it out of
+        // crsSupported, is accepted for both subsetting and output.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png" +
+            "&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)" +
+            "&SUBSETTINGCRS=http://www.opengis.net/def/crs/OGC/1.3/CRS84" +
+            "&OUTPUTCRS=http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        bytes.Should().Equal([0x89, 0x50, 0x4E, 0x47]);
+
+        _exportQueries.Should().ContainSingle();
+        var query = _exportQueries.Single();
+        query.OutputSrid.Should().Be(4326);
+        query.ClipRegion.Should().NotBeNull();
+        query.ClipRegion!.Value.Srid.Should().Be(4326);
+        // Longitude drives X and latitude drives Y: the CRS84 axis order, not EPSG:4326's.
+        var clip = new WKBReader().Read(query.ClipRegion!.Value.Geometry).EnvelopeInternal;
+        clip.MinX.Should().BeApproximately(-122.4, 1e-9);
+        clip.MaxX.Should().BeApproximately(-122.3, 1e-9);
+        clip.MinY.Should().BeApproximately(37.7, 1e-9);
+        clip.MaxY.Should().BeApproximately(37.8, 1e-9);
     }
 
     [IntegrationTest]
@@ -573,6 +730,98 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_GetCapabilities_DesktopPath_AdvertisesOperationsWithoutServicesSegment()
+    {
+        // ArcGIS Pro treats any {root}/services/{name}/ URL as an ArcGIS Server site
+        // (#4584), so every operation URL a client follows must stay on this form.
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/wcs/{WebAppFixture.TestServiceId}?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        XNamespace xlink = "http://www.w3.org/1999/xlink";
+        document.Descendants(ows + "Get").Select(get => get.Attribute(xlink + "href")!.Value)
+            .Should().HaveCount(3)
+            .And.OnlyContain(href => href == $"http://localhost/ogc/wcs/{WebAppFixture.TestServiceId}");
+        document.Descendants(XName.Get("CoverageId", "http://www.opengis.net/wcs/2.0"))
+            .Select(element => element.Value).Should().Equal("coverage_0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_DescribeCoverage_DesktopPath_MatchesServiceRouteDescription()
+    {
+        var query = "?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=coverage_0";
+        var desktop = await _fixture.Client.GetAsync($"/ogc/wcs/{WebAppFixture.TestServiceId}{query}");
+        var canonical = await _fixture.Client.GetAsync($"/ogc/services/{WebAppFixture.TestServiceId}/wcs{query}");
+
+        var content = await desktop.Content.ReadAsStringAsync();
+        desktop.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        canonical.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Be(await canonical.Content.ReadAsStringAsync());
+
+        // 64x64 grid anchored at (-122.5, 37.84) with a (0.00234375, -0.0021875) cell:
+        // the first pixel center is half a cell in from that corner on each axis.
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        var position = XDocument.Parse(content).Descendants(gml + "pos").Single().Value.Split(' ')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+        position[0].Should().BeApproximately(-122.5 + (0.00234375 / 2), 1e-10);
+        position[1].Should().BeApproximately(37.84 - (0.0021875 / 2), 1e-10);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_GetCoverage_DesktopPath_ExportsTheServiceRouteCoverage()
+    {
+        var query = "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_0&FORMAT=image/tiff" +
+            "&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)";
+        var desktop = await _fixture.Client.GetAsync($"/ogc/wcs/{WebAppFixture.TestServiceId}{query}");
+        var canonical = await _fixture.Client.GetAsync($"/ogc/services/{WebAppFixture.TestServiceId}/wcs{query}");
+
+        var bytes = await desktop.Content.ReadAsByteArrayAsync();
+        desktop.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(bytes));
+        canonical.StatusCode.Should().Be(HttpStatusCode.OK);
+        bytes.Should().Equal(await canonical.Content.ReadAsByteArrayAsync());
+
+        _exportQueries.Should().HaveCount(2);
+        foreach (var exportQuery in _exportQueries)
+        {
+            exportQuery.OutputFormat.Should().Be(RasterFormat.TIFF);
+            var clip = new WKBReader().Read(exportQuery.ClipRegion!.Value.Geometry).EnvelopeInternal;
+            clip.MinX.Should().BeApproximately(-122.4, 1e-9);
+            clip.MaxX.Should().BeApproximately(-122.3, 1e-9);
+            clip.MinY.Should().BeApproximately(37.7, 1e-9);
+            clip.MaxY.Should().BeApproximately(37.8, 1e-9);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_DescribeCoverage_DesktopPathUnknownService_ReturnsServiceNotFoundException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/wcs/missing?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("<ows:ExceptionReport");
+        content.Should().Contain("exceptionCode=\"NoApplicableCode\"");
+        content.Should().Contain("Service 'missing' was not found.");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
@@ -720,6 +969,101 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
         content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
         content.Should().Contain("locator=\"SUBSET\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("", "COVERAGEID")]
+    [InlineData("&SCALEFACTOR=1", "SCALEFACTOR")]
+    [InlineData("&SCALEFACTOR=40", "SCALEFACTOR")]
+    [InlineData("&SCALEFACTOR=1e300", "SCALEFACTOR")]
+    [InlineData("&SCALEAXES=x(0.25)", "SCALEAXES")]
+    [InlineData("&SCALEAXES=x(1e300),y(1)", "SCALEAXES")]
+    [InlineData("&SCALEEXTENT=x(0,8191),y(0,8191)", "SCALEEXTENT")]
+    [InlineData("&SCALEEXTENT=x(0,63)", "SCALEEXTENT")]
+    [InlineData("&SCALEEXTENT=x(-1e300,1e300),y(0,63)", "SCALEEXTENT")]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_OversizeEffectiveGrid_IsRejectedBeforeExport(string scaling, string locator)
+    {
+        var raster = CreateRasterInfo() with { Width = 8192, Height = 8192, GeoTransform = null };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png{scaling}");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"").And.Contain($"locator=\"{locator}\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("&SCALEFACTOR=0.5", 4096, 4096)]
+    [InlineData("&SCALEAXES=x(0.25),y(0.5)", 2048, 4096)]
+    [InlineData("&SCALEEXTENT=x(0,127),y(0,63)", 128, 64)]
+    [InlineData("&SCALESIZE=x(128),y(64)", 128, 64)]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_OversizeNativeGrid_CanBeDownscaled(string scaling, int width, int height)
+    {
+        var raster = CreateRasterInfo() with { Width = 8192, Height = 8192, GeoTransform = null };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png{scaling}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+        _exportQueries[0].OutputWidth.Should().Be(width);
+        _exportQueries[0].OutputHeight.Should().Be(height);
+    }
+
+    [IntegrationTheory]
+    [InlineData("0,0,0.25,0.25", true)]
+    [InlineData("0.00003,0,0.50003,0.25", false)]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_NativeBbox_BoundsAllTouchedCells(string bbox, bool allowed)
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Width = 8192,
+            Height = 8192,
+            GeoTransform = null,
+            Extent = new RasterExtent { XMin = 0, YMin = 0, XMax = 1, YMax = 1, Srid = 4326 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&BBOX={bbox}");
+        response.StatusCode.Should().Be(allowed ? HttpStatusCode.OK : HttpStatusCode.BadRequest,
+            await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().HaveCount(allowed ? 1 : 0);
+    }
+
+    [IntegrationTheory]
+    [InlineData(double.NegativeInfinity, double.PositiveInfinity)]
+    [InlineData(double.MinValue, double.MaxValue)]
+    [InlineData(double.NaN, 1d)]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_UnboundedExtent_CannotBypassNativeGridCap(double minX, double maxX)
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Width = 8192,
+            Height = 8192,
+            GeoTransform = null,
+            Extent = new RasterExtent { XMin = minX, YMin = 0, XMax = maxX, YMax = 1, Srid = 4326 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&BBOX=0,0,1,1");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
         _exportQueries.Should().BeEmpty();
     }
 

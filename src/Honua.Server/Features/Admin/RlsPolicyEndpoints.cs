@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -132,10 +133,11 @@ internal static partial class RlsPolicyEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<RlsPolicyResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    internal static async Task<Results<Created<ApiResponse<RlsPolicyResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleCreatePolicy(
             CreateRlsPolicyRequest request,
             [FromServices] IRlsPolicyStore store,
+            [FromServices] ReadPolicyEnforceabilityChecker enforceability,
             [FromServices] ILogger<RlsPolicyEndpointsLog> logger,
             HttpContext context)
     {
@@ -152,6 +154,19 @@ internal static partial class RlsPolicyEndpoints
             {
                 return TypedResults.BadRequest(
                     ApiResponse<object>.Failure("Comparison must be 'in' or 'equals'."));
+            }
+
+            // Refuse a policy that a targeted layer's provider cannot enforce; accepting it would
+            // only surface later as refused reads of that layer.
+            var unenforceable = await enforceability.FindUnenforceableTargetAsync(
+                request.Service.Trim(),
+                request.Layer.Trim(),
+                context.RequestAborted);
+            if (unenforceable is not null)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    $"This policy targets layer '{unenforceable.LayerName}', which is served by the '{unenforceable.ProviderName}' provider. " +
+                    "That provider cannot enforce row-level security policies. Scope the policy to layers served by a provider that enforces them."));
             }
 
             var policy = new RlsPolicy

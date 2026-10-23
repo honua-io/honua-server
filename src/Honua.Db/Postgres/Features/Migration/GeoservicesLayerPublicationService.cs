@@ -11,6 +11,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.Metadata;
 using Microsoft.Extensions.Logging;
 
@@ -81,7 +82,11 @@ internal sealed partial class GeoservicesLayerPublicationService
         DateTimeOffset startedAt,
         int featuresProcessed,
         string connectionString,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool supportsAttachments = false,
+        bool replacingExistingTarget = false,
+        IReadOnlyDictionary<long, long>? replacedSourceObjectIds = null,
+        IImportedAttachmentStore? importedAttachmentStore = null)
     {
         if (_layerPublishingService == null)
         {
@@ -94,6 +99,36 @@ internal sealed partial class GeoservicesLayerPublicationService
             warnings.Add("AutoPublish was requested, but no target serviceName was supplied; the imported table was not published.");
             return null;
         }
+
+        var columnMap = GeoservicesImportColumns.Map(layerInfo);
+        LayerPublishRequest BuildPublishRequest() => new()
+        {
+            Schema = targetSchema,
+            Table = request.TableName,
+            LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
+            Description = layerInfo.Description,
+            GeometryColumn = string.IsNullOrEmpty(layerInfo.GeometryType) ? null : "geom",
+            GeometryType = string.IsNullOrWhiteSpace(layerInfo.GeometryType)
+                ? null
+                : GeoservicesImportService.MapEsriGeometryType(
+                    layerInfo.GeometryType,
+                    hasZ: false,
+                    hasM: false),
+            HasZ = layerInfo.HasZ,
+            HasM = layerInfo.HasM,
+            Srid = request.TargetSrid,
+            PrimaryKey = FieldNames.ObjectId,
+            GlobalIdField = ResolveImportedGlobalIdField(layerInfo, columnMap),
+            SupportsAttachments = supportsAttachments,
+            Fields = [],
+            ServiceName = request.ServiceName,
+            Enabled = true,
+            FieldDomains = GeoservicesImportColumns.BuildFieldDomainMap(layerInfo),
+            // Physical column names, including reserved-name disambiguation, so publish
+            // matches the introspected table.
+            Subtypes = GeoservicesImportColumns.RemapSubtypes(layerInfo.Subtypes, columnMap),
+            AttributeRules = GeoservicesImportColumns.RemapAttributeRules(layerInfo.AttributeRules, columnMap)
+        };
 
         try
         {
@@ -108,37 +143,7 @@ internal sealed partial class GeoservicesLayerPublicationService
                 featuresProcessed,
                 layerInfo.Name);
 
-            var publishRequest = new LayerPublishRequest
-            {
-                Schema = targetSchema,
-                Table = request.TableName,
-                LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
-                Description = layerInfo.Description,
-                GeometryColumn = "geom",
-                GeometryType = string.IsNullOrWhiteSpace(layerInfo.GeometryType)
-                    ? null
-                    : GeoservicesImportService.MapEsriGeometryType(
-                        layerInfo.GeometryType,
-                        hasZ: false,
-                        hasM: false),
-                Srid = request.TargetSrid,
-                PrimaryKey = FieldNames.ObjectId,
-                Fields = [],
-                ServiceName = request.ServiceName,
-                Enabled = true,
-                FieldDomains = BuildFieldDomainMap(layerInfo),
-                // Carry the captured Esri subtype set through publish. The subtype field
-                // is the canonical 'type' column on the imported layer; the publish path
-                // only attaches the subtypes when that column is actually published, so a
-                // subtype set referencing a dropped column never false-fails reconciliation.
-                Subtypes = layerInfo.Subtypes,
-                // Carry the captured Esri attribute rules through publish so calculation /
-                // constraint / validation rules fire on applyEdits. Calculation rules whose
-                // target column is not published are pruned in the projection so a rule
-                // referencing a dropped field never fails graph validation.
-                AttributeRules = layerInfo.AttributeRules
-            };
-
+            var publishRequest = BuildPublishRequest();
             var published = await _layerPublishingService.PublishLayerAsync(
                     connectionString,
                     publishRequest,
@@ -152,8 +157,93 @@ internal sealed partial class GeoservicesLayerPublicationService
                     warnings,
                     cancellationToken)
                 .ConfigureAwait(false);
+            await RemapReplacedAttachmentsAsync(
+                    published,
+                    replacingExistingTarget,
+                    replacedSourceObjectIds,
+                    importedAttachmentStore,
+                    warnings,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
             return published;
+        }
+        catch (LayerPublishingException ex) when (
+            replacingExistingTarget &&
+            ex.ErrorKind == LayerPublishingErrorKind.Conflict &&
+            ex.LayerId is not null)
+        {
+            var publishRequest = BuildPublishRequest();
+            PublishedLayerSummary? rewritten = null;
+            try
+            {
+                rewritten = await _layerPublishingService.RewritePublishedLayerFieldsAsync(
+                        connectionString,
+                        ex.LayerId.Value,
+                        publishRequest,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception rewriteException) when (rewriteException is not OperationCanceledException)
+            {
+                Log.PublishedFieldRewriteFailed(_logger, ex.LayerId.Value, request.TableName, rewriteException);
+                warnings.Add("Published field metadata could not be rewritten for the replaced table.");
+            }
+
+            try
+            {
+                // Replacing a table does not create a new publication. Reuse the existing layer and
+                // rebuild its canonical feature snapshot so tile reads observe the committed table.
+                // Field metadata is rewritten first: the snapshot only projects columns already
+                // recorded on the layer. Returning the summary also lets attachment copy and
+                // reconciliation continue.
+                await _layerPublishingService.RefreshMaterializedFeaturesForSourceTableAsync(
+                        connectionString,
+                        targetSchema,
+                        request.TableName,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                var existingLayer = rewritten;
+                if (existingLayer is null)
+                {
+                    var existingLayers = await _layerPublishingService.ListPublishedLayersAsync(
+                            connectionString,
+                            request.ServiceName,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    existingLayer = existingLayers.FirstOrDefault(layer => layer.LayerId == ex.LayerId.Value);
+                }
+
+                if (existingLayer is not null)
+                {
+                    await TryAttachLayerStyleAsync(
+                            existingLayer,
+                            layerInfo,
+                            request,
+                            warnings,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    await RemapReplacedAttachmentsAsync(
+                            existingLayer,
+                            replacingExistingTarget,
+                            replacedSourceObjectIds,
+                            importedAttachmentStore,
+                            warnings,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return existingLayer;
+                }
+
+                warnings.Add("The existing published layer was refreshed, but its catalog entry could not be resolved.");
+                return null;
+            }
+            catch (Exception recoveryException) when (recoveryException is not OperationCanceledException)
+            {
+                Log.AutoPublishFailed(_logger, request.TableName, request.ServiceName!, recoveryException);
+                warnings.Add("AutoPublish was requested, but publishing did not complete.");
+                return null;
+            }
         }
         catch (LayerPublishingException)
         {
@@ -168,21 +258,41 @@ internal sealed partial class GeoservicesLayerPublicationService
         }
     }
 
-    // Projects the captured per-field Esri domains onto the publish request, keyed
-    // by source field name. Coded-value domains over the capture cap are not present
-    // here (the source parser omitted them and the inventory raised the truncation
-    // warning), so they intentionally publish without a domain rather than as a
-    // misleading partial lookup.
-    private static Dictionary<string, MetadataV2FieldDomain> BuildFieldDomainMap(
-        GeoservicesLayerInfo layerInfo)
+    private static string? ResolveImportedGlobalIdField(GeoservicesLayerInfo layerInfo, GeoservicesImportColumnMap columnMap)
     {
-        var map = new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
-        foreach (var field in layerInfo.Fields.Where(field => field.Domain is not null && !string.IsNullOrWhiteSpace(field.Name)))
+        var declared = layerInfo.GlobalIdField;
+        var field = !string.IsNullOrWhiteSpace(declared)
+            ? layerInfo.Fields.FirstOrDefault(field => field.Name.Equals(declared, StringComparison.OrdinalIgnoreCase))
+            : layerInfo.Fields.FirstOrDefault(field => field.Type.Equals("esriFieldTypeGlobalID", StringComparison.OrdinalIgnoreCase));
+        return field is null ? null : columnMap.MapReference(field.Name);
+    }
+
+    private async Task RemapReplacedAttachmentsAsync(
+        PublishedLayerSummary published,
+        bool replacingExistingTarget,
+        IReadOnlyDictionary<long, long>? replacedSourceObjectIds,
+        IImportedAttachmentStore? importedAttachmentStore,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (!replacingExistingTarget || importedAttachmentStore is null || replacedSourceObjectIds is null)
         {
-            map[field.Name] = field.Domain!;
+            return;
         }
 
-        return map;
+        try
+        {
+            await importedAttachmentStore.RemapImportedAttachmentsAsync(
+                    published.LayerId,
+                    replacedSourceObjectIds,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Log.AttachmentObjectIdRemapFailed(_logger, published.LayerId, exception);
+            warnings.Add("Existing attachments could not be remapped onto the replaced object ids.");
+        }
     }
 
     private async Task TryAttachLayerStyleAsync(
@@ -303,5 +413,13 @@ internal sealed partial class GeoservicesLayerPublicationService
         [LoggerMessage(7841, LogLevel.Warning,
             "Reconciliation gate could not run for table {TableName}; import completed without a reconciliation verdict")]
         public static partial void ReconciliationGateUnavailable(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7842, LogLevel.Warning,
+            "Published field metadata for layer {LayerId} could not be rewritten after replacing table {TableName}")]
+        public static partial void PublishedFieldRewriteFailed(ILogger logger, int layerId, string tableName, Exception exception);
+
+        [LoggerMessage(7843, LogLevel.Warning,
+            "Existing attachments for layer {LayerId} could not be remapped onto the replaced object ids")]
+        public static partial void AttachmentObjectIdRemapFailed(ILogger logger, int layerId, Exception exception);
     }
 }

@@ -62,6 +62,7 @@ internal sealed partial class OutputCacheInvalidationService
             tags.Add("layer-styles");
             tags.Add("terrain");
             tags.Add("ogc-maps");
+            tags.Add("ogc-styles");
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId.Value));
             responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId.Value));
             foreach (var ogcCollectionId in ogcCollectionIds)

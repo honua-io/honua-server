@@ -3,8 +3,11 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -15,6 +18,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
@@ -112,7 +116,16 @@ internal static partial class FeatureServerEndpoints
             return parseError;
         }
 
-        return await ExecuteAppendAsync(context, serviceId, layerId, features ?? [], cancellationToken);
+        return await ExecuteAppendAsync(
+            context,
+            serviceId,
+            layerId,
+            validationResult.Publication!,
+            service,
+            resource,
+            values,
+            features ?? [],
+            cancellationToken);
     }
 
     private static async Task<IResult> HandleLayerAppend(
@@ -184,30 +197,148 @@ internal static partial class FeatureServerEndpoints
             return parseError;
         }
 
-        return await ExecuteAppendAsync(context, serviceId, layerId, features ?? [], cancellationToken);
+        return await ExecuteAppendAsync(
+            context,
+            serviceId,
+            layerId,
+            validationResult.Publication!,
+            service,
+            resource,
+            values,
+            features ?? [],
+            cancellationToken);
     }
 
     private static async Task<IResult> ExecuteAppendAsync(
         HttpContext context,
         string serviceId,
         int layerId,
+        MetadataV2Publication publication,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        IReadOnlyDictionary<string, StringValues> values,
         GeoServicesFeature[] features,
         CancellationToken cancellationToken)
     {
+        if (!TryReadAppendOptions(values, out var appendOptions, out var optionsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid append request",
+                [optionsError ?? "Invalid append parameter."]);
+        }
+
+        var unsupported = FindUnsupportedAppendControl(values);
+        if (unsupported is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                $"{unsupported} is not supported",
+                [$"Omit {unsupported}. Append applies the edits array directly."]);
+        }
+
+        // Resolve gdbVersion before the upsert match read (#6095): matches must be found within
+        // the named version and the resulting adds/updates must be written there, never DEFAULT.
+        var gdbVersion = GetValueString(values, "gdbVersion");
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
+            context, gdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return versionError;
+        }
+
+        GeoServicesFeature[] updates = [];
+        var adds = features;
+        if (appendOptions.Upsert)
+        {
+            if (string.IsNullOrWhiteSpace(appendOptions.UpsertMatchingField))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid append request",
+                    ["upsertMatchingField is required when upsert is true."]);
+            }
+
+            if (!IsAppendMatchField(resource, appendOptions.UpsertMatchingField))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid upsertMatchingField",
+                    [$"Field '{appendOptions.UpsertMatchingField}' does not exist on the layer."]);
+            }
+
+            var updateAccessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
+            if (updateAccessError != null)
+            {
+                return updateAccessError;
+            }
+
+            var updateRbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                resource,
+                service,
+                AuthorizationOperation.Update,
+                cancellationToken).ConfigureAwait(false);
+            if (updateRbacError != null)
+            {
+                return updateRbacError;
+            }
+
+            var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageLayerId = ResolveFeatureServerStorageLayerIdV2(snapshot, publication, resource);
+            if (storageLayerId is null)
+            {
+                var layerName = resource.Metadata.Name.Length == 0
+                    ? layerId.ToString(CultureInfo.InvariantCulture)
+                    : resource.Metadata.Name;
+                return StandardErrorHelpers.CreateNotFound(context,
+                    $"Layer '{layerName}' is not bound to a storage layer.");
+            }
+
+            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var (matches, matchError) = await LoadAppendUpsertMatchesAsync(
+                featureReader,
+                filterService,
+                resource,
+                storageLayerId.Value,
+                features,
+                appendOptions.UpsertMatchingField,
+                versionContext,
+                cancellationToken).ConfigureAwait(false);
+            if (matchError is not null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid upsertMatchingField",
+                    [matchError]);
+            }
+
+            var matchingField = resource.SchemaFields.FirstOrDefault(field =>
+                field.Name.Equals(appendOptions.UpsertMatchingField, StringComparison.OrdinalIgnoreCase));
+            var partition = PartitionAppendFeatures(
+                features,
+                matches ?? new Dictionary<string, long>(StringComparer.Ordinal),
+                appendOptions.UpsertMatchingField,
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+                matchingField?.Type ?? MetadataV2FieldType.String);
+            adds = partition.Adds;
+            updates = partition.Updates;
+        }
+
         var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
 
-        var request = new ApplyEditsRequest { Adds = features, RollbackOnFailure = false };
+        var request = CreateAppendApplyEditsRequest(adds, updates, appendOptions.RollbackOnFailure, gdbVersion);
         var result = await editsHandler.HandleApplyEditsAsync(
-            serviceId, layerId, request, limitsOptions.Value.Edits, cancellationToken);
+            serviceId, layerId, request, limitsOptions.Value.Edits, cancellationToken: cancellationToken);
 
         // Map ApplyEditsResponse to AppendResponse
         if (result is Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult &&
             jsonResult.Value != null)
         {
             var editsResponse = jsonResult.Value;
-            var appended = editsResponse.AddResults?.Count(r => r.Success) ?? 0;
-            var failed = editsResponse.AddResults?.Count(r => !r.Success) ?? 0;
+            var appended = (editsResponse.AddResults?.Count(r => r.Success) ?? 0)
+                + (editsResponse.UpdateResults?.Count(r => r.Success) ?? 0);
+            var failed = (editsResponse.AddResults?.Count(r => !r.Success) ?? 0)
+                + (editsResponse.UpdateResults?.Count(r => !r.Success) ?? 0);
 
             var response = new AppendResponse
             {
@@ -233,6 +364,11 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        if (!ApplyEditsIdempotency.TryResolveKey(context, out var calculateIdempotencyKey, out var calculateIdempotencyError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, calculateIdempotencyError!);
+        }
+
         var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
@@ -375,11 +511,72 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
+        // Hidden schema fields and request-scoped field masks are not calculate inputs or outputs.
+        // The candidate read returns the full attribute bag, so a sqlExpression could otherwise copy
+        // a publisher-hidden value into a visible field (#6141).
+        var unavailableFields = resource.SchemaFields
+            .Where(static field => field.Hidden)
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var maskSource = context.RequestServices.GetService<IFieldMaskSource>();
+        if (maskSource is not null)
+        {
+            unavailableFields.UnionWith(await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false));
+        }
+
+        foreach (var (field, _, _, sqlExpression) in parsedExpressions)
+        {
+            if (unavailableFields.Contains(field))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context, $"Field '{field}' is not available for calculate.");
+            }
+
+            if (sqlExpression is null)
+            {
+                continue;
+            }
+
+            if (!TryInspectCalcExpression(sqlExpression, out var sourceFields, out var sourceError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Unsupported expression for field '{field}'",
+                    [sourceError ?? "Expression is not supported."]);
+            }
+
+            foreach (var sourceField in sourceFields)
+            {
+                if (!validFieldNames.Contains(sourceField))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context, $"Field '{sourceField}' does not exist in layer {layerId}.");
+                }
+
+                if (unavailableFields.Contains(sourceField))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context, $"Field '{sourceField}' is not available for calculate.");
+                }
+            }
+        }
+
+        // Resolve gdbVersion before any read (#6095): the candidate read must see the named
+        // version's rows and the update batches must target that version, never DEFAULT.
+        var gdbVersion = GetValueString(values, "gdbVersion");
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
+            context, gdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return versionError;
+        }
+
         // Build optional WHERE filter
         var whereClause = GetValueString(values, "where");
         var query = new FeatureQuery
         {
-            SpatialReferenceSrid = resource.ReadSrid()
+            SpatialReferenceSrid = resource.ReadSrid(),
+            VersionContext = versionContext is { IsDefault: false } ? versionContext : null
         };
 
         if (!string.IsNullOrWhiteSpace(whereClause) && whereClause != "1=1")
@@ -471,46 +668,219 @@ internal static partial class FeatureServerEndpoints
         var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
         var editLimits = limitsOptions.Value.Edits;
         var batchSize = Math.Max(1, Math.Min(editLimits.MaxFeaturesPerEdit, editLimits.MaxEditsPerTransaction));
-        var updatedCount = 0;
-        var allSucceeded = true;
+        return await ApplyCalculateBatchesAsync(
+            context,
+            editsHandler,
+            serviceId,
+            layerId,
+            updates,
+            gdbVersion,
+            calculateIdempotencyKey,
+            editLimits,
+            batchSize,
+            versionContext is { IsDefault: false },
+            cancellationToken).ConfigureAwait(false);
+    }
 
-        for (var offset = 0; offset < updates.Length; offset += batchSize)
+    /// <summary>
+    /// Applies calculate updates through the shared edit pipeline. One batch uses that
+    /// pipeline's own transaction. More than one batch shares a writer transaction so a
+    /// later failure rolls back earlier batches from this request before anything commits
+    /// (#6359). A provider that cannot share a transaction refuses the split instead.
+    /// </summary>
+    private static async Task<IResult> ApplyCalculateBatchesAsync(
+        HttpContext httpContext,
+        FeatureServerEditsHandler editsHandler,
+        string serviceId,
+        int layerId,
+        GeoServicesFeature[] updates,
+        string? gdbVersion,
+        string? calculateIdempotencyKey,
+        EditLimits editLimits,
+        int batchSize,
+        bool versioned,
+        CancellationToken cancellationToken)
+    {
+        if (updates.Length <= batchSize)
+        {
+            var single = await ApplyCalculateBatchLoopAsync(
+                editsHandler,
+                serviceId,
+                layerId,
+                updates,
+                gdbVersion,
+                calculateIdempotencyKey,
+                editLimits,
+                batchSize,
+                ambient: null,
+                cancellationToken).ConfigureAwait(false);
+            return single.Result!;
+        }
+
+        if (versioned)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                httpContext,
+                "Too many features for one versioned calculate",
+                ["A versioned calculate that exceeds one edit batch cannot be applied atomically. Narrow the where clause and retry."]);
+        }
+
+        IFeatureWriterTransaction transaction;
+        try
+        {
+            transaction = await editsHandler.BeginSharedEditTransactionAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                httpContext,
+                "Too many features for one calculate",
+                ["This provider cannot apply a calculate across multiple edit batches in one transaction. Narrow the where clause and retry."]);
+        }
+
+        var ambient = new AmbientFeatureEditTransaction { Transaction = transaction };
+        var committed = false;
+        await using (transaction.ConfigureAwait(false))
+        {
+            try
+            {
+                var batchResult = await ApplyCalculateBatchLoopAsync(
+                    editsHandler,
+                    serviceId,
+                    layerId,
+                    updates,
+                    gdbVersion,
+                    calculateIdempotencyKey,
+                    editLimits,
+                    batchSize,
+                    ambient,
+                    cancellationToken).ConfigureAwait(false);
+                if (!batchResult.Succeeded)
+                {
+                    return batchResult.Result!;
+                }
+
+                committed = await editsHandler.CommitAmbientEditTransactionAsync(ambient, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!committed)
+                {
+                    // The provider could not confirm the commit. Keep reservations and do not
+                    // roll back: the rows may already be durable.
+                    ambient.PreserveReservations = true;
+                    return Results.Json(
+                        new CalculateResponse { Success = false, UpdatedFeatureCount = 0 },
+                        FeatureServerJsonContext.Default.CalculateResponse,
+                        contentType: "application/json");
+                }
+
+                return Results.Json(
+                    new CalculateResponse { Success = true, UpdatedFeatureCount = batchResult.UpdatedCount },
+                    FeatureServerJsonContext.Default.CalculateResponse,
+                    contentType: "application/json");
+            }
+            finally
+            {
+                if (!committed && !ambient.PreserveReservations)
+                {
+                    await editsHandler.RollbackAmbientEditTransactionAsync(ambient).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    private static async Task<(IResult? Result, int UpdatedCount, bool Succeeded)> ApplyCalculateBatchLoopAsync(
+        FeatureServerEditsHandler editsHandler,
+        string serviceId,
+        int layerId,
+        GeoServicesFeature[] updates,
+        string? gdbVersion,
+        string? calculateIdempotencyKey,
+        EditLimits editLimits,
+        int batchSize,
+        AmbientFeatureEditTransaction? ambient,
+        CancellationToken cancellationToken)
+    {
+        var updatedCount = 0;
+        for (int offset = 0, batchIndex = 0; offset < updates.Length; offset += batchSize, batchIndex++)
         {
             var batch = updates[offset..Math.Min(offset + batchSize, updates.Length)];
-            var applyRequest = new ApplyEditsRequest { Updates = batch, RollbackOnFailure = true };
+            var applyRequest = new ApplyEditsRequest
+            {
+                Updates = batch,
+                RollbackOnFailure = true,
+                GdbVersion = gdbVersion
+            };
+            // A shared Idempotency-Key would make later batches replay batch 1 and skip the write.
+            // Derive a stable per-batch key so a retry replays each batch instead of the first one.
+            // With no header, suppress header reads so the batches do not independently re-read it.
+            var batchKey = calculateIdempotencyKey is null
+                ? new ApplyEditsIdempotencyChoice(null)
+                : new ApplyEditsIdempotencyChoice(DeriveCalculateBatchKey(calculateIdempotencyKey, batchIndex));
             var batchResult = await editsHandler.HandleApplyEditsAsync(
-                serviceId, layerId, applyRequest, editLimits, cancellationToken);
+                serviceId,
+                layerId,
+                applyRequest,
+                editLimits,
+                batchKey,
+                ambient,
+                cancellationToken).ConfigureAwait(false);
 
             if (batchResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult ||
                 jsonResult.Value is null)
             {
-                // A protocol-level error (e.g. license/validation). Surface it directly
-                // when nothing has been written yet; otherwise report a partial result.
-                if (updatedCount == 0)
+                // Nothing from this request stays committed when the batches share a transaction,
+                // so the protocol error can be returned as-is. Independent batches still report a
+                // partial calculate once an earlier batch has committed.
+                if (ambient is not null || updatedCount == 0)
                 {
-                    return batchResult;
+                    return (batchResult, 0, false);
                 }
 
-                allSucceeded = false;
-                break;
+                return (CalculateFailure(), updatedCount, false);
             }
 
             var batchResponse = jsonResult.Value;
-            updatedCount += batchResponse.UpdateResults?.Count(static r => r.Success) ?? 0;
             if (!batchResponse.Success)
             {
-                allSucceeded = false;
-                break;
+                if (ambient is not null)
+                {
+                    return (CalculateFailure(), 0, false);
+                }
+
+                updatedCount += batchResponse.UpdateResults?.Count(static r => r.Success) ?? 0;
+                return (CalculateFailure(updatedCount), updatedCount, false);
             }
+
+            updatedCount += batchResponse.UpdateResults?.Count(static r => r.Success) ?? 0;
         }
 
-        var calcResponse = new CalculateResponse
+        if (ambient is not null)
         {
-            Success = allSucceeded,
-            UpdatedFeatureCount = updatedCount
-        };
+            return (null, updatedCount, true);
+        }
 
-        return Results.Json(calcResponse, FeatureServerJsonContext.Default.CalculateResponse, contentType: "application/json");
+        return (Results.Json(
+            new CalculateResponse { Success = true, UpdatedFeatureCount = updatedCount },
+            FeatureServerJsonContext.Default.CalculateResponse,
+            contentType: "application/json"), updatedCount, true);
+
+        static IResult CalculateFailure(int updatedCount = 0)
+            => Results.Json(
+                new CalculateResponse { Success = false, UpdatedFeatureCount = updatedCount },
+                FeatureServerJsonContext.Default.CalculateResponse,
+                contentType: "application/json");
+    }
+
+    private static string DeriveCalculateBatchKey(string header, int batchIndex)
+    {
+        var suffix = ":batch" + batchIndex.ToString(CultureInfo.InvariantCulture);
+        var combined = header + suffix;
+        if (combined.Length <= ApplyEditsIdempotency.MaxKeyLength)
+        {
+            return combined;
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(combined))).ToLowerInvariant();
     }
 
     private static async Task<IResult> HandleQueryDomains(
@@ -590,16 +960,19 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             selectedLayers.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Metadata,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         var domains = accessibleLayers
             .SelectMany(pair => pair.Resource.SchemaFields
                 .Where(static field => !field.Hidden && field.Domain is not null)
@@ -629,7 +1002,7 @@ internal static partial class FeatureServerEndpoints
             Type = domain.Type,
             Name = domain.Name,
             FieldName = field.Name,
-            FieldType = MapFieldTypeToGeoServicesV2(field.Type),
+            FieldType = GeoServicesFieldConventions.MapFieldType(field.Type),
             LayerId = layerId,
             CodedValues = domain.CodedValues.Count == 0
                 ? null
@@ -702,62 +1075,23 @@ internal static partial class FeatureServerEndpoints
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             allPairs.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Metadata,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(allPairs.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, allPairs);
-
-        // Layer ids of accessible publications. Relationships pointing at non-accessible
-        // resources are filtered out (matching the v1 path which gated on layer access).
-        var layerIdByResourceId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (publication, resource) in accessibleLayers)
-        {
-            var id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1;
-            if (id < 0) continue;
-            // First (primary) publication wins for the resource id mapping.
-            layerIdByResourceId.TryAdd(resource.Metadata.Id, id);
-        }
-
-        var relationships = new List<ServiceRelationshipInfo>();
-        foreach (var (publication, resource) in accessibleLayers)
-        {
-            if (!layerIdByResourceId.TryGetValue(resource.Metadata.Id, out var originLayerId))
-            {
-                continue;
-            }
-
-            foreach (var relationship in resource.Relationships)
-            {
-                if (!layerIdByResourceId.TryGetValue(relationship.RelatedResourceId, out var relatedLayerId))
-                {
-                    continue;
-                }
-
-                var relationshipId = relationship.EsriRelationshipId ?? StableStringHash(relationship.Id);
-                relationships.Add(new ServiceRelationshipInfo
-                {
-                    Id = relationshipId,
-                    Name = relationship.Name,
-                    LayerId = originLayerId,
-                    RelatedTableId = relatedLayerId,
-                    Role = relationship.Role,
-                    KeyField = relationship.DestinationField,
-                    OriginKeyField = relationship.OriginField,
-                    DestinationKeyField = relationship.DestinationField,
-                    Description = relationship.Description
-                });
-            }
-        }
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, allPairs);
 
         var response = new QueryRelationshipsResponse
         {
-            Relationships = [.. relationships]
+            Relationships = BuildServiceRelationshipResponseV2(accessibleLayers, snapshot)
         };
 
         scope.SetSuccess(response.Relationships?.Length ?? 0);
@@ -770,14 +1104,50 @@ internal static partial class FeatureServerEndpoints
         return parser.TryParse(out _, out error);
     }
 
-    private static bool TryEvaluateCalcExpression(
+    /// <summary>
+    /// Parses a calculate <c>sqlExpression</c> and reports the field identifiers it reads.
+    /// Function names and the NULL/TRUE/FALSE keywords are not field references.
+    /// </summary>
+    internal static bool TryInspectCalcExpression(
+        string expression,
+        out IReadOnlyCollection<string> sourceFields,
+        out string? error)
+    {
+        var parser = new CalcSqlExpressionParser(expression, new Dictionary<string, object?>(), validationOnly: true);
+        var parsed = parser.TryParse(out _, out error);
+        sourceFields = parser.SourceFields;
+        return parsed;
+    }
+
+    internal static bool TryEvaluateCalcExpression(
         string expression,
         IReadOnlyDictionary<string, object?> attributes,
         out object? value,
         out string? error)
     {
-        var parser = new CalcSqlExpressionParser(expression, attributes);
+        var parser = new CalcSqlExpressionParser(expression, ToCaseInsensitiveAttributes(attributes));
         return parser.TryParse(out value, out error);
+    }
+
+    /// <summary>
+    /// Managed attribute bags are case-sensitive. Calculate identifiers follow the schema, which is not.
+    /// </summary>
+    private static Dictionary<string, object?> ToCaseInsensitiveAttributes(
+        IReadOnlyDictionary<string, object?> attributes)
+    {
+        if (attributes is Dictionary<string, object?> dictionary
+            && dictionary.Comparer == StringComparer.OrdinalIgnoreCase)
+        {
+            return dictionary;
+        }
+
+        var copy = new Dictionary<string, object?>(attributes.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in attributes)
+        {
+            copy[pair.Key] = pair.Value;
+        }
+
+        return copy;
     }
 
     private static bool TryParseCalcExpressionEntries(string calcExpression, out CalcExpressionEntry[] expressions)
@@ -919,8 +1289,11 @@ internal static partial class FeatureServerEndpoints
         private readonly string _expression;
         private readonly IReadOnlyDictionary<string, object?> _attributes;
         private readonly bool _validationOnly;
+        private readonly HashSet<string> _sourceFields = new(StringComparer.OrdinalIgnoreCase);
         private int _position;
         private Token _current;
+
+        public IReadOnlyCollection<string> SourceFields => _sourceFields;
 
         public CalcSqlExpressionParser(
             string expression,
@@ -1069,8 +1442,8 @@ internal static partial class FeatureServerEndpoints
                 return true;
             }
 
-            // During the validation pass unknown fields are allowed; the layer schema check
-            // validates targets, while a missing source field evaluates to SQL NULL.
+            // Record the identifier before lookup so validation can reject hidden sources (#6141).
+            _sourceFields.Add(name);
             value = _attributes.TryGetValue(name, out var attribute) ? attribute : null;
             return true;
         }
@@ -1434,16 +1807,19 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             selectedLayers.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         if (accessibleLayers.Length == 0)
         {
             return StandardErrorHelpers.CreateNotFound(context,

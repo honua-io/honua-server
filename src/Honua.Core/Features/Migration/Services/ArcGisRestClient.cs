@@ -3,19 +3,17 @@
 
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
-using Polly;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -23,6 +21,8 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Sdk.Abstractions.Features;
+using Honua.Sdk.GeoServices.FeatureServer.Models;
 
 namespace Honua.Core.Features.Migration.Services;
 
@@ -79,38 +79,41 @@ internal sealed partial class ArcGisRestClient
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         Log.DiscoveringService(_logger, normalizedUrl);
 
-        var serviceResponse = await GetJsonAsync(
+        var serviceResponse = await ExecuteSourceRequestAsync(
+            normalizedUrl,
             $"{normalizedUrl}?f=json",
-            ArcGisJsonContext.Default.ArcGisServiceResponse,
-            maxRetries,
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
+            static (client, serviceId, ct) => client.GetServiceInfoAsync(serviceId, ct),
+            cancellationToken).ConfigureAwait(false);
 
         var layers = new List<GeoservicesLayerInfo>();
 
-        if (serviceResponse.Layers != null)
+        // Esri lists nonspatial resources separately, but they use the same
+        // metadata/query endpoints and must be available to the import planner.
+        var resources = (serviceResponse.Layers ?? [])
+            .Concat(serviceResponse.Tables ?? [])
+            .DistinctBy(resource => resource.Id);
+        foreach (var layer in resources)
         {
-            foreach (var layer in serviceResponse.Layers)
+            try
             {
-                try
-                {
-                    var layerInfo = await GetLayerInfoAsync(
-                        normalizedUrl,
-                        layer.Id,
-                        timeoutSeconds,
-                        maxRetries,
-                        cancellationToken,
-                        credentials);
-                    layers.Add(layerInfo);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-                {
-                    // Per-layer failures (including per-request timeouts) degrade to a
-                    // warning, but caller cancellation must abort the whole discovery
-                    // instead of logging every remaining layer as failed.
-                    Log.LayerDiscoveryFailed(_logger, layer.Id, layer.Name ?? "unknown", ex);
-                }
+                var layerInfo = await GetLayerInfoAsync(
+                    normalizedUrl,
+                    layer.Id,
+                    timeoutSeconds,
+                    maxRetries,
+                    cancellationToken,
+                    credentials);
+                layers.Add(layerInfo);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                // Per-resource failures (including per-request timeouts) degrade to a
+                // warning, but caller cancellation must abort the whole discovery
+                // instead of logging every remaining resource as failed.
+                Log.LayerDiscoveryFailed(_logger, layer.Id, layer.Name ?? "unknown", ex);
             }
         }
 
@@ -119,8 +122,8 @@ internal sealed partial class ArcGisRestClient
             ServiceUrl = normalizedUrl,
             ServiceName = serviceResponse.ServiceDescription ?? ExtractServiceName(normalizedUrl),
             Description = serviceResponse.Description,
-            SpatialReferenceWkid = serviceResponse.SpatialReference?.Wkid,
-            MaxRecordCount = serviceResponse.MaxRecordCount,
+            SpatialReferenceWkid = AdvertisedOrNull(serviceResponse.SpatialReference?.Wkid),
+            MaxRecordCount = AdvertisedOrNull(serviceResponse.MaxRecordCount),
             Capabilities = ParseCapabilities(serviceResponse.Capabilities),
             Layers = layers.ToArray(),
             Version = FormatVersion(serviceResponse.CurrentVersion),
@@ -142,27 +145,28 @@ internal sealed partial class ArcGisRestClient
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var layerUrl = $"{normalizedUrl}/{layerId}?f=json";
 
-        var layerResponse = await GetJsonAsync(
+        var layerResponse = await ExecuteSourceRequestAsync(
+            normalizedUrl,
             layerUrl,
-            ArcGisJsonContext.Default.ArcGisLayerResponse,
-            maxRetries,
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
+            (client, serviceId, ct) => client.GetLayerInfoAsync(serviceId, layerId, ct),
+            cancellationToken).ConfigureAwait(false);
 
         // Try to get feature count
         int? featureCount = null;
         try
         {
-            var countUrl = $"{normalizedUrl}/{layerId}/query?where=1=1&returnCountOnly=true&f=json";
-            var countResponse = await GetJsonAsync(
-                countUrl,
-                ArcGisJsonContext.Default.ArcGisCountResponse,
-                maxRetries,
+            var count = await QueryFeatureCountAsync(
+                normalizedUrl,
+                layerId,
+                whereClause: null,
                 timeoutSeconds,
-                credentials,
-                cancellationToken);
-            featureCount = countResponse.Count;
+                maxRetries,
+                cancellationToken,
+                credentials).ConfigureAwait(false);
+            featureCount = checked((int)count);
         }
         // Best-effort enrichment only: a failed count query still surfaces the rest of the
         // layer metadata. Cancellation must propagate rather than be swallowed as a
@@ -177,21 +181,32 @@ internal sealed partial class ArcGisRestClient
             Log.FeatureCountFailed(_logger, layerId, ex);
         }
 
+        var subtypeResult = EsriSubtypeParser.Parse(
+            layerResponse.SubtypeField, layerResponse.DefaultSubtypeCode, layerResponse.Subtypes);
+        if (subtypeResult.Subtypes is null && !subtypeResult.Truncated)
+        {
+            subtypeResult = EsriSubtypeParser.ParseFeatureTypes(layerResponse.TypeIdField, layerResponse.Types);
+        }
+
         return new GeoservicesLayerInfo
         {
             Id = layerResponse.Id,
             Name = layerResponse.Name ?? $"Layer {layerResponse.Id}",
             Description = layerResponse.Description,
             GeometryType = layerResponse.GeometryType,
-            HasZ = layerResponse.HasZ,
-            HasM = layerResponse.HasM,
+            HasZ = layerResponse.HasZ ?? false,
+            HasM = layerResponse.HasM ?? false,
             SupportsPagination = layerResponse.SupportsPagination
-                ?? layerResponse.AdvancedQueryCapabilities?.SupportsPagination,
-            SpatialReferenceWkid = layerResponse.Extent?.SpatialReference?.Wkid,
-            MaxRecordCount = layerResponse.MaxRecordCount,
+                ?? GetOptionalSourceBoolean(layerResponse.AdvancedQueryCapabilities, "supportsPagination"),
+            SpatialReferenceWkid = AdvertisedOrNull(layerResponse.Extent?.SpatialReference?.Wkid),
+            MaxRecordCount = AdvertisedOrNull(layerResponse.MaxRecordCount),
             Fields = ParseFields(layerResponse.Fields),
+            Relationships = layerResponse.Relationships is { ValueKind: JsonValueKind.Array } relationships
+                ? relationships.Deserialize(ArcGisJsonContext.Default.GeoservicesRelationshipInfoArray) ?? []
+                : [],
             Type = layerResponse.Type,
             HasAttachments = layerResponse.HasAttachments,
+            GlobalIdField = layerResponse.GlobalIdField,
             MinScale = layerResponse.MinScale,
             MaxScale = layerResponse.MaxScale,
             Extent = ParseExtent(layerResponse.Extent),
@@ -202,10 +217,7 @@ internal sealed partial class ArcGisRestClient
             // Persisted through publish so the subtype field + subtype labels/overrides
             // survive to the served FeatureServer surface. A subtype set over the cap is
             // reported via the inventory warning path and intentionally not persisted.
-            Subtypes = EsriSubtypeParser.Parse(
-                layerResponse.SubtypeField,
-                layerResponse.DefaultSubtypeCode,
-                layerResponse.Subtypes).Subtypes,
+            Subtypes = subtypeResult.Subtypes,
             // Persisted through publish so calculation/constraint/validation rules survive
             // to the served FeatureServer surface and fire on applyEdits. An over-cap rule
             // set is reported via the inventory warning path and intentionally not persisted.
@@ -224,16 +236,106 @@ internal sealed partial class ArcGisRestClient
         GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var url = $"{normalizedUrl}/{layerId}/query?f=json&where={Uri.EscapeDataString(whereClause ?? "1=1")}&returnIdsOnly=true";
-        var response = await GetJsonAsync(
-            url,
-            ArcGisJsonContext.Default.ArcGisObjectIdsResponse,
-            maxRetries,
+        var query = new FeatureServerQueryParams { Where = whereClause ?? "1=1" };
+        var objectIds = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
+            (client, serviceId, ct) => client.QueryIdsAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
 
-        return response.ObjectIds ?? [];
+        return [.. objectIds];
+    }
+
+    /// <summary>
+    /// Counts the source features matching <paramref name="whereClause"/> (all features when it is
+    /// empty). Unlike the best-effort count on <see cref="GetLayerInfoAsync"/>, failures propagate so
+    /// callers can distinguish "unreadable" from a real count.
+    /// </summary>
+    public async Task<long> QueryFeatureCountAsync(
+        string serviceUrl,
+        int layerId,
+        string? whereClause,
+        int timeoutSeconds,
+        int maxRetries,
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        var query = new FeatureServerQueryParams
+        {
+            Where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : whereClause
+        };
+
+        return await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
+            timeoutSeconds,
+            maxRetries,
+            credentials,
+            (client, serviceId, ct) => client.QueryCountAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Queries the extent of the source features matching <paramref name="whereClause"/>.
+    /// This is the data extent, not the extent advertised on the layer metadata, so a stale
+    /// service extent can be told apart from the features that were transferred (#4826).
+    /// </summary>
+    public async Task<BoundingBox?> QueryFeatureExtentAsync(
+        string serviceUrl,
+        int layerId,
+        string? whereClause,
+        int timeoutSeconds,
+        int maxRetries,
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        var query = new FeatureServerQueryParams
+        {
+            // QueryExtentAsync supplies the extent flag. Setting it here as well sends
+            // duplicate parameters, which source services reject instead of returning an extent.
+            Where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : whereClause
+        };
+
+        var extent = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
+            timeoutSeconds,
+            maxRetries,
+            credentials,
+            (client, serviceId, ct) => client.QueryExtentAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
+
+        if (extent is null)
+        {
+            return null;
+        }
+
+        // LatestWkid is a non-nullable int, so a response that only sends wkid leaves it at 0.
+        // Prefer a positive latest wkid, then the advertised wkid. An all-zero envelope with no
+        // SRID is an empty answer, not a real extent at the origin.
+        var srid = 0;
+        if (extent.SpatialReference is { } spatial)
+        {
+            srid = spatial.LatestWkid > 0 ? spatial.LatestWkid : spatial.Wkid;
+        }
+
+        // codeql[cs/equality-on-floats]: all-zero envelope is the empty-answer sentinel, not an extent near the origin
+        if (srid <= 0 && extent.Xmin == 0d && extent.Ymin == 0d && extent.Xmax == 0d && extent.Ymax == 0d)
+        {
+            return null;
+        }
+
+        return BoundingBox.Create(
+            extent.Xmin,
+            extent.Ymin,
+            extent.Xmax,
+            extent.Ymax,
+            srid > 0 ? srid : null);
     }
 
     /// <summary>
@@ -264,18 +366,36 @@ internal sealed partial class ArcGisRestClient
         }
 
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var objectIdCsv = string.Join(
-            ",",
-            objectIds.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-        var queryUrl = $"{normalizedUrl}/{layerId}/queryAttachments?objectIds={Uri.EscapeDataString(objectIdCsv)}&returnUrl=false&f=json";
-
-        return await GetJsonAsync(
-            queryUrl,
-            ArcGisJsonContext.Default.ArcGisAttachmentQueryResponse,
-            maxRetries,
+        var objectIdList = objectIds as IReadOnlyList<long> ?? [.. objectIds];
+        var response = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/queryAttachments",
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
+            (client, serviceId, ct) => client.QueryAttachmentsAsync(serviceId, layerId, objectIdList, ct),
+            cancellationToken).ConfigureAwait(false);
+
+        return new ArcGisAttachmentQueryResponse
+        {
+            AttachmentGroups = response.AttachmentGroups
+                .Select(static group => new ArcGisAttachmentGroup
+                {
+                    ParentObjectId = group.ParentObjectId,
+                    ParentGlobalId = group.ParentGlobalId,
+                    AttachmentInfos = group.AttachmentInfos
+                        .Select(static info => new ArcGisAttachmentInfo
+                        {
+                            Id = info.Id ?? 0,
+                            Name = info.Name,
+                            ContentType = info.ContentType,
+                            Size = info.Size ?? 0,
+                            Keywords = info.Keywords
+                        })
+                        .ToArray()
+                })
+                .ToArray()
+        };
     }
 
     /// <summary>
@@ -293,39 +413,39 @@ internal sealed partial class ArcGisRestClient
         GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var url = $"{normalizedUrl}/{layerId}/{featureObjectId}/attachments/{attachmentId}";
+        var request = new FeatureAttachmentDownloadRequest
+        {
+            Source = new FeatureSource { LayerId = layerId },
+            ObjectId = featureObjectId,
+            AttachmentId = attachmentId
+        };
 
-        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
-
-        var options = BuildHttpOptions(maxRetries);
-        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
-        var response = await policy.ExecuteAsync(
-            async ct =>
-            {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-                using var request = CreateGetRequest(url, credentials);
-                return await _httpClient.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    timeoutCts.Token).ConfigureAwait(false);
-            },
-            cancellationToken).ConfigureAwait(false);
-
+        // The attachment stream outlives this call, so the per-call source client is handed to the
+        // download wrapper instead of being disposed here.
+        var sourceHttpClient = CreateSourceHttpClient(credentials);
         try
         {
-            ThrowIfAuthenticationFailure(response, url, credentials);
-            response.EnsureSuccessStatusCode();
+            var content = await ExecuteSourceRequestAsync(
+                sourceHttpClient,
+                normalizedUrl,
+                $"{normalizedUrl}/{layerId}/{featureObjectId}/attachments/{attachmentId}",
+                timeoutSeconds,
+                maxRetries,
+                credentials,
+                (client, serviceId, ct) => client.DownloadAttachmentAsync(
+                    request with { Source = request.Source with { ServiceId = serviceId } },
+                    ct),
+                cancellationToken).ConfigureAwait(false);
 
-            var contentType = response.Content.Headers.ContentType?.MediaType
-                ?? "application/octet-stream";
-            var contentLength = response.Content.Headers.ContentLength;
-            var content = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            return new ArcGisAttachmentDownload(content, contentType, contentLength, response);
+            return new ArcGisAttachmentDownload(
+                content.Content,
+                content.Info.ContentType ?? "application/octet-stream",
+                content.Info.Size,
+                sourceHttpClient);
         }
         catch
         {
-            response.Dispose();
+            sourceHttpClient.Dispose();
             throw;
         }
     }
@@ -348,162 +468,52 @@ internal sealed partial class ArcGisRestClient
         IReadOnlyCollection<long>? objectIds = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid, objectIds);
+
+        // An empty objectIds window selects nothing. Sending it would drop the objectIds filter and
+        // page the whole layer instead.
+        if (objectIds is { Count: 0 })
+        {
+            return new ArcGisQueryResult { Features = [] };
+        }
+
+        var query = new FeatureServerQueryParams
+        {
+            Where = whereClause ?? "1=1",
+            OutFields = outFields != null ? string.Join(",", outFields) : "*",
+            ReturnGeometry = true,
+            // Esri omits elevation and measures unless explicitly requested,
+            // even when the layer advertises them. Preserve both on every page.
+            ReturnZ = true,
+            ReturnM = true,
+            ObjectIds = objectIds is null ? null : objectIds as IReadOnlyList<long> ?? [.. objectIds],
+            ResultOffset = objectIds is null ? offset : null,
+            ResultRecordCount = objectIds is null ? batchSize : null,
+            OutSR = outSrid
+        };
 
         Log.QueryingFeatures(_logger, layerId, offset, batchSize);
 
-        var response = await GetJsonAsync(
-            queryUrl,
-            ArcGisJsonContext.Default.ArcGisFeatureResponse,
-            maxRetries,
+        var response = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
-
-        if (response.Error != null)
-        {
-            throw CreateArcGisResponseException(response.Error, queryUrl, credentials);
-        }
+            (client, serviceId, ct) => client.QueryAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
 
         return new ArcGisQueryResult
         {
-            Features = response.Features ?? [],
+            Features = response.Features is { Count: > 0 } features
+                ? features.Select(static feature => new ArcGisFeature
+                {
+                    Attributes = feature.Attributes,
+                    Geometry = feature.Geometry
+                }).ToArray()
+                : [],
             ExceededTransferLimit = response.ExceededTransferLimit,
-            SpatialReferenceWkid = response.SpatialReference?.Wkid
+            SpatialReferenceWkid = AdvertisedOrNull(response.SpatialReference?.Wkid)
         };
-    }
-
-    private static string BuildQueryUrl(
-        string serviceUrl,
-        int layerId,
-        int offset,
-        int batchSize,
-        string? whereClause,
-        string[]? outFields,
-        int? outSrid,
-        IReadOnlyCollection<long>? objectIds)
-    {
-        var query = new List<string>
-        {
-            "f=json",
-            $"where={Uri.EscapeDataString(whereClause ?? "1=1")}",
-            $"outFields={Uri.EscapeDataString(outFields != null ? string.Join(",", outFields) : "*")}",
-            "returnGeometry=true"
-        };
-
-        if (objectIds is null)
-        {
-            query.Add($"resultOffset={offset}");
-            query.Add($"resultRecordCount={batchSize}");
-        }
-
-        if (objectIds is not null)
-        {
-            query.Add($"objectIds={Uri.EscapeDataString(string.Join(',', objectIds))}");
-        }
-
-        if (outSrid.HasValue)
-        {
-            query.Add($"outSR={outSrid.Value}");
-        }
-
-        return $"{serviceUrl}/{layerId}/query?{string.Join("&", query)}";
-    }
-
-    private async Task<T> GetJsonAsync<T>(
-        string url,
-        JsonTypeInfo<T> jsonTypeInfo,
-        int maxRetries,
-        int timeoutSeconds,
-        GeoservicesCredentialDescriptor? credentials,
-        CancellationToken cancellationToken)
-    {
-        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
-
-        var options = BuildHttpOptions(maxRetries);
-        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
-        using var response = await policy.ExecuteAsync(
-            async ct =>
-            {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-                using var request = CreateGetRequest(url, credentials);
-                return await _httpClient.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
-            },
-            cancellationToken);
-        ThrowIfAuthenticationFailure(response, url, credentials);
-        response.EnsureSuccessStatusCode();
-
-        var result = await response.Content.ReadFromJsonAsync(jsonTypeInfo, cancellationToken);
-
-        if (result is IArcGisErrorResponse { Error: { } error })
-        {
-            throw CreateArcGisResponseException(error, url, credentials);
-        }
-
-        return result ?? throw new InvalidOperationException("Failed to deserialize response");
-    }
-
-    internal async Task<JsonDocument> GetJsonDocumentAsync(
-        string url,
-        int maxRetries,
-        int timeoutSeconds,
-        GeoservicesCredentialDescriptor? credentials,
-        CancellationToken cancellationToken)
-    {
-        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
-
-        var options = BuildHttpOptions(maxRetries);
-        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
-        using var response = await policy.ExecuteAsync(
-            async ct =>
-            {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-                using var request = CreateGetRequest(url, credentials);
-                return await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
-            },
-            cancellationToken).ConfigureAwait(false);
-        ThrowIfAuthenticationFailure(response, url, credentials);
-        response.EnsureSuccessStatusCode();
-
-        // Bound the buffered body: the URL is operator-supplied, so response size is
-        // source-controlled and must not be read into memory without a ceiling.
-        var content = await MigrationHttpContentReader
-            .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, cancellationToken)
-            .ConfigureAwait(false);
-
-        try
-        {
-            return JsonDocument.Parse(content);
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidOperationException($"Failed to parse ArcGIS JSON from '{RedactArcGisTokenParameters(url)}'.", ex);
-        }
-    }
-
-    private static HttpRequestMessage CreateGetRequest(
-        string url,
-        GeoservicesCredentialDescriptor? credentials)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
-        ApplyAuthorizationHeader(request, credentials);
-        return request;
-    }
-
-    private static void ThrowIfAuthenticationFailure(
-        HttpResponseMessage response,
-        string url,
-        GeoservicesCredentialDescriptor? credentials)
-    {
-        var statusCode = (int)response.StatusCode;
-        if (statusCode is not (401 or 403 or 498 or 499))
-        {
-            return;
-        }
-
-        throw CreateAuthenticationException(statusCode, url, credentials);
     }
 
     private static void ApplyAuthorizationHeader(
@@ -540,42 +550,6 @@ internal sealed partial class ArcGisRestClient
             BaseDelay = TimeSpan.FromSeconds(1),
             JitterPercentage = 0.2
         };
-    }
-
-    private IAsyncPolicy<HttpResponseMessage> CreateHttpPolicy(
-        ResiliencePolicyOptions options,
-        int maxRetries,
-        CancellationToken cancellationToken)
-    {
-        var builder = Policy<HttpResponseMessage>
-            .Handle<HttpRequestException>()
-            .OrResult(response => (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests)
-            .Or<OperationCanceledException>(_ => !cancellationToken.IsCancellationRequested);
-
-        return ResiliencePolicyFactory.CreateStandardPolicy(
-            builder,
-            options,
-            onRetry: (result, delay, attempt) =>
-            {
-                Log.RetryingRequest(_logger, attempt, maxRetries, delay.TotalSeconds, GetFailureMessage(result));
-                result.Result?.Dispose();
-            },
-            retryDelayProvider: (attempt, result, _) => GetRetryDelay(options, attempt, result));
-    }
-
-    private static TimeSpan GetRetryDelay(
-        ResiliencePolicyOptions options,
-        int attempt,
-        DelegateResult<HttpResponseMessage> result)
-    {
-        var retryAfter = result.Result?.Headers.RetryAfter?.Delta;
-        if (!retryAfter.HasValue && result.Result?.Headers.RetryAfter?.Date is { } date)
-        {
-            retryAfter = date - DateTimeOffset.UtcNow;
-        }
-
-        var delay = retryAfter ?? options.GetDelay(attempt);
-        return delay < TimeSpan.Zero ? TimeSpan.Zero : delay;
     }
 
     private static Exception CreateArcGisResponseException(
@@ -628,18 +602,6 @@ internal sealed partial class ArcGisRestClient
         };
 
         return new ArcGisAuthenticationException(kind, statusCode, message);
-    }
-
-    private static string GetFailureMessage(DelegateResult<HttpResponseMessage> result)
-    {
-        if (result.Exception != null)
-        {
-            return RedactArcGisTokenParameters(result.Exception.Message);
-        }
-
-        return result.Result != null
-            ? $"HTTP {(int)result.Result.StatusCode}"
-            : "Unknown failure";
     }
 
     private static string RedactArcGisTokenParameters(string value)
@@ -831,18 +793,18 @@ internal sealed partial class ArcGisRestClient
         return formats.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
-    private static GeoservicesFieldInfo[] ParseFields(ArcGisField[]? fields)
+    private static GeoservicesFieldInfo[] ParseFields(IReadOnlyList<FeatureServerField>? fields)
     {
-        if (fields == null || fields.Length == 0)
+        if (fields == null || fields.Count == 0)
             return [];
 
         return fields.Select(f => new GeoservicesFieldInfo
         {
-            Name = f.Name ?? "unknown",
-            Type = f.Type ?? "esriFieldTypeString",
+            Name = string.IsNullOrEmpty(f.Name) ? "unknown" : f.Name,
+            Type = string.IsNullOrEmpty(f.Type) ? "esriFieldTypeString" : f.Type,
             Alias = f.Alias,
             Length = f.Length,
-            Nullable = f.Nullable ?? true,
+            Nullable = f.IsNullable ?? true,
             // Persisted through publish so coded-value/range domains survive to the
             // served FeatureServer surface. A coded-value domain over the cap is
             // reported via the inventory warning path and intentionally not persisted.
@@ -850,7 +812,7 @@ internal sealed partial class ArcGisRestClient
         }).ToArray();
     }
 
-    private static EsriExtent? ParseExtent(ArcGisExtent? extent)
+    private static EsriExtent? ParseExtent(FeatureServerExtent? extent)
     {
         if (extent == null)
             return null;
@@ -861,7 +823,7 @@ internal sealed partial class ArcGisRestClient
             Ymin = extent.Ymin,
             Xmax = extent.Xmax,
             Ymax = extent.Ymax,
-            SpatialReferenceWkid = extent.SpatialReference?.Wkid
+            SpatialReferenceWkid = AdvertisedOrNull(extent.SpatialReference?.Wkid)
         };
     }
 
@@ -966,203 +928,6 @@ internal sealed record ArcGisQueryResult
 // JSON response models for ArcGIS REST API
 #pragma warning disable CA1812 // Internal class is never instantiated (used for JSON deserialization)
 
-internal interface IArcGisErrorResponse
-{
-    ArcGisError? Error { get; }
-}
-
-internal sealed record ArcGisServiceResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("serviceDescription")]
-    public string? ServiceDescription { get; init; }
-
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    [JsonPropertyName("currentVersion")]
-    public JsonElement? CurrentVersion { get; init; }
-
-    [JsonPropertyName("maxRecordCount")]
-    public int? MaxRecordCount { get; init; }
-
-    [JsonPropertyName("capabilities")]
-    public string? Capabilities { get; init; }
-
-    [JsonPropertyName("supportedQueryFormats")]
-    public string? SupportedQueryFormats { get; init; }
-
-    [JsonPropertyName("spatialReference")]
-    public ArcGisSpatialReference? SpatialReference { get; init; }
-
-    [JsonPropertyName("layers")]
-    public ArcGisLayerRef[]? Layers { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
-internal sealed record ArcGisLayerRef
-{
-    [JsonPropertyName("id")]
-    public int Id { get; init; }
-
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
-}
-
-internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("id")]
-    public int Id { get; init; }
-
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
-
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-
-    [JsonPropertyName("geometryType")]
-    public string? GeometryType { get; init; }
-
-    [JsonPropertyName("hasZ")]
-    public bool HasZ { get; init; }
-
-    [JsonPropertyName("hasM")]
-    public bool HasM { get; init; }
-
-    [JsonPropertyName("supportsPagination")]
-    public bool? SupportsPagination { get; init; }
-
-    [JsonPropertyName("advancedQueryCapabilities")]
-    public ArcGisAdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
-
-    [JsonPropertyName("maxRecordCount")]
-    public int? MaxRecordCount { get; init; }
-
-    [JsonPropertyName("hasAttachments")]
-    public bool HasAttachments { get; init; }
-
-    [JsonPropertyName("minScale")]
-    public double? MinScale { get; init; }
-
-    [JsonPropertyName("maxScale")]
-    public double? MaxScale { get; init; }
-
-    [JsonPropertyName("extent")]
-    public ArcGisExtent? Extent { get; init; }
-
-    [JsonPropertyName("fields")]
-    public ArcGisField[]? Fields { get; init; }
-
-    [JsonPropertyName("drawingInfo")]
-    public JsonElement? DrawingInfo { get; init; }
-
-    [JsonPropertyName("subtypeField")]
-    public string? SubtypeField { get; init; }
-
-    [JsonPropertyName("defaultSubtypeCode")]
-    public JsonElement? DefaultSubtypeCode { get; init; }
-
-    [JsonPropertyName("subtypes")]
-    public JsonElement? Subtypes { get; init; }
-
-    [JsonPropertyName("attributeRules")]
-    public JsonElement? AttributeRules { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
-internal sealed record ArcGisAdvancedQueryCapabilities
-{
-    [JsonPropertyName("supportsPagination")]
-    public bool? SupportsPagination { get; init; }
-}
-
-internal sealed record ArcGisSpatialReference
-{
-    [JsonPropertyName("wkid")]
-    public int? Wkid { get; init; }
-
-    [JsonPropertyName("latestWkid")]
-    public int? LatestWkid { get; init; }
-}
-
-internal sealed record ArcGisExtent
-{
-    [JsonPropertyName("xmin")]
-    public double Xmin { get; init; }
-
-    [JsonPropertyName("ymin")]
-    public double Ymin { get; init; }
-
-    [JsonPropertyName("xmax")]
-    public double Xmax { get; init; }
-
-    [JsonPropertyName("ymax")]
-    public double Ymax { get; init; }
-
-    [JsonPropertyName("spatialReference")]
-    public ArcGisSpatialReference? SpatialReference { get; init; }
-}
-
-internal sealed record ArcGisField
-{
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
-
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-
-    [JsonPropertyName("alias")]
-    public string? Alias { get; init; }
-
-    [JsonPropertyName("length")]
-    public int? Length { get; init; }
-
-    [JsonPropertyName("nullable")]
-    public bool? Nullable { get; init; }
-
-    [JsonPropertyName("domain")]
-    public JsonElement? Domain { get; init; }
-}
-
-internal sealed record ArcGisCountResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("count")]
-    public int Count { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
-internal sealed record ArcGisObjectIdsResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("objectIds")]
-    public long[]? ObjectIds { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
-internal sealed record ArcGisFeatureResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("features")]
-    public ArcGisFeature[]? Features { get; init; }
-
-    [JsonPropertyName("exceededTransferLimit")]
-    public bool ExceededTransferLimit { get; init; }
-
-    [JsonPropertyName("spatialReference")]
-    public ArcGisSpatialReference? SpatialReference { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
 internal sealed record ArcGisFeature
 {
     [JsonPropertyName("attributes")]
@@ -1224,23 +989,23 @@ internal sealed record ArcGisAttachmentInfo
 
 /// <summary>
 /// Wraps a single ArcGIS attachment download: the binary content stream plus the
-/// underlying <see cref="HttpResponseMessage"/> whose lifetime the caller controls.
+/// per-download source client whose lifetime the caller controls.
 /// </summary>
 internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
 {
-    private readonly HttpResponseMessage _response;
+    private readonly IDisposable _owner;
     private bool _disposed;
 
     public ArcGisAttachmentDownload(
         Stream content,
         string contentType,
         long? contentLength,
-        HttpResponseMessage response)
+        IDisposable owner)
     {
         Content = content ?? throw new ArgumentNullException(nameof(content));
         ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
         ContentLength = contentLength;
-        _response = response ?? throw new ArgumentNullException(nameof(response));
+        _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     }
 
     public Stream Content { get; }
@@ -1256,7 +1021,7 @@ internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
 
         _disposed = true;
         Content.Dispose();
-        _response.Dispose();
+        _owner.Dispose();
     }
 
     public async ValueTask DisposeAsync()
@@ -1268,19 +1033,14 @@ internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
 
         _disposed = true;
         await Content.DisposeAsync().ConfigureAwait(false);
-        _response.Dispose();
+        _owner.Dispose();
     }
 }
 
 /// <summary>
-/// JSON serialization context for ArcGIS REST API responses.
+/// JSON adaptation context for canonical migration relationship declarations.
 /// </summary>
-[JsonSerializable(typeof(ArcGisServiceResponse))]
-[JsonSerializable(typeof(ArcGisLayerResponse))]
-[JsonSerializable(typeof(ArcGisCountResponse))]
-[JsonSerializable(typeof(ArcGisObjectIdsResponse))]
-[JsonSerializable(typeof(ArcGisFeatureResponse))]
-[JsonSerializable(typeof(ArcGisAttachmentQueryResponse))]
+[JsonSerializable(typeof(GeoservicesRelationshipInfo[]))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal sealed partial class ArcGisJsonContext : JsonSerializerContext
 {

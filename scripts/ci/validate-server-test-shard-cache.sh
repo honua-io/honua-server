@@ -200,6 +200,25 @@ grep -qx 'reason=rejected_cache_evidence' "${rejected_output}"
 [[ ! -e "${fixture}/repo/tests/dotnet/Honua.Server.Tests/bin/Release" ]]
 [[ ! -e "${fixture}/repo/tests/dotnet/Honua.Server.Tests/obj" ]]
 
+# #4453: a rejected payload may already have extracted another project's build output.
+# Cleanup removes the manifest's declared bin/obj payload roots, and nothing outside them.
+mkdir -p "${fixture}/repo/samples/Demo/bin/Release/net10.0/wwwroot/_framework" \
+  "${fixture}/repo/samples/Demo/wwwroot" "${fixture}/escape/bin" "${fixture}/partial"
+printf 'trunc' > "${fixture}/repo/samples/Demo/bin/Release/net10.0/wwwroot/_framework/blazor.webassembly.js"
+printf '<html></html>\n' > "${fixture}/repo/samples/Demo/wwwroot/index.html"
+jq -n '{static_web_asset_content_roots: {
+  payload: ["samples/Demo/bin/Release/net10.0/wwwroot", "../escape/bin", "samples/Demo/wwwroot"],
+  checkout: [], nuget: []}}' > "${fixture}/partial/server-test-binaries-server.manifest.json"
+partial_output="${fixture}/partial.out"
+HONUA_SERVER_TEST_CACHE_REPO_ROOT="${fixture}/repo" \
+HONUA_SERVER_TEST_CACHE_REGISTRY="${REPO_ROOT}/.github/server-test-artifact-projects.json" \
+GITHUB_OUTPUT="${partial_output}" "${HELPER}" restore --project "${SERVER_PROJECT}" \
+  --source-sha "${SOURCE_SHA}" --payload "${fixture}/partial" --cache-hit true >/dev/null 2>&1
+grep -qx 'reason=rejected_cache_evidence' "${partial_output}"
+[[ ! -e "${fixture}/repo/samples/Demo/bin/Release/net10.0/wwwroot" ]]
+[[ -f "${fixture}/repo/samples/Demo/wwwroot/index.html" ]]
+[[ -d "${fixture}/escape/bin" ]]
+
 if GITHUB_OUTPUT="${fixture}/invalid.out" "${HELPER}" plan --shard absent --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
   >/dev/null 2>&1; then

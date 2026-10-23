@@ -1,0 +1,41 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Geocoding.Features.Geocoding.Domain;
+
+namespace Honua.Protocols.GeoServices.GeocodeServer;
+
+/// <summary>Shared metadata and catalog projection for GeoServices locator capabilities.</summary>
+internal static class GeocodeServerCapabilities
+{
+    public static GeocodeProviderCapabilities ApplyLicense(
+        GeocodeProviderCapabilities capabilities, ILicenseEntitlementService entitlements)
+        => entitlements.CheckEntitlement(FeatureCatalog.BatchGeocodingKey).IsActive
+            ? capabilities
+            : capabilities with { SupportsBatch = false };
+
+    public static string Format(GeocodeProviderCapabilities capabilities)
+    {
+        var availableCapabilities = new List<string>(capacity: 3);
+        if (capabilities.SupportsForwardGeocode)
+        {
+            availableCapabilities.Add("Geocode");
+        }
+
+        if (capabilities.SupportsReverseGeocode)
+        {
+            availableCapabilities.Add("ReverseGeocode");
+        }
+
+        if (capabilities.SupportsSuggest)
+        {
+            availableCapabilities.Add("Suggest");
+        }
+
+        // Batch support is described by locatorProperties, not an undocumented
+        // capability token. Esri's batch-capable services use these three tokens.
+        return string.Join(',', availableCapabilities);
+    }
+}

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services.Bridging;
@@ -23,6 +24,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     private readonly IStudioPackageFamilyRegistry _registry;
     private readonly IStudioPackageValidator _validator;
     private readonly TimeProvider _timeProvider;
+    private readonly ITenantContext? _tenantContext;
 
     /// <summary>
     /// Initializes a new Studio package lifecycle service.
@@ -36,12 +38,20 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     /// bridge is available, the store is wrapped with <see cref="BridgedStudioPackageStore"/>
     /// so bridged families (form, analysis) read and write through their native stores.
     /// </param>
+    /// <param name="tenantContext">
+    /// Optional per-request tenant context (honua-server#4905). Every draft this service
+    /// creates records the tenant the request resolved to, and the immutable versions and
+    /// content item minted from that draft inherit it, so a later lifecycle call can be
+    /// refused when it comes from another tenant. Hosts without tenant resolution pass
+    /// <see langword="null"/> and keep recording no tenant at all.
+    /// </param>
     public StudioPackageLifecycleService(
         IStudioPackageStore store,
         IStudioPackageFamilyRegistry registry,
         IStudioPackageValidator validator,
         TimeProvider timeProvider,
-        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
+        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null,
+        ITenantContext? tenantContext = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(registry);
@@ -53,6 +63,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         _registry = registry;
         _validator = validator;
         _timeProvider = timeProvider;
+        _tenantContext = tenantContext;
     }
 
     /// <inheritdoc />
@@ -83,6 +94,9 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             PackageKey = command.PackageKey.Trim(),
             WorkspaceId = NormalizeOptional(command.WorkspaceId),
             OwnerId = NormalizeOptional(command.OwnerId ?? command.ActorId),
+            // Tenant ownership is stamped from the request, never from the command, so a
+            // caller cannot claim another tenant's content (honua-server#4905).
+            TenantId = NormalizeOptional(_tenantContext?.TenantId),
             ExpectedExistingItemOwnerId = NormalizeOptional(command.ExpectedExistingItemOwnerId),
             ExpectedExistingItemPresent = command.ExpectedExistingItemPresent,
             Family = envelope.Family,
@@ -453,14 +467,33 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     public async Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
+        Guid? expectedCurrentVersionId,
         StudioPublicationIntent? intent,
         string? warningAcknowledgement,
         string? actorId,
+        CancellationToken cancellationToken = default)
+        => await CreatePublicationRequestAsync(
+            itemId, versionId, expectedCurrentVersionId, intent, warningAcknowledgement, actorId,
+            Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
+        Guid itemId,
+        Guid versionId,
+        Guid? expectedCurrentVersionId,
+        StudioPublicationIntent? intent,
+        string? warningAcknowledgement,
+        string? actorId,
+        Guid publicationRequestId,
         CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.publish-request.create");
         activity?.SetTag("studio.item.id", itemId.ToString("D"));
         activity?.SetTag("studio.version.id", versionId.ToString("D"));
+        if (expectedCurrentVersionId is { } expectedCurrent)
+        {
+            activity?.SetTag("studio.item.current-version.expected", expectedCurrent.ToString("D"));
+        }
 
         var version = await _store.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false);
         if (version is null)
@@ -480,20 +513,47 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         var status = version.Validation.Status == StudioPackageValidationStatus.Invalid
             ? StudioPublicationRequestStatus.Rejected
             : StudioPublicationRequestStatus.Accepted;
+        var effectiveIntent = intent ?? version.Envelope.PublicationIntent;
+        var effectiveRoute = effectiveIntent?.Route;
+        // honua-server#5825: skip the Studio route check only when this item resolved through a
+        // family bridge. A bridge registered for the family is not enough — an item that still
+        // lives in the inner store is enforced by that store and must be rejected here too, or
+        // an approval-gated deployment accepts the proposal and fails at actuation.
+        var governsStudioRoutes = await ItemGovernsStudioRoutesAsync(itemId, cancellationToken)
+            .ConfigureAwait(false);
+        if (status == StudioPublicationRequestStatus.Accepted &&
+            !string.IsNullOrWhiteSpace(effectiveRoute) &&
+            governsStudioRoutes)
+        {
+            var governing = await _store.GetActivePublicationRequestByRouteAsync(
+                effectiveRoute,
+                cancellationToken).ConfigureAwait(false);
+            if (governing is not null && governing.ItemId != itemId)
+            {
+                throw new StudioPublicationRouteConflictException(effectiveRoute, itemId, governing.ItemId);
+            }
+        }
+
         var request = new StudioPublicationRequest
         {
-            RequestId = Guid.NewGuid(),
+            RequestId = publicationRequestId,
             ItemId = itemId,
             VersionId = versionId,
-            Intent = intent ?? version.Envelope.PublicationIntent,
+            Intent = effectiveIntent,
             Status = status,
             Validation = version.Validation,
             WarningAcknowledgement = NormalizeOptional(warningAcknowledgement),
             RequestedBy = actorId,
             CreatedAt = _timeProvider.GetUtcNow(),
+            GovernsStudioRoutes = governsStudioRoutes,
         };
 
-        var stored = await _store.CreatePublicationRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        // honua-server#3980: the store applies expectedCurrentVersionId as a compare-and-set on the
+        // item's current pointer, atomically with the published-pointer move, and throws
+        // StudioPublicationPointerConflictException when a draft was saved after validation.
+        var stored = await _store
+            .CreatePublicationRequestAsync(request, expectedCurrentVersionId, cancellationToken)
+            .ConfigureAwait(false);
         activity?.SetTag("studio.publish.status", stored.Status.ToString());
         return stored;
     }
@@ -505,6 +565,12 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         Guid requestId,
         CancellationToken cancellationToken = default)
         => _store.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+        => _store.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
 
     /// <inheritdoc />
     public async Task<StudioPackageDraft?> ReopenVersionAsync(
@@ -637,6 +703,16 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             Dependencies = envelope.Dependencies ?? Array.Empty<StudioPackageDependency>(),
             Provenance = envelope.Provenance ?? Array.Empty<StudioProvenanceRef>(),
         };
+    }
+
+    /// <summary>
+    /// True unless this item's pointers resolved through a family bridge. Missing pointers
+    /// keep the check: the inner store is the authority for anything it still owns.
+    /// </summary>
+    private async Task<bool> ItemGovernsStudioRoutesAsync(Guid itemId, CancellationToken cancellationToken)
+    {
+        var pointers = await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
+        return pointers?.GovernsStudioRoutes ?? true;
     }
 
     private static string FormatValidationFailure(

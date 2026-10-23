@@ -103,7 +103,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 Log.JobRequestNotFound(_logger, jobId);
 
                 if (progress == null ||
-                    progress.Status is GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled)
+                    IsTerminalStatus(progress.Status))
                 {
                     return;
                 }
@@ -191,18 +191,47 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
             stopwatch.Stop();
 
-            // If the job was cancelled (the cancel endpoint writes Cancelled directly
-            // to the progress store) while the import was completing, the cancellation
-            // wins: don't overwrite the terminal Cancelled status with Completed/Failed.
+            if (licenseCancellation.IsCancellationRequested)
+            {
+                var licenseProgress = (progressController.CurrentProgress ?? GeoservicesImportProgress.CreateInitial(
+                    jobId,
+                    request.ServiceUrl,
+                    request.LayerId,
+                    request.TableName)) with
+                {
+                    Status = GeoservicesImportStatus.Failed,
+                    ErrorMessage = result.DataCommitted
+                        ? "license expired; imported rows were already committed"
+                        : "license expired",
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = result.DataCommitted
+                        ? "Failed: license expired after data was committed"
+                        : "Failed: license expired; partial import is incomplete",
+                    FeaturesProcessed = result.FeatureCount,
+                    FailedFeatures = result.FailedFeatures
+                };
+                await progressController.SetFinalProgressAsync(licenseProgress, CancellationToken.None).ConfigureAwait(false);
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                Log.JobFailed(_logger, jobId, licenseProgress.ErrorMessage, stopwatch.Elapsed.TotalSeconds);
+                return;
+            }
+
+            // The cancel endpoint writes Cancelled immediately. That wins only when the import
+            // had not yet committed. After commit, keep the committed result instead of
+            // discarding it for the Cancelled stamp.
             var storedProgress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
-            if (storedProgress?.Status == GeoservicesImportStatus.Cancelled)
+            if (storedProgress?.Status == GeoservicesImportStatus.Cancelled && !result.DataCommitted)
             {
                 await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
                 return;
             }
 
-            // Update final progress
-            var finalStatus = result.Success ? GeoservicesImportStatus.Completed : GeoservicesImportStatus.Failed;
+            // Update final progress. #4600: a run the fidelity gate routed to review is NeedsReview, not
+            // Failed, and its verdict and per-resource differences are persisted with the job so the batch
+            // orchestrator and API clients can act on them; before this they were dropped here.
+            var finalStatus = result.Success
+                ? GeoservicesImportStatus.Completed
+                : result.NeedsReview ? GeoservicesImportStatus.NeedsReview : GeoservicesImportStatus.Failed;
             var finalProgress = new GeoservicesImportProgress
             {
                 JobId = jobId,
@@ -218,21 +247,50 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 StartedAt = progressController.CurrentProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = result.ErrorMessage,
+                ErrorCode = result.ErrorCode,
                 Warnings = result.Warnings,
-                CurrentPhase = result.Success
-                    ? result.PublishedLayerId.HasValue ? "Import completed and layer published" : "Import completed"
-                    : "Import failed"
+                AttachmentsProcessed = result.AttachmentCount,
+                FailedAttachments = result.FailedAttachments,
+                ReconciliationArtifact = result.ReconciliationArtifact,
+                CatalogReconciliationReport = result.CatalogReconciliationReport,
+                FidelityVerdict = result.FidelityVerdict,
+                FidelityDifferences = result.FidelityDifferences,
+                CurrentPhase = result.DataCommitted
+                    && !result.Success
+                    && result.ErrorMessage != null
+                    && result.ErrorMessage.StartsWith(
+                        "Import was cancelled after the data was committed",
+                        StringComparison.Ordinal)
+                    ? "Import cancelled after data was committed"
+                    : finalStatus switch
+                    {
+                        GeoservicesImportStatus.Completed => result.PublishedLayerId.HasValue
+                            ? "Import completed and layer published"
+                            : "Import completed",
+                        GeoservicesImportStatus.NeedsReview => "Import published but requires operator review (fidelity gate)",
+                        _ => "Import failed"
+                    }
             };
 
-            await progressController.SetFinalProgressAsync(finalProgress, jobCancellation.Token).ConfigureAwait(false);
-            licenseCancellation.ThrowIfCancellationRequested();
+            // A cancel that arrived after commit has already cancelled jobCancellation.
+            // The terminal write has to use a token that cancel cannot abort.
+            var persistToken = result.DataCommitted ? CancellationToken.None : jobCancellation.Token;
+            await progressController.SetFinalProgressAsync(finalProgress, persistToken).ConfigureAwait(false);
+            if (!result.DataCommitted)
+            {
+                licenseCancellation.ThrowIfCancellationRequested();
+            }
 
             // Clean up request store
-            await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken);
+            await _jobManager.RequestStore.DeleteProgressAsync(jobId, result.DataCommitted ? CancellationToken.None : stoppingToken);
 
             if (result.Success)
             {
                 Log.JobCompleted(_logger, jobId, result.FeatureCount, stopwatch.Elapsed.TotalSeconds);
+            }
+            else if (result.NeedsReview)
+            {
+                Log.JobNeedsReview(_logger, jobId, result.FidelityVerdict, stopwatch.Elapsed.TotalSeconds);
             }
             else
             {
@@ -379,10 +437,16 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
     }
 
     private static bool IsTerminalStatus(GeoservicesImportStatus status)
-        => status is GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled;
+        => status is GeoservicesImportStatus.Completed
+            or GeoservicesImportStatus.Failed
+            or GeoservicesImportStatus.Cancelled
+            or GeoservicesImportStatus.NeedsReview;
 
     private static partial class Log
     {
+        [LoggerMessage(7716, LogLevel.Warning, "Import job {JobId} requires operator review (fidelity verdict {FidelityVerdict}, duration: {DurationSeconds:F1}s)")]
+        public static partial void JobNeedsReview(ILogger logger, string jobId, string fidelityVerdict, double durationSeconds);
+
         [LoggerMessage(7700, LogLevel.Information, "Geoservices import background service starting (instance: {InstanceId})")]
         public static partial void ServiceStarting(ILogger logger, string instanceId);
 

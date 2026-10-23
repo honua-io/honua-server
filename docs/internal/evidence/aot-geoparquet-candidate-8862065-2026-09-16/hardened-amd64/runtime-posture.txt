@@ -1,0 +1,17 @@
+ReadonlyRootfs=true
+CapDrop=[ALL]
+CapAdd=[]
+SecurityOpt=[no-new-privileges:true]
+Privileged=false
+ConfigUser=1001:1001
+id -u/-g/whoami inside the running container:
+1001
+1001
+uid=1001(honua) gid=1001(honua) groups=1001(honua)
+
+root filesystem write attempt (must be refused):
+touch: cannot touch '/app/write-probe': Read-only file system
+refused: exit 1
+
+GDAL/PROJ/GEOS native libraries in the running container (must be none):
+(end of list)

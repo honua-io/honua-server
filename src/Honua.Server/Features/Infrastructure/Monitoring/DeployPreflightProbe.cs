@@ -26,7 +26,8 @@ internal sealed class DeployPreflightProbe(
     ILogger<DeployPreflightProbe> logger,
     IConnectionSecretResolver? secretResolver = null,
     IOptions<MigrationSafetyOptions>? migrationSafetyOptions = null,
-    MigrationBackupHookState? backupHookState = null) : IDeployPreflightProbe
+    MigrationBackupHookState? backupHookState = null,
+    DatabaseSessionSettingsState? sessionSettingsState = null) : IDeployPreflightProbe
 {
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
 
@@ -57,7 +58,9 @@ internal sealed class DeployPreflightProbe(
                 Message = readiness.Message
             },
             Migration = migration,
-            DatabaseCompatibility = compatibilitySnapshot
+            DatabaseCompatibility = compatibilitySnapshot,
+            // Advisory only: a role-defaults mismatch is logged and surfaced, never blocking.
+            DatabaseSessionSettings = sessionSettingsState?.Snapshot
         };
     }
 
@@ -104,6 +107,8 @@ internal sealed class DeployPreflightProbe(
                 PendingScripts = plan.PendingScripts,
                 PendingContractScripts = plan.ContractScriptNames,
                 PendingScriptClassifications = plan.PendingScriptClassifications,
+                ScriptBindings = plan.ScriptBindings,
+                ContractApprovalNonce = plan.ContractApprovalNonce,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
                 PlanError = plan.Successful ? null : plan.ErrorMessage ?? MigrationPlanUnavailableMessage,
                 BackupHook = backupHook
@@ -233,6 +238,8 @@ internal sealed class DeployPreflightSnapshot
     public required DeployPreflightMigrationSnapshot Migration { get; init; }
 
     public DeployPreflightDatabaseCompatibilitySnapshot? DatabaseCompatibility { get; init; }
+
+    public DatabaseSessionSettingsSnapshot? DatabaseSessionSettings { get; init; }
 }
 
 internal sealed class DeployPreflightReadinessSnapshot
@@ -279,6 +286,11 @@ internal sealed class DeployPreflightMigrationSnapshot
     /// </summary>
     public IReadOnlyList<MigrationScriptClassification> PendingScriptClassifications { get; init; }
         = Array.Empty<MigrationScriptClassification>();
+
+    public IReadOnlyList<DatabaseMigrationScriptBinding> ScriptBindings { get; init; }
+        = Array.Empty<DatabaseMigrationScriptBinding>();
+
+    public string? ContractApprovalNonce { get; init; }
 
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 

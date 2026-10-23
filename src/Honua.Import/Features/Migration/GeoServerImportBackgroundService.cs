@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Abstractions;
@@ -101,6 +102,30 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
                 return;
             }
 
+            if (progress != null)
+            {
+                // Claim execution before reading the request. A queued cancellation that
+                // wins this transition prevents the import from being invoked at all.
+                var claimed = progress with
+                {
+                    Status = GeoServerImportStatus.Discovering,
+                    CurrentPhase = "Starting import"
+                };
+                var transition = await _jobManager.TryTransitionAsync(jobId, claimed,
+                    ((IOperationProgress)progress).Status, stoppingToken).ConfigureAwait(false);
+                if (transition.Outcome != ProgressCompareAndSetOutcome.Updated)
+                {
+                    if (transition.CurrentProgress?.Status == OperationStatus.Cancelled)
+                    {
+                        // Universal cancellation does not know about the import request store.
+                        await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                    }
+                    return;
+                }
+                progress = claimed;
+                progressController.Seed(progress);
+            }
+
             request = await _jobManager.RequestStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
             if (request == null)
             {
@@ -167,7 +192,14 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             request = await ResolveSecretReferencesAsync(request, scope.ServiceProvider, jobCancellation.Token).ConfigureAwait(false);
             var importService = scope.ServiceProvider.GetRequiredService<IGeoServerImportService>();
             var progressReporter = new Progress<GeoServerImportProgress>(p =>
-                _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None));
+            {
+                // Queued belongs to admission and recovery. An import's initial
+                // report must not make already-claimed execution appear queued again.
+                if (p.Status != GeoServerImportStatus.Queued)
+                {
+                    _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None);
+                }
+            });
 
             var result = await importService.ImportConfigurationAsync(request, progressReporter, jobCancellation.Token).ConfigureAwait(false);
 
@@ -390,34 +422,16 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
         };
     }
 
-    private static async Task<string> ResolveRequiredSecretAsync(
+    private static Task<string> ResolveRequiredSecretAsync(
         IServiceProvider serviceProvider,
         string secretReference,
         string secretDescription,
         CancellationToken cancellationToken)
-    {
-        if (SecretReferenceResolver.IsEnvironmentReference(secretReference))
-        {
-            var resolvedEnvironmentValue = SecretReferenceResolver.ResolveEnvironmentReference(secretReference, secretDescription);
-            if (string.IsNullOrWhiteSpace(resolvedEnvironmentValue))
-            {
-                throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
-            }
-
-            return resolvedEnvironmentValue;
-        }
-
-        var secretProvider = serviceProvider.GetService<ISecretProvider>()
-            ?? throw new InvalidOperationException("GeoServer import secret references require secret provider services.");
-
-        var resolved = await secretProvider.GetSecretAsync(secretReference, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
-        }
-
-        return resolved;
-    }
+        => RequestSecretReferenceValidation.ResolveRequiredAsync(
+            serviceProvider,
+            secretReference,
+            secretDescription,
+            cancellationToken);
 
     private static bool IsTerminalStatus(GeoServerImportStatus status)
         => status is GeoServerImportStatus.Completed or GeoServerImportStatus.Failed or GeoServerImportStatus.Cancelled;

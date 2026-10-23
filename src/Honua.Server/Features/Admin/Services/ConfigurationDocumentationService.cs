@@ -90,6 +90,10 @@ public sealed class ConfigurationDocumentationService
             sections.AddRange(contributor.GetSections());
         }
 
+        // Contributors set CurrentValue themselves and do not pass through GetCurrentValue.
+        // Mask credential-bearing strings here so a token= URL is not returned in clear text.
+        MaskCredentialBearingValues(sections);
+
         var envVars = BuildEnvironmentVariableQuickReference(sections);
         var version = typeof(ConfigurationDocumentationService).Assembly.GetName().Version?.ToString() ?? "unknown";
 
@@ -116,6 +120,8 @@ public sealed class ConfigurationDocumentationService
                     "Controls distributed tracing with OpenTelemetry", false, isSensitive: false),
                 BuildProperty("HONUA_SKIP_MIGRATIONS", "HONUA_SKIP_MIGRATIONS", "boolean",
                     "Skip database migrations on startup", false, isSensitive: false),
+                BuildProperty("HONUA_MIGRATE_ONLY", "HONUA_MIGRATE_ONLY", "boolean",
+                    "Apply database migrations, print a JSON summary to standard output and exit without serving (the out-of-band step that pairs with HONUA_SKIP_MIGRATIONS)", false, isSensitive: false),
                 BuildProperty("HONUA_TEST_SCHEMA_HEADERS", "HONUA_TEST_SCHEMA_HEADERS", "boolean",
                     "Enable schema-based test isolation headers", false, isSensitive: false),
                 BuildProperty("HONUA_DEV_AUTH", "HONUA_DEV_AUTH", "string",
@@ -138,6 +144,8 @@ public sealed class ConfigurationDocumentationService
                     "PostgreSQL connection string", null, isRequired: true, isSensitive: true),
                 BuildProperty("Database:SecureConnection:Name", "Database__SecureConnection__Name", "string",
                     "Named secure connection to resolve from the registry (uses DefaultConnection for registry access)", null),
+                BuildProperty("Database:SessionSettings:Mode", "Database__SessionSettings__Mode", "string",
+                    "How session timeouts and the default search_path are applied: 'connection' sets them on every connection; 'role-defaults' issues no session SET (lets RDS Proxy multiplex) and relies on ALTER ROLE defaults, verified with a warning at startup. Allowed: connection|role-defaults", "connection"),
                 BuildProperty("Database:QueryCache:MaxCachedStatements", "Database__QueryCache__MaxCachedStatements", "integer",
                     "Maximum number of cached prepared statements", 100),
                 BuildProperty("Database:QueryCache:StatementLifetimeMinutes", "Database__QueryCache__StatementLifetimeMinutes", "integer",
@@ -349,7 +357,7 @@ public sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Attachments:MaxTotalAttachmentSize", "Limits__Attachments__MaxTotalAttachmentSize", "integer",
                     "Maximum total attachment size per feature in bytes", FileSizeConstants.OneHundredMB, opts.MaxTotalAttachmentSize, "Range: 10MB-1GB"),
                 BuildPropertyWithCurrent("Limits:Attachments:AllowedMimeTypes", "Limits__Attachments__AllowedMimeTypes", "string",
-                    "Comma-separated allowed MIME types", "image/*,application/pdf", opts.AllowedMimeTypes)
+                    "Comma-separated allowed MIME types", "image/*,application/pdf,text/plain,text/csv,application/json", opts.AllowedMimeTypes)
             ]
         };
     }
@@ -431,6 +439,8 @@ public sealed class ConfigurationDocumentationService
                     "Maximum file size for general synchronous imports in bytes; direct PostGIS raster imports use the lower of this value and the fixed 50 MiB serving-process ceiling", FileSizeConstants.FiftyMB, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxImportSize", "Limits__Imports__MaxImportSize", "integer",
                     "Maximum import file size in bytes", FileSizeConstants.FiveHundredMB, opts.MaxImportSize, "Range: 50MB-5GB"),
+                BuildPropertyWithCurrent("Limits:Imports:MaxTilePackageSize", "Limits__Imports__MaxTilePackageSize", "integer",
+                    "Maximum Esri tile-cache package upload in bytes", 2L * FileSizeConstants.OneGB, opts.MaxTilePackageSize, "Range: 50MB-5GB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewFeatures", "Limits__Imports__MaxPreviewFeatures", "integer",
                     "Maximum features in preview", 100, opts.MaxPreviewFeatures, "Range: 10-1000"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewCountScan", "Limits__Imports__MaxPreviewCountScan", "integer",
@@ -802,7 +812,6 @@ public sealed class ConfigurationDocumentationService
         object? defaultValue, object? currentValue, string? validation = null, bool isSensitive = false)
     {
         var source = DetermineSource(path, envVar);
-        var displayValue = isSensitive && currentValue != null ? "***" : currentValue;
 
         return new ConfigurationProperty
         {
@@ -812,7 +821,7 @@ public sealed class ConfigurationDocumentationService
             Type = type,
             Description = description,
             DefaultValue = defaultValue,
-            CurrentValue = displayValue,
+            CurrentValue = MaskCurrentValue(currentValue, isSensitive),
             IsRequired = false,
             IsSensitive = isSensitive,
             Validation = validation,
@@ -823,17 +832,47 @@ public sealed class ConfigurationDocumentationService
     private string? GetCurrentValue(string path, string envVar, bool isSensitive)
     {
         var value = GetResolvedValue(path, envVar);
-        if (value == null)
+        return MaskCurrentValue(value, isSensitive) as string;
+    }
+
+    /// <summary>
+    /// Masks sensitive and credential-bearing current values. Default values and
+    /// environment-variable examples are left unchanged.
+    /// </summary>
+    private static void MaskCredentialBearingValues(IEnumerable<ConfigurationSection> sections)
+    {
+        foreach (var section in sections)
+        {
+            foreach (var property in section.Properties)
+            {
+                property.CurrentValue = MaskCurrentValue(property.CurrentValue, property.IsSensitive);
+            }
+
+            if (section.SubSections.Count > 0)
+            {
+                MaskCredentialBearingValues(section.SubSections);
+            }
+        }
+    }
+
+    private static object? MaskCurrentValue(object? currentValue, bool isSensitive)
+    {
+        if (currentValue is null)
         {
             return null;
         }
 
         if (isSensitive)
         {
-            return "***";
+            return ConfigurationSecretRedactor.Mask;
         }
 
-        return value;
+        if (currentValue is string text && ConfigurationSecretRedactor.LooksCredentialBearing(text))
+        {
+            return ConfigurationSecretRedactor.Mask;
+        }
+
+        return currentValue;
     }
 
     private string DetermineSource(string path, string envVar)
@@ -872,6 +911,7 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "HONUA_OBSERVABILITY", ConfigPath = "Features", Description = "Enable metrics endpoints", Default = "false", Example = "true" },
             new() { Name = "HONUA_OPENTELEMETRY", ConfigPath = "Features", Description = "Enable distributed tracing", Default = "false", Example = "true" },
             new() { Name = "HONUA_SKIP_MIGRATIONS", ConfigPath = "Features", Description = "Skip database migrations", Default = "false", Example = "true" },
+            new() { Name = "HONUA_MIGRATE_ONLY", ConfigPath = "Features", Description = "Apply database migrations and exit without serving", Default = "false", Example = "true" },
             new() { Name = "HONUA_DEV_AUTH", ConfigPath = "Security", Description = "Development auth bypass (Test env only; requires HONUA_DEV_AUTH_ALLOW_BYPASS=true)", Required = false, Example = "true" },
             new() { Name = "HONUA_DEV_AUTH_ALLOW_BYPASS", ConfigPath = "Security", Description = "Operator ack required alongside HONUA_DEV_AUTH=true to activate the Test-only auth bypass", Required = false, Example = "true" },
             new() { Name = "HONUA_ADMIN_PASSWORD", ConfigPath = "Security", Description = "Admin API password", Required = false, Example = "secure-password" },

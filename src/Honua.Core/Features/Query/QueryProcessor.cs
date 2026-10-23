@@ -574,7 +574,7 @@ public sealed class QueryProcessor : IQueryProcessor
         {
             SqlFilter = sqlFilter,
             ObjectIds = query.ObjectIds,
-            OutFields = query.OutFields,
+            OutFields = CanonicalizeOutFields(query.OutFields, resource),
             Offset = query.Offset,
             Limit = query.Limit,
             OrderBy = query.OrderBy,
@@ -585,7 +585,10 @@ public sealed class QueryProcessor : IQueryProcessor
             OutputAxisOrder = outputAxisOrder,
             SpatialFilter = query.SpatialFilter,
             TemporalFilter = query.TemporalFilter,
-            Distinct = query.Aggregation?.Distinct ?? false
+            Distinct = query.Aggregation?.Distinct ?? false,
+            SqlFilterSupplementsWhere = query.Extensions != null &&
+                query.Extensions.TryGetValue(FeatureQuery.SqlFilterSupplementsWhereExtensionKey, out var supplementsWhere) &&
+                supplementsWhere is true
         };
 
         if (query.Extensions?.TryGetValue("includeNullGeometry", out var includeNullGeometryValue) == true &&
@@ -733,6 +736,41 @@ public sealed class QueryProcessor : IQueryProcessor
 
             return 1000; // Default estimate
         }
+    }
+
+    private static ImmutableArray<string>? CanonicalizeOutFields(
+        ImmutableArray<string>? outFields,
+        MetadataV2Resource resource)
+    {
+        if (!outFields.HasValue || outFields.Value.IsDefaultOrEmpty)
+        {
+            return outFields;
+        }
+
+        var fields = outFields.Value;
+
+        Dictionary<string, MetadataV2Field>? index = null;
+        string[]? rewritten = null;
+        for (var i = 0; i < fields.Length; i++)
+        {
+            var requested = fields[i];
+            if (requested == "*")
+            {
+                continue;
+            }
+
+            index ??= BuildV2FieldIndex(resource);
+            if (!index.TryGetValue(requested, out var field)
+                || string.Equals(requested, field.Name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            rewritten ??= fields.ToArray();
+            rewritten[i] = field.Name;
+        }
+
+        return rewritten is null ? outFields : rewritten.ToImmutableArray();
     }
 
     private static Dictionary<string, MetadataV2Field> BuildV2FieldIndex(MetadataV2Resource resource)

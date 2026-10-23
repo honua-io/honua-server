@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Security.Abstractions;
@@ -105,7 +106,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
         if (!FeatureStreamArtifact.TryOpenRead(
                 inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
-                _options.CurrentValue.OutputRootDirectory))
+                _options.CurrentValue.OutputRootDirectory, context))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -158,10 +159,12 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         }
 
         connectionString = resolvedConnection.ConnectionString!;
+        var endpointFingerprint = ConnectionEndpointFingerprint.TryCompute(connectionString);
 
         var batchId = inputs.GetOrDefault("batchId", job.OperationId);
 
         long written = 0;
+        long acceptedOffset = 0;
         long rejected = 0;
         try
         {
@@ -202,8 +205,11 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                         await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                         written += await InsertBatchAsync(
                             connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId,
-                            idempotencyColumn, idempotencyConstraint, idempotencyKey, wkbWriter, cancellationToken)
+                            idempotencyColumn, idempotencyConstraint, idempotencyKey, acceptedOffset, wkbWriter, cancellationToken)
                             .ConfigureAwait(false);
+                        // Advance by accepted input rows, never by inserted rows: conflicts on
+                        // replay must not shift the identity of subsequent batches.
+                        acceptedOffset += buffer.Count;
                         buffer.Clear();
                     }
                 }
@@ -213,7 +219,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                     await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                     written += await InsertBatchAsync(
                         connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId,
-                        idempotencyColumn, idempotencyConstraint, idempotencyKey, wkbWriter, cancellationToken)
+                        idempotencyColumn, idempotencyConstraint, idempotencyKey, acceptedOffset, wkbWriter, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
@@ -239,12 +245,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                     await context.PublishArtifactAsync(
                         SinkResultArtifact.Build(
                             HandledProcessId,
-                            ("schema", schema),
-                            ("table", table),
-                            ("batchId", batchId),
-                            ("featuresWritten", written),
-                            ("featuresRejected", rejected),
-                            ("partial", true)),
+                            ReceiptMembers(schema, table, batchId, written, rejected, endpointFingerprint, committed: false)),
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception publishEx) when (publishEx is not OutOfMemoryException)
@@ -258,18 +259,42 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"{HandledProcessId} write failed: {ex.GetType().Name}.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await context.PublishArtifactAsync(
+        // The transaction has committed. Cancellation may stop later work, but must
+        // not suppress this destination receipt or misreport the committed load.
+        await context.RecordCommittedEffectAsync(
             SinkResultArtifact.Build(
                 HandledProcessId,
-                ("schema", schema),
-                ("table", table),
-                ("featuresWritten", written),
-                ("featuresRejected", rejected)),
-            cancellationToken).ConfigureAwait(false);
-        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
+                ReceiptMembers(schema, table, batchId, written, rejected, endpointFingerprint, committed: true)),
+            CancellationToken.None).ConfigureAwait(false);
+        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
-        return JobExecutionResult.Succeeded();
+        return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
+    }
+
+    private static (string Name, object Value)[] ReceiptMembers(
+        string schema,
+        string table,
+        string batchId,
+        long written,
+        long rejected,
+        string? endpointFingerprint,
+        bool committed)
+    {
+        var members = new List<(string Name, object Value)>
+        {
+            ("schema", schema),
+            ("table", table),
+            ("batchId", batchId),
+            (committed ? "committed" : "partial", true),
+            ("featuresWritten", written),
+            ("featuresRejected", rejected),
+        };
+        if (endpointFingerprint is not null)
+        {
+            members.Add(("endpointFingerprint", endpointFingerprint));
+        }
+
+        return members.ToArray();
     }
 
     private async Task<(string? ConnectionString, string? Error)> ResolveConnectionStringAsync(
@@ -398,6 +423,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         string? idempotencyColumn,
         string? idempotencyConstraint,
         string? idempotencyKey,
+        long acceptedOffset,
         WKBWriter wkbWriter,
         CancellationToken cancellationToken)
     {
@@ -418,7 +444,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             attributes[i] = BuildAttributesJson(jsonWriter, bufferWriter, features[i], batchId);
             if (idempotencyKeys is not null)
             {
-                idempotencyKeys[i] = $"{idempotencyKey}:{i}";
+                idempotencyKeys[i] = $"{idempotencyKey}:{(acceptedOffset + i).ToString(CultureInfo.InvariantCulture)}";
             }
         }
 

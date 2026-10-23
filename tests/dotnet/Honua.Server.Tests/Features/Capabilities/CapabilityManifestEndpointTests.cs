@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -10,6 +11,12 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Plugins;
+using Honua.Plugins.Abstractions;
+using Honua.Server.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -61,7 +68,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         HonuaEdition edition = HonuaEdition.Pro,
         bool manifestFromRegistry = false,
         bool experimentalGlobalEnabled = true,
-        bool tenantSchemaRoutingEnabled = false)
+        bool tenantSchemaRoutingEnabled = false,
+        bool tenantContextEnabled = true)
         => new WebAppFixture()
             .WithTestLicense(edition, entitlements: entitlements)
             .ConfigureServices(services =>
@@ -92,9 +100,145 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                         ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false",
                         ["Capabilities:Experimental:Enabled"] = experimentalGlobalEnabled ? "true" : "false",
                         ["MultiTenancy:SchemaRouting:Enabled"] = tenantSchemaRoutingEnabled ? "true" : "false",
+                        ["MultiTenancy:Enabled"] = tenantContextEnabled ? "true" : "false",
                     });
                 });
             });
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters(bool fromRegistry)
+    {
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var writers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(capability => capability.GetProperty("category").GetString() == "format-write").ToArray();
+        writers.Should().HaveCount(13);
+        writers.Where(capability => capability.GetProperty("supported").GetBoolean())
+            .Select(capability => capability.GetProperty("id").GetString()).Should().BeEquivalentTo(
+                "format.write.csv", "format.write.shapefile", "format.write.geopackage");
+        foreach (var writer in writers)
+        {
+            var supported = writer.GetProperty("supported").GetBoolean();
+            writer.GetProperty("available").GetBoolean().Should().Be(supported);
+            writer.GetProperty("lifecycle").GetString().Should().Be(supported ? "implemented" : "planned");
+            if (!supported)
+            {
+                writer.GetProperty("reasonCode").GetString().Should().Be("unsupported");
+            }
+        }
+
+        using var anonymous = fixture.CreateClient();
+        using var anonymousResponse = await anonymous.GetAsync("/api/v1/capabilities/manifest");
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+        var implemented = anonymousDocument.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() is "format-read" or "format-write")
+            .Where(row => row.GetProperty("supported").GetBoolean()).ToArray();
+        implemented.Should().HaveCount(16);
+        foreach (var capability in implemented)
+        {
+            capability.GetProperty("available").GetBoolean().Should().BeFalse();
+            capability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
+        }
+
+        foreach (var adminRead in new[] { false, true })
+        {
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, adminRead ? AdminApiKeyPermission.ScopedAdminRole : "editor"),
+                 new Claim(AdminApiKeyPermission.PermissionClaimType, adminRead ? "admin:read" : "features:read")],
+                "ApiKey"));
+            var manifest = await fixture.GetService<ICapabilityManifestService>().GetManifestAsync(
+                new CapabilityManifestRequest(principal, null, TenantContextSource.Anonymous, null, null, true));
+            var formats = manifest.Capabilities.Where(row => row.Category is "format-read" or "format-write")
+                .Where(row => row.Supported).ToArray();
+            formats.Should().HaveCount(16);
+            foreach (var capability in formats)
+            {
+                capability.Available.Should().Be(adminRead && capability.Category == "format-write",
+                    "import is an admin POST and synchronous export is an admin GET");
+                if (!capability.Available) { capability.ReasonCode.Should().Be("insufficient-policy"); }
+            }
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FileReadersWithoutImportService_ReportMissingDependency(bool fromRegistry)
+    {
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry)
+            .ConfigureServices(services => services.RemoveAll<IFileImportService>());
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var readers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() == "format-read").ToArray();
+        readers.Should().HaveCount(13);
+        foreach (var reader in readers)
+        {
+            reader.GetProperty("supported").GetBoolean().Should().BeTrue();
+            reader.GetProperty("available").GetBoolean().Should().BeFalse();
+            reader.GetProperty("reasonCode").GetString().Should().Be("dependency-unavailable");
+        }
+        GetCapability(document.RootElement, "format.write.csv").GetProperty("available").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery(bool fromRegistry, bool enabled, bool licensed)
+    {
+        var formats = new[] { "gpx", "fixture-tsv" }.Select(id =>
+        {
+            var format = Substitute.For<IFeatureOutputFormat>();
+            format.FormatId.Returns(id);
+            format.MediaType.Returns("application/octet-stream");
+            format.FileExtension.Returns(id);
+            return format;
+        }).ToArray();
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry,
+            edition: licensed ? HonuaEdition.Enterprise : HonuaEdition.Pro)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IFeatureOutputFormatRegistry>();
+                services.AddSingleton<IFeatureOutputFormatRegistry>(sp => new FeatureOutputFormatRegistry(
+                    formats, sp.GetRequiredService<ILicenseEntitlementService>(), Options.Create(new PluginOptions { Enabled = enabled })));
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var writers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() == "format-write").ToArray();
+        var active = enabled && licensed;
+        writers.Should().HaveCount(active ? 14 : 13);
+        writers.Select(row => row.GetProperty("id").GetString()).Should().OnlyHaveUniqueItems();
+        var gpx = GetCapability(document.RootElement, "format.write.gpx");
+        gpx.GetProperty("supported").GetBoolean().Should().Be(active);
+        gpx.GetProperty("available").GetBoolean().Should().Be(active);
+        gpx.GetProperty("lifecycle").GetString().Should().Be(active ? "implemented" : "planned");
+        writers.Any(row => row.GetProperty("id").GetString() == "format.write.fixture-tsv").Should().Be(active);
+        if (active)
+        {
+            GetCapability(document.RootElement, "format.write.fixture-tsv").GetProperty("available").GetBoolean().Should().BeTrue();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
@@ -110,10 +254,15 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "admin.multi-tenancy", "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var (id, lifecycle) in new[]
+                     {
+                         ("admin.multi-tenancy", "internal"),
+                         ("realtime.feature-streams", "preview"),
+                         ("serve.sensorthings", "preview"),
+                     })
             {
                 var capability = GetCapability(document.RootElement, id);
-                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("lifecycle").GetString().Should().Be(lifecycle);
                 capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
@@ -170,7 +319,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/capabilities/manifest");
                 using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
                 var anonymousCapability = GetCapability(anonymousDocument.RootElement, "admin.multi-tenancy");
-                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("internal");
                 anonymousCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 anonymousCapability.GetProperty("available").GetBoolean().Should().BeFalse();
                 anonymousCapability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
@@ -182,14 +331,45 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var adminDocument = await ReadDocumentAsync(adminResponse);
                 var adminCapability = GetCapability(adminDocument.RootElement, "admin.multi-tenancy");
                 adminCapability.GetProperty("available").GetBoolean().Should().BeTrue();
-                adminCapability.GetProperty("lifecycle").GetString().Should().Be("preview",
-                    "opting into a trial must never promote tenancy to GA");
+                adminCapability.GetProperty("lifecycle").GetString().Should().Be("internal",
+                    "opting in must never promote internal tenancy to a product lifecycle");
                 adminCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
             }
             finally
             {
                 await fixture.DisposeAsync();
             }
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, "disabled-by-configuration")]
+    [InlineData(true, "experimental-disabled")]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_InternalMultiTenancyWithoutOptIn_IsUnavailable(bool fromRegistry, string reasonCode)
+    {
+        var fixture = CreateManifestFixture(
+            edition: HonuaEdition.Enterprise,
+            manifestFromRegistry: fromRegistry,
+            experimentalGlobalEnabled: false,
+            tenantSchemaRoutingEnabled: true);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            using var document = await ReadDocumentAsync(response);
+            var capability = GetCapability(document.RootElement, "admin.multi-tenancy");
+            capability.GetProperty("lifecycle").GetString().Should().Be("internal");
+            capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+            capability.GetProperty("available").GetBoolean().Should().BeFalse(
+                "an Internal capability stays default-off even in Enterprise with schema routing");
+            capability.GetProperty("reasonCode").GetString().Should().Be(reasonCode);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 
@@ -280,6 +460,34 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             .Should().Be("/api/v1/streaming/features/capabilities");
         GetTransport(root, "mcp").GetProperty("available").GetBoolean().Should().BeTrue();
         GetTransport(root, "qgis").GetProperty("available").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithTenantContextDisabled_OmitsTenantScopeEntirely()
+    {
+        // Multi-tenant operation is internal to Honua's own hosted operation and is not
+        // offered to licensees, so tenant context is off in every deployment a licensee
+        // may run. The manifest omits the fields rather than reporting them as null: a
+        // key that is always null on every deployment a customer can legally operate
+        // invites the question of how to populate it.
+        await using var fixture = CreateManifestFixture(tenantContextEnabled: false);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/api/v1/capabilities/manifest", UriKind.Relative));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = await ReadDocumentAsync(response);
+        var scope = document.RootElement.GetProperty("scope");
+
+        scope.TryGetProperty("tenantId", out _).Should().BeFalse(
+            "tenant scope is not part of the surface a licensee operates");
+        scope.TryGetProperty("tenantSource", out _).Should().BeFalse(
+            "reporting how a tenant was resolved implies there is a tenant to resolve");
+
+        // The rest of the scope is unaffected.
+        scope.GetProperty("authenticated").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -619,6 +827,209 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RollbackClaimsAreTargetScoped()
+    {
+        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+        var handoff = RollbackBackend("rollback-handoff", supportsRollback: false);
+        var probe = RollbackBackend("rollback-probe", supportsRollback: true, probeFails: true);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((WorkflowOperationRecord?)null);
+        store.GetMostRecentSucceededDeployByTargetAsync("auto-prior", Arg.Any<CancellationToken>())
+            .Returns(ProtectedDeploy("auto-prior"));
+
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(automatic);
+                services.AddSingleton(handoff);
+                services.AddSingleton(probe);
+                services.AddSingleton(store);
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.AddRange(
+                [
+                    Target("auto-prior", automatic.BackendName, "test"),
+                    Target("auto-none", automatic.BackendName, "test"),
+                    Target("handoff", handoff.BackendName, "test"),
+                    Target("missing", "rollback-absent", "test"),
+                    Target("probe", probe.BackendName, "test"),
+                    Target("other-env", automatic.BackendName, "prod")
+                ]));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var document = await ReadDocumentAsync(response);
+            var rollback = GetCapability(document.RootElement, "deploy.rollback");
+
+            rollback.GetProperty("available").GetBoolean().Should().BeTrue(
+                "one target in the environment has a backend that supports rollback and a restorable prior revision");
+            var claims = rollback.GetProperty("rollbackTargets").EnumerateArray().ToArray();
+            claims.Select(claim => claim.GetProperty("targetId").GetString()).Should().Equal(
+                "auto-prior", "auto-none", "handoff", "missing", "probe");
+            Claim(claims, "auto-prior").GetProperty("executable").GetBoolean().Should().BeTrue();
+            Claim(claims, "auto-prior").GetProperty("reasonCode").GetString().Should().Be("rollback.executable");
+            Claim(claims, "auto-none").GetProperty("state").GetString().Should().Be("no-prior-revision");
+            Claim(claims, "auto-none").GetProperty("executable").GetBoolean().Should().BeFalse();
+            Claim(claims, "handoff").GetProperty("reasonCode").GetString().Should().Be("rollback.handoff-only");
+            Claim(claims, "missing").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-missing");
+            Claim(claims, "probe").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-probe-failed");
+            claims.Should().NotContain(claim => claim.GetProperty("targetId").GetString() == "other-env");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RollbackWithoutPriorRevision_IsNotAvailable()
+    {
+        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((WorkflowOperationRecord?)null);
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(automatic);
+                services.AddSingleton(store);
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                    Target("auto-none", automatic.BackendName, "test")));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var document = await ReadDocumentAsync(response);
+            var rollback = GetCapability(document.RootElement, "deploy.rollback");
+
+            rollback.GetProperty("available").GetBoolean().Should().BeFalse(
+                "SupportsRollback without a restorable prior revision is not an executable rollback");
+            rollback.GetProperty("reasonCode").GetString().Should().Be("rollback.no-executable-target");
+            var claim = rollback.GetProperty("rollbackTargets").EnumerateArray().Single();
+            claim.GetProperty("targetId").GetString().Should().Be("auto-none");
+            claim.GetProperty("executable").GetBoolean().Should().BeFalse();
+            claim.GetProperty("reasonCode").GetString().Should().Be("rollback.prior-revision-missing");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AnonymousCallerOmitsRollbackTargets()
+    {
+        const string targetId = "rollback-secret-target";
+        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.GetMostRecentSucceededDeployByTargetAsync(targetId, Arg.Any<CancellationToken>())
+            .Returns(ProtectedDeploy(targetId));
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(automatic);
+                services.AddSingleton(store);
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                    Target(targetId, automatic.BackendName, "test")));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var anonymous = fixture.CreateClient();
+            using var anonymousResponse = await anonymous.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+            var anonymousRollback = GetCapability(anonymousDocument.RootElement, "deploy.rollback");
+            anonymousRollback.GetProperty("supported").ValueKind.Should().Be(JsonValueKind.True);
+            anonymousRollback.TryGetProperty("available", out _).Should().BeTrue();
+            anonymousRollback.TryGetProperty("rollbackTargets", out _).Should().BeFalse();
+            anonymousDocument.RootElement.GetRawText().Should().NotContain(targetId);
+
+            using var admin = fixture.CreateAdminClient();
+            using var adminResponse = await admin.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var adminDocument = await ReadDocumentAsync(adminResponse);
+            var claims = GetCapability(adminDocument.RootElement, "deploy.rollback")
+                .GetProperty("rollbackTargets").EnumerateArray().ToArray();
+            claims.Should().Contain(claim => claim.GetProperty("targetId").GetString() == targetId);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static IDeployBackend RollbackBackend(string name, bool supportsRollback, bool probeFails = false)
+    {
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns(name);
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        if (probeFails)
+        {
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+                .Returns(_ => Task.FromException<DeployBackendCapabilities>(new InvalidOperationException("probe down")));
+        }
+        else
+        {
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+                .Returns(new DeployBackendCapabilities { SupportsRollback = supportsRollback });
+        }
+
+        return backend;
+    }
+
+    private static DeployTargetOptions Target(string targetId, string backend, string environment)
+        => new()
+        {
+            TargetId = targetId,
+            Backend = backend,
+            TargetKind = DeployTargetKind.Kubernetes,
+            Environment = environment
+        };
+
+    private static WorkflowOperationRecord ProtectedDeploy(string targetId)
+        => new()
+        {
+            OperationId = "op-" + targetId,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z", CultureInfo.InvariantCulture),
+            UpdatedAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z", CultureInfo.InvariantCulture),
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = targetId,
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "rollback-auto",
+                Environment = "test",
+                TargetName = targetId,
+                DesiredRevision = "rev-now",
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = "rev-prior",
+                    CandidateRevision = "rev-now",
+                    FirstExposureAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z", CultureInfo.InvariantCulture),
+                    ObservationDeadline = DateTimeOffset.Parse("2026-09-01T01:00:00Z", CultureInfo.InvariantCulture),
+                    PolicyDigest = "digest",
+                    Phase = DeployProtectionPhase.Protected
+                }
+            }
+        };
+
+    private static JsonElement Claim(JsonElement[] claims, string targetId)
+        => claims.Single(claim => claim.GetProperty("targetId").GetString() == targetId);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore()
     {
         var fixture = CreateManifestFixture()
@@ -728,6 +1139,16 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
         root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
             .GetBoolean().Should().BeFalse();
+
+        // 2026.1 rc.3 J1/S1: the governed proposal/approval control plane shares the Redis-backed
+        // substrate. Its honua_admin_* tools advertise everywhere, so the manifest is what tells an
+        // agent in advance that a Redis-off host refuses proposal-requiring calls.
+        var proposals = GetCapability(root, "operations.proposals");
+        proposals.GetProperty("supported").GetBoolean().Should().BeTrue();
+        proposals.GetProperty("available").GetBoolean().Should().BeFalse();
+        proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+        proposals.GetProperty("messageKey").GetString()
+            .Should().Be($"capabilities.operations.proposals.{CapabilityUnavailableCodes.ErrorCode}");
     }
 
     [IntegrationTest]
@@ -745,6 +1166,10 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         var jobsRunner = GetCapability(document.RootElement, "jobs.runner");
         jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse();
         jobsRunner.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+
+        var proposals = GetCapability(document.RootElement, "operations.proposals");
+        proposals.GetProperty("available").GetBoolean().Should().BeFalse();
+        proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
     }
 
     [IntegrationTest]
@@ -791,6 +1216,145 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
             root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
                 .GetBoolean().Should().BeTrue();
+
+            var proposals = GetCapability(root, "operations.proposals");
+            proposals.GetProperty("available").GetBoolean().Should().BeTrue(
+                "an entitled, attested Redis composes the durable proposal store");
+            proposals.TryGetProperty("reasonCode", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Owner ruling (2026-10-10): the Redis durability attestation is INFORMATION. A connected,
+    /// entitled Redis advertises <c>jobs.runner</c> and <c>operations.proposals</c> whatever the
+    /// attestation said, and the manifest publishes the outcome as
+    /// <c>limits.job.redisDurability</c>: <c>attested</c>, <c>unverified</c> (the managed-Redis
+    /// shape: AWS ElastiCache and MemoryDB block <c>CONFIG</c>), or <c>not-durable</c>
+    /// (<c>appendonly no</c>). Before the ruling the last two read <c>dependency-unavailable</c>
+    /// with <c>missingDependency=redis</c> although Redis was serving.
+    /// </summary>
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    [InlineData(null, "attested")]
+    [InlineData(DurableJobSubstrateCause.RedisAttestationUnavailable, "unverified")]
+    [InlineData(DurableJobSubstrateCause.RedisPersistenceDisabled, "not-durable")]
+    public async Task GetManifest_ConnectedRedis_AdvertisesControlPlaneAndPublishesDurabilityOutcome(
+        DurableJobSubstrateCause? outcome,
+        string expectedStatus)
+    {
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
+                services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = true;
+                    options.RedisDurabilityFailure = outcome;
+                    options.RedisDurabilityDetail = outcome is null
+                        ? null
+                        : "ERR unknown command 'CONFIG', with args beginning with: 'GET' 'appendonly'";
+                    options.RedisDurabilityAttestation = outcome is null
+                        ? new RedisDurabilityAttestation(
+                            "redis.example.internal:6379",
+                            "aof (appendonly=yes, aof_enabled=1)",
+                            "appendfsync=everysec",
+                            "noeviction",
+                            DateTimeOffset.UtcNow)
+                        : null;
+                });
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+
+            foreach (var capabilityId in new[] { "jobs.runner", "operations.proposals" })
+            {
+                var capability = GetCapability(root, capabilityId);
+                capability.GetProperty("available").GetBoolean().Should().BeTrue(
+                    $"a connected Redis enables {capabilityId} whatever the attestation said ({expectedStatus})");
+                capability.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            }
+
+            var job = root.GetProperty("limits").GetProperty("job");
+            job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeTrue();
+            var durability = job.GetProperty("redisDurability");
+            durability.GetProperty("status").GetString().Should().Be(expectedStatus);
+            if (outcome is null)
+            {
+                durability.TryGetProperty("cause", out _).Should().BeFalse();
+                durability.TryGetProperty("remediation", out _).Should().BeFalse();
+            }
+            else
+            {
+                durability.GetProperty("cause").GetString().Should().Be(outcome.Value.ToString());
+                durability.GetProperty("remediation").GetString()
+                    .Should().Be(DurableJobSubstrateRemediation.For(outcome.Value));
+            }
+
+            body.Should().NotContain("unknown command",
+                "the raw attestation detail is logged, never published on the manifest");
+            body.Should().NotContain("redis.example.internal",
+                "the Redis endpoint is not published on the manifest");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RedisConfiguredButUnreachable_WithholdsControlPlaneWithoutDurabilityOutcome()
+    {
+        // The one Redis-on case that still withholds the control plane: Redis did not connect at
+        // startup. It is a missing dependency, not a durability outcome.
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(static services =>
+            {
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
+                services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = true;
+                    options.RedisDurabilityFailure = DurableJobSubstrateCause.RedisUnreachable;
+                });
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
+
+            foreach (var capability in new[] { "jobs.runner", "operations.proposals" }
+                         .Select(capabilityId => GetCapability(root, capabilityId)))
+            {
+                capability.GetProperty("available").GetBoolean().Should().BeFalse();
+                capability.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+            }
+
+            var job = root.GetProperty("limits").GetProperty("job");
+            job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeFalse();
+            job.TryGetProperty("redisDurability", out _).Should().BeFalse();
         }
         finally
         {
@@ -865,6 +1429,10 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             jobsRunner.GetProperty("reasonCode").GetString()
                 .Should().NotBe(CapabilityUnavailableCodes.ErrorCode,
                     "an unentitled but present Redis is not a missing dependency");
+
+            var proposals = GetCapability(document.RootElement, "operations.proposals");
+            proposals.GetProperty("available").GetBoolean().Should().BeFalse();
+            proposals.GetProperty("reasonCode").GetString().Should().Be("license-required");
         }
         finally
         {

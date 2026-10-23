@@ -76,6 +76,22 @@ public interface IPublishedServiceStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finds a published service under the case-insensitive public URI identity.
+    /// Throws if multiple stored identifiers differ only by case.
+    /// </summary>
+    Task<PublishedServiceRecord?> FindByPublicIdAsync(
+        string serviceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds candidate public identifiers that collide with any persisted service,
+    /// including inactive and decommissioned records, in one store read.
+    /// </summary>
+    Task<IReadOnlyList<string>> FindCollidingPublicIdsAsync(
+        IReadOnlyList<string> candidateServiceIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Persists the latest published service record state.
     /// </summary>
     /// <param name="service">Updated published service record.</param>
@@ -117,23 +133,5 @@ public interface IPublishExecutor
     /// <returns>The resulting published service record.</returns>
     Task<PublishedServiceRecord> ExecuteAsync(
         PublishIntent intent,
-        CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// Executes a one-way refresh operation, pulling source content into a published service.
-/// Refresh is strictly one-way from the authoritative source; bidirectional sync and CDC
-/// are out of scope.
-/// </summary>
-public interface IRefreshExecutor
-{
-    /// <summary>
-    /// Executes a refresh for the given request.
-    /// </summary>
-    /// <param name="request">Refresh request specifying the service and scope.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The result of the refresh operation.</returns>
-    Task<RefreshResult> ExecuteAsync(
-        RefreshRequest request,
         CancellationToken cancellationToken = default);
 }

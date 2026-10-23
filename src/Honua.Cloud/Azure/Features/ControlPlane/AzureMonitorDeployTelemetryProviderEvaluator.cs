@@ -11,6 +11,21 @@ using Azure.Identity;
 namespace Honua.ControlPlane;
 
 /// <summary>
+/// One Log Analytics scalar read. <see cref="NoRows"/> is set only when the query succeeded and its
+/// first table has no rows, which is what an error-count query with a <c>by</c> or <c>bin()</c>
+/// clause returns for an error-free window. A failed request, a missing table, an empty row or an
+/// unparseable or non-finite cell is never <see cref="NoRows"/>.
+/// </summary>
+internal readonly record struct AzureMonitorScalarReading(double? Value, bool NoRows)
+{
+    /// <summary>A successful query whose result table has no rows.</summary>
+    public static AzureMonitorScalarReading Empty { get; } = new(null, NoRows: true);
+
+    /// <summary>A read that produced no usable value and no proof that the result is empty.</summary>
+    public static AzureMonitorScalarReading Unavailable { get; } = new(null, NoRows: false);
+}
+
+/// <summary>
 /// Thin seam over the Azure Monitor Logs (Log Analytics / Application Insights) query API so the
 /// deploy telemetry gate can be unit-tested without a live Azure subscription. The production
 /// implementation is <see cref="AzureMonitorLogsQueryClient"/>; tests substitute a fake. The seam
@@ -21,10 +36,10 @@ internal interface IAzureMonitorMetricClient
 {
     /// <summary>
     /// Evaluates a single Kusto (KQL) query against the supplied Log Analytics workspace over the
-    /// supplied window and returns the first scalar cell of the first result row, or <c>null</c>
+    /// supplied window and returns the first scalar cell of the first result row, or no value
     /// when the workspace returned no rows.
     /// </summary>
-    Task<double?> GetScalarValueAsync(
+    Task<AzureMonitorScalarReading> GetScalarReadingAsync(
         string workspaceId,
         string query,
         TimeSpan window,
@@ -50,7 +65,7 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
 
     private readonly TokenCredential _credential = AzureControlPlaneCredential.SharedDefault;
 
-    public async Task<double?> GetScalarValueAsync(
+    public async Task<AzureMonitorScalarReading> GetScalarReadingAsync(
         string workspaceId,
         string query,
         TimeSpan window,
@@ -70,7 +85,7 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        return ParseScalar(document.RootElement);
+        return ParseScalarReading(document.RootElement);
     }
 
     private async Task<HttpRequestMessage> CreateRequestAsync(
@@ -145,31 +160,55 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
     // The Log Analytics query response shape is { "tables": [ { "columns": [...],
     // "rows": [ [ <cell>, ... ], ... ] } ] }. A health/error/latency gate query is expected to
     // project a single scalar; read tables[0].rows[0][0] and coerce it to a double.
-    private static double? ParseScalar(JsonElement root)
+    internal static double? ParseScalar(JsonElement root)
+        => ParseScalarReading(root).Value;
+
+    /// <summary>
+    /// Reads the scalar and classifies an empty answer: only a present first table whose
+    /// <c>rows</c> array is empty is <see cref="AzureMonitorScalarReading.NoRows"/>.
+    /// </summary>
+    internal static AzureMonitorScalarReading ParseScalarReading(JsonElement root)
     {
         if (!root.TryGetProperty("tables", out var tables) ||
             tables.ValueKind != JsonValueKind.Array ||
             tables.GetArrayLength() == 0)
         {
-            return null;
+            return AzureMonitorScalarReading.Unavailable;
         }
 
         var table = tables[0];
         if (!table.TryGetProperty("rows", out var rows) ||
-            rows.ValueKind != JsonValueKind.Array ||
-            rows.GetArrayLength() == 0)
+            rows.ValueKind != JsonValueKind.Array)
         {
-            return null;
+            return AzureMonitorScalarReading.Unavailable;
+        }
+
+        // A partial result is not the whole answer, so an empty table in it proves nothing.
+        if (rows.GetArrayLength() == 0)
+        {
+            return root.TryGetProperty("error", out _)
+                ? AzureMonitorScalarReading.Unavailable
+                : AzureMonitorScalarReading.Empty;
+        }
+
+        // A health/error/latency gate query is expected to project exactly one row (a scalar). More
+        // than one is an ambiguous-cardinality configuration error (#4617): silently reading rows[0]
+        // can promote or hold a deploy on an arbitrary, unintended row.
+        if (rows.GetArrayLength() > 1)
+        {
+            throw new InvalidOperationException(
+                $"Telemetry query resolved to {rows.GetArrayLength()} rows; expected exactly one scalar row. " +
+                "Aggregate the query (for example with summarize) to a single value.");
         }
 
         var firstRow = rows[0];
         if (firstRow.ValueKind != JsonValueKind.Array || firstRow.GetArrayLength() == 0)
         {
-            return null;
+            return AzureMonitorScalarReading.Unavailable;
         }
 
         var cell = firstRow[0];
-        return cell.ValueKind switch
+        var parsedValue = cell.ValueKind switch
         {
             JsonValueKind.Number => cell.GetDouble(),
             JsonValueKind.String when double.TryParse(
@@ -177,8 +216,14 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
                 System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out var parsed) => parsed,
-            _ => null
+            _ => (double?)null
         };
+
+        // Guard the same non-finite class as every other provider (#4617): an undefined Log
+        // Analytics expression must not silently satisfy a threshold comparison.
+        return parsedValue.HasValue && double.IsFinite(parsedValue.Value)
+            ? new AzureMonitorScalarReading(parsedValue.Value, NoRows: false)
+            : AzureMonitorScalarReading.Unavailable;
     }
 
     private static Uri ResolveEndpoint(string? endpointOverride)
@@ -223,7 +268,8 @@ internal sealed class AzureMonitorDeployTelemetryProviderEvaluator(
         {
             throw new InvalidOperationException(
                 $"Telemetry connection '{connection.ConnectionId}' uses the azuremonitor provider, which requires explicit " +
-                "telemetry.error_rate.query / telemetry.latency_p95.query / telemetry.sample_count.query KQL queries.");
+                "telemetry.error_rate.query (or telemetry.error_count.query) / telemetry.latency_p95.query / " +
+                "telemetry.sample_count.query KQL queries.");
         }
 
         // The Log Analytics workspace id is carried on the connection's Region field, mirroring how
@@ -239,9 +285,11 @@ internal sealed class AzureMonitorDeployTelemetryProviderEvaluator(
 
         var endpointOverride = ResolveEndpointOverride(connection);
 
+        // Every signal reads the same window, so an error count and the sample count it is divided
+        // by describe the same traffic.
         var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
             ? (double?)null
-            : await metricClient.GetScalarValueAsync(workspaceId, policy.MinimumSampleQuery, Window, endpointOverride, cancellationToken).ConfigureAwait(false);
+            : (await metricClient.GetScalarReadingAsync(workspaceId, policy.MinimumSampleQuery, Window, endpointOverride, cancellationToken).ConfigureAwait(false)).Value;
 
         // Short-circuit when the sample-count gate already fails; mirrors the Prometheus/CloudWatch
         // evaluators that do not read error-rate/latency until the minimum sample gate clears.
@@ -253,19 +301,29 @@ internal sealed class AzureMonitorDeployTelemetryProviderEvaluator(
         double? errorRate = null;
         if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
         {
-            errorRate = await metricClient.GetScalarValueAsync(workspaceId, policy.ErrorRateQuery, Window, endpointOverride, cancellationToken).ConfigureAwait(false);
+            errorRate = (await metricClient.GetScalarReadingAsync(workspaceId, policy.ErrorRateQuery, Window, endpointOverride, cancellationToken).ConfigureAwait(false)).Value;
+        }
+
+        // Same bounded rule as the CloudWatch provider (honua-server#6474): only an error-count
+        // numerator keeps the "no rows" outcome for the shared gate to read as zero errors.
+        var errorCount = AzureMonitorScalarReading.Unavailable;
+        if (!string.IsNullOrWhiteSpace(policy.ErrorCountQuery) && policy.ErrorRateThreshold.HasValue)
+        {
+            errorCount = await metricClient.GetScalarReadingAsync(workspaceId, policy.ErrorCountQuery, Window, endpointOverride, cancellationToken).ConfigureAwait(false);
         }
 
         double? latencyP95 = null;
         if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
         {
-            latencyP95 = await metricClient.GetScalarValueAsync(workspaceId, policy.LatencyP95Query, Window, endpointOverride, cancellationToken).ConfigureAwait(false);
+            latencyP95 = (await metricClient.GetScalarReadingAsync(workspaceId, policy.LatencyP95Query, Window, endpointOverride, cancellationToken).ConfigureAwait(false)).Value;
         }
 
         return new DeployTelemetryReadings
         {
             SampleCount = sampleCount,
             ErrorRate = errorRate,
+            ErrorCount = errorCount.Value,
+            ErrorCountSeriesAbsent = errorCount.NoRows,
             LatencyP95 = latencyP95
         };
     }

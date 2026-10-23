@@ -55,7 +55,8 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             serviceApplyPayload);
         serviceApplyResponse.Be200Ok();
         using var serviceDocument = JsonDocument.Parse(await serviceApplyResponse.Content.ReadAsStringAsync());
-        var serviceAdd = serviceDocument.RootElement.GetProperty("editResults")[0].GetProperty("addResults")[0];
+        serviceDocument.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var serviceAdd = serviceDocument.RootElement[0].GetProperty("addResults")[0];
         serviceAdd.GetProperty("success").GetBoolean().Should().BeTrue();
         var serviceObjectId = serviceAdd.GetProperty("objectId").GetInt64();
         await AssertFeatureNameAsync(serviceObjectId, "mutation-service-apply");
@@ -99,6 +100,97 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         var deleteResult = await DeserializeEditsAsync(deleteResponse);
         deleteResult.DeleteResults.Should().ContainSingle(result => result.Success && result.ObjectId == objectId);
         (await ReadFeatureCountAsync(objectId)).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.BulkCreate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_MissingRequiredField_FailsOnlyThatAddWhenRollbackIsOff()
+    {
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
+        {
+            Name = "name",
+            Type = MetadataV2FieldType.String,
+            Nullable = false,
+            Description = "Name"
+        });
+
+        const string payload = """
+            {"rollbackOnFailure":false,"adds":[{"attributes":{"name":"required-ok"},"geometry":{"x":-122.41,"y":37.77}},{"attributes":{"description":"no-name"},"geometry":{"x":-122.42,"y":37.78}}]}
+            """;
+        var response = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            payload);
+        var result = await DeserializeEditsAsync(response);
+
+        result.AddResults.Should().HaveCount(2);
+        result.AddResults![0].Success.Should().BeTrue();
+        result.AddResults[1].Success.Should().BeFalse();
+        result.AddResults[1].Error!.Code.Should().Be(GeoServicesEditErrorCodes.ValidationFailed);
+        (await ReadCountByNameAsync("required-ok")).Should().Be(1);
+        (await ReadCountByWhereAsync("description='no-name'")).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.BulkCreate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task ApplyEdits_AddWithoutGlobalId_AssignsServerGlobalIdAndCreator()
+    {
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
+        {
+            Name = "GlobalID",
+            Type = MetadataV2FieldType.Uuid,
+            Nullable = true,
+            Description = "Global ID",
+        });
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
+        {
+            Name = "created_user",
+            Type = MetadataV2FieldType.String,
+            Nullable = true,
+            Description = "Creator",
+        });
+        _fixture.UpdateV2ResourceEditing(TestLayerId, new MetadataV2ResourceEditing
+        {
+            GlobalIdField = "GlobalID",
+            CreatorField = "created_user",
+            CreatedAtField = "created_date",
+            EditorField = "created_user",
+            UpdatedAtField = "created_date",
+        });
+
+        const string clientGlobalId = "11111111-1111-1111-1111-111111111111";
+        var payload = $$$"""
+            {"adds":[{"attributes":{"name":"tracked-add","GlobalID":"{{{clientGlobalId}}}","created_user":"forged-editor"},"geometry":{"x":-122.41,"y":37.77}}]}
+            """;
+        var response = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            payload);
+        var result = await DeserializeEditsAsync(response);
+        result.AddResults.Should().ContainSingle();
+        var added = result.AddResults![0];
+        added.Success.Should().BeTrue();
+        added.GlobalId.Should().NotBeNullOrWhiteSpace();
+        added.GlobalId.Should().NotBe(clientGlobalId);
+        Guid.TryParse(added.GlobalId, out _).Should().BeTrue();
+
+        var objectId = added.ObjectId!.Value;
+        var (storedGlobalId, storedCreator) = await ReadTrackedAttributesAsync(objectId);
+        storedGlobalId.Should().Be(added.GlobalId);
+        // The Test host authenticates through the dev bypass, whose api_key_id is the
+        // subject EditOwnerSubject prefers over the display name "admin".
+        storedCreator.Should().Be("00000000-0000-0000-0000-000000000001");
+
+        using var metadataResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=json");
+        metadataResponse.Be200Ok();
+        using var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+        var editFields = metadata.RootElement.GetProperty("editFieldsInfo");
+        editFields.GetProperty("creatorField").GetString().Should().Be("created_user");
+        editFields.GetProperty("creationDateField").GetString().Should().Be("created_date");
+        editFields.GetProperty("editorField").GetString().Should().Be("created_user");
+        editFields.GetProperty("editDateField").GetString().Should().Be("created_date");
     }
 
     [IntegrationTest]
@@ -278,6 +370,87 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ApplyEdits_MultiRowPartialUpdate_PreservesFieldsAndGeometryCommittedAfterPreRead()
+    {
+        // #6094: a multi-row batch has no snapshot-token guard. Its partial updates must merge
+        // onto the row the writer locks, not write back the unlocked pre-read snapshot.
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "score", Type = MetadataV2FieldType.Integer });
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        using var add = await PostJsonAsync(path,
+            """{"adds":[{"attributes":{"name":"first","score":0},"geometry":{"x":-122.25,"y":37.75,"spatialReference":{"wkid":4326}}},{"attributes":{"name":"second","score":0},"geometry":{"x":-121.25,"y":38.75,"spatialReference":{"wkid":4326}}}]}""");
+        var added = await DeserializeEditsAsync(add);
+        added.AddResults.Should().HaveCount(2).And.OnlyContain(result => result.Success);
+        var firstId = added.AddResults![0].ObjectId!.Value;
+        var secondId = added.AddResults[1].ObjectId!.Value;
+
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        using var builder = new Npgsql.NpgsqlCommandBuilder();
+        var schema = builder.QuoteIdentifier(_fixture.CurrentSchema!);
+        // Another editor changes an unrelated field and the geometry of the first row and holds
+        // its row lock until the batch below has pre-read both rows and is waiting to write.
+        await using (var concurrent = new Npgsql.NpgsqlCommand(
+            $"UPDATE {schema}.features SET attributes = attributes || '{{\"score\":29}}'::jsonb, geometry = ST_SetSRID(ST_Point(-120.5,36.5),4326) WHERE layer_id=0 AND objectid=@id",
+            connection, transaction))
+        {
+            concurrent.Parameters.AddWithValue("id", firstId);
+            (await concurrent.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var pending = PostJsonAsync(path,
+            $$$"""{"rollbackOnFailure":false,"updates":[{"attributes":{"objectid":{{{firstId}}},"name":"first-after"}},{"attributes":{"objectid":{{{secondId}}},"name":"second-after"}}]}""");
+        var waiting = 0L;
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (waiting < 1 && DateTime.UtcNow < deadline)
+        {
+            await using (var refresh = new Npgsql.NpgsqlCommand("SELECT pg_stat_clear_snapshot()", connection, transaction))
+            {
+                await refresh.ExecuteNonQueryAsync();
+            }
+            await using var command = new Npgsql.NpgsqlCommand(
+                "SELECT count(*) FROM pg_stat_activity WHERE @lockPid = ANY(pg_blocking_pids(pid))",
+                connection, transaction);
+            command.Parameters.AddWithValue("lockPid", connection.ProcessID);
+            waiting = (long)(await command.ExecuteScalarAsync())!;
+            if (waiting < 1)
+            {
+                await Task.Delay(25);
+            }
+        }
+
+        await transaction.CommitAsync();
+        waiting.Should().BeGreaterThanOrEqualTo(1, "the batch must pre-read before the concurrent edit commits");
+
+        using (var response = await pending)
+        {
+            var result = await DeserializeEditsAsync(response);
+            result.UpdateResults.Should().HaveCount(2).And.OnlyContain(edit => edit.Success,
+                await response.Content.ReadAsStringAsync());
+        }
+
+        using var query = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={firstId},{secondId}&outFields=*&returnGeometry=true&outSR=4326");
+        query.Be200Ok();
+        using var document = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("features").EnumerateArray()
+            .ToDictionary(feature => feature.GetProperty("attributes").GetProperty("objectid").GetInt64());
+        var first = features[firstId];
+        first.GetProperty("attributes").GetProperty("name").GetString().Should().Be("first-after");
+        first.GetProperty("attributes").GetProperty("score").GetInt32().Should().Be(29,
+            "the concurrently committed field must survive the batch");
+        first.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-120.5,
+            "omitted geometry must come from the locked row, not the pre-read");
+        first.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(36.5);
+        var second = features[secondId];
+        second.GetProperty("attributes").GetProperty("name").GetString().Should().Be("second-after");
+        second.GetProperty("attributes").GetProperty("score").GetInt32().Should().Be(0);
+        second.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-121.25);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ApplyEdits, Operations.Query, Operations.Metadata)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -340,6 +513,102 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         await AssertFeatureNameAsync(702, "second");
     }
 
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Operation(Operations.BulkCreate, Operations.BulkUpdate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task AddAndUpdateFeatures_NumericBooleanWireValues_PersistBooleansAndPreserveIntegerFields(int initial)
+    {
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "active",
+            Type = MetadataV2FieldType.Boolean,
+            Nullable = false
+        });
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "rank",
+            Type = MetadataV2FieldType.Integer,
+            Nullable = false
+        });
+
+        // Stock QGIS sends form-encoded GeoServices small-integer Boolean values.
+        var addFeatures = $$$"""[{"attributes":{"name":"typed-add","active":{{{initial}}},"rank":{{{initial}}}},"geometry":{"x":-157.8333,"y":21.3555}}]""";
+        using var addPayload = JsonDocument.Parse(addFeatures);
+        addPayload.RootElement.GetArrayLength().Should().Be(1);
+        using var addForm = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["features"] = addFeatures
+        });
+        using var addedResponse = await _fixture.Client.PostAsync(
+            "/rest/services/test/FeatureServer/0/addFeatures", addForm);
+        var added = await DeserializeEditsAsync(addedResponse);
+        var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
+        await AssertPersistedBooleanAsync(objectId, initial);
+        await AssertBooleanQueryAsync(objectId, initial);
+
+        var updated = 1 - initial;
+        var updateFeatures = $$$"""[{"attributes":{"objectid":{{{objectId}}},"active":{{{updated}}},"rank":{{{updated}}}}}]""";
+        using var updatePayload = JsonDocument.Parse(updateFeatures);
+        updatePayload.RootElement.GetArrayLength().Should().Be(1);
+        using var updateForm = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["features"] = updateFeatures
+        });
+        using var updatedResponse = await _fixture.Client.PostAsync(
+            "/rest/services/test/FeatureServer/0/updateFeatures", updateForm);
+        var result = await DeserializeEditsAsync(updatedResponse);
+        result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId,
+            await updatedResponse.Content.ReadAsStringAsync());
+        await AssertPersistedBooleanAsync(objectId, updated);
+        await AssertBooleanQueryAsync(objectId, updated);
+    }
+
+    private async Task AssertBooleanQueryAsync(long objectId, int expected)
+    {
+        // This common compact point query selects the raw PostGIS JSON response path.
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={objectId}&outFields=*&returnGeometry=true");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var booleanField = document.RootElement.GetProperty("fields").EnumerateArray()
+            .Single(field => field.GetProperty("name").GetString() == "active");
+        booleanField.GetProperty("type").GetString().Should().Be("esriFieldTypeSmallInteger");
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        var attributes = feature.GetProperty("attributes");
+        attributes.GetProperty("active").ValueKind.Should().Be(JsonValueKind.Number);
+        attributes.GetProperty("active").GetInt32().Should().Be(expected);
+        attributes.GetProperty("rank").ValueKind.Should().Be(JsonValueKind.Number);
+        attributes.GetProperty("rank").GetInt32().Should().Be(expected);
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().BeApproximately(-157.8333, 1e-10);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().BeApproximately(21.3555, 1e-10);
+    }
+
+    private async Task AssertPersistedBooleanAsync(long objectId, int expected)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT jsonb_typeof(attributes->'active'), attributes->'active',
+                   jsonb_typeof(attributes->'rank'), (attributes->>'rank')::integer
+            FROM features WHERE layer_id = 0 AND objectid = @objectId;
+            """;
+        command.Parameters.AddWithValue("objectId", objectId);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetString(0).Should().Be("boolean", "persisted attributes must honor the Boolean schema");
+        using var boolean = JsonDocument.Parse(reader.GetString(1));
+        boolean.RootElement.GetBoolean().Should().Be(expected == 1);
+        reader.GetString(2).Should().Be("number", "an Integer field containing 0 or 1 remains numeric");
+        reader.GetInt32(3).Should().Be(expected);
+    }
+
     private async Task<HttpResponseMessage> PostJsonAsync(string path, string json)
     {
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -373,9 +642,28 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         return document.RootElement.GetProperty("count").GetInt32();
     }
 
-    private async Task<int> ReadCountByNameAsync(string name)
+    private async Task<(string? GlobalId, string? Creator)> ReadTrackedAttributesAsync(long objectId)
     {
-        var where = Uri.EscapeDataString($"name='{name}'");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT attributes->>'GlobalID', attributes->>'created_user'
+            FROM features WHERE layer_id = 0 AND objectid = @objectId;
+            """;
+        command.Parameters.AddWithValue("objectId", objectId);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return (
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+    }
+
+    private Task<int> ReadCountByNameAsync(string name)
+        => ReadCountByWhereAsync($"name='{name}'");
+
+    private async Task<int> ReadCountByWhereAsync(string whereClause)
+    {
+        var where = Uri.EscapeDataString(whereClause);
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&where={where}&returnCountOnly=true");
         response.Be200Ok();

@@ -48,6 +48,10 @@ public sealed class NoOpVersionManager : IVersionManager
     }
 
     /// <inheritdoc />
+    public Task<VersionContext?> ResolveAsync(string? gdbVersion, string? callerOwner, CancellationToken cancellationToken = default)
+        => ResolveAsync(gdbVersion, cancellationToken);
+
+    /// <inheritdoc />
     public Task<VersionReconcileResult> ReconcileAsync(
         Guid versionId,
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,

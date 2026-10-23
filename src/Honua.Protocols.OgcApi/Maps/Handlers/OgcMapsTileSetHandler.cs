@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
@@ -65,7 +66,12 @@ internal sealed class OgcMapsTileSetHandler
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    context,
+                    resource,
+                    AuthorizationOperation.Query,
+                    service,
+                    cancellationToken).ConfigureAwait(false);
                 if (accessError != null)
                 {
                     return accessError;
@@ -152,7 +158,12 @@ internal sealed class OgcMapsTileSetHandler
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    context,
+                    resource,
+                    AuthorizationOperation.Query,
+                    service,
+                    cancellationToken).ConfigureAwait(false);
                 if (accessError != null)
                 {
                     return accessError;

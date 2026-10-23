@@ -1,0 +1,476 @@
+{
+  "format": "honua.studio.dashboard-lifecycle-receipt.v1",
+  "issue": "https://github.com/honua-io/honua-server/issues/3429",
+  "candidate": {
+    "image": "ghcr.io/honua-io/honua-server@sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb",
+    "sha": "3c52a4bffa8f9b8621a39a8868f839e0e605de78",
+    "runningImageId": "sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb",
+    "runningReference": "ghcr.io/honua-io/honua-server@sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb"
+  },
+  "startedAt": "2026-09-13T16:43:13.115709+00:00",
+  "completedAt": "2026-09-13T16:43:27.112215+00:00",
+  "verdict": "pass",
+  "rows": [
+    {
+      "id": "dashboard.compose.eleven-verbs",
+      "criterion": "A terminal MCP client creates a dashboard and all eleven composition verbs succeed with the map/app contract.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "draftId": "777dd16e-de0c-430d-bf26-cbd4a8317507",
+        "ownerId": "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public",
+        "family": "dashboard",
+        "verbsApplied": [
+          "add_layer",
+          "set_layer_style",
+          "set_layer_visibility",
+          "set_view",
+          "add_widget",
+          "bind_interaction",
+          "add_control",
+          "remove_control",
+          "remove_interaction",
+          "remove_widget",
+          "remove_layer"
+        ]
+      }
+    },
+    {
+      "id": "dashboard.cas.stale-retry",
+      "criterion": "Stale generation returns the canonical conflict and current generation; a re-read non-conflicting retry succeeds exactly once; a conflicting retry stays failed.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {}
+    },
+    {
+      "id": "dashboard.update-draft.shared-validator",
+      "criterion": "update_draft accepts a valid dashboard document and rejects malformed or unsupported content without mutation.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "rejectedBodies": [
+          {
+            "layers": "bad"
+          },
+          {
+            "layers": [
+              {
+                "id": "same"
+              },
+              {
+                "id": "same"
+              }
+            ]
+          },
+          {
+            "widgets": [
+              {
+                "id": "missing-kind"
+              }
+            ]
+          },
+          {
+            "view": {
+              "center": [
+                1
+              ]
+            }
+          },
+          {
+            "view": {
+              "zoom": 25
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dashboard.authorization.nondisclosure",
+      "criterion": "A different owner, a different tenant, or insufficient OAuth scope receives the canonical denial without leaking draft existence or content.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "observed": {
+          "other-owner-read": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "other-owner-compose": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "other-owner-missing-id": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "same-subject-other-tenant-read": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "same-subject-other-tenant-compose": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "read-only-scope-compose": {
+            "isError": true,
+            "code": "insufficient_scope",
+            "studioAuthorizationCode": "studio_authorization/oauth_scope_required",
+            "disclosedFields": []
+          }
+        }
+      }
+    },
+    {
+      "id": "dashboard.version.restart-identity",
+      "criterion": "Validate, save, get and reopen preserve the exact content hash and immutable version identity across a server restart.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "itemId": "c6e9f69a-7211-4bca-84cf-7208c49c78df",
+        "versionId": "dd7aaaac-bbcd-4d4e-a375-c869bee5a9b0",
+        "contentHash": "7271dc07dfa9e78def48658a11578bf5ff289e8d732c1a2acbc4a68a7a2721db",
+        "reopenedDraftId": "d04695b3-3fd1-4ffc-90c8-60ed417b8a38"
+      }
+    },
+    {
+      "id": "dashboard.publication.governed-proposal",
+      "criterion": "The saved dashboard enters the governed proposal lifecycle without changing a publication pointer.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "response": {
+          "status": "AwaitingApproval",
+          "proposalId": "proposal-31c13c09b8c84b39810c7d6bf3454e4e",
+          "proposalUri": "honua://proposals/proposal-31c13c09b8c84b39810c7d6bf3454e4e",
+          "code": null,
+          "humanConfirmationRequired": true
+        }
+      }
+    },
+    {
+      "id": "dashboard.audit.joined-evidence",
+      "criterion": "Every mutation joins owner, tenant, actor, durable audit and correlation evidence through the shared seam.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "ownerId": "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public",
+        "joins": [
+          {
+            "verb": "create_draft",
+            "traceId": "0b080e47e1df4485bc2b876b70142bc8",
+            "operationInstanceId": "opinst-698168a0eb0a42ad8e845810f43bbd30",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              3,
+              4
+            ]
+          },
+          {
+            "verb": "add_layer",
+            "traceId": "f8ddd9e4d22a4015ba3f7b2a684c4e04",
+            "operationInstanceId": "opinst-31fcd020684443ccbf3fea6d24f4024a",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              5,
+              6
+            ]
+          },
+          {
+            "verb": "set_layer_style",
+            "traceId": "7881bf327ca6441eb7446699ac1c6bd2",
+            "operationInstanceId": "opinst-fb577fd18dbf44adb7c56322f8dac04b",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              7,
+              8
+            ]
+          },
+          {
+            "verb": "set_layer_visibility",
+            "traceId": "4fff617996c24454ad355cfb0fce7f86",
+            "operationInstanceId": "opinst-a3c33df905184de4907008604ec62c57",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              9,
+              10
+            ]
+          },
+          {
+            "verb": "set_view",
+            "traceId": "89a078521bf14ed89a81913f15c67c08",
+            "operationInstanceId": "opinst-92b964712e7f4bf1b209811037e00bbd",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              11,
+              12
+            ]
+          },
+          {
+            "verb": "add_widget",
+            "traceId": "2a56dcef816b4540a54fa4aaaede15c8",
+            "operationInstanceId": "opinst-cc2aafce31114426978612c76590209e",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              13,
+              14
+            ]
+          },
+          {
+            "verb": "bind_interaction",
+            "traceId": "4d661da135ec44f6bb025f7ad799914a",
+            "operationInstanceId": "opinst-b926bcea4e0b42bb9b76fd47a5c58dbb",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              15,
+              16
+            ]
+          },
+          {
+            "verb": "add_control",
+            "traceId": "cffc29f2284943729a3d4ac61ebda4af",
+            "operationInstanceId": "opinst-a54ee3307b22480fa6dd5c17e9565189",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              17,
+              18
+            ]
+          },
+          {
+            "verb": "remove_control",
+            "traceId": "5cc379b5cd9446d9841e8c6fbb110009",
+            "operationInstanceId": "opinst-ab929f0695bd4ac78e7e509660eb034f",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              19,
+              20
+            ]
+          },
+          {
+            "verb": "remove_interaction",
+            "traceId": "05083dece13f4f3d932e8da377bbd074",
+            "operationInstanceId": "opinst-696f42612c524a718e94b7cd82643790",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              21,
+              22
+            ]
+          },
+          {
+            "verb": "remove_widget",
+            "traceId": "9f31d4a62afc46aeab3d047fd35eda9f",
+            "operationInstanceId": "opinst-8eebe97330024af59433fd4bdba7639b",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              23,
+              24
+            ]
+          },
+          {
+            "verb": "remove_layer",
+            "traceId": "fe7e398376c14c4ea7c7453013beeddb",
+            "operationInstanceId": "opinst-2fc0aee1bf71481591ea74fa22babbeb",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              25,
+              26
+            ]
+          },
+          {
+            "verb": "update_draft",
+            "traceId": "72b133f32a8f465fa101db4cacecafde",
+            "operationInstanceId": "opinst-b3b4ce6e51af47debec296542ffe94db",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              27,
+              28
+            ]
+          },
+          {
+            "verb": "save_version",
+            "traceId": "77a61c33287e47778385d3a4682cc49c",
+            "operationInstanceId": "opinst-d199e99066204a81a2affe051fb445a1",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              35,
+              36
+            ]
+          },
+          {
+            "verb": "reopen_version",
+            "traceId": "9c104fda949347ba82a38d6808f4bfbb",
+            "operationInstanceId": "opinst-e28ad75779a5415294ca6558cdc43e6f",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              37,
+              38
+            ]
+          },
+          {
+            "verb": "propose_publication",
+            "traceId": "49d699f296dd4922b14f7d431ca7b247",
+            "operationInstanceId": "opinst-333bf749e0644a0e88bcd5e615374fcf",
+            "status": "RequiresApproval",
+            "proposalId": "proposal-31c13c09b8c84b39810c7d6bf3454e4e",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.proposed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Fidp.r3429.invalid:dashboard-owner-63572b5b@tenant:public"
+            ],
+            "auditIds": [
+              40,
+              41
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

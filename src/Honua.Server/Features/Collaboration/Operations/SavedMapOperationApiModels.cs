@@ -15,12 +15,15 @@ namespace Honua.Server.Features.Collaboration.Operations;
 /// </summary>
 internal sealed record SavedMapOperationAppendApiRequest
 {
-    /// <summary>Client-generated operation id. Duplicates are replayed idempotently per map.</summary>
+    /// <summary>Client-generated operation id. Duplicates are replayed idempotently per map and actor.</summary>
     [Required]
     [StringLength(200, MinimumLength = 1)]
     public string? OperationId { get; init; }
 
-    /// <summary>Actor submitting the operation. When omitted, the authenticated principal is used.</summary>
+    /// <summary>
+    /// Ignored. The server attributes the operation to <c>ConsolePrincipal.ResolveActorId</c>.
+    /// Retained so existing clients that still send it are not rejected as unknown JSON.
+    /// </summary>
     public string? ActorId { get; init; }
 
     /// <summary>Client base cursor/revision the edit was authored against. Defaults to the empty-log base.</summary>
@@ -33,7 +36,7 @@ internal sealed record SavedMapOperationAppendApiRequest
     /// <summary>Operation payload. Stored opaquely by the MVP log.</summary>
     public JsonElement Payload { get; init; }
 
-    /// <summary>Optional idempotency key. When supplied, duplicates are replayed idempotently per map.</summary>
+    /// <summary>Optional idempotency key. When supplied, duplicates are replayed idempotently per map and actor.</summary>
     [StringLength(200)]
     public string? IdempotencyKey { get; init; }
 }
@@ -72,7 +75,9 @@ internal sealed record SavedMapOperationEnvelopeDto
 /// <summary>Append response: accepted operation plus the current head cursor and idempotency flag.</summary>
 internal sealed record SavedMapOperationAppendApiResponse
 {
-    /// <summary>Append status: <c>accepted</c>, <c>conflict</c>, or <c>resyncRequired</c>.</summary>
+    /// <summary>
+    /// Append status: <c>accepted</c>, <c>conflict</c>, <c>idempotencyMismatch</c>, or <c>resyncRequired</c>.
+    /// </summary>
     public required string Status { get; init; }
 
     /// <summary>Accepted operation when status is <c>accepted</c>.</summary>

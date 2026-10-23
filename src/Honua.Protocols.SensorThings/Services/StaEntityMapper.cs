@@ -49,26 +49,33 @@ internal static class StaEntityMapper
 
     public static StaObservation MapObservation(SensorThingsObservation observation, string staBase)
     {
-        var foiLink = observation.FeatureOfInterestId is { } foiId
-            ? $"{staBase}/FeaturesOfInterest({foiId})"
-            : $"{staBase}/Observations({observation.Id})/FeatureOfInterest";
-
+        // FeaturesOfInterest has no entity read surface in this Preview adapter.
+        // An opaque ingest identifier is not a resolvable entity: do not advertise it.
         return new StaObservation
         {
             IotId = observation.Id,
             IotSelfLink = $"{staBase}/Observations({observation.Id})",
-            PhenomenonTime = Iso(observation.PhenomenonTime),
+            PhenomenonTime = observation.PhenomenonTimeEnd is { } end ? $"{Iso(observation.PhenomenonTime)}/{Iso(end)}" : Iso(observation.PhenomenonTime),
             ResultTime = observation.ResultTime is { } rt ? Iso(rt) : null,
-            Result = observation.Result,
-            DatastreamNavigationLink = $"{staBase}/Observations({observation.Id})/Datastream",
-            FeatureOfInterestNavigationLink = foiLink
+            Result = ResultValue(observation),
+            DatastreamNavigationLink = $"{staBase}/Observations({observation.Id})/Datastream"
         };
+    }
+
+    internal static System.Text.Json.JsonElement ResultValue(SensorThingsObservation observation)
+    {
+        if (observation.JsonResult is { } result) return result;
+        using var document = System.Text.Json.JsonDocument.Parse(observation.Result?.ToString("R", CultureInfo.InvariantCulture) ?? "null");
+        return document.RootElement.Clone();
     }
 
     public static StaDatastream MapDatastream(
         SensorThingsDatastream datastream,
         string staBase,
-        IReadOnlyList<StaObservation>? expandedObservations = null)
+        IReadOnlyList<StaObservation>? expandedObservations = null,
+        StaThing? expandedThing = null,
+        StaSensor? expandedSensor = null,
+        StaObservedProperty? expandedObservedProperty = null)
     {
         string? phenomenonTime = null;
         if (datastream.PhenomenonTimeStart is { } start && datastream.PhenomenonTimeEnd is { } end)
@@ -94,7 +101,10 @@ internal static class StaEntityMapper
             ThingNavigationLink = $"{staBase}/Datastreams({datastream.Id})/Thing",
             SensorNavigationLink = $"{staBase}/Datastreams({datastream.Id})/Sensor",
             ObservedPropertyNavigationLink = $"{staBase}/Datastreams({datastream.Id})/ObservedProperty",
-            Observations = expandedObservations
+            Observations = expandedObservations,
+            Thing = expandedThing,
+            Sensor = expandedSensor,
+            ObservedProperty = expandedObservedProperty
         };
     }
 }

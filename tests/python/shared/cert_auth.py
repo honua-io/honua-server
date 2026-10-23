@@ -37,7 +37,7 @@ class AuthCredentials:
     oidc_signing_key: str
 
     @classmethod
-    def from_environment(cls) -> "AuthCredentials":
+    def from_environment(cls) -> AuthCredentials:
         return cls(
             api_key=os.getenv("HONUA_CERT_API_KEY", "ClientCompatAdmin123!"),
             oidc_issuer=os.getenv("HONUA_CERT_OIDC_ISSUER", "https://cert-auth.honua.test"),
@@ -68,15 +68,19 @@ class AuthCredentials:
         """Mint an HS256 JWT accepted by the deterministic OIDC fixture."""
         now = int(time.time())
         expiry = now - 900 if expired else now + 3600
+        # An expired credential must have been valid in the past. Otherwise
+        # exp < nbf tests malformed lifetime validation instead of expiry.
+        issued = now - 3600 if expired else now - 60
         header = {"alg": "HS256", "typ": "JWT"}
         payload = {
             "iss": self.oidc_issuer,
             "aud": self.oidc_audience,
             "sub": "cert-auth-reader",
+            "tenant_id": "default",
             "name": "Certification Auth Reader",
             "roles": ["admin"],
-            "iat": now - 60,
-            "nbf": now - 60,
+            "iat": issued,
+            "nbf": issued,
             "exp": expiry,
             "jti": f"cert-auth-{'expired' if expired else now}",
         }

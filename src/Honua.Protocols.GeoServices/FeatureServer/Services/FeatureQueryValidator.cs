@@ -29,8 +29,9 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
     // queryRelatedRecords keeps the stricter contract: an over-maximum resultRecordCount
     // is rejected with a 400 ("Query parameters exceed configured limits") rather than
     // silently clamped. The clamp above is intentionally scoped to the primary feature
-    // query operation (honua-server#1825); the related-records executor does not emit
-    // exceededTransferLimit paging, so a silent cap there would hide truncation.
+    // query operation (honua-server#1825). An omitted resultRecordCount stays null here
+    // so the related-records query can use maxRecordCount and exceededTransferLimit
+    // instead of the default page size (honua-server#6147).
     private static readonly PaginationValidationOptions _relatedRecordsPagination =
         new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
 
@@ -142,8 +143,13 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             SqlFormat = queryParams.SqlFormat,
             HistoricMoment = queryParams.HistoricMoment,
             ReturnTrueCurves = queryParams.ReturnTrueCurves,
-            ResultOffset = pagination.Offset,
-            ResultRecordCount = pagination.Limit,
+            ResultOffset = queryParams.ReturnCountOnly ? null : pagination.Offset,
+            // Null stays null. ValidateAndNormalizePagination substitutes DefaultRecordCount
+            // when the caller omits a limit; copying that into related records truncates the
+            // whole relationship at one global page and hides the rest.
+            ResultRecordCount = queryParams.ReturnCountOnly || !queryParams.ResultRecordCount.HasValue
+                ? null
+                : pagination.Limit,
             Where = queryParams.Where,
             OrderByFields = queryParams.OrderByFields,
             ReturnCountOnly = queryParams.ReturnCountOnly

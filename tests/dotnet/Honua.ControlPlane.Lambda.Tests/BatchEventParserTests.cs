@@ -40,6 +40,7 @@ public sealed class BatchEventParserTests
     }
     """;
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtractProviderOperationId_FromSampleBatchEventJson_ReturnsDetailJobId()
     {
@@ -48,6 +49,7 @@ public sealed class BatchEventParserTests
         providerId.Should().Be("26c7b4e8-1234-4abc-9def-0123456789ab");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtractProviderOperationId_NullOrBlankJson_ReturnsNull()
     {
@@ -55,12 +57,14 @@ public sealed class BatchEventParserTests
         BatchEventParser.ExtractProviderOperationId("   ").Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtractProviderOperationId_MalformedJson_ReturnsNullAndDoesNotThrow()
     {
         BatchEventParser.ExtractProviderOperationId("{ not json").Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtractProviderOperationId_WrongDetailType_ReturnsNull()
     {
@@ -72,6 +76,7 @@ public sealed class BatchEventParserTests
         BatchEventParser.ExtractProviderOperationId(wrongType).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtractProviderOperationId_WrongSource_ReturnsNull()
     {
@@ -83,6 +88,7 @@ public sealed class BatchEventParserTests
         BatchEventParser.ExtractProviderOperationId(wrongSource).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtractProviderOperationId_MissingDetailOrJobId_ReturnsNull()
     {
@@ -95,6 +101,7 @@ public sealed class BatchEventParserTests
             .Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExtractProviderOperationId_FromTypedEvent_ReturnsJobId()
     {

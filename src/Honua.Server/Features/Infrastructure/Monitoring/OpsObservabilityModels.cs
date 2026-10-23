@@ -622,6 +622,26 @@ public sealed class OpsFindingProposeResponse
     /// <summary>Gets an operator-facing message describing the outcome, when available.</summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. Null when the proposal was not federated.
+    /// </summary>
+    [JsonPropertyName("rootProvisioningOperationId")]
+    public string? RootProvisioningOperationId { get; init; }
+}
+
+/// <summary>
+/// Optional body for <c>POST /api/v{version}/admin/observability/findings/{findingId}/propose</c>.
+/// An empty body remains valid; the server materializes the action from the finding id.
+/// </summary>
+public sealed class OpsFindingProposeRequest
+{
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// </summary>
+    [JsonPropertyName("rootProvisioningOperationId")]
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>Response for <c>GET /api/v{version}/admin/observability/autonomy/policies</c>.</summary>

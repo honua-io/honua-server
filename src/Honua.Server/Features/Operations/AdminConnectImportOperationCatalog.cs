@@ -36,6 +36,7 @@ internal static class AdminConnectImportOperationCatalog
         new("admin.import.preview-url", "Preview import URL", HttpMethod.Post, "/import/preview-url", "previewImportFileFromUrl", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/import/preview-url"),
         Write("admin.import.upload", "Import uploaded file", HttpMethod.Post, "/import/upload", "uploadImportFile", OperationSideEffectClass.CreatesMetadata, "multipart/form-data"),
         Write("admin.import.upload-url", "Import file from URL", HttpMethod.Post, "/import/upload-url", "uploadImportFileFromUrl", OperationSideEffectClass.CreatesMetadata),
+        Write("admin.import.upload-object", "Import file from object store", HttpMethod.Post, "/import/upload-object", "uploadImportFileFromObjectStore", OperationSideEffectClass.CreatesMetadata),
         Read("admin.import.limits", "Get import limits", "/import/limits", "getImportLimits"),
         Read("admin.import.jobs.list", "List import jobs", "/import/jobs", "getActiveImportJobs"),
         Read("admin.import.jobs.get", "Get import job", "/import/jobs/{jobId}", "getImportJobStatus"),
@@ -70,7 +71,9 @@ internal static class AdminConnectImportOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = definition.SideEffect == OperationSideEffectClass.ReadOnly ? OperationApprovalModel.None : OperationApprovalModel.OperatorGate,
+            ApprovalModel = OperatorJourneyApproval.ForMutation(
+                definition.OperationId,
+                definition.SideEffect != OperationSideEffectClass.ReadOnly),
             Policy = new OperationPolicyMetadata
             {
                 BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
@@ -244,12 +247,14 @@ internal sealed record AdminConnectImportApprovalPayload
 
     public static AdminConnectImportApprovalPayload From(OperationRequest request, OperationPolicyContext context)
     {
-        if (request.Parameters.TryGetValue("password", out var password) && !string.IsNullOrEmpty(password))
+        if (HasInlinePassword(request.Parameters))
             throw new InvalidOperationException("Inline passwords cannot be persisted for approval; use secretReference.");
         return new AdminConnectImportApprovalPayload
         {
             OperationId = request.OperationId,
-            Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
+            Parameters = request.Parameters
+                .Where(pair => !string.Equals(pair.Key, "password", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
             ConnectionId = request.ConnectionId,
             ServiceName = request.ServiceName,
             Fields = request.Fields.ToArray(),
@@ -258,6 +263,14 @@ internal sealed record AdminConnectImportApprovalPayload
             SchemaName = context.SchemaName
         };
     }
+
+    /// <summary>
+    /// True when any parameter key equal to <c>password</c>, regardless of case, carries a value.
+    /// </summary>
+    internal static bool HasInlinePassword(IEnumerable<KeyValuePair<string, string?>> parameters) =>
+        parameters.Any(pair =>
+            string.Equals(pair.Key, "password", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(pair.Value));
 
     public OperationRequest ToOperationRequest() => new()
     {

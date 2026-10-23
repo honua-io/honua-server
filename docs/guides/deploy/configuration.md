@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Configure Honua Server"
+description: "You'll understand how Honua's configuration model works so you can set any option in any deployment target."
+---
 # Configure Honua Server
 
 You'll understand how Honua's configuration model works so you can set any option in any deployment target. The full variable table lives in the [environment variable reference](../../reference/configuration/environment-variables.md).
@@ -6,7 +11,7 @@ You'll understand how Honua's configuration model works so you can set any optio
 
 ## Environment variables are the configuration surface
 
-Honua is configured entirely through environment variables ([ADR-0008](../../internal/contributor/adr/0008-env-var-configuration.md)). `appsettings.json` is for local development only; containers, Kubernetes, and serverless all receive the same flat env-var contract. There is no config file to mount and no config service to run.
+Honua is configured entirely through environment variables. `appsettings.json` is for local development only; containers, Kubernetes, and serverless all receive the same flat env-var contract. There is no config file to mount and no config service to run.
 
 ## The `Section__Key` convention
 
@@ -21,6 +26,24 @@ Cors__AllowedOrigins__1=https://admin.example.com
 
 Docs that write a setting as `Section:Key` (the .NET colon form) mean the same thing — replace `:` with `__` in env vars.
 
+## Settings document (environment-size-limited hosts)
+
+Where the environment itself is size-limited (AWS Lambda caps it at 4 KB), set one variable,
+`HONUA_SETTINGS_DOCUMENT=aws:secretsmanager:<name-or-arn>`, and keep the remaining settings in that
+secret as a JSON object. Nested objects map to `Section:Key`, arrays to `Section:0..n`, and flat
+`Section__Key` names are accepted. Configuration sources apply in this order, later winning:
+
+1. `appsettings.json`, `appsettings.Security.json`, `appsettings.{Environment}.json`
+2. the settings document
+3. environment variables
+4. command-line arguments
+
+Values inside the document may be `aws:secretsmanager:` references and resolve like environment
+values. Startup refuses an unreadable, non-JSON, non-object, or larger-than-64 KB document, and
+logs only the key count and the document reference. Only `aws:secretsmanager:` documents are
+supported in this release. See [Keep settings out of the 4 KB Lambda environment](cloud-deployments.md#keep-settings-out-of-the-4-kb-lambda-environment)
+for an example document and the IAM grant.
+
 ## Startup validation
 
 Options are validated at startup (`ValidateOnStart`), so a malformed value fails the process immediately instead of surfacing later:
@@ -29,6 +52,7 @@ Options are validated at startup (`ValidateOnStart`), so a malformed value fails
 - `Security__ConnectionEncryption__MasterKey` must be at least 32 characters.
 - `HONUA_DEV_AUTH=true` in a Production environment refuses to start.
 - A missing database connection string skips migrations and logs an error in Production.
+- A Production host with a durable operation runtime refuses to start unless `Operations__Policy__Enabled=true` and `Operations__Policy__DefaultDecision` is not `Allow`. The shipped Production policy denies by default and appends two built-in rules that let administrators (`admin`, including `admin:write` keys) and other administrative API keys (`scoped-admin-key`, for example `admin:approve`) execute typed operations; startup logs the effective policy. See [Operation policy](../../reference/configuration/environment-variables.md#operation-policy) for the built-ins, the `Operations__Policy__BuiltInProductionRules=false` opt-out, and how to add your own rules.
 
 Confirm effective values at runtime with `GET /api/v1/admin/config` (admin auth).
 
@@ -37,7 +61,33 @@ Confirm effective values at runtime with `GET /api/v1/admin/config` (admin auth)
 Secrets don't have to be inlined. Two mechanisms exist:
 
 1. **Connection-string references** — `ConnectionStrings__DefaultConnection` accepts provider-prefixed references such as `aws:secretsmanager:...` or `env:...`, resolved at startup before migrations run.
+   `env:NAME` and the URI form `env://NAME` both read the process environment variable `NAME`; a missing or empty variable is a resolution failure, and the value is never logged. Use the `env` provider for harness/dev hosts and CI-injected secrets, and a managed store (`aws:secretsmanager:`, `azure:keyvault:`) in production.
 2. **Metadata secret references** — connection metadata stores a structured reference instead of a value: `{"provider": "env", "ref": "MY_DB_PASSWORD"}` (optional `version`), with providers like `env`, `azure-key-vault`, or `connection-registry`.
+
+For AWS references, valid explicit environment credentials take precedence. A
+configured ECS or Pod Identity provider must succeed; missing tokens, rejected
+endpoints, malformed responses and incomplete environment credentials refuse
+resolution instead of borrowing the EC2 node role. EC2 credentials are used only
+when none of these environment-selected providers is configured. The built-in secret resolver refuses
+unsupported IRSA credentials; AWS SDK clients have a separate credential chain.
+Keep tokens and secret values outside prompts and use an operator-allowed
+reference. See [Pod Identity and IRSA](kubernetes.md#pod-identity-and-irsa).
+
+### References supplied in a request
+
+Imports, workflow source steps and registered connections can name a server-side secret instead of carrying the value (`accessTokenSecretReference`, `passwordSecretReference`, `honuaApiKeySecretReference`, workflow `tokenSecretReference`/`passwordSecretReference`, and a connection's `secretReference`). These references are governed by an operator allowlist and are **refused by default**: with no entry configured, no request-supplied reference is resolved. References in the server's own configuration (the mechanisms above, the admin password, licensing and storage credentials) are not affected.
+
+| Variable | Meaning |
+|---|---|
+| `Security__RequestSecretReferences__AllowedEnvironmentVariables__0..n` | Environment variable names a request may name as `env:NAME`. Exact, case-sensitive match. |
+| `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0..n` | Name prefixes a request may name as `env:NAME`, for example `HONUA_IMPORT_`. A prefix never matches a name containing `__`, so variables that bind server configuration can only be permitted by an exact entry. |
+| `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0..n` | Whole-reference prefixes for the other providers, including the provider segment, for example `aws:secretsmanager:honua/imports/` or `azure:keyvault:honua-imports:`. |
+
+A request-supplied reference must be the whole value, in the form `provider:identifier` (`env:HONUA_IMPORT_ARCGIS_TOKEN`). Placeholders such as `{env:NAME}` inside a longer string, surrounding whitespace, and literal connection strings are not references and are rejected. A refused or unresolvable reference is reported with one generic message; the server log records the provider and the reason.
+
+Give imports and connections their own variables or secret path rather than allowlisting the server's credentials (`HONUA_ADMIN_PASSWORD`, `ConnectionStrings__DefaultConnection`, `Security__ConnectionEncryption__MasterKey`, cloud access keys).
+
+**Upgrading:** deployments that already use request-supplied references must add matching entries before upgrading. Until they do, affected imports and workflow steps fail, new connections that use `secretReference` are rejected, and existing registered connections that resolve their credentials through `secretReference` stop resolving. Connections stored with an encrypted password are unaffected.
 
 ## License renewal and source precedence
 

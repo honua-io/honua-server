@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "honua.admin-approve-candidate/v1",
+  "image": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "imageId": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "sourceRevision": "7ba422672e0c751843b17beb36e954a019cc19fb",
+  "fixtureImages": {
+    "postgis": {
+      "image": "postgis/postgis@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677",
+      "imageId": "sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677"
+    },
+    "redis": {
+      "image": "redis@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed",
+      "imageId": "sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed"
+    }
+  },
+  "environment": "Development",
+  "devGrantEdition": "Pro",
+  "scope": "server API; excludes Console browser qualification",
+  "checks": {
+    "mintReadApproveAndReadOnlyKeys": "passed",
+    "exactEffectiveGrantsAndUnrelatedWriteDenial": "passed",
+    "readOnlyDecisionsDenyWithoutChangingProposalOrDraft": "passed",
+    "approveDeletesOnlyApprovedDraftAndRejectPreservesExactDraft": "passed",
+    "expiredApproveKeyCannotRotateOrAuthenticate": "passed"
+  },
+  "decisions": [
+    {
+      "decision": "approve",
+      "proposalId": "proposal-5cea2ca7ed7642bfb66ad5d17b7540d2",
+      "operationInstanceId": "opinst-66f47458c2d64903ab44cc3946920226",
+      "draftId": "0a8bdfac-d4a8-4967-8284-eb5679c4d421",
+      "status": "Succeeded"
+    },
+    {
+      "decision": "reject",
+      "proposalId": "proposal-ce2cff5c2ad44af79854e5e34e87541e",
+      "operationInstanceId": "opinst-70638bd9663347a7adce582d58236e5a",
+      "draftId": "8408d44a-1d16-407d-94db-f6cdd9eedf1f",
+      "status": "Rejected"
+    }
+  ],
+  "completedAt": "2026-09-12T23:17:03.615611+00:00"
+}

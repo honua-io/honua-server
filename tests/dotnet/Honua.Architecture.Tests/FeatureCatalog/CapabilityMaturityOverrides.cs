@@ -98,6 +98,7 @@ internal sealed class CapabilityMaturityOverrides
     /// <summary>Parses a catalog maturity-tier string into the shared enum, or null.</summary>
     internal static CapabilityMaturity? ParseTier(string tier) => tier switch
     {
+        "internal" => CapabilityMaturity.Internal,
         "planned" => CapabilityMaturity.Planned,
         "deferred" => CapabilityMaturity.Deferred,
         "experimental" => CapabilityMaturity.Experimental,

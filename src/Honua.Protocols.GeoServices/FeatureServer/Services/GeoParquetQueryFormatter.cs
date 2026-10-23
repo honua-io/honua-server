@@ -31,7 +31,8 @@ internal static class GeoParquetQueryFormatter
         bool returnM,
         GeometryLimits geometryLimits,
         string[]? outFields = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        GeoParquetLimits? encodingLimits = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
@@ -45,7 +46,8 @@ internal static class GeoParquetQueryFormatter
             returnM,
             geometryLimits,
             outFields,
-            logger);
+            logger,
+            encodingLimits);
     }
 
     internal static List<MetadataV2Field> ResolveSelectedFields(MetadataV2Resource resource, string[]? outFields)

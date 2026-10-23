@@ -99,18 +99,21 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("supportsStatistics")]
     public bool SupportsStatistics { get; init; } = true;
 
+    // Unprefixed Esri vocabulary describing the ordering a rule-less request actually executes
+    // (newest acquisition first), not an aspirational method (#4063).
     [JsonPropertyName("defaultMosaicMethod")]
-    public string DefaultMosaicMethod { get; init; } = "esriMosaicNorthwest";
+    public string DefaultMosaicMethod { get; init; } = Services.ImageServerMosaicRule.DefaultMosaicMethod;
 
     // Esri serializes allowedMosaicMethods as a comma-separated STRING, not an
     // array. The ArcGIS Maps SDK for .NET native runtime parses the ImageServer
     // config with a strict reader that rejects an array here ("Invalid
-    // configuration file"), so emit the Esri string form (#1456).
+    // configuration file"), so emit the Esri string form (#1456). The tokens are the unprefixed
+    // Esri names of the methods the mosaic-rule parser executes (#4063).
     [JsonPropertyName("allowedMosaicMethods")]
-    public string AllowedMosaicMethods { get; init; } = "esriMosaicNorthwest,esriMosaicCenter";
+    public string AllowedMosaicMethods { get; init; } = Services.ImageServerMosaicRule.AllowedMosaicMethods;
 
     [JsonPropertyName("sortField")]
-    public string? SortField { get; init; }
+    public string? SortField { get; init; } = Services.ImageServerMosaicRule.DefaultSortField;
 
     [JsonPropertyName("sortValue")]
     public string? SortValue { get; init; }
@@ -181,8 +184,10 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("cacheType")]
     public string? CacheType { get; init; }
 
+    // renderingRule chains are executed by exportImage/identify/computeStatisticsHistograms and
+    // advertised at /rasterFunctionInfos, so the service accepts raster functions (#4063).
     [JsonPropertyName("allowRasterFunction")]
-    public bool AllowRasterFunction { get; init; } = false;
+    public bool AllowRasterFunction { get; init; } = true;
 
     [JsonPropertyName("rasterFunctionInfos")]
     public RasterFunctionInfo[]? RasterFunctionInfos { get; init; }
@@ -622,6 +627,15 @@ public sealed class Point
 
     [JsonPropertyName("y")]
     public required double Y { get; init; }
+
+    /// <summary>
+    /// Spatial reference of the coordinates. Esri identify locations carry it so clients do not
+    /// default a projected location to WGS84 (#4064); omitted when unset (for example a tile
+    /// scheme origin, whose reference is the enclosing tileInfo spatialReference).
+    /// </summary>
+    [JsonPropertyName("spatialReference")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SpatialReference? SpatialReference { get; init; }
 }
 
 /// <summary>
@@ -715,22 +729,76 @@ public sealed class IdentifyResponse
     public Dictionary<string, object?>? Properties { get; init; }
 
     [JsonPropertyName("catalogItems")]
-    public CatalogItem[]? CatalogItems { get; init; }
+    public IdentifyCatalogItems? CatalogItems { get; init; }
+
+    /// <summary>
+    /// Additive identify entries for native ArcGIS REST raster clients which read
+    /// the MapServer-style envelope. The standard pixel and location remain authoritative.
+    /// </summary>
+    [JsonPropertyName("results")]
+    public ImageServerIdentifyResult[] Results
+    {
+        get
+        {
+            var attributes = Properties is null
+                ? new Dictionary<string, object?>()
+                : new Dictionary<string, object?>(Properties);
+            attributes["Pixel Value"] = Value;
+            return
+            [
+                new ImageServerIdentifyResult
+                {
+                    LayerName = Name,
+                    DisplayFieldName = "Pixel Value",
+                    GeometryType = "esriGeometryPoint",
+                    Geometry = Location,
+                    Attributes = attributes
+                }
+            ];
+        }
+    }
+}
+
+/// <summary>Additive pixel-identify entry for stock ArcGIS REST raster clients.</summary>
+public sealed class ImageServerIdentifyResult
+{
+    /// <summary>Existing raster or mosaic display name.</summary>
+    [JsonPropertyName("layerName")]
+    public string? LayerName { get; init; }
+
+    /// <summary>Name of the pixel-value display attribute.</summary>
+    [JsonPropertyName("displayFieldName")]
+    public required string DisplayFieldName { get; init; }
+
+    /// <summary>Point geometry encoding for the sampled location.</summary>
+    [JsonPropertyName("geometryType")]
+    public required string GeometryType { get; init; }
+
+    /// <summary>The same authoritative location and optional CRS as the standard response.</summary>
+    [JsonPropertyName("geometry")]
+    public required Point Geometry { get; init; }
+
+    /// <summary>Existing pixel properties plus the standard formatted pixel value.</summary>
+    [JsonPropertyName("attributes")]
+    public required Dictionary<string, object?> Attributes { get; init; }
 }
 
 /// <summary>
-/// Catalog item for identify operations.
+/// Raster catalog feature set returned by identify, matching the Esri wire contract.
 /// </summary>
-public sealed class CatalogItem
+public sealed class IdentifyCatalogItems
 {
-    [JsonPropertyName("id")]
-    public required long Id { get; init; }
+    [JsonPropertyName("objectIdFieldName")]
+    public string ObjectIdFieldName { get; init; } = "OBJECTID";
 
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
+    [JsonPropertyName("geometryType")]
+    public string GeometryType { get; init; } = "esriGeometryPolygon";
 
-    [JsonPropertyName("footprint")]
-    public object? Footprint { get; init; }
+    [JsonPropertyName("spatialReference")]
+    public SpatialReference? SpatialReference { get; init; }
+
+    [JsonPropertyName("features")]
+    public CatalogQueryFeature[] Features { get; init; } = [];
 }
 
 /// <summary>
@@ -763,9 +831,10 @@ public sealed class ExportImageRequest
     // Accepts the Esri ImageServer format tokens the ArcGIS SDKs send. png8/png24/png32
     // and jpgpng are normalised to a concrete encoding by the handler; bmp and gif are
     // accepted for shape but rejected with a clear 400 because the shared raster export
-    // pipeline only emits png/jpeg/tiff containers.
-    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif)$",
-        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, or gif")]
+    // pipeline only emits png/jpeg/tiff containers. bsq, bip and lerc return the raw
+    // pixel block of the stored samples (#5437).
+    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif|bsq|bip|lerc)$",
+        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, gif, bsq, bip, or lerc")]
     public string? Format { get; init; } = "png";
 
     [RegularExpression(@"(?i)^(C128|C64|F32|F64|S16|S32|S8|U1|U16|U2|U32|U4|U8|UNKNOWN)$",
@@ -781,8 +850,10 @@ public sealed class ExportImageRequest
     [StringLength(50, ErrorMessage = "Interpolation value is too long")]
     public string? Interpolation { get; init; }
 
-    [RegularExpression(@"(?i)^(none|jpeg|lz77)$",
-        ErrorMessage = "Compression must be one of: None, JPEG, or LZ77")]
+    // LERC is accepted for lerc pixel blocks only (a no-op: the block is lossless LERC);
+    // the handler rejects it for every other format.
+    [RegularExpression(@"(?i)^(none|jpeg|lz77|lerc)$",
+        ErrorMessage = "Compression must be one of: None, JPEG, LZ77, or LERC")]
     public string? Compression { get; init; }
 
     [Range(0, 100, ErrorMessage = "CompressionQuality must be between 0 and 100")]

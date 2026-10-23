@@ -45,6 +45,13 @@ public sealed class FeatureServerServiceRbacTests
 {
     private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
 
+    // calculate is POST-only (#6100).
+    private static FormUrlEncodedContent CreateCalculateContent() => new(
+    [
+        new KeyValuePair<string, string>("calcExpression", CalculateExpression),
+        new KeyValuePair<string, string>("f", "json"),
+    ]);
+
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
@@ -160,14 +167,16 @@ public sealed class FeatureServerServiceRbacTests
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithAnonymousClient_ReturnsUnauthorized()
     {
         using var factory = ServiceRbacTestFixture.CreateFactory();
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+        using var calculateContent = CreateCalculateContent();
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate",
+            calculateContent);
 
         await response.AssertGeoServicesErrorAsync(401, 499);
     }
@@ -175,14 +184,16 @@ public sealed class FeatureServerServiceRbacTests
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithReadOnlyRole_ReturnsForbidden()
     {
         using var factory = ServiceRbacTestFixture.CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
 
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+        using var calculateContent = CreateCalculateContent();
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate",
+            calculateContent);
 
         await response.AssertGeoServicesErrorAsync(403);
     }
@@ -190,14 +201,16 @@ public sealed class FeatureServerServiceRbacTests
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithScopedDataEditor_DeniesOtherService()
     {
         using var factory = ServiceRbacTestFixture.CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
 
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+        using var calculateContent = CreateCalculateContent();
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/calculate",
+            calculateContent);
 
         await response.AssertGeoServicesErrorAsync(403);
     }
@@ -205,14 +218,16 @@ public sealed class FeatureServerServiceRbacTests
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithScopedDataEditor_AllowsMatchingService()
     {
         using var factory = ServiceRbacTestFixture.CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
 
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+        using var calculateContent = CreateCalculateContent();
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate",
+            calculateContent);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -521,6 +536,13 @@ public sealed class FeatureServerServiceAccessPolicyTests
 {
     private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
 
+    // calculate is POST-only (#6100).
+    private static FormUrlEncodedContent CreateCalculateContent() => new(
+    [
+        new KeyValuePair<string, string>("calcExpression", CalculateExpression),
+        new KeyValuePair<string, string>("f", "json"),
+    ]);
+
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
@@ -607,7 +629,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
@@ -618,8 +640,10 @@ public sealed class FeatureServerServiceAccessPolicyTests
                 }));
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+        using var calculateContent = CreateCalculateContent();
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate",
+            calculateContent);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -680,6 +704,80 @@ public sealed class FeatureServerReplicationAccessPolicyTests
             content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithWriteOnlyLayerRole_IsForbiddenBecauseTheResponseCarriesData()
+    {
+        // createReplica returns the replica features (#4018), so write access alone must not read a layer
+        // whose Query access is restricted to another role.
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(
+                    readRoles: ["alpha-reader"],
+                    writeRoles: ["alpha-writer"])));
+        using var writerClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
+        using var readerWriterClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer", "alpha-reader");
+
+        using (var denied = await PostCreateReplicaAsync(writerClient, "write-only"))
+        {
+            await denied.AssertGeoServicesErrorAsync(403);
+        }
+
+        using var allowed = await PostCreateReplicaAsync(readerWriterClient, "read-and-write");
+        await ServiceRbacTestFixture.AssertStatusAsync(allowed, HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await allowed.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.CreateReplica, Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_DownloadWithWriteOnlyLayerRole_IsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(
+                    readRoles: ["alpha-reader"],
+                    writeRoles: ["alpha-writer"])));
+        using var readerWriterClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer", "alpha-reader");
+        using var writerClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
+
+        using var created = await PostCreateReplicaAsync(readerWriterClient, "download-gate");
+        await ServiceRbacTestFixture.AssertStatusAsync(created, HttpStatusCode.OK);
+        using var createdDocument = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var replicaId = createdDocument.RootElement.GetProperty("replicaID").GetString();
+
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new { replicaID = replicaId, syncDirection = "download", f = "json" }),
+            Encoding.UTF8,
+            "application/json");
+        using var response = await writerClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
+            content);
+
+        await response.AssertGeoServicesErrorAsync(403);
+    }
+
+    private static async Task<HttpResponseMessage> PostCreateReplicaAsync(HttpClient client, string replicaName)
+    {
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new
+            {
+                replicaName,
+                layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+                f = "json"
+            }),
+            Encoding.UTF8,
+            "application/json");
+        return await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            content);
     }
 
     [IntegrationTest]

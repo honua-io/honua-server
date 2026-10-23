@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
@@ -25,6 +26,8 @@ namespace Honua.Migration;
 /// </summary>
 internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>, IDisposable
 {
+    private readonly IUniversalProgressStore _universalProgressStore;
+    private readonly GeoServerImportProgressStore _progressStore;
     private readonly ImportJobManagerState<GeoServerImportRequest, GeoServerImportProgress> _state;
 
     public GeoServerImportJobManager(
@@ -34,6 +37,8 @@ internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoSer
         IHostEnvironment hostEnvironment,
         IConnectionMultiplexer? redis = null)
     {
+        _universalProgressStore = universalProgressStore;
+        _progressStore = new GeoServerImportProgressStore(universalProgressStore);
         _state = new ImportJobManagerState<GeoServerImportRequest, GeoServerImportProgress>(
             universalProgressStore,
             distributedCache,
@@ -50,7 +55,7 @@ internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoSer
 
     internal IDistributedJobQueueService JobQueue => _state.JobQueue;
     internal IDistributedLeaderElection LeaderElection => _state.LeaderElection;
-    internal IDistributedProgressStore<GeoServerImportProgress> ProgressStore => _state.ProgressStore;
+    internal IDistributedProgressStore<GeoServerImportProgress> ProgressStore => _progressStore;
     internal IDistributedProgressStore<GeoServerImportRequest> RequestStore => _state.RequestStore;
     internal bool IsClusterDurable => _state.IsClusterDurable;
 
@@ -58,6 +63,12 @@ internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoSer
     IDistributedLeaderElection IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.LeaderElection => LeaderElection;
     IDistributedProgressStore<GeoServerImportProgress> IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.ProgressStore => ProgressStore;
     IDistributedProgressStore<GeoServerImportRequest> IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.RequestStore => RequestStore;
+
+    internal Task<ProgressCompareAndSetResult> TryTransitionAsync(
+        string jobId, GeoServerImportProgress progress, OperationStatus expectedStatus,
+        CancellationToken cancellationToken)
+        => _universalProgressStore.TrySetProgressAsync(jobId, progress, expectedStatus,
+            TimeSpan.FromHours(24), cancellationToken);
 
     public void Dispose()
     {

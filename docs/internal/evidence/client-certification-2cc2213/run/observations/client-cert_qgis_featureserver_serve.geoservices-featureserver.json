@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/featureserver/serve.geoservices-featureserver",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "featureserver",
+  "operation": "serve.geoservices-featureserver",
+  "protocol_version": "GeoServices REST 10.x",
+  "protocol_profile": "FeatureServer query",
+  "started_at": "2026-09-16T21:46:43.558489Z",
+  "finished_at": "2026-09-16T21:46:43.897655Z",
+  "duration_ms": 339,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "media-schema"
+  ],
+  "summary": "all 3 checks passed across 3 governed facets",
+  "primary_request_url": "http://honua:5000/rest/services/test_service/FeatureServer/0/query",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "load the FeatureServer layer and read every feature",
+      "outcome": "pass",
+      "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; 2 query requests",
+      "request_url": null,
+      "duration_ms": 226
+    },
+    {
+      "facet": "metadata",
+      "name": "layer JSON drives fields, geometry type, CRS and extent",
+      "outcome": "pass",
+      "detail": "fields {'objectid': 'esriFieldTypeOID', 'name': 'esriFieldTypeString', 'description': 'esriFieldTypeString', 'status': 'esriFieldTypeString', 'count': 'esriFieldTypeInteger', 'ratio': 'esriFieldTypeDouble', 'active': 'esriFieldTypeSmallInteger', 'created_at': 'esriFieldTypeDate', 'event_date': 'esriFieldTypeDate', 'event_time': 'esriFieldTypeString', 'uid': 'esriFieldTypeGUID', 'tags': 'esriFieldTypeString', 'numbers': 'esriFieldTypeString', 'eo:cloud_cover': 'esriFieldTypeDouble'}; crs EPSG:4326; extent -122.500,37.700 : -122.350,37.840",
+      "request_url": null,
+      "duration_ms": 17
+    },
+    {
+      "facet": "media-schema",
+      "name": "f=json responses are JSON and decode into typed attributes",
+      "outcome": "pass",
+      "detail": "counts [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; content types ['application/json']",
+      "request_url": null,
+      "duration_ms": 95
+    }
+  ]
+}

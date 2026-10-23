@@ -93,7 +93,8 @@ afterAll(() => {
 
 describe('WFS 2.0 GetFeature', () => {
   it('GetFeature returns parseable response', async () => {
-    evidence.attempt('CERT-QFLT-01');
+    // This is an unfiltered retrieval. Core filtering remains unproven here.
+    evidence.attemptExtension('JS-EXT-OL-WFS-GETFEATURE-01');
     const { typeName } = discoveredType;
     const start = Date.now();
     const resp = await fetch(
@@ -104,10 +105,11 @@ describe('WFS 2.0 GetFeature', () => {
     expect(resp.ok).toBe(true);
     const text = await resp.text();
     expect(text.length).toBeGreaterThan(0);
+    expect(wfsFormat.readFeatures(text).length).toBeGreaterThan(0);
 
-    evidence.record('CERT-QFLT-01', 'pass', {
+    evidence.recordExtension('JS-EXT-OL-WFS-GETFEATURE-01', 'pass', {
       durationMs: duration,
-      notes: `GetFeature for '${typeName}' returned ${text.length} bytes`,
+      notes: `Unfiltered GetFeature for '${typeName}' returned parseable features; does not prove core query filtering`,
     });
   });
 

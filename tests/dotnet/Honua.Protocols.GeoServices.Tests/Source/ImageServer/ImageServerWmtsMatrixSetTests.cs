@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer;
@@ -24,10 +25,19 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public class ImageServerWmtsMatrixSetTests
+public sealed class ImageServerWmtsMatrixSetTests : IDisposable
 {
     private const int TestLayerId = 0;
     private const string WorldCrs84Quad = "WorldCRS84Quad";
+    private readonly DirectoryInfo _storageDirectory = Directory.CreateTempSubdirectory("honua-wmts-matrix-");
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        // Every test disposes its host in finally before xUnit releases this owned directory.
+        _storageDirectory.Delete(recursive: true);
+        GC.SuppressFinalize(this);
+    }
 
     private static IRasterStore CreateRasterStoreSubstitute()
     {
@@ -67,11 +77,19 @@ public class ImageServerWmtsMatrixSetTests
         return store;
     }
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
+    private async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
     {
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
+                // Database isolation does not isolate the file-backed tile cache. A previous
+                // fixture's tile must never satisfy this fixture's first rendering request.
+                services.PostConfigure<LocalStorageOptions>(options => options.BasePath = _storageDirectory.FullName);
+                services.PostConfigure<CloudStorageOptions>(options =>
+                {
+                    options.LocalStorage ??= new LocalStorageOptions();
+                    options.LocalStorage.BasePath = _storageDirectory.FullName;
+                });
                 services.AddSingleton(rasterStore);
                 if (enableWorldCrs84Quad)
                 {
@@ -153,8 +171,8 @@ public class ImageServerWmtsMatrixSetTests
         {
             // WorldCRS84Quad level 0: 2 columns x 1 row. Tile (col 0, row 0) covers the western
             // hemisphere: lon [-180, 0], lat [-90, 90] in CRS84.
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET={WorldCrs84Quad}&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+            var tileUrl = $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET={WorldCrs84Quad}&TILEMATRIX=0&TILEROW=0&TILECOL=0";
+            using var response = await fixture.Client.GetAsync(tileUrl);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
@@ -168,6 +186,17 @@ public class ImageServerWmtsMatrixSetTests
             window.MaxX.Should().BeApproximately(0, 1e-9);
             window.MinY.Should().BeApproximately(-90, 1e-9);
             window.MaxY.Should().BeApproximately(90, 1e-9);
+
+            // Caching remains enabled: the second request must serve this fixture's bytes
+            // without rendering again. The cold request above must still prove its window.
+            var coldBytes = await response.Content.ReadAsByteArrayAsync();
+            coldBytes.Should().Equal([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+            using var cachedResponse = await fixture.Client.GetAsync(tileUrl);
+            cachedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            cachedResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            (await cachedResponse.Content.ReadAsByteArrayAsync()).Should().Equal(coldBytes);
+            store.ReceivedCalls().Count(c => string.Equals(c.GetMethodInfo().Name, "GetImageTileAsync", StringComparison.Ordinal)
+                && c.GetArguments().Length == 5).Should().Be(1);
         }
         finally
         {

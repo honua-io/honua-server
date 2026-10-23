@@ -98,11 +98,12 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             var certification = request.Certification;
             if (string.IsNullOrWhiteSpace(certification.CandidateId)
                 || string.IsNullOrWhiteSpace(certification.ReleaseId)
+                || string.IsNullOrWhiteSpace(certification.TenantId)
                 || string.IsNullOrWhiteSpace(certification.EndpointIdentity)
                 || string.IsNullOrWhiteSpace(certification.ActionId)
                 || string.IsNullOrWhiteSpace(certification.RunNonce))
             {
-                return "Certification requires candidateId, releaseId, endpointIdentity, actionId, and runNonce.";
+                return "Certification requires candidateId, tenantId, releaseId, endpointIdentity, actionId, and runNonce.";
             }
         }
 

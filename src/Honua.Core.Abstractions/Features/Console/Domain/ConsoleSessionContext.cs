@@ -112,4 +112,12 @@ public sealed record ConsoleSessionContext
     /// </summary>
     [JsonPropertyName("issuedAt")]
     public DateTimeOffset IssuedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Whether Console content, share, and open-data state is durable.
+    /// Defaults to the process-local notice so a host that has not overridden
+    /// the stores still tells the client the limitation.
+    /// </summary>
+    [JsonPropertyName("persistence")]
+    public ConsolePersistenceNotice Persistence { get; init; } = ConsolePersistenceNotice.InMemory;
 }

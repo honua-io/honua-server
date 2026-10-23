@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>bounded-roster MapLibre page</title>
+  <style>* { margin: 0; padding: 0; } #map { width: 512px; height: 512px; }</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    // The MapLibre release under test is selected with ?maplibre=<dir>; the driver
+    // waits for window.maplibreReady before creating maps.
+    const release = new URLSearchParams(location.search).get('maplibre');
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = `/__roster/${release}/maplibre-gl.css`;
+    document.head.appendChild(css);
+    // 5.x ships a UMD bundle; 6.x ships ES modules only.
+    fetch(`/__roster/${release}/maplibre-gl.js`, { method: 'HEAD' }).then((probe) => {
+      if (probe.ok) {
+        const script = document.createElement('script');
+        script.src = `/__roster/${release}/maplibre-gl.js`;
+        script.onload = () => { window.maplibreReady = true; };
+        script.onerror = () => { window.maplibreReady = 'failed'; };
+        document.head.appendChild(script);
+      } else {
+        import(`/__roster/${release}/maplibre-gl.mjs`).then((module) => {
+          window.maplibregl = module.default ?? module;
+          window.maplibreReady = true;
+        }, () => { window.maplibreReady = 'failed'; });
+      }
+    });
+  </script>
+</body>
+</html>

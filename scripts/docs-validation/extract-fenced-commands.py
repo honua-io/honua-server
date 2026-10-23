@@ -11,14 +11,13 @@ from pathlib import Path
 
 
 ANNOTATION = re.compile(r"^<!-- docs-validation:(?P<id>[a-z0-9.-]+) (?P<attrs>.+) -->$")
-FENCE = re.compile(r"^```(?P<language>bash|sh)\s*$")
 
 
 def fail(message: str) -> None:
     raise ValueError(message)
 
 
-def parse(document: Path) -> list[tuple[str, str, str]]:
+def parse(document: Path, languages: tuple[str, ...] = ("bash", "sh")) -> list[tuple[str, str, str]]:
     lines = document.read_text(encoding="utf-8").splitlines()
     blocks: list[tuple[str, str, str]] = []
     ids: set[str] = set()
@@ -43,7 +42,7 @@ def parse(document: Path) -> list[tuple[str, str, str]]:
             index += 1
             continue
 
-        fence = FENCE.match(line)
+        fence = re.fullmatch(r"```(" + "|".join(map(re.escape, languages)) + r")\s*", line)
         if fence:
             if pending is None:
                 fail(f"line {index + 1}: shell fence has no docs-validation annotation")

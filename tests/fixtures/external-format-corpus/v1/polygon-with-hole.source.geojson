@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature",
+      "properties": { "zone_id": 7, "zone_name": "outer-with-hole" },
+      "geometry": { "type": "Polygon", "coordinates": [
+        [[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]],
+        [[-122.45, 37.75], [-122.35, 37.75], [-122.35, 37.85], [-122.45, 37.85], [-122.45, 37.75]]
+      ] } }
+  ]
+}

@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
@@ -15,6 +17,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Operations;
@@ -26,7 +29,19 @@ namespace Honua.Server.Features.Operations;
 /// </summary>
 internal static class OperationsEndpoints
 {
+    private const string IdempotencyKeyHeader = "Idempotency-Key";
+    private const int MaxIdempotencyKeyLength = 200;
+
     internal sealed class OperationsEndpointsLog;
+
+    /// <summary>
+    /// Only a queued or running <c>service.publish</c> is 202. Every other submit stays 200.
+    /// </summary>
+    internal static int SubmissionStatusCode(OperationHandle handle)
+        => handle.OperationId == ServicePublishOperation.OperationId
+            && handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running
+            ? StatusCodes.Status202Accepted
+            : StatusCodes.Status200OK;
 
     public static void MapOperationsEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -61,6 +76,15 @@ internal static class OperationsEndpoints
             .WithName("GetOperationHandleStatus")
             .WithSummary("Get the status of a submitted operation handle")
             .Produces<ApiResponse<OperationStatus>>()
+            .Produces(StatusCodes.Status404NotFound);
+
+        // Redemption destroys the credential, so it must not sit behind a safe method: a
+        // prefetch, retry or cross-site GET would consume the caller's only copy.
+        group.MapPost("/handles/{handleId}/secrets/{referenceId}/consume", HandleConsumeOperationSecret)
+            .WithName("ConsumeOperationSecret")
+            .WithSummary("Consume one-time secret material from a completed operation")
+            .Produces<ApiResponse<OperationSecretValueResponse>>()
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound);
     }
 
@@ -123,6 +147,10 @@ internal static class OperationsEndpoints
         catch (OperationNotFoundException)
         {
             return NotFound(context, $"Operation '{id}' was not found.");
+        }
+        catch (OperationUnavailableException ex)
+        {
+            return BadRequest(context, ex.Message);
         }
         catch (ArgumentException ex)
         {
@@ -202,16 +230,26 @@ internal static class OperationsEndpoints
             }
         }
 
+        if (!TryResolveIdempotencyKey(context, out var idempotencyKey, out var idempotencyError))
+        {
+            return BadRequest(context, idempotencyError!);
+        }
+
         try
         {
             // Surface the caller's identity AND role(s) into the policy decision point so a
             // tier/role-aware engine (Phase 4) can decide per descriptor blast-radius. The
             // Community pass-through default ignores them. The running edition supplies
             // the same trusted tier used by MCP operation submissions.
+            var principalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+            var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
             var policyContext = new OperationPolicyContext
             {
-                PrincipalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId,
-                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
+                PrincipalId = principalId,
+                TenantId = tenantId,
+                IdempotencyKey = idempotencyKey is null
+                    ? null
+                    : ScopeIdempotencyKey(idempotencyKey, tenantId, principalId),
                 Tier = context.RequestServices.GetService<ILicenseEntitlementService>()?
                     .GetSnapshot().Edition.ToString().ToLowerInvariant(),
                 SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
@@ -230,11 +268,23 @@ internal static class OperationsEndpoints
                 .ConfigureAwait(false);
             return Results.Json(
                 ApiResponse<OperationHandle>.CreateSuccess(handle),
-                OperationsJsonContext.Default.ApiResponseOperationHandle);
+                OperationsJsonContext.Default.ApiResponseOperationHandle,
+                statusCode: SubmissionStatusCode(handle));
+        }
+        catch (CapabilityUnavailableException ex) when (string.Equals(
+            ex.MissingDependency,
+            LayerPublishRunnerDecision.RunnerDependency,
+            StringComparison.Ordinal))
+        {
+            return LayerPublishRefusals.ToResult(context);
         }
         catch (OperationNotFoundException)
         {
             return NotFound(context, $"Operation '{id}' was not found.");
+        }
+        catch (OperationUnavailableException ex)
+        {
+            return BadRequest(context, ex.Message);
         }
         catch (ArgumentException ex)
         {
@@ -268,6 +318,25 @@ internal static class OperationsEndpoints
             return NotFound(context, $"Operation handle '{handleId}' was not found.");
         }
 
+        if (string.Equals(handle.OperationId, ServicePublishOperation.OperationId, StringComparison.Ordinal)
+            && handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running
+            && !string.IsNullOrWhiteSpace(handle.JobId))
+        {
+            var executor = context.RequestServices.GetServices<IOperationExecutor>()
+                .FirstOrDefault(candidate => string.Equals(
+                    candidate.OperationId, ServicePublishOperation.OperationId, StringComparison.Ordinal));
+            if (executor is not null)
+            {
+                var live = await executor.GetStatusAsync(handle, cancellationToken).ConfigureAwait(false);
+                return Results.Json(
+                    ApiResponse<OperationStatus>.CreateSuccess(live with
+                    {
+                        RootProvisioningOperationId = handle.RootProvisioningOperationId,
+                    }),
+                    OperationsJsonContext.Default.ApiResponseOperationStatus);
+            }
+        }
+
         var status = new OperationStatus
         {
             OperationInstanceId = handle.OperationInstanceId,
@@ -287,6 +356,7 @@ internal static class OperationsEndpoints
             Reason = handle.Reason,
             ResourceIds = handle.ResourceIds,
             EvidenceRefs = handle.EvidenceRefs,
+            RootProvisioningOperationId = handle.RootProvisioningOperationId,
         };
 
         return Results.Json(
@@ -294,16 +364,107 @@ internal static class OperationsEndpoints
             OperationsJsonContext.Default.ApiResponseOperationStatus);
     }
 
+    private static async Task<IResult> HandleConsumeOperationSecret(
+        HttpContext context,
+        string handleId,
+        string referenceId,
+        IOperationInstanceStore instanceStore,
+        IOperationSecretStore secretStore,
+        CancellationToken cancellationToken)
+    {
+        SetNoStore(context);
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                context,
+                context.User,
+                OperationSideEffectClass.MutatesMetadata,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
+        }
+
+        var handle = await instanceStore.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
+        var reference = handle?.Result?.SecretReferences
+            .SingleOrDefault(item => string.Equals(item.ReferenceId, referenceId, StringComparison.Ordinal));
+        if (handle is null || reference is null)
+        {
+            return NotFound(context, "The requested operation secret was not found.");
+        }
+
+        var principalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+        var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        var value = secretStore.Consume(
+            reference,
+            handle.OperationInstanceId,
+            handle.OperationId,
+            principalId,
+            tenantId);
+        if (value is null)
+        {
+            return NotFound(context, "The requested operation secret was not found or was already consumed.");
+        }
+
+        return Results.Json(
+            ApiResponse<OperationSecretValueResponse>.CreateSuccess(new OperationSecretValueResponse
+            {
+                Name = reference.Name,
+                Value = value,
+            }),
+            OperationsJsonContext.Default.ApiResponseOperationSecretValueResponse);
+    }
+
+    // A body that omits "fields" (or "parameters") binds that member as null. Normalize it at the
+    // boundary: a null field list reached the admin approval payload and failed every destructive
+    // Admin proposal submitted through this endpoint (#3361).
     private static OperationRequest ToRequest(string operationId, OperationInvokeRequest request)
         => new()
         {
             OperationId = operationId,
-            Parameters = request.Parameters,
+            Parameters = request.Parameters ?? new Dictionary<string, string?>(StringComparer.Ordinal),
             ConnectionId = request.ConnectionId,
             ServiceName = request.ServiceName,
-            Fields = request.Fields,
+            Fields = request.Fields ?? [],
             DryRun = request.DryRun
         };
+
+    internal static bool TryResolveIdempotencyKey(HttpContext context, out string? key, out string? error)
+    {
+        key = null;
+        error = null;
+        if (!context.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var values) || values.Count == 0)
+        {
+            return true;
+        }
+
+        var trimmed = values.Count == 1 ? values[0]?.Trim() : null;
+        if (values.Count > 1)
+        {
+            error = $"{IdempotencyKeyHeader} header must be supplied once.";
+        }
+        else if (string.IsNullOrEmpty(trimmed))
+        {
+            error = $"{IdempotencyKeyHeader} header must not be empty.";
+        }
+        else if (trimmed.Length > MaxIdempotencyKeyLength)
+        {
+            error = $"{IdempotencyKeyHeader} header must be at most {MaxIdempotencyKeyLength} characters.";
+        }
+        else if (trimmed.Any(char.IsControl))
+        {
+            error = $"{IdempotencyKeyHeader} header must not contain control characters.";
+        }
+        else
+        {
+            key = trimmed;
+        }
+
+        return error is null;
+    }
+
+    // Bind the caller's key to its tenant and principal, so one caller's key can never resolve
+    // another caller's durable invocation or sealed proposal.
+    private static string ScopeIdempotencyKey(string key, string? tenantId, string? principalId)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{tenantId ?? "<default>"}:{principalId ?? "<anonymous>"}:{key}")));
 
     private static IResult BadRequest(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateAdminProblem(

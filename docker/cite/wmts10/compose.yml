@@ -5,7 +5,7 @@ services:
       context: ../../..
       dockerfile: Dockerfile
     ports:
-      - "${HONUA_CITE_WMTS_SERVER_PORT:-8098}:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CITE_WMTS_SERVER_PORT:-8098}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
@@ -53,7 +53,7 @@ services:
       - POSTGRES_PASSWORD=cite_password
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     ports:
-      - "5436:5432"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:5436:5432"
     networks:
       - cite-wmts-network
     healthcheck:
@@ -76,7 +76,7 @@ services:
   cite-engine:
     image: ogccite/ets-wmts10:1.11-teamengine-6.0.0-RC2
     ports:
-      - "8084:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:8084:8080"
     environment:
       - JAVA_OPTS=-Xmx2g -DTE_BASE=/root/te_base
       - TEAMENGINE_BASE_URL=http://cite-engine:8080/teamengine

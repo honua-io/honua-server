@@ -151,6 +151,7 @@ public static class InMemoryFilterEvaluator
         }
 
         var hasNull = false;
+        // codeql[cs/linq/missed-select]: returns on the first match and remembers a null element for three-valued logic
         foreach (var item in valueList.Values)
         {
             var itemValue = ResolveValue(item, props);
@@ -245,7 +246,16 @@ public static class InMemoryFilterEvaluator
         return lit.Type switch
         {
             LiteralType.Null => null,
-            LiteralType.Text => lit.Value as string,
+            // Schema normalization types UUID/TIME Text literals as Guid/TimeOnly so SQL
+            // binds them natively; compare them here in their canonical string form.
+            LiteralType.Text => lit.Value switch
+            {
+                string s => s,
+                Guid g => g.ToString("D"),
+                TimeOnly t => t.ToString("HH':'mm':'ss.FFFFFFF", CultureInfo.InvariantCulture),
+                null => null,
+                _ => Convert.ToString(lit.Value, CultureInfo.InvariantCulture)
+            },
             LiteralType.Number => lit.Value switch
             {
                 byte b => (long)b,

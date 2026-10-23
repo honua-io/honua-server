@@ -10,7 +10,32 @@ import tarfile
 from pathlib import PurePosixPath
 
 
-def validate_archive(path: str, max_unpacked_bytes: int, max_entries: int) -> tuple[int, int]:
+def within_allowed_roots(normalized: str, is_dir: bool, allowed_roots: tuple[str, ...]) -> bool:
+    for root in allowed_roots:
+        if normalized == root or normalized.startswith(root + "/"):
+            return True
+        # Parent directories of a declared root are emitted by `tar -C <staging> .`.
+        if is_dir and root.startswith(normalized + "/"):
+            return True
+    return False
+
+
+def validate_archive(
+    path: str,
+    max_unpacked_bytes: int,
+    max_entries: int,
+    allowed_roots: tuple[str, ...] | None = None,
+) -> tuple[int, int]:
+    if allowed_roots is not None:
+        for root in allowed_roots:
+            if (
+                not root
+                or root.startswith("/")
+                or "\\" in root
+                or posixpath.normpath(root) != root
+                or any(part in ("", ".", "..") for part in root.split("/"))
+            ):
+                raise ValueError(f"allowed payload root is not a normalized relative path: {root!r}")
     seen: set[str] = set()
     total = 0
     files = 0
@@ -44,6 +69,11 @@ def validate_archive(path: str, max_unpacked_bytes: int, max_entries: int) -> tu
             if normalized in seen:
                 raise ValueError(f"archive contains a duplicate path: {normalized!r}")
             seen.add(normalized)
+            # Extraction targets the repository root, so an entry outside the test
+            # project's output and the manifest's declared content roots would overwrite
+            # checkout content (#4453).
+            if allowed_roots is not None and not within_allowed_roots(normalized, member.isdir(), allowed_roots):
+                raise ValueError(f"archive entry is outside the declared payload roots: {normalized!r}")
             if member.isdir():
                 continue
             if not member.isfile():
@@ -71,8 +101,10 @@ def main() -> int:
     parser.add_argument("--archive", required=True)
     parser.add_argument("--max-unpacked-bytes", type=positive_int, required=True)
     parser.add_argument("--max-entries", type=positive_int, default=100_000)
+    parser.add_argument("--allowed-root", action="append", dest="allowed_roots")
     args = parser.parse_args()
-    files, total = validate_archive(args.archive, args.max_unpacked_bytes, args.max_entries)
+    allowed_roots = tuple(args.allowed_roots) if args.allowed_roots else None
+    files, total = validate_archive(args.archive, args.max_unpacked_bytes, args.max_entries, allowed_roots)
     print(f"server-test-archive=accepted files={files} unpacked_bytes={total}")
     return 0
 

@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -156,7 +157,7 @@ internal sealed partial class Wfs20Handler
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "InvalidParameterValue",
-                "Invalid WFS parameter value; see logs for details.");
+                DescribeValidationFailure(ex));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -197,7 +198,9 @@ internal sealed partial class Wfs20Handler
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken);
 
-            var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
+            var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
+            var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken)
+                .ConfigureAwait(false);
             totalMatched += layerMatched;
 
             if (layerMatched == 0)
@@ -230,7 +233,8 @@ internal sealed partial class Wfs20Handler
                 featureType,
                 query with { Offset = layerOffset, Limit = layerLimit },
                 layerMatched,
-                resolvedValueReference));
+                resolvedValueReference,
+                reader));
 
             remainingCount -= layerLimit;
         }
@@ -298,13 +302,13 @@ internal sealed partial class Wfs20Handler
         {
             if (plan.ValueReference.IsGeometry)
             {
-                var result = await _gmlFeatureStore.QueryGmlAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
-                queryResults.Add((plan, result.Items, null));
-                returnedCount += result.Items.Length;
+                var gmlFeatures = await QueryValueGmlFeaturesAsync(plan, cancellationToken).ConfigureAwait(false);
+                queryResults.Add((plan, gmlFeatures, null));
+                returnedCount += gmlFeatures.Length;
                 continue;
             }
 
-            var features = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
+            var features = await ReaderFor(plan).QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             queryResults.Add((plan, null, features.Items));
             returnedCount += features.Items.Length;
         }
@@ -365,7 +369,7 @@ internal sealed partial class Wfs20Handler
             // GeoJSON positions are always longitude,latitude (RFC 7946 §3.1.1);
             // OutputAxisOrder applies only to GML serialization.
             const AxisOrder axisOrder = AxisOrder.EastNorth;
-            var featureResult = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
+            var featureResult = await ReaderFor(plan).QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in featureResult.Items)
             {
                 var featureId = BuildFeatureId(plan.Descriptor, feature.Id);
@@ -475,7 +479,17 @@ internal sealed partial class Wfs20Handler
         WfsFeatureTypeDescriptor Descriptor,
         FeatureQuery Query,
         long MatchedCount,
-        ValueReferenceResolution ValueReference);
+        ValueReferenceResolution ValueReference,
+        IFeatureReader? Reader = null);
+
+    private IFeatureReader ReaderFor(LayerValuePlan plan) => plan.Reader ?? _featureReader;
+
+    private Task<ImmutableArray<GmlFeature>> QueryValueGmlFeaturesAsync(
+        LayerValuePlan plan,
+        CancellationToken cancellationToken)
+        => QueryGmlFeaturesAsync(
+            new LayerQueryPlan(plan.Descriptor, plan.Query, plan.MatchedCount, Reader: plan.Reader),
+            cancellationToken);
 
     private readonly record struct LayerValuePlanSet(
         ImmutableArray<LayerValuePlan> Plans,

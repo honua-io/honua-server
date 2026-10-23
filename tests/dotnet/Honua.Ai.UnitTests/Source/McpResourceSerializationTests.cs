@@ -1,0 +1,453 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using System.Security.Claims;
+using FluentAssertions;
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Protocols.Mcp;
+
+/// <summary>
+/// Verifies that MCP resource handlers serialize domain records into the
+/// canonical <c>honua://...</c> JSON envelope advertised in
+/// <c>AI_OPERATOR_CONTRACT.md §9</c>. The tests pin the wire fields that
+/// operators parse — job ids, resource URIs, map-package identifiers, and
+/// stub markers — so accidental rename of a JSON property breaks the build.
+/// </summary>
+[Protocol(TestProtocols.Mcp)]
+public sealed class McpResourceSerializationTests
+{
+    private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}")]
+    public async Task JobStatusResource_SerializesRecordFieldsAndLinksResultsUri()
+    {
+        var created = DateTimeOffset.Parse("2026-04-18T12:00:00Z", CultureInfo.InvariantCulture);
+        var updated = created.AddMinutes(2);
+        _jobService.GetJobAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobRecord
+            {
+                OperationId = "job-xyz",
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = created,
+                UpdatedAt = updated,
+                CompletedAt = null,
+                PercentComplete = 50.5,
+                CurrentPhase = "executing",
+                Warnings = ["layer projection assumed"],
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "buffer"
+                }
+            });
+
+        var resource = new JobStatusResource(_jobService, NullLogger<JobStatusResource>.Instance);
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(), "honua://jobs/job-xyz", CancellationToken.None);
+
+        result.Contents.Should().HaveCount(1);
+        var content = result.Contents[0];
+        content.Uri.Should().Be("honua://jobs/job-xyz");
+        content.MimeType.Should().Be("application/json");
+
+        var body = McpTestFactory.ParseJson(content.Text);
+        body.GetProperty("jobId").GetString().Should().Be("job-xyz");
+        body.GetProperty("status").GetString().Should().Be("Running");
+        body.GetProperty("percentComplete").GetDouble().Should().Be(50.5);
+        body.GetProperty("currentPhase").GetString().Should().Be("executing");
+        body.GetProperty("warnings").GetArrayLength().Should().Be(1);
+        body.GetProperty("resultsUri").GetString().Should().Be("honua://jobs/job-xyz/results");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
+    public async Task JobResultsResource_DelegatesToDomainServiceAndSerializesResultPackage()
+    {
+        _jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(AnalysisResultPackage.CreateCompleted(
+                "pkg-123",
+                new ResultSummary
+                {
+                    Title = "Buffered parcels",
+                    Description = "5-meter parcel buffers"
+                },
+                [
+                    new ArtifactRef
+                    {
+                        ArtifactId = "artifact-1",
+                        Kind = ArtifactKind.FeatureLayer,
+                        Label = "Buffered output",
+                        Uri = "honua://artifacts/artifact-1",
+                        ContentType = "application/geo+json",
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["layerId"] = "buffered-parcels"
+                        }
+                    }
+                ],
+                [
+                    new WorkspaceRef
+                    {
+                        WorkspaceId = "ws-42",
+                        Kind = WorkspaceKind.Scratch,
+                        Label = "Scratch workspace",
+                        Uri = "honua://workspace-storage/ws-42",
+                        ExpiresAt = DateTimeOffset.Parse("2026-04-19T12:00:00Z", CultureInfo.InvariantCulture)
+                    }
+                ],
+                new ProvenanceRecord
+                {
+                    Sources =
+                    [
+                        new ProvenanceSource
+                        {
+                            SourceId = "parcels",
+                            Version = "v1",
+                            Description = "County parcels"
+                        }
+                    ],
+                    ProcessDefinitions = ["geometry.buffer"],
+                    Assumptions = ["buffers use planar meters"],
+                    ClarificationsAsked = ["distance_units"],
+                    ClarificationsAnswered = ["meters"],
+                    ExecutedAt = DateTimeOffset.Parse("2026-04-18T12:05:00Z", CultureInfo.InvariantCulture),
+                    GeneratedArtifactIds = ["artifact-1"]
+                },
+                assumptions: ["output uses source CRS"],
+                mapPackageId: "map-55"));
+
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://jobs/job-xyz/results",
+            CancellationToken.None);
+
+        result.Contents.Should().HaveCount(1);
+        var content = result.Contents[0];
+        content.Uri.Should().Be("honua://jobs/job-xyz/results");
+        content.MimeType.Should().Be("application/json");
+
+        var body = McpTestFactory.ParseJson(content.Text);
+        body.GetProperty("jobId").GetString().Should().Be("job-xyz");
+        body.GetProperty("resultPackageId").GetString().Should().Be("pkg-123");
+        body.GetProperty("status").GetString().Should().Be("Completed");
+        body.GetProperty("summary").GetProperty("title").GetString().Should().Be("Buffered parcels");
+        body.GetProperty("artifacts").GetArrayLength().Should().Be(1);
+        body.GetProperty("artifacts")[0].GetProperty("artifactId").GetString().Should().Be("artifact-1");
+        body.GetProperty("workspaceRefs").GetArrayLength().Should().Be(1);
+        body.GetProperty("workspaceRefs")[0].GetProperty("resourceUri").GetString().Should().Be("honua://workspaces/ws-42");
+        body.GetProperty("mapPackageId").GetString().Should().Be("map-55");
+        body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
+    public async Task JobResultsResource_NonTerminalJob_PropagatesFailedPrecondition()
+    {
+        _jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AnalysisResultPackage>>(_ => throw new GeoprocessingPreconditionFailedException("not terminal"));
+
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://jobs/job-xyz/results",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
+    public async Task JobResultsResource_TerminalJobWithoutStoredPackage_PropagatesNotFound()
+    {
+        _jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AnalysisResultPackage>>(_ => throw new GeoprocessingNotFoundException("result package unavailable"));
+
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://jobs/job-xyz/results",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_WithoutLifecycleService_ReturnsDegradedEnvelopeWithWorkspaceId()
+    {
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://workspaces/ws-42",
+            CancellationToken.None);
+
+        result.Contents.Should().HaveCount(1);
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("workspaceId").GetString().Should().Be("ws-42");
+        body.TryGetProperty("kind", out _).Should().BeFalse();
+        body.TryGetProperty("lifecycleState", out _).Should().BeFalse();
+        body.GetProperty("notImplementedReason").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_WithLifecycleService_ReturnsWorkspaceEnvelope()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync("ws-42", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-42",
+                Kind = WorkspaceKind.ResultCollection,
+                Label = "Linked dashboard results",
+                OwnerId = "test-user",
+                State = WorkspaceLifecycleState.Active,
+                Uri = "honua://workspace-storage/ws-42",
+                CreatedAt = DateTimeOffset.Parse("2026-05-18T12:00:00Z", CultureInfo.InvariantCulture),
+                ExpiresAt = DateTimeOffset.Parse("2026-05-19T12:00:00Z", CultureInfo.InvariantCulture),
+                Artifacts =
+                [
+                    new Artifact
+                    {
+                        ArtifactId = "artifact-1",
+                        Kind = ArtifactKind.AppBundle,
+                        Label = "Mini app",
+                        State = ArtifactLifecycleState.Available,
+                        CreatedAt = DateTimeOffset.Parse("2026-05-18T12:05:00Z", CultureInfo.InvariantCulture),
+                        WorkspaceId = "ws-42",
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["resultPackageId"] = "result-123"
+                        }
+                    }
+                ]
+            });
+
+        await using var services = new ServiceCollection()
+            .AddScoped(_ => lifecycle)
+            .BuildServiceProvider();
+        var resource = new WorkspaceResource(
+            _jobService,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WorkspaceResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://workspaces/ws-42",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("workspaceId").GetString().Should().Be("ws-42");
+        body.GetProperty("kind").GetString().Should().Be("result_collection");
+        body.GetProperty("label").GetString().Should().Be("Linked dashboard results");
+        body.GetProperty("uri").GetString().Should().Be("honua://workspace-storage/ws-42");
+        body.GetProperty("lifecycleState").GetString().Should().Be("active");
+        body.TryGetProperty("status", out _).Should().BeFalse();
+        body.GetProperty("resultsUri").GetString().Should().Be("honua://results/result-123");
+        body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_MissingWorkspace_PropagatesNotFound()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync("missing", Arg.Any<CancellationToken>())
+            .Returns((Workspace?)null);
+
+        await using var services = new ServiceCollection()
+            .AddScoped(_ => lifecycle)
+            .BuildServiceProvider();
+        var resource = new WorkspaceResource(
+            _jobService,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WorkspaceResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://workspaces/missing",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://catalog/processes")]
+    public async Task ProcessCatalogResource_ReturnsBuiltInCatalogEntries()
+    {
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://catalog/processes",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("catalogVersion").GetString().Should().Be(BuiltInProcessCatalog.CatalogVersion);
+        body.GetProperty("status").GetString().Should().Be("ok");
+        var processes = body.GetProperty("processes");
+        processes.GetArrayLength().Should().BeGreaterThan(0);
+        var buffer = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "geometry.buffer");
+        buffer.GetProperty("name").GetString().Should().Be("Buffer");
+        buffer.GetProperty("family").GetString().Should().Be("geometry");
+        buffer.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+        buffer.GetProperty("parameters").GetArrayLength().Should().BeGreaterThan(0);
+        buffer.GetProperty("executionKind").GetString().Should().Be("Job");
+        buffer.GetProperty("supportedExecutionModes").EnumerateArray()
+            .Select(mode => mode.GetString()).Should().BeEquivalentTo(["Async", "Sync"]);
+
+        buffer.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["job", "workflow"]);
+
+        var source = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "source.geojson");
+        source.GetProperty("executionKind").GetString().Should().Be("WorkflowOnly");
+        // GA is defined per entry point (#4409): a DAG-only source must not read as
+        // job-submittable to an agent planning an execution.
+        source.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["workflow"]);
+
+        var cluster = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "analytics.cluster");
+        cluster.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["protocol"]);
+
+        var imagery = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "imagery.classify");
+        imagery.GetProperty("configurationDependency").GetString().Should().Be("Geoprocessing:ImageryInference");
+
+        var kriging = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "raster.interpolate-kriging");
+        kriging.GetProperty("executionKind").GetString().Should().Be("Job");
+        kriging.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["job", "workflow"]);
+        kriging.GetProperty("configurationDependency").GetString().Should().Be("runtime-profile:native");
+        body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://catalog/features")]
+    public async Task FeatureCatalogResource_ServesEmbeddedEvidenceBackedCatalog()
+    {
+        var resource = new FeatureCatalogResource(_jobService, NullLogger<FeatureCatalogResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://catalog/features",
+            CancellationToken.None);
+
+        result.Contents.Should().HaveCount(1);
+        var content = result.Contents[0];
+        content.Uri.Should().Be("honua://catalog/features");
+        content.MimeType.Should().Be("application/json");
+
+        var body = McpTestFactory.ParseJson(content.Text);
+        body.GetProperty("schema_version").GetString().Should().NotBeNullOrWhiteSpace();
+        body.GetProperty("tracking_issue").GetString().Should().Be("#1946");
+        var entries = body.GetProperty("entries");
+        entries.GetArrayLength().Should().BeGreaterThan(0);
+
+        // Every served entry is evidence-backed: a route, at least one proving
+        // test, and a recognized maturity tier. The tier vocabulary is closed:
+        // FeatureCatalogGenerator.MaturityLabel projects the shared
+        // CapabilityMaturity enum (ADR-0058) onto its lower-case name, so the
+        // catalog can only ever carry planned/deferred/experimental/partial/
+        // implemented. Deriving the set from the enum rather than pinning the
+        // literals keeps this honest when a reviewed
+        // capability-maturity-overrides.v1.json row demotes a capability
+        // (honua-release#100 demoted scene.catalog to "deferred" when D0.2 moved
+        // 3D to 2026.2) while still failing on any value outside the vocabulary.
+        // The resource serves the catalog unfiltered; that each non-implemented
+        // tier is *explained* is gated by FeatureCatalogDriftTests.
+        var maturityTiers = Enum.GetValues<CapabilityMaturity>()
+            .Select(tier => tier.ToString().ToLowerInvariant())
+            .ToArray();
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            entry.GetProperty("route").GetString().Should().NotBeNullOrWhiteSpace();
+            entry.GetProperty("method").GetString().Should().NotBeNullOrWhiteSpace();
+            entry.GetProperty("proving_tests").GetArrayLength().Should().BeGreaterThan(0);
+            entry.GetProperty("maturity").GetString().Should().BeOneOf(maturityTiers);
+        }
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public void FeatureCatalogResource_CanHandle_MatchesOnlyFeatureCatalogUri()
+    {
+        var resource = new FeatureCatalogResource(_jobService, NullLogger<FeatureCatalogResource>.Instance);
+
+        resource.CanHandle("honua://catalog/features").Should().BeTrue();
+        resource.CanHandle("honua://catalog/features/foo").Should().BeFalse();
+        resource.CanHandle("honua://catalog/processes").Should().BeFalse();
+        resource.CanHandle("honua://catalog").Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public void JobStatusResource_CanHandle_MatchesOnlyBareJobUris()
+    {
+        var resource = new JobStatusResource(_jobService, NullLogger<JobStatusResource>.Instance);
+
+        resource.CanHandle("honua://jobs/job-1").Should().BeTrue();
+        resource.CanHandle("honua://jobs/job-1/results").Should().BeFalse();
+        resource.CanHandle("honua://workspaces/job-1").Should().BeFalse();
+        resource.CanHandle("honua://jobs/").Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public void JobResultsResource_CanHandle_MatchesOnlyJobResultsUris()
+    {
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+
+        resource.CanHandle("honua://jobs/job-1/results").Should().BeTrue();
+        resource.CanHandle("honua://jobs/job-1").Should().BeFalse();
+        resource.CanHandle("honua://jobs//results").Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public void WorkspaceResource_CanHandle_MatchesOnlyWorkspaceUris()
+    {
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
+
+        resource.CanHandle("honua://workspaces/ws-1").Should().BeTrue();
+        resource.CanHandle("honua://workspaces/").Should().BeFalse();
+        resource.CanHandle("honua://workspaces/ws-1/sub").Should().BeFalse();
+        resource.CanHandle("honua://jobs/ws-1").Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public void ProcessCatalogResource_CanHandle_MatchesOnlyCatalogUri()
+    {
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
+
+        resource.CanHandle("honua://catalog/processes").Should().BeTrue();
+        resource.CanHandle("honua://catalog/processes/foo").Should().BeFalse();
+        resource.CanHandle("honua://catalog").Should().BeFalse();
+    }
+}

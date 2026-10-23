@@ -15,6 +15,10 @@ namespace Honua.Server.Features.Admin.Models;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(LayerRelationshipUpdateRequest))]
+[JsonSerializable(typeof(LayerRelationshipBatchUpdateRequest))]
+[JsonSerializable(typeof(LayerRelationshipBatchUpdateItem))]
+[JsonSerializable(typeof(LayerRelationshipBatchResponse))]
+[JsonSerializable(typeof(ApiResponse<LayerRelationshipBatchResponse>))]
 [JsonSerializable(typeof(LayerRelationshipUpdateItem))]
 [JsonSerializable(typeof(LayerRelationshipResponse))]
 [JsonSerializable(typeof(LayerRelationshipItem))]

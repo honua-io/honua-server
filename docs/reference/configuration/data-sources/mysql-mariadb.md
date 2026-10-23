@@ -1,9 +1,13 @@
+---
+type: reference
+title: "MySQL/MariaDB provider"
+description: "Honua supports MySQL 8.0.12+ and MariaDB 10.6+ as a read-only spatial feature provider."
+---
 # MySQL/MariaDB provider
 
-Honua supports MySQL 8.0.11+ and MariaDB 10.6+ as a **read-only** spatial feature
+Honua supports MySQL 8.0.12+ and MariaDB 10.6+ as a **read-only** spatial feature
 provider. This is a thin slice intended for serving spatial data that already
-lives in MySQL/MariaDB tables (Tier 2 enterprise backend under epic
-[#362](https://github.com/honua-io/honua-server/issues/362)).
+lives in MySQL/MariaDB tables.
 
 Use the [PostGIS provider](README.md) for full read/write,
 edits, statistics, MVT, and analytics. Use the
@@ -46,7 +50,7 @@ WHERE-field, and `Category=MySql` integration-test conventions.
 
 | Engine | Minimum Version | Notes |
 |--------|-----------------|-------|
-| MySQL  | 8.0.11          | Required for `ST_Distance_Sphere`, SRID-aware spatial functions |
+| MySQL  | 8.0.12          | `ST_Distance_Sphere` and SRID-aware functions need 8.0.11. EPSG:4326 point extents use `ST_Longitude`/`ST_Latitude`, added in 8.0.12. That release also redefined `ST_X`/`ST_Y` to follow SRS axis order, so 8.0.11 is not a safe floor. |
 | MariaDB | 10.6 LTS       | Spatial parity with MySQL 8.0 lineage |
 
 MySQL 5.7 is **not** supported; spatial function semantics changed
@@ -173,13 +177,13 @@ and to filter expressions translated through `MySqlSqlFilterTranslator`.
 | `Within`              | `ST_Within(col, ST_GeomFromWKB(?, srid))` |
 | `Contains`            | `ST_Contains(col, ST_GeomFromWKB(?, srid))` |
 | `Crosses` / `Touches` / `Overlaps` / `Disjoint` / `Equals` | matching `ST_*` function |
-| `WithinDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) <= ?` |
-| `BeyondDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) > ?` |
+| `WithinDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) <= ?` |
+| `BeyondDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) > ?` |
 | `NearestNeighbor`     | `NotSupportedException` — not implemented |
 
-`ST_Distance_Sphere` is documented by both engines as a WGS84 spherical
-**approximation**; the resulting distance differs from a true geodesic
-calculation. For accurate geodesic distance use a PostGIS-backed layer.
+`ST_Distance_Sphere` is a sphere, not a WGS 84 spheroid. Honua passes an
+explicit mean-Earth radius of 6371008.8 m. The result still differs from a
+geodesic on the ellipsoid. For that distance use a PostGIS-backed layer.
 Distance filters on layers whose geometry type is anything other than
 `Point` or `MultiPoint` raise `NotSupportedException`. The guard is
 applied uniformly in `MySqlFeatureQueryBuilder.Spatial` and
@@ -203,7 +207,7 @@ at startup:
 
 | `EngineFlavor` | Apply when                  | WKB I/O behaviour                                                                                                              |
 |----------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| `Mysql`        | Oracle MySQL 8.0.11+        | The provider emits `'axis-order=long-lat'` on `ST_AsWKB` and `ST_GeomFromWKB` so geographic SRSes (e.g. EPSG:4326) produce and consume canonical X/Y WKB regardless of the SRS-defined axis order. The option is permitted-but-ignored on projected SRSes (e.g. EPSG:3857). |
+| `Mysql`        | Oracle MySQL 8.0.12+        | The provider emits `'axis-order=long-lat'` on `ST_AsWKB` and `ST_GeomFromWKB` so geographic SRSes (e.g. EPSG:4326) produce and consume canonical X/Y WKB regardless of the SRS-defined axis order. The option is permitted-but-ignored on projected SRSes (e.g. EPSG:3857). |
 | `MariaDb`      | MariaDB 10.6+               | The provider uses the 2-argument `ST_GeomFromWKB(wkb, srid)` form. MariaDB does not support the third axis-order argument and does not enforce SRS-based axis order, so WKB-natural X/Y already matches the canonical Honua contract. |
 
 **Symptom of a wrong flavor.** With `EngineFlavor=MariaDb` against MySQL 8 (or
@@ -316,54 +320,11 @@ of the MySQL services.
 
 ## Testing
 
-### Unit tests
-
-`tests/dotnet/Honua.Db.MySql.Tests` contains unit tests for SQL generation,
-filter translation, registry behaviour, and provider resolution. They run on
-every PR and require no external services.
-
-```bash
-dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
-    --filter "Category!=MySql"
-```
-
-### Integration tests (gated)
-
-`MySqlFeatureStoreIntegrationTests` exercises the full stack against a MySQL
-8 container provisioned by Testcontainers. They are tagged
-`[Trait("Category", "MySql")]` and are **opt-in**: the `Category=MySql`
-filter selects them, and the test fixture additionally requires
-`HONUA_TEST_MYSQL=1` so a stray `--filter Category=MySql` cannot start
-Docker containers in CI environments without Docker.
-
-```bash
-# Requires Docker and the MySQL 8 image. Both the category filter AND the
-# environment variable are required — the env gate keeps the suite inert
-# unless explicitly enabled.
-HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
-    --filter "Category=MySql"
-```
-
-If `HONUA_TEST_MYSQL` is unset (or not exactly `1`) each infrastructure-gated
-test is reported as skipped before `InitializeAsync` starts Docker. They are
-not part of the default PR test suite.
-
-### HTTP-stack smoke coverage (nightly)
-
-`Honua.ProviderSmoke.Tests` boots a full HTTP-stack host with
-`DataSource:Provider=mysql` against a Testcontainers `mysql:8` instance and asserts real
-seeded-row correctness — not just 200s — through GeoServices FeatureServer, OGC API
-Features, OData, and tiles (TileJSON + a raster PNG tile; vector MVT is out of scope, see
-Limitations Summary). Runs nightly and on demand via
-[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
-part of standard PR CI.
-
-### MariaDB compatibility
-
-The integration suite uses MySQL 8 as the canonical engine. MariaDB 10.6 is
-nominally supported via the same SQL surface; manual verification against a
-MariaDB container is the recommended path until a second Testcontainers
-fixture is added in a follow-on slice.
+The provider is exercised nightly through the full HTTP stack against a MySQL 8
+instance: GeoServices FeatureServer, OGC API Features, OData, and tiles (TileJSON plus a
+raster PNG tile; vector MVT is out of scope, see the limitations below). MySQL 8 is the
+canonical engine; MariaDB 10.6 is supported via the same SQL surface and verified
+manually.
 
 ## Limitations Summary
 
@@ -435,7 +396,7 @@ fixture is added in a follow-on slice.
 - **Google Cloud SQL for MySQL** — supported. Enable Private IP and use the
   Cloud SQL Auth Proxy for IAM-based authentication.
 - **PlanetScale (Vitess)** — best-effort. PlanetScale's spatial support
-  depends on the underlying MySQL major version; confirm 8.0.11+ before
+  depends on the underlying MySQL major version; confirm 8.0.12+ before
   enabling.
 
 In all hosted environments, prefer secret-backed configuration for

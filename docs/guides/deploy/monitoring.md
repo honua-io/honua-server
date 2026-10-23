@@ -1,6 +1,12 @@
+---
+type: guide
+title: "Monitor Honua Server"
+description: "You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice."
+resource: "honua://capability/ops.observability"
+---
 # Monitor Honua Server
 
-You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md). The profiled Console Operate service in the Docker quickstart is the first local ops view once a compatible Console image is published; Grafana and Prometheus are optional depth for teams that want an external metrics backend.
+You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md). Grafana and Prometheus are optional depth for teams that want an external metrics backend.
 
 **Prerequisites:** A running deployment and the admin password (admin endpoints authenticate with the `X-API-Key` header). A metrics backend (managed Prometheus, self-hosted Prometheus, or any OTLP-compatible stack) is needed for long-retention metrics and deep traces/logs, but the built-in operate status, ops-health, findings, and timeline surfaces do not require Grafana or Prometheus.
 
@@ -18,7 +24,11 @@ You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the 
 | `GET /monitoring/metrics/{connection-pool,cache,resources,upload-queue,database-resilience}` | admin | Focused operational diagnostics |
 | `GET /monitoring/alerts` | admin | Current alert conditions from production thresholds |
 | `GET /api/v1/admin/observability/{errors,telemetry,events,migrations}` | admin | Error history, tracing status, Operate events, migration state |
-| `GET /api/v1/operate/status` | ops-reader or admin | **Server-authoritative aggregated status** — one server-computed verdict plus per-domain rollups and the availability SLO |
+| `GET /api/v1/operate/status` | ops-reader or admin | **Server-authoritative aggregated status** — one server-computed verdict, per-domain rollups, and an explicitly sourced SLO posture |
+
+## Which replica answered (`Honua-Instance`)
+
+Every response carries a `Honua-Instance` header naming the server instance that produced it, so behind an ALB, a Kubernetes Service, or a Lambda alias you can tell replicas apart and prove that a second instance sees what the first one published. The id is resolved once at startup (and logged with event id `4059`), stays fixed for the life of the process, and comes from the first of these sources that is present: the operator-set `Server__InstanceId` (`Server:InstanceId`), the Lambda execution environment (`AWS_LAMBDA_LOG_STREAM_NAME`), the ECS task id (the task ARN suffix, parsed from `ECS_CONTAINER_METADATA_URI_V4` without calling the metadata endpoint), `HOSTNAME` (the pod name on Kubernetes), the machine name, and finally a random per-process id. Values are limited to letters, digits and `-_.:/[]$`, at most 128 characters; nothing secret is read. Admins also see the id, its `source`, and `startedAt` in the `instance` block of `GET /api/v1/admin/version` and in the `instanceId` detail of the `admin.server.status` operation. Set `Server__InstanceId` yourself when several processes share a hostname. A CDN or other shared cache in front of Honua can replay a stored response with the header of the instance that first produced it, so read the header from uncached requests.
 
 ## Aggregated operational status
 
@@ -26,36 +36,40 @@ Instead of stitching the endpoints above and inventing your own "is the system h
 
 > Open Honua Console's **Operate → Health** view. It reads `/api/v1/operate/status`; Console/Operate routes are not exposed by the OpenAPI explorer.
 
-It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, an impaired dispatcher, or an exhausted SLO error budget ⇒ `degraded`; otherwise `healthy`.
+It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, or an impaired dispatcher ⇒ `degraded`; otherwise `healthy`.
 
-With the quickstart `console` profile enabled, open <http://localhost:5174/operate/health> for this status plus the Console health dashboard, and <http://localhost:5174/operate/copilot> for deterministic findings and proposal entry points. Those pages read the same server-owned APIs described here.
+Honua Console's Operate views read the same server-owned APIs described here.
 
-### Availability SLO / error budget
+### Platform SLO versus the node-local retained tail
 
-Configure an availability target and the `slo` block evaluates a burn rate and remaining error budget from the in-process, GIS-protocol-partitioned serving-latency window (no metrics database required):
+You may configure an intended availability target and horizon:
 
 ```bash
-Slo__Availability__Target=0.995          # fraction in (0,1); omit to leave the SLO "not configured"
+Slo__Availability__Target=0.995          # operator intent; not itself a platform observation
 Slo__Availability__RollingWindowSeconds=300
 ```
 
-When no target is set, `slo.configured` is `false` with an explicit reason rather than an invented number. v1 evaluates HTTP-5xx serving availability over the aggregator window; the in-band GeoServices error-envelope signal (2xx error envelopes) is not yet folded into the window.
+`slo.configured` remains `false` until a distributed, all-request, in-band-aware query source exists.
+The server does not compute platform availability, burn rate, or error budget from its in-process
+reservoir. Instead, `slo.nodeLocalRetainedTail` names that reservoir honestly as `replica-local`, marks
+`isPlatformSli: false`, and exposes its configured capacity, retained population, samples overwritten
+since reset, actual oldest/newest retained ages, HTTP-5xx-only success ratio, and reset behavior. A
+rolling replacement resets that diagnostic on one replica; it never changes the platform verdict.
 
 ### Read-only ops credential
 
 Provision an ops-reader credential so a status dashboard or copilot can read the ops posture without holding a key that could `POST /rollback`. Mint an admin API key scoped to the `ops:read` grant (distinct from `admin:read`, which can also read the broader admin surfaces):
 
-With a full-admin credential in the [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ops-dashboard","permissions":["ops:read"]}`.
+With a full-admin credential, `POST /api/v1/admin/api-keys` with `{"name":"ops-dashboard","permissions":["ops:read"]}` — see [Authenticate clients](../secure/authentication.md#2-create-scoped-api-keys-for-automation) for the call.
 
 The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
 
 ## Steps
 
-1. Enable the observability surfaces. `HONUA_OBSERVABILITY=true` turns on metrics; `HONUA_OPENTELEMETRY=true` adds distributed tracing; the scrape path is configurable.
+1. Point the scrape at the right path and give it an admin credential. Metrics are always exported; the endpoint is mapped at `Observability__Prometheus__Path` and requires the `Admin` policy. Tracing is on by default (`Tracing__Enabled`) and exports once `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 ```bash
-HONUA_OBSERVABILITY=true
-HONUA_OPENTELEMETRY=true
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 Observability__Prometheus__Path=/metrics
 ```
 
@@ -87,20 +101,27 @@ cd docs/guides/deploy/examples
 promtool test rules prometheus-alerts.test.yml
 ```
 
-For availability budgets, the [SLO metric contract](../../../observability/slo-metric-contract.json) counts in-band errors plus out-of-band logical 5xx errors. Logical error codes are independent of HTTP transport status: a GeoServices logical 500 returned over HTTP 200 must count once. Union the two selectors before aggregation so either error class remains visible when the other is absent. From the repository root, validate the published expression with `promtool` on `PATH`:
+For availability budgets, the [SLO metric contract](https://github.com/honua-io/honua-server/blob/trunk/observability/slo-metric-contract.json) counts in-band errors plus out-of-band logical 5xx errors. Logical error codes are independent of HTTP transport status: a GeoServices logical 500 returned over HTTP 200 must count once. Union the two selectors before aggregation so either error class remains visible when the other is absent.
+
+5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server.
+
+First mint the scrape credential. `/metrics` is served under the `Admin` policy and a scrape is a `GET`, so the narrowest credential that can read it is an API key with the read-only `admin:read` grant - not the admin password. With a full-admin credential, `POST /api/v1/admin/api-keys` with `{"name":"prometheus-scrape","permissions":["admin:read"]}` (see [Authenticate clients](../secure/authentication.md#2-create-scoped-api-keys-for-automation)), then write the returned `data.key` into a file that only you can read:
 
 ```bash
-python3 observability/test_slo_metric_contract.py
+umask 077
+printf '%s' "$HONUA_SCRAPE_KEY" > ./honua-scrape-key
 ```
 
-5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server:
+Then start the bundle. Both variables are required; the bundle refuses to start without them, and published ports bind to loopback unless you set `HONUA_BIND_ADDRESS`:
 
 ```bash
+export HONUA_MONITORING_GRAFANA_PASSWORD='<a password you choose>'
+export HONUA_METRICS_SCRAPE_KEY_FILE="$PWD/honua-scrape-key"
 docker compose -f docker/monitoring/compose.yml up -d
-# Grafana http://localhost:3000 (admin/admin), Prometheus http://localhost:9090
+# Grafana http://127.0.0.1:3000 (user admin), Prometheus http://127.0.0.1:9090
 ```
 
-Prometheus scrapes `/metrics` with `basic_auth` (the API-key handler accepts the admin key as the Basic password). Edit [`docker/monitoring/prometheus/prometheus.yml`](../../../docker/monitoring/prometheus/prometheus.yml) to set the scrape target/credentials, and see [`docker/monitoring/README.md`](../../../docker/monitoring/README.md) for details.
+Prometheus sends the mounted key in the `X-API-Key` header; the key file is mounted read-only and never stored in the scrape config. Edit [`docker/monitoring/prometheus/prometheus.yml`](../../../docker/monitoring/prometheus/prometheus.yml) to change the scrape target, and see [`docker/monitoring/README.md`](../../../docker/monitoring/README.md) for details.
 
 ## Verify
 
@@ -117,9 +138,10 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 
 ## Troubleshoot
 
-- **`/metrics` returns 404** — `HONUA_OBSERVABILITY` is not `true`, or the path was moved with `Observability__Prometheus__Path`.
+- **`/metrics` returns 401 or 403** — the endpoint requires the `Admin` policy. Scrape it with an admin credential, or keep it on an interface Prometheus can reach and your users cannot.
+- **`/metrics` returns 404** — the path was moved with `Observability__Prometheus__Path`, or no meter provider is registered (the server logs that it skipped mapping the endpoint).
 - **`/metrics` returns 401** — the scrape request is missing the `X-API-Key` header (or OIDC bearer token).
-- **No traces in your backend** — set `HONUA_OPENTELEMETRY=true` and an `OTEL_EXPORTER_OTLP_ENDPOINT`; confirm status via `GET /api/v1/admin/observability/telemetry`.
+- **No traces in your backend** — set `OTEL_EXPORTER_OTLP_ENDPOINT`, and check `Tracing__Enabled` has not been turned off; confirm status via `GET /api/v1/admin/observability/telemetry`.
 - **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. If Redis is configured, an unreachable Redis also fails readiness (durable feature-change event storage); a deployment with no Redis configured runs events in single-node in-memory mode and stays `Ready`.
 
 ## Next steps

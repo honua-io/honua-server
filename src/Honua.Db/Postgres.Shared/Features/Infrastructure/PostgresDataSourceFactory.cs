@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Honua.Core.Configuration;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
@@ -10,12 +12,17 @@ namespace Honua.Db.Postgres.Features.Infrastructure;
 
 internal static class PostgresDataSourceFactory
 {
+    // Every data source this factory builds, held weakly so tracking never extends a data
+    // source's lifetime. ReleasePooledConnections enumerates it to clear each pool.
+    private static readonly ConditionalWeakTable<NpgsqlDataSource, object?> BuiltDataSources = new();
+
     public static NpgsqlDataSource Create(string connectionString, IConfiguration configuration, bool schemaHeadersEnabled)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         var limits = ResolveConnectionLimits(configuration);
         var defaultSchema = configuration["Database:Schema"];
-        return Create(connectionString, schemaHeadersEnabled, limits, defaultSchema);
+        var sessionSettingsMode = DatabaseSessionSettingsOptions.ResolveMode(configuration);
+        return Create(connectionString, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode);
     }
 
     public static ConnectionLimits ResolveConnectionLimits(IConfiguration configuration)
@@ -45,17 +52,110 @@ internal static class PostgresDataSourceFactory
         limits.StatementTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.StatementTimeout), limits.StatementTimeout);
         limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
 
+        // A Lambda instance is frozen between invocations, so Npgsql never prunes below
+        // MinPoolSize. The long-lived defaults (min 20, idle 600s) clamp the floor up to
+        // the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
+        // for the floor). Every warm API instance then holds its whole pool, and the
+        // control-plane functions — cap 2 — still open that floor on top of their
+        // invocation. Leave an explicit operator value alone.
+        if (ControlPlaneEventHandlerHost.IsLambda(configuration))
+        {
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
+            {
+                limits.MinConnectionPoolSize = 0;
+            }
+
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionIdleLifetimeSeconds)]))
+            {
+                limits.ConnectionIdleLifetimeSeconds = Math.Max(
+                    LambdaIdleConnectionLifetimeSeconds,
+                    limits.ConnectionPruningIntervalSeconds);
+            }
+        }
+
         return limits;
     }
 
-    public static NpgsqlDataSource Create(string connectionString, bool schemaHeadersEnabled, ConnectionLimits limits, string? defaultSchema = null)
+    /// <summary>
+    /// Idle lifetime applied on Lambda when <c>Limits:Connections:ConnectionIdleLifetimeSeconds</c>
+    /// is unset. Matches the connection-string lifetime honua-iac puts on the RDS Proxy cell and
+    /// stays at or above the default pruning interval.
+    /// </summary>
+    internal const int LambdaIdleConnectionLifetimeSeconds = 60;
+
+    public static NpgsqlDataSource Create(
+        string connectionString,
+        bool schemaHeadersEnabled,
+        ConnectionLimits limits,
+        string? defaultSchema = null,
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
-        Configure(builder, schemaHeadersEnabled, limits, defaultSchema);
-        return builder.Build();
+        Configure(builder, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode);
+        return Track(builder.Build());
     }
 
-    public static void Configure(NpgsqlDataSourceBuilder builder, bool schemaHeadersEnabled, ConnectionLimits limits, string? defaultSchema = null)
+    /// <summary>
+    /// Builds a data source for a bound (secure-connection) source database. Bound sources
+    /// always use <see cref="DatabaseSessionSettingsMode.Connection"/>: their role is not the
+    /// primary database role an operator configures for <c>role-defaults</c>.
+    /// </summary>
+    public static NpgsqlDataSource CreateForBoundSource(string connectionString, ConnectionLimits limits)
+    {
+        var builder = new NpgsqlDataSourceBuilder(connectionString);
+        var sourceOptions = builder.ConnectionStringBuilder.Options;
+        Configure(builder, schemaHeadersEnabled: false, limits);
+        if (!string.IsNullOrWhiteSpace(sourceOptions) &&
+            !string.Equals(sourceOptions, builder.ConnectionStringBuilder.Options, StringComparison.Ordinal))
+        {
+            // Multiplexing supplies common timeouts as startup options. Retain
+            // source options such as search_path, with configured limits last.
+            builder.ConnectionStringBuilder.Options = $"{sourceOptions} {builder.ConnectionStringBuilder.Options}";
+        }
+
+        return Track(builder.Build());
+    }
+
+    /// <summary>
+    /// Closes the idle physical connections of every data source this factory has built, plus
+    /// the connection-string pools that bare <see cref="NpgsqlConnection"/> instances use.
+    /// In-use connections are closed when returned instead of being reused, and every pool
+    /// stays usable (the next open connects afresh). A data source that was already disposed
+    /// is skipped.
+    /// </summary>
+    /// <returns>The number of data-source pools that were cleared.</returns>
+    public static int ReleasePooledConnections()
+    {
+        var cleared = 0;
+        foreach (var (dataSource, _) in BuiltDataSources)
+        {
+            try
+            {
+                dataSource.Clear();
+                cleared++;
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposed data sources hold no connections; nothing to release.
+            }
+        }
+
+        NpgsqlConnection.ClearAllPools();
+        return cleared;
+    }
+
+    private static NpgsqlDataSource Track(NpgsqlDataSource dataSource)
+    {
+        BuiltDataSources.AddOrUpdate(dataSource, null);
+        return dataSource;
+    }
+
+    public static void Configure(
+        NpgsqlDataSourceBuilder builder,
+        bool schemaHeadersEnabled,
+        ConnectionLimits limits,
+        string? defaultSchema = null,
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(limits);
@@ -145,6 +245,19 @@ internal static class PostgresDataSourceFactory
         //   every pool return; initializer-applied SETs would be wiped by the first
         //   reset, while startup options survive RESET ALL as session defaults. This
         //   mode is test-only and never runs behind a connection proxy.
+        //
+        // - Database:SessionSettings:Mode=role-defaults: emit nothing. The settings
+        //   come from the database role's defaults (ALTER ROLE ... SET ...), which
+        //   PostgreSQL applies at session start and which survive RESET ALL. No
+        //   session SET means RDS Proxy can multiplex instead of pinning each client
+        //   connection (honua-server#5870). The role defaults are verified once at
+        //   startup by PostgresSessionSettingsVerificationService, which warns with
+        //   the ALTER ROLE statements to run; the server never runs ALTER ROLE.
+        if (sessionSettingsMode == DatabaseSessionSettingsMode.RoleDefaults)
+        {
+            return;
+        }
+
         var searchPathSchema = ResolveSearchPathSchema(schemaHeadersEnabled, defaultSchema);
 
         if (useMultiplexing || schemaHeadersEnabled)

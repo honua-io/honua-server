@@ -23,6 +23,17 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     public GeoServicesSpatialReference? SpatialReference { get; init; }
 
     /// <summary>
+    /// Coordinate quantization transform (origin/scale/translate) emitted when the
+    /// request supplied <c>quantizationParameters</c>; geometry coordinates are then
+    /// integer grid deltas recoverable through this transform. Declared ahead of
+    /// <see cref="Features"/> so it serializes first, as in the GeoServices featureSet:
+    /// clients read the featureSet front to back and dequantize each geometry with the
+    /// transform already read, so a transform after the features draws nothing (#5438).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeoServicesTransform? Transform { get; init; }
+
+    /// <summary>
     /// Name of the display field for the result set.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -95,14 +106,6 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// queryTopFeatures result could not be read.
     /// </summary>
     public bool ExceededTransferLimit { get; init; }
-
-    /// <summary>
-    /// Coordinate quantization transform (origin/scale/translate) emitted when the
-    /// request supplied <c>quantizationParameters</c>; geometry coordinates are then
-    /// integer grid deltas recoverable through this transform.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public GeoServicesTransform? Transform { get; init; }
 
     ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items =>
         Features?.ToImmutableArray() ?? ImmutableArray<GeoServicesFeature>.Empty;

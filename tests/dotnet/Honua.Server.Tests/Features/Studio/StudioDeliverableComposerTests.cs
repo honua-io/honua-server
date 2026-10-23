@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Server.Features.Studio.Export;
 using Honua.TestKit.Attributes;
+using SkiaSharp;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Studio;
@@ -66,6 +67,43 @@ public sealed class StudioDeliverableComposerTests
         var version = BuildVersion(StudioPackageFamily.Map, body: null);
 
         var artifact = StudioDeliverableComposer.Compose(version, StudioDeliverableFormat.Png);
+
+        artifact.Content.Take(PngMagic.Length).Should().Equal(PngMagic);
+    }
+
+    // honua-server#4908: prior to this guard, a typeface that resolved to a glyphless object
+    // (no fonts installed on the AOT image) let StudioDeliverableComposer.Compose return a
+    // 200-worthy PNG with only the two hairline rules drawn -- a silent blank artifact. The
+    // guard must refuse loudly instead, for both "no typeface at all" (the attestation-marker
+    // -removed case: RenderingTypeface.Default never resolved anything) and "typeface resolved
+    // but carries zero glyphs" (the corrupted-font case: a handle exists but nothing can be
+    // drawn with it).
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(null, false)]
+    [InlineData(0, false)]
+    [InlineData(6253, true)]
+    public void HasRenderableGlyphs_ReflectsWhetherTypefaceCanDrawText(int? glyphCount, bool expected)
+        => StudioDeliverableComposer.HasRenderableGlyphs(glyphCount).Should().Be(expected);
+
+    [UnitTest]
+    public void Compose_WithNoTypeface_ThrowsRenderExceptionRatherThanReturningABlankArtifact()
+    {
+        var version = BuildVersion(StudioPackageFamily.Map);
+
+        var act = () => StudioDeliverableComposer.Compose(version, StudioDeliverableFormat.Png, typeface: null);
+
+        act.Should().Throw<StudioDeliverableRenderException>()
+            .Which.Code.Should().Be("studio_deliverable/no_renderable_typeface");
+    }
+
+    [UnitTest]
+    public void Compose_WithRenderableTypeface_StillProducesArtifact()
+    {
+        var version = BuildVersion(StudioPackageFamily.Map);
+
+        var artifact = StudioDeliverableComposer.Compose(version, StudioDeliverableFormat.Png, SKTypeface.Default);
 
         artifact.Content.Take(PngMagic.Length).Should().Equal(PngMagic);
     }

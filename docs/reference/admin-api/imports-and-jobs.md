@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Imports and jobs"
+description: "Reference for importing vector and raster data (file upload, URL, GeoServer/GeoServices migration, raster registration) and for the job and operations endpoints used to track long-running work."
+resource: "honua://capability/import.file"
+---
 # Imports and jobs
 
 Reference for importing vector and raster data (file upload, URL, GeoServer/GeoServices migration, raster registration) and for the job and operations endpoints used to track long-running work.
@@ -13,11 +19,16 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | POST | `/api/v1/admin/import/preview-url` | Preview data from a supported public object URL |
 | POST | `/api/v1/admin/import/upload` | Upload and import data |
 | POST | `/api/v1/admin/import/upload-url` | Import data from a supported public object URL |
+| POST | `/api/v1/admin/import/upload-object` | Import an allow-listed `s3://` object with the host identity |
 | GET | `/api/v1/admin/import/limits` | Get import size and concurrency limits |
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/import/upload` and attach `parcels.geojson` to the `file` form field.
 
 Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves the `.gdb` directory structure. FlatGeobuf and GeoParquet files upload directly; provide `sourceSrid` when the file does not embed a CRS. See [Import files](../../guides/publish/import-files.md) for format-specific behavior.
+
+For URL imports, send one `Idempotency-Key` header (1–200 characters). The key is scoped to the authenticated principal and tenant. Repeating the same effective request returns its accepted response and original job without another download or import; the `/api/v1/admin/imports` compatibility route uses the same identity. Reusing the key with a changed request returns HTTP 409. A retry while the first request is still being accepted or executed also returns HTTP 409 with a retry-later message; retry the same key and request after the first response completes. Omitted fields and their explicit defaults are equivalent. Changing a signed source URL changes the request.
+
+Authorization, including OAuth scope restrictions, is checked again before replay. A failed durable audit check refuses the retry instead of returning stored success. Successful responses carry `X-Honua-Operation-Instance-Id`, `X-Honua-Audit-Id`, and `X-Correlation-ID` for the original operation. Requests without an idempotency key retain the ordinary import behavior.
 
 ## Uploads and import jobs
 
@@ -31,6 +42,15 @@ Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves t
 | POST | `/api/v1/admin/import/jobs/{jobId}/cancel` | Cancel an import job |
 
 Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the id returned by the upload.
+
+Besides the progress fields (`status`, `featuresProcessed`, `currentPhase`, `errorMessage`, and so on), the job document reports where the import runs:
+
+| Field | Value |
+|---|---|
+| `runner` | `batch`: a batch-compute execution worker (AWS Batch on `aws-serverless`) runs the import. `in-process`: a long-lived server process runs it, either the job worker of any replica (Redis on) or the server that accepted the upload (Redis off). Absent on jobs recorded before 2026.1. |
+| `instanceId` | The `Honua-Instance` identity of the process running the import; for `batch`, the AWS Batch job id when the worker runs on AWS Batch. Until a worker picks up a queued job, the instance that accepted the upload. |
+
+With a durable runner the job document is stored in Redis, so it survives a restart of the server that accepted the upload. If the worker stops before it records an outcome (crash, timeout, cancellation, or a rejected batch submission), the status reflects the durable job's terminal state instead of staying `processing`. A host that cannot run background imports answers `503 Background import service not available` on the upload; the `import.background` capability states the runner (`batch`, `in-process` or `unavailable`) and, when unavailable, the cause in `reasonCode`.
 
 ## Migration scan
 
@@ -52,7 +72,7 @@ Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUr
 | GET | `/api/v1/admin/import/geoserver/jobs/{jobId}` | Get GeoServer import job status |
 | POST | `/api/v1/admin/import/geoserver/jobs/{jobId}/cancel` | Cancel a GeoServer import job |
 
-Queued jobs persist request state before a worker runs, so credentials must use secret references (for example `"passwordSecretReference": "env:GEOSERVER_PASSWORD"`); plaintext passwords are rejected.
+Queued jobs persist request state before a worker runs, so credentials must use secret references (for example `"passwordSecretReference": "env:GEOSERVER_PASSWORD"`); plaintext passwords are rejected. Secret references are refused unless the operator has permitted them under `Security__RequestSecretReferences__*` ([References supplied in a request](../../guides/deploy/configuration.md#references-supplied-in-a-request)); nothing is permitted by default.
 
 ## GeoServices (ArcGIS) migration import
 
@@ -64,7 +84,7 @@ Queued jobs persist request state before a worker runs, so credentials must use 
 | GET | `/api/v1/admin/import/geoservices/jobs/{jobId}` | Get GeoServices import job status |
 | POST | `/api/v1/admin/import/geoservices/jobs/{jobId}/cancel` | Cancel a GeoServices import job |
 
-Authenticated sources send credentials in the request `credentials` object, never in the URL. Queued jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext token/password values are accepted only by the synchronous discover and scan endpoints.
+Authenticated sources send credentials in the request `credentials` object, never in the URL. Queued jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext token/password values are accepted only by the synchronous discover and scan endpoints. The same operator allowlist applies to these references.
 
 Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
 
@@ -92,7 +112,7 @@ Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https:
 
 Raster import is multipart form-data with optional sidecars (`.pgw`/`.jgw`/`.tfw`/`.wld`, `.prj`). Subsequent uploads to a layer must match the layer's SRID and band count; mismatches return `400`.
 
-Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif` and `layerName=ortho-2026`.
+Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif`, `layerId=1`, and `name=ortho-2026`.
 
 ## Tile operation jobs
 
@@ -131,8 +151,9 @@ Run `GET /api/v1/admin/operations/{operationId}` with the operation id returned 
 ## Related guides
 
 - [Import files](../../guides/publish/import-files.md)
+- [Import from object storage](../../guides/publish/import-from-object-storage.md)
 - [Import from ArcGIS services](../../guides/publish/import-from-arcgis-services.md)
 - [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
 - [Publish rasters](../../guides/publish/publish-rasters.md)
 - [Publish tiles](../../guides/publish/publish-tiles.md)
-- [Operations](../../guides/deploy/backup-and-restore.md)
+- [Monitor Honua Server](../../guides/deploy/monitoring.md)

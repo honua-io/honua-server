@@ -17,10 +17,11 @@ namespace Honua.Core.Features.Metadata.Caching;
 /// object reference across threads and requests is safe.
 /// </summary>
 /// <remarks>
-/// Staleness is bounded by a short, configurable TTL (<see cref="CacheOptions.MetadataGraphTtl"/>);
-/// this is what keeps multi-node deployments correct because a catalog write on one node does not
-/// reach another node's in-process cache. Same-node writes call <see cref="Invalidate(string)"/> for
-/// immediate freshness. Concurrent misses are coalesced (single-flight) so a TTL expiry under load
+/// Same-node writes call <see cref="Invalidate(string)"/> for immediate freshness. In multi-node
+/// deployments with Redis composed, the host decorates this cache with a Redis pub/sub invalidator
+/// that broadcasts each write so every node drops its snapshot too. Staleness is still bounded by a
+/// short, configurable TTL (<see cref="CacheOptions.MetadataGraphTtl"/>) as the backstop for a lost
+/// broadcast or a Redis-off node. Concurrent misses are coalesced (single-flight) so a TTL expiry under load
 /// triggers a single reload rather than a stampede.
 /// </remarks>
 public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalidator
@@ -68,7 +69,7 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
             && existing.State is { } fresh
             && !IsExpired(fresh, _timeProvider.GetTimestamp()))
         {
-            return await fresh.Snapshot.ConfigureAwait(false);
+            return await fresh.Snapshot.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // Slow path: coalesce concurrent reloads for this environment under a per-slot lock so a
@@ -85,12 +86,12 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
             else
             {
                 var expiresAt = now + (long)(ttl.TotalSeconds * _timeProvider.TimestampFrequency);
-                snapshotTask = LoadAndCacheAsync(environment, slot, load, cancellationToken);
+                snapshotTask = LoadAndCacheAsync(environment, slot, load);
                 slot.State = new SlotState(snapshotTask, expiresAt);
             }
         }
 
-        return await snapshotTask.ConfigureAwait(false);
+        return await snapshotTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -119,12 +120,13 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
     private async Task<MetadataV2GraphSnapshot> LoadAndCacheAsync(
         string environment,
         CacheSlot slot,
-        Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> load,
-        CancellationToken cancellationToken)
+        Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> load)
     {
         try
         {
-            return await load(cancellationToken).ConfigureAwait(false);
+            // A coalesced load belongs to the cache, not to whichever request won the race.
+            // Individual callers can cancel their own WaitAsync without cancelling other waiters.
+            return await load(CancellationToken.None).ConfigureAwait(false);
         }
         catch
         {

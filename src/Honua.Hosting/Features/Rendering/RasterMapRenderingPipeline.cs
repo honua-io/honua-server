@@ -1,13 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -119,8 +119,6 @@ internal static class RasterMapRenderingPipeline
             string.Equals(MapLibreStyleJson, style?.MapLibreStyleJson, StringComparison.Ordinal);
     }
 
-    private const float PointGeneralizationPixels = 0.8f;
-    private const int PointGeneralizationThreshold = 1024;
     internal const int TileSize = 256;
     internal const int TileSrid = 3857;
     internal const int GeographicTileSrid = 4326;
@@ -145,7 +143,8 @@ internal static class RasterMapRenderingPipeline
         MetadataV2GeometryType GeometryType,
         VerticalSelection? VerticalSelection = null,
         string? StableOrderField = null,
-        MetadataV2FieldType? StableOrderFieldType = null);
+        MetadataV2FieldType? StableOrderFieldType = null,
+        ImmutableArray<string>? EnforcedMaskedFields = null);
 
     internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
         int layerId,
@@ -372,6 +371,8 @@ internal static class RasterMapRenderingPipeline
                     : null,
                 stableOrderField: layer.StableOrderField,
                 stableOrderFieldType: layer.StableOrderFieldType);
+            featureQuery = featureQuery with { EnforcedMaskedFields = layer.EnforcedMaskedFields };
+            FeatureQuerySecurity.Validate(featureQuery);
 
             var renderedPointCount = await TryRenderAllRasterPointPagesAsync(
                 canvas,
@@ -752,7 +753,7 @@ internal static class RasterMapRenderingPipeline
                     continue;
                 }
 
-                if (TryRenderBatchedStyleLayer(canvas, features, styleLayer, transform, zoom))
+                if (SkiaFeatureDrawing.TryRenderBatchedStyleLayer(canvas, features, styleLayer, transform, zoom))
                 {
                     continue;
                 }
@@ -769,7 +770,7 @@ internal static class RasterMapRenderingPipeline
                         continue;
                     }
 
-                    RenderStyledFeature(canvas, feature, styleLayer, transform, zoom);
+                    SkiaFeatureDrawing.RenderStyledFeature(canvas, feature, styleLayer, transform, zoom);
                 }
             }
         }
@@ -781,7 +782,7 @@ internal static class RasterMapRenderingPipeline
 
             if (geometryType == MetadataV2GeometryType.Point)
             {
-                RenderDefaultPoints(canvas, features, transform, fill);
+                SkiaFeatureDrawing.RenderDefaultPoints(canvas, features, transform, fill);
                 return;
             }
 
@@ -793,337 +794,11 @@ internal static class RasterMapRenderingPipeline
                 }
 
                 var result = WkbToSkiaConverter.Convert(feature.Geometry, transform);
-                RenderConversionResult(canvas, result, fill, stroke);
+                SkiaFeatureDrawing.RenderConversionResult(canvas, result, fill, stroke);
             }
         }
     }
 
-    private static void RenderDefaultPoints(
-        SKCanvas canvas,
-        IReadOnlyList<Feature> features,
-        Func<double, double, SKPoint> transform,
-        SKPaint fill)
-    {
-        if (features.Count == 0)
-        {
-            return;
-        }
-
-        var rented = ArrayPool<SKPoint>.Shared.Rent(features.Count);
-
-        try
-        {
-            var count = CollectRenderablePoints(features, transform, rented, PointGeneralizationPixels);
-            if (count == 0)
-            {
-                return;
-            }
-
-            DrawPointBatch(canvas, rented, count, fill);
-        }
-        finally
-        {
-            ArrayPool<SKPoint>.Shared.Return(rented);
-        }
-    }
-
-    private static bool TryRenderBatchedStyleLayer(
-        SKCanvas canvas,
-        IReadOnlyList<Feature> features,
-        MapLibreStyleLayer styleLayer,
-        Func<double, double, SKPoint> transform,
-        RenderZoom zoom)
-    {
-        if (!string.Equals(styleLayer.Type, "circle", StringComparison.Ordinal) ||
-            styleLayer.Filter is not null ||
-            StyleTranslator.CollectReferencedFields([styleLayer]).Length != 0)
-        {
-            return false;
-        }
-
-        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, ImmutableDictionary<string, object?>.Empty, zoom);
-        RenderCirclePoints(canvas, features, transform, circleStyle);
-        return true;
-    }
-
-    private static void RenderCirclePoints(
-        SKCanvas canvas,
-        IReadOnlyList<Feature> features,
-        Func<double, double, SKPoint> transform,
-        ResolvedCircleStyle circleStyle)
-    {
-        if (features.Count == 0 || circleStyle.Radius <= 0)
-        {
-            return;
-        }
-
-        var rented = ArrayPool<SKPoint>.Shared.Rent(features.Count);
-
-        try
-        {
-            var count = CollectRenderablePoints(
-                features,
-                transform,
-                rented,
-                Math.Max(PointGeneralizationPixels, circleStyle.Radius));
-            if (count == 0)
-            {
-                return;
-            }
-
-            if (ShouldBatchCirclePoints(features.Count, count))
-            {
-                using var circlePaint = CreateBatchedCirclePaint(
-                    circleStyle.FillColor,
-                    Math.Max(1f, circleStyle.Radius * 2f));
-                DrawPointBatch(canvas, rented, count, circlePaint);
-
-                if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
-                {
-                    using var strokePaint = CreateBatchedCirclePaint(
-                        circleStyle.StrokeColor.Value,
-                        Math.Max(1f, (circleStyle.Radius * 2f) + circleStyle.StrokeWidth));
-                    DrawPointBatch(canvas, rented, count, strokePaint);
-                }
-            }
-            else
-            {
-                using var circlePaint = new SKPaint
-                {
-                    Style = SKPaintStyle.Fill,
-                    Color = circleStyle.FillColor,
-                    IsAntialias = true
-                };
-                DrawCircleLoop(canvas, rented, count, circleStyle.Radius, circlePaint);
-
-                if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
-                {
-                    using var strokePaint = new SKPaint
-                    {
-                        Style = SKPaintStyle.Stroke,
-                        Color = circleStyle.StrokeColor.Value,
-                        StrokeWidth = circleStyle.StrokeWidth,
-                        IsAntialias = true
-                    };
-                    DrawCircleLoop(canvas, rented, count, circleStyle.Radius, strokePaint);
-                }
-            }
-        }
-        finally
-        {
-            ArrayPool<SKPoint>.Shared.Return(rented);
-        }
-    }
-
-    private static bool ShouldBatchCirclePoints(int originalCount, int renderedCount)
-        => originalCount >= PointGeneralizationThreshold && (renderedCount * 20) <= (originalCount * 19);
-
-    private static int CollectRenderablePoints(
-        IReadOnlyList<Feature> features,
-        Func<double, double, SKPoint> transform,
-        SKPoint[] rented,
-        float generalizationPixels)
-    {
-        var count = 0;
-        var generalize = features.Count >= PointGeneralizationThreshold;
-        var seenCells = generalize ? new HashSet<long>() : null;
-
-        foreach (var feature in features)
-        {
-            if (!WkbToSkiaConverter.TryConvertPoint(feature.Geometry, transform, out var point))
-            {
-                continue;
-            }
-
-            if (seenCells is not null && !seenCells.Add(GetPointCellKey(point, generalizationPixels)))
-            {
-                continue;
-            }
-
-            rented[count++] = point;
-        }
-
-        return count;
-    }
-
-    private static void DrawPointBatch(
-        SKCanvas canvas,
-        SKPoint[] rented,
-        int count,
-        SKPaint paint)
-    {
-        if (count == rented.Length)
-        {
-            canvas.DrawPoints(SKPointMode.Points, rented, paint);
-            return;
-        }
-
-        var points = new SKPoint[count];
-        Array.Copy(rented, points, count);
-        canvas.DrawPoints(SKPointMode.Points, points, paint);
-    }
-
-    private static void DrawCircleLoop(
-        SKCanvas canvas,
-        SKPoint[] rented,
-        int count,
-        float radius,
-        SKPaint paint)
-    {
-        for (var i = 0; i < count; i++)
-        {
-            canvas.DrawCircle(rented[i], radius, paint);
-        }
-    }
-
-    private static SKPaint CreateBatchedCirclePaint(SKColor color, float diameter)
-        => new()
-        {
-            Style = SKPaintStyle.Stroke,
-            StrokeCap = SKStrokeCap.Round,
-            StrokeWidth = diameter,
-            Color = color,
-            IsAntialias = true
-        };
-
-    private static long GetPointCellKey(SKPoint point, float cellSize)
-    {
-        var cellX = (int)MathF.Floor(point.X / cellSize);
-        var cellY = (int)MathF.Floor(point.Y / cellSize);
-        return ((long)cellX << 32) | (uint)cellY;
-    }
-
-    private static void RenderStyledFeature(
-        SKCanvas canvas,
-        Feature feature,
-        MapLibreStyleLayer styleLayer,
-        Func<double, double, SKPoint> transform,
-        RenderZoom zoom)
-    {
-        var result = WkbToSkiaConverter.Convert(feature.Geometry!, transform);
-        try
-        {
-            switch (styleLayer.Type)
-            {
-                case "fill":
-                    {
-                        var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes, zoom);
-                        using var fillPaint = new SKPaint
-                        {
-                            Style = SKPaintStyle.Fill,
-                            Color = fillStyle.FillColor,
-                            IsAntialias = fillStyle.Antialias
-                        };
-
-                        if (result.Path != null)
-                        {
-                            canvas.DrawPath(result.Path, fillPaint);
-                        }
-
-                        if (fillStyle.OutlineColor.HasValue && result.Path != null)
-                        {
-                            using var outlinePaint = new SKPaint
-                            {
-                                Style = SKPaintStyle.Stroke,
-                                Color = fillStyle.OutlineColor.Value,
-                                StrokeWidth = fillStyle.OutlineWidth,
-                                IsAntialias = fillStyle.Antialias
-                            };
-                            canvas.DrawPath(result.Path, outlinePaint);
-                        }
-
-                        break;
-                    }
-                case "line":
-                    {
-                        var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes, zoom);
-                        using var linePaint = new SKPaint
-                        {
-                            Style = SKPaintStyle.Stroke,
-                            Color = lineStyle.LineColor,
-                            StrokeWidth = lineStyle.LineWidth,
-                            StrokeCap = lineStyle.LineCap,
-                            StrokeJoin = lineStyle.LineJoin,
-                            IsAntialias = true
-                        };
-
-                        if (lineStyle.DashArray is { Length: > 0 })
-                        {
-                            using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
-                            linePaint.PathEffect = dashEffect;
-                        }
-
-                        if (result.Path != null)
-                        {
-                            canvas.DrawPath(result.Path, linePaint);
-                        }
-
-                        break;
-                    }
-                case "circle":
-                    {
-                        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes, zoom);
-                        using var circlePaint = new SKPaint
-                        {
-                            Style = SKPaintStyle.Fill,
-                            Color = circleStyle.FillColor,
-                            IsAntialias = true
-                        };
-
-                        if (result.Points != null)
-                        {
-                            foreach (var point in result.Points)
-                            {
-                                canvas.DrawCircle(point, circleStyle.Radius, circlePaint);
-                            }
-
-                            if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
-                            {
-                                using var strokePaint = new SKPaint
-                                {
-                                    Style = SKPaintStyle.Stroke,
-                                    Color = circleStyle.StrokeColor.Value,
-                                    StrokeWidth = circleStyle.StrokeWidth,
-                                    IsAntialias = true
-                                };
-                                foreach (var point in result.Points)
-                                {
-                                    canvas.DrawCircle(point, circleStyle.Radius, strokePaint);
-                                }
-                            }
-                        }
-
-                        break;
-                    }
-            }
-        }
-        finally
-        {
-            result.Path?.Dispose();
-        }
-    }
-
-    private static void RenderConversionResult(
-        SKCanvas canvas,
-        WkbToSkiaConverter.GeometryConversionResult result,
-        SKPaint fill,
-        SKPaint? stroke)
-    {
-        if (result.IsPoint && result.Points != null)
-        {
-            canvas.DrawPoints(SKPointMode.Points, result.Points, fill);
-        }
-        else if (result.Path != null)
-        {
-            canvas.DrawPath(result.Path, fill);
-            if (stroke != null)
-            {
-                canvas.DrawPath(result.Path, stroke);
-            }
-        }
-
-        result.Path?.Dispose();
-    }
 
     internal static async Task<RasterStylePlan> GetRasterStylePlanAsync(
         ILayerStyleCatalog styleCatalog,
@@ -1354,7 +1029,7 @@ internal static class RasterMapRenderingPipeline
         }
 
         circleStyle = stylePlan.SimpleCircleStyle;
-        var generalizationPixels = Math.Max(PointGeneralizationPixels, circleStyle.Radius);
+        var generalizationPixels = Math.Max(SkiaFeatureDrawing.PointGeneralizationPixels, circleStyle.Radius);
         var cellWidth = CoordinateTransformer.GetEffectiveWidth(renderExtent) / imageWidth * generalizationPixels;
         var cellHeight = renderExtent.Height / imageHeight * generalizationPixels;
         if (cellWidth <= 0 || cellHeight <= 0)
@@ -1423,7 +1098,7 @@ internal static class RasterMapRenderingPipeline
                     yield break;
                 }
 
-                yield return result.Items;
+                yield return ApplyRasterFieldMasks(query, result.Items);
                 if (result.Items.Length < pageSize)
                 {
                     yield break;
@@ -1444,7 +1119,7 @@ internal static class RasterMapRenderingPipeline
                 yield break;
             }
 
-            yield return page.Items;
+            yield return ApplyRasterFieldMasks(query, page.Items);
             if (!page.HasMoreResults)
             {
                 yield break;
@@ -1452,6 +1127,23 @@ internal static class RasterMapRenderingPipeline
 
             offset = checked(offset + page.Items.Length);
         }
+    }
+
+    private static ImmutableArray<Feature> ApplyRasterFieldMasks(FeatureQuery query, ImmutableArray<Feature> features)
+    {
+        if (query.EnforcedMaskedFields is not { IsDefaultOrEmpty: false } fields)
+        {
+            return features;
+        }
+
+        // Keep the render snapshot authoritative even if a provider rechecks live policy
+        // or cannot enforce query-carried masks after that policy has been removed.
+        var masks = fields.Where(static field => !string.IsNullOrWhiteSpace(field))
+            .Select(static field => field.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return features.Select(feature => feature with
+        {
+            Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(masks.Contains))
+        }).ToImmutableArray();
     }
 
     private static void RenderProjectedCirclePoints(
@@ -1472,19 +1164,19 @@ internal static class RasterMapRenderingPipeline
             projectedPoints[i] = transform(points[i].X, points[i].Y);
         }
 
-        if (points.Length >= PointGeneralizationThreshold)
+        if (points.Length >= SkiaFeatureDrawing.PointGeneralizationThreshold)
         {
-            using var circlePaint = CreateBatchedCirclePaint(
+            using var circlePaint = SkiaFeatureDrawing.CreateBatchedCirclePaint(
                 circleStyle.FillColor,
                 Math.Max(1f, circleStyle.Radius * 2f));
-            DrawPointBatch(canvas, projectedPoints, points.Length, circlePaint);
+            SkiaFeatureDrawing.DrawPointBatch(canvas, projectedPoints, points.Length, circlePaint);
 
             if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
             {
-                using var strokePaint = CreateBatchedCirclePaint(
+                using var strokePaint = SkiaFeatureDrawing.CreateBatchedCirclePaint(
                     circleStyle.StrokeColor.Value,
                     Math.Max(1f, (circleStyle.Radius * 2f) + circleStyle.StrokeWidth));
-                DrawPointBatch(canvas, projectedPoints, points.Length, strokePaint);
+                SkiaFeatureDrawing.DrawPointBatch(canvas, projectedPoints, points.Length, strokePaint);
             }
 
             return;
@@ -1496,7 +1188,7 @@ internal static class RasterMapRenderingPipeline
             Color = circleStyle.FillColor,
             IsAntialias = true
         };
-        DrawCircleLoop(canvas, projectedPoints, points.Length, circleStyle.Radius, fillPaint);
+        SkiaFeatureDrawing.DrawCircleLoop(canvas, projectedPoints, points.Length, circleStyle.Radius, fillPaint);
 
         if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
         {
@@ -1507,7 +1199,7 @@ internal static class RasterMapRenderingPipeline
                 StrokeWidth = circleStyle.StrokeWidth,
                 IsAntialias = true
             };
-            DrawCircleLoop(canvas, projectedPoints, points.Length, circleStyle.Radius, strokePaint);
+            SkiaFeatureDrawing.DrawCircleLoop(canvas, projectedPoints, points.Length, circleStyle.Radius, strokePaint);
         }
     }
 

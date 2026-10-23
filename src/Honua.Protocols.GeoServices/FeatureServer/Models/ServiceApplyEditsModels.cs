@@ -67,18 +67,6 @@ public sealed class ServiceLayerEdits
 }
 
 /// <summary>
-/// Response model for service-level applyEdits containing per-layer results
-/// </summary>
-public sealed class ServiceApplyEditsResponse
-{
-    /// <summary>
-    /// Per-layer edit results
-    /// </summary>
-    [JsonPropertyName("editResults")]
-    public ServiceLayerEditResult[]? EditResults { get; set; }
-}
-
-/// <summary>
 /// Edit results for a single layer in a service-level applyEdits response
 /// </summary>
 public sealed class ServiceLayerEditResult
@@ -106,4 +94,10 @@ public sealed class ServiceLayerEditResult
     /// </summary>
     [JsonPropertyName("deleteResults")]
     public EditResult[]? DeleteResults { get; set; }
+
+    /// <summary>
+    /// When returnEditMoment=true, the time the layer's edits were applied, in epoch milliseconds (#4105).
+    /// </summary>
+    [JsonPropertyName("editMoment")]
+    public long? EditMoment { get; set; }
 }

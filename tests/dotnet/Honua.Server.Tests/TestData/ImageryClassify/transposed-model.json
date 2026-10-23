@@ -1,0 +1,10 @@
+{
+  "modelId": "honua-mindist-transposed",
+  "algorithm": "minimum-distance-to-mean",
+  "bands": ["red", "green", "blue"],
+  "classes": [
+    { "id": 1, "name": "water",      "centroid": [40, 90, 30] },
+    { "id": 2, "name": "vegetation", "centroid": [120, 90, 60] },
+    { "id": 3, "name": "soil",       "centroid": [20, 40, 80] }
+  ]
+}

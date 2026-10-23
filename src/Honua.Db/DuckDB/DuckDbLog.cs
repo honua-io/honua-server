@@ -27,4 +27,10 @@ internal static partial class DuckDbLog
 
     [LoggerMessage(EventId = 8805, Level = LogLevel.Error, Message = "DuckDB {OperationType} query failed for layer {LayerId}.")]
     public static partial void QueryFailed(ILogger logger, string operationType, int layerId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 8806,
+        Level = LogLevel.Warning,
+        Message = "DuckDB layer {LayerId} table {Table}: attribute column '{Column}' is outside the supported field-name syntax and is not exposed; rename the column or list the columns to expose in DuckDB:Layers:N:Attributes")]
+    public static partial void AttributeColumnNotSupported(ILogger logger, int layerId, string table, string column);
 }

@@ -80,7 +80,7 @@ internal abstract class StudioDraftToolBase
     /// "studio-compose" grant family; honua-server#3002/#3001). Admin
     /// principals bypass as usual (matches the existing REST Studio lifecycle
     /// surface's admin-tier default posture); the OAuth bearer-scope
-    /// narrowing in <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync"/>
+    /// narrowing in <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync(System.Security.Claims.ClaimsPrincipal, OperatorResourceType, OperatorOperation, System.Threading.CancellationToken)"/>
     /// applies identically to every other <c>/mcp</c> tool.
     /// </summary>
     protected async Task<ClaimsPrincipal> EnsureAuthorizedAsync(
@@ -191,6 +191,22 @@ internal abstract class StudioDraftToolBase
         var draft = await lifecycleService.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
         if (draft is null)
         {
+            // Non-disclosure (#3429): authorize a missing draft as an ownerless target first, so a
+            // caller who could not act on another owner's draft receives that same governed denial
+            // instead of learning whether the id exists.
+            await EnsureStudioAuthorizedAsync(
+                httpContext,
+                RequireAuthorizationService(httpContext),
+                principal,
+                studioOperation,
+                resourceOwnerId: null,
+                // A lookup miss carries the caller's own tenant so the tenant boundary stays a
+                // no-op here and the ownerless-target denial keeps deciding (honua-server#4905).
+                resourceTenantId: RequestTenantId(httpContext),
+                draftId.ToString("D"),
+                "studio-package-draft",
+                operatorOperation,
+                cancellationToken).ConfigureAwait(false);
             throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
         }
 
@@ -200,12 +216,23 @@ internal abstract class StudioDraftToolBase
             principal,
             studioOperation,
             draft.OwnerId,
+            draft.TenantId,
             draftId.ToString("D"),
             "studio-package-draft",
             operatorOperation,
             cancellationToken).ConfigureAwait(false);
 
         return draft;
+    }
+
+    /// <summary>
+    /// The tenant the current MCP request resolved to (honua-server#4905). Used as the recorded
+    /// tenant of a resource the caller is about to create and of a lookup miss.
+    /// </summary>
+    protected static string? RequestTenantId(HttpContext httpContext)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        return httpContext.RequestServices.GetService<ITenantContext>()?.TenantId;
     }
 
     /// <summary>
@@ -219,6 +246,7 @@ internal abstract class StudioDraftToolBase
         ClaimsPrincipal principal,
         StudioAuthorizationOperation studioOperation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         string? resourceId,
         string resourceType,
         OperatorOperation operatorOperation,
@@ -230,6 +258,7 @@ internal abstract class StudioDraftToolBase
             callerId,
             studioOperation,
             resourceOwnerId,
+            resourceTenantId,
             resourceId: resourceId,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 

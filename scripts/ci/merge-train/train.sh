@@ -476,7 +476,7 @@ train_phase_recovery_reason() {
 # TRAIN_STATE_PHASES (state.sh) without a TRAIN_PHASE_RECOVERY class, a class
 # cannot survive removal of its phase, and no class value can be a typo.
 train_state_phase_recovery_drift() {
-  local phase
+  local phase schema_phase known
   for phase in "${TRAIN_STATE_PHASES[@]}"; do
     case "$(train_phase_recovery_class "${phase}")" in
       escalate|release|retry|post-land) ;;
@@ -484,9 +484,21 @@ train_state_phase_recovery_drift() {
       *)  printf 'unknown-recovery-class %s=%s\n' "${phase}" "$(train_phase_recovery_class "${phase}")" ;;
     esac
   done
+  # Membership is tested in-process on purpose. Piping the phase list into
+  # `grep -Fxq` raced under `set -o pipefail`: grep exits at the first match and
+  # the writer can then take SIGPIPE, so the pipeline reported failure and this
+  # guard emitted a phantom orphan for a phase that IS in the schema. At ~26
+  # classes that fired in roughly one run in three of the fixture (#4460-era
+  # trunk), which is drift noise the guard exists to rule out.
   for phase in "${!TRAIN_PHASE_RECOVERY[@]}"; do
-    printf '%s\n' "${TRAIN_STATE_PHASES[@]}" | grep -Fxq -- "${phase}" \
-      || printf 'orphan-recovery-class %s\n' "${phase}"
+    known=0
+    for schema_phase in "${TRAIN_STATE_PHASES[@]}"; do
+      if [[ "${schema_phase}" == "${phase}" ]]; then
+        known=1
+        break
+      fi
+    done
+    (( known )) || printf 'orphan-recovery-class %s\n' "${phase}"
   done
 }
 

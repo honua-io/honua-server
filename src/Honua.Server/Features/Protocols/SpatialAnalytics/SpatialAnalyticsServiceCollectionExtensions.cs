@@ -1,6 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Abstractions;
+#if !HONUA_EXCLUDE_GEOSERVICES
+using Honua.Infrastructure.Analytics;
+#endif
+using Honua.Infrastructure.Services;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
 /// <summary>
@@ -21,6 +28,14 @@ internal static class SpatialAnalyticsServiceCollectionExtensions
         // This hook is kept so AddServerFeatures can include analytics alongside the rest of
         // the server feature slices and so future server-side additions (metrics, caches) have
         // a single place to land without touching the composition root.
+
+        // The canonical analytics selection translation, shared with the source.honua-layer
+        // geoprocessing connector so layer-sourced jobs honor geometry/time selectors exactly
+        // as the synchronous analytics endpoints do (#4624).
+#if !HONUA_EXCLUDE_GEOSERVICES
+        services.TryAddScoped<SpatialReferenceResolver>();
+        services.TryAddScoped<ILayerSelectionFilterTranslator, AnalyticsLayerSelectionFilterTranslator>();
+#endif
         return services;
     }
 }

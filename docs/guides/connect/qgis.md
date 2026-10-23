@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Connect QGIS to Honua"
+description: "Add Honua layers to a QGIS project over OGC API Features, WMS/WMTS, or WFS, then filter them with the standard QGIS tools."
+---
 # Connect QGIS to Honua
 
 Add Honua layers to a QGIS project over OGC API Features, WMS/WMTS, or WFS, then filter them with the standard QGIS tools.

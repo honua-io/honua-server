@@ -1,6 +1,66 @@
+---
+type: concept
+title: "Editions and licensing"
+description: "Honua's source is available under the Elastic License 2.0 — free to use, deploy, and modify."
+---
 # Editions and licensing
 
-Honua's source is available under the [Elastic License 2.0](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify. At runtime, the server operates in one of three editions:
+Honua's source is available under the [Elastic License 2.0](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify.
+
+## 2026.1: licensing disabled
+
+The first release uses the supported `Licensing__Mode=Disabled` setting, including in
+Production. No license file, signing key or license minting is required. All catalog
+entitlements are active, including GeoServices editing, Redis caching, geocoding and
+OIDC. License sources are not loaded or validated; capacity registration, metering,
+expiry notifications and license-driven operation cancellation are off. Uploads are
+rejected while this mode is active, and surge requests leave metering disabled.
+
+```bash
+Licensing__Mode=Disabled
+```
+
+Set the same mode on standalone GDAL workers; their job coordination still requires
+Redis, while licensing and capacity metering remain off. Restart each host after
+changing the mode. This explicit choice belongs in the
+deployment configuration: the server default remains `Licensing__Mode=Enabled`
+with Community when no edition or license source is configured. Honua's 2026.1
+deployment surfaces select Disabled through their own configuration.
+
+The admin license endpoints (`GET /api/v1/admin/license` and `/status`) report
+`mode: disabled`, `edition: Unlicensed-2026.1`, `validationState: Disabled`, no expiry
+and no expiry warning. `/api/v1/admin/license/capacity` reports
+`meteringEnabled: false`, no registrations and no enforcement. The Console license
+status view displays the returned edition and validation state.
+
+Disabling licensing grants entitlements only. Authentication, authorization and
+tenant isolation still apply; features still require their runtime configuration
+and dependencies. Preview and Experimental opt-ins and the release manifest's
+`experimental:` exclusions remain in effect. Alerting and offline sync remain
+Preview; all four cloud-native formats and the whole GA process catalog
+retain their release scope. `Licensing__DevGrantEdition` remains a development-only
+override and is refused in Production, including when Mode is Disabled.
+
+Disabled mode also sets the default guardrail posture, because the guardrail ladder
+treats the host as Enterprise-equivalent. Administrative configuration changes,
+deploy and rollback, metadata release, seed and service publish operations route
+through approval by default. Studio draft composition is the exception. An
+authorized owner creates, updates, validates, previews, saves, reopens and deletes
+drafts directly, as on a Community host. Studio publication and rollback still wait
+for approval, and so does every agent publication proposal.
+`Guardrails__Overrides__<OperationClass>` still takes precedence and applies to the
+whole class. `Guardrails__Overrides__StudioDraftMutation=RequiresApproval` puts
+composition behind approval too. `DirectExecute` on that class removes the approval
+step from Studio publication and rollback; agent publication proposals keep theirs.
+
+Licensing bands, metering and marketplace integration are scheduled for hardening
+and re-enablement in 2026.2. The edition and signed-license behavior below applies
+when `Licensing__Mode=Enabled`; it is not a license requirement for the 2026.1
+Disabled deployment posture.
+
+## Editions with licensing enabled
+
+With licensing enabled, the server operates in one of three editions:
 
 | Edition | How it activates | Scope |
 |---|---|---|
@@ -12,7 +72,7 @@ Community requires no license and is unaffected by license expiry. Pro and Enter
 
 ## Commercial boundaries for 2026.1
 
-The [2026-09-04 commercial-boundaries ruling](https://github.com/honua-io/honua-flow/blob/trunk/docs/2026.1-quality-contract.md) separates edition entitlement from release maturity:
+Edition entitlement and release maturity are separate axes: paying for a capability does not make it GA, and a Preview capability is not free. These edition assignments apply with licensing enabled; Disabled mode grants them all without changing maturity:
 
 | Capability | Edition | 2026.1 boundary |
 |---|---|---|
@@ -20,10 +80,7 @@ The [2026-09-04 commercial-boundaries ruling](https://github.com/honua-io/honua-
 | Organisational approval and policy controls | Enterprise | Paid governance around the core versioning/operation workflow |
 | Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers | Community | 3D remains Experimental; this does not expand the supported release surface |
 | Specialised CityGML/BIM and point-cloud ingest; I3S | Enterprise | Remain Experimental; no tier expansion without a specific commercial decision |
-| Customer-facing multitenancy | Preview/trial only | Single-tenant GA; no Honua SaaS or production multi-tenant deployment |
 | Essential secure operation and recoverability | Baseline in every edition | Authorization, isolation, audit integrity, backup/restore and recovery procedures are product obligations; advanced automation, governance and support are the paid layers |
-
-Any multi-tenant deployment is an explicitly labelled demo/trial/preview environment: no customer production data, production SLO, availability, performance or durability commitment. Cross-tenant disclosure remains a full-severity defect. Multitenancy functional, UX and performance work is deferred to 2026.2.
 
 ## License files
 
@@ -45,6 +102,7 @@ Feature activation is entitlement-based: Community-tier features are active on C
 ## Configuration
 
 ```bash
+Licensing__Mode=Enabled
 Licensing__Edition=Pro
 Licensing__LicensePath=/etc/honua/license.honua-license.json
 Licensing__TrustedKeys__honua-2026-q2=base64url:<32-byte-raw-ed25519-public-key>
@@ -52,7 +110,8 @@ Licensing__AllowAdminUpload=false   # default
 Licensing__ExpiryWarningDays=30     # default
 ```
 
-- `Licensing__Edition` — `Community`, `Pro`, or `Enterprise`. Set it on every paid server and worker. If omitted, a configured source selects paid-license validation and a valid signed license determines the tier.
+- `Licensing__Mode` — `Enabled` (server default) or `Disabled`, case-insensitive. Unknown values refuse startup. Changing the mode requires restart.
+- `Licensing__Edition` — `Community`, `Pro`, or `Enterprise`, ignored in Disabled mode. With licensing enabled, set it on every paid server and worker. If omitted, a configured source selects paid-license validation and a valid signed license determines the tier.
 - `Licensing__LicensePath` — path to the signed license file and the location prefix for the persisted `.uploaded` override. With no paid edition declared and no file, inline content, or secret reference configured, the server runs Community mode.
 - `Licensing__LicenseContent` — inline signed JSON envelope.
 - `Licensing__LicenseContentSecretRef` — secret-store reference to the signed envelope.
@@ -113,82 +172,12 @@ license source on each API replica and native worker.
 For the exact startup errors and remedies, see
 [operator troubleshooting](../guides/deploy/troubleshooting.md#license-failure-mode).
 
-## Issuing Pro / Enterprise licenses (publisher only)
+## Obtaining a Pro or Enterprise license
 
-> This section is for the Honua publisher (whoever owns the signing key), not for
-> operators consuming a license. Customers never run the mint tool.
-
-License envelopes are minted offline with the `honua-license-mint` tool
-(`src/Honua.LicenseMint`). It generates the Ed25519 signing key pair and signs the
-canonical payload bytes the runtime verifier checks, so a minted file is accepted by
-`GET /api/v1/admin/license/status` with `validationState=Valid`.
-
-### 1. Generate a signing key pair (once per key id)
-
-```bash
-dotnet run --project src/Honua.LicenseMint -- \
-  keygen --key-id honua-2026-q3 --private-out signing.key
-```
-
-This prints the public key and the exact `Licensing__TrustedKeys__<keyId>` setting to
-configure on every server instance, and writes the private seed (Base64URL, `chmod 600`)
-to `signing.key`. The public key is safe to publish; configure it as a trusted key on
-the runtime. The private seed is the trust root for **every** license — see custody
-rules below.
-
-### 2. Mint a license
-
-```bash
-dotnet run --project src/Honua.LicenseMint -- \
-  mint --key-id honua-2026-q3 \
-       --license-id lic-acme-001 \
-       --licensed-to "Acme Corp" \
-       --edition Pro \
-       --expires 365d \
-       --capacity-units 4 \
-       --annual-surge-days 14 \
-       --surge-allowance standard \
-       --private-key-file signing.key \
-       --out acme.honua-license.json
-```
-
-- `--edition` is `Community`, `Pro`, or `Enterprise`. By default every `FeatureCatalog`
-  feature at or below the edition is granted; pass `--entitlements key1,key2` to scope a
-  license to specific feature keys (each must be a known catalog key).
-- `--expires` accepts an RFC 3339 timestamp or a duration like `365d`. Omit it for a
-  perpetual license. BYOL files are typically ≤ 1 year; marketplace-issued files ≤ 90 days
-  (ADR-0033).
-- `--capacity-units` signs the maximum sustained serving-unit band into the license.
-  When present, `--annual-surge-days` defaults to `14` (or accepts `unlimited`) and
-  `--surge-allowance` defaults to `standard` (`high` and `unlimited` are also valid).
-  Omit all three options only when the commercial license is intentionally unbanded.
-- The signing key can also be supplied inline with `--private-key <base64url>` or via the
-  `HONUA_LICENSE_SIGNING_KEY` environment variable.
-
-Hand `acme.honua-license.json` to the customer; they load it via `Licensing__LicensePath`
-(or the admin upload endpoint) as described above.
-
-### Key custody
-
-The Ed25519 **private seed is the trust root** for the entire licensing system — anyone
-holding it can mint a license for any edition.
-
-- **Never commit it.** Keep `signing.key` (and any inline key value) out of version
-  control; the mint tool restricts the written file to owner-only permissions on
-  POSIX hosts as a best-effort safeguard.
-- **Store it in a secret manager** (AWS Secrets Manager, Azure Key Vault, a sealed
-  secret, or an offline air-gapped store), not in CI logs or shared drives.
-- **Rotate by adding, not replacing.** `Licensing__TrustedKeys` is additive: configure a
-  new `keyId` public key alongside the old one, mint new files with the new key, and retire
-  the old key once the longest-lived file signed with it has expired (ADR-0033, key-rotation
-  runbook).
-- **The public key is not secret.** Only the public key goes into `Licensing__TrustedKeys`;
-  distributing it does not weaken signing.
-
-The hosted-mint admin API (`POST /api/v1/admin/license/mint`) and marketplace adapters
-described in [ADR-0033](../internal/contributor/adr/0033-unified-license-format.md) are
-follow-on work; this tool is the offline BYOL minting path and the signing primitive those
-hosted flows reuse.
+Pro and Enterprise license files are issued by Honua. Contact your Honua representative
+or support to request, renew, or re-scope a license; you will receive a signed
+`.honua-license.json` envelope to install with [Configuration](#configuration) or the
+admin upload endpoint above.
 
 ## Migrating existing licenses
 

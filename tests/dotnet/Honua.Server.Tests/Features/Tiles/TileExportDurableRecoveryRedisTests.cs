@@ -7,14 +7,17 @@ using System.Diagnostics.Metrics;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Tiles;
+using Honua.Server.Features.Admin.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -330,6 +333,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
         private readonly CountingTileExportProducer _producer;
         private readonly TileExportJobExecutor _executor;
         private readonly TimeProvider _timeProvider;
+        private readonly ServiceProvider _policyServices;
 
         private TileExportRedisHarness(ConnectionMultiplexer multiplexer)
         {
@@ -345,12 +349,20 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
             Queue = new RedisJobQueue(_multiplexer, Store, NullLogger<RedisJobQueue>.Instance);
             Storage = new RecordingCloudFileStorage(_timeProvider);
             _producer = new CountingTileExportProducer();
+            // Mirrors the host composition (Program.cs registers the in-memory policy stores by
+            // default): with no row or field policies configured, map packages remain reusable
+            // checkpoints. Without a scope factory the executor fails closed to a fresh render.
+            _policyServices = new ServiceCollection()
+                .AddScoped<IRlsPolicyStore, InMemoryRlsPolicyStore>()
+                .AddScoped<IFieldMaskPolicyStore, InMemoryFieldMaskPolicyStore>()
+                .BuildServiceProvider();
             _executor = new TileExportJobExecutor(
                 Storage,
                 [_producer],
                 [new AlwaysAvailableFence()],
                 _timeProvider,
-                NullLogger<TileExportJobExecutor>.Instance);
+                NullLogger<TileExportJobExecutor>.Instance,
+                _policyServices.GetRequiredService<IServiceScopeFactory>());
         }
 
         public RedisExecutionJobStore Store { get; }
@@ -452,6 +464,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
         {
             await CleanupAsync();
             await _multiplexer.DisposeAsync();
+            await _policyServices.DisposeAsync();
         }
 
         private async Task CleanupAsync()

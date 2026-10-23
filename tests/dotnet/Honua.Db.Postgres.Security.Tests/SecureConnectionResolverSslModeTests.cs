@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Security;
@@ -17,6 +19,7 @@ namespace Honua.Db.Postgres.Security.Tests;
 /// </summary>
 public sealed class SecureConnectionResolverSslModeTests
 {
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("Allow")]
@@ -49,6 +52,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains("allows plaintext fallback", exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("Host=replica.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require", "resolved host does not match configured host")]
@@ -83,6 +87,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains(expectedMessage, exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task ResolveConnectionStringAsync_SecretReferenceWithoutDeclaredHostOrPort_ResolvesWithoutTamperCheck()
@@ -119,6 +124,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Equal(resolvedConnectionString, resolved);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task ResolveConnectionStringAsync_SecretReferenceWithApiPersistedHostPlaceholder_ResolvesWithoutTamperCheck()
@@ -154,6 +160,145 @@ public sealed class SecureConnectionResolverSslModeTests
         var resolved = await resolver.ResolveConnectionStringAsync(connection.Name);
 
         Assert.Equal(resolvedConnectionString, resolved);
+    }
+
+    [Trait("Tier", "Fast")]
+    [SecurityTest]
+    [Theory]
+    [InlineData("Options=-c statement_timeout=0")]
+    [InlineData("Trust Server Certificate=true")]
+    [InlineData("Root Certificate=/etc/ssl/certs/root.pem")]
+    [InlineData("SSL Certificate=/tmp/client.pem")]
+    [InlineData("Passfile=/tmp/pgpass")]
+    [InlineData("Include Error Detail=true")]
+    public async Task ResolveConnectionStringAsync_SecretWithKeywordOutsideAllowlist_ThrowsInvalidOperation(string keyword)
+    {
+        // SEC-23: a resolved PostgreSQL connection string may carry only the endpoint, credential,
+        // TLS-mode and tuning keywords the server supports; anything else is refused.
+        var connection = CreateSecretReferenceConnection(host: "db.example.com", port: 5432);
+        var resolver = CreateResolver(
+            connection,
+            $"Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require;{keyword}");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveConnectionStringAsync(connection.Name));
+
+        Assert.Equal("Failed to resolve connection string for 'production-analytics'.", exception.Message);
+        Assert.NotNull(exception.InnerException);
+        Assert.Contains("keyword", exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret", exception.InnerException.Message, StringComparison.Ordinal);
+    }
+
+    [Trait("Tier", "Fast")]
+    [SecurityTest]
+    [Theory]
+    [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
+    [InlineData("Server=db.example.com;Port=5432;Database=analytics;User Id=app;Password=secret;SSL Mode=VerifyFull")]
+    [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SSL Mode=Require;Trust Server Certificate=false")]
+    [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require;Timeout=5;Command Timeout=30;Pooling=true;Maximum Pool Size=20;Minimum Pool Size=0;Application Name=honua;Search Path=public;Keepalive=30;Connection Idle Lifetime=60")]
+    public async Task ResolveConnectionStringAsync_SecretWithAllowedKeywords_ResolvesUnchanged(string resolvedConnectionString)
+    {
+        var connection = CreateSecretReferenceConnection(host: "db.example.com", port: 5432);
+        var resolver = CreateResolver(connection, resolvedConnectionString);
+
+        var resolved = await resolver.ResolveConnectionStringAsync(connection.Name);
+
+        Assert.Equal(resolvedConnectionString, resolved);
+    }
+
+    [Trait("Tier", "Fast")]
+    [SecurityTest]
+    [Theory]
+    [InlineData("Host=other.example.net;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
+    [InlineData("Host=db.example.com,other.example.net;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
+    public async Task ResolveConnectionStringAsync_ResolvedHostOutsideHostPolicy_ThrowsInvalidOperation(string resolvedConnectionString)
+    {
+        // SEC-23: the host policy applies to every host the resolved string names, including a
+        // secret-reference connection that declared no host of its own.
+        var connection = CreateSecretReferenceConnection(host: DataConnection.SecretReferenceMetadataPlaceholder, port: 0);
+        var resolver = CreateResolver(
+            connection,
+            resolvedConnectionString,
+            new ConnectionHostAllowlist(
+                new ConnectionHostAllowlistOptions { AllowedHosts = ["db.example.com"] },
+                static (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") })));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveConnectionStringAsync(connection.Name));
+
+        Assert.NotNull(exception.InnerException);
+        Assert.Contains("not permitted by the connection host policy", exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Trait("Tier", "Fast")]
+    [SecurityTest]
+    [Fact]
+    public async Task ResolveConnectionStringAsync_ResolvedHostInsideHostPolicy_Resolves()
+    {
+        const string resolvedConnectionString =
+            "Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require";
+        var connection = CreateSecretReferenceConnection(host: DataConnection.SecretReferenceMetadataPlaceholder, port: 0);
+        var resolver = CreateResolver(
+            connection,
+            resolvedConnectionString,
+            new ConnectionHostAllowlist(
+                new ConnectionHostAllowlistOptions { AllowedHosts = ["db.example.com"] },
+                static (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") })));
+
+        var resolved = await resolver.ResolveConnectionStringAsync(connection.Name);
+
+        Assert.Equal(resolvedConnectionString, resolved);
+    }
+
+    private static DataConnection CreateSecretReferenceConnection(string host, int port)
+        => DataConnection.CreateWithSecretReference(
+            name: "production-analytics",
+            host: host,
+            port: port,
+            databaseName: "analytics",
+            username: "app",
+            secretRef: "env:PROD_DB_CONNECTION",
+            secretType: "EnvironmentVariable",
+            createdBy: "test",
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+    private static SecureConnectionResolver CreateResolver(
+        DataConnection connection,
+        string resolvedConnectionString,
+        IConnectionHostAllowlist? hostAllowlist = null)
+        => new(
+            new StubRegistry(connection),
+            new StubEncryptionService(resolvedConnectionString),
+            new StubSecretResolver(resolvedConnectionString),
+            NullLogger<SecureConnectionResolver>.Instance,
+            connectionDriverRegistry: null,
+            hostAllowlist: hostAllowlist);
+
+    [Trait("Tier", "Fast")]
+    [SecurityTest]
+    [Theory]
+    [InlineData("honua")]
+    [InlineData("pg_catalog")]
+    [InlineData("information_schema")]
+    [InlineData("unlisted")]
+    [InlineData("public,pg_temp")]
+    [InlineData("\"$user\",public")]
+    [InlineData("public,")]
+    [InlineData("\"PUBLIC\"")]
+    public async Task ResolveConnectionStringAsync_UnsafeSearchPath_Refuses(string searchPath)
+    {
+        var connection = CreateSecretReferenceConnection("db.example.com", 5432);
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder
+        {
+            Host = "db.example.com",
+            Username = "app",
+            Password = "secret",
+            SslMode = Npgsql.SslMode.Require,
+            SearchPath = searchPath
+        };
+        var resolver = CreateResolver(connection, builder.ConnectionString);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveConnectionStringAsync(connection.Name));
     }
 
     private sealed class StubRegistry(DataConnection connection) : ISecureConnectionRegistry
@@ -218,33 +363,23 @@ public sealed class SecureConnectionResolverSslModeTests
         public Task<bool> ValidateEncryptionAsync() => Task.FromResult(true);
     }
 
-    private sealed class ThrowingSecretResolver : IConnectionSecretResolver
+    private sealed class ThrowingSecretResolver : IRequestSecretReferenceResolver
     {
-        public string ProviderName => "ThrowingProvider";
+        public RequestSecretReferenceDecision Evaluate(string? reference)
+            => RequestSecretReferenceDecision.Refused("not supported");
 
-        public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
-            => Task.FromException<string?>(new NotSupportedException());
-
-        public bool CanResolve(string secretKey)
-            => false;
-
-        public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+        public Task<string> ResolveAsync(string reference, CancellationToken cancellationToken = default)
             => Task.FromException<string>(new NotSupportedException());
     }
 
-    private sealed class StubSecretResolver(string resolvedConnectionString) : IConnectionSecretResolver
+    private sealed class StubSecretResolver(string resolvedConnectionString) : IRequestSecretReferenceResolver
     {
         private readonly string _resolvedConnectionString = resolvedConnectionString;
 
-        public string ProviderName => "EnvironmentVariable";
+        public RequestSecretReferenceDecision Evaluate(string? reference)
+            => RequestSecretReferenceDecision.Permitted();
 
-        public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>(_resolvedConnectionString);
-
-        public bool CanResolve(string secretKey)
-            => true;
-
-        public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+        public Task<string> ResolveAsync(string reference, CancellationToken cancellationToken = default)
             => Task.FromResult(_resolvedConnectionString);
     }
 }

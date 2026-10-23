@@ -68,10 +68,22 @@ public sealed record LayerReconciliationLayerInput
     public long? SourceFeatureCount { get; init; }
 
     /// <summary>
+    /// Whether the source resource declares geometry. Attribute-only tables do not require
+    /// geometry-validity or extent probes. Defaults to true for existing spatial callers.
+    /// </summary>
+    public bool SourceHasGeometry { get; init; } = true;
+
+    /// <summary>
     /// Source-side bounding box snapshot. <c>null</c> when the source did not advertise an
     /// extent; the extent probe will record a <c>warn</c> with a "no baseline" reason.
     /// </summary>
     public BoundingBox? SourceExtent { get; init; }
+
+    /// <summary>
+    /// Target CRS recorded in the reviewed import request. A different observed CRS is a
+    /// failure; when reprojection is planned, compare target rows back in the source CRS.
+    /// </summary>
+    public int? PlannedTargetSrid { get; init; }
 
     /// <summary>
     /// Source-advertised field names (deduplicated). Empty when the source did not advertise
@@ -82,9 +94,64 @@ public sealed record LayerReconciliationLayerInput
     /// <summary>
     /// Optional secret-safe filter mirror applied at apply time (e.g. CQL or GeoServices
     /// <c>where</c>) so the count probe can be filter-mirrored. <c>null</c> means the apply
-    /// imported all features and the probe issues an unfiltered count.
+    /// imported all features and the probe issues an unfiltered count. For a dedicated
+    /// import target this is provenance only; see <see cref="TargetContainsOnlyImportedFeatures"/>.
     /// </summary>
     public string? FilterMirror { get; init; }
+
+    /// <summary>
+    /// The target is a dedicated import table that holds only the selected source population.
+    /// <see cref="FilterMirror"/> is then source provenance and is not executed against the
+    /// target: source identifiers may have been remapped on insert, and a repeated filter would
+    /// hide extra target rows. Every target row is counted, extent-probed and sampled, and any
+    /// difference from <see cref="SourceFeatureCount"/> fails the count probe.
+    /// </summary>
+    public bool TargetContainsOnlyImportedFeatures { get; init; }
+
+    /// <summary>
+    /// Per-feature source geometry census keyed by the target feature id the reader returns.
+    /// Null keeps the target-only validity ratio. When present, the filtered population is
+    /// compared in one CRS: a null or invalid source that is still missing or not well-formed
+    /// is an inherited source defect, a well-formed target in its place is not a successful
+    /// repair, and a present valid source that did not survive is transfer loss (#4826).
+    /// </summary>
+    public SourceGeometryCensus? SourceGeometry { get; init; }
+
+    /// <summary>
+    /// Extent queried from the source features themselves (<c>returnExtentOnly</c>), independent
+    /// of <see cref="SourceExtent"/>. A disagreement beyond tolerance marks the advertised extent
+    /// stale and compares the target with this queried extent.
+    /// </summary>
+    public BoundingBox? QueriedSourceExtent { get; init; }
+
+    /// <summary>
+    /// Source field name to published target field name. Applied to <see cref="FilterMirror"/>
+    /// before a shared target executes it. Parsed field references, including quoted names,
+    /// are mapped; literals and function names are preserved. Ignored for a dedicated import target.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? FilterFieldMappings { get; init; }
+}
+
+/// <summary>
+/// Source geometry dispositions recorded at insert, keyed by the target feature id.
+/// </summary>
+public sealed record SourceGeometryCensus
+{
+    /// <summary>Target ids whose source feature had no geometry.</summary>
+    public IReadOnlySet<long> AbsentTargetFeatureIds { get; init; } = new HashSet<long>();
+
+    /// <summary>
+    /// Target ids whose source geometry was present but could not be stored. A null or
+    /// malformed target geometry for one of these ids is transfer loss, not an inherited defect.
+    /// </summary>
+    public IReadOnlySet<long> UnconvertedTargetFeatureIds { get; init; } = new HashSet<long>();
+
+    /// <summary>
+    /// Target ids whose source geometry was present and topologically invalid. A still-invalid
+    /// or missing target geometry is an inherited source defect. A well-formed target geometry
+    /// is not a successful repair of that defect (#4826).
+    /// </summary>
+    public IReadOnlySet<long> InvalidTargetFeatureIds { get; init; } = new HashSet<long>();
 }
 
 /// <summary>

@@ -52,6 +52,43 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/validation")]
+    public async Task GetLayerValidation_WithAttributeOnlyStorage_ReturnsValid()
+    {
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"ALTER TABLE \"{_schema}\".\"{_tableName}\" DROP COLUMN geom";
+            await command.ExecuteNonQueryAsync();
+        }
+        var provider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException("Test V2 graph provider was not registered.");
+        var snapshot = await provider.GetCurrentAsync();
+        var layerId = _layerId ?? throw new InvalidOperationException("Layer setup failed.");
+        var resourceId = snapshot.Index.ResourcesByStorageLayerId[layerId].Metadata.Id;
+        provider.SetGraph(snapshot.Graph with
+        {
+            Resources = snapshot.Graph.Resources.Select(resource => resource.Metadata.Id == resourceId
+                ? resource with
+                {
+                    Type = MetadataV2ResourceType.Table,
+                    Spatial = null,
+                    SchemaFields = resource.SchemaFields.Where(field => field.Name != "geom").ToArray()
+                }
+                : resource).ToArray(),
+            Revision = snapshot.Graph.Revision + 1
+        });
+
+        using var response = await _client.GetAsync($"/api/v1/admin/metadata/layers/{layerId}/validation");
+        response.Be200Ok();
+        var result = await ReadValidationResponseAsync(response);
+        result.Data.Should().NotBeNull();
+        result.Data!.IsValid.Should().BeTrue();
+        result.Data.Checks.Should().NotContain(check => check.Severity == "error");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/validation")]
     public async Task GetLayerValidation_WithMatchingStorage_ReturnsValid()
     {
         var response = await _client.GetAsync($"/api/v1/admin/metadata/layers/{_layerId}/validation");

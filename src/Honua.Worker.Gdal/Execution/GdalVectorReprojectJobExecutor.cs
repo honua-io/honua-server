@@ -162,18 +162,19 @@ internal sealed partial class GdalVectorReprojectJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding reprojected feature artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var bounded = await GdalArtifactPublisher.ReadBoundedPayloadAsync(
+                outputPath, opts.MaxArtifactBytes, cancellationToken).ConfigureAwait(false);
+            if (bounded.ExceededLimit)
             {
-                return JobExecutionResult.Failed("ogr2ogr produced an empty reprojected FeatureCollection.");
+                Log.ArtifactTooLarge(logger, job.OperationId, bounded.Length, opts.MaxArtifactBytes);
+                return JobExecutionResult.Failed(
+                    $"Reprojected FeatureCollection size {bounded.Length.ToString(CultureInfo.InvariantCulture)} bytes exceeds configured " +
+                    $"MaxArtifactBytes={opts.MaxArtifactBytes.ToString(CultureInfo.InvariantCulture)}.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            if (bounded.Payload is not { Length: > 0 } outputBytes)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Reprojected FeatureCollection size {outputBytes.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+                return JobExecutionResult.Failed("ogr2ogr produced an empty reprojected FeatureCollection.");
             }
 
             var artifactUri = GdalDataUri.Build(GeoJsonContentType, outputBytes);

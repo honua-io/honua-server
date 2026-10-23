@@ -14,23 +14,29 @@ namespace Honua.Infrastructure.Authentication;
 /// scheme configured in <see cref="OidcAuthenticationExtensions"/>.
 /// </summary>
 /// <remarks>
-/// Centralizing the rules keeps the portal verifier's decision identical to a
-/// direct OIDC Bearer session: the issuers/audiences derived here mirror
-/// <c>ConfigureJwtBearerAuthentication</c>. The authority returned alongside the
-/// parameters is the metadata endpoint the caller should configure on a
-/// <c>ConfigurationManager&lt;OpenIdConnectConfiguration&gt;</c> for signing-key
-/// discovery when no static symmetric key is set.
+/// Authorities follow <see cref="OidcProviderCatalog"/> order (Azure AD, Google,
+/// Okta, Auth0, generic, then runtime providers), the same order the OAuth broker
+/// uses. Signing keys are resolved per authority by the caller. A per-issuer
+/// audience validator rejects a token whose audience belongs to a different provider.
 /// </remarks>
 internal static class OidcTokenValidationParametersFactory
 {
     /// <summary>
-    /// Builds validation parameters and resolves the metadata authority.
+    /// Result of <see cref="Build"/>. Authorities stay in catalog order even when a
+    /// static symmetric signing key is set, so a selected provider can still be pinned.
     /// </summary>
-    /// <param name="options">The OIDC authentication options.</param>
-    /// <returns>The validation parameters and the resolved authority (or
-    /// <see langword="null"/> when a static symmetric signing key is configured
-    /// and metadata discovery is not required).</returns>
-    public static (TokenValidationParameters Parameters, string? Authority) Build(OidcAuthenticationOptions options)
+    /// <param name="Parameters">Validation parameters, including the audience pairing.</param>
+    /// <param name="Authorities">Metadata authorities in catalog order, distinct and trimmed.</param>
+    public readonly record struct BuildResult(
+        TokenValidationParameters Parameters,
+        IReadOnlyList<string> Authorities);
+
+    /// <summary>
+    /// Builds validation parameters and the metadata authorities in catalog order.
+    /// </summary>
+    public static BuildResult Build(
+        OidcAuthenticationOptions options,
+        IOidcRuntimeProviderSource? runtimeProviders = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -45,128 +51,144 @@ internal static class OidcTokenValidationParametersFactory
             RoleClaimType = options.ClaimsMapping.RoleClaimType,
         };
 
-        parameters.ValidIssuers = BuildIssuers(options);
-        parameters.ValidAudiences = BuildAudiences(options);
-
-        var staticSigningKey = options.TokenValidation.SymmetricSigningKey;
-        if (!string.IsNullOrWhiteSpace(staticSigningKey))
-        {
-            parameters.IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(staticSigningKey));
-            return (parameters, null);
-        }
-
-        return (parameters, ResolveAuthority(options));
-    }
-
-    private static string[] BuildIssuers(OidcAuthenticationOptions options)
-    {
         var issuers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var audiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var audiencesByIssuer = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var authorities = new List<string>();
 
-        if (options.AzureAd?.IsValid == true)
+        foreach (var provider in OidcProviderCatalog.GetProviders(options, runtimeProviders))
         {
-            var tenantId = options.AzureAd.TenantId!;
-            issuers.Add($"{options.AzureAd.Instance}{tenantId}/v2.0");
-            issuers.Add($"https://sts.windows.net/{tenantId}/");
-        }
+            if (!provider.IsValid)
+            {
+                continue;
+            }
 
-        if (options.Google?.IsValid == true)
-        {
-            issuers.Add("https://accounts.google.com");
-        }
-
-        if (options.Generic?.IsValid == true && !string.IsNullOrEmpty(options.Generic.Authority))
-        {
-            issuers.Add(options.Generic.Authority);
-        }
-
-        if (options.Okta?.IsValid == true)
-        {
-            issuers.Add(options.Okta.GetAuthority());
-        }
-
-        if (options.Auth0?.IsValid == true)
-        {
-            issuers.Add(options.Auth0.GetAuthority());
+            AddProviderBinding(provider, options, issuers, audiences, audiencesByIssuer, authorities);
         }
 
         foreach (var issuer in options.TokenValidation.ValidIssuers)
         {
-            issuers.Add(issuer);
-        }
-
-        return [.. issuers];
-    }
-
-    private static string[] BuildAudiences(OidcAuthenticationOptions options)
-    {
-        var audiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (options.AzureAd?.IsValid == true)
-        {
-            var clientId = options.AzureAd.ClientId!;
-            audiences.Add(clientId);
-            audiences.Add($"api://{clientId}");
-        }
-
-        if (options.Google?.IsValid == true)
-        {
-            audiences.Add(options.Google.ClientId!);
-        }
-
-        if (options.Generic?.IsValid == true)
-        {
-            audiences.Add(options.Generic.ClientId!);
-        }
-
-        if (options.Okta?.IsValid == true)
-        {
-            audiences.Add(options.Okta.ClientId!);
-        }
-
-        if (options.Auth0?.IsValid == true)
-        {
-            audiences.Add(options.Auth0.ClientId!);
-            if (!string.IsNullOrWhiteSpace(options.Auth0.Audience))
+            if (!string.IsNullOrWhiteSpace(issuer))
             {
-                audiences.Add(options.Auth0.Audience);
+                issuers.Add(issuer);
             }
         }
 
         foreach (var audience in options.TokenValidation.ValidAudiences)
         {
-            audiences.Add(audience);
+            if (!string.IsNullOrWhiteSpace(audience))
+            {
+                audiences.Add(audience);
+            }
         }
 
-        return [.. audiences];
+        parameters.ValidIssuers = issuers.ToArray();
+        parameters.ValidAudiences = audiences.ToArray();
+        if (options.TokenValidation.ValidateAudience && audiencesByIssuer.Count > 0)
+        {
+            var pairing = audiencesByIssuer;
+            parameters.AudienceValidator = (tokenAudiences, securityToken, validationParameters) =>
+            {
+                var issuer = securityToken?.Issuer;
+                if (!string.IsNullOrWhiteSpace(issuer) && pairing.TryGetValue(issuer, out var allowedForIssuer))
+                {
+                    return tokenAudiences is not null && tokenAudiences.Any(allowedForIssuer.Contains);
+                }
+
+                var fallback = validationParameters.ValidAudiences;
+                return tokenAudiences is not null && fallback is not null &&
+                    tokenAudiences.Any(audience =>
+                        fallback.Any(valid => string.Equals(valid, audience, StringComparison.OrdinalIgnoreCase)));
+            };
+        }
+
+        var staticSigningKey = options.TokenValidation.SymmetricSigningKey;
+        if (!string.IsNullOrWhiteSpace(staticSigningKey))
+        {
+            parameters.IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(staticSigningKey));
+        }
+
+        return new BuildResult(parameters, authorities);
     }
 
-    private static string? ResolveAuthority(OidcAuthenticationOptions options)
+    /// <summary>
+    /// Restricts parameters to the provider that started a broker flow so a token from
+    /// another configured authority cannot be substituted.
+    /// </summary>
+    public static TokenValidationParameters NarrowToProvider(
+        TokenValidationParameters parameters,
+        OidcProviderRegistration provider,
+        OidcAuthenticationOptions options)
     {
-        if (options.AzureAd?.IsValid == true)
+        ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var issuers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var audiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pairing = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        AddProviderBinding(provider, options, issuers, audiences, pairing, authorities: []);
+
+        var narrowed = parameters.Clone();
+        narrowed.ValidIssuer = null;
+        narrowed.ValidIssuers = issuers.ToArray();
+        narrowed.ValidAudiences = audiences.ToArray();
+        narrowed.AudienceValidator = (tokenAudiences, _, _) =>
+            tokenAudiences is not null && tokenAudiences.Any(audience =>
+                audiences.Contains(audience));
+        return narrowed;
+    }
+
+    private static void AddProviderBinding(
+        OidcProviderRegistration provider,
+        OidcAuthenticationOptions options,
+        HashSet<string> issuers,
+        HashSet<string> audiences,
+        Dictionary<string, HashSet<string>> audiencesByIssuer,
+        List<string> authorities)
+    {
+        if (string.IsNullOrWhiteSpace(provider.Authority) || string.IsNullOrWhiteSpace(provider.ClientId))
         {
-            return $"{options.AzureAd.Instance}{options.AzureAd.TenantId}/v2.0";
+            return;
         }
 
-        if (options.Generic?.IsValid == true)
+        var authority = provider.Authority.Trim();
+        var metadataAuthority = authority.TrimEnd('/');
+        if (!authorities.Contains(metadataAuthority, StringComparer.OrdinalIgnoreCase))
         {
-            return options.Generic.Authority;
+            authorities.Add(metadataAuthority);
         }
 
-        if (options.Okta?.IsValid == true)
+        var providerIssuers = new List<string> { authority };
+        var providerAudiences = new List<string> { provider.ClientId.Trim() };
+
+        if (string.Equals(provider.Type, "AzureAd", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(options.AzureAd?.TenantId))
         {
-            return options.Okta.GetAuthority();
+            providerIssuers.Add($"https://sts.windows.net/{options.AzureAd.TenantId}/");
+            providerAudiences.Add($"api://{provider.ClientId.Trim()}");
         }
 
-        if (options.Auth0?.IsValid == true)
+        if (string.Equals(provider.Type, "Auth0", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(options.Auth0?.Audience))
         {
-            return options.Auth0.GetAuthority();
+            providerAudiences.Add(options.Auth0.Audience);
         }
 
-        if (options.Google?.IsValid == true)
+        foreach (var issuer in providerIssuers)
         {
-            return "https://accounts.google.com";
-        }
+            issuers.Add(issuer);
+            if (!audiencesByIssuer.TryGetValue(issuer, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                audiencesByIssuer[issuer] = set;
+            }
 
-        return null;
+            foreach (var audience in providerAudiences)
+            {
+                set.Add(audience);
+                audiences.Add(audience);
+            }
+        }
     }
 }

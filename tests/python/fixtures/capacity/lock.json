@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 1,
+  "release": "2026.1.0-rc.1",
+  "owner": "release-engineering",
+  "frozenAt": "2026-09-13T12:24:00Z",
+  "baseline": {
+    "repository": "honua-io/honua-server",
+    "revision": "9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd",
+    "imageDigest": "sha256:a5d962958ec8a6890ecd0f5f34f1da9c08a9d464da0418bdfbbc381c754d30fc",
+    "workflowRunId": 34753540275,
+    "workflowUrl": "https://github.com/honua-io/honua-server/actions/runs/34753540275",
+    "receiptUrl": "https://raw.githubusercontent.com/honua-io/honua-server/e185c1aaa3b0a45704a9f517dea828d1111db62d/capacity/9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd-34753540275.json",
+    "receiptSha256": "0b07ce30d03c21735b8afe809eafc7b55cbb30a4828d59bd746413a9f12d30d3",
+    "profile": "soak",
+    "environment": "Production",
+    "substrate": "local-docker",
+    "result": "completed",
+    "priorLockGateResult": "failed: p95LatencyMs, p99LatencyMs, throughputRps",
+    "steadyStateSeconds": 3600,
+    "observedValues": {
+      "availability": 1.0,
+      "errorRate": 0.048903454537463004,
+      "p95LatencyMs": 746.5,
+      "p99LatencyMs": 929.28,
+      "throughputRps": 1254.1833333333334,
+      "queueAgeSeconds": 10.266,
+      "saturationRatio": 0.29,
+      "recoveryTimeSeconds": 5.181
+    },
+    "derivation": {
+      "latency": "Observed worst-scenario percentile times 1.10, rounded up to whole milliseconds.",
+      "throughput": "Observed successful requests per full 4020-second run times 0.95, rounded down to whole requests per second.",
+      "errorRate": "Observed 259240 / 5301057 = 0.048903454537463004; retain the absolute 0.05 ceiling, which also covers the first baseline observation 0.0491650679726396. No additional allowance at evaluation.",
+      "retainedBounds": "Availability >= 0.9999, queue age <= 30s, saturation <= 0.85 and recovery <= 300s are retained: observed 1.0, 10.266s, 0.29 and 5.181s respectively meet those bounds on this dataset. No additional allowance at evaluation."
+    },
+    "priorBaseline": {
+      "workflowRunId": 34749955367,
+      "workflowUrl": "https://github.com/honua-io/honua-server/actions/runs/34749955367",
+      "receiptUrl": "https://raw.githubusercontent.com/honua-io/honua-server/a8a4a073a0c7382333a3fa6b4770a703daa54be5/capacity/9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd-34749955367.json",
+      "receiptSha256": "c34b38b625419fce421bb06764f8c2d32494fb16248fa3c26f5d08311a37428c",
+      "observedValues": {
+        "availability": 1.0,
+        "errorRate": 0.0491650679726396,
+        "p95LatencyMs": 587.26,
+        "p99LatencyMs": 775.17,
+        "throughputRps": 1617.8286069651742,
+        "queueAgeSeconds": 10.308,
+        "saturationRatio": 0.28,
+        "recoveryTimeSeconds": 6.18
+      },
+      "qualificationResult": "The independent run 34753540275 did not reproduce limits 646ms p95, 853ms p99 and 1536 successful requests/second; its completed measurements replace the first baseline before another independent qualification."
+    }
+  },
+  "supportedEnvelope": {
+    "tenants": 1,
+    "services": 1,
+    "layersPerService": 4,
+    "featuresPerLayer": 10000,
+    "maximumFeaturePayloadBytes": 1048576,
+    "concurrentVirtualUsers": 170,
+    "gpWorkers": 1,
+    "gpQueueDepth": 100
+  },
+  "soak": {
+    "profile": "soak",
+    "minimumSteadyStateSeconds": 3600,
+    "requiredSignals": [
+      "availability",
+      "errorRate",
+      "p95LatencyMs",
+      "p99LatencyMs",
+      "throughputRps",
+      "queueAgeSeconds",
+      "saturationRatio",
+      "recoveryTimeSeconds"
+    ]
+  },
+  "thresholds": {
+    "availability": {
+      "operator": ">=",
+      "value": 0.9999,
+      "regressionAllowance": 0.0
+    },
+    "errorRate": {
+      "operator": "<=",
+      "value": 0.05,
+      "regressionAllowance": 0.0
+    },
+    "p95LatencyMs": {
+      "operator": "<=",
+      "value": 822.0,
+      "regressionAllowance": 0.1
+    },
+    "p99LatencyMs": {
+      "operator": "<=",
+      "value": 1023.0,
+      "regressionAllowance": 0.1
+    },
+    "throughputRps": {
+      "operator": ">=",
+      "value": 1191.0,
+      "regressionAllowance": 0.05
+    },
+    "queueAgeSeconds": {
+      "operator": "<=",
+      "value": 30.0,
+      "regressionAllowance": 0.0
+    },
+    "saturationRatio": {
+      "operator": "<=",
+      "value": 0.85,
+      "regressionAllowance": 0.0
+    },
+    "recoveryTimeSeconds": {
+      "operator": "<=",
+      "value": 300.0,
+      "regressionAllowance": 0.0
+    }
+  },
+  "rulings": [
+    {
+      "date": "2026-09-13",
+      "notes": "Preview dimensions excluded by operator ruling A 2026-09-13; see docs/CAPACITY-ENVELOPE-2026.1.md.",
+      "excludedDimensions": [
+        "activeSubscriptions",
+        "alertEvaluationsPerSecond"
+      ]
+    }
+  ],
+  "receiptContract": {
+    "schemaVersion": 2,
+    "evidenceScope": "single-tenant-ga",
+    "bundleFormat": "zip",
+    "approvedProducer": {
+      "repository": "honua-io/honua-server",
+      "workflowPath": ".github/workflows/capacity-soak-candidate.yml",
+      "predicateType": "https://slsa.dev/provenance/v1",
+      "runner": "github-hosted"
+    },
+    "requiredRawEvidence": true,
+    "requiredWorkloadStatus": "exercised",
+    "previewProxyEvidenceAllowed": false,
+    "frozenAt": "2026-09-29T01:15:00Z"
+  },
+  "excludedPreviewDimensions": {
+    "activeSubscriptions": {
+      "status": "preview",
+      "requiredForGa": false
+    },
+    "alertEvaluationsPerSecond": {
+      "status": "preview",
+      "requiredForGa": false
+    }
+  },
+  "queries": {
+    "availability": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "sum(requests[count where httpStatus < 500 and inBandError == false]) / sum(requests[count])",
+      "sha256": "ba9ebb1bb2186411a62498a98723871e759d1a0c00c6a8a0276225ea5548510e"
+    },
+    "errorRate": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "sum(requests[count where httpStatus >= 500 or inBandError == true]) / sum(requests[count])",
+      "sha256": "c8f764a94360fa9adb12c82d70f163fe164eccaf95a8ed6532ca9d4fdf3f81cd"
+    },
+    "p95LatencyMs": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "weighted_nearest_rank(requests[durationMs,count], 0.95)",
+      "sha256": "b56300c5fe053b697c772bedb230fdafce2a39770d094e6dfd882f2297fbe4ca"
+    },
+    "p99LatencyMs": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "weighted_nearest_rank(requests[durationMs,count], 0.99)",
+      "sha256": "3932938a3ae7741a712e767676b027016f86e545329c5159b0102c690668a097"
+    },
+    "throughputRps": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "sum(requests[count]) / seconds(window)",
+      "sha256": "159b24f7907e4b03a3bcf3f76d6f81df78f97b2b9d76869d25b9b3849d2ea202"
+    },
+    "queueAgeSeconds": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "max(metrics[queueAgeSeconds])",
+      "sha256": "d1b19193dc1a35c27014287f45f45c873c32893e18f0618de1b818c64044fdee"
+    },
+    "saturationRatio": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "max(metrics[worker], metrics[database], metrics[redis])",
+      "sha256": "7d78e5d70bb0b90691cb51b0f6b0a66b95c1744980278c79f0a088228ffd0211"
+    },
+    "recoveryTimeSeconds": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "max(recoveries[seconds(recoveredAt - injectedAt)])",
+      "sha256": "3e7b8e1a0613131609d285fe2bf2dc2c2dbd110fb37c73d947a5e254ea7b03cc"
+    }
+  },
+  "workloadQueries": {
+    "tenants": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.tenants] == 1)",
+      "sha256": "781bb88d57bdef3c307e96d58fb4e455243b5f42ede418e64b337f8a51eea62d"
+    },
+    "services": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.services] == 1)",
+      "sha256": "4c2374bc5cfc72251cdc60b6581a80593d3a0a1c231ce3fc54100d513577e072"
+    },
+    "layersPerService": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.layersPerService] == 4)",
+      "sha256": "6f2291250af7ec22190ba5030b499df970cca6747b279ca87be8dd1867498470"
+    },
+    "featuresPerLayer": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.featuresPerLayer] == 10000)",
+      "sha256": "ed87c1df55c251c72b480b5d9034cc742dd5e3e5ae06dfcad98a4ec60d2f7944"
+    },
+    "maximumFeaturePayloadBytes": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.maximumFeaturePayloadBytes] == 1048576)",
+      "sha256": "00673308445f7ef420503e5da268fc244f56fec0f69969d16ce02d40364dbb2b"
+    },
+    "concurrentVirtualUsers": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.concurrentVirtualUsers] == 170)",
+      "sha256": "72973364bba05326bd2cb4559f175d93250b66add29b8b2caa0c1a747fbbc082"
+    },
+    "gpWorkers": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.gpWorkers] == 1)",
+      "sha256": "52f6f8818c9c5b3f1845e2aa0c79eb71964e5c3a2dcfa22d9cccc295f2f810e6"
+    },
+    "gpQueueDepth": {
+      "language": "honua-observation-query",
+      "version": "1",
+      "expression": "all(workloads[dimensions.gpQueueDepth] == 100)",
+      "sha256": "82d11f84c14f7f88933d306c5744cbcc0f3f9a3a0d9dc4625eec401cff3ccdef"
+    }
+  }
+}

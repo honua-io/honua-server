@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -63,7 +64,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -83,7 +85,6 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not configured as time-aware.");
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
@@ -94,11 +95,23 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
-        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-            resource,
-            storageLayerId.Value,
-            featureReader,
-            cancellationToken).ConfigureAwait(false);
+        TemporalExtentHelpers.MetadataV2TemporalRange? temporalRange;
+        try
+        {
+            var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+                resource,
+                storageLayerId.Value,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "temporalExtent is not supported by the configured feature provider for this layer.");
+        }
 
         if (temporalRange is null)
         {

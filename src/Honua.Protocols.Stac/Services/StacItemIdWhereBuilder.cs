@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Stac;
 
 namespace Honua.Protocols.Stac.Services;
 
@@ -12,30 +13,54 @@ namespace Honua.Protocols.Stac.Services;
 /// </summary>
 internal static class StacItemIdWhereBuilder
 {
-    private static readonly ImmutableArray<string> CanonicalKeys = ["stac_id", "item_id", "id"];
-
     public static ImmutableArray<MetadataV2Field> GetCandidateFields(MetadataV2Resource resource)
     {
-        var fields = ImmutableArray.CreateBuilder<MetadataV2Field>();
-        foreach (var canonicalKey in CanonicalKeys)
+        var source = StacItemIdentity.Resolve(resource);
+        if (source.Field is null)
         {
-            var field = resource.SchemaFields.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
-            if (field is not null)
-            {
-                fields.Add(field);
-            }
+            return ImmutableArray<MetadataV2Field>.Empty;
         }
 
-        var primaryIdField = resource.FindPrimaryIdField();
-        if (primaryIdField is not null &&
-            !CanonicalKeys.Any(key => string.Equals(key, primaryIdField.Name, StringComparison.OrdinalIgnoreCase)))
+        if (!source.IsDeclaredIdentity)
         {
-            fields.Add(primaryIdField);
+            return ImmutableArray.Create(source.Field);
         }
 
-        return fields.ToImmutable();
+        // A blank declared identity is published as the object id. Include the primary
+        // key so a client can fetch that published id, while rows with a real identity
+        // still fail the published-id check in the query executor.
+        var primary = resource.FindPrimaryIdField();
+        if (primary is null ||
+            string.Equals(primary.Name, source.Field.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return ImmutableArray.Create(source.Field);
+        }
+
+        return ImmutableArray.Create(source.Field, primary);
     }
+
+    /// <summary>
+    /// Attribute names an unbound item lookup may match. A configured identity field
+    /// replaces the canonical <c>stac_id</c>/<c>item_id</c>/<c>id</c> list.
+    /// </summary>
+    public static IReadOnlyList<string> UnboundAttributeNames(MetadataV2Resource resource)
+    {
+        var source = StacItemIdentity.Resolve(resource);
+        if (source.IsDeclaredIdentity &&
+            source.Field is { } field &&
+            !string.IsNullOrWhiteSpace(field.Name))
+        {
+            return [field.Name];
+        }
+
+        return StacItemIdentity.CanonicalNames;
+    }
+
+    public static string BuildUnboundAttributePredicate(MetadataV2Resource resource)
+        => string.Join(
+            " OR ",
+            UnboundAttributeNames(resource).Select(static name =>
+                $"attributes->>'{name.Replace("'", "''", StringComparison.Ordinal)}' = @p0"));
 
     public static bool TryBuildFieldMatch(
         MetadataV2Field field,

@@ -123,6 +123,22 @@ public sealed class PublicSceneDiscoveryEndpointTests : IAsyncLifetime
         var bytes = await response.Content.ReadAsByteArrayAsync();
         bytes.Length.Should().BeGreaterThan(4);
         System.Text.Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("b3dm");
+        System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4)).Should().Be(1);
+        System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8)).Should().Be((uint)bytes.Length);
+        var glbOffset = 28;
+        for (var index = 12; index < 28; index += 4)
+        {
+            glbOffset += (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(index));
+        }
+
+        glbOffset.Should().BeLessThan(bytes.Length - 20);
+        System.Text.Encoding.ASCII.GetString(bytes, glbOffset, 4).Should().Be("glTF");
+        System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(glbOffset + 4)).Should().Be(2);
+        System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(glbOffset + 8)).Should().Be((uint)(bytes.Length - glbOffset));
+        var jsonLength = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(glbOffset + 12));
+        using var glb = JsonDocument.Parse(bytes.AsMemory(glbOffset + 20, jsonLength));
+        var position = glb.RootElement.GetProperty("meshes")[0].GetProperty("primitives")[0].GetProperty("attributes").GetProperty("POSITION").GetInt32();
+        glb.RootElement.GetProperty("accessors")[position].GetProperty("count").GetInt32().Should().Be(6);
     }
 
     [IntegrationTest]

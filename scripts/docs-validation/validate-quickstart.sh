@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-document="${repo_root}/docs/get-started/quickstart.md"
+document="${repo_root}/docs/internal/developer/source-quickstart.md"
 extractor="${repo_root}/scripts/docs-validation/extract-fenced-commands.py"
 project_name="${HONUA_DOCS_COMPOSE_PROJECT:-honua-docs-quickstart}"
 artifacts="${HONUA_DOCS_ARTIFACTS:-${repo_root}/artifacts/docs-validation/quickstart}"

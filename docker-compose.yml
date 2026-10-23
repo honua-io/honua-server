@@ -101,6 +101,7 @@ services:
       # Development-only defaults for the repo quickstart. Override these before
       # reusing this compose file outside a local developer workstation.
       HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      AuditLog__ChainVerification__Key: "${AuditLog__ChainVerification__Key:-}"
       FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
       FileStorage__LocalStorage__BasePath: "/var/lib/honua/storage"
       FileStorage__AwsS3__BucketName: "${HONUA_S3_BUCKET:-}"
