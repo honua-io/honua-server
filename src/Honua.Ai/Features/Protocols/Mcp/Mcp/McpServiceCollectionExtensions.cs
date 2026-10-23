@@ -11,7 +11,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Capabilities;
-using Honua.Geoprocessing;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Studio.Drafts;
 
@@ -350,7 +349,6 @@ internal static class McpServiceCollectionExtensions
         if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FileImport.Abstractions.IFileImportService)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestDatasetTool>());
-            services.TryAddSingleton<IServerJobArtifactImportLedger, MemoryServerJobArtifactImportLedger>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestJobArtifactTool>());
         }
 

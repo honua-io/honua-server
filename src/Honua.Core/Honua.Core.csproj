@@ -66,6 +66,8 @@
     <InternalsVisibleTo Include="Honua.Postgres" />
     <InternalsVisibleTo Include="Honua.Postgres.Shared" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
+    <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Ai" />
     <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.DuckDB" />
     <InternalsVisibleTo Include="Honua.MySql" />

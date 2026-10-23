@@ -11,12 +11,15 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
 using NSubstitute;
 
 namespace Honua.Geoprocessing.Tests;
@@ -113,12 +116,74 @@ public sealed class ServerJobArtifactImporterTests
         var ledger = new MemoryServerJobArtifactImportLedger();
         var first = await ImportAsync(recording.Service, artifact, 4326, ledger: ledger);
         var second = await ImportAsync(recording.Service, artifact, 4326, ledger: ledger);
-        second.Should().Be(first);
+        second.Should().BeSameAs(first);
         await recording.Service.Received(1).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
 
         var conflict = () => ImportAsync(recording.Service, artifact, 4326, ledger: ledger, table: "other_table");
         await conflict.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
         await recording.Service.Received(1).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SameActorAndIntent_InAnotherTenant_ImportsAgain()
+    {
+        var artifact = await BufferArtifactAsync("3857", "10");
+        var recording = new RecordingImports();
+        var ledger = new MemoryServerJobArtifactImportLedger();
+        var first = await ImportAsync(recording.Service, artifact, 4326, ledger: ledger, tenantId: "tenant-a");
+        var second = await ImportAsync(recording.Service, artifact, 4326, ledger: ledger, tenantId: "tenant-b");
+        second.Should().NotBeSameAs(first);
+        await recording.Service.Received(2).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
+
+        var replay = await ImportAsync(recording.Service, artifact, 4326, ledger: ledger, tenantId: "tenant-a");
+        replay.Should().BeSameAs(first);
+        await recording.Service.Received(2).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public void VerifiedSrid_PlusUntaggedGeometry_IsMixed_InEitherOrder()
+    {
+        var known = new Point(1, 2) { SRID = 3857 };
+        var untagged = new Point(3, 4) { SRID = 4326 };
+
+        var knownFirst = new FeatureArtifactSpatialReferenceAccumulator();
+        knownFirst.Add(known, hasProducerSpatialReference: true);
+        knownFirst.Add(untagged, hasProducerSpatialReference: false);
+        knownFirst.Value.State.Should().Be("mixed");
+        knownFirst.Value.Srid.Should().BeNull();
+
+        var untaggedFirst = new FeatureArtifactSpatialReferenceAccumulator();
+        untaggedFirst.Add(untagged, hasProducerSpatialReference: false);
+        untaggedFirst.Add(known, hasProducerSpatialReference: true);
+        untaggedFirst.Value.State.Should().Be("mixed");
+        untaggedFirst.Value.Srid.Should().BeNull();
+
+        var bothUntagged = new FeatureArtifactSpatialReferenceAccumulator();
+        bothUntagged.Add(untagged, hasProducerSpatialReference: false);
+        bothUntagged.Add(new Point(5, 6) { SRID = 32610 }, hasProducerSpatialReference: false);
+        bothUntagged.Value.State.Should().Be("unknown");
+        bothUntagged.Value.Srid.Should().BeNull();
+
+        var same = new FeatureArtifactSpatialReferenceAccumulator();
+        same.Add(known, hasProducerSpatialReference: true);
+        same.Add(new Point(8, 9) { SRID = 3857 }, hasProducerSpatialReference: true);
+        same.Value.State.Should().Be("known");
+        same.Value.Srid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    public void ScratchPath_StaysUnderTheDirectory_AndRejectsARootedSegment()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "honua-scratch-root");
+        var path = ServerJobArtifactImporter.CreateScratchPath(directory, "job-artifact-abc");
+        var root = Path.GetFullPath(directory);
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        path.Should().Be(Path.GetFullPath(Path.Join(root, "job-artifact-abc")));
+        path.StartsWith(prefix, StringComparison.Ordinal).Should().BeTrue();
+
+        var rooted = Path.DirectorySeparatorChar + "job-artifact-abc";
+        var act = () => ServerJobArtifactImporter.CreateScratchPath(directory, rooted);
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [UnitTheory]
@@ -205,13 +270,14 @@ public sealed class ServerJobArtifactImporterTests
         int? sourceSrid = null,
         string intentId = "intent-buffer",
         string table = "buffered",
+        string tenantId = "tenant-a",
         IServerJobArtifactImportLedger? ledger = null)
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
         var job = CompletedJob(artifact.Uri, version: 2);
         jobs.GetJobAsync(job.OperationId, Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(job);
         return await ServerJobArtifactImporter.ImportAsync(
-            Command(Reference(artifact, 2, 1), intentId, table, targetSrid, sourceSrid),
+            Command(Reference(artifact, 2, 1), intentId, table, targetSrid, sourceSrid, tenantId),
             Principal(),
             jobs,
             imports,
@@ -334,8 +400,9 @@ public sealed class ServerJobArtifactImporterTests
         string intentId = "intent-buffer",
         string table = "buffered",
         int targetSrid = 4326,
-        int? sourceSrid = null)
-        => new(intentId, "actor-1", "honua_data", table, reference, targetSrid, sourceSrid);
+        int? sourceSrid = null,
+        string tenantId = "tenant-a")
+        => new(intentId, tenantId, "actor-1", "honua_data", table, reference, targetSrid, sourceSrid);
 
     private static ClaimsPrincipal Principal()
         => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "actor-1")], "Test"));

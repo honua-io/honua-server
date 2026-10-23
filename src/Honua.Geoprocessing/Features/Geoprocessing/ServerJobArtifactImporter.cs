@@ -8,27 +8,17 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Geoprocessing.Execution;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>One committed import of an authorized job artifact. Replay returns this receipt and does not import again.</summary>
-internal sealed record ServerJobArtifactImportReceipt(
-    string IntentId,
-    string Schema,
-    string Table,
-    string PhysicalTable,
-    int FeatureCount,
-    int SourceSrid,
-    int TargetSrid,
-    string ContentSha256,
-    string CrsState);
-
 /// <summary>Caller-supplied command. The server reads the artifact; the caller does not supply bytes or a path.</summary>
 internal sealed record ServerJobArtifactImportCommand(
     string IntentId,
+    string TenantId,
     string ActorId,
     string Schema,
     string Table,
@@ -36,53 +26,63 @@ internal sealed record ServerJobArtifactImportCommand(
     int TargetSrid,
     int? SourceSrid);
 
-/// <summary>Remembers one committed command so an exact replay cannot insert a second copy.</summary>
-internal interface IServerJobArtifactImportLedger
-{
-    /// <summary>Returns the original receipt when <paramref name="fingerprint"/> still matches.</summary>
-    Task<ServerJobArtifactImportReceipt> GetOrImportAsync(
-        string actorId,
-        string intentId,
-        string fingerprint,
-        Func<CancellationToken, Task<ServerJobArtifactImportReceipt>> import,
-        CancellationToken cancellationToken);
-}
-
-/// <summary>Process-local ledger. The command key is the actor plus the original intent id.</summary>
+/// <summary>In-process ledger. The key is the tenant, actor, and intent.</summary>
 internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactImportLedger
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (string Fingerprint, ServerJobArtifactImportReceipt Receipt)> _entries = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (string Fingerprint, ServerJobArtifactImportReceipt Receipt)> _entries = new(StringComparer.Ordinal);
 
     public async Task<ServerJobArtifactImportReceipt> GetOrImportAsync(
-        string actorId,
-        string intentId,
-        string fingerprint,
-        Func<CancellationToken, Task<ServerJobArtifactImportReceipt>> import,
+        ServerJobArtifactImportScope scope,
+        Func<IServerJobArtifactImportAttempt, CancellationToken, Task<ServerJobArtifactImportReceipt>> import,
         CancellationToken cancellationToken)
     {
-        var key = actorId + "\n" + intentId;
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(import);
+        var key = scope.TenantId + "\n" + scope.ActorId + "\n" + scope.IntentId;
         var gate = _gates.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_entries.TryGetValue(key, out var existing))
             {
-                if (!string.Equals(existing.Fingerprint, fingerprint, StringComparison.Ordinal))
+                if (!string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
                 {
-                    throw new GeoprocessingIdempotencyConflictException(intentId);
+                    throw new ServerJobArtifactImportConflictException(scope.IntentId);
                 }
 
                 return existing.Receipt;
             }
 
-            var receipt = await import(cancellationToken).ConfigureAwait(false);
-            _entries[key] = (fingerprint, receipt);
+            var receipt = await import(MemoryAttempt.Instance, cancellationToken).ConfigureAwait(false);
+            if (!_entries.TryAdd(key, (scope.Fingerprint, receipt)))
+            {
+                if (_entries.TryGetValue(key, out existing)
+                    && string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
+                {
+                    return existing.Receipt;
+                }
+
+                throw new ServerJobArtifactImportConflictException(scope.IntentId);
+            }
+
             return receipt;
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    private sealed class MemoryAttempt : IServerJobArtifactImportAttempt
+    {
+        internal static readonly MemoryAttempt Instance = new();
+
+        public ImportCommitParticipant Participant { get; } = static (_, _) => ValueTask.CompletedTask;
+
+        public void Prepare(ServerJobArtifactImportReceiptPrototype prototype)
+        {
+            ArgumentNullException.ThrowIfNull(prototype);
         }
     }
 }
@@ -113,12 +113,31 @@ internal static class ServerJobArtifactImporter
         ArgumentNullException.ThrowIfNull(services);
         ValidateCommand(command);
         var fingerprint = Fingerprint(command);
-        return await ledger.GetOrImportAsync(
-            command.ActorId,
-            command.IntentId,
-            fingerprint,
-            token => ImportNewAsync(command, principal, jobs, imports, services, token),
-            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ledger.GetOrImportAsync(
+                new ServerJobArtifactImportScope(
+                    command.TenantId,
+                    command.ActorId,
+                    command.IntentId,
+                    fingerprint,
+                    command.Schema,
+                    command.Table),
+                (attempt, token) => ImportNewAsync(command, principal, jobs, imports, services, attempt, token),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServerJobArtifactImportConflictException)
+        {
+            throw new GeoprocessingIdempotencyConflictException(command.IntentId);
+        }
+        catch (ServerJobArtifactImportInProgressException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
+        catch (ServerJobArtifactImportIncompleteException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
     }
 
     internal static int ResolveSourceSrid(string crsState, int? producerSrid, int? requested)
@@ -149,6 +168,7 @@ internal static class ServerJobArtifactImporter
         IGeoprocessingJobService jobs,
         IFileImportService imports,
         IServiceProvider services,
+        IServerJobArtifactImportAttempt attempt,
         CancellationToken cancellationToken)
     {
         var authorized = await ReadAuthorizedAsync(
@@ -166,6 +186,11 @@ internal static class ServerJobArtifactImporter
                 authorized.Summary.SpatialReference.State,
                 authorized.Summary.SpatialReference.Srid,
                 command.SourceSrid);
+            attempt.Prepare(new ServerJobArtifactImportReceiptPrototype(
+                sourceSrid,
+                command.TargetSrid,
+                authorized.Summary.Sha256,
+                authorized.Summary.SpatialReference.State));
             authorized.Content.Position = 0;
             var result = await imports.ImportFileAsync(
                 new ImportRequest
@@ -179,6 +204,7 @@ internal static class ServerJobArtifactImporter
                     TargetSrid = command.TargetSrid,
                     OverwriteExisting = false,
                     LoadMode = ImportLoadMode.Append,
+                    CommitParticipant = attempt.Participant,
                 },
                 cancellationToken).ConfigureAwait(false);
             if (!result.Success)
@@ -244,7 +270,7 @@ internal static class ServerJobArtifactImporter
         }
 
         var stream = new FileStream(
-            Path.Combine(Path.GetTempPath(), "honua-job-artifact-" + Guid.NewGuid().ToString("N")),
+            CreateScratchPath(Path.GetTempPath(), "honua-job-artifact-" + Guid.NewGuid().ToString("N")),
             FileMode.CreateNew,
             FileAccess.ReadWrite,
             FileShare.None,
@@ -288,6 +314,35 @@ internal static class ServerJobArtifactImporter
         CancellationToken cancellationToken)
         => await jobs.GetJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
 
+    internal static string CreateScratchPath(string tempDirectory, string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(tempDirectory))
+        {
+            throw new InvalidOperationException("A scratch directory is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(fileName)
+            || fileName is "." or ".."
+            || fileName.Contains('/', StringComparison.Ordinal)
+            || fileName.Contains('\\', StringComparison.Ordinal)
+            || Path.IsPathRooted(fileName))
+        {
+            throw new InvalidOperationException("The scratch file name must stay inside the scratch directory.");
+        }
+
+        var root = Path.GetFullPath(tempDirectory);
+        var combined = Path.GetFullPath(Path.Join(root, fileName));
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        if (!combined.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The scratch file name must stay inside the scratch directory.");
+        }
+
+        return combined;
+    }
+
     internal static bool SupportsImportEnvelope(string? reference)
         => !string.IsNullOrWhiteSpace(reference)
             && (reference.StartsWith(FeatureCollectionArtifact.DataUriPrefix, StringComparison.Ordinal)
@@ -315,6 +370,7 @@ internal static class ServerJobArtifactImporter
     private static void ValidateCommand(ServerJobArtifactImportCommand command)
     {
         RequireToken(command.IntentId, "intentId");
+        RequireToken(command.TenantId, "tenant");
         RequireToken(command.ActorId, "actor");
         RequireToken(command.Reference.TargetId, "targetId");
         RequireJobId(command.Reference.JobId);
@@ -401,6 +457,7 @@ internal static class ServerJobArtifactImporter
     {
         var text = string.Join(
             "\n",
+            command.TenantId,
             command.Reference.TargetId,
             command.Reference.JobId,
             command.Reference.ResultPackageId,

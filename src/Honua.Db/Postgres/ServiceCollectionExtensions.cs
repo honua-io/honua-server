@@ -743,6 +743,13 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>());
         });
 
+        // Shared catalog receipt for honua_ingest_job_artifact. Registered before MCP so the
+        // process-local ledger cannot become the production store.
+        services.TryAddSingleton<IServerJobArtifactImportLedger>(static serviceProvider =>
+            new PostgresServerJobArtifactImportLedger(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>()));
+
         // Register universal import job service using unified progress store
         // This replaces the in-memory job service with one that uses centralized progress tracking
         services.AddSingleton<IImportJobService>(serviceProvider =>

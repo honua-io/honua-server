@@ -94,13 +94,20 @@ internal sealed class FeatureArtifactSpatialReferenceAccumulator
             return;
         }
 
-        if (!hasProducerSpatialReference || geometry.SRID <= 0)
+        var verified = hasProducerSpatialReference && geometry.SRID > 0;
+        if (!verified)
         {
+            // A verified frame plus an untagged frame is mixed, in either order.
+            if (_srid is not null)
+            {
+                _mixed = true;
+            }
+
             _unknown = true;
             return;
         }
 
-        if (_srid is { } original && original != geometry.SRID)
+        if (_unknown || (_srid is { } original && original != geometry.SRID))
         {
             _mixed = true;
         }

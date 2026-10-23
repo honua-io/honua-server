@@ -3,7 +3,9 @@
 
 using System.Text.Json;
 using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
@@ -81,9 +83,16 @@ internal sealed class IngestJobArtifactTool(ILogger<IngestJobArtifactTool> logge
                 McpJsonContext.Default.McpIngestJobArtifactOutput);
         }
 
+        var tenant = httpContext.RequestServices.GetService<ITenantContext>();
+        if (tenant is null || !tenant.RequireTenantId(out var tenantId, out _))
+        {
+            throw new GeoprocessingValidationException("A tenant is required to import a job artifact.");
+        }
+
         var receipt = await ServerJobArtifactImporter.ImportAsync(
             new ServerJobArtifactImportCommand(
                 argument.IntentId ?? string.Empty,
+                tenantId,
                 McpAuthorizationHelper.ResolveActorId(principal),
                 argument.Schema ?? string.Empty,
                 argument.Table ?? string.Empty,
