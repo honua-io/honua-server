@@ -266,7 +266,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
           "test": "QueryClusters_Dbscan_PerFeature_ReturnsClusterAssignments",
           "assertion": "Real layer execution returns the expected DBSCAN membership/noise assignments.",
-          "bodyDigest": "sha256:a0dc309c92908b195655b6febf3d68a67f7e957d7d92e41e4b144c29e9a7e6f6"
+          "bodyDigest": "sha256:d8b74b31cd41220aa290c02b9c7fed5e6617c2f35a31ec4e9f8bf3e0de24a8b6"
         }
       ]
     },
