@@ -114,4 +114,10 @@ internal static partial class MonitoringLog
         Message = "Database recovery gave up after {Attempt} attempt(s); the host remains degraded. Non-database routes continue to serve, but database-backed routes will fail. {ErrorMessage}")]
     public static partial void DatabaseRecoveryGaveUp(
         ILogger logger, int attempt, string errorMessage, Exception? exception);
+
+    [LoggerMessage(
+        EventId = 4324,
+        Level = LogLevel.Information,
+        Message = "Adopted raster provider baseline {ScriptName} into public.schema_versions without executing the migration")]
+    public static partial void RasterProviderBaselineAdopted(ILogger logger, string scriptName);
 }

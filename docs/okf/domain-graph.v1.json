@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:a948db2f370362d6a4c8e4b32c4edb1feb3431c955df0e54ae9caf4ee9428b5b",
+  "bundleDigest": "sha256:74aab02afe655896e2a87d1481f55b6fa14fc762f1b3a59bd8df0dcbed894c62",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1960,7 +1960,7 @@
     {
       "id": "get-started/with-ai",
       "path": "get-started/with-ai.md",
-      "documentDigest": "sha256:30fe0a1e94db16d72fe2942424e2c2577a186dbb14775f1eeb4d66bbe5c4b444",
+      "documentDigest": "sha256:b3109d332161f942f306e5cf4d37373ac7112107f878f91b70d35ca0856ef601",
       "metadata": {
         "type": "guide",
         "title": "Get started with AI",
@@ -2145,7 +2145,7 @@
     {
       "id": "guides/deploy/cloud-deployments",
       "path": "guides/deploy/cloud-deployments.md",
-      "documentDigest": "sha256:50ba7f1fc70f99ba1b662d701d7ddedbec5495a9ecc0ec2e34b01cda835609fb",
+      "documentDigest": "sha256:8e2d0a217a147e699c8dff9ea2d7f46c4b9e9f66598da51452ac23d4f410d4a3",
       "metadata": {
         "type": "runbook",
         "title": "Deploy on AWS and Azure",
@@ -2249,7 +2249,7 @@
     {
       "id": "guides/deploy/upgrade-and-rollback",
       "path": "guides/deploy/upgrade-and-rollback.md",
-      "documentDigest": "sha256:921e2fc2d9bcfc7af8efc75cfa174cfcb4ef2f8fd9300a1cccb6e108be26862b",
+      "documentDigest": "sha256:995ddbca3ea6942bb87e5228b31f915b5c4ee7f77bd3bc2836644116bb05a2b4",
       "metadata": {
         "type": "guide",
         "title": "Upgrade and roll back",

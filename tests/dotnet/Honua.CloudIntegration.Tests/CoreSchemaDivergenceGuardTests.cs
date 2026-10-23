@@ -1552,6 +1552,142 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
     }
 
     [SkippableFact]
+    public async Task Guard_WhenRasterBaselineMatchesAndJournalOmitsIt_RecordsAdoptionWithoutReapplyingOrDropping()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the raster-baseline adoption lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var migrated = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        migrated.Successful.Should().BeTrue(migrated.ErrorMessage);
+
+        var beforeOids = await ReadRasterBaselineOidsAsync(connectionString);
+        beforeOids.Should().HaveCount(3);
+        await ExecuteAsync(connectionString, $"""
+            DELETE FROM public.schema_versions
+            WHERE scriptname = '{PostgresCoreSchemaGuard.RasterTablesMigration}';
+            DELETE FROM public.schema_version_reader_compatibility
+            WHERE script_name = '{PostgresCoreSchemaGuard.RasterTablesMigration}';
+            """);
+
+        var adopted = await guard.TryAdoptMatchingRasterBaselineAsync(connectionString);
+        adopted.Should().Be(PostgresCoreSchemaGuard.RasterTablesMigration);
+        (await ReadRasterBaselineOidsAsync(connectionString)).Should().Equal(beforeOids,
+            "adoption records the journal receipt and must not drop or recreate the baseline tables");
+        (await CountScriptsAsync(connectionString, PostgresCoreSchemaGuard.RasterTablesMigration))
+            .Should().Be(1);
+        (await CountReaderDeclarationsAsync(connectionString, PostgresCoreSchemaGuard.RasterTablesMigration))
+            .Should().Be(0, "adoption must not pretend the migration ran and declare reader compatibility");
+
+        var again = await guard.TryAdoptMatchingRasterBaselineAsync(connectionString);
+        again.Should().BeNull("a second pass sees the adoption receipt and does not insert another");
+        (await CountScriptsAsync(connectionString, PostgresCoreSchemaGuard.RasterTablesMigration))
+            .Should().Be(1);
+
+        await guard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
+        var rerun = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        rerun.Successful.Should().BeTrue(rerun.ErrorMessage);
+        rerun.AppliedScripts.Should().NotContain(PostgresCoreSchemaGuard.RasterTablesMigration,
+            "the adopted receipt is not a new DbUp apply");
+    }
+
+    [SkippableTheory]
+    [InlineData("missing")]
+    [InlineData("partial")]
+    public async Task Guard_WhenRasterBaselineIsMissingOrIncomplete_DoesNotAdoptAndKeepsTheFloor(string scenario)
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the raster-baseline adoption lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var tables = scenario == "missing"
+            ? """
+              CREATE TABLE honua.raster_layer_statistics (layer_id integer);
+              """
+            : """
+              CREATE TABLE honua.raster_data (id integer);
+              CREATE TABLE honua.raster_statistics (id integer);
+              CREATE TABLE honua.raster_tiles (id integer);
+              """;
+        await ExecuteAsync(connectionString, $"""
+            CREATE SCHEMA honua;
+            {tables}
+            CREATE TABLE public.schema_versions (
+                schemaversionsid serial PRIMARY KEY,
+                scriptname varchar(255) NOT NULL,
+                applied timestamp NOT NULL);
+            INSERT INTO public.schema_versions (scriptname, applied)
+            VALUES ('Honua.Server.Migrations.091_RenormalizeGeocodeReferenceSearchText.sql', NOW());
+            """);
+
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var before = await CaptureStateAsync(connectionString);
+        var adopted = await guard.TryAdoptMatchingRasterBaselineAsync(connectionString);
+        adopted.Should().BeNull("only a complete baseline that matches the creation contract is adopted");
+        (await CaptureStateAsync(connectionString)).Should().Be(before);
+
+        var exception = await guard.Awaiting(instance => instance.VerifyAsync(connectionString))
+            .Should().ThrowAsync<DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterTablesMigration);
+        exception.Which.FailureKind.Should().Be(scenario == "missing"
+            ? DatabaseSchemaFloorFailureKind.MigrationNotApplied
+            : DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+        (await CaptureStateAsync(connectionString)).Should().Be(before,
+            "a missing or incomplete raster schema stays a read-only floor failure");
+    }
+
+    private static async Task<IReadOnlyList<uint>> ReadRasterBaselineOidsAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT c.oid
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'honua'
+              AND c.relname IN ('raster_data', 'raster_statistics', 'raster_tiles')
+            ORDER BY c.relname;
+            """;
+        var oids = new List<uint>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            oids.Add(reader.GetFieldValue<uint>(0));
+        }
+
+        return oids;
+    }
+
+    private static async Task<int> CountScriptsAsync(string connectionString, string scriptName)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)::int
+            FROM public.schema_versions
+            WHERE scriptname = @script;
+            """;
+        command.Parameters.AddWithValue("script", scriptName);
+        return (int)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<int> CountReaderDeclarationsAsync(string connectionString, string scriptName)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)::int
+            FROM public.schema_version_reader_compatibility
+            WHERE script_name = @script;
+            """;
+        command.Parameters.AddWithValue("script", scriptName);
+        return (int)(await command.ExecuteScalarAsync())!;
+    }
+
+    [SkippableFact]
     public async Task Guard_WhenRasterBaselineJournalEntryIsMissing_FullVerificationFailsWithoutMutation()
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");

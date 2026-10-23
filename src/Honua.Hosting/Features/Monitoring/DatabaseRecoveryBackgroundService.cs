@@ -161,6 +161,19 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         {
             var schemaGuard = _services.GetService(typeof(IDatabaseSchemaGuard)) as IDatabaseSchemaGuard
                 ?? throw new InvalidOperationException("Database recovery requires the deferred schema guard.");
+            if (_context.SchemaGuardPending)
+            {
+                var adoptedBaseline = schemaGuard.TryAdoptMatchingRasterBaselineAsync(connectionString, cancellationToken);
+                if (adoptedBaseline is not null)
+                {
+                    var adoptedScript = await adoptedBaseline.ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(adoptedScript))
+                    {
+                        MonitoringLog.RasterProviderBaselineAdopted(_logger, adoptedScript);
+                    }
+                }
+            }
+
             await schemaGuard.VerifyAsync(connectionString, cancellationToken);
             _migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified after recovery.");
             return;

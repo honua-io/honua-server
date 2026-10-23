@@ -194,6 +194,19 @@ Single-instance Docker is not zero-downtime: pull the new tag, stop the old cont
 
 Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records the forward-compatibility declarations, so rolling the serving replicas back to the previous image keeps the database when every newer migration is expand-only (see [Rollback across additive migrations](#rollback-across-additive-migrations)). The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
 
+### Upgrading a journal that stops at 091
+
+An August deployment whose `public.schema_versions` journal stops at migration 091 is not a pure expand upgrade to this build. Raster provider tables may already exist from before `Honua.Postgres.Migrations.001_CreateRasterTables.sql` joined the canonical journal.
+
+`MigrationSafetyClassifier` was re-run on this revision against the scripts that journal does not contain: the 49 server migrations from 092 through 136, and all 7 raster provider scripts (001 through 007). That is 56 scripts. 13 are `ContractAnnotated` and none are `ContractUnannotated`. The 13 are raster `001_CreateRasterTables`, server `094_CreateSavedMapCheckpointVersionRecovery`, `095_DeleteSavedMapOperationLogWithStudioDraft`, `102_WidenReplicaConflictTypeForDeleteDelete`, both `106_*` scripts, `108_FixLongImportIndexNames`, both `109_*` scripts, both `111_*` scripts, `115_AddDropImportStagingTable`, and `124_AttachFeatureChangeTriggerToHonuaFeatures`. Issue #6496 reported 15 `ContractAnnotated` scripts for revision `4709145`'s 52 pending scripts (092 through 133 plus raster 001 through 006) and listed these same names; that 15 was not reproduced on this revision. With the default `Database__MigrationSafety__ContractApplyPolicy=Gate`, these 13 need the one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce. Fresh installs are unaffected.
+
+Do this before serving replicas start:
+
+1. Run migrate-only, below. When contract scripts are pending it exits `5` and prints the nonce. Review those scripts, then re-run with `HONUA_APPROVE_CONTRACT_MIGRATIONS` set to that nonce. The raster root's script uses `CREATE TABLE IF NOT EXISTS`, so existing baseline tables are kept and then journaled as applied. Unset the nonce afterwards.
+2. Serve with `HONUA_SKIP_MIGRATIONS=true`.
+
+If a serving process with `HONUA_SKIP_MIGRATIONS=true` reaches the schema guard before that apply, and `raster_data`, `raster_statistics`, and `raster_tiles` already match the raster baseline's creation contract (columns, constraints, sequences, table properties, and the indexes that script creates), startup inserts `Honua.Postgres.Migrations.001_CreateRasterTables.sql` into `public.schema_versions` as an adoption. It does not execute the script, drop or recreate the tables, or report the script as a newly applied migration. A missing or partial raster schema is not adopted, and a baseline that does not match the creation contract is not adopted. Those stay floor failures: `MigrationNotApplied` when the baseline tables are absent (Lambda degraded start, readiness 503 `schema-floor`), and `SchemaExistsWithoutJournal` when migration-owned tables exist without a journal row. A schema-floor refusal other than `MigrationNotApplied` stops the process with exit code 1 and writes the refusal message. It does not abort the runtime. Adoption of the baseline does not apply the later contract scripts; those still need migrate-only and the nonce.
+
 ```bash
 docker run --rm \
   -e HONUA_MIGRATE_ONLY=true \

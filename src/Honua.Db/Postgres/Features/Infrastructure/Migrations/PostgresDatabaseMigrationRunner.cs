@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
 internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 {
-    private const long MigrationLockKey = 8_044_282_257_919_950_151;
+    internal const long MigrationLockKey = 8_044_282_257_919_950_151;
     private const string SafeMigrationFailureMessage =
         "Database migration planning failed; reconcile the migration journal and schema before retrying.";
     private const string BackupHookSucceededOutcome = "succeeded";
