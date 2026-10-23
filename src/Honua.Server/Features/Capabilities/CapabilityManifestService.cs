@@ -65,7 +65,6 @@ internal sealed class CapabilityManifestService(
     IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
-    ManifestRoutedCapabilityIndex routedCapabilities,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     internal const string BackgroundImportCapabilityId = "import.background";
@@ -933,7 +932,7 @@ internal sealed class CapabilityManifestService(
             return false;
         }
 
-        return routedCapabilities.TryGetRoutedCapability(manifestId, out var capability)
+        return runtimeInventory.RoutedCapabilities.TryGetRoutedCapability(manifestId, out var capability)
             && Array.IndexOf(profile.EnabledCapabilities, capability) < 0;
     }
 

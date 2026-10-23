@@ -258,6 +258,20 @@ internal sealed class ManifestRoutedCapabilityIndex
                 capability = capabilityValue.GetString();
             }
 
+            var resolution = entry.TryGetProperty("resolution", out var resolutionValue) && resolutionValue.ValueKind == JsonValueKind.String
+                ? resolutionValue.GetString()
+                : null;
+            // Entitlement resolution names a license key, not the routes this manifest id occupies.
+            // security.mtls is licensed by identity.mtls-client-certificate, which owns only the
+            // certificate-management routes. Omitting that key 404s those routes, but
+            // client-certificate enforcement still applies to admin routes the profile keeps.
+            if (string.Equals(resolution, "entitlement", StringComparison.Ordinal)
+                && string.Equals(manifestId, "security.mtls", StringComparison.Ordinal))
+            {
+                byId[manifestId] = null;
+                continue;
+            }
+
             byId[manifestId] = string.IsNullOrWhiteSpace(capability) ? null : capability;
         }
 

@@ -40,7 +40,7 @@ public sealed class DeploymentCapabilityProfileManifestTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task ProfileOmittingMapSessions_RemovesFeatureLocksButKeepsEnabledCapability(bool fromRegistry)
     {
-        await using var fixture = CreateFixture(fromRegistry);
+        await using var fixture = CreateFixture(fromRegistry, HonuaEdition.Pro, EnabledCapabilities);
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
 
@@ -76,6 +76,44 @@ public sealed class DeploymentCapabilityProfileManifestTests
         crossNode.GetProperty("reasonCode").GetString().Should().Be("unsupported");
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task ProfileOmittingCertificateRoutes_DoesNotExcludeConfiguredMtls(bool fromRegistry)
+    {
+        await using var fixture = CreateFixture(
+            fromRegistry,
+            HonuaEdition.Enterprise,
+            ["admin.control-plane", "discovery.capability-manifest"],
+            new Dictionary<string, string?>
+            {
+                ["Capabilities:Experimental:security.mtls:Enabled"] = "true",
+                ["Authentication:ClientCertificates:Mode"] = "RequiredForAdmin",
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var manifest = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = manifest.RootElement;
+
+        root.GetProperty("deploymentProfile").GetProperty("enabledCapabilities").EnumerateArray()
+            .Select(static item => item.GetString())
+            .Should().Equal("admin.control-plane", "discovery.capability-manifest");
+
+        var mtls = Capability(root, "security.mtls");
+        mtls.GetProperty("available").GetBoolean().Should().BeTrue(
+            "certificate enforcement still applies to retained admin routes when the profile omits certificate-management routes");
+        (!mtls.TryGetProperty("reasonCode", out var mtlsReason) || mtlsReason.ValueKind == JsonValueKind.Null)
+            .Should().BeTrue("configured mTLS must not be deployment-profile-excluded");
+
+        var locks = Capability(root, "collaboration.feature-locks");
+        locks.GetProperty("available").GetBoolean().Should().BeFalse();
+        locks.GetProperty("reasonCode").GetString().Should().Be("deployment-profile-excluded");
+    }
+
     private static JsonElement Capability(JsonElement root, string id)
     {
         var match = root.GetProperty("capabilities").EnumerateArray()
@@ -85,10 +123,28 @@ public sealed class DeploymentCapabilityProfileManifestTests
         return match[0];
     }
 
-    private static WebAppFixture CreateFixture(bool fromRegistry)
+    private static WebAppFixture CreateFixture(
+        bool fromRegistry,
+        HonuaEdition edition,
+        string[] capabilities,
+        IReadOnlyDictionary<string, string?>? extraSettings = null)
     {
+        var settings = new Dictionary<string, string?>
+        {
+            [DeploymentCapabilityProfile.EnabledCapabilitiesKey] = string.Join(',', capabilities),
+            [DeploymentCapabilityProfile.SchemaVersionKey] = DeploymentCapabilityProfile.SupportedSchemaVersion,
+            ["Capabilities:ManifestFromRegistry"] = fromRegistry ? "true" : "false",
+        };
+        if (extraSettings is not null)
+        {
+            foreach (var setting in extraSettings)
+            {
+                settings[setting.Key] = setting.Value;
+            }
+        }
+
         var fixture = new WebAppFixture()
-            .WithTestLicense(HonuaEdition.Pro)
+            .WithTestLicense(edition)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IFeatureLockAuthorizer>();
@@ -101,12 +157,7 @@ public sealed class DeploymentCapabilityProfileManifestTests
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    [DeploymentCapabilityProfile.EnabledCapabilitiesKey] = string.Join(',', EnabledCapabilities),
-                    [DeploymentCapabilityProfile.SchemaVersionKey] = DeploymentCapabilityProfile.SupportedSchemaVersion,
-                    ["Capabilities:ManifestFromRegistry"] = fromRegistry ? "true" : "false",
-                }));
+                configuration.AddInMemoryCollection(settings));
         });
     }
 
