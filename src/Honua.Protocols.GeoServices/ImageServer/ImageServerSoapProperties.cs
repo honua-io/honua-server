@@ -825,7 +825,14 @@ internal static partial class ImageServerSoapEndpoints
                 }
             }
 
-            if (histogramsByBand.TryGetValue(sourceBand, out var bandHistograms))
+        }
+
+        // Native RasterInfo deserialization reads the extensible statistics
+        // members before the histogram members. Preserve the wire order used by
+        // ImageServer rather than interleaving the two per-band arrays.
+        for (var outputBand = 0; outputBand < bands.Length; outputBand++)
+        {
+            if (histogramsByBand.TryGetValue(bands[outputBand], out var bandHistograms))
             {
                 foreach (var bandHistogram in bandHistograms)
                 {

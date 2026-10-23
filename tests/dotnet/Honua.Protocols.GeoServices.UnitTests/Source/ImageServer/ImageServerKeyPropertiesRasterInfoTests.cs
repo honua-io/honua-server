@@ -35,6 +35,26 @@ public sealed class ImageServerKeyPropertiesRasterInfoTests
     };
 
     [UnitTest]
+    public void RasterInfo_SerializesStatisticsBeforeHistogramsForNativeStreamingReader()
+    {
+        // GetKeyPropertiesX on Esri's Toronto ImageServer serializes the two
+        // extensible arrays in sequence. A forward-only reader finishes the
+        // statistics array before it starts searching for RasterHistogram_0.
+        var value = ImageServerSoapEndpoints.BuildKeyPropertiesRasterInfo(
+            Raster, Raster.Extent!.Value,
+            [new() { Band = 1, MinValue = 200, MaxValue = 200 },
+             new() { Band = 3, MinValue = 60, MaxValue = 60 }],
+            [new() { SourceBand = 1, Size = 1, Min = 199.5, Max = 200.5, Counts = [2048] },
+             new() { SourceBand = 3, Size = 1, Min = 59.5, Max = 60.5, Counts = [2048] }]);
+
+        var members = value.Elements().Where(element =>
+            element.Name.LocalName.StartsWith("RasterStatistics_", StringComparison.Ordinal)
+            || element.Name.LocalName.StartsWith("RasterHistogram_", StringComparison.Ordinal));
+        members.Select(element => element.Name.LocalName).Should().Equal(
+            "RasterStatistics_0", "RasterStatistics_2", "RasterHistogram_0", "RasterHistogram_2");
+    }
+
+    [UnitTest]
     public void RasterInfo_UsesTypedZeroBasedBandsAndCanonicalFacts()
     {
         RasterStatistics[] statistics =
