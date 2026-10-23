@@ -147,6 +147,39 @@ Oidc__Generic__ClientId=honua-admin
 Oidc__Generic__ClientSecret=$OIDC_CLIENT_SECRET
 ```
 
+For a separately hosted Console, pin the backend-assisted admin broker's callback:
+
+```bash
+Oidc__AdminAuthCallbackUri=https://console.example.com/admin/auth/callback
+```
+
+Keep `Public__BaseUrl` at the public API origin. The optional callback must be an
+absolute HTTPS URI with the exact `/admin/auth/callback` path and no user information,
+query or fragment. Register that same URI on the OIDC app client and route it to
+Console's authenticated BFF. The broker uses this deployment setting for both
+creation of the authorization URL and authorization-code exchange; request bodies
+cannot choose a redirect. Without the setting, the existing `Public:BaseUrl` plus
+`/admin/auth/callback` behavior is retained, including an existing public path prefix.
+This setting does not alter API links, ASP.NET OIDC middleware callback paths, or
+post-logout URLs. State, pending-session cookies and PKCE remain required.
+
+Cognito logout requires separate deployment integration: Console's current logout
+clears its local/operator sessions and upstream server cookie jar, but does not
+clear an edge proxy's session or navigate a Cognito logout endpoint. The Server
+broker's discovery-based logout uses `post_logout_redirect_uri` ending in `/admin`;
+Cognito's managed logout requires its documented `client_id` and `logout_uri`
+parameters. Configuring this callback alone does not establish global sign-out or
+revoke an edge/Cognito login session.
+
+Explicit `Oidc:AdminRoles` and `Oidc:Generic:Scopes` arrays replace their options
+constructor defaults. Configuration providers still merge indexed keys: when overriding
+an appsettings array through environment variables, override every existing index
+(for the two default admin roles, both `Oidc__AdminRoles__0` and
+`Oidc__AdminRoles__1`). If the arrays are omitted, their defaults remain. This controls
+configured claim normalization; existing shared authorization policies also accept
+legacy admin aliases and approved-operation/API-key roles. Replacing these options
+does not establish an approver-only policy for all authentication schemes.
+
 Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; OIDC providers can also be managed at runtime via `/api/v1/admin/oidc/providers`. When OIDC is enabled, `Authorization: Bearer` tokens are evaluated before API keys. Map your IdP's admin group to a role in `Oidc__AdminRoles` (default `admin`, `administrator`) — without it, signed-in users hold no admin rights.
 
 An explicitly configured static JWT issuer may set

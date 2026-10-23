@@ -248,7 +248,7 @@ internal static class AdminAuthEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Identity provider was not found.");
         }
 
-        var baseUrlRequirement = RequireConfiguredPublicBaseUrl(context);
+        var baseUrlRequirement = RequireConfiguredAdminCallback(context, oidcOptions.Value);
         if (baseUrlRequirement != null)
         {
             return baseUrlRequirement;
@@ -295,7 +295,7 @@ internal static class AdminAuthEndpoints
             var authorizeUrl = BuildAuthorizeUrl(
                 discovery.AuthorizationEndpoint,
                 provider,
-                BuildAbsoluteUri(context, AdminRedirectPath),
+                ResolveAdminCallbackUri(context, oidcOptions.Value),
                 state,
                 challenge);
 
@@ -355,7 +355,7 @@ internal static class AdminAuthEndpoints
             codeVerifier = pendingSession.CodeVerifier;
         }
 
-        var baseUrlRequirement = RequireConfiguredPublicBaseUrl(context);
+        var baseUrlRequirement = RequireConfiguredAdminCallback(context, oidcOptions.Value);
         if (baseUrlRequirement != null)
         {
             return baseUrlRequirement;
@@ -383,7 +383,7 @@ internal static class AdminAuthEndpoints
                 provider,
                 request,
                 codeVerifier,
-                BuildAbsoluteUri(context, AdminRedirectPath),
+                ResolveAdminCallbackUri(context, oidcOptions.Value),
                 context.RequestAborted).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -816,6 +816,20 @@ internal static class AdminAuthEndpoints
         {
             Path = "/"
         });
+    }
+
+    private static string ResolveAdminCallbackUri(HttpContext context, OidcAuthenticationOptions options) =>
+        options.AdminAuthCallbackUri ?? BuildAbsoluteUri(context, AdminRedirectPath);
+
+    private static IResult? RequireConfiguredAdminCallback(HttpContext context, OidcAuthenticationOptions options)
+    {
+        if (!options.TryGetAdminAuthCallbackUri(out var callback))
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(context,
+                "Admin OIDC callback configuration is invalid.");
+        }
+
+        return callback is not null ? null : RequireConfiguredPublicBaseUrl(context);
     }
 
     private static IResult? RequireConfiguredPublicBaseUrl(HttpContext context)
