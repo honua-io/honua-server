@@ -28,6 +28,42 @@ namespace Honua.Hosting.UnitTests.Infrastructure.Authentication;
 public sealed class DelegatedAgentCredentialTests
 {
     [Theory]
+    [InlineData("analytics.buffer-aggregate-managed", true)]
+    [InlineData("*", false)]
+    [InlineData("own", false)]
+    [InlineData("geometry.buffer", false)]
+    [InlineData("ANALYTICS.BUFFER-AGGREGATE-MANAGED", false)]
+    public async Task ManagedBufferPermission_RequiresExactLiveProcessGrantAndRefusesRevokedReplay(string layer, bool expected)
+    {
+        using var fixture = new Fixture();
+        const string permission = "agent:managed-process:analytics.buffer-aggregate-managed";
+        fixture.Profile.Permissions = ["agent:workspace", permission];
+        fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions =
+                [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
+                 new PermissionGrant { Service = "agent", Layer = layer, Operation = "managed-process" }]
+            });
+        var principal = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        principal.HasClaim("permission", permission).Should().Be(expected);
+        var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
+        snapshot.Should().NotBeNull();
+        fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions = [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }]
+            });
+        (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().BeNull();
+    }
+
+    [Theory]
     [InlineData("studio-compose", "exact", true)]
     [InlineData("studio-propose-publication", "exact", true)]
     [InlineData("studio-compose", "wildcard", false)]

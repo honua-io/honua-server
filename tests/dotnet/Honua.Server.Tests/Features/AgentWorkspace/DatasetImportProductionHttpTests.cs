@@ -32,7 +32,7 @@ namespace Honua.Server.Tests.Features.AgentWorkspace;
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Import)]
-public sealed class DatasetImportProductionHttpTests(RedisFixture redis, ITestOutputHelper testOutput)
+public sealed partial class DatasetImportProductionHttpTests(RedisFixture redis, ITestOutputHelper testOutput)
 {
     [IntegrationTheory]
     [InlineData(false)]

@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using System.Diagnostics;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -134,7 +135,27 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         // fail-closed signal the catalog-layer read seam refuses on, rather than reading
         // unrestricted. Begun synchronously in this method's own flow so the AsyncLocal write is
         // visible to the awaited executor.
-        using var securityScope = JobSecurityScope.Begin(job.Audit.SubmitterSecurityContext);
+        if (job.Audit.SubmitterSecurityContext?.AgentCredential is not null && context.OperationId != job.OperationId)
+            throw AgentManagedBufferContract.Denied();
+        using var agentServices = job.Audit.SubmitterSecurityContext?.AgentCredential is not null
+            ? _serviceScopeFactory?.CreateScope() ?? throw AgentManagedBufferContract.Denied() : null;
+        var authority = agentServices?.ServiceProvider.GetRequiredService<IJobExecutionLeaseAuthority>();
+        var agentContext = authority is null ? null : await authority.RevalidateForExecutionAsync(job, cancellationToken).ConfigureAwait(false);
+        if (agentContext is not null && (job.Spec.AgentManagedProcessBinding is not { Contract: AgentManagedBufferContract.Format }
+            || processId != AgentManagedBufferContract.ProcessId || agentContext.ExecutionLease is null)) throw AgentManagedBufferContract.Denied();
+        if (agentContext is null && job.Spec.AgentManagedProcessBinding is not null) throw AgentManagedBufferContract.Denied();
+        using var executionDeadline = agentContext is null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (executionDeadline is not null)
+        {
+            await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
+            var remaining = agentContext!.ExecutionLease!.ExpiresAt - (agentServices!.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+            if (remaining <= TimeSpan.Zero) throw AgentManagedBufferContract.Denied();
+            executionDeadline.CancelAfter(remaining);
+            cancellationToken = executionDeadline.Token;
+            context = new AgentManagedProcessExecutionContext(context, job, authority!);
+        }
+        using var securityScope = agentContext is null ? JobSecurityScope.Begin(job.Audit.SubmitterSecurityContext)
+            : JobSecurityScope.BeginExecution(job, agentContext);
 
         JobExecutionResult result;
         var (workspaceScope, effectiveContext, workspaceError, workspaceErrorIsRetryable) =
@@ -150,9 +171,16 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
             try
             {
-                var streamContext = new ManagedFeatureStreamContext(effectiveContext, job, _outputStore, _jobStore,
-                    _stagingOptions?.CurrentValue ?? new GeoprocessingOutputStagingOptions(), _serviceScopeFactory);
+                // The scoped contract cannot stage or spill, even when the general
+                // host enables staging for ordinary GP workloads. The publisher
+                // refuses before allocating a spill file at the inline threshold.
+                var streamOptions = agentContext is null ? _stagingOptions?.CurrentValue ?? new GeoprocessingOutputStagingOptions()
+                    : new GeoprocessingOutputStagingOptions { Enabled = false, MaxInlineArtifactBytes = (int)AgentManagedBufferContract.MaximumOutputBytes };
+                var streamContext = new ManagedFeatureStreamContext(effectiveContext, job, agentContext is null ? _outputStore : null, _jobStore,
+                    streamOptions, _serviceScopeFactory);
                 result = await handler.ExecuteAsync(job, streamContext, cancellationToken).ConfigureAwait(false);
+                if (authority is not null)
+                    _ = await authority.RevalidateForExecutionAsync(job, cancellationToken).ConfigureAwait(false);
             }
             catch (TransformInputException ex)
             {

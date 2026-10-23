@@ -1181,6 +1181,38 @@ internal sealed class McpExecuteOutput
 
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("executionContract")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public McpManagedProcessExecutionContract? ExecutionContract { get; set; }
+}
+
+/// <summary>Actual accepted scoped execution limits; this readback grants no authority.</summary>
+internal sealed class McpManagedProcessExecutionContract
+{
+    [JsonPropertyName("contract")]
+    public required string Contract { get; init; }
+    [JsonPropertyName("workspaceId")]
+    public required string WorkspaceId { get; init; }
+    [JsonPropertyName("turnId")]
+    public required string TurnId { get; init; }
+    [JsonPropertyName("originalTurnHash")]
+    public required string OriginalTurnHash { get; init; }
+    [JsonPropertyName("taskAttachmentAllowed")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public bool TaskAttachmentAllowed { get; init; }
+    [JsonPropertyName("inputMode")]
+    public string InputMode { get; init; } = "inline-geojson";
+    [JsonPropertyName("inputSrid")]
+    public int InputSrid { get; init; } = 3857;
+    [JsonPropertyName("maximumInputBytes")]
+    public required long MaximumInputBytes { get; init; }
+    [JsonPropertyName("outputMode")]
+    public string OutputMode { get; init; } = "inline-only";
+    [JsonPropertyName("maximumOutputBytes")]
+    public required long MaximumOutputBytes { get; init; }
+    [JsonPropertyName("sourceResourceIds")]
+    public required string[] SourceResourceIds { get; init; }
 }
 
 /// <summary>

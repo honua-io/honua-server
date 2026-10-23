@@ -257,6 +257,18 @@ internal static class McpToolOutputSchemas
             "resourceUri": {
               "type": "string",
               "description": "honua://jobs/{jobId} resource URI for polling lifecycle state via resources/read."
+            },
+            "executionContract": {
+              "type": "object",
+              "description": "Actual accepted scoped limits and original turn/source provenance; never an authority token.",
+              "required": ["contract", "workspaceId", "turnId", "originalTurnHash", "taskAttachmentAllowed", "inputMode", "inputSrid", "maximumInputBytes", "outputMode", "maximumOutputBytes", "sourceResourceIds"],
+              "properties": {
+                "contract": { "type": "string" }, "workspaceId": { "type": "string" }, "turnId": { "type": "string" },
+                "originalTurnHash": { "type": "string" }, "taskAttachmentAllowed": { "type": "boolean" },
+                "inputMode": { "type": "string" }, "inputSrid": { "type": "integer" }, "maximumInputBytes": { "type": "integer" },
+                "outputMode": { "type": "string" }, "maximumOutputBytes": { "type": "integer" },
+                "sourceResourceIds": { "type": "array", "items": { "type": "string" } }
+              }
             }
           }
         }

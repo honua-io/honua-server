@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -54,7 +55,7 @@ internal sealed class ExecutePlanTool : IMcpTool
     {
         Name = ToolName,
         Title = "Execute plan",
-        Description = "Submit an analysis plan for asynchronous execution. Returns a jobId and its honua://jobs/{jobId} resourceUri: poll that resource with resources/read until status is terminal (Succeeded, Failed, or Cancelled), then read honua://jobs/{jobId}/results for the produced artifacts, then promote any publishable artifact to a hosted service with honua_publish_result. This is the execute->poll->results->publish loop.",
+        Description = "Submit an analysis plan for asynchronous execution. Returns a jobId and its honua://jobs/{jobId} resourceUri: poll that resource with resources/read until status is terminal (Succeeded, Failed, or Cancelled), then read honua://jobs/{jobId}/results for the produced artifacts. Scoped agents require an exact supported process grant and a live analysis turn selecting the original catalog source with no task attachment. The initial managed buffer contract accepts EPSG:3857 inline GeoJSON up to 32 KiB and retains inline output up to 1 MiB; staging and unsupported selectors are refused.",
         InputSchema = McpToolSchemas.ExecutePlanArgumentSchema,
         OutputSchema = McpToolOutputSchemas.ExecuteOutputSchema,
         // Write tool: it submits server-side work. Idempotent because it honors
@@ -72,7 +73,7 @@ internal sealed class ExecutePlanTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        await _jobService
+        if (!AgentCredentialAuthority.IsAgent(principal)) await _jobService
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
             .ConfigureAwait(false);
 
@@ -124,7 +125,18 @@ internal sealed class ExecutePlanTool : IMcpTool
             JobId = jobRecord.OperationId,
             Status = jobRecord.Status.ToString(),
             CreatedAt = jobRecord.CreatedAt,
-            ResourceUri = McpResourceUris.JobUri(jobRecord.OperationId)
+            ResourceUri = McpResourceUris.JobUri(jobRecord.OperationId),
+            ExecutionContract = jobRecord.Spec.AgentManagedProcessBinding is not { } binding ? null : new()
+            {
+                Contract = binding.Contract,
+                WorkspaceId = binding.WorkspaceId,
+                TurnId = binding.TurnId,
+                OriginalTurnHash = binding.TurnHash,
+                TaskAttachmentAllowed = false,
+                MaximumInputBytes = binding.MaximumInputBytes,
+                MaximumOutputBytes = binding.MaximumOutputBytes,
+                SourceResourceIds = binding.Sources.Select(source => source.ResourceId).ToArray()
+            }
         };
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpExecuteOutput);

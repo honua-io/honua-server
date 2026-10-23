@@ -53,12 +53,13 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.RequiresAuth("Authentication is required for operator resources.");
         }
 
-        if (AgentDatasetImportAuthorization.AllowsOperator(principal, request))
+        if (AgentDatasetImportAuthorization.AllowsOperator(principal, request)
+            || AgentManagedProcessAuthorization.AllowsOperator(principal, request))
         {
             using var importScope = scopeFactory.CreateScope();
             return await AgentCredentialAuthority.IsCurrentObserverAsync(principal, importScope.ServiceProvider, cancellationToken).ConfigureAwait(false)
                 ? AccessDecision.Allowed()
-                : AccessDecision.Forbidden("The exact import credential is no longer current.");
+                : AccessDecision.Forbidden("The exact scoped agent credential is no longer current.");
         }
 
         if (AgentCredentialAuthority.IsDelegated(principal))

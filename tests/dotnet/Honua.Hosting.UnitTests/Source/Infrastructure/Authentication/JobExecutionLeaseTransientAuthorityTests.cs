@@ -6,7 +6,10 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +20,60 @@ namespace Honua.Hosting.UnitTests.Infrastructure.Authentication;
 
 public sealed class JobExecutionLeaseTransientAuthorityTests
 {
+    [Theory]
+    [InlineData("original")]
+    [InlineData("copy")]
+    [InlineData("different-job")]
+    [InlineData("metadata-tenant")]
+    [InlineData("foreign-current-principal")]
+    [InlineData("revoked")]
+    [InlineData("no-job-scope")]
+    public async Task ExecutionTenant_ComesOnlyFromOriginalCurrentLeaseObjectAndActualJobScope(string mutation)
+    {
+        using var fixture = await Fixture.CreateAsync("selected-tenant");
+        using var targets = new ServiceCollection().AddScoped<RequestTenantContext>()
+            .AddScoped<ITenantContext>(provider => provider.GetRequiredService<RequestTenantContext>()).BuildServiceProvider(validateScopes: true);
+        using var target = targets.CreateScope();
+        var copy = new ClaimsPrincipal(fixture.Principal.Identities.Select(identity => identity.Clone()));
+        var caller = mutation == "copy" ? copy : fixture.Principal;
+        var context = fixture.Context with { CurrentAgentPrincipal = mutation == "foreign-current-principal" ? copy : fixture.Principal };
+        if (mutation == "metadata-tenant") context = context with { TenantId = "caller-job-metadata" };
+        var job = mutation == "different-job" ? fixture.Job with { OperationId = "foreign-job" } : fixture.Job;
+        ((ClaimsIdentity)caller.Identity!).AddClaim(new Claim("tenant_id", "caller-token-tenant"));
+        if (mutation == "revoked") await fixture.Keys.RevokeAsync(fixture.KeyId, default);
+        async Task Bind()
+        {
+            using var execution = mutation == "no-job-scope" ? null : JobSecurityScope.BeginExecution(job, context);
+            await JobExecutionLeaseTenantContext.BindExecutionTenantAsync(target.ServiceProvider, caller, default);
+        }
+        if (mutation == "original")
+        {
+            await Bind();
+            Assert.Equal("selected-tenant", target.ServiceProvider.GetRequiredService<RequestTenantContext>().TenantId);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(Bind);
+            Assert.False(target.ServiceProvider.GetRequiredService<RequestTenantContext>().IsInitialized);
+        }
+    }
+
+    [Theory]
+    [InlineData("conflicting-tenant")]
+    [InlineData(null)]
+    public async Task ExecutionTenant_NeverOverwritesConflictingOrExplicitUnscopedContext(string? existing)
+    {
+        using var fixture = await Fixture.CreateAsync("selected-tenant");
+        using var targets = new ServiceCollection().AddScoped<RequestTenantContext>()
+            .AddScoped<ITenantContext>(provider => provider.GetRequiredService<RequestTenantContext>()).BuildServiceProvider(validateScopes: true);
+        using var target = targets.CreateScope();
+        var retained = target.ServiceProvider.GetRequiredService<RequestTenantContext>();
+        retained.Set(existing, TenantContextSource.Header);
+        using var execution = JobSecurityScope.BeginExecution(fixture.Job, fixture.Context with { CurrentAgentPrincipal = fixture.Principal });
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => JobExecutionLeaseTenantContext.BindExecutionTenantAsync(target.ServiceProvider, fixture.Principal, default));
+        Assert.Equal(existing, retained.TenantId);
+    }
+
     [Fact]
     public async Task TransientAuthority_RequiresActualJobScopeAndFreshStoredCredential()
     {
@@ -117,14 +174,17 @@ public sealed class JobExecutionLeaseTransientAuthorityTests
         internal required JobSecurityContext Context { get; init; }
         internal required ClaimsPrincipal Principal { get; init; }
 
-        internal static async Task<Fixture> CreateAsync()
+        internal static async Task<Fixture> CreateAsync(string? tenant = null)
         {
             var keys = new InMemoryAdminApiKeyStore();
             var created = await keys.CreateAsync("worker", ["agent:workspace", "admin:write"], null, null, default);
             var services = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys)
+                .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
                 .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions())).BuildServiceProvider();
             var original = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
-            var context = await AgentJobSecurityBridge.CaptureAsync(original, new RbacOptions(), services, null, default);
+            var selectedTenant = new RequestTenantContext();
+            selectedTenant.Set(tenant, TenantContextSource.Claim);
+            var context = await AgentJobSecurityBridge.CaptureAsync(original, new RbacOptions(), services, selectedTenant, default);
             var now = DateTimeOffset.UtcNow;
             var job = new ExecutionJobRecord
             {

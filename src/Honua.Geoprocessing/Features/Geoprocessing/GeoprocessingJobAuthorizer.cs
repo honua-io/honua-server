@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Identity.Abstractions;
@@ -73,6 +74,52 @@ internal sealed class GeoprocessingJobAuthorizer
         var tenantContext = _httpContextAccessor.HttpContext?.RequestServices
             .GetService<ITenantContext>();
         return JobSecurityContextCapture.Capture(principal, options, tenantContext, membershipManaged);
+    }
+
+    internal IAgentManagedProcessAdmission RequireAgentManagedProcessAdmission(ClaimsPrincipal principal)
+    {
+        var http = _httpContextAccessor.HttpContext;
+        if (http is null || !ReferenceEquals(http.User, principal))
+            throw new GeoprocessingAuthorizationException(false,
+                "Bounded agent execution requires the actual current authenticated request.",
+                OperatorResourceType.Process, OperatorOperation.Execute);
+        return http.RequestServices.GetService<IAgentManagedProcessAdmission>()
+            ?? throw new GeoprocessingAuthorizationException(false,
+                "Bounded agent process admission is not available on this host.",
+                OperatorResourceType.Process, OperatorOperation.Execute);
+    }
+
+    internal string? ResolveCurrentTenantId(ClaimsPrincipal principal, RbacOptions options)
+    {
+        if (!AgentCredentialAuthority.IsAgent(principal)) return CaptureSecurityContext(principal, options).TenantId;
+        var http = _httpContextAccessor.HttpContext;
+        if (http is null || !ReferenceEquals(http.User, principal)) throw new UnauthorizedAccessException("Current agent metadata requires its actual request.");
+        var tenant = http.RequestServices.GetRequiredService<ITenantContext>();
+        if (tenant is Honua.Infrastructure.MultiTenancy.RequestTenantContext { IsInitialized: false }
+            || !AgentCredentialAuthority.MatchesTenant(principal, tenant.TenantId))
+            throw new UnauthorizedAccessException("The validated agent request tenant is unavailable.");
+        return JobSecurityContextCapture.ResolveTenantId(principal, tenant);
+    }
+
+    internal async Task RequireLeaseObservationAsync(ExecutionJobRecord job, ClaimsPrincipal principal,
+        JobExecutionLeaseObservationKind kind, CancellationToken cancellationToken)
+    {
+        if (job.Audit.SubmitterSecurityContext?.AgentCredential is null) return;
+        var http = _httpContextAccessor.HttpContext;
+        if (job.Audit.SubmitterSecurityContext.ExecutionLease is null || http is null || !ReferenceEquals(http.User, principal))
+            throw new GeoprocessingAuthorizationException(false, "The original bounded job observation authority is unavailable.", OperatorResourceType.Job, OperatorOperation.Read);
+        var authority = http.RequestServices.GetService<IJobExecutionLeaseAuthority>()
+            ?? throw new GeoprocessingAuthorizationException(false, "The original bounded job observation authority is unavailable.", OperatorResourceType.Job, OperatorOperation.Read);
+        try
+        {
+            var observed = await authority.ResolveForObservationAsync(job.OperationId, principal, kind, cancellationToken).ConfigureAwait(false);
+            if (observed.JobId != job.OperationId || observed.IntentFingerprint != JobExecutionLeaseIntentFingerprint.Compute(job))
+                throw new UnauthorizedAccessException("The original accepted job changed.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new GeoprocessingAuthorizationException(false, "Current source and original job authority are required to read this job.", OperatorResourceType.Job, OperatorOperation.Read);
+        }
     }
 
     /// <summary>

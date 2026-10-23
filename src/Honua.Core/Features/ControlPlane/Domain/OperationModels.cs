@@ -1130,6 +1130,10 @@ public sealed record WorkflowOperationRecord
 /// </summary>
 public sealed record ExecutionJobSpec
 {
+    /// <summary>Server-owned bounded managed-agent provenance; absent on ordinary and legacy jobs.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public AgentManagedProcessJobBinding? AgentManagedProcessBinding { get; init; }
+
     /// <summary>
     /// Server-owned GPServer binding, stamped after scoped execution authorization.
     /// Arbitrary protocol parameters cannot create this binding. Null on legacy or other-protocol jobs.

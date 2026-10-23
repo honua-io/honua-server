@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -61,7 +62,7 @@ internal sealed partial class ConsoleJobService(
 
         foreach (var job in page.Items)
         {
-            if (!await CanReadAsync(context, job.OperationId, cancellationToken).ConfigureAwait(false))
+            if (!await CanReadAsync(context, job, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
@@ -506,7 +507,7 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         var job = await RequireJobStore().GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null || !await CanReadAsync(context, job.OperationId, cancellationToken).ConfigureAwait(false))
+        if (job == null || !await CanReadAsync(context, job, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -520,7 +521,7 @@ internal sealed partial class ConsoleJobService(
 
     private async Task<bool> CanReadAsync(
         HttpContext context,
-        string jobId,
+        ExecutionJobRecord job,
         CancellationToken cancellationToken)
     {
         var decision = await approvalGate.CheckAuthorizationAsync(
@@ -529,10 +530,20 @@ internal sealed partial class ConsoleJobService(
             {
                 ResourceType = OperatorResourceType.Job,
                 Operation = OperatorOperation.Read,
-                ResourceId = jobId
+                ResourceId = job.OperationId
             },
             cancellationToken).ConfigureAwait(false);
-        return decision.IsAllowed;
+        if (!decision.IsAllowed || job.Audit.SubmitterSecurityContext?.AgentCredential is null) return decision.IsAllowed;
+        if (job.Audit.SubmitterSecurityContext.ExecutionLease is null) return false;
+        var authority = serviceProvider.GetService<IJobExecutionLeaseAuthority>();
+        if (authority is null) return false;
+        try
+        {
+            var observed = await authority.ResolveForObservationAsync(job.OperationId, context.User,
+                JobExecutionLeaseObservationKind.Status, cancellationToken).ConfigureAwait(false);
+            return observed.JobId == job.OperationId && observed.IntentFingerprint == JobExecutionLeaseIntentFingerprint.Compute(job);
+        }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     private static ExecutionJobQuery ToExecutionQuery(ConsoleJobQueryRequest request)

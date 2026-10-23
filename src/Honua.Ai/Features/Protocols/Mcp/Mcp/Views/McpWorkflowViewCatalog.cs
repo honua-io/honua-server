@@ -418,7 +418,7 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "plan",
                 Title = "Plan and execute",
-                Description = "Validate and run a plan. A published-layer buffer is analytics.buffer-aggregate.",
+                Description = "Validate and run a plan. Asynchronous inline buffers use analytics.buffer-aggregate-managed; analytics.buffer-aggregate is synchronous only.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_plan_analysis"),

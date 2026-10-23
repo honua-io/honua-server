@@ -466,6 +466,9 @@ internal static class AgentCredentialAuthority
 
     private static bool Covered(string permission, IReadOnlyList<PermissionGrant> grants)
     {
+        if (permission == AgentManagedProcessAuthorization.Permission)
+            return grants.Any(grant => grant.Service == "agent" && grant.Operation == AgentManagedProcessAuthorization.Operation
+                && grant.Layer == AgentManagedProcessAuthorization.ProcessId);
         if (permission.Split(':') is ["agent", var studioAction, var item]
             && studioAction is AgentStudioAuthorization.Compose or AgentStudioAuthorization.ProposePublication)
         {

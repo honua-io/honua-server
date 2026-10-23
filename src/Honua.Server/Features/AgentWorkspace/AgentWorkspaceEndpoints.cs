@@ -27,6 +27,7 @@ internal static class AgentWorkspaceEndpoints
 {
     public static void AddAgentWorkspace(this IServiceCollection services)
     {
+        services.AddAgentManagedProcessAdmission();
         services.AddSingleton<IAgentWorkspaceStore>(sp => new AgentWorkspaceStore(sp.GetService<IConnectionMultiplexer>(),
             sp.GetRequiredService<IConfiguration>()["AgentWorkspace:DeploymentId"]));
         services.TryAddSingleton(TimeProvider.System);
