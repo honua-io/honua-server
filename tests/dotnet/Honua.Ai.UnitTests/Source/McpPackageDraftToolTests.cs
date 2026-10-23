@@ -266,6 +266,60 @@ public sealed class McpPackageDraftToolTests
         result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("invalid_argument");
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    public async Task Create_RecordsTheCaller_AndHidesTheDraftFromAnotherOwner()
+    {
+        var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
+        var mapTool = new CreateMapPackageTool(
+            _jobService,
+            new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            drafts,
+            NullLogger<CreateMapPackageTool>.Instance);
+        var appTool = new CreateAppPackageTool(
+            _jobService,
+            new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            drafts,
+            NullLogger<CreateAppPackageTool>.Instance);
+        using var arguments = JsonDocument.Parse("{}");
+        var caller = McpTestFactory.AuthenticatedHttpContext("ada");
+
+        var mapResult = await mapTool.InvokeAsync(caller, arguments.RootElement.Clone(), CancellationToken.None);
+        var appResult = await appTool.InvokeAsync(caller, arguments.RootElement.Clone(), CancellationToken.None);
+        var mapId = mapResult.StructuredContent!.Value.GetProperty("packageId").GetString()!;
+        var appId = appResult.StructuredContent!.Value.GetProperty("packageId").GetString()!;
+
+        (await drafts.GetMapDraftAsync(mapId, "ada")).Should().NotBeNull();
+        (await drafts.GetAppDraftAsync(appId, "ada")).Should().NotBeNull();
+        (await drafts.GetMapDraftAsync(mapId, "mallory")).Should().BeNull();
+        (await drafts.GetAppDraftAsync(appId, "mallory")).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    public async Task Create_WithoutOwnerSubject_DoesNotSave()
+    {
+        var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
+        var tool = new CreateMapPackageTool(
+            _jobService,
+            new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            drafts,
+            NullLogger<CreateMapPackageTool>.Instance);
+        using var arguments = JsonDocument.Parse("{}");
+        var context = new DefaultHttpContext
+        {
+            User = new System.Security.Claims.ClaimsPrincipal(
+                new System.Security.Claims.ClaimsIdentity(authenticationType: "Test")),
+        };
+
+        var act = async () => await tool.InvokeAsync(context, arguments.RootElement, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .WithMessage("*owner*");
+    }
+
     private Task<McpJsonRpcResponse?> DispatchAsync(McpJsonRpcRequest request)
     {
         var surface = new McpDataAccessSurface(

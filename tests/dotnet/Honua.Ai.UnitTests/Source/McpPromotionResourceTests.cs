@@ -378,7 +378,7 @@ public sealed class McpPromotionResourceTests
             Format = "honua_map_package.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
-        });
+        }, "test-user");
 
         var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var result = await resource.ReadAsync(
@@ -408,7 +408,7 @@ public sealed class McpPromotionResourceTests
             Format = "honua_map_package.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
-        });
+        }, "test-user");
 
         var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var result = await resource.ReadAsync(
@@ -434,7 +434,7 @@ public sealed class McpPromotionResourceTests
             Format = "honua_app_package.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
-        });
+        }, "test-user");
 
         var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
         var result = await resource.ReadAsync(
@@ -447,6 +447,42 @@ public sealed class McpPromotionResourceTests
         body.GetProperty("resourceUri").GetString().Should().Be("honua://app-packages/app_draft");
         body.GetProperty("packageStatus").GetString().Should().Be("draft");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task PackageResources_DraftOwnedBySomeoneElse_IsNotFound()
+    {
+        _deployments.ListBySourceAsync(Arg.Any<DeploymentSourceKind>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        await _drafts.SaveMapDraftAsync(new MapPackage
+        {
+            MapPackageId = "map_owned",
+            Format = "honua_map_package.v1",
+            Status = PackageStatus.Draft,
+            CreatedAt = PublishedAt,
+        }, "test-user");
+        await _drafts.SaveAppDraftAsync(new AppPackage
+        {
+            AppPackageId = "app_owned",
+            TargetSdk = "honua-sdk-js",
+            Format = "honua_app_package.v1",
+            Status = PackageStatus.Draft,
+            CreatedAt = PublishedAt,
+        }, "test-user");
+
+        var maps = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var apps = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var other = McpTestFactory.AuthenticatedHttpContext("other-user");
+
+        var readMap = async () => await maps.ReadAsync(other, "honua://map-packages/map_owned", CancellationToken.None);
+        var readApp = async () => await apps.ReadAsync(other, "honua://app-packages/app_owned", CancellationToken.None);
+        await readMap.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        await readApp.Should().ThrowAsync<GeoprocessingNotFoundException>();
+
+        var owner = McpTestFactory.AuthenticatedHttpContext();
+        var owned = await maps.ReadAsync(owner, "honua://map-packages/map_owned", CancellationToken.None);
+        McpTestFactory.ParseJson(owned.Contents[0].Text).GetProperty("packageStatus").GetString().Should().Be("draft");
     }
 
     [UnitTest]

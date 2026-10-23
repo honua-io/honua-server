@@ -34,34 +34,61 @@ namespace Honua.Core.Features.Studio.Drafts;
 /// here is therefore explicitly bounded rather than indefinite — see
 /// <see cref="PackageDraftRetentionOptions"/>.
 /// </para>
+/// <para>
+/// Every draft is stored against the caller that saved it (honua-server#3312).
+/// A read by any other subject, a read after the TTL, and a read of an identifier
+/// that was never saved all return <see langword="null"/>. A save with no owner
+/// writes nothing. When a shared backing is composed, two store instances read
+/// what the other wrote; the in-memory registration does not share across processes.
+/// </para>
 /// </remarks>
 public interface IPackageDraftStore
 {
     /// <summary>Records a map-package draft under its <see cref="MapPackage.MapPackageId"/>.</summary>
     /// <param name="package">The draft to record.</param>
+    /// <param name="ownerId">
+    /// Caller subject that may later read the draft. A null, empty, or whitespace
+    /// owner fails the save and writes nothing.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task SaveMapDraftAsync(MapPackage package, CancellationToken cancellationToken = default);
+    /// <exception cref="ArgumentException">
+    /// <paramref name="ownerId"/> is missing, or a live draft with this identifier
+    /// already belongs to a different owner. The existing draft is left unchanged.
+    /// </exception>
+    Task SaveMapDraftAsync(MapPackage package, string ownerId, CancellationToken cancellationToken = default);
 
     /// <summary>Records an app-package draft under its <see cref="AppPackage.AppPackageId"/>.</summary>
     /// <param name="package">The draft to record.</param>
+    /// <param name="ownerId">
+    /// Caller subject that may later read the draft. A null, empty, or whitespace
+    /// owner fails the save and writes nothing.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task SaveAppDraftAsync(AppPackage package, CancellationToken cancellationToken = default);
+    /// <exception cref="ArgumentException">
+    /// <paramref name="ownerId"/> is missing, or a live draft with this identifier
+    /// already belongs to a different owner. The existing draft is left unchanged.
+    /// </exception>
+    Task SaveAppDraftAsync(AppPackage package, string ownerId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets a recorded map-package draft, or <see langword="null"/> when no draft
-    /// with that identifier is held (never created, or retention expired).
+    /// with that identifier is visible to <paramref name="ownerId"/>. Never created,
+    /// expired, owned by someone else, and a missing owner are the same result.
     /// </summary>
     /// <param name="mapPackageId">The <c>map_…</c> identifier.</param>
+    /// <param name="ownerId">Caller subject recorded when the draft was saved.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<MapPackage?> GetMapDraftAsync(string mapPackageId, CancellationToken cancellationToken = default);
+    Task<MapPackage?> GetMapDraftAsync(string mapPackageId, string ownerId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets a recorded app-package draft, or <see langword="null"/> when no draft
-    /// with that identifier is held (never created, or retention expired).
+    /// with that identifier is visible to <paramref name="ownerId"/>. Never created,
+    /// expired, owned by someone else, and a missing owner are the same result.
     /// </summary>
     /// <param name="appPackageId">The <c>app_…</c> identifier.</param>
+    /// <param name="ownerId">Caller subject recorded when the draft was saved.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<AppPackage?> GetAppDraftAsync(string appPackageId, CancellationToken cancellationToken = default);
+    Task<AppPackage?> GetAppDraftAsync(string appPackageId, string ownerId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

@@ -79,6 +79,7 @@ internal sealed class CreateAppPackageTool : IMcpTool
         await _jobService
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Package, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var ownerId = PackageDraftCaller.RequireOwnerId(principal);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpCreateAppPackageArgument);
 
@@ -100,7 +101,7 @@ internal sealed class CreateAppPackageTool : IMcpTool
         // Persist before returning, for the same reason CreateMapPackageTool does:
         // the honua://app-packages/{id} URI in this response is only honourable if
         // AppPackageResource can find the draft without a deployment (honua-server#3262).
-        await _draftStore.SaveAppDraftAsync(result.Package, cancellationToken).ConfigureAwait(false);
+        await _draftStore.SaveAppDraftAsync(result.Package, ownerId, cancellationToken).ConfigureAwait(false);
 
         var output = new McpPackageDraftOutput
         {

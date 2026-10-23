@@ -104,7 +104,10 @@ internal sealed class MapPackageResource : IMcpResource
             // Deployment-backed visibility is checked first so a promoted package
             // keeps reporting its deployment edges rather than the stale draft it
             // grew from. Only when nothing serves it do we fall back to the draft.
-            var draft = await _drafts.GetMapDraftAsync(packageId, cancellationToken).ConfigureAwait(false);
+            var ownerId = PackageDraftCaller.ResolveOwnerId(principal);
+            var draft = string.IsNullOrWhiteSpace(ownerId)
+                ? null
+                : await _drafts.GetMapDraftAsync(packageId, ownerId, cancellationToken).ConfigureAwait(false);
             if (draft is null)
             {
                 throw new GeoprocessingNotFoundException(
