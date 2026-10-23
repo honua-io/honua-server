@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Import.Abstractions;
@@ -59,6 +60,11 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
+                // The receipt is already decided. A failed unlock must not replace it.
+                // The next attempt takes over a reserved row when the session is gone.
+                Trace.TraceWarning(
+                    "Job artifact import left its session lock for takeover: {0}",
+                    exception.GetType().Name);
             }
         }
     }
@@ -266,6 +272,11 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            // The original import error is what the caller sees. A reserved row that
+            // survives is taken over by the next attempt with the same fingerprint.
+            Trace.TraceWarning(
+                "Job artifact import left a reserved receipt for takeover: {0}",
+                exception.GetType().Name);
         }
     }
 

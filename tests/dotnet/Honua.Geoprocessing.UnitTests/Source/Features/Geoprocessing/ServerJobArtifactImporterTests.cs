@@ -174,7 +174,7 @@ public sealed class ServerJobArtifactImporterTests
     [UnitTest]
     public void ScratchPath_StaysUnderTheDirectory_AndRejectsARootedSegment()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "honua-scratch-root");
+        var directory = Path.Join(Path.GetTempPath(), "honua-scratch-root");
         var path = ServerJobArtifactImporter.CreateScratchPath(directory, "job-artifact-abc");
         var root = Path.GetFullPath(directory);
         var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
