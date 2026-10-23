@@ -116,6 +116,7 @@ internal sealed class DeploymentCapabilityRouteCatalog
             ?? throw new InvalidOperationException($"Embedded capability route catalog '{CatalogResourceName}' was not found.");
         using var document = JsonDocument.Parse(stream);
         var routes = new List<RouteCapability>();
+        var routed = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in document.RootElement.GetProperty("entries").EnumerateArray())
         {
             var method = entry.GetProperty("method").GetString();
@@ -126,6 +127,7 @@ internal sealed class DeploymentCapabilityRouteCatalog
                 throw new InvalidOperationException("Embedded capability route catalog contains an incomplete entry.");
             }
 
+            routed.Add(capability);
             routes.Add(new RouteCapability(
                 method.ToUpperInvariant(),
                 new TemplateMatcher(TemplateParser.Parse(route.TrimStart('/')), new RouteValueDictionary()),
@@ -139,7 +141,11 @@ internal sealed class DeploymentCapabilityRouteCatalog
                 static group => group.Key,
                 static group => group.OrderByDescending(route => route.Specificity).ToArray(),
                 StringComparer.Ordinal);
+        RoutedCapabilities = routed;
     }
+
+    /// <summary>Capability keys that own at least one catalogued HTTP route.</summary>
+    public IReadOnlySet<string> RoutedCapabilities { get; }
 
     public RouteResolution Resolve(HttpContext context)
     {
@@ -183,6 +189,79 @@ internal sealed class DeploymentCapabilityRouteCatalog
     {
         public static RouteResolution NotRouted => new(false, null);
         public static RouteResolution Unmapped => new(true, null);
+    }
+}
+
+/// <summary>
+/// Joins manifest capability ids to the deployment-profile key that owns their routes.
+/// A capability with no catalogued route is absent, so availability leaves it unchanged.
+/// </summary>
+internal sealed class ManifestRoutedCapabilityIndex
+{
+    private const string CrosswalkResourceName = "Honua.Server.DeploymentProfiles.capability-manifest-crosswalk.v1.json";
+
+    private readonly IReadOnlySet<string> _routed;
+    private readonly Dictionary<string, string?> _byManifestId;
+
+    public ManifestRoutedCapabilityIndex(DeploymentCapabilityRouteCatalog routes)
+    {
+        ArgumentNullException.ThrowIfNull(routes);
+        _routed = routes.RoutedCapabilities;
+        _byManifestId = LoadCrosswalk();
+    }
+
+    /// <summary>
+    /// Resolves the deployment-profile key whose routes this manifest id advertises.
+    /// Returns false when the id has no mapped route.
+    /// </summary>
+    public bool TryGetRoutedCapability(string manifestId, out string capability)
+    {
+        if (_byManifestId.TryGetValue(manifestId, out var mapped))
+        {
+            if (mapped is not null && _routed.Contains(mapped))
+            {
+                capability = mapped;
+                return true;
+            }
+
+            capability = string.Empty;
+            return false;
+        }
+
+        if (_routed.Contains(manifestId))
+        {
+            capability = manifestId;
+            return true;
+        }
+
+        capability = string.Empty;
+        return false;
+    }
+
+    private static Dictionary<string, string?> LoadCrosswalk()
+    {
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(CrosswalkResourceName)
+            ?? throw new InvalidOperationException($"Embedded capability manifest crosswalk '{CrosswalkResourceName}' was not found.");
+        using var document = JsonDocument.Parse(stream);
+        var byId = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var entry in document.RootElement.GetProperty("entries").EnumerateArray())
+        {
+            var manifestId = entry.GetProperty("manifestId").GetString();
+            if (string.IsNullOrWhiteSpace(manifestId))
+            {
+                throw new InvalidOperationException("Embedded capability manifest crosswalk contains an entry with no manifest id.");
+            }
+
+            string? capability = null;
+            if (entry.TryGetProperty("capability", out var capabilityValue) && capabilityValue.ValueKind == JsonValueKind.String)
+            {
+                capability = capabilityValue.GetString();
+            }
+
+            byId[manifestId] = string.IsNullOrWhiteSpace(capability) ? null : capability;
+        }
+
+        return byId;
     }
 }
 

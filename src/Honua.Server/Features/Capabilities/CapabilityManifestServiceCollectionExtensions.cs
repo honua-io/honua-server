@@ -31,6 +31,7 @@ internal static class CapabilityManifestServiceCollectionExtensions
         services.AddSingleton<DeploymentCapabilityProfile>();
         services.AddSingleton<DeploymentIdentity>();
         services.AddSingleton<DeploymentCapabilityRouteCatalog>();
+        services.AddSingleton<ManifestRoutedCapabilityIndex>();
         // Test and custom hosts can intentionally bypass the infrastructure composition root.
         // Keep the manifest resolvable there while preserving the canonical instance that
         // infrastructure startup registered and used to make provider-registration decisions.

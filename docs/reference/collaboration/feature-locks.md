@@ -40,7 +40,7 @@ page:
 
 | Manifest capability | What it reports |
 | --- | --- |
-| `collaboration.feature-locks` | `supported: true` — enforcement ships on every feature-write path. `available` is `true` only once you supply an [authorizer](#authorization); until then it is `false` with `reasonCode: disabled-by-configuration`, because a lease that can never be granted is not an available capability. |
+| `collaboration.feature-locks` | `supported: true` — enforcement ships on every feature-write path. `available` is `true` only once you supply an [authorizer](#authorization) and, when a [deployment profile](../../guides/deploy/capability-deployment-profiles.md) is configured, that profile enables `collaboration.map-sessions`. Until an authorizer is supplied it is `false` with `reasonCode: disabled-by-configuration`, because a lease that can never be granted is not an available capability. A profile that omits `collaboration.map-sessions` removes the routes and reports `available: false` with `reasonCode: deployment-profile-excluded`. |
 | `collaboration.feature-locks.cross-node` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — leases do not span nodes. See [Single-node scope](#single-node-scope). |
 | `edit.geoservices-version-tokens` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — the GeoServices `applyEdits` surface honours no client-supplied version token. The row is named for that surface on purpose: OGC API Features **does** enforce `If-Match`/`412`, and a generically-named row would tell you to disable optimistic concurrency where it works. |
 
@@ -53,12 +53,12 @@ how enforcement behaves rather than capabilities that can be switched on or off;
 manifest has no field that could carry them without inventing one. Read
 [What a lease does not promise](#what-a-lease-does-not-promise) for both.
 
-One further caveat when you read the manifest: `capabilities[].available` does not account
-for a [deployment capability profile](../../guides/deploy/capability-deployment-profiles.md). A profile that omits
-`collaboration.map-sessions` removes the feature-lock routes, and no capability row in the
-manifest folds that in — the profile is published separately as `deploymentProfile`, and a
-client that cares must intersect the two. That is uniform across every row in the document,
-not specific to feature locks.
+`capabilities[].available` already includes a configured
+[deployment capability profile](../../guides/deploy/capability-deployment-profiles.md) for every
+capability that maps to a route. Omitting `collaboration.map-sessions` makes
+`collaboration.feature-locks` unavailable even when an authorizer is present, because those
+routes resolve to that key. The same allowlist is also published as `deploymentProfile`.
+Intersecting the two again is harmless. A capability with no mapped route is unchanged.
 
 ## Endpoints
 
