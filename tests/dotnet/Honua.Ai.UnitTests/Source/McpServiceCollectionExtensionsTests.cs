@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Studio;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Hosting;
@@ -17,6 +18,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -330,6 +332,50 @@ public sealed partial class McpServiceCollectionExtensionsTests
         provider.GetRequiredService<IDeploymentStore>().Should().BeSameAs(canonicalDeployments);
         provider.GetServices<IMcpResource>().OfType<PublishedServiceResource>().Should().ContainSingle();
         provider.GetServices<IMcpResource>().OfType<DeploymentResource>().Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public void AddStudioDraftFactories_WithoutRedis_ResolvesInMemoryPackageDraftStore()
+    {
+        var services = BuildBaseServices();
+        services.AddStudioDraftFactories();
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IPackageDraftStore>().Should().BeOfType<InMemoryPackageDraftStore>(
+            "a host with no multiplexer keeps the single-process store");
+    }
+
+    [UnitTest]
+    public void AddMcpDataAccessSurface_WithoutRedis_ResolvesInMemoryPackageDraftStore()
+    {
+        var services = BuildBaseServices();
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IPackageDraftStore>().Should().BeOfType<InMemoryPackageDraftStore>();
+    }
+
+    [UnitTest]
+    public void AddMcpDataAccessSurface_WithRedisMultiplexer_ResolvesRedisPackageDraftStore()
+    {
+        var services = BuildBaseServices();
+        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IPackageDraftStore>().Should().BeOfType<RedisPackageDraftStore>();
+    }
+
+    [UnitTest]
+    public void AddMcpDataAccessSurface_WithCallerSuppliedStore_KeepsThatStore()
+    {
+        var custom = Substitute.For<IPackageDraftStore>();
+        var services = BuildBaseServices();
+        services.AddSingleton(custom);
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IPackageDraftStore>().Should().BeSameAs(custom);
     }
 
 }

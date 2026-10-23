@@ -204,6 +204,10 @@ internal static class McpServiceCollectionExtensions
         // here so the MCP surface is self-sufficient regardless of whether the
         // host also composes the Studio slice.
         services.AddStudioDraftFactories();
+        // The draft factories register the in-memory store. Replace that default
+        // when Redis is composed so a draft saved on one replica is readable on
+        // another; without a multiplexer the in-memory store stays (honua-server#3312).
+        PackageDraftStoreComposition.PreferRedisWhenConfigured(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
 
