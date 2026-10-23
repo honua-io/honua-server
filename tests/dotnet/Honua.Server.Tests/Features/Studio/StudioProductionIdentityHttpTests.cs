@@ -81,6 +81,11 @@ public sealed class StudioProductionIdentityHttpTests
                 human.DefaultRequestHeaders.Remove("X-Honua-Local-Bridge");
                 human.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.GetProperty("accessToken").GetString());
 
+                using var anonymous = factory.CreateClient();
+                (await anonymous.GetAsync("/api/v1/agent/target")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+                var bootstrap = await ReadAsync(await setup.GetAsync("/api/v1/agent/target"), HttpStatusCode.OK);
+                bootstrap.GetProperty("principal").GetProperty("isHumanSession").GetBoolean().Should().BeFalse();
+
                 var itemId = Guid.NewGuid();
                 var issued = await ReadAsync(await setup.PostAsJsonAsync("/api/v1/admin/api-keys", new
                 {
@@ -93,6 +98,16 @@ public sealed class StudioProductionIdentityHttpTests
                 using var agent = factory.CreateClient();
                 agent.DefaultRequestHeaders.Add("X-API-Key", issued.GetProperty("data").GetProperty("key").GetString());
                 var target = await ReadAsync(await human.GetAsync("/api/v1/agent/target"), HttpStatusCode.OK);
+                var humanPrincipal = target.GetProperty("principal");
+                humanPrincipal.GetProperty("isHumanSession").GetBoolean().Should().BeTrue();
+                humanPrincipal.GetProperty("authenticationKind").GetString().Should().Be("operator-bearer");
+                var agentTarget = await ReadAsync(await agent.GetAsync("/api/v1/agent/target"), HttpStatusCode.OK);
+                var agentPrincipal = agentTarget.GetProperty("principal");
+                agentTarget.GetProperty("targetId").GetString().Should().Be(target.GetProperty("targetId").GetString());
+                agentPrincipal.GetProperty("actorId").GetString().Should().Be(workspaceActor);
+                agentPrincipal.GetProperty("studioOwnerId").GetString().Should().Be(keyId);
+                agentPrincipal.GetProperty("isHumanSession").GetBoolean().Should().BeFalse();
+                agentPrincipal.GetProperty("authenticationKind").GetString().Should().Be("api-key");
                 var workspace = await ReadAsync(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new
                 {
                     viewId = "identity-view",
@@ -108,6 +123,7 @@ public sealed class StudioProductionIdentityHttpTests
                 }), HttpStatusCode.OK);
                 var retained = await scope.ServiceProvider.GetRequiredService<IAgentWorkspaceStore>().GetAsync(workspaceId);
                 retained!.AgentActorId.Should().Be(workspaceActor);
+                retained.OwnerId.Should().Be(humanPrincipal.GetProperty("actorId").GetString());
                 agent.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
                 agent.DefaultRequestHeaders.Add("X-Honua-Turn", "identity-turn");
                 await ReadAsync(await agent.GetAsync($"/api/v1/agent/workspaces/{workspaceId}/turns/identity-turn"), HttpStatusCode.OK);

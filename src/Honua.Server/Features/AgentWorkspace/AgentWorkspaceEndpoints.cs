@@ -91,7 +91,7 @@ internal static class AgentWorkspaceEndpoints
         group.MapDatasetImportTasks();
         group.MapDatasetImportUploads();
         group.MapDatasetImportSubmissions();
-        group.MapGet("/target", async (IAgentWorkspaceStore store) => Results.Ok(new AgentTargetResponse(await store.GetTargetIdAsync().ConfigureAwait(false))));
+        group.MapGet("/target", GetTarget);
         group.MapPost("/devops/authorize", AuthorizeDevOps);
         group.MapPost("/workspaces", CreateWorkspace);
         group.MapGet("/workspaces/{workspaceId}", GetWorkspace);
@@ -232,6 +232,28 @@ internal static class AgentWorkspaceEndpoints
             catch (System.Text.Json.JsonException) { return false; }
         }
         return true;
+    }
+
+    internal static async Task<IResult> GetTarget(HttpContext context, IAgentWorkspaceStore store)
+    {
+        var principal = context.User;
+        var services = context.RequestServices;
+        if (CanonicalSecurityActor.Resolve(principal) is not { } actor ||
+            !await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, context.RequestAborted).ConfigureAwait(false))
+            return Results.Forbid();
+        var targetId = await store.GetTargetIdAsync().ConfigureAwait(false);
+        var human = AgentPublicationProposalAuthorization.IsHumanApprover(principal);
+        var kind = principal.Identities.Any(identity => identity.IsAuthenticated &&
+            identity.AuthenticationType == OidcAuthenticationExtensions.OperatorBearerScheme) ? "operator-bearer"
+            : human ? "interactive"
+            : AgentCredentialAuthority.IsDelegated(principal) ? "delegated-agent"
+            : principal.FindFirst("api_key_id") is not null ? "api-key" : "authenticated";
+        var studioOwner = services.GetService<Honua.Core.Features.Studio.Abstractions.IStudioAuthorizationService>()
+            ?.ResolveCallerId(principal);
+        if (!await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, context.RequestAborted).ConfigureAwait(false))
+            return Results.Forbid();
+        return Results.Json(new AgentTargetResponse(targetId,
+            new(actor.ActorId, studioOwner, Tenant(context), kind, human)), AgentWorkspaceJsonContext.Default.AgentTargetResponse);
     }
 
     private static string Actor(HttpContext context)

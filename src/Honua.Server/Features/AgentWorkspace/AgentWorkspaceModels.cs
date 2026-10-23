@@ -68,7 +68,11 @@ internal sealed record CreateAgentDraft([property: JsonRequired] string Kind, [p
 internal sealed record PatchAgentDraft([property: JsonRequired] long ExpectedRevision, [property: JsonRequired] string ViewId, [property: JsonRequired] Dictionary<string, string> Changes);
 internal sealed record SubmitAgentDraft([property: JsonRequired] string CommandId, [property: JsonRequired] long ExpectedRevision, [property: JsonRequired] string ViewId);
 internal sealed record AppendAgentMessage([property: JsonRequired] string MessageId, [property: JsonRequired] string TurnId, [property: JsonRequired] string Content);
-internal sealed record AgentTargetResponse(string TargetId);
+internal sealed record AgentTargetResponse(string TargetId, AgentPrincipalProjection? Principal = null);
+// Read-only identity observed from the current authenticated request. Membership
+// and every operation remain independently authorized against their real resource.
+internal sealed record AgentPrincipalProjection(string ActorId, string? StudioOwnerId, string? TenantId,
+    string AuthenticationKind, bool IsHumanSession);
 internal sealed record AgentDevOpsAuthorizationRequest(
     string TargetId, string DeployTargetId, string Environment, string? CanonicalTool,
     Dictionary<string, System.Text.Json.JsonElement>? Arguments = null);
