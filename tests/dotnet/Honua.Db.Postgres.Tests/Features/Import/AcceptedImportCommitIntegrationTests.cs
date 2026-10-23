@@ -53,7 +53,8 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
         foreach (var migration in new[] { "004_CreateImportFunctions.sql", "070_AddImportLoadModes.sql",
             "071_FixImportStagingTableNameLength.sql", "108_FixLongImportIndexNames.sql",
             "111_PreserveImportOrdinateDimensions.sql", "123_ImportDatumTransformPipeline.sql",
-            "129_ProtectImportTableOwnership.sql", "136_CreateImportCommitReceipts.sql" })
+            "129_ProtectImportTableOwnership.sql", "136_CreateImportCommitReceipts.sql",
+            "139_FixImportCommitReceiptFingerprintConstraint.sql" })
         {
             var sql = await File.ReadAllTextAsync(Path.Join(root.FullName, "src", "Honua.Server", "Migrations", migration));
             await ExecuteAsync(sql.Replace("$HonuaSchema$", "honua", StringComparison.Ordinal));

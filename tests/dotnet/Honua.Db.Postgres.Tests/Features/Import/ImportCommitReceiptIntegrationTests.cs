@@ -21,9 +21,16 @@ public sealed class ImportCommitReceiptIntegrationTests(PostgresFixture fixture)
     public async Task InitializeAsync()
     {
         _schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportCommitReceiptIntegrationTests));
-        var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory,
-            "Migrations", "136_CreateImportCommitReceipts.sql"));
-        await fixture.ExecuteAsync(migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal));
+        foreach (var migrationName in new[]
+        {
+            "136_CreateImportCommitReceipts.sql",
+            "139_FixImportCommitReceiptFingerprintConstraint.sql"
+        })
+        {
+            var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory,
+                "Migrations", migrationName));
+            await fixture.ExecuteAsync(migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal));
+        }
         await fixture.ExecuteAsync($"CREATE TABLE {_schema}.destination (id integer PRIMARY KEY)");
     }
 
