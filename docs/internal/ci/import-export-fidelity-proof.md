@@ -68,3 +68,10 @@ PostGIS file/GeoServices import behavior fixtures 7 passed, all zero failures/sk
 all nine independent decode checks and the deliberate-corruption rejection passed.
 Receipt-reader checks 2 passed; client comparator checks 5 passed. The delivering
 PR carries the exact final-head gate links and the fresh receipt location.
+
+Final Windows integration verification: tier enforcement 13 passed with an unchanged
+ratchet; the actual Fast filter reached all 3 writer cases. Managed build plan
+regressions: 14 passed. After reconciling the concurrent tier correction, the full
+3-writer/7-import/9-reader proof passed again with zero skips at commit a4f67c7a84;
+fresh local receipt:
+`tests/TestResults/import-export-fidelity/f191e22d-9b34-4d20-97a2-c21e903c8ebe/scorecard.json`.
