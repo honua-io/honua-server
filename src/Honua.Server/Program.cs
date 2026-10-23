@@ -1866,10 +1866,17 @@ catch (InvalidOperationException ex)
 
 // Run database migrations on startup. A migration safety gate refusal is terminal, but it
 // must leave through the host dispose path: an unhandled exception aborts the runtime and
-// native finalizers then run after their modules unload (honua-server#5507).
+// native finalizers then run after their modules unload (honua-server#5507). A schema-floor
+// refusal on the skip-migrations path is the same class of abort (honua-server#6496).
 try
 {
     await RunDatabaseMigrationsAsync();
+}
+catch (Exception ex) when (Honua.Server.Hosting.GatedBootShutdown.IsSchemaFloorRefusal(ex)
+    && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+{
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
 }
 catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdown.IsContractGateRefusal(ex))
 {
@@ -2223,6 +2230,21 @@ async Task RunDatabaseMigrationsAsync()
 
         try
         {
+            // The pending provider script cannot run while migrations are skipped. A baseline that
+            // already matches is journaled as adopted; anything short of that match stays a floor
+            // failure and is not repaired here (honua-server#6496).
+            var adoptedBaseline = schemaGuard.TryAdoptMatchingRasterBaselineAsync(
+                skippedMigrationConnectionString,
+                app.Lifetime.ApplicationStopping);
+            if (adoptedBaseline is not null)
+            {
+                var adoptedScript = await adoptedBaseline;
+                if (!string.IsNullOrEmpty(adoptedScript))
+                {
+                    Honua.Infrastructure.Logging.Log.RasterProviderBaselineAdopted(app.Logger, adoptedScript);
+                }
+            }
+
             await schemaGuard.VerifyAsync(
                 skippedMigrationConnectionString,
                 app.Lifetime.ApplicationStopping);

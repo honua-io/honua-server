@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
@@ -599,6 +600,109 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 firstMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
                 $"migration adoption candidate(s) are incomplete: {string.Join("; ", incomplete)}.");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> TryAdoptMatchingRasterBaselineAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        // Skip-migrations serving cannot run the pending provider script. When the baseline tables
+        // already match that script's creation contract, record the journal receipt only. A missing
+        // or partial raster schema stays a floor failure (honua-server#6496).
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        if (!await TryAcquireRasterAdoptionLockAsync(connection, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        try
+        {
+            var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+            if (state.JournalIsEmpty
+                || state.IsApplied(RasterTablesMigration)
+                || state.MissingRasterBaselineTables().Count > 0)
+            {
+                return null;
+            }
+
+            if (!await RasterBaselineMatchesCreationContractAsync(connection, cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            await using var insert = connection.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO public.schema_versions (scriptname, applied)
+                SELECT @script, CURRENT_TIMESTAMP
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM public.schema_versions WHERE scriptname = @script)
+                """;
+            var script = insert.CreateParameter();
+            script.ParameterName = "script";
+            script.Value = RasterTablesMigration;
+            insert.Parameters.Add(script);
+            var wrote = await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return wrote > 0 ? RasterTablesMigration : null;
+        }
+        finally
+        {
+            await ReleaseRasterAdoptionLockAsync(connection).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> RasterBaselineMatchesCreationContractAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        // Same creation-time contract the seed adoption uses. Later columns and indexes may exist;
+        // every column, constraint, sequence, table property, and index the baseline script creates
+        // must already match, because this path does not execute the script to repair them.
+        var definitions = await PostgresSeedSchemaContract.ReadAsync(connection, _schemaName, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var table in _rasterBaselineTables)
+        {
+            if (!definitions.ContainsKey((table, "table")))
+            {
+                return false;
+            }
+
+            foreach (var entry in PostgresSeedSchemaContract.Definitions.Where(candidate => candidate.Key.Table == table))
+            {
+                if (!definitions.TryGetValue(entry.Key, out var actual) || actual != entry.Value)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static async Task<bool> TryAcquireRasterAdoptionLockAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock(@lock_key);", connection);
+        _ = command.Parameters.AddWithValue("lock_key", PostgresDatabaseMigrationRunner.MigrationLockKey);
+        return (bool?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false;
+    }
+
+    private static async Task ReleaseRasterAdoptionLockAsync(NpgsqlConnection connection)
+    {
+        try
+        {
+            await using var command = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_key);", connection);
+            _ = command.Parameters.AddWithValue("lock_key", PostgresDatabaseMigrationRunner.MigrationLockKey);
+            _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Debug.WriteLine(ex);
         }
     }
 

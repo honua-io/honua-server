@@ -105,6 +105,26 @@ public interface IDatabaseSchemaGuard
         => VerifyConsistencyAsync(connection, cancellationToken);
 
     /// <summary>
+    /// Records an already-created raster provider baseline in the migration journal when its tables
+    /// match the creation contract and the journal does not yet name that migration. Does not execute
+    /// the migration script, drop or alter tables, or report a new apply. A missing, partial, or
+    /// non-matching raster schema is not journaled; the floor check stays in force.
+    /// </summary>
+    /// <param name="connectionString">Connection string for the target database.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The adopted script name when a journal receipt was recorded; otherwise <see langword="null"/>.
+    /// </returns>
+    /// <remarks>
+    /// The default adopts nothing. A guard that does not model the raster baseline keeps the strict
+    /// floor check.
+    /// </remarks>
+    Task<string?> TryAdoptMatchingRasterBaselineAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<string?>(null);
+
+    /// <summary>
     /// Checks the migration-owned schema required by one ordinary runtime operation.
     /// </summary>
     /// <param name="connection">Open connection to the target database.</param>
