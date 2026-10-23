@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:74aab02afe655896e2a87d1481f55b6fa14fc762f1b3a59bd8df0dcbed894c62",
+  "bundleDigest": "sha256:742c4b6481977d63cb594152ea100083f957d6c8f42cc8168eb17185fe6cebf1",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2638,7 +2638,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:b11899b89c730dd791c3f5d4ed1a7e2a10850cc767568ac8a7c0d5bd6ef01376",
+      "documentDigest": "sha256:a16ace1dd6b569e0395776a5ea4d5f269c176f9d864d54a0affd1835520058dc",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",
@@ -7746,7 +7746,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:b25ab14f894ac03fc6f286c53c71cd062414696275b6f6f97539096e09e9247a",
+      "documentDigest": "sha256:68bd29308e658e34a0db73fd8c05b951598910b2cb1f0350479ada5b8de58343",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",
