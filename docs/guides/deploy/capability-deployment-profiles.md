@@ -50,7 +50,12 @@ non-secret and contains only the schema version and selected key list.
 
 When both generated variables are present, the server treats the selected keys as a fail-closed
 HTTP route allowlist backed by the committed feature catalog. Unselected routed surfaces return
-404. Include `discovery.capability-manifest` to expose `/api/v1/capabilities/manifest`, which reports
+404. The capability manifest folds that allowlist into `capabilities[].available` for every
+capability that maps to a route: an omitted key is `available: false` with
+`reasonCode: deployment-profile-excluded`. A capability with no mapped route is unchanged, and
+an enabled key stays on the other availability gates. Clients that also intersect
+`deploymentProfile.enabledCapabilities` count the restriction twice, which is harmless.
+Include `discovery.capability-manifest` to expose `/api/v1/capabilities/manifest`, which reports
 the exact effective keys in `deploymentProfile.enabledCapabilities`. Include `ops.health` when an
 orchestrator needs the standard health probes. With neither variable present, the middleware is
 inert and the historical full-surface behavior is preserved.

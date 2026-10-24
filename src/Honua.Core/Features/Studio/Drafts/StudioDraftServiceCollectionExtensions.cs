@@ -42,6 +42,9 @@ public static class StudioDraftServiceCollectionExtensions
         // constructor dependency of both tools and both package resources for the
         // same reason the factories are: a missing registration must fail at
         // startup, not degrade into a URI that silently never resolves.
+        // In-memory is the single-process fallback. The MCP host replaces this
+        // descriptor with a factory that selects Redis when a multiplexer is
+        // registered (honua-server#3312). TryAdd keeps a store the host already set.
         services.TryAddSingleton(new PackageDraftRetentionOptions());
         services.TryAddSingleton<IPackageDraftStore, InMemoryPackageDraftStore>();
 

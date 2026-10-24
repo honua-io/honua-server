@@ -95,6 +95,7 @@ internal sealed class CreateMapPackageTool : IMcpTool
         await _jobService
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Package, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var ownerId = PackageDraftCaller.RequireOwnerId(principal);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpCreateMapPackageArgument);
 
@@ -117,7 +118,7 @@ internal sealed class CreateMapPackageTool : IMcpTool
         // its honua://map-packages/{id} URI", and MapPackageResource can only
         // honour that for a deployment-less draft if the draft was recorded
         // (honua-server#3262).
-        await _draftStore.SaveMapDraftAsync(result.Package, cancellationToken).ConfigureAwait(false);
+        await _draftStore.SaveMapDraftAsync(result.Package, ownerId, cancellationToken).ConfigureAwait(false);
 
         var output = new McpPackageDraftOutput
         {

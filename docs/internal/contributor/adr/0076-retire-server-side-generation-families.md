@@ -329,6 +329,9 @@ Draft reads are authorized exactly as deployment-backed package reads are
 records no owner, so it does not narrow that further; per-draft ownership would
 be a change to the package authorization model, not to this store.
 
+Superseded for retention and ownership by the amendment below (#3312). The
+paragraphs above record the #3262 decision, not the current one.
+
 ### The guard
 
 The behavioural guard this ADR asks for is extended rather than duplicated:
@@ -337,3 +340,26 @@ composed host — `tools/call` to mint the identifier, then `resources/read` on 
 exact `resourceUri` the tool returned — for both map and app packages. A tool
 that creates without persisting passes the create half and fails the resolve
 half, which is precisely the defect this amendment closes.
+
+## Amendment (2026-10-23): shared, owner-scoped drafts (#3312)
+
+The retention paragraph above left drafts on the replica that created them and
+recorded no owner. `POST /mcp` is not sticky, and a Lambda cold start is a new
+process, so a client that had just received `honua://map-packages/{id}` could
+read it back as not found.
+
+### What was chosen
+
+`IPackageDraftStore` still keys drafts by the minted `map_…` / `app_…` identifier
+and still does not use `IStudioPackageStore`. Each save records the caller, using
+the same subject order as attachment and replica ownership (`NameIdentifier`,
+then `sub`, then `api_key_id`, then `Identity.Name`). A save with no subject
+fails and writes nothing. A read by a different subject returns the same
+not-found result as a missing or expired draft and does not reveal that the
+draft exists.
+
+When the host has registered `IConnectionMultiplexer`, the store is Redis-backed
+and the key TTL is the retention window (default 24 hours). When it has not, the
+store stays `InMemoryPackageDraftStore` for that single process and is not
+treated as shared. Per-kind capacity stays 500, oldest write evicted first.
+Expiry still reads as not found.

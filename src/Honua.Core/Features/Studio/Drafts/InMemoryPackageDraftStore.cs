@@ -1,136 +1,80 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
 /// <summary>
-/// Default <see cref="IPackageDraftStore"/>: an in-process, age-bounded map from
-/// the minted <c>map_…</c> / <c>app_…</c> identifier to the draft package
-/// (ADR-0076, honua-server#3262).
+/// Single-process <see cref="IPackageDraftStore"/> (ADR-0076, honua-server#3312).
 /// </summary>
 /// <remarks>
 /// <para>
-/// In-process is the deliberate default rather than a placeholder. A draft is
-/// pre-publish scratch with no cross-request contract beyond the composition
-/// session that created it: the moment it is promoted to a deployment it becomes
-/// resolvable through the deployment store, which is durable and shared. Adding a
-/// schema-bearing table for state whose whole purpose is to be short-lived buys
-/// retention nobody has asked for and a migration everybody pays for.
+/// This is the registration used when no shared backing is composed. Each instance
+/// owns a private <see cref="MemoryPackageDraftBacking"/>, so two processes — two
+/// replicas, or a Lambda cold start — do not see each other's drafts. That is
+/// intentional: an in-memory store must not be described as shared. A host that
+/// has registered a Redis connection uses <c>RedisPackageDraftStore</c> instead,
+/// and two of those instances read what the other wrote.
 /// </para>
 /// <para>
-/// The consequence is recorded rather than hidden: on a multi-replica deployment
-/// a draft resolves only on the replica that created it, and it does not survive
-/// a restart. Both are acceptable for scratch state and both are visible as an
-/// ordinary "not found", which is exactly the response an expired draft gives.
-/// A durable, shared backing is a separate decision with its own retention and
-/// authorization questions.
+/// Tests that need the replica contract pass one <see cref="IPackageDraftBacking"/>
+/// into both instances. Retention stays the bounds in
+/// <see cref="PackageDraftRetentionOptions"/>: default 24 hours, 500 drafts per
+/// kind, oldest write evicted first. An expired draft and a draft owned by
+/// someone else both read as not found.
 /// </para>
 /// </remarks>
 public sealed class InMemoryPackageDraftStore : IPackageDraftStore
 {
-    private readonly ConcurrentDictionary<string, Entry<MapPackage>> _maps = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, Entry<AppPackage>> _apps = new(StringComparer.Ordinal);
-    private readonly PackageDraftRetentionOptions _retention;
-    private readonly TimeProvider _timeProvider;
+    private readonly PackageDraftLedger _ledger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="InMemoryPackageDraftStore"/> class.
+    /// Initializes a new instance of the <see cref="InMemoryPackageDraftStore"/> class
+    /// with a private backing.
     /// </summary>
     /// <param name="retention">Age and capacity bounds.</param>
     /// <param name="timeProvider">Clock used for expiry, injected so tests can pin it.</param>
     public InMemoryPackageDraftStore(PackageDraftRetentionOptions retention, TimeProvider timeProvider)
+        : this(retention, timeProvider, new MemoryPackageDraftBacking(timeProvider))
     {
-        ArgumentNullException.ThrowIfNull(retention);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        _retention = retention;
-        _timeProvider = timeProvider;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryPackageDraftStore"/> class
+    /// over a caller-supplied backing. Two instances constructed with the same backing
+    /// are the replica case.
+    /// </summary>
+    /// <param name="retention">Age and capacity bounds.</param>
+    /// <param name="timeProvider">Clock stamped onto each write.</param>
+    /// <param name="backing">Shared or private record store.</param>
+    internal InMemoryPackageDraftStore(
+        PackageDraftRetentionOptions retention,
+        TimeProvider timeProvider,
+        IPackageDraftBacking backing)
+    {
+        _ledger = new PackageDraftLedger(backing, retention, timeProvider);
     }
 
     /// <inheritdoc />
-    public Task SaveMapDraftAsync(MapPackage package, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(package);
-        Save(_maps, package.MapPackageId, package);
-        return Task.CompletedTask;
-    }
+    public Task SaveMapDraftAsync(MapPackage package, string ownerId, CancellationToken cancellationToken = default) =>
+        _ledger.SaveMapDraftAsync(package, ownerId, cancellationToken);
 
     /// <inheritdoc />
-    public Task SaveAppDraftAsync(AppPackage package, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(package);
-        Save(_apps, package.AppPackageId, package);
-        return Task.CompletedTask;
-    }
+    public Task SaveAppDraftAsync(AppPackage package, string ownerId, CancellationToken cancellationToken = default) =>
+        _ledger.SaveAppDraftAsync(package, ownerId, cancellationToken);
 
     /// <inheritdoc />
-    public Task<MapPackage?> GetMapDraftAsync(string mapPackageId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Get(_maps, mapPackageId));
+    public Task<MapPackage?> GetMapDraftAsync(
+        string mapPackageId,
+        string ownerId,
+        CancellationToken cancellationToken = default) =>
+        _ledger.GetMapDraftAsync(mapPackageId, ownerId, cancellationToken);
 
     /// <inheritdoc />
-    public Task<AppPackage?> GetAppDraftAsync(string appPackageId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Get(_apps, appPackageId));
-
-    private void Save<T>(ConcurrentDictionary<string, Entry<T>> store, string id, T package)
-        where T : class
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
-
-        var now = _timeProvider.GetUtcNow();
-        store[id] = new Entry<T>(package, now);
-        Trim(store, now);
-    }
-
-    private T? Get<T>(ConcurrentDictionary<string, Entry<T>> store, string id)
-        where T : class
-    {
-        if (string.IsNullOrWhiteSpace(id) || !store.TryGetValue(id, out var entry))
-        {
-            return null;
-        }
-
-        if (IsExpired(entry, _timeProvider.GetUtcNow()))
-        {
-            // Read-time expiry keeps the store honest without a background sweeper:
-            // an aged-out draft is removed the first time anybody looks for it.
-            store.TryRemove(id, out _);
-            return null;
-        }
-
-        return entry.Package;
-    }
-
-    private void Trim<T>(ConcurrentDictionary<string, Entry<T>> store, DateTimeOffset now)
-        where T : class
-    {
-        // codeql[cs/linq/missed-where]: removes expired drafts while enumerating the concurrent store
-        foreach (var pair in store)
-        {
-            if (IsExpired(pair.Value, now))
-            {
-                store.TryRemove(pair.Key, out _);
-            }
-        }
-
-        if (store.Count <= _retention.Capacity)
-        {
-            return;
-        }
-
-        // Oldest-first eviction: a draft still being composed was written most
-        // recently, so it is the last one dropped.
-        foreach (var pair in store.OrderBy(pair => pair.Value.CreatedAt).Take(store.Count - _retention.Capacity))
-        {
-            store.TryRemove(pair.Key, out _);
-        }
-    }
-
-    private bool IsExpired<T>(Entry<T> entry, DateTimeOffset now)
-        where T : class =>
-        now - entry.CreatedAt >= _retention.Ttl;
-
-    private sealed record Entry<T>(T Package, DateTimeOffset CreatedAt)
-        where T : class;
+    public Task<AppPackage?> GetAppDraftAsync(
+        string appPackageId,
+        string ownerId,
+        CancellationToken cancellationToken = default) =>
+        _ledger.GetAppDraftAsync(appPackageId, ownerId, cancellationToken);
 }

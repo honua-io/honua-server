@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:bfb4595e594d3be0907e45155281d69342025c9d23642708272b3905039878b5",
+  "bundleDigest": "sha256:4dd376b0f1f991f4e20b5b07bbfa27107b1de0351a3bab45bb012787fb39119e",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2134,7 +2134,7 @@
     {
       "id": "guides/deploy/capability-deployment-profiles",
       "path": "guides/deploy/capability-deployment-profiles.md",
-      "documentDigest": "sha256:9768cb26e088622c1a3d4f7af407cc774b3fe64b4c410e81d11a132634b75c9f",
+      "documentDigest": "sha256:e25df81e9c874be4a33f5e08efb077b50a14f58461ee75f9a370535fb7984308",
       "metadata": {
         "type": "guide",
         "title": "Capability deployment profiles",
@@ -7515,7 +7515,7 @@
     {
       "id": "reference/admin-api/overview",
       "path": "reference/admin-api/overview.md",
-      "documentDigest": "sha256:97499351aa4e6be88502922f9c3855ab528a8e2e628b30c51f9e9b4edd015be0",
+      "documentDigest": "sha256:4907fb69c1a7867124b3160748999d95bdc17c68e4aaca0442d4e3581bbb6397",
       "metadata": {
         "type": "reference",
         "title": "Admin API overview",
@@ -7566,7 +7566,7 @@
     {
       "id": "reference/collaboration/feature-locks",
       "path": "reference/collaboration/feature-locks.md",
-      "documentDigest": "sha256:a663098e3968daa8233ed2e4e4413542c297f6b6ddc078a450fd1ca9e9f6a1d7",
+      "documentDigest": "sha256:99bc4a3add874870e790b46396226fe240491cb34ba70094e1865fa2c44ae5aa",
       "metadata": {
         "type": "reference",
         "title": "Feature locks (collaborative editing)",
@@ -7820,7 +7820,7 @@
     {
       "id": "reference/geoprocessing-operations",
       "path": "reference/geoprocessing-operations.md",
-      "documentDigest": "sha256:338121e11c00989848820ba418a70aaa809749b60db4dfc866812d50ca34e2e3",
+      "documentDigest": "sha256:e17fec12cef292c281dd7df0be0a4386ce2ae1c28a774fc5a763895adbc91efa",
       "metadata": {
         "type": "reference",
         "title": "Geoprocessing operations",
