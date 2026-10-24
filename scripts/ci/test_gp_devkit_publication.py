@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -63,8 +64,9 @@ class GpDevkitPublicationTests(unittest.TestCase):
             output = Path(directory) / "publication.json"
             pushed = []
 
-            def push(command, check):
-                self.assertTrue(check)
+            def push(command, check, **_kwargs):
+                self.assertFalse(check)
+                self.assertNotIn("--skip-duplicate", command)
                 self.assertEqual("dotnet", command[0])
                 self.assertIn("nuget", command)
                 self.assertIn("push", command)
@@ -72,6 +74,7 @@ class GpDevkitPublicationTests(unittest.TestCase):
                 self.assertIn(publication.FEED, command)
                 self.assertIn("token-must-not-leak", command)
                 pushed.append(command)
+                return subprocess.CompletedProcess(command, 0, stdout="Your package was pushed.", stderr="")
 
             with patch.object(publication.subprocess, "run", side_effect=push):
                 receipt = publication.publish(package, ENVIRONMENT, output)
@@ -102,6 +105,24 @@ class GpDevkitPublicationTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         publication.publish(package, {**ENVIRONMENT, **changes}, Path(directory) / "out.json")
                     run.assert_not_called()
+
+    def test_duplicate_push_does_not_record_the_local_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = nupkg(directory)
+            output = Path(directory) / "publication.json"
+            skipped = subprocess.CompletedProcess(
+                ["dotnet"], 0, stdout="", stderr="The package is already in the feed. Skipping.",
+            )
+            with patch.object(publication.subprocess, "run", return_value=skipped):
+                with self.assertRaises(ValueError):
+                    publication.publish(package, ENVIRONMENT, output)
+            self.assertFalse(output.exists())
+
+            failed = subprocess.CompletedProcess(["dotnet"], 1, stdout="", stderr="error: 409")
+            with patch.object(publication.subprocess, "run", return_value=failed):
+                with self.assertRaises(ValueError):
+                    publication.publish(package, ENVIRONMENT, output)
+            self.assertFalse(output.exists())
 
     def test_installed_suffix_and_wrong_package_are_not_pushed(self):
         with tempfile.TemporaryDirectory() as directory:

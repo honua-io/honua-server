@@ -94,14 +94,26 @@ def require_publication(environment):
     return {"source_sha": sha, "run_id": run, "run_attempt": attempt, "repository": REPOSITORY}
 
 
+def _push_skipped_existing(output):
+    text = output.lower()
+    return "already exists" in text or "already in the feed" in text or ("skipping" in text and "package" in text)
+
+
 def publish(package, environment, output):
     origin = require_publication(environment)
     identity = package_identity(package)
     require("installed." not in identity["version"], "candidate version suffixes are not a published release")
-    subprocess.run(
-        ["dotnet", "nuget", "push", str(package), "--source", FEED, "--api-key", environment["NUGET_AUTH_TOKEN"], "--skip-duplicate"],
-        check=True,
+    # A duplicate version must not be recorded as this nupkg. --skip-duplicate
+    # exits successfully without uploading, so the push has to fail closed.
+    completed = subprocess.run(
+        ["dotnet", "nuget", "push", str(package), "--source", FEED, "--api-key", environment["NUGET_AUTH_TOKEN"]],
+        check=False,
+        capture_output=True,
+        text=True,
     )
+    pushed_text = f"{completed.stdout or ''}\n{completed.stderr or ''}"
+    require(completed.returncode == 0 and not _push_skipped_existing(pushed_text),
+            "package push did not upload this nupkg; refusing to record it as published")
     receipt = {
         "schema": SCHEMA,
         "package_id": identity["package_id"],
