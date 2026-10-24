@@ -210,8 +210,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" />
     <PackageReference Include="ParquetSharp" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
