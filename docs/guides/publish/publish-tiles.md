@@ -88,6 +88,8 @@ How clients reach the artifact is set by `FileStorage:PMTilesPublish:UrlStrategy
 - `PublicUrl` — `{PublicBucketBaseUrl}/{objectKey}` for publicly readable buckets; never expires.
 - `RangeProxy` — server-relative `/api/v1/tiles/pmtiles/{artifactId}`; range reads proxy through Honua, no storage credentials reach the browser.
 
+The range proxy checks every read against the access policy of the layer the archive was published from, so an archive whose layer is restricted, retired or rebound is not served. An archive you place in the bucket yourself (for example a basemap extract) has no source layer. To serve it, upload it at the publish `KeyPrefix` with content type `application/vnd.pmtiles` and object metadata `operation=publish`, and set `FileStorage:PMTilesPublish:AllowAnonymousUnboundArchives` to `true`. The proxy then serves it to any caller. The default is `false`, and such archives return `404`.
+
 For `SignedUrl`/`PublicUrl`, the bucket CORS policy must allow `GET`/`HEAD` with the `Range` request header and expose `Accept-Ranges`, `Content-Range`, `Content-Length`, `ETag`, and `Last-Modified`.
 
 ## Troubleshoot
@@ -96,6 +98,7 @@ For `SignedUrl`/`PublicUrl`, the bucket CORS policy must allow `GET`/`HEAD` with
 - **Seed job completes with warnings** — individual tile failures are listed per `z/x/y` in the job progress; commonly bad geometries at high zooms.
 - **`archive`/`publish` fails with a cloud storage error** — both operations require configured cloud file storage; `archiveFileId`/`downloadUrl` are null without it.
 - **`Publish aborted before upload: N tiles failed during generation.`** — fix the failing tiles (or narrow `bbox`/zoom range) and re-run; the previous artifact is untouched.
+- **Range proxy returns `404` for an archive that exists in the bucket** — the archive has no `layerId` metadata (it was uploaded directly, not by a publish job) and `AllowAnonymousUnboundArchives` is off, or its source layer was retired or rebound. The server logs which one at Information level.
 - **Browser cannot read the PMTiles artifact** — usually missing bucket CORS headers for `Range` requests, or an expired `SignedUrl`; re-publish or switch strategy.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).

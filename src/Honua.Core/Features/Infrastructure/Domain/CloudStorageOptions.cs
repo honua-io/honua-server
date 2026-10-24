@@ -100,6 +100,21 @@ public sealed record PMTilesPublishOptions
     /// Required only for that strategy. Should not include a trailing slash.
     /// </summary>
     public string? PublicBucketBaseUrl { get; set; }
+
+    /// <summary>
+    /// Serves operator-provisioned PMTiles archives through the range proxy to
+    /// any caller. An archive is unbound when its object metadata carries the
+    /// publish tags (<c>application/vnd.pmtiles</c>, <c>operation=publish</c>)
+    /// but no source binding (<c>layerId</c>, <c>serviceId</c>,
+    /// <c>publicationId</c>, <c>resourceId</c>, <c>storageBindingId</c>).
+    /// Honua's own publish job always writes a binding, so an unbound archive
+    /// was uploaded directly to the bucket, for example an extracted basemap.
+    /// It has no source layer whose access policy the proxy could check.
+    /// Defaults to <c>false</c>, so unbound archives return 404. Archives that
+    /// carry a binding always go through the source layer's access policy, and
+    /// a retired or rebound source is not served whatever this is set to.
+    /// </summary>
+    public bool AllowAnonymousUnboundArchives { get; set; }
 }
 
 /// <summary>
