@@ -150,7 +150,7 @@ The worker images are built on `ghcr.io/osgeo/gdal:ubuntu-full`, published by OS
 | libtiff, libgeotiff, OpenJPEG, libpng, libjpeg-turbo, libwebp, giflib, LERC, zstd, zlib, libdeflate | libtiff (BSD-like), MIT/X, BSD-2, libpng, IJG/BSD, BSD-3, MIT, Apache-2.0, BSD-3, Zlib, MIT |
 | HDF5, netCDF, libaec, CFITSIO, OpenEXR, Armadillo, Blosc | BSD-3-like, BSD-3-like, BSD-2, CFITSIO (permissive), BSD-3, Apache-2.0, BSD-3 |
 | libxml2, Xerces-C, expat, PCRE2, json-c, libkml, libfyba, lcms2 | MIT, Apache-2.0, MIT, BSD-3, MIT, BSD-3, MIT, MIT |
-| libcurl, OpenSSL, libpq, ICU | curl (MIT-like), Apache-2.0, PostgreSQL, Unicode/ICU |
+| libcurl, OpenSSL, libpq, ICU | libcurl license (MIT-like), Apache-2.0, PostgreSQL, Unicode/ICU |
 | libheif, libde265, libavif, libjxl | LGPL-3.0, LGPL-3.0, BSD-2, BSD-3 |
 | libspatialite, librasterlite2, FreeXL | MPL-1.1 / GPL-2.0-or-later / LGPL-2.1-or-later (tri-license) |
 | MariaDB Connector/C (libmariadb3), unixODBC | LGPL-2.1, LGPL-2.1 |
