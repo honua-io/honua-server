@@ -132,7 +132,7 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `honua-site-preview` | Private | Preview deployment repo for honua.io site changes. |
 | `honua-helm` | Public | Helm chart for deploying Honua. |
 | `honua-iac` | Private | Infrastructure as code (Terraform, CloudFormation, Bicep). **Renamed from `honua-terraform`** — the old name only resolves by GitHub redirect, so use `honua-iac`. |
-| `honua-agentflow` | Private | CLI workflow for multi-agent ticket execution and state tracking. |
+| `honua-agentflow` | Private (archived) | Abandoned ticket-execution engine, retained for history. Do not route new work here; current orchestration lives in `honua-flow`. |
 | `honua-devops` | Private | AI DevOps operations agent for Honua. |
 | `honua-marketplace` | Private | AWS/Azure Marketplace seller packaging, listing assets, and fulfillment automation. |
 | `honua-sales` | Private | Sales and marketing operating docs. |

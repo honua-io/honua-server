@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1206,
+    "total": 1189,
     "byStatus": {
-      "not-executable": 1191,
+      "not-executable": 1174,
       "unvalidated": 12,
       "passed": 3
     }
@@ -725,45 +725,6 @@
       "language": "json"
     },
     {
-      "id": "2fe0a36ac091ee23",
-      "kind": "docs-fence",
-      "path": "docs/archive/contributor/IMPLEMENTATION_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 148,
-      "language": "csharp"
-    },
-    {
-      "id": "38e7aeb55686d9ae",
-      "kind": "docs-fence",
-      "path": "docs/archive/contributor/IMPLEMENTATION_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 3,
-      "line": 154,
-      "language": "csharp"
-    },
-    {
-      "id": "3f4b6ea1d3a61f8e",
-      "kind": "docs-fence",
-      "path": "docs/archive/contributor/IMPLEMENTATION_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 142,
-      "language": "csharp"
-    },
-    {
       "id": "3e8ab2640123a1d2",
       "kind": "docs-fence",
       "path": "docs/archive/contributor/OBSERVABILITY_ENHANCEMENTS.md",
@@ -827,19 +788,6 @@
       "fence": 1,
       "line": 266,
       "language": "bash"
-    },
-    {
-      "id": "4d8864e071d56957",
-      "kind": "docs-fence",
-      "path": "docs/archive/contributor/PHASE_2_TRANSPORT_LAYER_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 20,
-      "language": "plain"
     },
     {
       "id": "02d0fa3c5d0d990d",
@@ -2686,188 +2634,6 @@
       "fence": 36,
       "line": 428,
       "language": "bash"
-    },
-    {
-      "id": "0ec58301673a652f",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 8,
-      "line": 193,
-      "language": "csharp"
-    },
-    {
-      "id": "1e201941339fb9ab",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 6,
-      "line": 182,
-      "language": "csharp"
-    },
-    {
-      "id": "33375dbb103fd00c",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 3,
-      "line": 93,
-      "language": "csharp"
-    },
-    {
-      "id": "416f76ca8c4c6229",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 107,
-      "language": "csharp"
-    },
-    {
-      "id": "7c7e9f5ac37692d0",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 80,
-      "language": "csharp"
-    },
-    {
-      "id": "acc61bc9dcf141c4",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 5,
-      "line": 130,
-      "language": "json"
-    },
-    {
-      "id": "cb559d73bdd7dc1b",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 36,
-      "language": "csharp"
-    },
-    {
-      "id": "cd7f1c71b135912d",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 7,
-      "line": 187,
-      "language": "csharp"
-    },
-    {
-      "id": "d90891b01f2885f9",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CONFIGURATION_MANAGEMENT_IMPLEMENTATION.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 9,
-      "line": 200,
-      "language": "csharp"
-    },
-    {
-      "id": "310e1dd6de50ca01",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CRITICAL_SECURITY_FIXES_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 23,
-      "language": "json"
-    },
-    {
-      "id": "59e3e35db9a78801",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CRITICAL_SECURITY_FIXES_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 113,
-      "language": "json"
-    },
-    {
-      "id": "a9c0c5c93d77426f",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CRITICAL_SECURITY_FIXES_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 3,
-      "line": 80,
-      "language": "json"
-    },
-    {
-      "id": "b80f30756e5f9eb3",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CRITICAL_SECURITY_FIXES_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 5,
-      "line": 150,
-      "language": "plain"
-    },
-    {
-      "id": "c549e6509e24d4ab",
-      "kind": "docs-fence",
-      "path": "docs/archive/root/CRITICAL_SECURITY_FIXES_SUMMARY.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 50,
-      "language": "json"
     },
     {
       "id": "11329ea1c9803025",
@@ -6664,7 +6430,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 261,
+      "line": 250,
       "language": "bash"
     },
     {
@@ -6690,7 +6456,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 134,
+      "line": 151,
       "language": "bash"
     },
     {
@@ -6703,7 +6469,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 214,
+      "line": 234,
       "language": "bash"
     },
     {
@@ -6716,7 +6482,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 198,
+      "line": 216,
       "language": "bash"
     },
     {
@@ -6729,7 +6495,20 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 62,
+      "line": 66,
+      "language": "bash"
+    },
+    {
+      "id": "a1e86bc819f7cbb0",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-devkit-authoring.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 10,
+      "line": 297,
       "language": "bash"
     },
     {
@@ -6742,7 +6521,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 116,
+      "line": 97,
       "language": "bash"
     },
     {
@@ -6755,7 +6534,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 180,
+      "line": 169,
       "language": "bash"
     },
     {
