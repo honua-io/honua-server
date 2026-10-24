@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1206,
+    "total": 1207,
     "byStatus": {
-      "not-executable": 1191,
+      "not-executable": 1192,
       "unvalidated": 12,
       "passed": 3
     }
@@ -3555,7 +3555,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 104,
+      "line": 108,
       "language": "bash"
     },
     {
@@ -3568,7 +3568,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 19,
+      "line": 23,
       "language": "bash"
     },
     {
@@ -3581,7 +3581,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 89,
+      "line": 93,
       "language": "json"
     },
     {
@@ -6664,7 +6664,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 261,
+      "line": 250,
       "language": "bash"
     },
     {
@@ -6690,7 +6690,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 134,
+      "line": 151,
       "language": "bash"
     },
     {
@@ -6703,7 +6703,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 214,
+      "line": 234,
       "language": "bash"
     },
     {
@@ -6716,7 +6716,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 198,
+      "line": 216,
       "language": "bash"
     },
     {
@@ -6729,7 +6729,20 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 62,
+      "line": 66,
+      "language": "bash"
+    },
+    {
+      "id": "a1e86bc819f7cbb0",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-devkit-authoring.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 10,
+      "line": 297,
       "language": "bash"
     },
     {
@@ -6742,7 +6755,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 116,
+      "line": 97,
       "language": "bash"
     },
     {
@@ -6755,7 +6768,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 180,
+      "line": 169,
       "language": "bash"
     },
     {
@@ -10096,7 +10109,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 90,
+      "line": 91,
       "language": "markdown"
     },
     {
