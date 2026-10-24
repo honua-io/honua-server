@@ -1,3 +1,4 @@
+<!-- Honua Server does not accept pull requests from outside the organization; see CONTRIBUTING.md. External PRs are closed automatically. -->
 # Pull Request
 
 ## Issue Link
