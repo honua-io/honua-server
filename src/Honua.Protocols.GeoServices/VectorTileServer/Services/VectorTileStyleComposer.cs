@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
 // Composes the Mapbox GL v8 style document served by the GeoServices VectorTileServer
 // resources/styles/root.json endpoint (honua-server#1779, epic #1776). Given the canonical

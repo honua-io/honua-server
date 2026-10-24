@@ -1,10 +1,10 @@
--- Copyright (c) Honua. All rights reserved.
--- Licensed under the Elastic License 2.0. See LICENSE in the project root.
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- Durable audit log for security-relevant events (#1144).
 -- Append-only sink — no UPDATE / DELETE policy is enforced at the table
 -- level via a rule that blocks both operations, so forensic / compliance
--- consumers (and the ELv2 enterprise pitch) have a tamper-resistant store.
+-- consumers (and the FCL enterprise pitch) have a tamper-resistant store.
 -- The application layer (PostgresAuditLog) only ever issues INSERTs.
 
 CREATE TABLE IF NOT EXISTS honua.audit_log (

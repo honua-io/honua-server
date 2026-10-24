@@ -84,6 +84,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0077](0077-studio-model-routing-default.md) | Model Routing Is a Client Choice — Proxy Default for the Browser, Client-Direct Elsewhere | Accepted | 2026-08 |
 | [0078](0078-3d-scene-architecture.md) | 3D Scene Architecture — Canonical 3D Tiles, I3S Projection, and Runtime Resolution | Accepted | 2026-08 |
 | [0079](0079-protocol-route-scoping.md) | A protocol's route is scoped by its own addressable unit | Accepted | 2026-09 |
+| [0080](0080-fair-core-license.md) | Adopt the Fair Core License (FCL-1.0-ALv2) | Accepted | 2026-10 |
 
 ## Template
 

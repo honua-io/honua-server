@@ -1828,7 +1828,7 @@
       "metadata": {
         "type": "concept",
         "title": "Editions and licensing",
-        "description": "Honua's source is available under the Elastic License 2.0 — free to use, deploy, and modify."
+        "description": "Honua's source is available under the Fair Core License (FCL-1.0-ALv2) — free to use, deploy, and modify, converting to Apache-2.0 two years after each release."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/editions-and-licensing.md"
     },

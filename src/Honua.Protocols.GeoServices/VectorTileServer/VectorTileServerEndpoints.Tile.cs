@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
 // VectorTileServer vector tile data route (honua-server#1778). Implemented WITHOUT editing
 // the shared VectorTileServerEndpoints.cs: the route is declared here in this partial file.

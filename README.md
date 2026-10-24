@@ -12,7 +12,7 @@
 
 ## Status
 
-Honua Server is open core under the [Elastic License 2.0](LICENSE). Current source and nightly images are **evaluation builds**. A supported versioned server release has not yet been published; 2026.1 release qualification is in progress. See [server releases](https://github.com/honua-io/honua-server/releases) for published artifacts and release notes, and [versioning and support](docs/reference/versioning-and-support.md) for the compatibility and recovery policy. Feature requests and priorities go in [issues](https://github.com/honua-io/honua-server/issues).
+Honua Server is source-available under the [Fair Core License, Version 1.0, ALv2 Future License](LICENSE) (FCL-1.0-ALv2); each version converts to Apache-2.0 two years after release. Current source and nightly images are **evaluation builds**. A supported versioned server release has not yet been published; 2026.1 release qualification is in progress. See [server releases](https://github.com/honua-io/honua-server/releases) for published artifacts and release notes, and [versioning and support](docs/reference/versioning-and-support.md) for the compatibility and recovery policy. Feature requests and priorities go in [issues](https://github.com/honua-io/honua-server/issues).
 
 For a reproducible evaluation, retain the server image digest and source revision, exact client package versions, deployment configuration, and the evidence for that combination. Historical test results and capability maturity labels do not qualify a newer nightly image. Use the release-specific manifest and evidence when a supported release is published.
 
@@ -217,7 +217,7 @@ Honua is a family of repos around this server — the full map is in [Ecosystem]
 - [honua-helm](https://github.com/honua-io/honua-helm) — Helm chart, the Kubernetes deploy path
 - [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) — client SDKs generated from the same admin contract
 - [honua-mobile](https://github.com/honua-io/honua-mobile) — **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0)
-- [honua-collect](https://github.com/honua-io/honua-collect) — **Experimental** full end-user field-collection app built on `honua-mobile` (ELv2)
+- [honua-collect](https://github.com/honua-io/honua-collect) — **Experimental** full end-user field-collection app built on `honua-mobile` (FCL-1.0-ALv2)
 - [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) — open gRPC protocol standard the server's `geospatial.v1` surface implements
 - [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) — open geospatial MCP standard behind `/mcp`
 
@@ -235,4 +235,4 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, resp
 
 ## License
 
-[Elastic License 2.0 (ELv2)](LICENSE) — free to use, deploy, and modify, within the ELv2 limitations: you may not provide Honua to third parties as a hosted or managed service, may not circumvent the license-key functionality, and may not remove or obscure the licensor's notices.
+[Fair Core License, Version 1.0, ALv2 Future License](LICENSE) (FCL-1.0-ALv2) — source-available. You may use, copy, modify and redistribute Honua Server for any purpose except a Competing Use: making it available to others in a commercial product or service that substitutes for Honua or offers substantially similar functionality. Internal use, non-commercial education and research, and professional services delivered to a licensee are expressly permitted. You may not circumvent or remove the license-key functionality, which includes edition entitlements and capacity metering (see [NOTICE](NOTICE)). Each version is additionally licensed under the Apache License 2.0 two years after Honua Geo Inc. makes it available.

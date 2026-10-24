@@ -1,5 +1,5 @@
-# Copyright (c) Honua. All rights reserved.
-# Licensed under the Elastic License 2.0. See LICENSE in the project root.
+# Copyright (c) Honua Geo Inc. All rights reserved.
+# Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 """Author the committed imagery.classify scene. Input only - never an expected output.
 
 The scene is a 16x16 three-band Byte GeoTIFF in EPSG:4326 whose origin is

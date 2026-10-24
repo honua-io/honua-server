@@ -97,7 +97,7 @@ ENV HONUA_CUSTOMCODE_SOURCE_ROOT=/work/src \
 
 LABEL org.opencontainers.image.title="honua-worker-customcode-python" \
       org.opencontainers.image.description="Honua custom-code GP worker (Python runtime): runs user GP tools at a pinned git SHA under a scoped Honua SDK client." \
-      org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.licenses="LicenseRef-FCL-1.0-ALv2" \
       honua.runtime.profile="customcode-python" \
       security.non-root="true" \
       security.user="1001"

@@ -1,5 +1,5 @@
--- Copyright (c) Honua. All rights reserved.
--- Licensed under the Elastic License 2.0. See LICENSE in the project root.
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- Durable Studio map collaboration: feature-pinned comment threads and the
 -- collaboration activity feed for a map draft/package (#1278, slice 1).

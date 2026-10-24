@@ -1,5 +1,5 @@
--- Copyright (c) Honua. All rights reserved.
--- Licensed under the Elastic License 2.0. See LICENSE in the project root.
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- Migration: 123_ImportDatumTransformPipeline.sql
 -- The 7-argument honua.insert_import_feature and honua.bulk_upsert_import_features

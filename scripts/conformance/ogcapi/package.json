@@ -8,7 +8,7 @@
     "mvt": "node mvt_validator.mjs",
     "maps": "node maps_validator.mjs"
   },
-  "license": "Elastic-2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@mapbox/vector-tile": "^3.0.0",
     "ajv": "^8.20.0",

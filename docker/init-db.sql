@@ -1,5 +1,5 @@
--- Copyright (c) Honua. All rights reserved.
--- Licensed under the Elastic License 2.0. See LICENSE in the project root.
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- Generic PostGIS initialization for the currently selected POSTGRES_DB/POSTGRES_USER.
 -- The Docker entrypoint connects as POSTGRES_USER to POSTGRES_DB before running this file.

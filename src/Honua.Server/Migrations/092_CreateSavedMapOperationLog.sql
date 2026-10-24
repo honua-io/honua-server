@@ -1,5 +1,5 @@
--- Copyright (c) Honua. All rights reserved.
--- Licensed under the Elastic License 2.0. See LICENSE in the project root.
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- Restart-durable saved-map collaboration operation log and checkpoint cursor (#3067).
 -- The head row is the per-map serialization point for cursor assignment. Keeping the

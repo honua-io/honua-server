@@ -1,5 +1,5 @@
--- Copyright (c) Honua. All rights reserved.
--- Licensed under the Elastic License 2.0. See LICENSE in the project root.
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- Forward-compatibility declarations beside the DbUp journal (#6477). After each
 -- successful migration run the server records, for every journaled script it ships,

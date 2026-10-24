@@ -16,7 +16,7 @@
       "displayName": "Multi-Tenant Operation",
       "category": "Internal",
       "edition": "Enterprise",
-      "description": "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.",
+      "description": "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Fair Core License prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.",
       "status": "internal"
     },
     {

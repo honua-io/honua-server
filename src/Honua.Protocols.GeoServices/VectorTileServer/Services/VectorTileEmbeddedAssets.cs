@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
 // Embedded sprite/glyph assets served by the GeoServices VectorTileServer resources surface
 // (honua-server#1780, epic #1776). Per the epic decision the sprite pipeline is scoped-minimal:

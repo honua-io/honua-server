@@ -1,5 +1,5 @@
--- Copyright (c) Honua. All rights reserved.
--- Licensed under the Elastic License 2.0. See LICENSE in the project root.
+-- Copyright (c) Honua Geo Inc. All rights reserved.
+-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- GP process releases and bindings (honua-server#6221). A release is an immutable lock
 -- (honua.gp-process-release-lock/v1) keyed by the digest of its canonical JSON; a binding is
