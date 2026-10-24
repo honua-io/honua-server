@@ -1,0 +1,162 @@
+# Third-party notices
+
+Honua Server is built on open-source software. This file lists the third-party components distributed with Honua Server binaries, NuGet packages and container images, with their licenses. Each component remains under its own license; the Honua Server license (see `LICENSE`) applies only to Honua Geo Inc.'s own code. Test-only dependencies are not distributed and are not listed.
+
+Generated from `Directory.Packages.props` and the container build files on 2026-10-23. Regenerate when dependencies change.
+
+## .NET packages (shipped in server, worker and SDK binaries)
+
+| Package | Version | License | Project |
+|---|---|---|---|
+| Amazon.Lambda.Core | 2.5.1 | Apache-2.0 | https://github.com/aws/aws-lambda-dotnet |
+| Amazon.Lambda.RuntimeSupport | 1.13.0 | Apache-2.0 | https://github.com/aws/aws-lambda-dotnet |
+| Amazon.Lambda.Serialization.SystemTextJson | 2.4.4 | Apache-2.0 | https://github.com/aws/aws-lambda-dotnet |
+| Apache.Arrow | 22.1.0 | Apache-2.0 | https://arrow.apache.org/ |
+| Asp.Versioning.Http | 8.1.1 | MIT | https://github.com/dotnet/aspnet-api-versioning/wiki |
+| Aspire.Hosting.PostgreSQL | 13.2.2 | MIT | https://github.com/microsoft/aspire |
+| Aspire.Hosting.Redis | 13.2.2 | MIT | https://github.com/microsoft/aspire |
+| Aspire.Npgsql | 13.2.2 | MIT | https://github.com/microsoft/aspire |
+| Aspire.StackExchange.Redis.DistributedCaching | 13.2.2 | MIT | https://github.com/microsoft/aspire |
+| AWSSDK.Batch | 4.0.8.8 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.BedrockRuntime | 4.0.21.1 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.CloudWatch | 4.0.11.2 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.ECS | 4.0.9 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.ElasticLoadBalancingV2 | 4.0.5 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.Lambda | 4.0.14.1 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.LocationService | 4.0.3.25 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.S3 | 4.0.21.2 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.SecretsManager | 4.0.5.6 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.SecurityToken | 4.0.7.8 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.SimpleNotificationService | 4.0.2.27 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| AWSSDK.SQS | 4.0.2.25 | Apache-2.0 | https://github.com/aws/aws-sdk-net/ |
+| Azure.Identity | 1.21.0 | MIT | https://github.com/Azure/azure-sdk-for-net/blob/Azure.Identity_1.21.0/sdk/identity/Azure.Identity/README.md |
+| Azure.Messaging.EventGrid | 5.0.0 | MIT | https://github.com/Azure/azure-sdk-for-net/blob/Azure.Messaging.EventGrid_5.0.0/sdk/eventgrid/Azure.Messaging.EventGrid/README.md |
+| Azure.Messaging.EventHubs | 5.12.2 | MIT | https://github.com/Azure/azure-sdk-for-net/blob/Azure.Messaging.EventHubs_5.12.2/sdk/eventhub/Azure.Messaging.EventHubs/README.md |
+| Azure.Security.KeyVault.Secrets | 4.7.0 | MIT | https://github.com/Azure/azure-sdk-for-net/blob/Azure.Security.KeyVault.Secrets_4.7.0/sdk/keyvault/Azure.Security.KeyVault.Secrets/README.md |
+| Azure.Storage.Blobs | 12.27.0 | MIT | https://github.com/Azure/azure-sdk-for-net/blob/Azure.Storage.Blobs_12.27.0/sdk/storage/Azure.Storage.Blobs/README.md |
+| BouncyCastle.Cryptography | 2.7.0 | MIT | https://www.bouncycastle.org/stable/nuget/csharp/website |
+| Confluent.Kafka | 2.14.2 | Apache-2.0 | https://github.com/confluentinc/confluent-kafka-dotnet/ |
+| dbup-postgresql | 7.0.1 | MIT | https://dbup.github.io/ |
+| DuckDB.NET.Data.Full | 1.5.0 | MIT | https://github.com/Giorgi/DuckDB.NET |
+| FlatGeobuf | 3.26.0 | BSD-2-Clause |  |
+| Geospatial.Grpc | 1.0.2 | Apache-2.0 | https://github.com/honua-io/geospatial-grpc |
+| Google.Protobuf | 3.36.2 | BSD-3-Clause | https://github.com/protocolbuffers/protobuf |
+| Grpc.AspNetCore | 2.80.0 | Apache-2.0 | https://github.com/grpc/grpc-dotnet |
+| Grpc.AspNetCore.HealthChecks | 2.80.0 | Apache-2.0 | https://github.com/grpc/grpc-dotnet |
+| Grpc.AspNetCore.Server.Reflection | 2.80.0 | Apache-2.0 | https://github.com/grpc/grpc-dotnet |
+| Grpc.AspNetCore.Web | 2.80.0 | Apache-2.0 | https://github.com/grpc/grpc-dotnet |
+| Grpc.Core.Api | 2.84.0 | Apache-2.0 | https://github.com/grpc/grpc-dotnet |
+| Honua.Sdk | 1.11.1 | Apache-2.0 | https://github.com/honua-io/honua-sdk-dotnet |
+| Honua.Sdk.GeoServices | 1.10.4 | Apache-2.0 | https://github.com/honua-io/honua-sdk-dotnet |
+| MessagePack | 2.5.303 | MIT | https://github.com/MessagePack-CSharp/MessagePack-CSharp |
+| Microsoft.AspNetCore.Authentication.JwtBearer | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.Authentication.OpenIdConnect | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.Components.WebAssembly | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.Components.WebAssembly.Authentication | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.Components.WebAssembly.Server | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.OpenApi | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.OutputCaching.StackExchangeRedis | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.SignalR.StackExchangeRedis | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.AspNetCore.WebUtilities | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.CodeAnalysis.CSharp | 4.14.0 | MIT | https://github.com/dotnet/roslyn |
+| Microsoft.Data.SqlClient | 6.1.2 | MIT | https://aka.ms/sqlclientproject |
+| Microsoft.Data.Sqlite | 10.0.6 | MIT | https://docs.microsoft.com/dotnet/standard/data/sqlite/ |
+| Microsoft.Extensions.AI | 10.5.2 | MIT | https://dot.net/ |
+| Microsoft.Extensions.AI.Abstractions | 10.5.2 | MIT | https://dot.net/ |
+| Microsoft.Extensions.Caching.Memory | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.Caching.StackExchangeRedis | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.Extensions.Configuration.Binder | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.Hosting.Abstractions | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.Http | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.Http.Polly | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.Extensions.Logging.Abstractions | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.ObjectPool | 10.0.13 | MIT | https://asp.net/ |
+| Microsoft.Extensions.Options | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.Options.ConfigurationExtensions | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.Options.DataAnnotations | 10.0.13 | MIT | https://dot.net/ |
+| Microsoft.Extensions.ServiceDiscovery | 10.5.0 | MIT | https://dot.net/ |
+| Microsoft.NET.Test.Sdk | 18.4.0 | MIT | https://github.com/microsoft/vstest |
+| Microsoft.OpenApi | 2.12.2 | MIT | https://github.com/Microsoft/OpenAPI.NET |
+| MySqlConnector | 2.4.0 | MIT | https://mysqlconnector.net/ |
+| NATS.Net | 2.8.2 | Apache-2.0 | https://github.com/nats-io/nats.net |
+| NetTopologySuite | 2.6.0 | BSD-3-Clause | https://licenses.nuget.org/BSD-3-Clause |
+| NetTopologySuite.IO.Esri.Shapefile | 1.2.0 | BSD-3-Clause | https://github.com/NetTopologySuite/NetTopologySuite.IO.Esri |
+| NetTopologySuite.IO.GeoJSON | 4.0.0 | BSD-3-Clause | https://licenses.nuget.org/BSD-3-Clause |
+| NetTopologySuite.IO.GeoPackage | 2.0.0 | BSD-3-Clause | https://licenses.nuget.org/BSD-3-Clause |
+| Npgsql | 10.0.1 | PostgreSQL | https://github.com/npgsql/npgsql |
+| OpenTelemetry.Exporter.OpenTelemetryProtocol | 1.15.3 | Apache-2.0 | https://opentelemetry.io/ |
+| OpenTelemetry.Exporter.Prometheus.AspNetCore | 1.15.0-beta.1 | Apache-2.0 | https://opentelemetry.io/ |
+| OpenTelemetry.Extensions.AWS | 1.15.1 | Apache-2.0 | https://opentelemetry.io/ |
+| OpenTelemetry.Instrumentation.AspNetCore | 1.15.1 | Apache-2.0 | https://opentelemetry.io/ |
+| OpenTelemetry.Instrumentation.Http | 1.15.0 | Apache-2.0 | https://opentelemetry.io/ |
+| OpenTelemetry.Instrumentation.Process | 1.15.1-beta.1 | Apache-2.0 | https://opentelemetry.io/ |
+| OpenTelemetry.Instrumentation.Runtime | 1.15.0 | Apache-2.0 | https://opentelemetry.io/ |
+| OpenTelemetry.Instrumentation.StackExchangeRedis | 1.14.0-beta.1 | Apache-2.0 | https://opentelemetry.io/ |
+| Oracle.ManagedDataAccess.Core | 23.9.1 | Oracle Free Use Terms and Conditions (FUTC) | https://www.oracle.com/database/technologies/appdev/dotnet.html |
+| Parquet.Net | 5.6.0 | MIT | https://github.com/aloneguid/parquet-dotnet |
+| ParquetSharp | 23.0.0.1 | Apache-2.0 | https://github.com/G-Research/ParquetSharp |
+| Polly | 8.6.6 | BSD-3-Clause | https://github.com/App-vNext/Polly |
+| Scalar.AspNetCore | 2.14.1 | MIT | https://scalar.com/ |
+| Serilog.AspNetCore | 10.0.0 | Apache-2.0 | https://github.com/serilog/serilog-aspnetcore |
+| Serilog.Enrichers.Environment | 3.0.1 | Apache-2.0 | https://github.com/serilog/serilog-enrichers-environment |
+| Serilog.Enrichers.Span | 3.1.0 | MIT | https://github.com/RehanSaeed/Serilog.Enrichers.Span |
+| Serilog.Enrichers.Thread | 4.0.0 | Apache-2.0 | http://serilog.net/ |
+| Serilog.Formatting.Compact | 3.0.0 | Apache-2.0 | https://github.com/serilog/serilog-formatting-compact |
+| Serilog.Sinks.Console | 6.1.1 | Apache-2.0 | https://github.com/serilog/serilog-sinks-console |
+| SkiaSharp | 3.119.2 | MIT | https://go.microsoft.com/fwlink/?linkid=868515 |
+| SkiaSharp.NativeAssets.Linux | 3.119.2 | MIT | https://go.microsoft.com/fwlink/?linkid=868515 |
+| SkiaSharp.NativeAssets.Linux.NoDependencies | 3.119.2 | MIT | https://go.microsoft.com/fwlink/?linkid=868515 |
+| Snappier | 1.3.1 | BSD-3-Clause | https://brantburnett.github.io/Snappier/ |
+| Snowflake.Data | 5.7.0 | Apache-2.0 | https://github.com/snowflakedb/snowflake-connector-net |
+| StackExchange.Redis | 2.12.14 | MIT | https://stackexchange.github.io/StackExchange.Redis/ |
+| System.IdentityModel.Tokens.Jwt | 8.19.2 | MIT | https://github.com/AzureAD/azure-activedirectory-identitymodel-extensions-for-dotnet |
+| System.Security.Cryptography.Pkcs | 10.0.13 | MIT | https://dot.net/ |
+| xunit | 2.9.3 | Apache-2.0 | https://licenses.nuget.org/Apache-2.0 |
+| xunit.runner.visualstudio | 3.1.5 | Apache-2.0 | https://licenses.nuget.org/Apache-2.0 |
+| YamlDotNet | 16.3.0 | MIT | https://github.com/aaubry/YamlDotNet/wiki |
+| Yarp.ReverseProxy | 2.3.0 | MIT | https://github.com/dotnet/yarp |
+| ZstdSharp.Port | 0.8.7 | MIT | https://github.com/oleg-st/ZstdSharp |
+
+Notes:
+
+- **Oracle.ManagedDataAccess.Core** is distributed under the Oracle Free Use Terms and Conditions, which permit unmodified redistribution with Oracle's notices intact as part of a product that adds substantial value. It is not open source.
+- **Npgsql** is under the PostgreSQL License. **FlatGeobuf** is BSD-2-Clause. **Apache.Arrow** and **Amazon.Lambda.Serialization.SystemTextJson** publish their license as a file rather than an SPDX expression; both are Apache-2.0.
+
+## Native libraries bundled through .NET packages (serving image)
+
+| Component | Delivered by | License |
+|---|---|---|
+| Skia and its bundled dependencies (HarfBuzz, FreeType, libpng, libjpeg-turbo, libwebp, expat, zlib) | SkiaSharp.NativeAssets.Linux.NoDependencies | BSD-3-Clause (Skia); MIT, FTL/GPLv2 dual (FreeType, used under FTL), libpng, IJG/BSD, BSD-3, MIT, Zlib |
+| Apache Arrow C++ and Parquet with bundled Thrift, Snappy, Zstandard, LZ4, Brotli, RE2, RapidJSON, utf8proc | ParquetSharp | Apache-2.0; Apache-2.0, BSD-3, BSD-3, BSD-2, MIT, BSD-3, MIT, MIT |
+| DuckDB | DuckDB.NET.Data.Full | MIT |
+| librdkafka with bundled LZ4 and Zstandard | Confluent.Kafka | BSD-2-Clause; BSD-2, BSD-3 |
+| SQLite (e_sqlite3) | Microsoft.Data.Sqlite / SQLitePCLRaw | Public domain |
+| DejaVu fonts | serving image (`fonts-dejavu-core`) | Bitstream Vera / DejaVu license (permissive) |
+| MIT Kerberos (libgssapi-krb5-2), libatomic, tzdata, ca-certificates | serving image base packages | MIT; GPL-3.0 with GCC Runtime Library Exception; public domain; Mozilla Public License 2.0 |
+
+## Worker images (GDAL, Python custom code, .NET custom code)
+
+The worker images are built on `ghcr.io/osgeo/gdal:ubuntu-full`, published by OSGeo. Honua's worker processes invoke GDAL command-line tools as separate processes, or expose GDAL to user-authored tools in process. The image carries GDAL and the libraries it links, among them:
+
+| Component | License |
+|---|---|
+| GDAL/OGR | MIT |
+| PROJ | MIT |
+| GEOS | LGPL-2.1 |
+| PDAL (built from source, 2.10.x) with TBB, Eigen, jsoncpp, libgeotiff, Boost | BSD-3-Clause; Apache-2.0, MPL-2.0, MIT, MIT/X, BSL-1.0 |
+| libtiff, libgeotiff, OpenJPEG, libpng, libjpeg-turbo, libwebp, giflib, LERC, zstd, zlib, libdeflate | libtiff (BSD-like), MIT/X, BSD-2, libpng, IJG/BSD, BSD-3, MIT, Apache-2.0, BSD-3, Zlib, MIT |
+| HDF5, netCDF, libaec, CFITSIO, OpenEXR, Armadillo, Blosc | BSD-3-like, BSD-3-like, BSD-2, CFITSIO (permissive), BSD-3, Apache-2.0, BSD-3 |
+| libxml2, Xerces-C, expat, PCRE2, json-c, libkml, libfyba, lcms2 | MIT, Apache-2.0, MIT, BSD-3, MIT, BSD-3, MIT, MIT |
+| libcurl, OpenSSL, libpq, ICU | curl (MIT-like), Apache-2.0, PostgreSQL, Unicode/ICU |
+| libheif, libde265, libavif, libjxl | LGPL-3.0, LGPL-3.0, BSD-2, BSD-3 |
+| libspatialite, librasterlite2, FreeXL | MPL-1.1 / GPL-2.0-or-later / LGPL-2.1-or-later (tri-license) |
+| MariaDB Connector/C (libmariadb3), unixODBC | LGPL-2.1, LGPL-2.1 |
+| Poppler (GDAL PDF driver) | GPL-2.0-or-later / GPL-3.0 |
+| Python packages in the custom-code worker: rasterio, GeoPandas, Shapely, Fiona, pyproj, boto3, honua-sdk, NumPy, pandas | BSD-3, BSD-3, BSD-3, BSD-3, MIT, Apache-2.0, Apache-2.0, BSD-3, BSD-3 |
+
+Source code for the LGPL and GPL components above is available from the Ubuntu package archive for the release the image is built on, and from each project's upstream repository. Honua Geo Inc. will provide the corresponding source for any such component on request to the address in `SECURITY.md`.
+
+## Standards
+
+Honua Server implements open standards published by the Open Geospatial Consortium (OGC), the STAC community, OASIS (OData) and the Esri GeoServices REST specification (Open Web Foundation Agreement). Specification documents redistributed under `docs/user/specifications/` remain under their publishers' terms.
