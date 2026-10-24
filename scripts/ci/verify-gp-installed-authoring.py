@@ -11,11 +11,16 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gp_devkit_publication as publication
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--tool')
     parser.add_argument('--package-version', type=Path)
+    parser.add_argument('--package-version-stamp')
+    parser.add_argument('--host-debug-receipt', type=Path)
     parser.add_argument('--restored-locks', type=Path)
     args = parser.parse_args()
     if args.package_version:
@@ -80,6 +85,11 @@ def main():
                 receipt = Path(result['receipt'])
                 assert receipt.is_file()
                 assert (receipt.parent / 'artifacts/summary.json').read_bytes() == (project / 'expected/summary.json').read_bytes()
+                if args.host_debug_receipt:
+                    if not args.package_version_stamp:
+                        raise RuntimeError('--package-version-stamp is required with --host-debug-receipt')
+                    # Candidate host-debug evidence only. write_host_debug_receipt never marks it published.
+                    publication.write_host_debug_receipt(args.host_debug_receipt, args.package_version_stamp)
             output = run(tool, 'test', '--project', str(project))
             assert 'PASS  summary.json' in output and 'summary : passed' in output
             if language == 'dotnet' and os.name != 'nt':

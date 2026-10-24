@@ -55,9 +55,44 @@ that expects WGS 84 GeoJSON.
 Use `plan` with the same inputs to validate parameters and inspect the execution
 plan without running it. Its size and cost estimates are heuristics.
 
+## Install the published devkit
+
+The customer install is the `Honua.Geoprocessing.Cli` package on the GitHub Packages
+feed `https://nuget.pkg.github.com/honua-io/index.json`. `Publish GP Devkit` pushes
+that package only from an explicit canonical-trunk dispatch and retains the
+publication identity for honua-release#615. Authenticate the `honua-github` source
+with a GitHub token that can read packages before installing:
+
+```bash
+cat > /tmp/honua-gp-devkit.nuget.config <<'NUGET'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="honua-github" value="https://nuget.pkg.github.com/honua-io/index.json" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="honua-github">
+      <package pattern="Honua.Geoprocessing.Cli" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+NUGET
+dotnet tool install Honua.Geoprocessing.Cli --configfile /tmp/honua-gp-devkit.nuget.config \
+  --tool-path ./honua-gp
+./honua-gp/honua-gp-devkit doctor --managed-only --json
+```
+
+A checkout pack and the GP Installed Authoring candidate do not establish published availability. Their host-debug receipts are handed to honua-release#615 separately.
+
 ## Install a tool built from this checkout
 
-The devkit can be packed and installed outside the source tree:
+Contributors can pack and install a candidate outside the source tree. This is not
+the published package:
 
 ```bash
 dotnet pack src/Honua.Geoprocessing.Cli -c Release -o artifacts/gp-tool
@@ -82,8 +117,8 @@ mapping. The explicit `--configfile` above sidesteps that mapping for the
 install only; it does not change how the repository restores.
 
 The executable is `honua-gp-devkit`; `honua gp` in existing help is the command-family
-label. This local package procedure does not imply a matching NuGet release
-has already been published. On Windows use the generated `.exe` launcher.
+label. This checkout pack does not establish published availability. On Windows
+use the generated `.exe` launcher.
 
 `list --json` and `describe <id> --json` expose catalog execution modes and
 configuration dependencies for scripts and agents. `dependenciesVerified: false`
@@ -167,7 +202,8 @@ virtual environment as the generated README describes. The generated .NET debugg
 uses the bundled SDK project. The `GP Installed Authoring` CI workflow packs the candidate
 once and exercises installed Python/.NET init, golden success and deliberate failure,
 direct harness tests, and release-evidence refusal on Linux, Windows and macOS runners
-without checking out the server there. It does not publish packages or qualify a cloud image.
+without checking out the server there. It uploads the supported-OS host-debug handoff
+for honua-release#615. That candidate and its receipts do not establish published availability, and the workflow does not publish packages or qualify a cloud image.
 
 `list` and `describe` report an `executionMode` (managed, native, service-backed, custom),
 the prerequisites checked, `runnableHere` with the missing prerequisite named, the
