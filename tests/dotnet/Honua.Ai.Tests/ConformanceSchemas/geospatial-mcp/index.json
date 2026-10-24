@@ -64,6 +64,20 @@
       "implementationStatus": "implemented"
     },
     {
+      "standardName": "shared_style_get",
+      "referenceToolName": "honua_shared_style_get",
+      "family": "Shared style inspection (Honua extension)",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: reads canonical style bytes and authorized impact for the frozen shared-style task. No published geospatial-mcp standard schema is claimed."
+    },
+    {
+      "standardName": "shared_style_propose",
+      "referenceToolName": "honua_shared_style_propose",
+      "family": "Shared style proposals (Honua extension)",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: proposes canonical shared-style replacement or restoration through retained operations and separate human approval. No published geospatial-mcp standard schema is claimed."
+    },
+    {
       "standardName": "apply_style_preset",
       "referenceToolName": "honua_apply_style_preset",
       "family": "Map composition (reference shape)",
@@ -520,6 +534,27 @@
       "schema": "tools/studio_propose_publication.schema.json",
       "implementationStatus": "implemented",
       "notes": "Honua extension (honua-server#3002): records publish/share/embed intent on a Studio draft for human review ONLY — no publish/share/embed execution tool exists on the agent surface (REQ-003/REQ-009). Pending formalization in the standard's publish family."
+    },
+    {
+      "standardName": "workflow_package",
+      "referenceToolName": "honua_workflow_package",
+      "family": "Workflow package lifecycle (Honua extension)",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: inspect and edit workflow package drafts through the canonical workflow package runtime. No published geospatial-mcp standard schema is claimed."
+    },
+    {
+      "standardName": "workflow_package_propose",
+      "referenceToolName": "honua_workflow_package_propose",
+      "family": "Workflow package lifecycle (Honua extension)",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: propose consequential workflow package transitions for human approval through the canonical operation runtime. No published geospatial-mcp standard schema is claimed."
+    },
+    {
+      "standardName": "studio_propose_restore",
+      "referenceToolName": "honua_studio_propose_restore",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#6532): guarded restoration of an original saved version through canonical rollback; workspace agents require separate human approval. No published geospatial-mcp standard schema is claimed."
     },
     {
       "standardName": "bind_interaction",

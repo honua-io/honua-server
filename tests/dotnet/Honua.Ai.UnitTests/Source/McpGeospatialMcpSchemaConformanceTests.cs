@@ -233,6 +233,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             "honua_studio_add_widget",
             "honua_studio_remove_widget",
             "honua_studio_propose_publication",
+            // Native guarded restoration is not a published standard-schema claim (#6532).
+            "honua_studio_propose_restore",
         };
 
     private static string SchemaRoot =>

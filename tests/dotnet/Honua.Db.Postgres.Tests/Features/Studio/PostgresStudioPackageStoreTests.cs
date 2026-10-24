@@ -1303,11 +1303,17 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             await ApplyStudioMigrationAsync(schema, "120_AddStudioTenantOwnership.sql", root);
             await ApplyStudioMigrationAsync(schema, "120_AddStudioTenantOwnership.sql", root);
 
-            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
-            (await store.GetPointersAsync(qualifiedItemId))!.TenantId.Should().Be(
+            // Read the historical migration's columns directly. The current store
+            // also requires later lifecycle migrations that this upgrade test does not apply.
+            await using var upgradedConnection = await fixture.GetConnectionAsync(schema);
+            await using var upgradedCommand = upgradedConnection.CreateCommand();
+            upgradedCommand.CommandText = $"SELECT tenant_id FROM \"{schema}\".studio_content_items WHERE item_id = @item_id";
+            upgradedCommand.Parameters.AddWithValue("item_id", qualifiedItemId);
+            (await upgradedCommand.ExecuteScalarAsync()).Should().Be(
                 "tenant-legacy",
                 "a tenant-qualified owner id already names its tenant, so the upgrade recovers it precisely");
-            (await store.GetPointersAsync(unqualifiedItemId))!.TenantId.Should().BeNull(
+            upgradedCommand.Parameters["item_id"].Value = unqualifiedItemId;
+            (await upgradedCommand.ExecuteScalarAsync()).Should().Be(DBNull.Value,
                 "an owner id with no tenant segment stays unassigned and is attributed to the default tenant at runtime");
         }
         finally
@@ -1333,6 +1339,118 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         command.CommandText = $"SELECT deployment_id FROM \"{schema}\".studio_rollback_requests WHERE request_id = @request_id";
         command.Parameters.AddWithValue("@request_id", requestId);
         return await command.ExecuteScalarAsync() as string;
+    }
+
+    [IntegrationTest]
+    public async Task GuardedRestore_CommitsOriginalVersionAndRecoversOriginalReceiptFromAnotherStore()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("StudioRestoreRecovery");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var writer = new PostgresStudioPackageStore(provider, schema);
+            var draft = await writer.CreateDraftAsync(BuildDraft("1=1", "restore") with { TenantId = "tenant-restore" });
+            var first = await writer.CreateVersionAsync(draft, "original", "author");
+            draft = (await writer.UpdateDraftAsync(draft with { Envelope = BuildEnvelope("2=2") }))!;
+            var second = await writer.CreateVersionAsync(draft, "later", "author");
+            var before = (await writer.GetPointersAsync(draft.ItemId))!;
+            var conditions = new StudioRollbackPreconditions
+            {
+                RequestId = Guid.NewGuid(),
+                ContentHash = first.ContentHash,
+                ExpectedCurrentVersionId = second.VersionId,
+                ExpectedPointerRevision = before.PointerRevision,
+            };
+            var receipt = await writer.RollbackAsync(draft.ItemId, first.VersionId, StudioRollbackPointer.Current,
+                "agent", "approved", conditions);
+            receipt.Pointers.CurrentVersionId.Should().Be(first.VersionId);
+            receipt.Pointers.PublishedVersionId.Should().BeNull();
+            receipt.Pointers.PointerRevision.Should().Be(before.PointerRevision + 1);
+            (await writer.GetDraftAsync(draft.DraftId))!.Envelope.Body!.Value.GetRawText().Should().Be(draft.Envelope.Body!.Value.GetRawText());
+            (await writer.ListVersionsAsync(draft.ItemId)).Should().HaveCount(2);
+
+            // No local memory from the mutating store is retained by this independent reader.
+            var restarted = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var replay = await restarted.RollbackAsync(draft.ItemId, first.VersionId, StudioRollbackPointer.Current,
+                "agent", "approved", conditions);
+            replay.RequestId.Should().Be(receipt.RequestId);
+            replay.Preconditions.Should().Be(conditions);
+            replay.Pointers.Should().Be(receipt.Pointers);
+            replay.CreatedAt.Should().BeCloseTo(receipt.CreatedAt, TimeSpan.FromMicroseconds(1));
+            (await restarted.GetPointersAsync(draft.ItemId))!.PointerRevision.Should().Be(receipt.Pointers.PointerRevision);
+
+            await writer.RollbackAsync(draft.ItemId, second.VersionId, StudioRollbackPointer.Current, "human", "new edit");
+            var later = (await restarted.GetPointersAsync(draft.ItemId))!;
+            (await restarted.RollbackAsync(draft.ItemId, first.VersionId, StudioRollbackPointer.Current,
+                "agent", "approved", conditions)).RequestId.Should().Be(receipt.RequestId);
+            (await restarted.GetPointersAsync(draft.ItemId)).Should().Be(later);
+            var changed = () => restarted.RollbackAsync(draft.ItemId, first.VersionId, StudioRollbackPointer.Published,
+                "agent", "approved", conditions);
+            await changed.Should().ThrowAsync<InvalidOperationException>();
+            (await restarted.GetPointersAsync(draft.ItemId)).Should().Be(later);
+        }
+        finally { await fixture.DropSchemaAsync(schema); }
+    }
+
+    [IntegrationTest]
+    public async Task GuardedRestore_DatabaseRevisionFencesOlderWriterAndCompetingRestorations()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("StudioRestoreRace");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var writer = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var draft = await writer.CreateDraftAsync(BuildDraft("1=1", "restore-race"));
+            var first = await writer.CreateVersionAsync(draft, "original", "author");
+            var second = await writer.CreateVersionAsync(draft, "second", "author");
+            var before = (await writer.GetPointersAsync(draft.ItemId))!;
+            var conditions = new StudioRollbackPreconditions
+            {
+                RequestId = Guid.NewGuid(),
+                ContentHash = first.ContentHash,
+                ExpectedCurrentVersionId = second.VersionId,
+                ExpectedPointerRevision = before.PointerRevision,
+            };
+            // Simulate a previous binary's pointer SQL, which knows nothing about revisions.
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"UPDATE \"{schema}\".studio_content_items SET current_version_id = @version WHERE item_id = @item";
+                command.Parameters.AddWithValue("@version", first.VersionId);
+                command.Parameters.AddWithValue("@item", draft.ItemId);
+                await command.ExecuteNonQueryAsync();
+                command.Parameters["@version"].Value = second.VersionId;
+                await command.ExecuteNonQueryAsync();
+            }
+            var current = (await writer.GetPointersAsync(draft.ItemId))!;
+            current.CurrentVersionId.Should().Be(before.CurrentVersionId);
+            current.PointerRevision.Should().Be(before.PointerRevision + 2);
+            var stale = () => writer.RollbackAsync(draft.ItemId, first.VersionId, StudioRollbackPointer.Current, "agent", null, conditions);
+            await stale.Should().ThrowAsync<InvalidOperationException>();
+            (await writer.GetPointersAsync(draft.ItemId)).Should().Be(current);
+
+            conditions = conditions with { ExpectedPointerRevision = current.PointerRevision };
+            var wrongHash = () => writer.RollbackAsync(draft.ItemId, first.VersionId, StudioRollbackPointer.Current,
+                "agent", null, conditions with { ContentHash = "wrong-original-hash" });
+            await wrongHash.Should().ThrowAsync<InvalidOperationException>();
+            async Task<bool> AttemptAsync()
+            {
+                var independent = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+                try
+                {
+                    await independent.RollbackAsync(draft.ItemId, first.VersionId, StudioRollbackPointer.Current,
+                        "agent", null, conditions with { RequestId = Guid.NewGuid() });
+                    return true;
+                }
+                catch (InvalidOperationException) { return false; }
+            }
+            var outcomes = await Task.WhenAll(AttemptAsync(), AttemptAsync());
+            outcomes.Count(value => value).Should().Be(1);
+            (await writer.GetPointersAsync(draft.ItemId))!.PointerRevision.Should().Be(current.PointerRevision + 1);
+            (await writer.ListVersionsAsync(draft.ItemId)).Should().HaveCount(2);
+        }
+        finally { await fixture.DropSchemaAsync(schema); }
     }
 
     private async Task EnsureStudioTablesAsync(string schema)
@@ -1362,6 +1480,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      // insert and single-version read carry (honua-server#5449).
                      "126_AddStudioContentHashInput.sql",
                      "134_VersionCanonicalDeployments.sql",
+                     "140_AddStudioRollbackPreconditions.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);

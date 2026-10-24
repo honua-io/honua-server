@@ -658,6 +658,7 @@ internal sealed record McpStudioGetVersionArgument
 
 internal sealed record McpStudioGetVersionOutput
 {
+    [JsonPropertyName("pointers")] public StudioContentItemPointers? Pointers { get; init; }
     [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
     [JsonPropertyName("contentHash")] public required string ContentHash { get; init; }
 }
@@ -666,4 +667,27 @@ internal sealed record McpStudioSaveVersionOutput
 {
     [JsonPropertyName("operation")] public required OperationHandle Operation { get; init; }
     [JsonPropertyName("version")] public StudioContentVersion? Version { get; init; }
+}
+
+/// <summary>Exact saved-version restoration input; the idempotency key survives transport retries.</summary>
+internal sealed record McpStudioProposeRestoreArgument
+{
+    public required Guid ItemId { get; init; }
+    public required Guid TargetVersionId { get; init; }
+    public required string ContentHash { get; init; }
+    public required StudioRollbackPointer Pointer { get; init; }
+    public required Guid ExpectedCurrentVersionId { get; init; }
+    public required long ExpectedPointerRevision { get; init; }
+    public required string IdempotencyKey { get; init; }
+    public string? Reason { get; init; }
+}
+
+/// <summary>Canonical pending or completed restoration, never inferred from generated text.</summary>
+internal sealed record McpStudioProposeRestoreOutput
+{
+    public required OperationHandle Operation { get; init; }
+    public StudioRollbackRequest? Restoration { get; init; }
+    public required bool HumanConfirmationRequired { get; init; }
+    public string? ProposalUri { get; init; }
+    public required string Message { get; init; }
 }

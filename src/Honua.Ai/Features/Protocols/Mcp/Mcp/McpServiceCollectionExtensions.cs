@@ -277,6 +277,7 @@ internal static class McpServiceCollectionExtensions
         // publish-adjacent tool and it never moves a current/published
         // pointer — see ProposeStudioPublicationTool's doc comment.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeStudioPublicationTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeStudioRestoreTool>());
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());

@@ -608,6 +608,11 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
+    public Task<StudioRollbackRequest?> GetRollbackRequestAsync(
+        Guid itemId, Guid requestId, CancellationToken cancellationToken = default)
+        => _store.GetRollbackRequestAsync(itemId, requestId, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<StudioRollbackRequest?> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -638,6 +643,22 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             actorId,
             NormalizeOptional(reason),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioRollbackRequest?> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions preconditions, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preconditions);
+        preconditions.Validate();
+        if (!StudioPackageEnumHelpers.IsDefined(target))
+        {
+            throw new ArgumentException("Rollback pointer is not supported.", nameof(target));
+        }
+
+        return await _store.RollbackAsync(itemId, targetVersionId, target, actorId,
+            NormalizeOptional(reason), preconditions, cancellationToken).ConfigureAwait(false);
     }
 
     private static Activity? Start(string name, StudioPackageFamily family, Guid? itemId)

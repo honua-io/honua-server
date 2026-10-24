@@ -51,6 +51,8 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 [JsonSerializable(typeof(McpStudioControlInput))]
 [JsonSerializable(typeof(McpStudioAddControlArgument))]
 [JsonSerializable(typeof(McpStudioRemoveControlArgument))]
+[JsonSerializable(typeof(McpStudioProposeRestoreArgument))]
+[JsonSerializable(typeof(McpStudioProposeRestoreOutput))]
 [JsonSerializable(typeof(McpStudioProposePublicationArgument))]
 [JsonSerializable(typeof(McpStudioProposePublicationOutput))]
 [JsonSerializable(typeof(StudioPackageDraft))]

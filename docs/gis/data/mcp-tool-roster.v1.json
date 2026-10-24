@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "3a77d863c2ea066b234c8433d98459359fc1409c",
-  "generatedAt": "2026-10-23T00:06:11Z",
+  "serverSha": "710d38c45151f910927e98ca87919bff48dc054d",
+  "generatedAt": "2026-10-24T00:35:39Z",
   "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -43,6 +43,8 @@
     "honua_query_features",
     "honua_render_map",
     "honua_resolve_entity",
+    "honua_shared_style_get",
+    "honua_shared_style_propose",
     "honua_solve_route",
     "honua_studio_add_control",
     "honua_studio_add_layer",
@@ -53,6 +55,7 @@
     "honua_studio_get_version",
     "honua_studio_preview_draft",
     "honua_studio_propose_publication",
+    "honua_studio_propose_restore",
     "honua_studio_remove_control",
     "honua_studio_remove_interaction",
     "honua_studio_remove_layer",
@@ -61,12 +64,15 @@
     "honua_studio_save_version",
     "honua_studio_set_layer_style",
     "honua_studio_set_layer_visibility",
+    "honua_studio_set_map_style",
     "honua_studio_set_view",
     "honua_studio_update_draft",
     "honua_studio_validate_draft",
     "honua_supported_operation_kinds",
     "honua_validate_package",
-    "honua_validate_plan"
+    "honua_validate_plan",
+    "honua_workflow_package",
+    "honua_workflow_package_propose"
   ],
   "projectedAdmin": [
     "honua_admin_api_key_effective_permissions",
@@ -179,7 +185,9 @@
       "honua_list_layers",
       "honua_plan_analysis",
       "honua_query_features",
-      "honua_validate_plan"
+      "honua_validate_plan",
+      "honua_workflow_package",
+      "honua_workflow_package_propose"
     ],
     "configure": [
       "honua_admin_api_key_effective_permissions",
@@ -201,23 +209,21 @@
       "honua_publish_service",
       "honua_query_features",
       "honua_render_map",
-      "honua_studio_add_control",
+      "honua_shared_style_get",
+      "honua_shared_style_propose",
       "honua_studio_add_layer",
-      "honua_studio_add_widget",
-      "honua_studio_bind_interaction",
       "honua_studio_create_draft",
       "honua_studio_get_draft",
       "honua_studio_get_version",
       "honua_studio_preview_draft",
       "honua_studio_propose_publication",
-      "honua_studio_remove_control",
-      "honua_studio_remove_interaction",
+      "honua_studio_propose_restore",
       "honua_studio_remove_layer",
-      "honua_studio_remove_widget",
       "honua_studio_reopen_version",
       "honua_studio_save_version",
       "honua_studio_set_layer_style",
       "honua_studio_set_layer_visibility",
+      "honua_studio_set_map_style",
       "honua_studio_set_view",
       "honua_studio_update_draft",
       "honua_studio_validate_draft"
@@ -246,6 +252,15 @@
       "honua_propose_finding",
       "honua_supported_operation_kinds"
     ],
+    "processes": [
+      "honua_describe_layer",
+      "honua_list_capabilities",
+      "honua_list_layers",
+      "honua_query_features",
+      "honua_resolve_entity",
+      "honua_shared_style_get",
+      "honua_shared_style_propose"
+    ],
     "setup": [
       "honua_apply_style_preset",
       "honua_describe_layer",
@@ -272,6 +287,7 @@
       "honua_studio_get_version",
       "honua_studio_preview_draft",
       "honua_studio_propose_publication",
+      "honua_studio_propose_restore",
       "honua_studio_remove_control",
       "honua_studio_remove_interaction",
       "honua_studio_remove_layer",
@@ -280,11 +296,21 @@
       "honua_studio_save_version",
       "honua_studio_set_layer_style",
       "honua_studio_set_layer_visibility",
+      "honua_studio_set_map_style",
       "honua_studio_set_view",
       "honua_studio_update_draft",
       "honua_studio_validate_draft",
       "honua_supported_operation_kinds",
       "honua_validate_plan"
+    ],
+    "workspace": [
+      "honua_describe_layer",
+      "honua_list_capabilities",
+      "honua_list_layers",
+      "honua_query_features",
+      "honua_resolve_entity",
+      "honua_shared_style_get",
+      "honua_shared_style_propose"
     ]
   },
   "retired": [

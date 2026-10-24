@@ -18,6 +18,7 @@ internal static class AgentStudioAuthorization
 {
     internal const string Compose = "studio-compose";
     internal const string ProposePublication = "studio-propose-publication";
+    internal const string Restore = "studio-restore";
     internal const string DeniedCode = "studio_authorization/agent_item_permission_required";
 
     internal static bool HasItemPermission(ClaimsPrincipal principal, Guid itemId, string action)
@@ -47,7 +48,7 @@ internal static class AgentStudioAuthorization
         if (context.RequestServices.GetService<IStudioAuthorizationService>()?.IsEndUserAuthorizationEnabled != true)
             return Deny();
         if (operation is StudioAuthorizationOperation.ListOwn or StudioAuthorizationOperation.Generate
-            or StudioAuthorizationOperation.Rollback or StudioAuthorizationOperation.DeleteDraft
+            or StudioAuthorizationOperation.DeleteDraft
             or StudioAuthorizationOperation.ReopenVersion || !Guid.TryParse(resourceId, out var id))
             return Deny();
 
@@ -60,8 +61,15 @@ internal static class AgentStudioAuthorization
             itemId = draft.ItemId;
             resourceTenantId = draft.TenantId;
         }
-        var action = operation == StudioAuthorizationOperation.PublishRequest ? ProposePublication : Compose;
-        if (!HasItemPermission(principal, itemId, action)) return Deny();
+        var action = operation switch
+        {
+            StudioAuthorizationOperation.PublishRequest => ProposePublication,
+            StudioAuthorizationOperation.Rollback => Restore,
+            _ => Compose,
+        };
+        var canReadForRestore = operation == StudioAuthorizationOperation.ReadContentItem &&
+            HasItemPermission(principal, itemId, Restore);
+        if (!HasItemPermission(principal, itemId, action) && !canReadForRestore) return Deny();
 
         var services = context.RequestServices;
         var tenant = services.GetService<ITenantContext>();
@@ -71,6 +79,7 @@ internal static class AgentStudioAuthorization
             OperatorResourceType.StudioDraft, operation switch
             {
                 StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
+                StudioAuthorizationOperation.Rollback => OperatorOperation.Rollback,
                 StudioAuthorizationOperation.ReadDraft or StudioAuthorizationOperation.ReadContentItem
                     or StudioAuthorizationOperation.ValidateDraft => OperatorOperation.Read,
                 StudioAuthorizationOperation.UpdateDraft => OperatorOperation.Update,
@@ -79,7 +88,7 @@ internal static class AgentStudioAuthorization
         if (!scope.IsAllowed) return StudioAuthorizationDecision.Deny(
             "studio_authorization/insufficient_scope", scope.Reason ?? "The token scope does not permit this Studio operation.");
         return await BindAsync(context, principal, cancellationToken, turnAuthorizer).ConfigureAwait(false) is null
-            ? Deny() : StudioAuthorizationDecision.Allow(operation == StudioAuthorizationOperation.PublishRequest);
+            ? Deny() : StudioAuthorizationDecision.Allow(operation is StudioAuthorizationOperation.PublishRequest or StudioAuthorizationOperation.Rollback);
     }
 
     private static StudioAuthorizationDecision Deny() => StudioAuthorizationDecision.Deny(

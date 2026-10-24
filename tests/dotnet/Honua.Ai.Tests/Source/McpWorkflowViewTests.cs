@@ -75,8 +75,8 @@ public sealed class McpWorkflowViewTests
         StageOf(view, "author-workflow").Should().Contain("honua_workflow_package").And.NotContain("honua_workflow_package_propose");
         StageOf(view, "publish-workflow").Should().Contain("honua_workflow_package_propose");
         McpWorkflowViewCatalog.Analyze.Revision.Should().Be("analyze.v2");
-        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v7");
-        McpWorkflowViewCatalog.Configure.Revision.Should().Be("configure.v4");
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v8");
+        McpWorkflowViewCatalog.Configure.Revision.Should().Be("configure.v5");
     }
 
     [UnitTest]
@@ -962,6 +962,7 @@ public sealed class McpWorkflowViewTests
             "the terminal setup view includes the saved-version read the map path calls");
         McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_add_layer").Should().BeGreaterThanOrEqualTo(0);
         McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_propose_publication").Should().BeGreaterThanOrEqualTo(0);
+        McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_propose_restore").Should().BeGreaterThanOrEqualTo(0);
         McpWorkflowViewCatalog.Setup.Stages.Single(stage => stage.Id == "compose").Exclusions
             .Should().Contain(rule => rule.Value == "honua_studio_propose_publication");
 
@@ -994,6 +995,7 @@ public sealed class McpWorkflowViewTests
             "honua_studio_add_layer",
             "honua_studio_get_version",
             "honua_studio_propose_publication",
+            "honua_studio_propose_restore",
             "honua_publish_service",
             "honua_ingest_dataset",
             "honua_ingest_job_artifact",

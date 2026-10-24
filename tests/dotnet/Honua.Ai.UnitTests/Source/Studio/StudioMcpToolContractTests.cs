@@ -16,6 +16,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -51,12 +53,10 @@ public sealed class StudioMcpToolContractTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_*")]
-    public void ToolRoster_ContainsNoPublishOrRollbackExecutionTool()
+    public void ToolRoster_ContainsOnlyGovernedPublicationAndRestorationTools()
     {
-        // REQ-003/REQ-010: the agent-reachable tool surface must contain no
-        // publish/share/embed or rollback execution tool. The only
-        // publish-adjacent tool is honua_studio_propose_publication, which
-        // records intent only.
+        // Publication and saved-version restoration use canonical governance;
+        // neither exposes an agent tool that bypasses the separate human approval.
         var names = BuildAllTools().Select(t => t.Name).ToArray();
 
         names.Should().NotContain(n => n.Contains("rollback", StringComparison.OrdinalIgnoreCase));
@@ -67,6 +67,8 @@ public sealed class StudioMcpToolContractTests
         names.Should().NotContain("honua_studio_publish");
         names.Should().NotContain("honua_studio_publish_draft");
         names.Should().NotContain("honua_studio_execute_publish");
+        names.Where(n => n.Contains("restore", StringComparison.OrdinalIgnoreCase))
+            .Should().BeEquivalentTo(["honua_studio_propose_restore"]);
     }
 
     [UnitTest]
@@ -76,12 +78,33 @@ public sealed class StudioMcpToolContractTests
     {
         foreach (var tool in BuildAllTools())
         {
-            var properties = tool.Describe().OutputSchema!.Value.GetProperty("properties");
-            properties.TryGetProperty("studioAuthorizationCode", out _).Should().BeTrue(
-                $"'{tool.Name}' must advertise the governed Studio denial code emitted at runtime");
+            var output = tool.Describe().OutputSchema!.Value;
+            var properties = output.GetProperty("properties");
+            var errorBranch = output.GetProperty("oneOf").EnumerateArray().Single(branch =>
+                branch.TryGetProperty("required", out var required) &&
+                required.EnumerateArray().Any(value => value.GetString() == "error"));
+            var authorization = properties.TryGetProperty("studioAuthorizationCode", out var rootAuthorization)
+                ? rootAuthorization
+                : errorBranch.GetProperty("properties").GetProperty("studioAuthorizationCode");
+            authorization.GetProperty("type").EnumerateArray().Select(value => value.GetString())
+                .Should().BeEquivalentTo("string", "null");
             properties.GetProperty("currentGeneration").GetProperty("type")
                 .EnumerateArray().Select(value => value.GetString()).Should().BeEquivalentTo("integer", "null");
             properties.GetProperty("currentGeneration").GetProperty("minimum").GetInt64().Should().Be(1);
+
+            var schema = JSchema.Parse(output.GetRawText());
+            var denial = JObject.Parse("""
+                {"status":"error","code":"forbidden","message":"Not authorized",
+                 "error":{"kind":"Forbidden","message":"Not authorized"},
+                 "studioAuthorizationCode":"studio_access_denied","currentGeneration":1}
+                """);
+            denial.IsValid(schema).Should().BeTrue($"'{tool.Name}' must accept a governed Studio denial");
+            denial["studioAuthorizationCode"] = 42;
+            denial.IsValid(schema).Should().BeFalse();
+            denial["studioAuthorizationCode"] = null;
+            denial.IsValid(schema).Should().BeTrue();
+            denial["currentGeneration"] = 0;
+            denial.IsValid(schema).Should().BeFalse();
         }
     }
 
@@ -782,6 +805,7 @@ public sealed class StudioMcpToolContractTests
             new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
             new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
             new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
+            new ProposeStudioRestoreTool(jobService, NullLogger<ProposeStudioRestoreTool>.Instance),
         ];
     }
 

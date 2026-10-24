@@ -11,6 +11,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
@@ -151,7 +152,7 @@ internal sealed class GetStudioVersionTool(IGeoprocessingJobService jobService, 
         Name = Name,
         Title = "Get Studio version",
         Description = "Read one saved Studio version by itemId and versionId. Returns versionId and contentHash "
-            + "at the top level. Missing versions are not_found. Does not advance the draft generation.",
+            + "at the top level, plus current pointers and pointerRevision when authorized to read the item. Missing versions are not_found. Does not advance the draft generation.",
         InputSchema = StudioMcpSchemas.GetVersionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioGetVersionOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Get Studio version"),
@@ -190,10 +191,23 @@ internal sealed class GetStudioVersionTool(IGeoprocessingJobService jobService, 
         await EnsureStudioAuthorizedAsync(httpContext, authorization, principal, StudioAuthorizationOperation.ReadContentItem,
             version.OwnerId, version.TenantId, argument.ItemId.ToString("D"), "studio-content-item", OperatorOperation.Read,
             cancellationToken).ConfigureAwait(false);
+        var pointers = await lifecycle.GetPointersAsync(argument.ItemId, cancellationToken).ConfigureAwait(false);
+        if (pointers is not null)
+        {
+            // Permission to read one historical version does not disclose another owner's
+            // current unpublished pointer. Only expose the item's own authorized snapshot.
+            var decision = AgentCredentialAuthority.IsAgent(principal)
+                ? await AgentStudioAuthorization.AuthorizeAsync(httpContext, principal, StudioAuthorizationOperation.ReadContentItem,
+                    pointers.TenantId, "studio-content-item", argument.ItemId.ToString("D"), cancellationToken).ConfigureAwait(false)
+                : await authorization.AuthorizeAsync(principal, ActorIdFor(authorization, principal), StudioAuthorizationOperation.ReadContentItem,
+                    pointers.OwnerId, pointers.TenantId, resourceId: argument.ItemId.ToString("D"), cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!decision.IsAllowed) pointers = null;
+        }
         return McpToolHelpers.SuccessResult(new McpStudioGetVersionOutput
         {
             VersionId = version.VersionId,
             ContentHash = version.ContentHash,
+            Pointers = pointers,
         }, StudioMcpJsonContext.Default.McpStudioGetVersionOutput);
     }
 }

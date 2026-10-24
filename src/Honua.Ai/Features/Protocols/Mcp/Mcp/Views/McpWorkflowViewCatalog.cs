@@ -109,7 +109,7 @@ internal static class McpWorkflowViewCatalog
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs. Select configure on the same MCP connection for reusable shared styles, or analyze to author or publish "
             + "reusable workflow packages; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v7",
+        Revision = "setup.v8",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -232,6 +232,7 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_propose_restore"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
                 ],
             },
@@ -250,7 +251,7 @@ internal static class McpWorkflowViewCatalog
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
             + "style and render a map, then compose, save, read, and propose a Studio map. Select setup on the same "
             + "MCP connection for widgets, controls, and interactions; select analyze for reusable workflow packages.",
-        Revision = "configure.v4",
+        Revision = "configure.v5",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -331,6 +332,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_get_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_reopen_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_propose_restore"),
                 ],
             },
             new McpWorkflowViewStageDefinition

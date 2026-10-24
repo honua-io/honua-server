@@ -1527,6 +1527,14 @@ internal static partial class StudioPackageEndpoints
         try
         {
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (AgentCredentialAuthority.IsAgent(context.User))
+            {
+                var agentDenial = await EnsureAuthorizedAsync(authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem, pointers?.OwnerId,
+                    pointers is null ? StudioEndpointAuthorization.ResolveRequestTenantId(context) : pointers.TenantId,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
+                if (agentDenial is not null) return agentDenial;
+            }
             var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
 
             // PR #3018 review, round 6, item 1: version.OwnerId is an immutable snapshot of
@@ -1543,7 +1551,8 @@ internal static partial class StudioPackageEndpoints
                 var authResult = await EnsureAuthorizedAsync(
                     authorization, context,
                     StudioAuthorizationOperation.ReadContentItem, version.OwnerId, version.TenantId,
-                    resourceType: "studio-content-version", resourceId: version.VersionId.ToString("D"),
+                    resourceType: AgentCredentialAuthority.IsAgent(context.User) ? "studio-content-item" : "studio-content-version",
+                    resourceId: (AgentCredentialAuthority.IsAgent(context.User) ? itemId : version.VersionId).ToString("D"),
                     isPubliclyReadable: pointers?.PublishedVersionId == version.VersionId).ConfigureAwait(false);
                 if (authResult is null)
                 {
@@ -1562,10 +1571,13 @@ internal static partial class StudioPackageEndpoints
                 return firstDenial;
             }
 
+            var itemDecision = await authorization.AuthorizeAsync(context, StudioAuthorizationOperation.ReadContentItem,
+                pointers?.OwnerId, pointers?.TenantId, "studio-content-item", itemId.ToString("D")).ConfigureAwait(false);
             return Results.Json(
                 ApiResponse<StudioContentVersionListResponse>.CreateSuccess(new StudioContentVersionListResponse
                 {
                     ItemId = itemId,
+                    Pointers = itemDecision.IsAllowed ? pointers : null,
                     Versions = visibleVersions,
                 }),
                 StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
@@ -1593,7 +1605,8 @@ internal static partial class StudioPackageEndpoints
                 return await NotFoundAfterAuthorizationAsync(
                     authorization, context,
                     StudioAuthorizationOperation.ReadContentItem,
-                    resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
+                    resourceType: AgentCredentialAuthority.IsAgent(context.User) ? "studio-content-item" : "studio-content-version",
+                    resourceId: (AgentCredentialAuthority.IsAgent(context.User) ? itemId : versionId).ToString("D"),
                     "Studio content version was not found.").ConfigureAwait(false);
             }
 
@@ -1601,7 +1614,8 @@ internal static partial class StudioPackageEndpoints
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
                 StudioAuthorizationOperation.ReadContentItem, version.OwnerId, version.TenantId,
-                resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
+                resourceType: AgentCredentialAuthority.IsAgent(context.User) ? "studio-content-item" : "studio-content-version",
+                    resourceId: (AgentCredentialAuthority.IsAgent(context.User) ? itemId : versionId).ToString("D"),
                 isPubliclyReadable: pointers?.PublishedVersionId == versionId).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1983,14 +1997,29 @@ internal static partial class StudioPackageEndpoints
             }
 
             var actor = authorization.ResolveCallerId(context.User);
-            var receipt = await mutationRuntime.RollbackAsync(
-                itemId,
-                request.TargetVersionId,
-                request.Target,
-                actor,
-                request.Reason,
-                BuildGovernanceMutationContext(context, actor),
-                context.RequestAborted).ConfigureAwait(false);
+            var guarded = AgentCredentialAuthority.IsAgent(context.User) || request.ContentHash is not null ||
+                request.ExpectedCurrentVersionId is not null || request.ExpectedPointerRevision is not null;
+            if (guarded && (string.IsNullOrWhiteSpace(request.ContentHash) ||
+                request.ExpectedCurrentVersionId is null || request.ExpectedCurrentVersionId == Guid.Empty))
+            {
+                return BadRequest(context, "Guarded restoration requires the saved contentHash, expectedCurrentVersionId and expectedPointerRevision.");
+            }
+            if (guarded && (request.ExpectedPointerRevision is null or < 0 ||
+                context.Request.Headers["Idempotency-Key"].Count != 1 || string.IsNullOrWhiteSpace(context.Request.Headers["Idempotency-Key"])))
+            {
+                return BadRequest(context, "Guarded restoration requires an observed pointer revision and one Idempotency-Key.");
+            }
+            var mutationContext = BuildGovernanceMutationContext(context, actor);
+            var receipt = guarded
+                ? await mutationRuntime.RollbackAsync(itemId, request.TargetVersionId, request.Target, actor, request.Reason,
+                    new StudioRollbackPreconditions
+                    {
+                        ContentHash = request.ContentHash!,
+                        ExpectedCurrentVersionId = request.ExpectedCurrentVersionId,
+                        ExpectedPointerRevision = request.ExpectedPointerRevision!.Value,
+                    }, mutationContext, context.RequestAborted).ConfigureAwait(false)
+                : await mutationRuntime.RollbackAsync(itemId, request.TargetVersionId, request.Target, actor, request.Reason,
+                    mutationContext, context.RequestAborted).ConfigureAwait(false);
             SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {

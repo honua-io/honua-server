@@ -190,6 +190,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
                          "120_AddStudioTenantOwnership.sql",
                          "126_AddStudioContentHashInput.sql",
                          "134_VersionCanonicalDeployments.sql",
+                     "140_AddStudioRollbackPreconditions.sql",
                      })
             {
                 await using var stream = typeof(Program).Assembly.GetManifestResourceStream($"Honua.Server.Migrations.{file}")

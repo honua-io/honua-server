@@ -207,6 +207,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // No publish/share/embed execution tool: honua_studio_propose_publication
             // only records intent on the draft (REQ-003/REQ-009).
             ("honua_studio_propose_publication", "studio_propose_publication", "lifecycle"),
+            ("honua_studio_propose_restore", "studio_propose_restore", "lifecycle"),
         ];
 
         foreach (var (advertised, standard, family) in tools)

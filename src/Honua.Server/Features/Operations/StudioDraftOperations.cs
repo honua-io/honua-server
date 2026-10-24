@@ -171,6 +171,9 @@ internal sealed record StudioReopenVersionPayload
 
 internal sealed record StudioRollbackPayload
 {
+    public WorkspaceAgentPublicationAuthority? AgentAuthority { get; init; }
+    public StudioRollbackPreconditions? Preconditions { get; init; }
+
     public required Guid ItemId { get; init; }
     public required Guid TargetVersionId { get; init; }
     public required StudioRollbackPointer Target { get; init; }
@@ -653,12 +656,100 @@ internal sealed class StudioReopenVersionExecutor(IStudioPackageLifecycleService
             ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
 }
 
-internal sealed class StudioRollbackExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
-    : StudioDraftMutationExecutor<StudioRollbackPayload, StudioRollbackRequest>(lifecycle, clock)
+internal sealed class StudioRollbackExecutor(
+    IStudioPackageLifecycleService lifecycle, TimeProvider clock, IServiceProvider? services = null)
+    : StudioDraftMutationExecutor<StudioRollbackPayload, StudioRollbackRequest>(lifecycle, clock), IOperationRequestPreparer
 {
     public override string OperationId => StudioDraftOperations.Rollback;
     protected override JsonTypeInfo<StudioRollbackPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioRollbackPayload;
     protected override JsonTypeInfo<StudioRollbackRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioRollbackRequest;
+
+    public async Task<OperationRequest> PrepareAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = ParsePayload(request);
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        {
+            if (payload.AgentAuthority is not null)
+                await StudioAgentRestoreReplay.VerifyAsync(services ?? throw new InvalidOperationException("Agent replay is unavailable."),
+                    request, context, payload, cancellationToken).ConfigureAwait(false);
+            return request;
+        }
+        var http = services?.GetService<IHttpContextAccessor>()?.HttpContext;
+        if (http is null || !AgentCredentialAuthority.IsAgent(http.User))
+        {
+            if (payload.AgentAuthority is not null) throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+            return request;
+        }
+        var pointers = await Lifecycle.GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false);
+        var decision = await AgentStudioAuthorization.AuthorizeAsync(http, http.User, StudioAuthorizationOperation.Rollback,
+            pointers?.TenantId, "studio-content-item", payload.ItemId.ToString("D"), cancellationToken).ConfigureAwait(false);
+        var binding = await AgentStudioAuthorization.BindAsync(http, http.User, cancellationToken).ConfigureAwait(false);
+        var credential = await AgentCredentialAuthority.CaptureAsync(http.User, http.RequestServices, cancellationToken).ConfigureAwait(false);
+        if (pointers is null || !decision.IsAllowed || binding is null || credential is null || payload.Preconditions is null ||
+            payload.ActorId != context.PrincipalId || http.RequestServices.GetRequiredService<IStudioAuthorizationService>().ResolveCallerId(http.User) != context.PrincipalId ||
+            context.RequiredApprovalPolicyRef != AgentPublicationProposalAuthorization.ApprovalPolicyRef)
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        payload = payload with { AgentAuthority = new(credential, binding) };
+        return request with
+        {
+            Parameters = new Dictionary<string, string?>
+            {
+                [StudioDraftOperations.PayloadParameter] = JsonSerializer.Serialize(payload, PayloadType),
+            }
+        };
+    }
+
+    public override async Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
+    {
+        var payload = ParsePayload(request);
+        if (payload.Preconditions is { } conditions)
+        {
+            try
+            {
+                conditions.Validate();
+                if (!StudioPackageEnumHelpers.IsDefined(payload.Target))
+                    throw new ArgumentException("Rollback pointer is not supported.");
+                var original = await Lifecycle.GetRollbackRequestAsync(payload.ItemId, conditions.RequestId, cancellationToken).ConfigureAwait(false);
+                if (original is not null)
+                {
+                    // A process can fail after the native transaction commits but before its
+                    // operation handle is persisted. Recover the original receipt first.
+                    conditions.RequireSameRequest(original, payload.ItemId, payload.TargetVersionId,
+                        payload.Target, payload.ActorId, payload.Reason);
+                }
+                else
+                {
+                    var version = await Lifecycle.GetVersionAsync(payload.ItemId, payload.TargetVersionId, cancellationToken).ConfigureAwait(false)
+                        ?? throw new KeyNotFoundException("Studio content version was not found.");
+                    var pointers = await Lifecycle.GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false)
+                        ?? throw new KeyNotFoundException("Studio content item was not found.");
+                    conditions.RequireCurrent(pointers, version);
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
+            {
+                return new OperationValidation
+                {
+                    IsValid = false,
+                    Status = "invalid",
+                    ErrorKind = ex is ArgumentException ? "argument" : ex is KeyNotFoundException ? "not-found" : "conflict",
+                    Messages = [ex.Message],
+                };
+            }
+        }
+        return await base.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    public override async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = ParsePayload(request);
+        if (payload.AgentAuthority is not null)
+            await StudioAgentRestoreReplay.VerifyAsync(services ?? throw new InvalidOperationException("Agent replay is unavailable."),
+                request, context, payload, cancellationToken).ConfigureAwait(false);
+        return await base.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+    }
 
     protected override IReadOnlyDictionary<string, string> ResourceIds(StudioRollbackRequest result)
     {
@@ -678,12 +769,15 @@ internal sealed class StudioRollbackExecutor(IStudioPackageLifecycleService life
     }
 
     protected override async Task<StudioRollbackRequest> ActuateAsync(
-        StudioRollbackPayload payload,
-        CancellationToken cancellationToken) => await Lifecycle
-            .RollbackAsync(payload.ItemId, payload.TargetVersionId, payload.Target, payload.ActorId,
-                payload.Reason, cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new KeyNotFoundException($"Studio content version '{payload.TargetVersionId:D}' was not found.");
+        StudioRollbackPayload payload, CancellationToken cancellationToken)
+    {
+        var request = payload.Preconditions is { } conditions
+            ? await Lifecycle.RollbackAsync(payload.ItemId, payload.TargetVersionId, payload.Target, payload.ActorId,
+                payload.Reason, conditions, cancellationToken).ConfigureAwait(false)
+            : await Lifecycle.RollbackAsync(payload.ItemId, payload.TargetVersionId, payload.Target, payload.ActorId,
+                payload.Reason, cancellationToken).ConfigureAwait(false);
+        return request ?? throw new KeyNotFoundException($"Studio content version '{payload.TargetVersionId:D}' was not found.");
+    }
 }
 
 internal sealed class StudioDraftMutationRuntime(
@@ -830,6 +924,34 @@ internal sealed class StudioDraftMutationRuntime(
             StudioDraftOperationJsonContext.Default.StudioRollbackRequest,
             GovernedStep(context, BuiltInGuardrailActions.StudioRollback),
             cancellationToken);
+
+    public Task<StudioDraftMutationReceipt<StudioRollbackRequest>> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions preconditions, StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preconditions);
+        if (context.RequiredApprovalPolicyRef == AgentPublicationProposalAuthorization.ApprovalPolicyRef &&
+            string.IsNullOrWhiteSpace(context.IdempotencyKey))
+            throw new ArgumentException("Agent restoration requires an Idempotency-Key for proposal recovery.");
+        var scoped = ScopeIdempotencyKey(context);
+        var requestId = scoped is null ? Guid.NewGuid() : new Guid(SHA256.HashData(
+            Encoding.UTF8.GetBytes($"{StudioDraftOperations.Rollback}:{scoped}")).AsSpan(0, 16));
+        return InvokeAsync(
+            StudioDraftOperations.Rollback,
+            new StudioRollbackPayload
+            {
+                ItemId = itemId,
+                TargetVersionId = targetVersionId,
+                Target = target,
+                ActorId = actorId,
+                Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
+                Preconditions = preconditions with { RequestId = requestId },
+            },
+            StudioDraftOperationJsonContext.Default.StudioRollbackPayload,
+            StudioDraftOperationJsonContext.Default.StudioRollbackRequest,
+            GovernedStep(context, BuiltInGuardrailActions.StudioRollback), cancellationToken);
+    }
 
     // Publication and rollback move content pointers, so they route as governed actions rather
     // than draft composition (#4758). A caller-supplied action, such as the agent publication
@@ -988,6 +1110,29 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
 
     private OperationProposalPlan BuildPlan(string payload)
     {
+        if (OperationId == StudioDraftOperations.Rollback)
+        {
+            var rollback = JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioRollbackPayload)
+                ?? throw new ArgumentException("The Studio rollback payload is invalid.", nameof(payload));
+            if (rollback.Preconditions is { } conditions)
+            {
+                return new OperationProposalPlan
+                {
+                    Summary = $"Restore saved Studio version {rollback.TargetVersionId:D} to the {rollback.Target} pointer.",
+                    Diff =
+                    [
+                        $"itemId={rollback.ItemId:D}",
+                        $"targetVersionId={rollback.TargetVersionId:D}",
+                        $"contentHash={conditions.ContentHash}",
+                        $"pointer={rollback.Target}",
+                        $"expectedCurrentVersionId={conditions.ExpectedCurrentVersionId:D}",
+                        $"expectedPointerRevision={conditions.ExpectedPointerRevision}",
+                        "Editable drafts and unrelated items are preserved.",
+                    ],
+                    RiskLevel = ProposalRiskLevel.High,
+                };
+            }
+        }
         if (OperationId != StudioDraftOperations.CreatePublicationRequest)
         {
             return new OperationProposalPlan

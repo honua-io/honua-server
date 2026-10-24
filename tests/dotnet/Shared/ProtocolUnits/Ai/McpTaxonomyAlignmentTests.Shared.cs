@@ -125,7 +125,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
             new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
             new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
-            new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance)
+            new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
+            new ProposeStudioRestoreTool(jobService, NullLogger<ProposeStudioRestoreTool>.Instance)
         ];
     }
 

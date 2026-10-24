@@ -481,6 +481,22 @@ internal static class StudioMcpSchemas
     /// <summary>Schema for <see cref="McpStudioProposePublicationArgument"/>.</summary>
     public static readonly JsonElement ProposePublicationArgumentSchema = Parse(ProposePublicationArgumentSchemaJson);
 
+    /// <summary>Schema for the exact original-version restoration proposal.</summary>
+    public static readonly JsonElement ProposeRestoreArgumentSchema = Parse("""
+        {"type":"object","additionalProperties":false,
+         "required":["itemId","targetVersionId","contentHash","pointer","expectedCurrentVersionId","expectedPointerRevision","idempotencyKey"],
+         "properties":{
+           "itemId":{"type":"string","format":"uuid"},
+           "targetVersionId":{"type":"string","format":"uuid"},
+           "contentHash":{"type":"string","minLength":1,"maxLength":128},
+           "pointer":{"type":"string","enum":["current","published","both"]},
+           "expectedCurrentVersionId":{"type":"string","format":"uuid"},
+           "expectedPointerRevision":{"type":"integer","minimum":0},
+           "idempotencyKey":{"type":"string","minLength":1,"maxLength":200},
+           "reason":{"type":"string","maxLength":1000}
+         }}
+        """);
+
     private static JsonElement Parse(string json)
     {
         using var document = JsonDocument.Parse(json);

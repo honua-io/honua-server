@@ -130,9 +130,18 @@ internal static class McpToolOutputSchemas
         {
             if (successProperties[errorProperty.Key] is JsonNode successProperty)
             {
+                // Identical constraints apply to both outcomes at the root. Do not
+                // repeat them in each branch of every advertised tool schema.
+                if (JsonNode.DeepEquals(successProperty, errorProperty.Value))
+                {
+                    continue;
+                }
+
                 successOverlapProperties[errorProperty.Key] = successProperty.DeepClone();
                 errorOverlapProperties[errorProperty.Key] = errorProperty.Value?.DeepClone();
-                successProperties[errorProperty.Key] = new JsonObject();
+                // Each branch owns the differing constraints. An empty root
+                // property adds no validation and repeats its name in tools/list.
+                successProperties.Remove(errorProperty.Key);
                 continue;
             }
 
@@ -1225,13 +1234,22 @@ internal static class McpToolOutputSchemas
         """);
 
     /// <summary>
-    /// Top-level read of a saved Studio version (<c>honua_studio_get_version</c>).
-    /// Save keeps these fields nested under <c>version</c>.
+    /// Canonical approval or completion of an exact saved-version restoration.
     /// </summary>
+    public static readonly JsonElement StudioProposeRestoreOutputSchema = Parse("""
+        {"type":"object","required":["operation","humanConfirmationRequired","message"],"properties":{
+          "operation":{"type":"object"},"restoration":{"type":"object"},
+          "humanConfirmationRequired":{"type":"boolean"},
+          "proposalUri":{"type":"string","pattern":"^honua://proposals/.+"},"message":{"type":"string"}}}
+        """);
+
+    /// <summary>Reads a saved version with authorized item pointer preconditions.</summary>
     public static readonly JsonElement StudioGetVersionOutputSchema = Parse("""
         {"type":"object","required":["versionId","contentHash"],"additionalProperties":false,"properties":{
           "versionId":{"type":"string","format":"uuid"},
-          "contentHash":{"type":"string","minLength":1}}}
+          "contentHash":{"type":"string","minLength":1},
+          "pointers":{"type":"object","required":["itemId","pointerRevision"],"properties":{
+            "itemId":{"type":"string","format":"uuid"},"pointerRevision":{"type":"integer","minimum":0}}}}}
         """);
 
     public static readonly JsonElement StudioVersionMutationOutputSchema = Parse("""

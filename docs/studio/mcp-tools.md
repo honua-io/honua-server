@@ -1,16 +1,17 @@
 ---
 type: guide
 title: "Studio MCP tools"
-description: "The server publishes 20 typed Studio tools through /mcp."
+description: "Typed Studio composition, publication and saved-version restoration through /mcp."
 resource: "honua://capability/ai.mcp-discovery"
 ---
 # Studio MCP tools
 
-The server publishes 20 typed Studio tools through `/mcp`.
+The server publishes typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
-The `configure` and `setup` workflow views both include these tools. The
+The `configure` view includes basic map composition; `setup` also includes full
+dashboard composition. Both include publication and saved-version restoration. The
 `setup_and_publish` and `dashboard_scaffolding` prompts select `configure`
-because that view also carries the closed admin roster. `setup` (`setup.v4`)
+because that view also carries the closed admin roster. `setup` (`setup.v8`)
 is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 
 | Tool | Semantics |
@@ -23,6 +24,7 @@ is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 | `honua_studio_add_layer` | Add one layer. |
 | `honua_studio_remove_layer` | Remove one layer. |
 | `honua_studio_set_layer_style` | Replace a layer's typed style. |
+| `honua_studio_set_map_style` | Replace the map's typed style. |
 | `honua_studio_set_layer_visibility` | Set a layer's visibility. |
 | `honua_studio_set_view` | Set center, zoom, bearing, and pitch. |
 | `honua_studio_add_widget` | Add a widget. |
@@ -32,9 +34,10 @@ is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 | `honua_studio_add_control` | Add a map control. |
 | `honua_studio_remove_control` | Remove a map control. |
 | `honua_studio_save_version` | Save the draft as an immutable version. `versionId` and `contentHash` stay nested under `version`. |
-| `honua_studio_get_version` | Read a saved version by `itemId` and `versionId`. Returns top-level `versionId` and `contentHash`. A missing version is `not_found`. Does not advance the draft generation. |
+| `honua_studio_get_version` | Read a saved version by `itemId` and `versionId`. Returns top-level `versionId` and `contentHash`, and current `pointers` when the caller may read the item. A missing version is `not_found`. Does not advance the draft generation. |
 | `honua_studio_reopen_version` | Branch a new draft from a saved version. |
 | `honua_studio_propose_publication` | Publish the current saved version directly for an authorized admin, or return an approval proposal for another caller. Bind the exact item, version, hash, route, and visibility. |
+| `honua_studio_propose_restore` | Propose restoration of an original saved version using its hash and the observed pointer revision. Workspace agents require a separate human approval. Editable drafts remain unchanged. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale
 generation returns `failed_precondition` with the owner-authorized snapshot's
@@ -95,6 +98,27 @@ completion. A non-admin receives `AwaitingApproval`,
 `humanConfirmationRequired: true`, and the proposal identity with no share URL.
 Follow that proposal to its decision and activation; never have the proposer
 approve itself. Neither path changes the requested audience implicitly.
+
+## Restore a saved version
+
+Read the original version with `honua_studio_get_version`. Pass its `contentHash`
+and the returned `pointers.currentVersionId` and `pointers.pointerRevision` to
+`honua_studio_propose_restore`, together with `itemId`, `targetVersionId`,
+`pointer` (`current`, `published` or `both`), `expectedCurrentVersionId`,
+`expectedPointerRevision`, and a stable `idempotencyKey`.
+
+The independent permission `agent:studio-restore:<item-guid>` authorizes a
+workspace agent to request this operation; composition or publication permission
+alone does not. Use the actual workspace and turn headers. The proposal describes
+the exact original version, hash and pointer change for a distinct human to review.
+Treat `humanConfirmationRequired: true` as pending and follow the canonical proposal.
+
+Approval rechecks the original agent and turn. An intervening pointer change makes
+the proposal stale, even if the pointer was subsequently changed back. Refresh the
+observed state and obtain a new approval. A lost response can be retried with the
+same key and identical arguments to recover the original receipt. Restoration
+changes the selected pointers without creating a replacement version or overwriting
+an editable draft, including edits made while approval was pending.
 
 A browser client can support fewer result branches than the server. In particular,
 the Studio Preview sharing adapter currently models the non-admin proposal path;

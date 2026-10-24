@@ -29,6 +29,7 @@ namespace Honua.Core.Features.Studio.Domain;
 [JsonSerializable(typeof(StudioVersionComparison))]
 [JsonSerializable(typeof(StudioPreviewPlan))]
 [JsonSerializable(typeof(StudioRollbackRequest))]
+[JsonSerializable(typeof(StudioRollbackPreconditions))]
 [JsonSerializable(typeof(StudioPackageBinding[]))]
 [JsonSerializable(typeof(StudioPackageDependency[]))]
 [JsonSerializable(typeof(StudioProvenanceRef[]))]

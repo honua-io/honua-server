@@ -79,10 +79,12 @@ internal static class AgentPublicationReplay
                 ServicePublishApprovalJsonContext.Default.ServicePublishApprovalPayload)?.Parameters.ContainsKey(ServicePublishAgentAuthority.Parameter) == true,
             StudioDraftOperations.CreatePublicationRequest => JsonSerializer.Deserialize(payload,
                 StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload)?.AgentAuthority is not null,
+            StudioDraftOperations.Rollback => JsonSerializer.Deserialize(payload,
+                StudioDraftOperationJsonContext.Default.StudioRollbackPayload)?.AgentAuthority is not null,
             _ => false,
         });
         if (proposal.Audit.Reason == AgentPublicationProposalAuthorization.ApprovalPolicyRef &&
-            proposal.OperationId is ServicePublishOperation.OperationId or StudioDraftOperations.CreatePublicationRequest && !hasSnapshot)
+            proposal.OperationId is ServicePublishOperation.OperationId or StudioDraftOperations.CreatePublicationRequest or StudioDraftOperations.Rollback && !hasSnapshot)
             throw new InvalidOperationException("This agent publication proposal predates authority sealing; create a new proposal.");
         return hasSnapshot || proposal.Audit.Reason == AgentPublicationProposalAuthorization.ApprovalPolicyRef;
     }
@@ -146,4 +148,24 @@ internal static class StudioAgentPublicationReplay
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void Deny() => throw new GeoprocessingAuthorizationException(requiresAuthentication: false,
         message: "The original Studio agent authority or human-approved publication seal is no longer valid.");
+}
+
+/// <summary>Rechecks the original agent and exact item grant before an approved saved-version restoration.</summary>
+internal static class StudioAgentRestoreReplay
+{
+    internal static async Task VerifyAsync(IServiceProvider services, OperationRequest request,
+        OperationPolicyContext context, StudioRollbackPayload payload, CancellationToken cancellationToken)
+    {
+        if (payload.Preconditions is null) throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        var (http, turns) = await AgentPublicationReplay.VerifyAsync(services, request, context,
+            payload.AgentAuthority, request.Parameters[StudioDraftOperations.PayloadParameter]!, true, cancellationToken).ConfigureAwait(false);
+        var pointers = await services.GetRequiredService<IStudioPackageLifecycleService>()
+            .GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false);
+        if (pointers is null) throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        var decision = await AgentStudioAuthorization.AuthorizeAsync(http, http.User, StudioAuthorizationOperation.Rollback,
+            pointers.TenantId, "studio-content-item", payload.ItemId.ToString("D"), cancellationToken, turns).ConfigureAwait(false);
+        if (!decision.IsAllowed) throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        // The native store checks revision and original receipt under its write lock.
+        // A completed native commit can be recovered without demanding its old pointer again.
+    }
 }

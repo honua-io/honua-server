@@ -470,7 +470,7 @@ internal static class AgentCredentialAuthority
             return grants.Any(grant => grant.Service == "agent" && grant.Operation == AgentManagedProcessAuthorization.Operation
                 && grant.Layer == AgentManagedProcessAuthorization.ProcessId);
         if (permission.Split(':') is ["agent", var studioAction, var item]
-            && studioAction is AgentStudioAuthorization.Compose or AgentStudioAuthorization.ProposePublication)
+            && studioAction is AgentStudioAuthorization.Compose or AgentStudioAuthorization.ProposePublication or AgentStudioAuthorization.Restore)
         {
             // Neither wildcard nor own-sentinel grants mint an exact-item capability.
             return Guid.TryParseExact(item, "D", out var id) && id != Guid.Empty && item == id.ToString("D")

@@ -119,7 +119,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_remove_interaction",
         "honua_studio_add_control",
         "honua_studio_remove_control",
-        "honua_studio_propose_publication"
+        "honua_studio_propose_publication",
+        "honua_studio_propose_restore"
     };
 
     private static readonly string[] TaxonomyResourceUris =
@@ -177,9 +178,44 @@ public sealed partial class McpTaxonomyAlignmentTests
             .Select(d => (d.McpToolName, d.Category))
             .ToArray();
 
-        dynamicTools.Should().ContainSingle()
-            .Which.Should().Be(("honua_admin_server_status", McpTelemetry.WorkflowFamily.Results));
-        TaxonomyToolNames.Should().NotContain("honua_admin_server_status");
+        (string Name, string Family)[] expected =
+        [
+            ("honua_admin_server_status", McpTelemetry.WorkflowFamily.Results),
+            ("honua_workspace_create", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_get", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_set_context", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_create_turn", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_get_turn", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_conversation", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_append_message", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_create_draft", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_get_draft", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_patch_draft", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_submit_draft", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_get_command", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_create_dataset_import_task", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_get_dataset_import_intent", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_get_dataset_import_authority", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_renew_dataset_import_authority", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_get_dataset_import_submission", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_submit_dataset_import", McpTelemetry.WorkflowFamily.Lifecycle),
+            ("honua_workspace_local_process_get_project", "geoprocessing"),
+            ("honua_workspace_local_process_read_source", "geoprocessing"),
+            ("honua_workspace_local_process_write_source", "geoprocessing"),
+            ("honua_workspace_local_process_capture_snapshot", "geoprocessing"),
+            ("honua_workspace_local_process_get_snapshot", "geoprocessing"),
+            ("honua_workspace_local_process_read_snapshot_source", "geoprocessing"),
+            ("honua_workspace_local_process_list_runs", "geoprocessing"),
+            ("honua_workspace_local_process_run", "geoprocessing"),
+            ("honua_workspace_local_process_get_run", "geoprocessing"),
+            ("honua_workspace_local_process_get_command", "geoprocessing"),
+            ("honua_workspace_local_process_cancel", "geoprocessing"),
+            ("honua_workspace_local_process_read_artifact", "geoprocessing"),
+        ];
+        dynamicTools.Should().BeEquivalentTo(expected,
+            "deployment-contributed tools must retain their explicit workflow families");
+        TaxonomyToolNames.Should().NotIntersectWith(expected.Select(tool => tool.Name),
+            "deployment-contributed tools are not part of the static MCP surface");
     }
 
     [UnitTest]
@@ -408,6 +444,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_query_features",
         "honua_render_map",
         "honua_get_style",
+        "honua_shared_style_get",
         "honua_resolve_entity",
         "honua_list_capabilities",
         "honua_studio_get_draft",
@@ -466,6 +503,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_workflow_package"] = (Destructive: false, Idempotent: true),
             ["honua_workflow_package_propose"] = (Destructive: true, Idempotent: true),
             ["honua_studio_propose_publication"] = (Destructive: false, Idempotent: true),
+            ["honua_studio_propose_restore"] = (Destructive: true, Idempotent: true),
         };
 
     [UnitTest]
@@ -622,6 +660,55 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             AssertSharedErrorEnvelopeValidates(tool.Describe());
         }
+    }
+
+    [UnitTest]
+    public void SharedOutputConstraints_PreserveSuccessAndErrorValidationWithoutDuplication()
+    {
+        foreach (var closed in new[] { false, true })
+        {
+            using var original = JsonDocument.Parse($$$$"""
+                {"type":"object","required":["value","message"],"additionalProperties":{{{{(!closed).ToString().ToLowerInvariant()}}}},
+                 "properties":{"value":{"type":"integer"},"message":{"type":"string"}}}
+                """);
+            var emitted = McpToolOutputSchemas.IncludeErrorEnvelope(original.RootElement);
+            var schema = JSchema.Parse(emitted.GetRawText());
+            JObject.Parse("""{"value":1,"message":"saved"}""").IsValid(schema).Should().BeTrue();
+            JObject.Parse("""{"value":1,"message":42}""").IsValid(schema).Should().BeFalse();
+            JObject.Parse("""{"message":"missing value"}""").IsValid(schema).Should().BeFalse();
+            JObject.Parse("""{"value":1,"message":"saved","extra":true}""").IsValid(schema).Should().Be(!closed);
+            JObject.Parse("""{"status":"error","code":"conflict","message":"changed","error":{}}""")
+                .IsValid(schema).Should().BeTrue();
+            JObject.Parse("""{"status":"error","code":"conflict","message":42,"error":{}}""")
+                .IsValid(schema).Should().BeFalse();
+            emitted.GetProperty("properties").GetProperty("message").GetProperty("type")
+                .GetString().Should().Be("string");
+            foreach (var branch in emitted.GetProperty("oneOf").EnumerateArray())
+            {
+                if (branch.TryGetProperty("properties", out var properties) &&
+                    properties.TryGetProperty("message", out var message))
+                {
+                    message.EnumerateObject().Should().BeEmpty(
+                        "the common message constraint already applies at the root");
+                }
+            }
+        }
+    }
+
+    [UnitTest]
+    public void DifferentOutputConstraints_RemainSpecificToSuccessAndError()
+    {
+        using var original = JsonDocument.Parse("""
+            {"type":"object","required":["value","message"],"additionalProperties":false,
+             "properties":{"value":{"type":"integer"},"message":{"type":"integer"}}}
+            """);
+        var schema = JSchema.Parse(McpToolOutputSchemas.IncludeErrorEnvelope(original.RootElement).GetRawText());
+        JObject.Parse("""{"value":1,"message":42}""").IsValid(schema).Should().BeTrue();
+        JObject.Parse("""{"value":1,"message":"wrong success type"}""").IsValid(schema).Should().BeFalse();
+        JObject.Parse("""{"status":"error","code":"conflict","message":"changed","error":{}}""")
+            .IsValid(schema).Should().BeTrue();
+        JObject.Parse("""{"status":"error","code":"conflict","message":42,"error":{}}""")
+            .IsValid(schema).Should().BeFalse();
     }
 
     [UnitTest]

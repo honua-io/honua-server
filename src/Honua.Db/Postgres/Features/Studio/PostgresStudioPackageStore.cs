@@ -590,7 +590,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id
+            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id, pointer_revision
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -1184,13 +1184,24 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                 : null,
         };
 
-    public async Task<StudioRollbackRequest> RollbackAsync(
-        Guid itemId,
-        Guid targetVersionId,
-        StudioRollbackPointer target,
-        string? actorId,
-        string? reason,
+    public Task<StudioRollbackRequest> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
         CancellationToken cancellationToken = default)
+        => RollbackCoreAsync(itemId, targetVersionId, target, actorId, reason, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StudioRollbackRequest> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions preconditions, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preconditions);
+        preconditions.Validate();
+        return RollbackCoreAsync(itemId, targetVersionId, target, actorId, reason, preconditions, cancellationToken);
+    }
+
+    private async Task<StudioRollbackRequest> RollbackCoreAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions? preconditions, CancellationToken cancellationToken)
     {
         if (!StudioPackageEnumHelpers.IsDefined(target))
         {
@@ -1205,11 +1216,32 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         await StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, false, cancellationToken).ConfigureAwait(false);
         try
         {
+            // Serialize restoration with every native pointer writer. The original receipt
+            // is checked under this same item lock before considering a stale precondition.
+            await LockItemAsync(connection, transaction, itemId, cancellationToken).ConfigureAwait(false);
+            if (preconditions is not null)
+            {
+                var original = await GetRollbackRequestAsync(connection, transaction,
+                    preconditions.RequestId, cancellationToken).ConfigureAwait(false);
+                if (original is not null)
+                {
+                    preconditions.RequireSameRequest(original, itemId, targetVersionId, target, actorId, reason);
+                    await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                    return original;
+                }
+            }
             var targetVersion = await GetVersionForPublicationAsync(
                 connection, transaction, itemId, targetVersionId, cancellationToken).ConfigureAwait(false);
             if (targetVersion is null)
             {
                 throw new KeyNotFoundException("Studio content version was not found.");
+            }
+
+            if (preconditions is not null)
+            {
+                var observed = await GetPointersAsync(connection, transaction, itemId, cancellationToken).ConfigureAwait(false)
+                    ?? throw new KeyNotFoundException("Studio content item was not found.");
+                preconditions.RequireCurrent(observed, targetVersion);
             }
 
             var updateCurrent = target is StudioRollbackPointer.Current or StudioRollbackPointer.Both;
@@ -1231,7 +1263,8 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                 ?? throw new KeyNotFoundException("Studio content item was not found.");
             var request = new StudioRollbackRequest
             {
-                RequestId = Guid.NewGuid(),
+                RequestId = preconditions?.RequestId ?? Guid.NewGuid(),
+                Preconditions = preconditions,
                 ItemId = itemId,
                 TargetVersionId = targetVersionId,
                 Target = target,
@@ -1245,11 +1278,11 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                 INSERT INTO {_rollbackRequestsTable}
                     (request_id, item_id, target_version_id, pointer,
                      current_version_id, published_version_id, requested_by, reason, created_at,
-                     deployment_id)
+                     deployment_id, pointer_revision, preconditions)
                 VALUES
                     (@request_id, @item_id, @target_version_id, @pointer,
                      @current_version_id, @published_version_id, @requested_by, @reason, @created_at,
-                     @deployment_id)
+                     @deployment_id, @pointer_revision, @preconditions)
                 """;
             await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
             {
@@ -1257,6 +1290,12 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@item_id", itemId);
                 command.Parameters.AddWithValue("@target_version_id", targetVersionId);
                 command.Parameters.AddWithValue("@pointer", rollbackPointer);
+                command.Parameters.AddWithValue("@pointer_revision", pointers.PointerRevision);
+                command.Parameters.Add(new NpgsqlParameter("@preconditions", NpgsqlDbType.Jsonb)
+                {
+                    Value = preconditions is null ? DBNull.Value :
+                        JsonSerializer.Serialize(preconditions, StudioJsonContext.Default.StudioRollbackPreconditions),
+                });
                 command.Parameters.AddWithValue("@current_version_id", (object?)pointers.CurrentVersionId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@published_version_id", (object?)pointers.PublishedVersionId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@requested_by", (object?)actorId ?? DBNull.Value);
@@ -1291,6 +1330,61 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioRollbackRequest?> GetRollbackRequestAsync(
+        Guid itemId, Guid requestId, CancellationToken cancellationToken = default)
+    {
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var receipt = await GetRollbackRequestAsync(lease.Connection, null, requestId, cancellationToken).ConfigureAwait(false);
+        return receipt?.ItemId == itemId ? receipt : null;
+    }
+
+    private async Task<StudioRollbackRequest?> GetRollbackRequestAsync(
+        NpgsqlConnection connection, NpgsqlTransaction? transaction, Guid requestId, CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT r.request_id, r.item_id, r.target_version_id, r.pointer,
+                   r.current_version_id, r.published_version_id, r.requested_by, r.reason,
+                   r.created_at, r.deployment_id, r.pointer_revision, r.preconditions,
+                   i.owner_id, i.tenant_id
+            FROM {_rollbackRequestsTable} r
+            JOIN {_itemsTable} i ON i.item_id = r.item_id
+            WHERE r.request_id = @request_id
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@request_id", requestId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) return null;
+        return new StudioRollbackRequest
+        {
+            RequestId = reader.GetGuid(0),
+            ItemId = reader.GetGuid(1),
+            TargetVersionId = reader.GetGuid(2),
+            Target = reader.GetString(3) switch
+            {
+                "current" => StudioRollbackPointer.Current,
+                "published" => StudioRollbackPointer.Published,
+                "both" => StudioRollbackPointer.Both,
+                _ => throw new InvalidDataException("Unknown persisted Studio rollback pointer."),
+            },
+            Pointers = new StudioContentItemPointers
+            {
+                ItemId = reader.GetGuid(1),
+                CurrentVersionId = reader.IsDBNull(4) ? null : reader.GetGuid(4),
+                PublishedVersionId = reader.IsDBNull(5) ? null : reader.GetGuid(5),
+                PointerRevision = reader.GetInt64(10),
+                OwnerId = reader.IsDBNull(12) ? null : reader.GetString(12),
+                TenantId = reader.IsDBNull(13) ? null : reader.GetString(13),
+            },
+            RequestedBy = reader.IsDBNull(6) ? null : reader.GetString(6),
+            Reason = reader.IsDBNull(7) ? null : reader.GetString(7),
+            CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
+            DeploymentId = reader.IsDBNull(9) ? null : reader.GetString(9),
+            Preconditions = reader.IsDBNull(11) ? null : JsonSerializer.Deserialize(
+                reader.GetString(11), StudioJsonContext.Default.StudioRollbackPreconditions),
+        };
     }
 
     private async Task UpsertItemAsync(
@@ -1422,6 +1516,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             SET {currentClause}
                 {publishedClause}
                 {governingClause}
+                pointer_revision = pointer_revision + 1,
                 updated_by = @updated_by,
                 updated_at = @updated_at
             WHERE item_id = @item_id{expectedClause}
@@ -1614,7 +1709,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id
+            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id, pointer_revision
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -1719,6 +1814,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             PublishedVersionId = reader.IsDBNull(2) ? null : reader.GetGuid(2),
             OwnerId = reader.IsDBNull(3) ? null : reader.GetString(3),
             TenantId = reader.IsDBNull(4) ? null : reader.GetString(4),
+            PointerRevision = reader.GetInt64(5),
         };
 
     private static string VersionSelectSql(string versionsTable, bool includeHashInput = false) => $"""

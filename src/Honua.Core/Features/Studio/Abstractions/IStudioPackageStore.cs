@@ -122,6 +122,11 @@ public interface IStudioPackageStore
         string route,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Reads the original committed rollback receipt for this item and request identity.</summary>
+    Task<StudioRollbackRequest?> GetRollbackRequestAsync(
+        Guid itemId, Guid requestId, CancellationToken cancellationToken = default)
+        => Task.FromResult<StudioRollbackRequest?>(null);
+
     /// <summary>Creates a persisted rollback request and updates item pointers.</summary>
     Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
@@ -130,6 +135,17 @@ public interface IStudioPackageStore
         string? actorId,
         string? reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Atomically restores the approved saved version and retains an idempotent original receipt.</summary>
+    Task<StudioRollbackRequest> RollbackAsync(
+        Guid itemId,
+        Guid targetVersionId,
+        StudioRollbackPointer target,
+        string? actorId,
+        string? reason,
+        StudioRollbackPreconditions preconditions,
+        CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("This Studio provider does not support guarded saved-version restoration.");
 }
 
 /// <summary>
@@ -380,6 +396,11 @@ public interface IStudioPackageLifecycleService
     /// <summary>Reopens an immutable version as a new mutable draft.</summary>
     Task<StudioPackageDraft?> ReopenVersionAsync(Guid itemId, Guid versionId, string? actorId, CancellationToken cancellationToken = default);
 
+    /// <summary>Reads the original committed rollback receipt for this item and request identity.</summary>
+    Task<StudioRollbackRequest?> GetRollbackRequestAsync(
+        Guid itemId, Guid requestId, CancellationToken cancellationToken = default)
+        => Task.FromResult<StudioRollbackRequest?>(null);
+
     /// <summary>Creates a rollback request and updates item pointers.</summary>
     Task<StudioRollbackRequest?> RollbackAsync(
         Guid itemId,
@@ -388,6 +409,17 @@ public interface IStudioPackageLifecycleService
         string? actorId,
         string? reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Atomically restores the approved saved version and retains an idempotent original receipt.</summary>
+    Task<StudioRollbackRequest?> RollbackAsync(
+        Guid itemId,
+        Guid targetVersionId,
+        StudioRollbackPointer target,
+        string? actorId,
+        string? reason,
+        StudioRollbackPreconditions preconditions,
+        CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("This Studio provider does not support guarded saved-version restoration.");
 }
 
 /// <summary>

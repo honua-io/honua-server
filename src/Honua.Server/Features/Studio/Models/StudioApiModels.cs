@@ -159,6 +159,19 @@ public sealed class CreateStudioPublicationRequest
 /// </summary>
 public sealed class CreateStudioRollbackRequest
 {
+    /// <summary>Original saved content hash; required for a guarded agent restoration.</summary>
+    [StringLength(128)]
+    [JsonPropertyName("contentHash")]
+    public string? ContentHash { get; init; }
+
+    /// <summary>Current saved version observed before proposing restoration.</summary>
+    [JsonPropertyName("expectedCurrentVersionId")]
+    public Guid? ExpectedCurrentVersionId { get; init; }
+
+    /// <summary>Observed pointer revision; required together with the content hash and current version.</summary>
+    [JsonPropertyName("expectedPointerRevision")]
+    public long? ExpectedPointerRevision { get; init; }
+
     /// <summary>Version identifier selected as the rollback target.</summary>
     [Required]
     [JsonPropertyName("targetVersionId")]
@@ -179,6 +192,11 @@ public sealed class CreateStudioRollbackRequest
 /// </summary>
 public sealed class StudioContentVersionListResponse
 {
+    /// <summary>Current item pointers and revision, included only when the caller can read the item itself.</summary>
+    [JsonPropertyName("pointers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StudioContentItemPointers? Pointers { get; init; }
+
     /// <summary>Content item identifier.</summary>
     [JsonPropertyName("itemId")]
     public required Guid ItemId { get; init; }

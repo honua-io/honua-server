@@ -255,6 +255,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             _items[draft.ItemId] = item with
             {
                 CurrentVersionId = version.VersionId,
+                PointerRevision = checked(item.PointerRevision + 1),
                 UpdatedBy = actorId,
                 UpdatedAt = version.CreatedAt,
             };
@@ -295,6 +296,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 {
                     ItemId = item.ItemId,
                     CurrentVersionId = item.CurrentVersionId,
+                    PointerRevision = item.PointerRevision,
                     PublishedVersionId = item.PublishedVersionId,
                     OwnerId = item.OwnerId,
                     TenantId = item.TenantId,
@@ -575,6 +577,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             _items[request.ItemId] = item with
             {
                 PublishedVersionId = request.VersionId,
+                PointerRevision = checked(item.PointerRevision + 1),
                 UpdatedBy = request.RequestedBy,
                 UpdatedAt = request.CreatedAt,
             };
@@ -632,13 +635,36 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     }
 
     /// <inheritdoc />
+    public Task<StudioRollbackRequest?> GetRollbackRequestAsync(
+        Guid itemId, Guid requestId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            return Task.FromResult(_rollbackRequests.TryGetValue(requestId, out var receipt) && receipt.ItemId == itemId
+                ? receipt : null);
+        }
+    }
+
+    /// <inheritdoc />
     public Task<StudioRollbackRequest> RollbackAsync(
-        Guid itemId,
-        Guid targetVersionId,
-        StudioRollbackPointer target,
-        string? actorId,
-        string? reason,
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
         CancellationToken cancellationToken = default)
+        => RollbackCoreAsync(itemId, targetVersionId, target, actorId, reason, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StudioRollbackRequest> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions preconditions, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preconditions);
+        preconditions.Validate();
+        return RollbackCoreAsync(itemId, targetVersionId, target, actorId, reason, preconditions, cancellationToken);
+    }
+
+    private Task<StudioRollbackRequest> RollbackCoreAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions? preconditions, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -649,15 +675,29 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new ArgumentException("Rollback pointer is not supported.", nameof(target));
             }
 
+            if (preconditions is not null && _rollbackRequests.TryGetValue(preconditions.RequestId, out var original))
+            {
+                preconditions.RequireSameRequest(original, itemId, targetVersionId, target, actorId, reason);
+                return Task.FromResult(original);
+            }
+
             var version = GetVersions(itemId).FirstOrDefault(v => v.VersionId == targetVersionId);
             if (version is null || !_items.TryGetValue(itemId, out var item))
             {
                 throw new KeyNotFoundException("Studio content version was not found.");
             }
 
+            preconditions?.RequireCurrent(new StudioContentItemPointers
+            {
+                ItemId = itemId,
+                CurrentVersionId = item.CurrentVersionId,
+                PublishedVersionId = item.PublishedVersionId,
+                PointerRevision = item.PointerRevision,
+            }, version);
             var now = DateTimeOffset.UtcNow;
             var updatedItem = item with
             {
+                PointerRevision = checked(item.PointerRevision + 1),
                 CurrentVersionId = target is StudioRollbackPointer.Current or StudioRollbackPointer.Both ? targetVersionId : item.CurrentVersionId,
                 PublishedVersionId = target is StudioRollbackPointer.Published or StudioRollbackPointer.Both ? targetVersionId : item.PublishedVersionId,
                 UpdatedBy = actorId,
@@ -666,7 +706,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             _items[itemId] = updatedItem;
             var request = new StudioRollbackRequest
             {
-                RequestId = Guid.NewGuid(),
+                RequestId = preconditions?.RequestId ?? Guid.NewGuid(),
+                Preconditions = preconditions,
                 ItemId = itemId,
                 TargetVersionId = targetVersionId,
                 Target = target,
@@ -674,6 +715,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 {
                     ItemId = itemId,
                     CurrentVersionId = updatedItem.CurrentVersionId,
+                    PointerRevision = updatedItem.PointerRevision,
                     PublishedVersionId = updatedItem.PublishedVersionId,
                     OwnerId = updatedItem.OwnerId,
                     TenantId = updatedItem.TenantId,
@@ -756,5 +798,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         string? CreatedBy,
         string? UpdatedBy,
         DateTimeOffset CreatedAt,
-        DateTimeOffset UpdatedAt);
+        DateTimeOffset UpdatedAt,
+        long PointerRevision = 0);
 }

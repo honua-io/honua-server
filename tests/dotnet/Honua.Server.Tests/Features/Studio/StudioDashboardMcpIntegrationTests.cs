@@ -71,6 +71,7 @@ public sealed partial class StudioDashboardMcpIntegrationTests : IAsyncLifetime
                      "120_AddStudioTenantOwnership.sql",
                      "126_AddStudioContentHashInput.sql",
                      "134_VersionCanonicalDeployments.sql",
+                     "140_AddStudioRollbackPreconditions.sql",
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", migration));

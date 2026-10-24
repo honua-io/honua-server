@@ -51,6 +51,7 @@ public sealed class StudioDraftMutationArchitectureTests
             "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioDraftToolBase.cs",
             "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioCompositionTools.cs",
             "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioProposePublicationTool.cs",
+            "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioProposeRestoreTool.cs",
         };
         var mutationMethods = new[]
         {

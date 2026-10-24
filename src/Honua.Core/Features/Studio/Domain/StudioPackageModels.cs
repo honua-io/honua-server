@@ -498,6 +498,10 @@ public sealed record StudioCheckpointedVersion
 /// </summary>
 public sealed record StudioContentItemPointers
 {
+    /// <summary>Monotonic revision of the current/published pointers, including changes back to an earlier value.</summary>
+    [JsonPropertyName("pointerRevision")]
+    public long PointerRevision { get; init; }
+
     /// <summary>Content item identifier.</summary>
     [JsonPropertyName("itemId")]
     public required Guid ItemId { get; init; }
@@ -861,6 +865,11 @@ public sealed record StudioPackageDraftListResult
 /// </summary>
 public sealed record StudioRollbackRequest
 {
+    /// <summary>Exact approved restoration conditions, when this request used guarded rollback.</summary>
+    [JsonPropertyName("preconditions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StudioRollbackPreconditions? Preconditions { get; init; }
+
     /// <summary>Rollback request identifier.</summary>
     [JsonPropertyName("requestId")]
     public required Guid RequestId { get; init; }

@@ -59,6 +59,13 @@ public interface IStudioDraftMutationRuntime
     Task<StudioDraftMutationReceipt<StudioRollbackRequest>> RollbackAsync(
         Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
         StudioDraftMutationContext context, CancellationToken cancellationToken = default);
+
+    /// <summary>Proposes an exact saved-version restoration through the canonical rollback operation.</summary>
+    Task<StudioDraftMutationReceipt<StudioRollbackRequest>> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions preconditions, StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("The Studio runtime does not support guarded saved-version restoration.");
 }
 
 /// <summary>Trusted evidence supplied by an authorized protocol adapter.</summary>

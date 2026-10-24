@@ -264,6 +264,11 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
 
     /// <inheritdoc />
+    public Task<StudioRollbackRequest?> GetRollbackRequestAsync(
+        Guid itemId, Guid requestId, CancellationToken cancellationToken = default)
+        => _inner.GetRollbackRequestAsync(itemId, requestId, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -280,6 +285,20 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         }
 
         return await _inner.RollbackAsync(itemId, targetVersionId, target, actorId, reason, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioRollbackRequest> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioRollbackPreconditions preconditions, CancellationToken cancellationToken = default)
+    {
+        var bridged = await ResolveBridgedPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
+        if (bridged is not null)
+        {
+            throw new InvalidOperationException($"Guarded rollback is not supported for the bridged {bridged.Bridge.Family} family.");
+        }
+        return await _inner.RollbackAsync(itemId, targetVersionId, target, actorId, reason,
+            preconditions, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<BridgedItem?> ResolveBridgedPointersAsync(Guid itemId, CancellationToken cancellationToken)
