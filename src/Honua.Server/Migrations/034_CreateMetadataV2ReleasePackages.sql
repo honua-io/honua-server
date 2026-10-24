@@ -1,5 +1,5 @@
--- Copyright (c) Honua Geo Inc. All rights reserved.
--- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+-- Copyright (c) Honua. All rights reserved.
+-- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 -- Metadata v2 release packages for GitOps-safe semantic promotion (#1163).
 -- Packages reference Metadata v2 revisions and serialize changed semantic entries as JSONB while

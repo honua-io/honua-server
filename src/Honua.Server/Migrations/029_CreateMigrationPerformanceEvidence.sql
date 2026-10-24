@@ -1,5 +1,5 @@
--- Copyright (c) Honua Geo Inc. All rights reserved.
--- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+-- Copyright (c) Honua. All rights reserved.
+-- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 -- Migration 029: Persistence table for migration performance evidence artifacts (#1033 slice 5).
 -- Backs the admin / SDK endpoints that surface the latest passing publish plus per-fixture history.

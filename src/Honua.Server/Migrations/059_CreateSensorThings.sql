@@ -1,5 +1,5 @@
--- Copyright (c) Honua Geo Inc. All rights reserved.
--- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+-- Copyright (c) Honua. All rights reserved.
+-- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 -- OGC SensorThings API (STA v1.1) Phase 1 storage (#1747).
 --

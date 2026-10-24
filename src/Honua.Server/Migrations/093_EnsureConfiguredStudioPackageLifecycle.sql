@@ -1,5 +1,5 @@
--- Copyright (c) Honua Geo Inc. All rights reserved.
--- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+-- Copyright (c) Honua. All rights reserved.
+-- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 -- Forward-only repair for installations that selected a non-default Database:Schema after the
 -- original Studio lifecycle migration was journaled (#3067). Fresh installations provision these

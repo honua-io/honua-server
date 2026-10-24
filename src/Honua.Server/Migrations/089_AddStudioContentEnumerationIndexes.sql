@@ -1,5 +1,5 @@
--- Copyright (c) Honua Geo Inc. All rights reserved.
--- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+-- Copyright (c) Honua. All rights reserved.
+-- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 -- Supporting indexes for Studio content-item and package-draft enumeration (#3003).
 -- GET /api/v1/studio/content-items and GET /api/v1/studio/package-drafts filter by
