@@ -1,0 +1,28 @@
+name: Close external pull requests
+
+# This repository does not accept code contributions from outside the
+# organization. Pull requests from non-members are closed automatically.
+# Issues and security reports remain open; see SECURITY.md.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    if: >-
+      github.event.pull_request.user.type != 'Bot' &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close with explanation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr comment "$PR" -R "$REPO" --body "Thanks for your interest. This repository is source-available and does not accept external pull requests, so this PR is being closed automatically. Bug reports are welcome as issues, and security findings should follow SECURITY.md."
+          gh pr close "$PR" -R "$REPO"
