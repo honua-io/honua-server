@@ -201,6 +201,7 @@ RUN groupadd --gid 1001 --system honua && \
 # Security: Set strict file permissions
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
 
 # Native dependency gate (honua-server#4912). `ldd -r` forces every relocation of the
 # native libraries the server P/Invokes, so a missing shared library or an incompatible

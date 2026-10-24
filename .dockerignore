@@ -43,6 +43,7 @@ docker-compose*
 
 # Documentation
 *.md
+!THIRD-PARTY-NOTICES.md
 docs/
 !docs/developer/
 !docs/developer/api-specs/

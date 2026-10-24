@@ -162,6 +162,7 @@ RUN groupadd --gid 1001 --system honua && \
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
 
 # Security: Create runtime directories with proper permissions.
 # This set MUST include every writable directory the default configuration writes
