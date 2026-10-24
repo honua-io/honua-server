@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:4dd376b0f1f991f4e20b5b07bbfa27107b1de0351a3bab45bb012787fb39119e",
+  "bundleDigest": "sha256:39f32d8a4e64cb0cdecdac5010a58a1a8cb7ca85177e8e012523b6272036fa0b",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2488,7 +2488,7 @@
     {
       "id": "guides/publish/publish-tiles",
       "path": "guides/publish/publish-tiles.md",
-      "documentDigest": "sha256:67cda869a59c5f7d9b994c2413472250113fa1dce940fb8f6718fd1ca8fe18a9",
+      "documentDigest": "sha256:c64b629e05d63653b6bc982f103a30e0601ee595fb46bb46d2cfb66a14422340",
       "metadata": {
         "type": "guide",
         "title": "Publish tiles",
