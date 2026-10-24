@@ -34,10 +34,11 @@ License. Licensor: Honua Geo Inc.
   own managed service is a Competing Use and requires a partner agreement.
 - The repository does not accept external contributions (`close-external-prs.yml`), so Honua Geo
   Inc. retains full copyright and the ability to relicense.
-- Journaled SQL migrations recorded in the frozen schema reader baseline
-  (`SchemaReaderBaseline.json`, plus 129) keep their original ELv2 header bytes: the
-  migration-safety classifier accepts them by exact SHA-256, and a header rewrite would
-  either break startup or require re-blessing hashes that record a historical review.
+- Every already-journaled SQL migration keeps its original ELv2 header bytes. The
+  migration-safety classifier accepts the frozen set (`SchemaReaderBaseline.json`, plus
+  129) by exact SHA-256, and any change under the migration directories triggers the
+  N-1 reader compatibility gate, which cannot pass for pre-guard images. A header
+  rewrite would therefore break startup or block the gate for no functional change.
   Those files are Honua-authored and covered by the repository LICENSE regardless of
   the comment text; new migrations use the FCL header.
 - Capacity metering must stay on the license-validated code path to remain covered by the

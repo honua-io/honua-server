@@ -1,5 +1,5 @@
--- Copyright (c) Honua Geo Inc. All rights reserved.
--- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+-- Copyright (c) Honua. All rights reserved.
+-- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 -- Shared admin API key registry for multi-instance hosts that run without Redis (AWS Lambda,
 -- Deployment:Mode=MultiNode) (#6487). A per-process dictionary leaves a key minted on one
