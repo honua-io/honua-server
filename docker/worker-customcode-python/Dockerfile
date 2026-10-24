@@ -102,6 +102,7 @@ LABEL org.opencontainers.image.title="honua-worker-customcode-python" \
       security.non-root="true" \
       security.user="1001"
 
+COPY LICENSE THIRD-PARTY-NOTICES.md /usr/share/doc/honua/
 USER 1001:1001
 
 # The harness console script reads CUSTOMCODE_* / HONUA_* from the Batch

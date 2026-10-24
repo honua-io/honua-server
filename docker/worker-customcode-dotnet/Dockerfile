@@ -188,6 +188,7 @@ LABEL org.opencontainers.image.title="honua-worker-customcode-dotnet" \
       security.non-root="true" \
       security.user="1001"
 
+COPY LICENSE THIRD-PARTY-NOTICES.md /usr/share/doc/honua/
 USER 1001:1001
 
 # The harness reads CUSTOMCODE_* / HONUA_* from the Batch container env (or a

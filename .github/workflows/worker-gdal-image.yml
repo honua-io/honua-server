@@ -329,6 +329,29 @@ jobs:
           output: trivy-worker-gdal.sarif
           vuln-type: os,library
 
+      # Report-only license inventory for the worker image. It is built on
+      # ghcr.io/osgeo/gdal:ubuntu-full and knowingly carries LGPL/GPL system libraries
+      # (GEOS, Poppler, MariaDB client, unixODBC, libheif, SpatiaLite); Honua invokes
+      # GDAL as a separate process, and THIRD-PARTY-NOTICES.md records the set and
+      # the source offer. Review the artifact when the base image changes.
+      - name: Report worker image licenses
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: honua-worker-gdal:boundary
+          scanners: license
+          format: table
+          output: trivy-worker-gdal-licenses.txt
+          exit-code: '0'
+
+      - name: Upload worker image license report
+        if: always() && hashFiles('trivy-worker-gdal-licenses.txt') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-worker-gdal-licenses-${{ github.sha }}
+          path: trivy-worker-gdal-licenses.txt
+          retention-days: 30
+
       - name: Record worker report availability
         id: sarif
         if: always() && hashFiles('trivy-worker-gdal.sarif') != ''

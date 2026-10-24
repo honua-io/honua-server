@@ -221,6 +221,19 @@ Honua is a family of repos around this server — the full map is in [Ecosystem]
 - [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) — open gRPC protocol standard the server's `geospatial.v1` surface implements
 - [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) — open geospatial MCP standard behind `/mcp`
 
+## Built on open source
+
+Honua Server stands on the shoulders of the open geospatial community. The pieces we lean on hardest:
+
+- **[GDAL/OGR](https://gdal.org/)**, **[PROJ](https://proj.org/)** and **[GEOS](https://libgeos.org/)** (OSGeo) for raster and vector I/O, coordinate reference systems and geometry predicates, and **[PDAL](https://pdal.io/)** for point clouds.
+- **[NetTopologySuite](https://github.com/NetTopologySuite/NetTopologySuite)** for geometry in .NET, with its GeoJSON, Shapefile and GeoPackage readers.
+- **[PostgreSQL](https://www.postgresql.org/)** and **[PostGIS](https://postgis.net/)** as the primary store, through **[Npgsql](https://www.npgsql.org/)**, plus **[DuckDB](https://duckdb.org/)** and **[Apache Arrow and Parquet](https://arrow.apache.org/)** for cloud-native analytics.
+- **[FlatGeobuf](https://flatgeobuf.org/)**, **[GeoParquet](https://geoparquet.org/)**, **[PMTiles](https://github.com/protomaps/PMTiles)** and the **[STAC](https://stacspec.org/)** and **[OGC API](https://ogcapi.ogc.org/)** specifications for the formats and protocols we serve.
+- **[SkiaSharp](https://github.com/mono/SkiaSharp)** for map rendering, **[MapLibre](https://maplibre.org/)** style compatibility, **[OpenTelemetry](https://opentelemetry.io/)**, **[Serilog](https://serilog.net/)**, **[Polly](https://github.com/App-vNext/Polly)**, **[StackExchange.Redis](https://stackexchange.github.io/StackExchange.Redis/)** and **[YARP](https://microsoft.github.io/reverse-proxy/)** for the service fabric, and **[xUnit](https://xunit.net/)** with **[Testcontainers](https://testcontainers.com/)** for the test suite.
+- Conformance is checked against the OGC **[CITE TEAM Engine](https://cite.opengeospatial.org/teamengine/)** suites, **[stac-api-validator](https://github.com/stac-utils/stac-api-validator)** and **[Schemathesis](https://schemathesis.io/)**.
+
+Thank you to the maintainers. The complete list of distributed third-party components and their licenses is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 ## Feedback
 
 GitHub Issues are the primary feedback loop. Please use the forms so reports include enough detail for triage:

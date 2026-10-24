@@ -264,6 +264,7 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
 # Qualification-only read-only OS/store observer. It refuses execution without
 # an explicit mounted policy; it is invoked by governed ECS Exec, never the job.
 COPY --chown=0:0 --chmod=0444 scripts/qualification/gp_native_observer.py /app/gp_native_observer.py
