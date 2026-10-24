@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:39f32d8a4e64cb0cdecdac5010a58a1a8cb7ca85177e8e012523b6272036fa0b",
+  "bundleDigest": "sha256:72ab8be85b7f02daf7292107dc50299c2a3fcba00a6a6b7cf386cf17e524080b",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1813,7 +1813,7 @@
     {
       "id": "concepts/ecosystem",
       "path": "concepts/ecosystem.md",
-      "documentDigest": "sha256:48f73ac553d6854746e6b9321a75f2f314249fbfc15d0c715dc2edc93cb05b0b",
+      "documentDigest": "sha256:65e866d3246816b14607857fda8b91a2885337afce95ed316083504749d71c89",
       "metadata": {
         "type": "concept",
         "title": "Ecosystem",
@@ -1824,7 +1824,7 @@
     {
       "id": "concepts/editions-and-licensing",
       "path": "concepts/editions-and-licensing.md",
-      "documentDigest": "sha256:58d5f43acb57f582f27e282c018532a873bf2fa4be7ad76ff3020a611b364bd6",
+      "documentDigest": "sha256:748a2481777aab492c9c7effdeef1a17d87a3099e5f4b89f43afe4fe3952f15c",
       "metadata": {
         "type": "concept",
         "title": "Editions and licensing",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:9925d4a22483774f06a9ea4fd6854d11e71f8d0355d85e073f5bc310fac0e669",
+      "documentDigest": "sha256:85008ed752ae371383f5a0c2abf3e19b1c79f0aa9def0c4cb5534e0e1bd847c9",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2145,7 +2145,7 @@
     {
       "id": "guides/deploy/cloud-deployments",
       "path": "guides/deploy/cloud-deployments.md",
-      "documentDigest": "sha256:8e2d0a217a147e699c8dff9ea2d7f46c4b9e9f66598da51452ac23d4f410d4a3",
+      "documentDigest": "sha256:b7b10bedfff2868dd30fb18955e858592b2dbc3626648e9d02d38ac0208c8710",
       "metadata": {
         "type": "runbook",
         "title": "Deploy on AWS and Azure",
@@ -8107,7 +8107,7 @@
     {
       "id": "sdks/README",
       "path": "sdks/README.md",
-      "documentDigest": "sha256:ed4c4ffb2933023f4ab2976bbb7b173cd7a42d7ebcc3b3cb01dbdcd05a1a9345",
+      "documentDigest": "sha256:4f6c4e4de3d51815d4e98128e848b0d1108bc432bd56a0d1a5c3bc0a821084bd",
       "metadata": {
         "type": "index",
         "title": "SDKs",
@@ -16812,7 +16812,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:b7857c2df07cf6b966599ba27838387da91dda48ae66a8f73f00ee0af94e39c4"
+      "contractDigest": "sha256:3e6d3c44fd11c653f7e5ad2e900ae3fb894094f14a7810b3c5b630eb1e9ba1cf"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16876,7 +16876,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:b7857c2df07cf6b966599ba27838387da91dda48ae66a8f73f00ee0af94e39c4"
+      "contractDigest": "sha256:3e6d3c44fd11c653f7e5ad2e900ae3fb894094f14a7810b3c5b630eb1e9ba1cf"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16886,7 +16886,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:b7857c2df07cf6b966599ba27838387da91dda48ae66a8f73f00ee0af94e39c4"
+      "contractDigest": "sha256:3e6d3c44fd11c653f7e5ad2e900ae3fb894094f14a7810b3c5b630eb1e9ba1cf"
     },
     {
       "workflow": "guides/workflows/import-data",
