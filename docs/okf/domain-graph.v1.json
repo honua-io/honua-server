@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:72ab8be85b7f02daf7292107dc50299c2a3fcba00a6a6b7cf386cf17e524080b",
+  "bundleDigest": "sha256:580c9b5a8e277f4c58aed46d6b55dd169c32d0ac1a7b5d47af89502f59ca8327",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5933,7 +5933,7 @@
     {
       "id": "okf/capabilities/discovery.capability-manifest",
       "path": "okf/capabilities/discovery.capability-manifest.md",
-      "documentDigest": "sha256:9855173969d665e4a179ebf2fd5c83963bcbbc2e71d10c5234260b4e900d0d5b",
+      "documentDigest": "sha256:a9785e4ddd59e5b0f7b04e7249ac43443b3c329dfc27a25581b24ff5f3dc783f",
       "metadata": {
         "type": "capability",
         "title": "Capability Manifest",
