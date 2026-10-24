@@ -17,7 +17,7 @@ namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 /// Each read checks the source layer's current export policy, matching the COG
 /// range proxy, and a retired or rebound source is not found.
 /// </summary>
-internal static class PMTilesProxyEndpoints
+internal static partial class PMTilesProxyEndpoints
 {
     private const string PMTilesContentType = "application/vnd.pmtiles";
 
@@ -47,6 +47,7 @@ internal static class PMTilesProxyEndpoints
         HttpContext context,
         [FromServices] PMTilesProxyService service,
         [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(artifactId))
@@ -62,21 +63,34 @@ internal static class PMTilesProxyEndpoints
 
         var metadata = resolution.Metadata;
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var source = PMTilesProxySourceResolver.Resolve(snapshot, metadata.Metadata);
-        if (source is null)
+        var binding = service.BindSource(snapshot, metadata);
+        if (!binding.IsServable)
         {
+            var logger = loggerFactory.CreateLogger(typeof(PMTilesProxyEndpoints));
+            if (binding.Kind == PMTilesSourceBindingKind.UnboundRefused)
+            {
+                LogUnboundArchiveRefused(logger, artifactId);
+            }
+            else
+            {
+                LogSourceNotResolved(logger, artifactId);
+            }
+
             return TypedResults.NotFound();
         }
 
-        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context,
-            source.Resource,
-            AuthorizationOperation.Export,
-            source.Service,
-            cancellationToken).ConfigureAwait(false);
-        if (accessError is not null)
+        if (binding.Source is { } source)
         {
-            return accessError;
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context,
+                source.Resource,
+                AuthorizationOperation.Export,
+                source.Service,
+                cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
         }
 
         var response = context.Response;
@@ -141,4 +155,16 @@ internal static class PMTilesProxyEndpoints
                 return Results.Stream(fullStream, response.ContentType, enableRangeProcessing: true);
         }
     }
+
+    [LoggerMessage(
+        EventId = 6541,
+        Level = LogLevel.Information,
+        Message = "PMTiles archive {ArtifactId} has no source binding (no layerId/serviceId/publicationId metadata) and was not served. Set FileStorage:PMTilesPublish:AllowAnonymousUnboundArchives=true to serve operator-provisioned archives.")]
+    private static partial void LogUnboundArchiveRefused(ILogger logger, string artifactId);
+
+    [LoggerMessage(
+        EventId = 6542,
+        Level = LogLevel.Information,
+        Message = "PMTiles archive {ArtifactId} names a source that does not resolve to one routable publication and was not served.")]
+    private static partial void LogSourceNotResolved(ILogger logger, string artifactId);
 }

@@ -172,6 +172,28 @@ internal static class PMTilesProxySourceResolver
         return matches[0];
     }
 
+    /// <summary>
+    /// True when the object metadata names no source at all: none of the
+    /// binding keys the publish job writes is present. Such an archive was
+    /// placed in the bucket by an operator, not produced by a publish job.
+    /// Duplicate key spellings are not unbound, so they fail closed.
+    /// </summary>
+    internal static bool IsUnbound(IEnumerable<KeyValuePair<string, string>> metadata)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+
+        if (!TryReadMetadata(metadata, out var values))
+        {
+            return false;
+        }
+
+        return !values.ContainsKey(LayerIdMetadataKey) &&
+               !values.ContainsKey(ServiceIdMetadataKey) &&
+               !values.ContainsKey(PublicationIdMetadataKey) &&
+               !values.ContainsKey(ResourceIdMetadataKey) &&
+               !values.ContainsKey(StorageBindingIdMetadataKey);
+    }
+
     internal static ImmutableDictionary<string, string> StampPublishMetadata(
         ImmutableDictionary<string, string> metadata,
         PMTilesPublishedSource? source)

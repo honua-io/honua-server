@@ -8,8 +8,11 @@ using Azure;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.FileStorage;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Tiles;
@@ -416,6 +419,155 @@ public sealed class PMTilesProxyServiceTests
         stubReader.LastLength.Should().Be(4);
     }
 
+    // demo.honua.io on rc.1 (199bce7): every PMTiles archive returned 404.
+    // The objects were uploaded directly to the bucket with the metadata the
+    // pre-rc.1 proxy required (content type + operation=publish) and no
+    // layerId, so the source-policy check added in rc.1 found no source.
+    // These fixtures mirror `aws s3api head-object` for s3://<bucket>/maui-basemap.
+    private const string DemoBucket = "honua-demo-data-585192672263";
+    private const string DemoArtifactId = "maui-basemap";
+    private const string DemoS3ETag = "\"876eee62e70af859b4cec3bf7b8825f9\"";
+
+    [UnitTest]
+    public async Task BindSource_OperatorUploadedS3Archive_DefaultOptions_IsNotServable()
+    {
+        var (sut, _, metadata) = await DemoBasemapAsync(allowUnbound: false);
+
+        // Metadata lookup, the prefix check (KeyPrefix "/" normalises to empty)
+        // and the ETag-conditional S3 read all succeed: none of them is the 404.
+        var range = await sut.ReadRangeAsync(metadata, "bytes=0-16383", CancellationToken.None);
+        range.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+
+        var binding = sut.BindSource(await SnapshotAsync(), metadata);
+
+        binding.Kind.Should().Be(PMTilesSourceBindingKind.UnboundRefused);
+        binding.IsServable.Should().BeFalse("unbound archives stay closed unless the operator opts in");
+    }
+
+    [UnitTest]
+    public async Task BindSource_OperatorUploadedS3Archive_AllowUnbound_ServesRangeWithoutLayerCheck()
+    {
+        var (sut, reader, metadata) = await DemoBasemapAsync(allowUnbound: true);
+
+        var binding = sut.BindSource(await SnapshotAsync(), metadata);
+        binding.Kind.Should().Be(PMTilesSourceBindingKind.OperatorProvisioned);
+        binding.IsServable.Should().BeTrue();
+        binding.Source.Should().BeNull("there is no source layer policy to evaluate");
+
+        var range = await sut.ReadRangeAsync(metadata, "bytes=0-16383", CancellationToken.None);
+
+        range.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+        range.Start.Should().Be(0);
+        range.End.Should().Be(16383);
+        range.TotalSize.Should().Be(7_089_102);
+        range.Payload!.Take(7).Should().Equal("PMTiles"u8.ToArray());
+        reader.LastBucket.Should().Be(DemoBucket);
+        reader.LastKey.Should().Be(DemoArtifactId);
+        reader.LastExpectedETag.Should().Be(DemoS3ETag, "the S3 ETag is passed through quoted, as S3 returns it");
+    }
+
+    [UnitTest]
+    public async Task BindSource_UnresolvableBinding_AllowUnbound_StaysNotFound()
+    {
+        // The opt-in covers archives that name no source. An archive that names
+        // a retired, rebound or unknown source is still not served.
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(
+            new byte[16],
+            metadata: ImmutableDictionary<string, string>.Empty
+                .Add("operation", "publish")
+                .Add("layerId", "0")
+                .Add("publicationId", "pub-retired"));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions
+        {
+            PMTilesPublish = new PMTilesPublishOptions { AllowAnonymousUnboundArchives = true }
+        }));
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+
+        var binding = sut.BindSource(await SnapshotAsync(), metadata);
+
+        binding.Kind.Should().Be(PMTilesSourceBindingKind.SourceNotResolved);
+        binding.IsServable.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task BindSource_PublishedLayerArchive_BindsSourceForPolicyCheck()
+    {
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(
+            new byte[16],
+            metadata: ImmutableDictionary<string, string>.Empty
+                .Add("operation", "publish")
+                .Add("layerId", "0"));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions
+        {
+            PMTilesPublish = new PMTilesPublishOptions { AllowAnonymousUnboundArchives = true }
+        }));
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+
+        var binding = sut.BindSource(await SnapshotAsync(), metadata);
+
+        binding.Kind.Should().Be(PMTilesSourceBindingKind.Bound);
+        binding.Source!.Publication.Metadata.Id.Should().Be("pub-parcels");
+    }
+
+    [UnitTest]
+    public void IsUnbound_DistinguishesOperatorArchivesFromBoundOnes()
+    {
+        PMTilesProxySourceResolver.IsUnbound(new Dictionary<string, string> { ["operation"] = "publish" })
+            .Should().BeTrue();
+        PMTilesProxySourceResolver.IsUnbound(new Dictionary<string, string> { ["operation"] = "publish", ["layerid"] = "3" })
+            .Should().BeFalse("S3 lowercases user-metadata keys");
+        PMTilesProxySourceResolver.IsUnbound(new Dictionary<string, string> { ["operation"] = "publish", ["serviceId"] = "parcels" })
+            .Should().BeFalse();
+        PMTilesProxySourceResolver.IsUnbound(
+            [
+                new KeyValuePair<string, string>("operation", "publish"),
+                new KeyValuePair<string, string>("OPERATION", "publish"),
+            ])
+            .Should().BeFalse("duplicate key spellings fail closed");
+    }
+
+    private static async Task<(PMTilesProxyService Service, RecordingRangeReader Reader, CloudFile Metadata)> DemoBasemapAsync(
+        bool allowUnbound)
+    {
+        var bytes = new byte[7_089_102];
+        "PMTiles"u8.CopyTo(bytes);
+        bytes[7] = 3;
+        var stub = new TestCloudStorage();
+        stub.AddFile(
+            bytes,
+            provider: CloudStorageProvider.AwsS3,
+            metadata: ImmutableDictionary<string, string>.Empty.Add("operation", "publish"),
+            storagePath: DemoArtifactId,
+            fileId: DemoArtifactId,
+            etag: DemoS3ETag);
+        var reader = new RecordingRangeReader(CloudStorageProvider.AwsS3) { Content = bytes };
+        var options = Options.Create(new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            AwsS3 = new AwsS3Options { BucketName = DemoBucket, Region = "us-west-2" },
+            PMTilesPublish = new PMTilesPublishOptions
+            {
+                KeyPrefix = "/",
+                AllowAnonymousUnboundArchives = allowUnbound
+            }
+        });
+        var sut = new PMTilesProxyService(stub, [reader], TestClassifiers(), options);
+
+        var resolution = await sut.ResolveAsync(DemoArtifactId, CancellationToken.None);
+        resolution.Exists.Should().BeTrue("the object passes the content-type, operation tag and prefix checks");
+        return (sut, reader, resolution.Metadata!);
+    }
+
+    private static async Task<MetadataV2GraphSnapshot> SnapshotAsync()
+        => await new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder()
+            .AddResource("res-parcels", "parcels")
+            .AddStorageBinding("binding-parcels", "res-parcels", "features", storageLayerId: 0)
+            .AddService("svc-parcels", "parcels")
+            .AddPublication("pub-parcels", "svc-parcels", "res-parcels", layerIndex: 0)
+            .Build()).GetCurrentAsync();
+
     private sealed class TestCloudStorage : ICloudFileStorage
     {
         private static readonly ImmutableDictionary<string, string> DefaultPublishMetadata =
@@ -431,9 +583,11 @@ public sealed class PMTilesProxyServiceTests
             CloudStorageProvider provider = CloudStorageProvider.Local,
             string contentType = "application/vnd.pmtiles",
             ImmutableDictionary<string, string>? metadata = null,
-            string? storagePath = null)
+            string? storagePath = null,
+            string? fileId = null,
+            string? etag = null)
         {
-            var fileId = Guid.NewGuid().ToString("N");
+            fileId ??= Guid.NewGuid().ToString("N");
             _files[fileId] = (new CloudFile
             {
                 FileId = fileId,
@@ -443,7 +597,8 @@ public sealed class PMTilesProxyServiceTests
                 SizeBytes = bytes.Length,
                 UploadedAt = DateTimeOffset.UtcNow,
                 Metadata = metadata ?? DefaultPublishMetadata,
-                Provider = provider
+                Provider = provider,
+                ETag = etag
             }, bytes);
             return fileId;
         }
@@ -518,6 +673,8 @@ public sealed class PMTilesProxyServiceTests
         public string? LastKey { get; private set; }
         public long LastOffset { get; private set; }
         public int LastLength { get; private set; }
+        public string? LastExpectedETag { get; private set; }
+        public byte[]? Content { get; init; }
 
         public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
         {
@@ -525,8 +682,19 @@ public sealed class PMTilesProxyServiceTests
             LastKey = key;
             LastOffset = offset;
             LastLength = length;
-            return Task.FromResult(new byte[length]);
+            return Task.FromResult(Slice(offset, length));
         }
+
+        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, string expectedETag, CancellationToken cancellationToken = default)
+        {
+            LastExpectedETag = expectedETag;
+            return ReadRangeAsync(bucket, key, offset, length, cancellationToken);
+        }
+
+        private byte[] Slice(long offset, int length)
+            => Content is null
+                ? new byte[length]
+                : Content.AsSpan((int)offset, Math.Min(length, Content.Length - (int)offset)).ToArray();
 
         // Ownership transfer: the returned stream is owned and disposed by the caller,
         // matching the real range-read contract.

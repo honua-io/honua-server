@@ -4,6 +4,7 @@
 using System.Net.Http.Headers;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
@@ -82,6 +83,35 @@ internal sealed class PMTilesProxyService
         }
 
         return PMTilesProxyResolution.Found(metadata);
+    }
+
+    /// <summary>
+    /// Binds a resolved archive to the source the proxy authorizes it against.
+    /// A bound archive is checked against its source layer's policy by the
+    /// caller. An unbound archive is served without a layer check only when
+    /// <see cref="PMTilesPublishOptions.AllowAnonymousUnboundArchives"/> is
+    /// set. Anything else, including a binding that no longer resolves, is
+    /// not found.
+    /// </summary>
+    public PMTilesSourceBinding BindSource(MetadataV2GraphSnapshot snapshot, CloudFile metadata)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(metadata);
+
+        var source = PMTilesProxySourceResolver.Resolve(snapshot, metadata.Metadata);
+        if (source is not null)
+        {
+            return PMTilesSourceBinding.Bound(source);
+        }
+
+        if (!PMTilesProxySourceResolver.IsUnbound(metadata.Metadata))
+        {
+            return PMTilesSourceBinding.NotFound(PMTilesSourceBindingKind.SourceNotResolved);
+        }
+
+        return _storageOptions.PMTilesPublish?.AllowAnonymousUnboundArchives == true
+            ? PMTilesSourceBinding.OperatorProvisioned
+            : PMTilesSourceBinding.NotFound(PMTilesSourceBindingKind.UnboundRefused);
     }
 
     private bool IsPublishedPMTilesArtifact(CloudFile metadata)
@@ -381,6 +411,32 @@ internal sealed class PMTilesProxyService
 
         return start <= end && end < totalSize;
     }
+}
+
+internal enum PMTilesSourceBindingKind
+{
+    /// <summary>The archive names a source that resolves in the current graph.</summary>
+    Bound,
+
+    /// <summary>The archive names no source and unbound archives are allowed.</summary>
+    OperatorProvisioned,
+
+    /// <summary>The archive names a source that is retired, rebound, ambiguous or unknown.</summary>
+    SourceNotResolved,
+
+    /// <summary>The archive names no source and unbound archives are not allowed.</summary>
+    UnboundRefused
+}
+
+internal readonly record struct PMTilesSourceBinding(PMTilesSourceBindingKind Kind, PMTilesPublishedSource? Source)
+{
+    public bool IsServable => Kind is PMTilesSourceBindingKind.Bound or PMTilesSourceBindingKind.OperatorProvisioned;
+
+    public static PMTilesSourceBinding OperatorProvisioned => new(PMTilesSourceBindingKind.OperatorProvisioned, null);
+
+    public static PMTilesSourceBinding Bound(PMTilesPublishedSource source) => new(PMTilesSourceBindingKind.Bound, source);
+
+    public static PMTilesSourceBinding NotFound(PMTilesSourceBindingKind kind) => new(kind, null);
 }
 
 internal readonly record struct PMTilesProxyResolution(bool Exists, CloudFile? Metadata)
