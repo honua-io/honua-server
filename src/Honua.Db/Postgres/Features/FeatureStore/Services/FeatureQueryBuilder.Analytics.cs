@@ -34,16 +34,19 @@ internal sealed partial class FeatureQueryBuilder
     /// </para>
     /// <para>
     /// When the layer SRID is geographic the geometry is projected to an azimuthal
-    /// equidistant plane (WGS 84, metres) centred on the request envelope, or on
-    /// the centroid of the filtered extent when the request has no envelope.
-    /// <c>eps</c> is then ground metres at that centre. Scale error grows with
-    /// distance from the centre. An envelope wider than 180° uses the centre of
-    /// the complementary arc so a dateline-crossing window is not centred on the
-    /// long way around. A filtered extent with no request envelope uses the box
-    /// centroid, which is the long-way centre when the rows themselves straddle
-    /// the antimeridian. <c>ST_ClusterDBSCAN</c> cannot take a geography distance.
-    /// Projected layers keep the Web Mercator planar path, including foot CRS
-    /// values converted by <c>ST_Transform</c> to EPSG:3857.
+    /// equidistant plane (WGS 84, metres). <c>eps</c> is ground metres in that
+    /// plane. A request envelope centres the plane, and a span wider than 180° uses
+    /// the complementary short arc. With no envelope, the largest longitude gap
+    /// picks the same short arc, so rows at 179° and -179° are not centred on the
+    /// long-way box. One plane is used only while the extent corner stays inside
+    /// <see cref="AzimuthalGroundPlane.SinglePlaneMaxCornerMetres"/> (under 1%
+    /// tangential scale). Wider extents are split into
+    /// <see cref="AzimuthalGroundPlane.PlaneTileMetres"/> planes. DBSCAN overlaps
+    /// those planes by <c>eps</c> and merges labels that share a feature, so a
+    /// pair closer than <c>eps</c> is not cut by a tile edge. K-Means keeps one
+    /// global <c>k</c> on the short-arc centre. <c>ST_ClusterDBSCAN</c> cannot take a geography distance.
+    /// Projected layers, including feet and UTM, keep the Web Mercator path
+    /// through <c>ST_Transform</c> to EPSG:3857.
     /// </para>
     /// <para>
     /// The CTE applies <c>LIMIT (maxInputFeatures + 1)</c> so the handler can
@@ -66,21 +69,30 @@ internal sealed partial class FeatureQueryBuilder
             var geometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
             var geographic = IsGeographicLayer(query.SpatialReferenceSrid);
+            var adaptiveGround = geographic
+                && !TryUseFixedGroundPlane(query, query.SpatialReferenceSrid!.Value, out _, out _);
             var metersGeometry = geographic
                 ? "geom_m"
                 : EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
             // Batch joins must not reorder the cluster's input. Both PostGIS
             // algorithms operate over the full partition, including later rows.
-            var clusterWindow = geographic
-                ? "OVER (ORDER BY source_ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
-                : "OVER ()";
+            // DBSCAN on a split extent clusters inside each overlapped tile, then
+            // merges labels. K-Means always sees one partition so k stays global.
+            var dbscanTiles = adaptiveGround && clusterQuery.Algorithm == ClusterAlgorithm.DbScan;
+            var clusterWindow = dbscanTiles
+                ? "OVER (PARTITION BY plane_id ORDER BY source_ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+                : geographic
+                    ? "OVER (ORDER BY source_ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+                    : "OVER ()";
 
+            string? dbscanEpsParam = null;
             string clusterExpression;
             if (clusterQuery.Algorithm == ClusterAlgorithm.DbScan)
             {
                 var epsValue = _geometryProcessor.ConvertDistanceToMeters(
                     clusterQuery.Eps ?? 0d, clusterQuery.DistanceUnit);
                 var epsParam = $"${paramIndex++}";
+                dbscanEpsParam = epsParam;
                 parameters.Add(epsValue);
 
                 var minPointsParam = $"${paramIndex++}";
@@ -110,7 +122,40 @@ internal sealed partial class FeatureQueryBuilder
             var maxInputParam = $"${paramIndex++}";
             parameters.Add(clusterQuery.MaxInputFeatures + 1);
 
-            if (geographic)
+            if (adaptiveGround)
+            {
+                // No usable single-plane envelope: centre on the short arc of the
+                // filtered rows and tile when one plane would exceed the scale limit.
+                sql.Append(dbscanTiles ? "WITH RECURSIVE filtered AS (SELECT " : "WITH filtered AS (SELECT ");
+                AppendClusterSourceColumns(sql, attributesSource, geometryOperand, trailingComma: false);
+                AppendClusterSourceFrom(sql, query, geometryStorageType, ref paramIndex, parameters, maxInputParam);
+                sql.Append(',');
+                AppendGroundPlaneCtes(sql, "geom");
+                if (dbscanTiles)
+                {
+                    AppendDbscanTileMembership(sql, dbscanEpsParam ?? "$2");
+                    AppendGeographicPlaneProjectionCtes(sql, "tile_membership");
+                    AppendDbscanLabelMerge(sql, clusterExpression);
+                }
+                else
+                {
+                    sql.Append("""
+                        , kmeans_input AS (
+                            SELECT objectid, attributes, geom, false AS split,
+                                0::bigint AS plane_id,
+                                COALESCE(center_lon_single, 0) AS center_lon,
+                                LEAST(GREATEST(COALESCE(mid_lat, 0), -90.0), 90.0) AS center_lat
+                            FROM grounded
+                        )
+                        """);
+                    AppendGeographicPlaneProjectionCtes(sql, "kmeans_input");
+                    sql.Append(", src AS (SELECT ");
+                    sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+                    sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, geom, ");
+                    sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id FROM projected)");
+                }
+            }
+            else if (geographic)
             {
                 // Filter first so the azimuthal centre can be the extent of the
                 // same rows the cluster sees, then project those rows.
@@ -186,9 +231,10 @@ internal sealed partial class FeatureQueryBuilder
     /// Buffers each input feature by <see cref="BufferAggregateQuery.Distance"/>
     /// (converted to meters), then either <c>ST_Union</c>s the buffered geometries
     /// per group (when <see cref="BufferAggregateQuery.Dissolve"/> is true) or
-    /// returns the per-row buffers. The buffer is computed in Web Mercator and
-    /// the resulting geometry is emitted as GeoJSON in WGS 84 to match the rest
-    /// of the analytics surface.
+    /// returns the per-row buffers. A geographic layer buffers in the same
+    /// ground-metre azimuthal plane as clustering, then transforms the result
+    /// back to WGS 84 GeoJSON. Projected layers, including feet and UTM, buffer
+    /// after <c>ST_Transform</c> to EPSG:3857.
     /// </para>
     /// <para>
     /// The input cap is applied inside a <c>src</c> CTE so <c>ST_Buffer</c> /
@@ -225,18 +271,64 @@ internal sealed partial class FeatureQueryBuilder
 
             var geometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
-            var metersGeometry = EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
+            var geographic = IsGeographicLayer(query.SpatialReferenceSrid);
+            var adaptiveGround = geographic
+                && !TryUseFixedGroundPlane(query, query.SpatialReferenceSrid!.Value, out _, out _);
+            var metersGeometry = geographic
+                ? null
+                : EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
 
             var bufferedGeometry = $"ST_Buffer(geom_m, {distanceParam})";
+            string bufferGeoJson;
+            if (adaptiveGround)
+            {
+                bufferGeoJson = bufferQuery.Dissolve
+                    ? $"ST_AsGeoJSON(ST_Union(ST_SetSRID(ST_TransformPipeline({bufferedGeometry}, inv), 4326)))"
+                    : $"ST_AsGeoJSON(ST_SetSRID(ST_TransformPipeline({bufferedGeometry}, inv), 4326))";
+            }
+            else if (geographic)
+            {
+                var inverse = BuildAeqdPipelineSql(
+                    query, query.SpatialReferenceSrid!.Value, "filtered", "geom", inverse: true);
+                bufferGeoJson = bufferQuery.Dissolve
+                    ? $"ST_AsGeoJSON(ST_SetSRID(ST_TransformPipeline(ST_Union({bufferedGeometry}), {inverse}), 4326))"
+                    : $"ST_AsGeoJSON(ST_SetSRID(ST_TransformPipeline({bufferedGeometry}, {inverse}), 4326))";
+            }
+            else
+            {
+                bufferGeoJson = bufferQuery.Dissolve
+                    ? $"ST_AsGeoJSON(ST_Transform(ST_Union({bufferedGeometry}), 4326))"
+                    : $"ST_AsGeoJSON(ST_Transform({bufferedGeometry}, 4326))";
+            }
 
-            // Source CTE — decode the meters geometry once and bound the input set
+            // Source CTE — decode the analysis geometry once and bound the input set
             // BEFORE the buffer/union aggregation. objectid and attributes are carried
             // forward so the outer query can reference them through AppendGroupBy* /
             // AppendClusterStatisticsColumns without hitting the base table again.
-            sql.Append("WITH src AS (SELECT ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{metersGeometry} AS geom_m");
+            if (adaptiveGround)
+            {
+                sql.Append("WITH filtered AS (SELECT ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{geometryOperand} AS geom");
+            }
+            else if (geographic)
+            {
+                var forward = BuildAeqdPipelineSql(
+                    query, query.SpatialReferenceSrid!.Value, "filtered", "geom", inverse: false);
+                sql.Append("WITH src AS (SELECT ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"ST_TransformPipeline({geometryOperand}, {forward}) AS geom_m");
+            }
+            else
+            {
+                sql.Append("WITH src AS (SELECT ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{metersGeometry} AS geom_m");
+            }
+
             sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
             sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");
             sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.GeometryColumn} IS NOT NULL");
@@ -251,6 +343,17 @@ internal sealed partial class FeatureQueryBuilder
             var maxInputParam = $"${paramIndex}";
             parameters.Add(bufferQuery.MaxInputFeatures + 1);
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam})");
+            if (adaptiveGround)
+            {
+                var forward = AeqdForwardFromColumns("center_lat", "center_lon");
+                var inverse = AeqdInverseFromColumns("center_lat", "center_lon");
+                sql.Append(',');
+                AppendGroundPlaneCtes(sql, "geom");
+                sql.Append(", src AS (SELECT ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
+                sql.Append(CultureInfo.InvariantCulture, $"ST_TransformPipeline(geom, {forward}) AS geom_m, {inverse} AS inv FROM grounded)");
+            }
 
             sql.Append(" SELECT ");
 
@@ -271,15 +374,13 @@ internal sealed partial class FeatureQueryBuilder
             if (bufferQuery.Dissolve)
             {
                 sql.Append("COUNT(*)::bigint AS \"featureCount\", ");
-                sql.Append(CultureInfo.InvariantCulture,
-                    $"ST_AsGeoJSON(ST_Transform(ST_Union({bufferedGeometry}), 4326)) AS \"bufferGeometry\"");
+                sql.Append(CultureInfo.InvariantCulture, $"{bufferGeoJson} AS \"bufferGeometry\"");
             }
             else
             {
                 sql.Append(CultureInfo.InvariantCulture,
                     $"{DatabaseSchema.ObjectIdColumn} AS \"objectId\", ");
-                sql.Append(CultureInfo.InvariantCulture,
-                    $"ST_AsGeoJSON(ST_Transform({bufferedGeometry}, 4326)) AS \"bufferGeometry\"");
+                sql.Append(CultureInfo.InvariantCulture, $"{bufferGeoJson} AS \"bufferGeometry\"");
             }
 
             AppendClusterStatisticsColumns(sql, bufferQuery.OutStatistics);
@@ -302,7 +403,9 @@ internal sealed partial class FeatureQueryBuilder
 
     /// <summary>
     /// Builds a density (heatmap) query that bins the filtered subset into a
-    /// hex or square grid in Web Mercator and returns one row per occupied cell.
+    /// hex or square grid and returns one row per occupied cell. Geographic
+    /// layers bin in ground metres on the same azimuthal planes as clustering.
+    /// Projected layers, including feet and UTM, bin in Web Mercator.
     /// </summary>
     /// <remarks>
     /// Uses PostGIS <c>ST_HexagonGrid</c> / <c>ST_SquareGrid</c> against the
@@ -330,6 +433,8 @@ internal sealed partial class FeatureQueryBuilder
             var geometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
             var geographic = IsGeographicLayer(query.SpatialReferenceSrid);
+            var adaptiveGround = geographic
+                && !TryUseFixedGroundPlane(query, query.SpatialReferenceSrid!.Value, out _, out _);
             var pointGeometry = geographic
                 ? $"ST_Centroid({geometryOperand})"
                 : $"ST_Centroid({EnsureMeters(geometryOperand, query.SpatialReferenceSrid)})";
@@ -370,7 +475,26 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam}),");
 
             string cellGeometrySql;
-            if (geographic)
+            if (adaptiveGround)
+            {
+                var forward = AeqdForwardFromColumns("center_lat", "center_lon");
+                var inverse = AeqdInverseFromColumns("c.center_lat", "c.center_lon");
+                AppendGroundPlaneCtes(sql, "pt_geo");
+                sql.Append(", src AS (SELECT input_id, plane_id, center_lat, center_lon, ST_TransformPipeline(pt_geo, ");
+                sql.Append(forward);
+                sql.Append(") AS pt");
+                if (weightExpression != null)
+                {
+                    sql.Append(", weight");
+                }
+
+                sql.Append(" FROM grounded),");
+                // Each plane has its own metre grid. Stamp SRID 0 so the grid matches
+                // the projected points; cells are transformed back with that plane's centre.
+                sql.Append(" bounds AS (SELECT plane_id, min(center_lat) AS center_lat, min(center_lon) AS center_lon, ST_SetSRID(ST_Extent(pt)::geometry, 0) AS extent FROM src GROUP BY plane_id),");
+                cellGeometrySql = $"ST_TransformPipeline(c.cell, {inverse})";
+            }
+            else if (geographic)
             {
                 var forward = BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "pt_geo", inverse: false);
                 var inverse = BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "pt_geo", inverse: true);
@@ -401,19 +525,36 @@ internal sealed partial class FeatureQueryBuilder
                 : "ST_SquareGrid";
 
             // Cells CTE — generate the grid only over the data envelope.
-            sql.Append(CultureInfo.InvariantCulture,
-                $" cells AS (SELECT (g).geom AS cell, (g).i, (g).j FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g),");
-
             // Intersections include both sides of an edge (and every cell at a
             // vertex). Assign each input row once, using stable grid coordinates
-            // rather than deduplicating centroids or their weights.
-            sql.Append(" assigned AS (SELECT DISTINCT ON (s.input_id) s.input_id, c.cell");
-            if (weightExpression != null)
+            // rather than deduplicating centroids or their weights. Plane-local
+            // grids must not claim a point that was projected into another plane.
+            if (adaptiveGround)
             {
-                sql.Append(", s.weight");
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" cells AS (SELECT b.plane_id, b.center_lat, b.center_lon, (g).geom AS cell, (g).i, (g).j FROM bounds b, LATERAL {gridFunction}({cellSizeParam}, b.extent::geometry) g),");
+                sql.Append(" assigned AS (SELECT DISTINCT ON (s.input_id) s.input_id, c.cell, c.center_lat, c.center_lon");
+                if (weightExpression != null)
+                {
+                    sql.Append(", s.weight");
+                }
+
+                sql.Append(" FROM cells c JOIN src s ON s.plane_id = c.plane_id AND ST_Intersects(c.cell, s.pt)");
+                sql.Append(" ORDER BY s.input_id, c.i, c.j)");
             }
-            sql.Append(" FROM cells c JOIN src s ON ST_Intersects(c.cell, s.pt)");
-            sql.Append(" ORDER BY s.input_id, c.i, c.j)");
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" cells AS (SELECT (g).geom AS cell, (g).i, (g).j FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g),");
+                sql.Append(" assigned AS (SELECT DISTINCT ON (s.input_id) s.input_id, c.cell");
+                if (weightExpression != null)
+                {
+                    sql.Append(", s.weight");
+                }
+
+                sql.Append(" FROM cells c JOIN src s ON ST_Intersects(c.cell, s.pt)");
+                sql.Append(" ORDER BY s.input_id, c.i, c.j)");
+            }
 
             // Outer query — count or weighted sum per cell, emit GeoJSON in WGS 84.
             // _inputCount carries the actual src CTE row count (capped at
@@ -429,7 +570,7 @@ internal sealed partial class FeatureQueryBuilder
             }
             sql.Append(CultureInfo.InvariantCulture, $", ST_AsGeoJSON({cellGeometrySql}) AS \"cellGeometry\"");
             sql.Append(" FROM assigned c");
-            sql.Append(" GROUP BY c.cell");
+            sql.Append(adaptiveGround ? " GROUP BY c.cell, c.center_lat, c.center_lon" : " GROUP BY c.cell");
 
             // ORDER BY count desc, then LIMIT max+1 so the handler detects overflow.
             sql.Append(" ORDER BY \"featureCount\" DESC");
@@ -446,11 +587,11 @@ internal sealed partial class FeatureQueryBuilder
     }
 
     /// <summary>
-    /// Ensures a geometry expression is in a meters CRS (Web Mercator / 3857)
-    /// for distance-based PostGIS functions like <c>ST_ClusterDBSCAN</c> and
-    /// <c>ST_Buffer</c>. When the layer SRID is null (unknown) the geometry is
-    /// assumed to already be in WGS 84 and is transformed; when it is already
-    /// 3857 the call is a no-op.
+    /// Projects a non-geographic geometry to Web Mercator metres for distance
+    /// functions. Geographic cluster, density and buffer SQL do not use this;
+    /// they measure on an azimuthal plane. Feet and UTM layers still convert
+    /// through EPSG:3857. A null SRID is treated as already WGS 84 and transformed.
+    /// When the layer is already EPSG:3857 the call is a no-op.
     /// </summary>
     private static string EnsureMeters(string geometryOperand, int? sourceSrid)
     {
