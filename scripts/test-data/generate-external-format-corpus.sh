@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright (c) Honua. All rights reserved.
-# Licensed under the Elastic License 2.0. See LICENSE in the project root.
+# Copyright (c) Honua Geo Inc. All rights reserved.
+# Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 #
 # Regenerates tests/fixtures/external-format-corpus/v1 — the format fixtures that Honua did
 # NOT author (honua-server#4419). Every binary in that corpus is written by GDAL/OGR, an

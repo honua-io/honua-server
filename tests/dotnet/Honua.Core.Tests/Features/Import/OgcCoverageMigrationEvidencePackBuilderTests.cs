@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 #pragma warning disable CA1305 // DateTimeOffset.Parse with string literal — fixture data is invariant, locale-sensitivity is not a concern for test inputs.
 
 using System.Text.Json;

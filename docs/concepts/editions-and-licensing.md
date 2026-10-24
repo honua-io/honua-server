@@ -1,11 +1,15 @@
 ---
 type: concept
 title: "Editions and licensing"
-description: "Honua's source is available under the Elastic License 2.0 — free to use, deploy, and modify."
+description: "Honua's source is available under the Fair Core License (FCL-1.0-ALv2) — free to use, deploy, and modify, converting to Apache-2.0 two years after each release."
 ---
 # Editions and licensing
 
-Honua's source is available under the [Elastic License 2.0](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify.
+Honua's source is available under the [Fair Core License, Version 1.0, ALv2 Future License](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify.
+
+## Source license
+
+Honua Server and Honua Collect are licensed under the Fair Core License, Version 1.0, ALv2 Future License (FCL-1.0-ALv2), a [Fair Source](https://fair.io/) license. It permits use, modification and redistribution for any purpose other than a Competing Use (making the software available to others in a commercial product or service that substitutes for it), forbids circumventing or removing the license-key functionality, and grants each version an additional Apache License 2.0 license two years after it is made available. Internal use, including air-gapped self-hosting, non-commercial education and research, and professional services delivered to a licensee are expressly permitted. Previously published versions remain under the Elastic License 2.0. The repository `NOTICE` file states what counts as license-key functionality. The source license and the edition entitlements below are separate: the license governs use of the source code, entitlements govern which server capabilities are active.
 
 ## 2026.1: licensing disabled
 

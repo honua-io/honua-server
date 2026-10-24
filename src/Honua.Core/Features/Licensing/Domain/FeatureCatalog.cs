@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 namespace Honua.Core.Features.Licensing.Domain;
 
@@ -94,7 +94,7 @@ public static class FeatureCatalog
         /// <summary>
         /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
         /// licensee. These are not part of the customer-deployable product surface and have no
-        /// path to general availability as a customer feature: the Elastic License 2.0 prohibits
+        /// path to general availability as a customer feature: the Fair Core License prohibits
         /// providing Honua to third parties as a hosted or managed service, so a licensee can
         /// never be the party operating them. Not Preview - Preview implies a GA path, and there
         /// is none. Never published as customer documentation.
@@ -586,6 +586,6 @@ public static class FeatureCatalog
 
         // Internal — Honua's own hosted operation; not offered to licensees
         new(MultiTenancyKey, "Multi-Tenant Operation", Categories.Internal,
-            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless."),
+            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Fair Core License prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless."),
     ];
 }

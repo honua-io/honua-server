@@ -21,7 +21,11 @@
     <IsPackable>true</IsPackable>
     <PackageId>Honua.CustomCode.Sdk</PackageId>
     <Description>Honua custom-code GP .NET SDK — the IGeoprocessingTool contract a user tool implements.</Description>
-    <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\..\..\LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

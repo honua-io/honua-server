@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -240,7 +240,7 @@ public sealed class CapabilityKeyDriftTests
         var vocabulary = CapabilityKeyCatalog.All.Single(capability => capability.Key == "admin.multi-tenancy");
         // `internal`, not `preview`: Preview promises a GA path and this has none.
         // Multi-tenant operation supports Honua's own hosted operation and is not
-        // offered to licensees - ELv2 prohibits providing Honua to third parties as
+        // offered to licensees - the FCL prohibits providing Honua to third parties as
         // a hosted or managed service, so a licensee can never operate it.
         vocabulary.Status.Should().Be("internal");
         vocabulary.Description.Should()

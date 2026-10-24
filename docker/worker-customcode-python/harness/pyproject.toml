@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Honua custom-code GP harness — runs user tools at a pinned git SHA under a scoped Honua SDK client inside a per-job Batch container."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Elastic-2.0" }
+license = { text = "FCL-1.0-ALv2" }
 authors = [{ name = "Honua", email = "mike@honua.io" }]
 
 # The harness itself is dependency-light: git/pip are invoked as subprocesses,

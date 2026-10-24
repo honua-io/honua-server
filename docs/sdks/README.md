@@ -17,7 +17,7 @@ The three first-party server SDKs are generated and tested against the same admi
 | **Python** | `honua-sdk` (PyPI) | 0.1.18 | Python ≥ 3.11 | [Python getting started](python/python-getting-started.md) |
 | **JavaScript / TypeScript** | `@honua/sdk-js` (npm) | 0.2.6 | Node ≥ 20 | [JavaScript getting started](javascript/javascript-getting-started.md) |
 | Mobile controls (.NET MAUI) | [honua-mobile](https://github.com/honua-io/honua-mobile) | Experimental (Apache-2.0) | .NET MAUI | Reusable SDK and map/control foundation; repo README |
-| Field collection app | [honua-collect](https://github.com/honua-io/honua-collect) | Experimental (ELv2) | .NET MAUI | Full end-user app built on `honua-mobile`; repo README |
+| Field collection app | [honua-collect](https://github.com/honua-io/honua-collect) | Experimental (FCL-1.0-ALv2) | .NET MAUI | Full end-user app built on `honua-mobile`; repo README |
 
 The Python and JavaScript lines are still 0.x. Pin exact versions and validate against your target server before broad rollout. All three SDKs expose a runtime capability handshake (`GET /api/v1/admin/capabilities`) so clients negotiate features instead of inferring them from version numbers.
 

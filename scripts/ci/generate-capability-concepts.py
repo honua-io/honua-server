@@ -91,7 +91,7 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
 # proving-test count reads as an available feature whatever its prose says.
 #
 # `internal` marks capabilities that support Honua's own hosted operation and are
-# not offered to licensees - the Elastic License 2.0 prohibits providing Honua to
+# not offered to licensees - the Fair Core License prohibits providing Honua to
 # third parties as a hosted or managed service, so a licensee can never be the
 # party operating them, and there is no GA path to document.
 #
@@ -164,7 +164,7 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
     description = " ".join((entry.get("description") or "").split())
     # A capability description is a licensing and safety statement, not a
     # summary: it is where "Preview status never lowers the security severity of
-    # cross-tenant disclosure" and "the Elastic License 2.0 prohibits providing
+    # cross-tenant disclosure" and "the Fair Core License prohibits providing
     # Honua to third parties as a hosted or managed service" are said. Emitting
     # anything other than the registry's exact words - shortened, reflowed,
     # elided - drops the caveat and keeps the opening clause that reads like a

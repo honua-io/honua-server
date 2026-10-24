@@ -41,7 +41,7 @@ We’re building an AI GIS expert aligned to Honua ops: automated guidance, best
 
 ## Licensing and tradeoffs
 
-Honua uses the ELv2 license for the core. We follow an open-core model: the core remains accessible and self-hostable, while enterprise licensing funds the advanced capabilities and support that larger organizations expect.
+Honua uses the Fair Core License (FCL-1.0-ALv2) for the core. We follow an open-core model: the core remains accessible and self-hostable, while enterprise licensing funds the advanced capabilities and support that larger organizations expect.
 
 We are explicit about the tradeoff. The enterprise tier will prioritize features aligned with EnterpriseReady patterns (SSO, RBAC, audit logs, deployment options, change management, integrations, advanced reporting, and SLA/support), while the core stays fast, compatible, and transparent.
 

@@ -62,7 +62,7 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [Style and labels](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/style.md): Drawing rules for a layer or composition, separate from its underlying features.
 - [Task and operation](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/task.md): The user's desired work, distinguished from a callable process and a particular job execution.
 - [Ecosystem](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/ecosystem.md): Honua is developed as a family of repositories around this server.
-- [Editions and licensing](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/editions-and-licensing.md): Honua's source is available under the Elastic License 2.0 — free to use, deploy, and modify.
+- [Editions and licensing](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/editions-and-licensing.md): Honua's source is available under the Fair Core License (FCL-1.0-ALv2) — free to use, deploy, and modify, converting to Apache-2.0 two years after each release.
 
 ## SDKs
 

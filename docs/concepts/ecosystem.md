@@ -18,7 +18,7 @@ Honua is developed as a family of repositories around this server. This page map
 | [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) | .NET SDKs (`Honua.Sdk.*` packages, admin + gRPC clients) |
 | [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) | Python SDK for the control plane and data APIs |
 | [honua-mobile](https://github.com/honua-io/honua-mobile) | **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0) |
-| [honua-collect](https://github.com/honua-io/honua-collect) | **Experimental** full end-user field-collection app built on `honua-mobile` (ELv2) |
+| [honua-collect](https://github.com/honua-io/honua-collect) | **Experimental** full end-user field-collection app built on `honua-mobile` (FCL-1.0-ALv2) |
 | [honua-studio](https://github.com/honua-io/honua-studio) | Realtime conversational Studio (Preview): the `<honua-studio-app>` element and shared typed map, app, and dashboard composition - see [Honua Studio](../studio/README.md) |
 | [honua-helm](https://github.com/honua-io/honua-helm) | Helm chart for Kubernetes deployment |
 | [honua-iac](https://github.com/honua-io/honua-iac) | Terraform modules, deployment presets, and operator contracts for AWS and Azure |

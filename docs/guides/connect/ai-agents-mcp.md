@@ -202,7 +202,7 @@ There are two MCP surfaces in the Honua platform, and it is easy to conflate the
 | Transport | HTTP `POST /mcp` (Streamable HTTP), authenticated | MCP stdio (`honua-devops --mcp`) |
 | Roster | The data-access, planning, Studio and ops-evidence tools on this page, plus a dynamic `honua_op_*` tool per published operation | Operator-intelligence tools that reason over the evidence and plan diagnosis, tuning, upgrades and remediation |
 | What it does | Serves geospatial data-access and Studio workflows and reads bounded operational evidence; at most it *proposes* a control-plane action a human approves | Consumes this server's evidence tools and acts on them through its own day-2 loop |
-| Licensing | Open-core (ELv2), included in Community | Public source under a proprietary licence; built from source or run as a container, not installed from a package registry |
+| Licensing | Fair Core (FCL-1.0-ALv2), included in Community | Public source under a proprietary licence; built from source or run as a container, not installed from a package registry |
 
 The eight ops-evidence tools on this page (`honua_ops_health`, `honua_ops_findings`, `honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`, `honua_deploy_operations`, `honua_supported_operation_kinds`, `honua_propose_rollback`) are deliberately public: they expose bounded read-only facts and human-gated proposals, not operator reasoning.
 

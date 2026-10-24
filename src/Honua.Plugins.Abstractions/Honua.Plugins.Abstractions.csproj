@@ -7,11 +7,12 @@
     <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <RootNamespace>Honua.Plugins.Abstractions</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
 
     <!--

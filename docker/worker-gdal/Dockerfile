@@ -282,7 +282,7 @@ ENV DOTNET_RUNNING_IN_CONTAINER=true \
 
 LABEL org.opencontainers.image.title="honua-worker-etl" \
       org.opencontainers.image.description="Honua heavyweight GP/ETL worker (GDAL + PDAL equipped, native runtime profile)" \
-      org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.licenses="LicenseRef-FCL-1.0-ALv2" \
       org.opencontainers.image.revision="${HONUA_GIT_SHA}" \
       honua.runtime.profile="native" \
       honua.native.gdal.version="${GDAL_VERSION}" \

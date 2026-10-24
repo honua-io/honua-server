@@ -183,7 +183,7 @@ ENV HONUA_CUSTOMCODE_SDK_ASSEMBLY=/opt/harness/Honua.CustomCode.Sdk.dll \
 
 LABEL org.opencontainers.image.title="honua-worker-customcode-dotnet" \
       org.opencontainers.image.description="Honua custom-code GP worker (.NET runtime): runs user IGeoprocessingTool implementations at a pinned git SHA under a scoped Honua SDK client." \
-      org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.licenses="LicenseRef-FCL-1.0-ALv2" \
       honua.runtime.profile="customcode-dotnet" \
       security.non-root="true" \
       security.user="1001"

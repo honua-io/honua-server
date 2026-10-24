@@ -8,7 +8,7 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:c80d68ee77e1bdd7e962b70c794652ea606e7fc13454c3c930755cf71407d093",
+    "catalogSourceContentDigest": "sha256:b0c1c96534c6af9ec505653f85263c3f0538ed0142bb9739365bbfe6c8d645c1",
     "gpCorrectnessAudit": "certification/gp-correctness-audit-20261016.md",
     "releaseBindingRegistrationAudit": "certification/gp-release-binding-audit-20261015.md",
     "securityRemediationAudit": "certification/gp-security-remediation-audit-20261009.md",

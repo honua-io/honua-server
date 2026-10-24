@@ -1,4 +1,4 @@
-/* Copyright (c) Honua. Licensed under the Elastic License 2.0.
+/* Copyright (c) Honua Geo Inc. Licensed under the Fair Core License, Version 1.0, ALv2 Future License.
  * Qualification-only pause AFTER actual ELF exec, before main. Never an
  * assertion that GDAL has processed data or reached a mid-operation phase. */
 #define _GNU_SOURCE

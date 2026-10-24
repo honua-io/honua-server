@@ -15,7 +15,7 @@ and it is public.** Start with its
 *which* pattern to pick and what each one implies; that guide is how you stand one up.
 
 Modules are consumed by Git source pinned to a SemVer tag rather than from the public
-Terraform Registry, which the Elastic License 2.0 precludes
+Terraform Registry, which the Fair Core License precludes
 ([the recorded decision](https://github.com/honua-io/honua-iac/blob/trunk/docs/module-publishing-decision.md)):
 
 ```hcl

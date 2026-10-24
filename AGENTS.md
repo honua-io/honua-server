@@ -145,7 +145,7 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `honua-samples` | Public | Runnable samples as executable evidence — capability-keyed manifests run in CI against a real server, published at samples.honua.io. |
 | `honua-studio` | Public | Realtime conversational map/app builder over the JavaScript SDK: typed composition updates the canvas as tools execute, with undo/redo and durable versions. This is the current Studio authoring model; do not revive the legacy Console builders. |
 | `honua-migrate` | Public | Unified migration CLI: assessment, planning, code migration, service import, reconciliation. Owns the arcpy/toolbox translation CLI surface. |
-| `honua-collect` | Public | Offline-first mobile field data collection (ELv2 open core). |
+| `honua-collect` | Public | Offline-first mobile field data collection (FCL-1.0-ALv2). |
 | `honua-esri-compat` | Private | Automated Esri client compatibility verification (ArcGIS Pro/arcpy, ArcGIS API for Python, ArcGIS Maps SDK for .NET). Home for anything needing a licensed Esri environment. |
 | `honua-compliance` | Private | Security/compliance system of record: policies, CSA CCM v4 control mappings, self-attestations (STAR/CAIQ, OWASP ASVS, NIST CSF), evidence index. |
 | `honua-demo` | Private | demo.honua.io environment: Terraform root module (consumes `honua-iac`), seeding, runbook, demo ops. |
