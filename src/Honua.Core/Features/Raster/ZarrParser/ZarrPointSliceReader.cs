@@ -212,8 +212,12 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
             return CreateResult(spatialStatus, variable: array.Name, error: spatialError);
         }
 
-        foreach (var selection in request.Selections)
+        foreach (var requested in request.Selections)
         {
+            var selection = requested with
+            {
+                Dimension = ZarrDimensionSliceResolver.ResolveAdvertisedDimensionName(metadata, requested.Dimension)
+            };
             if (!string.IsNullOrWhiteSpace(selection.Variable) &&
                 !string.Equals(selection.Variable, array.Name, StringComparison.Ordinal))
             {

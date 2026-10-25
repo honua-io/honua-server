@@ -462,8 +462,12 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             return false;
         }
 
-        foreach (var selection in selections)
+        foreach (var requested in selections)
         {
+            var selection = requested with
+            {
+                Dimension = ZarrDimensionSliceResolver.ResolveAdvertisedDimensionName(metadata, requested.Dimension)
+            };
             if (!string.IsNullOrWhiteSpace(selection.Variable) &&
                 !string.Equals(selection.Variable, variable, StringComparison.Ordinal))
             {

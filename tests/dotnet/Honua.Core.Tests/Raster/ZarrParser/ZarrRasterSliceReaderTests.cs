@@ -82,6 +82,23 @@ public sealed class ZarrRasterSliceReaderTests
         store.ListCalls.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadAsync_AdvertisedStdZ_IsAcceptedAsTheVerticalAxis()
+    {
+        var reader = CreateReader(new CountingZarrStore([Registration()]));
+        var request = Request() with
+        {
+            Selections = [new ZarrPointSliceSelection("temperature", "StdZ", 500)],
+        };
+
+        var result = await reader.ReadAsync(7, request);
+
+        // The selection resolves (the empty range reader fails the read afterwards);
+        // before the alias it was rejected as an unknown dimension.
+        result.Status.Should().NotBe(ZarrRasterSliceReadStatus.InvalidSelection, result.Error);
+    }
+
     private static ZarrRasterSliceReader CreateReader(IZarrStore store)
         => new(
             store,
