@@ -195,8 +195,22 @@ class PreviewLifecycleEvidenceTests(unittest.TestCase):
         self.assertTrue(entries)
         self.assertTrue(all(row["maturity"] == "preview" for row in entries))
 
-    def test_imageserver_is_preview(self):
-        self.assert_preview_evidence("serve.geoservices-imageserver")
+    def test_imageserver_is_ga(self):
+        # GA in 2026.1 (2026-10-24 operator ruling); no longer Preview evidence.
+        matrix = json.loads((ROOT / "docs/gis/data/capability-matrix.v1.json").read_text())
+        capability = next(row for row in matrix["capabilities"] if row["key"] == "serve.geoservices-imageserver")
+        self.assertGreater(capability["entryCount"], 0)
+        # The ImageServer WMTS routes stay Preview with WMTS; everything else is implemented.
+        self.assertNotEqual("preview", capability["status"])
+        self.assertGreater(capability["maturity"]["implemented"], 0)
+        self.assertEqual(set(capability["maturity"]) - {"implemented", "preview"}, set())
+        catalog = json.loads((ROOT / "docs/gis/data/feature-catalog.json").read_text())
+        entries = [row for row in catalog["entries"] if row.get("capability") == "serve.geoservices-imageserver"]
+        self.assertTrue(entries)
+        self.assertTrue(all(row["maturity"] == "implemented"
+                            for row in entries if "/WMTS" not in row["route"].upper()))
+        self.assertTrue(all(row["maturity"] == "preview"
+                            for row in entries if "/WMTS" in row["route"].upper()))
 
     def test_wmts_is_preview(self):
         self.assert_preview_evidence("serve.wmts")

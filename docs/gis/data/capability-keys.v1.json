@@ -628,8 +628,7 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface.",
-      "status": "preview"
+      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface."
     },
     {
       "key": "serve.geoservices-mapserver",

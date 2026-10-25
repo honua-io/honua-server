@@ -136,7 +136,16 @@ public sealed class CapabilityRegistryConformanceTests
                     $"unimplemented capability '{descriptor.Id}' cannot be served");
                 resolution.ReasonCode.Should().Be(CapabilityReasonCodes.NotImplemented);
             }
-            else if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages")
+            else if (descriptor.Id is "serve.geoservices-imageserver")
+            {
+                // GA in 2026.1 (2026-10-24 operator ruling); it was already served by default.
+                descriptor.Maturity.Should().Be(CapabilityMaturity.Implemented);
+                descriptor.RequiresOptIn.Should().BeFalse();
+                resolution.Enabled.Should().BeTrue(
+                    $"GA capability '{descriptor.Id}' is served by default");
+                resolution.ReasonCode.Should().BeNull();
+            }
+            else if (descriptor.Id is "serve.wmts" or "serve.ogc-api-coverages")
             {
                 descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
                 descriptor.RequiresOptIn.Should().BeFalse();

@@ -49,8 +49,9 @@ repositories. Supported advertised workflows, security and data integrity take
 priority. Preview and experimental
 features have a separate, lower-priority readiness profile. SensorThings is
 **Preview** and opt-in, despite its `Capabilities:Experimental` configuration
-section. ImageServer, WMTS and offline sync also have Preview classifications;
-branch versioning is Experimental. Source references are in `scope_contract`.
+section. WMTS and offline sync also have Preview classifications; ImageServer
+was Preview at the reviewed candidate and is GA in 2026.1 under the 2026-10-24
+operator ruling; branch versioning is Experimental. Source references are in `scope_contract`.
 Maturity, client applicability, execution outcome and priority are separate axes.
 The requested #5238, #5192 and #5036 work remains tracked within those profiles.
 

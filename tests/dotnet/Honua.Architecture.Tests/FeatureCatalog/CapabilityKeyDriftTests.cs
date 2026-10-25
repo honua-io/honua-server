@@ -217,7 +217,7 @@ public sealed class CapabilityKeyDriftTests
     {
         var registry = new CapabilityRegistry();
         var catalog = LoadCommittedCatalog();
-        foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages", "serve.ogc-api-edr" })
+        foreach (var capability in new[] { "serve.wmts", "serve.ogc-api-coverages", "serve.ogc-api-edr" })
         {
             registry.Find(capability).Should().NotBeNull();
             registry.Find(capability)!.Maturity.Should().Be(CapabilityMaturity.Preview);
@@ -232,6 +232,27 @@ public sealed class CapabilityKeyDriftTests
             .ToArray();
         wmtsRoutes.Should().NotBeEmpty();
         wmtsRoutes.Should().OnlyContain(entry => entry.Maturity == "preview");
+    }
+
+    [ArchitectureTest]
+    public void ImageServer_IsGaInRegistryKeyCatalogAndEveryCatalogProjection()
+    {
+        // GA in 2026.1 by the 2026-10-24 operator ruling; supersedes the 2026-09-03 Preview ruling.
+        const string capability = "serve.geoservices-imageserver";
+        var registry = new CapabilityRegistry();
+        registry.Find(capability).Should().NotBeNull();
+        registry.Find(capability)!.Maturity.Should().Be(CapabilityMaturity.Implemented);
+        registry.Find(capability)!.RequiresOptIn.Should().BeFalse();
+        CapabilityKeyCatalog.All.Single(key => key.Key == capability).Status
+            .Should().NotBe(CapabilityKeyCatalog.PreviewStatus);
+
+        var entries = LoadCommittedCatalog().Entries.Where(entry => entry.Capability == capability).ToArray();
+        entries.Should().NotBeEmpty();
+        // ImageServer's own routes are GA; its /WMTS routes keep the WMTS Preview lifecycle,
+        // which the 2026-10-24 ruling did not change (asserted for every WMTS route above).
+        var nonWmts = entries.Where(entry => !entry.Route.Contains("/WMTS", StringComparison.OrdinalIgnoreCase)).ToArray();
+        nonWmts.Should().NotBeEmpty();
+        nonWmts.Should().OnlyContain(entry => entry.Maturity == "implemented");
     }
 
     [ArchitectureTest]

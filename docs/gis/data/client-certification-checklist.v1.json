@@ -51,11 +51,17 @@
       "candidate_revision": "ab2e3ed3d58196658fbd98567de65eec4db7dc64",
       "capabilities": {
         "serve.sensorthings": "preview",
-        "serve.geoservices-imageserver": "preview",
         "serve.wmts": "preview",
         "serve.ogc-api-coverages": "preview",
         "sync.offline": "preview",
         "versioning.branch": "experimental"
+      },
+      "promoted_after_review": {
+        "serve.geoservices-imageserver": {
+          "maturity": "implemented",
+          "decision": "2026-10-24 operator ruling: ImageServer is GA in 2026.1 (#5238, #6492 and #3558 pulled into 2026.1)",
+          "note": "Preview at candidate_revision; the 2026-09-03 Preview ruling no longer applies to ImageServer. WMTS and OGC API Coverages stay Preview."
+        }
       },
       "sensorthings_opt_in": "Capabilities:Experimental:serve.sensorthings:Enabled",
       "remaining_classification": "review-required; implemented source status alone is not a GA profile decision"

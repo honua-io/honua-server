@@ -110,7 +110,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [FeatureServer Query](serve.geoservices-featureserver.md) | Serve | Community | ga |
 | [GeocodeServer Discovery](serve.geoservices-geocodeserver.md) | Serve | Community | ga |
 | [Geometry Service](serve.geoservices-geometry-service.md) | Serve | Community | ga |
-| [ImageServer](serve.geoservices-imageserver.md) | Serve | Community | **preview** |
+| [ImageServer](serve.geoservices-imageserver.md) | Serve | Community | ga |
 | [MapServer](serve.geoservices-mapserver.md) | Serve | Community | ga |
 | [GeoServices REST Root](serve.geoservices-root.md) | Serve | Community | ga |
 | [VectorTileServer](serve.geoservices-vectortileserver.md) | Serve | Community | ga |

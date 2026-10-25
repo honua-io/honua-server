@@ -131,9 +131,10 @@ See [GeoServices parity — MapServer](../compatibility/geoservices-parity.md#ma
 
 ## ImageServer
 
-ImageServer and its WMTS routes are **Preview in 2026.1**. Security, isolation
-and lifecycle-truth fixes remain in scope; other parity work is deferred to
-release/2026.2. See the [Preview contract](../compatibility/geoservices-parity.md#imageserver),
+ImageServer is **GA in 2026.1** (2026-10-24 operator ruling, superseding the
+2026-09-03 Preview ruling for ImageServer only). ImageServer WMTS routes stay
+**Preview in 2026.1**; their non-security parity work is deferred to release/2026.2.
+See the [lifecycle and contract](../compatibility/geoservices-parity.md#imageserver),
 including the explicit unavailable-export error behavior.
 
 Base: `/rest/services/{serviceId}/ImageServer` (raster-backed services).
