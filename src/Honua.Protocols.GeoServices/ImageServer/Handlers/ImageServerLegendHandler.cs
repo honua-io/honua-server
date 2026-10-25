@@ -98,8 +98,10 @@ internal sealed class ImageServerLegendHandler
             // form/query values on POST (#1900); callers pass the resolved value in.
             var renderingRuleValue = renderingRule ?? context.Request.Query["renderingRule"].ToString();
             LegendEntry[] swatches;
+            var legendType = "Stretched";
             if (TryGetColormap(renderingRuleValue, out var colormap))
             {
+                legendType = "Colormap";
                 swatches = BuildColormapSwatches(colormap);
             }
             else
@@ -126,6 +128,7 @@ internal sealed class ImageServerLegendHandler
                         LayerType = "Raster Layer",
                         MinScale = 0,
                         MaxScale = 0,
+                        LegendType = legendType,
                         Legend = swatches,
                     },
                 ],

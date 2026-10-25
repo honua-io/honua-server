@@ -216,13 +216,13 @@ internal sealed class ImageServerIdentifyHandler
                         Y = y.Value,
                         SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid)
                     },
-                    Properties = new Dictionary<string, object?>
+                    Properties = WithoutNulls(new Dictionary<string, object?>
                     {
                         ["HasData"] = false,
                         ["Coordinates"] = $"{x.Value}, {y.Value}",
                         ["SRID"] = srid,
                         ["BandCount"] = 0
-                    },
+                    }),
                     CatalogItems = request.ReturnCatalogItems == true
                         ? new IdentifyCatalogItems { SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) }
                         : null
@@ -278,7 +278,12 @@ internal sealed class ImageServerIdentifyHandler
                 Properties = CreateProperties(pixelResult, request.PixelSize),
                 CatalogItems = request.ReturnCatalogItems == true
                     ? BuildCatalogItems(selectedRasters, includeFootprint, maskedFields)
-                    : null
+                    : null,
+                // One entry per returned catalog item, in catalogItems order. Every selected
+                // raster participates in the identified pixel, so each is fully visible.
+                CatalogItemVisibilities = request.ReturnCatalogItems == true
+                    ? selectedRasters.Select(static _ => 1.0).ToArray()
+                    : []
             };
 
             ImageServerLog.IdentifyCompleted(_logger, layerId, pixelResult.HasData, pixelResult.BandValues.Count);
@@ -373,14 +378,14 @@ internal sealed class ImageServerIdentifyHandler
             // The slice reader samples an sr-less point in the coverage's native CRS, so the
             // location reference is only stated when the request supplied one.
             Location = new Point { X = x, Y = y, SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) },
-            Properties = new Dictionary<string, object?>
+            Properties = WithoutNulls(new Dictionary<string, object?>
             {
                 ["HasData"] = hasData,
                 ["Value"] = hasData ? value : null,
                 ["Variable"] = read.Variable,
                 ["SRID"] = srid,
                 ["DimensionCount"] = constraints.Count,
-            },
+            }),
             CatalogItems = request.ReturnCatalogItems == true
                 ? new IdentifyCatalogItems { SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) }
                 : null,
@@ -550,6 +555,19 @@ internal sealed class ImageServerIdentifyHandler
         foreach (var band in pixelResult.BandValues.OrderBy(kvp => kvp.Key))
         {
             properties[$"Band_{band.Key}"] = band.Value;
+        }
+
+        return WithoutNulls(properties);
+    }
+
+    // Esri identify "properties" is a flat name/value bag; native readers reject a JSON null
+    // where they expect a value, so a member without a value is omitted rather than written null
+    // (e.g. a NoData band, or an SRID the request did not state).
+    private static Dictionary<string, object?> WithoutNulls(Dictionary<string, object?> properties)
+    {
+        foreach (var key in properties.Where(static pair => pair.Value is null).Select(static pair => pair.Key).ToArray())
+        {
+            properties.Remove(key);
         }
 
         return properties;

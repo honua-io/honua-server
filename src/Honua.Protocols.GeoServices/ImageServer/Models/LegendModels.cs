@@ -52,6 +52,10 @@ public sealed class LegendLayer
     [JsonPropertyName("maxScale")]
     public double MaxScale { get; init; }
 
+    /// <summary>Renderer type Esri names on each legend layer, e.g. Stretched or Colormap.</summary>
+    [JsonPropertyName("legendType")]
+    public string LegendType { get; init; } = "Stretched";
+
     /// <summary>
     /// Legend swatches for the layer.
     /// </summary>

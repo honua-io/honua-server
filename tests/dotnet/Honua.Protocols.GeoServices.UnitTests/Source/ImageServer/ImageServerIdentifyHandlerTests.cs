@@ -979,6 +979,67 @@ public class ImageServerIdentifyHandlerTests
         await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(default, default, default, default);
     }
 
+    // Esri always emits catalogItemVisibilities (an array, empty when no catalog items come
+    // back) alongside catalogItems; a native client reads it positionally against the features (#5238).
+    [UnitTheory]
+    [InlineData(true, 1)]
+    [InlineData(false, 0)]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_CatalogItemVisibilities_AlignWithCatalogItems(bool returnCatalogItems, int expected)
+    {
+        SetupSuccessfulIdentify();
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20",
+            Sr = "4326",
+            ReturnCatalogItems = returnCatalogItems,
+            F = "json"
+        });
+
+        var visibilities = json.RootElement.GetProperty("catalogItemVisibilities");
+        visibilities.ValueKind.Should().Be(JsonValueKind.Array);
+        visibilities.GetArrayLength().Should().Be(expected);
+        if (returnCatalogItems)
+        {
+            visibilities[0].GetDouble().Should().Be(1.0);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_NoDataWithoutSr_PropertiesCarryNoJsonNulls()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        using var json = await ExecuteIdentifyJsonAsync(CreateRequest("10,20"));
+        var root = json.RootElement;
+        root.GetProperty("catalogItemVisibilities").GetArrayLength().Should().Be(0);
+        var properties = root.GetProperty("properties");
+        properties.ValueKind.Should().Be(JsonValueKind.Object);
+        properties.EnumerateObject().Should().OnlyContain(member => member.Value.ValueKind != JsonValueKind.Null);
+        properties.TryGetProperty("SRID", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_NoDataBand_OmitsNullBandMember()
+    {
+        SetupSuccessfulIdentify();
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 10.5,
+                Y = 20.3,
+                Srid = 4326,
+                HasData = false,
+                BandValues = new Dictionary<int, object?> { [1] = null }
+            });
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest { Geometry = "10,20", Sr = "4326", F = "json" });
+
+        var properties = json.RootElement.GetProperty("properties");
+        properties.EnumerateObject().Should().OnlyContain(member => member.Value.ValueKind != JsonValueKind.Null);
+        json.RootElement.GetProperty("value").GetString().Should().Be("NoData");
+    }
+
     private async Task<JsonDocument> ExecuteIdentifyJsonAsync(IdentifyRequest request)
     {
         var context = CreateImageServerContext();

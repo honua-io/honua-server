@@ -732,6 +732,13 @@ public sealed class IdentifyResponse
     public IdentifyCatalogItems? CatalogItems { get; init; }
 
     /// <summary>
+    /// Percentage contribution of each catalog item, in <c>catalogItems</c> order. Esri always
+    /// emits the array and leaves it empty when no catalog items are returned.
+    /// </summary>
+    [JsonPropertyName("catalogItemVisibilities")]
+    public double[] CatalogItemVisibilities { get; init; } = [];
+
+    /// <summary>
     /// Additive identify entries for native ArcGIS REST raster clients which read
     /// the MapServer-style envelope. The standard pixel and location remain authoritative.
     /// </summary>
