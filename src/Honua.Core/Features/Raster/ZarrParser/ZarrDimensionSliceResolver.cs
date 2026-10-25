@@ -95,6 +95,43 @@ public static class ZarrDimensionSliceResolver
     }
 
     /// <summary>
+    /// Maps a dimension name a client read from the advertised <c>multidimensionalInfo</c>
+    /// (the Esri standard <c>StdTime</c> / <c>StdZ</c>) to the store's own dimension name
+    /// (for example <c>time</c> / <c>depth</c>). Names the store declares literally, and all
+    /// other names, are returned unchanged. <c>StdZ</c> maps only when the store declares
+    /// exactly one non-temporal coordinate axis, so the mapping is never a guess.
+    /// </summary>
+    public static string ResolveAdvertisedDimensionName(ZarrStoreMetadata metadata, string dimensionName)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (string.IsNullOrWhiteSpace(dimensionName) || DeclaresDimension(metadata, dimensionName))
+        {
+            return dimensionName;
+        }
+
+        if (string.Equals(dimensionName, "StdTime", StringComparison.OrdinalIgnoreCase))
+        {
+            return metadata.TemporalDimension ?? dimensionName;
+        }
+
+        if (string.Equals(dimensionName, "StdZ", StringComparison.OrdinalIgnoreCase))
+        {
+            var candidates = metadata.Axes
+                .Where(axis => !string.Equals(axis.Name, metadata.TemporalDimension, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            return candidates.Length == 1 ? candidates[0].Name : dimensionName;
+        }
+
+        return dimensionName;
+    }
+
+    private static bool DeclaresDimension(ZarrStoreMetadata metadata, string dimensionName)
+        => string.Equals(metadata.TemporalDimension, dimensionName, StringComparison.OrdinalIgnoreCase) ||
+           metadata.Axes.Any(axis => string.Equals(axis.Name, dimensionName, StringComparison.OrdinalIgnoreCase)) ||
+           metadata.Arrays.Any(array => array.DimensionNames.Any(
+               name => string.Equals(name, dimensionName, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
     /// Locates the grid dimension index for a named axis within a variable's
     /// <see cref="ZarrArrayMetadata.DimensionNames"/>.
     /// </summary>

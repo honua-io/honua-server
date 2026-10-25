@@ -133,4 +133,59 @@ public class ZarrDimensionSliceResolverTests
         ZarrDimensionSliceResolver.TryFindArrayDimension(Array3D("elevation"), "missing", out var missing).Should().BeFalse();
         missing.Should().Be(-1);
     }
+
+    private static ZarrStoreMetadata WithTimeAxis(string timeName = "time")
+        => new(
+            ZarrFormatVersion.V2,
+            4326,
+            new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+            [Array3D(timeName)],
+            "temperature",
+            "x",
+            "y",
+            timeName,
+            new TemporalExtent(
+                new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 1, 5, 0, 0, 0, TimeSpan.Zero),
+                5));
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("StdTime", "time")]
+    [InlineData("stdtime", "time")]
+    [InlineData("time", "time")]
+    [InlineData("salinity", "salinity")]
+    public void AdvertisedStdTime_MapsToTheStoreTimeDimension(string requested, string expected)
+        => ZarrDimensionSliceResolver.ResolveAdvertisedDimensionName(WithTimeAxis(), requested).Should().Be(expected);
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void AdvertisedStdTime_ResolvesTheSameSliceAsTheNativeName()
+    {
+        var metadata = WithTimeAxis();
+        var millis = new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var name = ZarrDimensionSliceResolver.ResolveAdvertisedDimensionName(metadata, "StdTime");
+
+        ZarrDimensionSliceResolver.TryResolveSliceIndex(metadata, name, millis, out var index, out var error)
+            .Should().BeTrue(error);
+        index.Should().Be(2);
+        ZarrDimensionSliceResolver.TryFindArrayDimension(metadata.Arrays[0], name, out var dimension).Should().BeTrue();
+        dimension.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void AdvertisedStdZ_MapsOnlyWhenExactlyOneVerticalAxisIsDeclared()
+    {
+        ZarrDimensionSliceResolver.ResolveAdvertisedDimensionName(WithVerticalAxis(), "StdZ").Should().Be("elevation");
+        // No non-temporal axis declared: nothing to map to, the name is left for the caller to reject.
+        ZarrDimensionSliceResolver.ResolveAdvertisedDimensionName(WithTimeAxis(), "StdZ").Should().Be("StdZ");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void LiterallyDeclaredStdTime_IsNotRemapped()
+    {
+        ZarrDimensionSliceResolver.ResolveAdvertisedDimensionName(WithTimeAxis("StdTime"), "StdTime").Should().Be("StdTime");
+    }
 }
