@@ -175,6 +175,14 @@ internal sealed class McpOptions
     public int MaxBatchSize { get; set; } = 50;
 
     /// <summary>
+    /// Maximum number of elements in one JSON-RPC batch from an anonymous caller on
+    /// <c>POST /mcp</c> (SEC-18). The effective anonymous bound is the smaller of this
+    /// value and <see cref="MaxBatchSize"/>; authenticated callers use
+    /// <see cref="MaxBatchSize"/>. Default 5.
+    /// </summary>
+    public int MaxAnonymousBatchSize { get; set; } = 5;
+
+    /// <summary>
     /// Maximum <c>POST /mcp</c> request body size in bytes (SEC-18). A larger body is
     /// refused with HTTP 413 before it is parsed. The default, 10 MiB, leaves room for
     /// the 4 MiB inline dataset accepted by <c>honua_ingest_dataset</c> after JSON
